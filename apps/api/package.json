@@ -6,7 +6,7 @@
     "dev": "tsx watch main.ts",
     "build": "node scripts/build.js",
     "start": "node dist/index.js",
-    "type-check": "tsc",
+    "type-check": "tsc --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {
