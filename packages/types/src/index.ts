@@ -89,6 +89,12 @@ export type {
   RecordStatus,
 } from "./companion";
 export { toFHIRCompanion } from "./companion";
+export type {
+  ParentCompanionRole,
+  ParentCompanionStatus,
+  ParentCompanionPermissions,
+  CompanionParentLink,
+} from "./parentCompanion";
 
 export type { Organization, Organisation, ToFHIROrganizationOptions } from "./organization";
 export type { OrganisationRoom } from "./organisationRoom";

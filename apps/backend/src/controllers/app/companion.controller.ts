@@ -2,6 +2,8 @@ import { Request, Response } from 'express'
 import logger from '../../utils/logger'
 import { CompanionService, CompanionServiceError } from '../../services/companion.service'
 import type { CompanionRequestDTO } from '@yosemite-crew/types'
+import { ParentService, ParentServiceError } from '../../services/parent.service'
+import type { AuthenticatedRequest } from '../../middlewares/auth'
 
 const parseCompanionPayload = (payload: unknown): CompanionRequestDTO | undefined => {
     if (!payload) {
@@ -49,10 +51,30 @@ const extractCompanionPayload = (req: Request): CompanionRequestDTO => {
 export const CompanionController = {
     create: async (req: Request, res: Response) => {
         try {
+            const { userId } = req as AuthenticatedRequest
+
+            if (!userId) {
+                res.status(401).json({ message: 'Unauthorized.' })
+                return
+            }
+
             const payload = extractCompanionPayload(req)
-            const { response } = await CompanionService.create(payload)
+            const parentDocument = await ParentService.findDocumentByUserId(userId)
+
+            if (!parentDocument) {
+                res.status(404).json({ message: 'Parent profile not found for current user.' })
+                return
+            }
+
+            const { response } = await CompanionService.create(payload, {
+                parentMongoId: parentDocument._id,
+            })
             res.status(201).json(response)
         } catch (error) {
+            if (error instanceof ParentServiceError) {
+                res.status(error.statusCode).json({ message: error.message })
+                return
+            }
             if (error instanceof CompanionServiceError) {
                 res.status(error.statusCode).json({ message: error.message })
                 return
@@ -114,6 +136,44 @@ export const CompanionController = {
             }
             logger.error('Failed to update companion', error)
             res.status(500).json({ message: 'Unable to update companion.' })
+        }
+    },
+
+    delete: async (req: Request, res: Response) => {
+        try {
+            const { id } = req.params
+            const { userId } = req as AuthenticatedRequest
+
+            if (!userId) {
+                res.status(401).json({ message: 'Unauthorized.' })
+                return
+            }
+
+            if (!id) {
+                res.status(400).json({ message: 'Companion ID is required.' })
+                return
+            }
+
+            const parentDocument = await ParentService.findDocumentByUserId(userId)
+
+            if (!parentDocument) {
+                res.status(404).json({ message: 'Parent profile not found for current user.' })
+                return
+            }
+
+            await CompanionService.delete(id, { parentMongoId: parentDocument._id })
+            res.status(204).send()
+        } catch (error) {
+            if (error instanceof ParentServiceError) {
+                res.status(error.statusCode).json({ message: error.message })
+                return
+            }
+            if (error instanceof CompanionServiceError) {
+                res.status(error.statusCode).json({ message: error.message })
+                return
+            }
+            logger.error('Failed to delete companion', error)
+            res.status(500).json({ message: 'Unable to delete companion.' })
         }
     },
 }

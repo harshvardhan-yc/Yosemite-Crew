@@ -9,6 +9,10 @@ import {
 } from '@yosemite-crew/types'
 
 type ParentAddress = Parent['address']
+type ParentServiceContext = {
+    userId: string
+}
+type PersistableParentAttributes = Omit<ParentMongo, 'userId'>
 
 export class ParentServiceError extends Error {
     constructor(message: string, public readonly statusCode: number) {
@@ -104,7 +108,7 @@ const ensureSafeIdentifier = (value: unknown): string | undefined => {
     return identifier
 }
 
-const sanitizeParentAttributes = (dto: ParentDTOAttributesType): ParentMongo => {
+const sanitizeParentAttributes = (dto: ParentDTOAttributesType): PersistableParentAttributes => {
     const firstName = requireSafeString(dto.firstName, 'Parent first name')
 
     if (typeof dto.age !== 'number') {
@@ -145,16 +149,37 @@ const isAddressComplete = (address: ParentAddress): boolean => {
     return requiredFields.every((field) => isNonEmptyString(address[field]))
 }
 
+const requireAuthenticatedUserId = (context?: ParentServiceContext): string => {
+    if (!context?.userId || !isNonEmptyString(context.userId)) {
+        throw new ParentServiceError('Authenticated parent context is required.', 401)
+    }
+
+    return context.userId.trim()
+}
+
+const applyOwnershipFilter = <T extends Record<string, unknown>>(
+    query: T,
+    context?: ParentServiceContext
+): T & { userId?: string } => {
+    if (!context?.userId) {
+        return query
+    }
+
+    return {
+        ...query,
+        userId: context.userId,
+    }
+}
+
 const determineProfileCompletion = (parent: Parent): boolean => {
-    const { firstName, age, phoneNumber, profileImageUrl, address } = parent
+    const { firstName, age, phoneNumber, address } = parent
 
     return (
         isNonEmptyString(firstName) &&
         typeof age === 'number' &&
         age > 0 &&
         isAddressComplete(address) &&
-        isNonEmptyString(phoneNumber) &&
-        isNonEmptyString(profileImageUrl)
+        isNonEmptyString(phoneNumber)
     )
 }
 
@@ -175,6 +200,7 @@ const buildParentDomain = (document: ParentDocument): Parent => {
 
     const parent: Parent = {
         _id: fhirId ?? _id.toString(),
+        userId: rest.userId,
         firstName: rest.firstName,
         lastName: rest.lastName,
         age: rest.age,
@@ -189,7 +215,7 @@ const buildParentDomain = (document: ParentDocument): Parent => {
     return parent
 }
 
-const createPersistableFromFHIR = (payload: ParentRequestDTO) => {
+const createPersistableFromFHIR = (payload: ParentRequestDTO): { persistable: PersistableParentAttributes } => {
     if (payload?.resourceType !== 'RelatedPerson') {
         throw new ParentServiceError('Invalid payload. Expected FHIR RelatedPerson resource.', 400)
     }
@@ -211,10 +237,21 @@ const resolveIdQuery = (id: string) => {
 }
 
 export const ParentService = {
-    async create(payload: ParentRequestDTO) {
+    async create(payload: ParentRequestDTO, context: ParentServiceContext) {
+        const userId = requireAuthenticatedUserId(context)
+        payload.id = userId
         const { persistable } = createPersistableFromFHIR(payload)
 
-        const document = await ParentModel.create(persistable)
+        const existing = await ParentModel.findOne({ userId }, null, { sanitizeFilter: true })
+
+        if (existing) {
+            throw new ParentServiceError('Parent profile already exists for this user.', 409)
+        }
+
+        const document = await ParentModel.create({
+            ...persistable,
+            userId
+        })
         const parent = buildParentDomain(document)
         const response = toParentResponseDTO(parent)
 
@@ -224,8 +261,9 @@ export const ParentService = {
         }
     },
 
-    async getById(id: string) {
-        const document = await ParentModel.findOne(resolveIdQuery(id))
+    async getById(id: string, context?: ParentServiceContext) {
+        const query = applyOwnershipFilter(resolveIdQuery(id), context)
+        const document = await ParentModel.findOne(query, null, { sanitizeFilter: true })
 
         if (!document) {
             return null
@@ -238,10 +276,10 @@ export const ParentService = {
         }
     },
 
-    async update(id: string, payload: ParentRequestDTO) {
+    async update(id: string, payload: ParentRequestDTO, context?: ParentServiceContext) {
         const { persistable } = createPersistableFromFHIR(payload)
         const document = await ParentModel.findOneAndUpdate(
-            resolveIdQuery(id),
+            applyOwnershipFilter(resolveIdQuery(id), context),
             { $set: persistable },
             { new: true, sanitizeFilter: true }
         )
@@ -255,5 +293,30 @@ export const ParentService = {
             response: toParentResponseDTO(parent),
             isProfileComplete: parent.isProfileComplete ?? false,
         }
+    },
+
+    async delete(id: string, context: ParentServiceContext) {
+        const document = await ParentModel.findOneAndDelete(
+            applyOwnershipFilter(resolveIdQuery(id), context),
+            { sanitizeFilter: true }
+        )
+
+        if (!document) {
+            return null
+        }
+
+        return buildParentDomain(document)
+    },
+
+    async findDocumentByUserId(userId: string) {
+        if (!isNonEmptyString(userId)) {
+            throw new ParentServiceError('User identifier is required to load parent.', 400)
+        }
+
+        return ParentModel.findOne({ userId: userId.trim() }, null, { sanitizeFilter: true })
+    },
+
+    async findDocumentByIdentifier(id: string) {
+        return ParentModel.findOne(resolveIdQuery(id), null, { sanitizeFilter: true })
     },
 }

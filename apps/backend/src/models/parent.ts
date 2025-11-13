@@ -14,6 +14,7 @@ const AddressSchema = new Schema(
 )
 
 export interface ParentMongo {
+    userId: string
     fhirId?: string
     firstName: string
     lastName?: string
@@ -34,7 +35,8 @@ export interface ParentMongo {
 
 const ParentSchema = new Schema<ParentMongo>(
     {
-        fhirId: { type: String },
+        userId: { type: String, required: true, index: true, unique: true },
+        fhirId: { type: String, index: true, unique: true, sparse: true },
         firstName: { type: String, required: true },
         lastName: { type: String },
         age: { type: Number, required: true },

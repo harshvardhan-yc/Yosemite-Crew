@@ -1,5 +1,6 @@
 import { Types } from 'mongoose'
 import CompanionModel, { CompanionDocument, type CompanionMongo } from '../models/companion'
+import { ParentCompanionService, ParentCompanionServiceError } from './parent-companion.service'
 import {
     fromCompanionRequestDTO,
     toCompanionResponseDTO,
@@ -161,7 +162,7 @@ const sanitizeCompanionAttributes = (dto: CompanionDTOAttributes): CompanionMong
     const isInsured = typeof dto.isInsured === 'boolean' ? dto.isInsured : false
 
     return {
-        fhirId: ensureSafeIdentifier(dto._id),
+        fhirId: ensureSafeIdentifier(dto.id),
         name,
         type,
         breed: optionalSafeString(dto.breed, 'Companion breed'),
@@ -198,7 +199,7 @@ const buildCompanionDomain = (document: CompanionDocument): Companion => {
     const { _id, fhirId, createdAt, updatedAt, ...rest } = plain
 
     return {
-        _id: fhirId ?? _id.toString(),
+        id: fhirId ?? _id.toString(),
         name: rest.name,
         type: rest.type as CompanionType,
         breed: rest.breed ?? '',
@@ -243,17 +244,59 @@ const resolveIdQuery = (id: string) => {
     return Types.ObjectId.isValid(safeId) ? { _id: safeId } : { fhirId: safeId }
 }
 
+type CompanionCreateContext = {
+    parentMongoId: Types.ObjectId
+}
+
 export const CompanionService = {
-    async create(payload: CompanionRequestDTO) {
+    async create(payload: CompanionRequestDTO, context: CompanionCreateContext) {
+        if (!context?.parentMongoId) {
+            throw new CompanionServiceError('Parent context is required to create a companion.', 400)
+        }
+
         const { persistable } = createPersistableFromFHIR(payload)
 
-        const document = await CompanionModel.create(persistable)
-        const companion = buildCompanionDomain(document)
-        const response = toCompanionResponseDTO(companion)
+        let document: CompanionDocument | null = null
 
-        return {
-            response,
+        try {
+            document = await CompanionModel.create(persistable)
+
+            await ParentCompanionService.linkParent({
+                parentId: context.parentMongoId,
+                companionId: document._id,
+                role: 'PRIMARY',
+            })
+
+            const companion = buildCompanionDomain(document)
+            const response = toCompanionResponseDTO(companion)
+
+            return {
+                response,
+            }
+        } catch (error) {
+            if (document) {
+                await CompanionModel.deleteOne({ _id: document._id })
+            }
+
+            if (error instanceof ParentCompanionServiceError) {
+                throw new CompanionServiceError(error.message, error.statusCode)
+            }
+
+            throw error
         }
+    },
+
+    async listByParent(parentId: Types.ObjectId) {
+        const companionIds = await ParentCompanionService.getActiveCompanionIdsForParent(parentId)
+
+        if (companionIds.length === 0) {
+            return { responses: [] }
+        }
+
+        const documents = await CompanionModel.find({ _id: { $in: companionIds } })
+
+        const responses = documents.map((doc) => toCompanionResponseDTO(buildCompanionDomain(doc)))
+        return { responses }
     },
 
     async getById(id: string) {
@@ -280,6 +323,32 @@ export const CompanionService = {
         const companion = buildCompanionDomain(document)
         return {
             response: toCompanionResponseDTO(companion),
+        }
+    },
+
+    async delete(id: string, context: CompanionCreateContext) {
+        if (!context?.parentMongoId) {
+            throw new CompanionServiceError('Parent context is required to delete a companion.', 400)
+        }
+
+        try {
+            const document = await CompanionModel.findOne(resolveIdQuery(id), null, {
+                sanitizeFilter: true,
+            })
+
+            if (!document) {
+                throw new CompanionServiceError('Companion not found.', 404)
+            }
+
+            await ParentCompanionService.ensurePrimaryOwnership(context.parentMongoId, document._id)
+            await ParentCompanionService.deleteLinksForCompanion(document._id)
+            await CompanionModel.deleteOne({ _id: document._id }, { sanitizeFilter: true })
+        } catch (error) {
+            if (error instanceof ParentCompanionServiceError) {
+                throw new CompanionServiceError(error.message, error.statusCode)
+            }
+
+            throw error
         }
     },
 }

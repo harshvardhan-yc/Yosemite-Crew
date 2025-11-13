@@ -7,6 +7,7 @@ export const PARENT_PROFILE_COMPLETION_EXTENSION_URL =
 
 export interface Parent {
     _id: string;
+    userId?: string;
     firstName: string;
     lastName?: string;
     age: number;

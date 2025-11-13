@@ -4,9 +4,9 @@ import type {
   Patient,
   Extension,
 } from "@yosemite-crew/fhirtypes";
+import type { CompanionParentLink } from "./parentCompanion";
 
 export interface InsuranceDetails {
-    _id?: string;
     isInsured: boolean;
     companyName: string;
     policyNumber: string;
@@ -50,6 +50,7 @@ export interface Companion {
   status?: RecordStatus;
   createdAt?: Date;
   updatedAt?: Date;
+  parents?: CompanionParentLink[];
 }
 
 export const SPECIES_SYSTEM_URL = "http://hl7.org/fhir/animal-species";

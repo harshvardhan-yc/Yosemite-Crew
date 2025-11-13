@@ -4,6 +4,9 @@ import logger from '../../utils/logger'
 import { ParentService, ParentServiceError } from '../../services/parent.service'
 import type { ParentRequestDTO } from '@yosemite-crew/types'
 import { handleFileUpload, uploadBufferAsFile, type FileUploadResult } from '../../middlewares/upload'
+import { ParentCompanionService } from '../../services/parent-companion.service'
+import { CompanionService, CompanionServiceError } from '../../services/companion.service'
+import type { AuthenticatedRequest } from '../../middlewares/auth'
 
 const PROFILE_IMAGE_FIELD = 'profileImage'
 const STORAGE_KEY_EXTENSION_URL = 'http://example.org/fhir/StructureDefinition/storage-key'
@@ -142,13 +145,19 @@ const buildAttachmentWithUploadResult = (
 export const ParentController = {
     create: async (req: Request, res: Response) => {
         try {
+            const { userId } = req as AuthenticatedRequest
+
+            if (!userId) {
+                res.status(401).json({ message: 'Unauthorized.' })
+                return
+            }
+
             const payload = extractParentPayload(req)
 
             if (!payload) {
                 res.status(400).json({ message: 'Request body is required.' })
                 return
             }
-
             const profileImageFile = getSingleFile((req as RequestWithFiles).files, PROFILE_IMAGE_FIELD)
 
             if (profileImageFile) {
@@ -178,9 +187,8 @@ export const ParentController = {
                 }
             }
 
-            const { response, isProfileComplete } = await ParentService.create(payload)
-            res.set('x-parent-profile-complete', String(isProfileComplete))
-            res.status(201).json(response)
+            const { response, isProfileComplete } = await ParentService.create(payload, { userId })
+            res.status(201).json({ response, isProfileComplete })
         } catch (error) {
             if (error instanceof ParentServiceError) {
                 res.status(error.statusCode).json({ message: error.message })
@@ -200,15 +208,15 @@ export const ParentController = {
                 return
             }
 
-            const result = await ParentService.getById(id)
+            const { userId } = req as AuthenticatedRequest
+            const result = await ParentService.getById(id, userId ? { userId } : undefined)
 
             if (!result) {
                 res.status(404).json({ message: 'Parent not found.' })
                 return
             }
 
-            res.set('x-parent-profile-complete', String(result.isProfileComplete))
-            res.status(200).json(result.response)
+            res.status(200).json({ response: result.response, isProfileComplete: result.isProfileComplete })
         } catch (error) {
             if (error instanceof ParentServiceError) {
                 res.status(error.statusCode).json({ message: error.message })
@@ -265,15 +273,15 @@ export const ParentController = {
                 }
             }
 
-            const result = await ParentService.update(id, payload)
+            const { userId } = req as AuthenticatedRequest
+            const result = await ParentService.update(id, payload, userId ? { userId } : undefined)
 
             if (!result) {
                 res.status(404).json({ message: 'Parent not found.' })
                 return
             }
 
-            res.set('x-parent-profile-complete', String(result.isProfileComplete))
-            res.status(200).json(result.response)
+            res.status(200).json({ response: result.response, isProfileComplete: result.isProfileComplete })
         } catch (error) {
             if (error instanceof ParentServiceError) {
                 res.status(error.statusCode).json({ message: error.message })
@@ -281,6 +289,103 @@ export const ParentController = {
             }
             logger.error('Failed to update parent', error)
             res.status(500).json({ message: 'Unable to update parent.' })
+        }
+    },
+
+    listCompanions: async (req: Request, res: Response) => {
+        try {
+            const { id } = req.params
+            const { userId } = req as AuthenticatedRequest
+
+            if (!userId) {
+                res.status(401).json({ message: 'Unauthorized.' })
+                return
+            }
+
+            if (!id) {
+                res.status(400).json({ message: 'Parent ID is required.' })
+                return
+            }
+
+            const parentDocument = await ParentService.findDocumentByIdentifier(id)
+
+            if (!parentDocument) {
+                res.status(404).json({ message: 'Parent not found.' })
+                return
+            }
+
+            if (parentDocument.userId !== userId) {
+                res.status(403).json({ message: 'You are not allowed to access these companions.' })
+                return
+            }
+
+            const { responses } = await CompanionService.listByParent(parentDocument._id)
+            res.status(200).json(responses)
+        } catch (error) {
+            if (error instanceof CompanionServiceError) {
+                res.status(error.statusCode).json({ message: error.message })
+                return
+            }
+            if (error instanceof ParentServiceError) {
+                res.status(error.statusCode).json({ message: error.message })
+                return
+            }
+            logger.error('Failed to list parent companions', error)
+            res.status(500).json({ message: 'Unable to list companions.' })
+        }
+    },
+
+    delete: async (req: Request, res: Response) => {
+        try {
+            const { id } = req.params
+            const { userId } = req as AuthenticatedRequest
+
+            if (!userId) {
+                res.status(401).json({ message: 'Unauthorized.' })
+                return
+            }
+
+            if (!id) {
+                res.status(400).json({ message: 'Parent ID is required.' })
+                return
+            }
+
+            const parentDocument = await ParentService.findDocumentByIdentifier(id)
+
+            if (!parentDocument) {
+                res.status(404).json({ message: 'Parent not found.' })
+                return
+            }
+
+            if (parentDocument.userId !== userId) {
+                res.status(403).json({ message: 'You are not allowed to delete this parent.' })
+                return
+            }
+
+            const hasLinks = await ParentCompanionService.hasAnyLinks(parentDocument._id)
+
+            if (hasLinks) {
+                res.status(409).json({ message: 'Remove associated companions before deleting this parent.' })
+                return
+            }
+
+            const deleted = await ParentService.delete(id, { userId })
+
+            if (!deleted) {
+                res.status(404).json({ message: 'Parent not found.' })
+                return
+            }
+
+            await ParentCompanionService.deleteLinksForParent(parentDocument._id)
+
+            res.status(204).send()
+        } catch (error) {
+            if (error instanceof ParentServiceError) {
+                res.status(error.statusCode).json({ message: error.message })
+                return
+            }
+            logger.error('Failed to delete parent', error)
+            res.status(500).json({ message: 'Unable to delete parent.' })
         }
     },
 }
