@@ -4,7 +4,13 @@ import type {
   Patient,
   Extension,
 } from "@yosemite-crew/fhirtypes";
-import { InsuranceDetails } from "./insuranceDetails";
+
+export interface InsuranceDetails {
+    _id?: string;
+    isInsured: boolean;
+    companyName: string;
+    policyNumber: string;
+}
 
 export type CompanionType = "dog" | "cat" | "horse" | "other";
 export type Gender = "male" | "female" | "unknown";
@@ -17,11 +23,10 @@ export type SourceType =
 export type RecordStatus = "active" | "archived" | "deleted";
 
 export interface Companion {
-  _id?: string;
+  id?: string;
   name: string;
   type: CompanionType;
   breed: string;
-  //breedID
   dateOfBirth: Date;
   gender: Gender;
   photoUrl?: string;
@@ -257,7 +262,7 @@ export const toFHIRCompanion = (companion: Companion): Patient => {
 
   return {
     resourceType: "Patient",
-    id: companion._id ? String(companion._id) : undefined,
+    id: companion.id ? String(companion.id) : undefined,
     name: name
       ? [
           {

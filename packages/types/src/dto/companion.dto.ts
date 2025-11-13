@@ -209,7 +209,7 @@ export type CompanionRequestDTO = Patient;
 export type CompanionResponseDTO = Patient;
 
 export type CompanionDTOAttributes = {
-  _id?: Companion["_id"];
+  id?: Companion["id"];
   name?: Companion["name"];
   type?: Companion["type"];
   breed?: Companion["breed"];
@@ -240,7 +240,7 @@ export const fromCompanionRequestDTO = (
     parseSpecies(dto.animal?.species) ?? ("other" as CompanionType);
 
   return {
-    _id: dto.id,
+    id: dto.id,
     name: parseName(dto.name),
     type,
     breed: parseBreed(dto.animal?.breed),
