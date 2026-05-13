@@ -1,30 +1,21 @@
-import React, { useRef, useState } from "react";
-import {
-  FaCloudUploadAlt,
-  FaFilePdf,
-  FaFileWord,
-  FaFileImage,
-  FaTrashAlt,
-} from "react-icons/fa";
-import Image from "next/image";
-import { Button } from "react-bootstrap";
+import React, { useRef, useState } from 'react';
+import { FaCloudUploadAlt, FaFilePdf, FaFileWord, FaFileImage, FaTrashAlt } from 'react-icons/fa';
+import Image from 'next/image';
 
-import "./UploadImage.css";
+import './UploadImage.css';
 
 const allowedTypes = new Set([
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/png",
-  "image/jpeg",
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/png',
+  'image/jpeg',
 ]);
 
 function getFileIcon(type: string) {
-  if (type === "application/pdf")
-    return <FaFilePdf className="file-icon pdf" />;
-  if (type.includes("word")) return <FaFileWord className="file-icon word" />;
-  if (type.startsWith("image/"))
-    return <FaFileImage className="file-icon img" />;
+  if (type === 'application/pdf') return <FaFilePdf className="file-icon pdf" />;
+  if (type.includes('word')) return <FaFileWord className="file-icon word" />;
+  if (type.startsWith('image/')) return <FaFileImage className="file-icon img" />;
   return <FaFileImage className="file-icon" />;
 }
 
@@ -83,10 +74,12 @@ const UploadImage = ({
   return (
     <>
       <button
+        type="button"
         className="UploadAreaData"
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
+        aria-label={placeholder}
       >
         <div className="upldCont">
           <FaCloudUploadAlt className="upload-cloud" />
@@ -101,7 +94,8 @@ const UploadImage = ({
             type="file"
             multiple
             accept=".pdf,.doc,.docx,.png,.jpeg,.jpg"
-            style={{ display: "none" }}
+            style={{ display: 'none' }}
+            aria-label={placeholder}
             onChange={(e) => handleFiles(e.target.files)}
           />
         </div>
@@ -111,7 +105,7 @@ const UploadImage = ({
         {/* New user-selected files */}
         {files.map((file, idx) => (
           <div className="upload-preview-item" key={`file-${file.name}`}>
-            {file.type.startsWith("image/") ? (
+            {file.type.startsWith('image/') ? (
               <Image
                 src={URL.createObjectURL(file)}
                 alt={file.name}
@@ -126,16 +120,21 @@ const UploadImage = ({
                 <span className="file-name">{file.name}</span>
               </div>
             )}
-            <Button className="delete-btn" onClick={() => handleDelete(idx)}>
+            <button
+              type="button"
+              className="delete-btn"
+              onClick={() => handleDelete(idx)}
+              aria-label={`Remove ${file.name}`}
+            >
               <FaTrashAlt />
-            </Button>
+            </button>
           </div>
         ))}
 
         {/* API/S3 existing files */}
         {apiFiles.map((file, idx) => (
           <div className="upload-preview-item" key={`api-${file.name}`}>
-            {file.type.startsWith("image/") ? (
+            {file.type.startsWith('image/') ? (
               <Image
                 src={file.url}
                 alt={file.name}
@@ -149,12 +148,14 @@ const UploadImage = ({
                 <span className="file-name">{file.name}</span>
               </div>
             )}
-            <Button
+            <button
+              type="button"
               className="delete-btn"
               onClick={() => handleDeleteExisting(idx)}
+              aria-label={`Remove ${file.name}`}
             >
               <FaTrashAlt />
-            </Button>
+            </button>
           </div>
         ))}
       </div>

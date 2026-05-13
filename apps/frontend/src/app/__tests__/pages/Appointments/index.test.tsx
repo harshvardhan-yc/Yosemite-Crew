@@ -1,8 +1,42 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 import ProtectedAppointments from '@/app/features/appointments/pages/Appointments';
+
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: (loader: () => Promise<unknown>) => {
+    const source = loader.toString();
+    const LoadableComponent = (props: Record<string, unknown>) => {
+      if (source.includes('ui/tables/Appointments')) {
+        const MockAppointmentsTable = jest.requireMock('@/app/ui/tables/Appointments') as React.FC<
+          Record<string, unknown>
+        >;
+        return <MockAppointmentsTable {...props} />;
+      }
+
+      if (source.includes('components/Calendar/AppointmentCalendar')) {
+        const MockAppointmentCalendar = jest.requireMock(
+          '@/app/features/appointments/components/Calendar/AppointmentCalendar'
+        ) as React.FC<Record<string, unknown>>;
+        return <MockAppointmentCalendar {...props} />;
+      }
+
+      if (source.includes('components/AppointmentBoard')) {
+        const MockAppointmentBoard = jest.requireMock(
+          '@/app/features/appointments/components/AppointmentBoard'
+        ) as React.FC<Record<string, unknown>>;
+        return <MockAppointmentBoard {...props} />;
+      }
+
+      return null;
+    };
+
+    LoadableComponent.displayName = 'MockDynamicComponent';
+    return LoadableComponent;
+  },
+}));
 
 const useAppointmentsMock = jest.fn();
 const useCompanionsForPrimaryOrgMock = jest.fn();
@@ -12,6 +46,9 @@ const usePermissionsMock = jest.fn();
 const useSearchStoreMock = jest.fn();
 const useSearchParamsMock = jest.fn();
 const usePrimaryOrgProfileMock = jest.fn();
+const useAppointmentStoreMock = jest.fn();
+const useTeamForPrimaryOrgMock = jest.fn();
+const useAuthStoreMock = jest.fn();
 
 const calendarSpy = jest.fn();
 const tableSpy = jest.fn();
@@ -53,6 +90,19 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/app/hooks/useProfiles', () => ({
   usePrimaryOrgProfile: () => usePrimaryOrgProfileMock(),
+}));
+
+jest.mock('@/app/stores/appointmentStore', () => ({
+  useAppointmentStore: (selector: any) => useAppointmentStoreMock(selector),
+}));
+
+jest.mock('@/app/hooks/useTeam', () => ({
+  useTeamForPrimaryOrg: () => useTeamForPrimaryOrgMock(),
+  useLoadTeam: jest.fn(),
+}));
+
+jest.mock('@/app/stores/authStore', () => ({
+  useAuthStore: (selector: any) => useAuthStoreMock(selector),
 }));
 
 jest.mock('@/app/ui/layout/guards/PermissionGate', () => ({
@@ -123,9 +173,31 @@ jest.mock('@/app/features/appointments/pages/Appointments/Sections/Reschedule', 
   <div data-testid="reschedule" />
 ));
 
+jest.mock('@/app/features/appointments/pages/Appointments/Sections/ChangeStatus', () => () => (
+  <div data-testid="change-status" />
+));
+
+jest.mock('@/app/features/appointments/pages/Appointments/Sections/ChangeRoom', () => () => (
+  <div data-testid="change-room" />
+));
+
 describe('Appointments page', () => {
+  const renderAppointments = async () => {
+    await act(async () => {
+      render(<ProtectedAppointments />);
+      await Promise.resolve();
+    });
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
+    useAppointmentStoreMock.mockImplementation((selector: any) =>
+      selector({ status: 'succeeded' })
+    );
+    useTeamForPrimaryOrgMock.mockReturnValue([]);
+    useAuthStoreMock.mockImplementation((selector: any) =>
+      selector({ attributes: { sub: 'user-1' } })
+    );
     useCompanionsForPrimaryOrgMock.mockReturnValue([]);
     useCompanionsParentsForPrimaryOrgMock.mockReturnValue([]);
     useAppointmentsMock.mockReturnValue([
@@ -152,8 +224,8 @@ describe('Appointments page', () => {
     usePrimaryOrgProfileMock.mockReturnValue(null);
   });
 
-  it('renders calendar view by default and toggles to list/board', () => {
-    render(<ProtectedAppointments />);
+  it('renders calendar view by default and toggles to list/board', async () => {
+    await renderAppointments();
 
     expect(screen.getByTestId('appointment-calendar')).toBeInTheDocument();
     expect(calendarSpy).toHaveBeenCalledWith(
@@ -171,11 +243,11 @@ describe('Appointments page', () => {
     );
   });
 
-  it('renders board view when profile appointmentView is STATUS_BOARD', () => {
+  it('renders board view when profile appointmentView is STATUS_BOARD', async () => {
     usePrimaryOrgProfileMock.mockReturnValue({
       personalDetails: { pmsPreferences: { appointmentView: 'STATUS_BOARD' } },
     });
-    render(<ProtectedAppointments />);
+    await renderAppointments();
 
     expect(screen.getByTestId('appointment-board')).toBeInTheDocument();
     expect(boardSpy).toHaveBeenCalledWith(
@@ -185,15 +257,15 @@ describe('Appointments page', () => {
     );
   });
 
-  it('opens add appointment modal from the list filters row', () => {
-    render(<ProtectedAppointments />);
+  it('opens add appointment modal from the list filters row', async () => {
+    await renderAppointments();
 
     fireEvent.click(screen.getByText('List'));
     fireEvent.click(screen.getByRole('button', { name: 'Add Appointment' }));
     expect(addAppointmentSpy).toHaveBeenCalledWith(expect.objectContaining({ showModal: true }));
   });
 
-  it('opens appointment modal directly on finance section for finance deep links', () => {
+  it('opens appointment modal directly on finance section for finance deep links', async () => {
     useAppointmentsMock.mockReturnValue([
       {
         id: 'a2',
@@ -211,9 +283,9 @@ describe('Appointments page', () => {
       },
     });
 
-    render(<ProtectedAppointments />);
+    await renderAppointments();
 
-    expect(appointmentInfoSpy).toHaveBeenCalledWith(
+    expect(appointmentInfoSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         showModal: true,
         initialViewIntent: { label: 'finance', subLabel: 'summary' },
@@ -221,7 +293,7 @@ describe('Appointments page', () => {
     );
   });
 
-  it('opens appointment modal directly on info overview sub-section for info deep links', () => {
+  it('opens appointment modal directly on info overview sub-section for info deep links', async () => {
     useAppointmentsMock.mockReturnValue([
       {
         id: 'a2',
@@ -239,9 +311,9 @@ describe('Appointments page', () => {
       },
     });
 
-    render(<ProtectedAppointments />);
+    await renderAppointments();
 
-    expect(appointmentInfoSpy).toHaveBeenCalledWith(
+    expect(appointmentInfoSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         showModal: true,
         initialViewIntent: { label: 'info', subLabel: 'history' },
@@ -249,7 +321,7 @@ describe('Appointments page', () => {
     );
   });
 
-  it('normalizes overview sub-label for details deep links', () => {
+  it('normalizes overview sub-label for details deep links', async () => {
     useAppointmentsMock.mockReturnValue([
       {
         id: 'a2',
@@ -267,9 +339,9 @@ describe('Appointments page', () => {
       },
     });
 
-    render(<ProtectedAppointments />);
+    await renderAppointments();
 
-    expect(appointmentInfoSpy).toHaveBeenCalledWith(
+    expect(appointmentInfoSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         showModal: true,
         initialViewIntent: { label: 'info', subLabel: 'history' },

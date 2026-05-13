@@ -150,13 +150,15 @@ const Sidebar = () => {
         <Link
           href={authenticatedLogoHref}
           className={`logo ${isCollapsed ? 'logo-collapsed' : ''}`}
+          aria-label="Yosemite Crew dashboard"
         >
           <Image
             src={MEDIA_SOURCES.logo}
-            alt="Logo"
-            width={isCollapsed ? 68 : 90}
-            height={isCollapsed ? 64 : 83}
+            alt="Yosemite Crew"
+            width={112}
+            height={72}
             priority
+            style={{ width: 'auto' }}
           />
         </Link>
       </div>
@@ -202,7 +204,13 @@ const Sidebar = () => {
                       side="right"
                       className="sidebar-route-tooltip"
                     >
-                      <Link className={routeClassName} href={route.href} onClick={onClick}>
+                      <Link
+                        className={routeClassName}
+                        href={route.href}
+                        onClick={onClick}
+                        aria-current={isActive ? 'page' : undefined}
+                      >
+                        <span className="sr-only">{route.name}</span>
                         <span className="route-collapsed-icon-wrap">{routeIcon}</span>
                       </Link>
                     </GlassTooltip>
@@ -215,6 +223,7 @@ const Sidebar = () => {
                     className={routeClassName}
                     href={route.href}
                     onClick={onClick}
+                    aria-current={isActive ? 'page' : undefined}
                   >
                     {routeIcon}
                     <span className="route-label">{route.name}</span>

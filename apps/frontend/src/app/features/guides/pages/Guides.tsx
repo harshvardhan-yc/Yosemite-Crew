@@ -4,6 +4,7 @@ import { FaCirclePlay } from 'react-icons/fa6';
 
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import VideoPlayerModal from '@/app/ui/overlays/Modal/VideoPlayerModal';
 import Search from '@/app/ui/inputs/Search';
 import { Primary } from '@/app/ui/primitives/Buttons';
@@ -70,10 +71,10 @@ const Guides = () => {
     <div className="flex flex-col gap-8 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-5! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-5!">
       <div className="flex flex-wrap items-center justify-between gap-3 mt-2">
         <div className="flex flex-col gap-1">
-          <div className="text-text-primary text-heading-2">
+          <h1 className="text-text-primary text-heading-2">
             Guides & Tutorials{' '}
             <span className="text-body-2 text-text-tertiary">{`(${guidesData.length})`}</span>
-          </div>
+          </h1>
           <p className="text-body-3 text-text-secondary max-w-3xl mb-0!">
             Learn how to set up your animal health practice, streamline workflows, and get the most
             from Yosemite Crew.
@@ -115,7 +116,7 @@ const Guides = () => {
                   {featuredGuide.category}
                 </div>
               </div>
-              <div className="text-heading-2 text-text-primary">{featuredGuide.title}</div>
+              <h2 className="text-heading-2 text-text-primary">{featuredGuide.title}</h2>
               <div className="text-body-3 text-text-secondary">{featuredGuide.description}</div>
               <Primary
                 text="Watch now"
@@ -212,8 +213,8 @@ const Guides = () => {
 
 const ProtectedGuides = () => {
   return (
-    <ProtectedRoute>
-      <OrgGuard>
+    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
+      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
         <Guides />
       </OrgGuard>
     </ProtectedRoute>

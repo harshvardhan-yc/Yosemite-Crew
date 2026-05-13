@@ -25,16 +25,26 @@ const YosemiteLoader: React.FC<YosemiteLoaderProps> = ({
   }
 
   return (
-    <output className={`yosemite-loader ${variantClass}`} aria-live="polite" data-testid={testId}>
+    <output
+      className={`yosemite-loader ${variantClass}`}
+      aria-live="polite"
+      aria-label={label ?? 'Loading'}
+      data-testid={testId}
+    >
       <Image
-        src="/assets/yosemiteLoader.gif"
         alt="Loading"
+        className="yosemite-loader__image"
+        src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
         width={size}
         height={size}
         unoptimized
-        className="yosemite-loader__image"
+        style={{ width: size, height: size }}
       />
-      {label ? <span className="yosemite-loader__label">{label}</span> : null}
+      {label ? (
+        <span className="yosemite-loader__label">{label}</span>
+      ) : (
+        <span className="sr-only">Loading</span>
+      )}
     </output>
   );
 };

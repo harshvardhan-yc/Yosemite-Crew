@@ -2,7 +2,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import React, { useEffect, useRef, useState } from 'react';
-import { Container } from 'react-bootstrap';
 import { motion, Variants, useInView } from 'framer-motion';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 
@@ -71,6 +70,7 @@ const footerLinks = [
       { label: 'About us', href: '/about' },
       { label: 'Terms and conditions', href: '/terms-and-conditions' },
       { label: 'Privacy policy', href: '/privacy-policy' },
+      { label: 'Accessibility', href: '/accessibility' },
       { label: 'Pricing', href: '/pricing' },
       { label: 'Trust Center', href: '/trust-center' },
     ],
@@ -128,54 +128,62 @@ const Footer = () => {
       animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
       transition={{ duration: 0.7, ease: 'easeOut' }}
     >
-      <Container>
+      <div className="container mx-auto px-4">
         <div className="FooterData">
           <div className="FootTopData">
             <div className="leftFooter">
               <Link href={'/'}>
                 <Image
-                  aria-hidden
                   src={MEDIA_SOURCES.logo}
                   alt="Yosemite Crew Logo"
                   width={90}
                   height={83}
+                  style={{ height: 'auto' }}
                 />
               </Link>
               <div className="ClientLogoGroup">
-                <div className="ClientLogo" aria-label="Certifications">
-                  <Image
-                    aria-hidden
-                    src={MEDIA_SOURCES.footer.gdpr}
-                    alt="GDPR"
-                    width={55}
-                    height={56}
-                    className="gdpr-footer"
-                  />
-                  <Image
-                    aria-hidden
-                    src={MEDIA_SOURCES.footer.soc2}
-                    alt="SOC2"
-                    width={56}
-                    height={56}
-                    className="soc-footer"
-                  />
-                  <Image
-                    aria-hidden
-                    src={MEDIA_SOURCES.footer.iso}
-                    alt="ISO"
-                    width={54}
-                    height={60}
-                    className="iso-footer"
-                  />
-                  <Image
-                    aria-hidden
-                    src={MEDIA_SOURCES.footer.fhir}
-                    alt="FHIR"
-                    width={117}
-                    height={28}
-                    className="fhir-footer"
-                  />
-                </div>
+                <ul className="ClientLogo" aria-label="Certifications">
+                  <li>
+                    <Image
+                      src={MEDIA_SOURCES.footer.gdpr}
+                      alt=""
+                      width={55}
+                      height={56}
+                      className="gdpr-footer"
+                      style={{ height: 'auto' }}
+                    />
+                  </li>
+                  <li>
+                    <Image
+                      src={MEDIA_SOURCES.footer.soc2}
+                      alt=""
+                      width={56}
+                      height={56}
+                      className="soc-footer"
+                      style={{ height: 'auto' }}
+                    />
+                  </li>
+                  <li>
+                    <Image
+                      src={MEDIA_SOURCES.footer.iso}
+                      alt=""
+                      width={54}
+                      height={60}
+                      className="iso-footer"
+                      style={{ height: 'auto' }}
+                    />
+                  </li>
+                  <li>
+                    <Image
+                      src={MEDIA_SOURCES.footer.fhir}
+                      alt=""
+                      width={117}
+                      height={28}
+                      className="fhir-footer"
+                      style={{ height: 'auto' }}
+                    />
+                  </li>
+                </ul>
                 <Link
                   href={PLATFORM_STATUS_URL}
                   target="_blank"
@@ -196,13 +204,14 @@ const Footer = () => {
             >
               {footerLinks.map((section) => (
                 <motion.div className="FtDiv" key={section.title} variants={ftDivVariants}>
-                  <div className="text-heading-3 text-text-tertiary">{section.title}</div>
+                  <h3 className="text-heading-3 text-text-tertiary">{section.title}</h3>
                   <ul className="FtLinks">
                     {section.links.map((link) => (
                       <li key={link.label}>
                         <Link
                           href={link.href}
-                          target={section.title === 'Company' ? '' : '_blank'}
+                          target={section.title === 'Company' ? undefined : '_blank'}
+                          rel={section.title === 'Company' ? undefined : 'noopener noreferrer'}
                           className="text-body-4 text-text-tertiary"
                         >
                           {link.label}
@@ -248,7 +257,7 @@ const Footer = () => {
             </div>
           </div>
         </div>
-      </Container>
+      </div>
     </motion.footer>
   );
 };

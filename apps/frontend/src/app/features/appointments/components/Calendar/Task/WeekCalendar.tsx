@@ -1,5 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import { useScrollBoundaryWheel } from '@/app/hooks/useScrollBoundaryWheel';
+import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import {
   getWeekDays,
   HOURS_IN_DAY,
@@ -88,6 +89,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
   const days = useMemo<Date[]>(() => getWeekDays(weekStart), [weekStart]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const onWheelBoundary = useScrollBoundaryWheel();
+  const onWheelHorizontal = useWheelToHorizontalScroll();
   const now = useCalendarNow();
   const height = getHourRowHeightPx(zoomMode);
   const dayColumnsStyle = useMemo(
@@ -158,12 +160,13 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
   return (
     <div className="h-full flex flex-col">
       <div
-        className="w-full flex-1 overflow-x-auto overflow-y-hidden relative rounded-2xl"
+        className="w-full flex-1 overflow-x-auto overflow-y-hidden relative rounded-2xl scrollbar-x-float"
         data-calendar-scroll="true"
+        onWheel={onWheelHorizontal}
       >
         <div className="min-w-max h-full flex flex-col relative">
           <div className="z-30 bg-white">
-            <div className="grid border-b border-grey-light py-3 grid-cols-[64px_minmax(0,1fr)_64px] min-w-max bg-white">
+            <div className="grid border-b border-grey-light py-2 grid-cols-[64px_minmax(0,1fr)_64px] min-w-max bg-white">
               <div className="sticky left-0 z-40 bg-white flex items-center justify-center">
                 <Back onClick={handlePrevWeek} />
               </div>
@@ -268,21 +271,21 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                               {nowTimeLabel && (
                                 <div
                                   className="absolute left-3 -translate-y-[115%] text-[10px] leading-none font-semibold whitespace-nowrap"
-                                  style={{ color: 'var(--color-danger-500)' }}
+                                  style={{ color: 'var(--color-danger-700)' }}
                                 >
                                   {nowTimeLabel}
                                 </div>
                               )}
                               <div
                                 className="absolute -left-1.25 w-3 h-3 rounded-full translate-y-[-50%]"
-                                style={{ backgroundColor: 'var(--color-danger-500)' }}
+                                style={{ backgroundColor: 'var(--color-danger-700)' }}
                               />
                               <div
                                 className="translate-y-[-50%]"
                                 style={{
                                   borderTopWidth: '2px',
                                   borderTopStyle: 'solid',
-                                  borderTopColor: 'var(--color-danger-500)',
+                                  borderTopColor: 'var(--color-danger-700)',
                                 }}
                               />
                             </div>

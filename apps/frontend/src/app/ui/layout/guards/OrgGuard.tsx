@@ -28,6 +28,7 @@ import { useLoadInvoicesForPrimaryOrg } from '@/app/hooks/useInvoices';
 import { useLoadIntegrationsForPrimaryOrg } from '@/app/hooks/useIntegrations';
 import { resolveDefaultOpenScreenRouteForProfile } from '@/app/lib/defaultOpenScreen';
 import { useLoadSpecialitiesForPrimaryOrg } from '@/app/hooks/useSpecialities';
+import { getStorage, getStorageItem, setStorageItem } from '@/app/lib/browserStorage';
 import {
   canAccessPathByPermissions,
   resolveFirstAccessibleAppRoute,
@@ -36,6 +37,7 @@ import { appRoutes } from '@/app/constants/routes';
 
 type OrgGuardProps = {
   children: React.ReactNode;
+  skeleton?: React.ReactNode;
 };
 
 const isLocalGuardBypassEnabled = () => {
@@ -47,6 +49,25 @@ const isLocalGuardBypassEnabled = () => {
 };
 
 const isStatusPending = (status?: string) => status === 'idle' || status === 'loading';
+
+const ORG_GUARD_KEY_PREFIX = 'yc_org_guard_passed:';
+const orgGuardPassedKey = (orgId: string) => `${ORG_GUARD_KEY_PREFIX}${orgId}`;
+const readOrgGuardPassed = (orgId: string): boolean =>
+  getStorageItem('session', orgGuardPassedKey(orgId)) === '1';
+const writeOrgGuardPassed = (orgId: string) =>
+  setStorageItem('session', orgGuardPassedKey(orgId), '1');
+
+// Returns true if ANY org has previously passed the guard in this session.
+// Used as the fast-path initial state before primaryOrgId is known from the store.
+const readAnyOrgGuardPassed = (): boolean => {
+  const ss = getStorage('session');
+  if (!ss) return false;
+  for (let i = 0; i < ss.length; i++) {
+    const key = ss.key(i);
+    if (key?.startsWith(ORG_GUARD_KEY_PREFIX) && ss.getItem(key) === '1') return true;
+  }
+  return false;
+};
 
 type RedirectParams = {
   pathname: string;
@@ -147,15 +168,14 @@ const applyDefaultLandingRedirect = (
   if (!shouldEvaluateLanding) return null;
 
   const landingAppliedKey = `yc_default_landing_applied:${primaryOrgId}`;
-  const isLandingAlreadyApplied =
-    globalThis.window?.sessionStorage.getItem(landingAppliedKey) === '1';
+  const isLandingAlreadyApplied = getStorageItem('session', landingAppliedKey) === '1';
 
   if (preferredLanding !== pathname && !isLandingAlreadyApplied) {
-    globalThis.window?.sessionStorage.setItem(landingAppliedKey, '1');
+    setStorageItem('session', landingAppliedKey, '1');
     return preferredLanding;
   }
 
-  globalThis.window?.sessionStorage.setItem(landingAppliedKey, '1');
+  setStorageItem('session', landingAppliedKey, '1');
   return null;
 };
 
@@ -175,7 +195,7 @@ const applyDefaultLandingRedirect = (
  *    - isOnboarded === true:
  *        - if on /complete-profile → /dashboard
  */
-const OrgGuard = ({ children }: OrgGuardProps) => {
+const OrgGuard = ({ children, skeleton = null }: OrgGuardProps) => {
   useLoadSubscriptionCounterForPrimaryOrg();
   useLoadSpecialitiesForPrimaryOrg();
   useLoadTeam();
@@ -218,11 +238,19 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
   );
   const profileStatus = useUserProfileStore((s) => s.status);
 
-  const [checked, setChecked] = useState(false);
+  const [checked, setChecked] = useState(
+    () =>
+      isLocalGuardBypassEnabled() ||
+      (primaryOrgId ? readOrgGuardPassed(primaryOrgId) : readAnyOrgGuardPassed())
+  );
   useFullscreenLoader('org-guard', !isAuthGuardDisabled && !checked);
 
   useEffect(() => {
-    setChecked(false);
+    if (primaryOrgId && readOrgGuardPassed(primaryOrgId)) {
+      setChecked(true);
+    } else {
+      setChecked(false);
+    }
   }, [primaryOrgId]);
 
   useEffect(() => {
@@ -311,6 +339,7 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
       return;
     }
 
+    writeOrgGuardPassed(primaryOrgId);
     setChecked(true);
   }, [
     isAuthGuardDisabled,
@@ -331,7 +360,7 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
     teamIdsByOrgId,
   ]);
 
-  if (!checked) return null;
+  if (!checked) return <>{skeleton}</>;
 
   return <>{children}</>;
 };

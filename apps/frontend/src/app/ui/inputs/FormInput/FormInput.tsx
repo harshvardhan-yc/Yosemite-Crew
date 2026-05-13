@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { IoIosWarning } from 'react-icons/io';
 
 type FormInputProps = {
@@ -30,13 +30,13 @@ const FormInput = ({
   className,
   tabIndex,
 }: Readonly<FormInputProps>) => {
+  const uid = useId();
+  const errorId = error ? `${uid}-error` : undefined;
+
   const handleInputClick = (e: React.MouseEvent<HTMLInputElement>) => {
     onClick?.(e);
     if (intype === 'time' || intype === 'date') {
-      const inputEl = e.currentTarget as HTMLInputElement & {
-        showPicker?: () => void;
-      };
-      inputEl.showPicker?.();
+      e.currentTarget.showPicker?.();
     }
   };
 
@@ -46,7 +46,7 @@ const FormInput = ({
         <input
           type={intype}
           name={inname}
-          id={inname}
+          id={uid}
           value={value ?? ''}
           onChange={onChange}
           autoComplete="off"
@@ -54,6 +54,8 @@ const FormInput = ({
           required
           placeholder=" "
           tabIndex={tabIndex}
+          aria-invalid={Boolean(error)}
+          aria-describedby={errorId}
           onFocus={onFocus}
           onBlur={onBlur}
           onClick={handleInputClick}
@@ -67,7 +69,7 @@ const FormInput = ({
           `}
         />
         <label
-          htmlFor={inname}
+          htmlFor={uid}
           className={`
             pointer-events-none absolute left-6
             top-1/2 -translate-y-1/2
@@ -89,12 +91,14 @@ const FormInput = ({
 
       {error && (
         <div
+          id={errorId}
+          role="alert"
           className={`
             mt-1.5 flex items-center gap-1 px-4
             text-caption-2 text-text-error
           `}
         >
-          <IoIosWarning className="text-text-error" size={14} />
+          <IoIosWarning className="text-text-error" size={14} aria-hidden="true" />
           <span>{error}</span>
         </div>
       )}

@@ -1,9 +1,7 @@
-import React, { useState } from "react";
-import { Button, Container } from "react-bootstrap";
+import React, { useState } from 'react';
+import { Icon } from '@iconify/react/dist/iconify.js';
 
-import { Icon } from "@iconify/react/dist/iconify.js";
-
-import "./Toast.css";
+import './Toast.css';
 
 type ErrorTostProps = {
   message?: string;
@@ -17,25 +15,28 @@ const ErrorTost: React.FC<ErrorTostProps> = ({
   message,
   iconElement,
   errortext,
-  className = "",
+  className = '',
   onClose,
 }) => {
   return (
     <div className={`SignError ${className}`}>
-      <Container>
-        <div className="ErroItemDiv">
-          <div className="errortopbar">
-            <div className="Errortexted">
-              {iconElement}
-              <h6>{errortext}</h6>
-              <p>{message}</p>
-            </div>
+      <div className="ErroItemDiv">
+        <div className="errortopbar">
+          <div className="Errortexted">
+            {iconElement}
+            <h6>{errortext}</h6>
+            <p>{message}</p>
           </div>
-          <Button onClick={onClose} variant="light">
-            <Icon icon="solar:close-circle-bold" width="24" height="24" />
-          </Button>
         </div>
-      </Container>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Dismiss notification"
+          className="bg-transparent border-0 cursor-pointer"
+        >
+          <Icon icon="solar:close-circle-bold" width="24" height="24" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 };
@@ -53,7 +54,7 @@ const useErrorTost = () => {
     message,
     errortext,
     iconElement,
-    className = "",
+    className = '',
     duration = 5000,
   }: {
     message: string;
@@ -68,9 +69,9 @@ const useErrorTost = () => {
 
   const ErrorTostPopup = errorTost.show ? (
     <ErrorTost
-      className={errorTost.className || ""}
-      message={errorTost.message || ""}
-      errortext={errorTost.errortext || ""}
+      className={errorTost.className || ''}
+      message={errorTost.message || ''}
+      errortext={errorTost.errortext || ''}
       iconElement={errorTost.iconElement}
       onClose={() => setErrorTost({ show: false })}
     />

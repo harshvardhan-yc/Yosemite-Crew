@@ -117,8 +117,14 @@ describe('WeekCalendar (Appointments)', () => {
       />
     );
 
+    expect(
+      screen.getByRole('region', {
+        name: 'Appointments week calendar starting January 6, 2025',
+      })
+    ).toBeInTheDocument();
     expect(screen.getByText('All-day')).toBeInTheDocument();
     const allDayButton = screen.getAllByText(/Milo/)[0].closest('button');
+    expect(allDayButton).toHaveAccessibleName('All-day appointment for Milo. Checkup');
     fireEvent.click(allDayButton!);
 
     expect(handleViewAppointment).toHaveBeenCalledWith(events[0]);
@@ -170,5 +176,26 @@ describe('WeekCalendar (Appointments)', () => {
     expect(container.querySelector('.border-t-red-500')).toBeInTheDocument();
 
     jest.useRealTimers();
+  });
+
+  it('precomputes slot events once per visible day and hour', () => {
+    render(
+      <WeekCalendar
+        events={events}
+        handleViewAppointment={handleViewAppointment}
+        weekStart={weekStart}
+        setWeekStart={setWeekStart}
+        setCurrentDate={setCurrentDate}
+        handleRescheduleAppointment={handleRescheduleAppointment}
+        canEditAppointments
+      />
+    );
+
+    const uniqueDayHourCalls = new Set(
+      mockEventsForDayHour.mock.calls.map(([, day, hour]) => `${day.toISOString()}-${hour}`)
+    );
+
+    expect(mockEventsForDayHour).toHaveBeenCalledTimes(uniqueDayHourCalls.size);
+    expect(uniqueDayHourCalls.size).toBeGreaterThan(0);
   });
 });

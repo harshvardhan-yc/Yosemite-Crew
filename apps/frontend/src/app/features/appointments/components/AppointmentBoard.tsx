@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useBoardDragScroll } from '@/app/hooks/useBoardDragScroll';
+import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import { buildDragPreview } from '@/app/lib/buildDragPreview';
 import AppointmentScopeToggle from '@/app/ui/primitives/AppointmentScopeToggle/AppointmentScopeToggle';
 import { Appointment } from '@yosemite-crew/types';
@@ -140,7 +141,7 @@ type AppointmentBoardProps = {
   hasEmergency?: boolean;
 };
 
-const AppointmentBoard = ({
+const AppointmentBoardComponent = ({
   appointments,
   currentDate,
   setCurrentDate,
@@ -272,6 +273,7 @@ const AppointmentBoard = ({
   };
 
   const { autoScrollBoardOnDrag } = useBoardDragScroll();
+  const onWheelHorizontal = useWheelToHorizontalScroll();
 
   const moveToStatus = useCallback(
     async (appointmentId: string, nextStatus: BoardStatus) => {
@@ -422,8 +424,9 @@ const AppointmentBoard = ({
             </div>
           </div>
           <div
-            className="relative z-20 min-w-0 flex-1 overflow-x-auto scrollbar-hidden py-1 -my-1"
+            className="relative z-20 min-w-0 flex-1 overflow-x-auto scrollbar-x-float py-1 -my-1"
             style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+            onWheel={onWheelHorizontal}
           >
             <div className="flex w-max items-center gap-3 ml-auto">
               <button
@@ -473,9 +476,10 @@ const AppointmentBoard = ({
       </div>
       <div
         ref={boardRootRef}
-        className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-3"
+        className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-3 scrollbar-x-float"
         data-calendar-scroll="true"
         data-board-scroll-root="true"
+        onWheel={onWheelHorizontal}
       >
         <div className="h-full min-w-max flex items-stretch gap-3">
           {BOARD_COLUMNS.map((column) => {
@@ -807,4 +811,5 @@ const AppointmentBoard = ({
   );
 };
 
+const AppointmentBoard = React.memo(AppointmentBoardComponent);
 export default AppointmentBoard;

@@ -6,6 +6,61 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTeamOnboarding } from '@/app/hooks/useTeamOnboarding';
 import { convertFromGetApi } from '@/app/features/appointments/components/Availability/utils';
 
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: (loader: () => Promise<unknown>) => {
+    const source = loader.toString();
+    const LoadableComponent = (props: Record<string, unknown>) => {
+      if (source.includes('Steps/Progress/Progress')) {
+        const MockProgress = (
+          jest.requireMock('@/app/features/onboarding/components/Steps/Progress/Progress') as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockProgress {...props} />;
+      }
+
+      if (source.includes('TeamOnboarding/PersonalStep')) {
+        const MockPersonalStep = (
+          jest.requireMock(
+            '@/app/features/onboarding/components/Steps/TeamOnboarding/PersonalStep'
+          ) as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockPersonalStep {...props} />;
+      }
+
+      if (source.includes('TeamOnboarding/ProfessionalStep')) {
+        const MockProfessionalStep = (
+          jest.requireMock(
+            '@/app/features/onboarding/components/Steps/TeamOnboarding/ProfessionalStep'
+          ) as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockProfessionalStep {...props} />;
+      }
+
+      if (source.includes('TeamOnboarding/AvailabilityStep')) {
+        const MockAvailabilityStep = (
+          jest.requireMock(
+            '@/app/features/onboarding/components/Steps/TeamOnboarding/AvailabilityStep'
+          ) as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockAvailabilityStep {...props} />;
+      }
+
+      return null;
+    };
+
+    LoadableComponent.displayName = 'MockDynamicComponent';
+    return LoadableComponent;
+  },
+}));
+
 // --- Mocks ---
 
 jest.mock('next/navigation', () => ({
@@ -90,6 +145,9 @@ describe('TeamOnboarding Page', () => {
 
   it('renders PersonalStep initially (step 0)', () => {
     render(<ProtectedTeamOnboarding />);
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Create organization profile' })
+    ).toBeInTheDocument();
     expect(screen.getByText('Create organization profile')).toBeInTheDocument();
     expect(screen.getByTestId('personal-step')).toBeInTheDocument();
     expect(screen.getByTestId('progress')).toHaveTextContent('Step 1');

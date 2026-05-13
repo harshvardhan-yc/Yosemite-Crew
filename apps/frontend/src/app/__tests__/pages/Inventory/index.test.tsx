@@ -1,8 +1,60 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import ProtectedInventory from '@/app/features/inventory/pages/Inventory';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useInventoryModule } from '@/app/hooks/useInventory';
+
+expect.extend(toHaveNoViolations);
+
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: (loader: () => Promise<unknown>) => {
+    const source = loader.toString();
+    const LoadableComponent = (props: Record<string, unknown>) => {
+      if (source.includes('ui/tables/InventoryTable')) {
+        const MockInventoryTable = (
+          jest.requireMock('@/app/ui/tables/InventoryTable') as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockInventoryTable {...props} />;
+      }
+
+      if (source.includes('ui/tables/InventoryTurnoverTable')) {
+        const MockInventoryTurnoverTable = (
+          jest.requireMock('@/app/ui/tables/InventoryTurnoverTable') as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockInventoryTurnoverTable {...props} />;
+      }
+
+      if (source.includes('components/AddInventory')) {
+        const MockAddInventory = (
+          jest.requireMock('@/app/features/inventory/components/AddInventory') as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockAddInventory {...props} />;
+      }
+
+      if (source.includes('InventoryInfo') || source.includes('features/inventory/components')) {
+        const MockInventoryInfo = (
+          jest.requireMock('@/app/features/inventory/components') as {
+            InventoryInfo: React.FC<Record<string, unknown>>;
+          }
+        ).InventoryInfo;
+        return <MockInventoryInfo {...props} />;
+      }
+
+      return null;
+    };
+
+    LoadableComponent.displayName = 'MockDynamicComponent';
+    return LoadableComponent;
+  },
+}));
 
 // --- Mocks ---
 
@@ -32,11 +84,13 @@ jest.mock('@/app/ui/filters/InventoryFilters', () => ({
     <div data-testid="inventory-filters">
       {categoryAction}
       <input
+        aria-label="Search inventory"
         data-testid="search-input"
         value={filters.search}
         onChange={(e) => onChange({ ...filters, search: e.target.value })}
       />
       <select
+        aria-label="Category"
         data-testid="category-select"
         value={filters.category}
         onChange={(e) => onChange({ ...filters, category: e.target.value })}
@@ -45,6 +99,7 @@ jest.mock('@/app/ui/filters/InventoryFilters', () => ({
         <option value="Medicine">Medicine</option>
       </select>
       <select
+        aria-label="Visibility status"
         data-testid="status-select"
         value={filters.visibility ?? 'ALL'}
         onChange={(e) =>
@@ -56,6 +111,7 @@ jest.mock('@/app/ui/filters/InventoryFilters', () => ({
         <option value="HIDDEN">HIDDEN</option>
       </select>
       <select
+        aria-label="Stock health"
         data-testid="stock-health-select"
         value={filters.status ?? 'ALL'}
         onChange={(e) => onChange({ ...filters, status: e.target.value })}
@@ -253,6 +309,19 @@ describe('Inventory Page', () => {
   });
 
   // --- Section 1: Rendering & Initialization ---
+
+  it('has no axe violations on initial render', async () => {
+    jest.useRealTimers();
+    const { container } = render(<ProtectedInventory />);
+    expect(screen.getByRole('heading', { level: 1, name: /Inventory/ })).toBeInTheDocument();
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('renders h1 page heading', () => {
+    render(<ProtectedInventory />);
+    expect(screen.getByRole('heading', { level: 1, name: /Inventory/ })).toBeInTheDocument();
+  });
 
   it('renders the inventory page layout correctly', () => {
     render(<ProtectedInventory />);

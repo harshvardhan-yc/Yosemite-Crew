@@ -9,7 +9,6 @@ import AppointmentDetailField from '@/app/features/appointments/components/Appoi
 import {
   getAppointmentCompanionPhotoUrl,
   normalizeAppointmentStatus,
-  type LegacyAppointmentStatus,
 } from '@/app/lib/appointments';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import { formatCompanionNameWithOwnerLastName, getOwnerFirstName } from '@/app/lib/companionName';
@@ -35,6 +34,7 @@ export const AppointmentCompanionHeader = ({ appointment }: AppointmentCardConte
       )}
       height={40}
       width={40}
+      priority
       className="h-10 w-10 rounded-full object-cover"
     />
     <div className="flex flex-col gap-0">
@@ -89,8 +89,7 @@ export const AppointmentDetails = ({ appointment }: AppointmentCardContentProps)
 };
 
 export const AppointmentStatusBadge = ({ appointment }: AppointmentCardContentProps) => {
-  const displayStatus =
-    normalizeAppointmentStatus(appointment.status as LegacyAppointmentStatus) ?? 'REQUESTED';
+  const displayStatus = normalizeAppointmentStatus(appointment.status) ?? 'REQUESTED';
   return (
     <div
       style={getStatusStyle(displayStatus)}

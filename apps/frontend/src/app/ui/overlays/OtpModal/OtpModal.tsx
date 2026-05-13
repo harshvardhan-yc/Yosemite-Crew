@@ -1,6 +1,5 @@
 'use client';
-import React, { useState, useRef, useEffect } from 'react';
-import { Button, Modal } from 'react-bootstrap';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -10,9 +9,25 @@ import { postData } from '@/app/services/axios';
 import { useSignOut } from '@/app/hooks/useAuth';
 import Close from '@/app/ui/primitives/Icons/Close';
 import { resolvePostAuthRedirect } from '@/app/lib/postAuthRedirect';
+import { setStorageItem } from '@/app/lib/browserStorage';
 import { defaultSidebarToCollapsed } from '@/app/lib/sidebarPreference';
 
 import './OtpModal.css';
+
+type OtpModalProps = {
+  email: string;
+  password: string;
+  showErrorTost: (args: {
+    message: string;
+    errortext: string;
+    iconElement: React.ReactNode;
+    className: string;
+  }) => void;
+  showVerifyModal: boolean;
+  setShowVerifyModal: React.Dispatch<React.SetStateAction<boolean>>;
+  redirectPath?: string;
+  isDeveloper?: boolean;
+};
 
 const OtpModal = ({
   email,
@@ -22,7 +37,7 @@ const OtpModal = ({
   setShowVerifyModal,
   redirectPath,
   isDeveloper = false,
-}: any) => {
+}: Readonly<OtpModalProps>) => {
   const { signOut } = useSignOut();
   const { confirmSignUp, resendCode, signIn, role } = useAuthStore();
   const router = useRouter();
@@ -30,6 +45,10 @@ const OtpModal = ({
   const [activeInput, setActiveInput] = useState(0);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [invalidOtp, setInvalidOtp] = useState(false);
+  const dialogTitleId = useId();
+  const dialogDescriptionId = useId();
+  const otpHintId = useId();
+  const otpStatusId = useId();
   // Stable ref callback to avoid React warning
   const setOtpRef = (el: HTMLInputElement | null, idx: number) => {
     otpRefs.current[idx] = el;
@@ -45,6 +64,9 @@ const OtpModal = ({
     const newCode = [...code];
     newCode[idx] = val[0];
     setCode(newCode);
+    if (invalidOtp) {
+      setInvalidOtp(false);
+    }
     if (idx < 5 && val) {
       otpRefs.current[idx + 1]?.focus();
       setActiveInput(idx + 1);
@@ -108,7 +130,7 @@ const OtpModal = ({
           defaultSidebarToCollapsed();
           await afterAuthSuccess();
           // Set devAuth flag BEFORE redirect so DevRouteGuard can read it
-          globalThis.window?.sessionStorage?.setItem('devAuth', isDeveloper ? 'true' : 'false');
+          setStorageItem('session', 'devAuth', isDeveloper ? 'true' : 'false');
           const signedInRole =
             typeof useAuthStore.getState === 'function' ? useAuthStore.getState().role : role;
           const nextRoute = await resolvePostAuthRedirect({
@@ -207,16 +229,17 @@ const OtpModal = ({
     }
   }, [showVerifyModal]);
 
+  if (!showVerifyModal) return null;
+
   return (
-    <Modal
-      show={showVerifyModal}
-      onHide={() => setShowVerifyModal(false)}
-      backdrop="static"
-      keyboard={false}
-      centered
-      contentClassName="VerifyModalSec"
-    >
-      <Modal.Body>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <dialog
+        open
+        className="VerifyModalSec"
+        aria-modal="true"
+        aria-labelledby={dialogTitleId}
+        aria-describedby={dialogDescriptionId}
+      >
         <div className="VerifyModalClose">
           <button
             type="button"
@@ -229,17 +252,24 @@ const OtpModal = ({
         </div>
         <div className="VerifyModalTopInner">
           <div className="VerifyTexted">
-            <div className="text-display-2 text-text-primary">Verify Email Address</div>
+            <h2 id={dialogTitleId} className="text-display-2 text-text-primary">
+              Verify Email Address
+            </h2>
             <div className="text-body-3-emphasis text-text-primary">
               A Verification code has been sent to <br /> <span>{email}</span>
             </div>
-            <p>
+            <p id={dialogDescriptionId}>
               Please check your inbox and enter the verification code below to verify your email
               address. The Code will expire soon.
             </p>
           </div>
           <div className="verifyInputDiv">
-            <div className="verifyInput" style={{ marginBottom: 24 }}>
+            <fieldset
+              className="verifyInput"
+              style={{ marginBottom: 24 }}
+              aria-label="Email verification code"
+              aria-describedby={`${otpHintId} ${invalidOtp ? otpStatusId : ''}`.trim()}
+            >
               {code.map((digit, idx) => (
                 <input
                   key={`${digit}-${idx}`}
@@ -248,13 +278,20 @@ const OtpModal = ({
                   maxLength={1}
                   value={digit}
                   autoFocus={activeInput === idx}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete={idx === 0 ? 'one-time-code' : 'off'}
+                  aria-label={`Digit ${idx + 1} of 6`}
                   onChange={(e) => handleCodeChange(e, idx)}
                   onKeyDown={(e) => handleCodeKeyDown(e, idx)}
                 />
               ))}
-            </div>
+            </fieldset>
+            <p id={otpHintId} className="text-caption-1 text-text-secondary">
+              Enter the 6-digit code from your email.
+            </p>
             {invalidOtp ? (
-              <p>
+              <p id={otpStatusId} role="alert">
                 <Icon icon="solar:danger-circle-bold" width="18" height="18" /> Invalid OTP
               </p>
             ) : (
@@ -264,13 +301,15 @@ const OtpModal = ({
         </div>
         <div className="VerifyModalBottomInner">
           <div className="VerifyBtnDiv">
-            <Button
+            <button
+              type="button"
               onClick={handleVerify}
               disabled={isVerifying || timer === 0 || code.includes('')}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
             >
               {isVerifying ? 'Verifying...' : 'Verify Code'}
-            </Button>
-            <span>
+            </button>
+            <span role="status" aria-live="polite">
               {timer > 0
                 ? `${String(Math.floor(timer / 60)).padStart(2, '0')}:${String(timer % 60).padStart(2, '0')} sec`
                 : 'Code expired'}
@@ -291,8 +330,8 @@ const OtpModal = ({
             </Link>
           </div>
         </div>
-      </Modal.Body>
-    </Modal>
+      </dialog>
+    </div>
   );
 };
 

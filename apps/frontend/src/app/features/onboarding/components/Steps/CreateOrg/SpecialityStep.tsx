@@ -16,7 +16,6 @@ import {
   createSpecialitiesBulk,
   updateService,
   deleteSpeciality,
-  loadSpecialitiesForOrg,
 } from '@/app/features/organization/services/specialityService';
 import { deleteService } from '@/app/features/organization/services/serviceService';
 import { bindPendingCompanionTerminologyToOrg } from '@/app/lib/companionTerminology';
@@ -85,14 +84,13 @@ const buildServicePayload = (
   organisationId: string,
   specialityId: string,
   service: Service
-): Service =>
-  ({
-    ...service,
-    id: '',
-    isActive: true,
-    organisationId,
-    specialityId,
-  }) as Service;
+): Service => ({
+  ...service,
+  id: '',
+  isActive: true,
+  organisationId,
+  specialityId,
+});
 
 const areServicesEquivalent = (left: Service, right: Service) =>
   normalizeName(left.name) === normalizeName(right.name) &&
@@ -452,13 +450,10 @@ const SpecialityStep = ({
       try {
         const specialitiesToCreate = nextSpecialities
           .filter((speciality) => !speciality._id)
-          .map(
-            (speciality) =>
-              ({
-                ...speciality,
-                services: [],
-              }) as Speciality
-          );
+          .map((speciality) => ({
+            ...speciality,
+            services: [],
+          }));
         createdSpecialities =
           specialitiesToCreate.length > 0 ? await createSpecialitiesBulk(specialitiesToCreate) : [];
       } catch {
@@ -524,7 +519,7 @@ const SpecialityStep = ({
               isActive: service.isActive ?? matchedService.isActive ?? true,
               organisationId: resolvedOrgId,
               specialityId,
-            } as Service,
+            },
           ];
         });
       });
@@ -555,7 +550,6 @@ const SpecialityStep = ({
         return;
       }
 
-      await loadSpecialitiesForOrg({ force: true, silent: true, orgId: resolvedOrgId });
       const nextRoute = await resolveOrgScopedRedirect({
         orgId: resolvedOrgId,
         fallbackRole: 'owner',

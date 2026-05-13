@@ -1,15 +1,15 @@
 'use client';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
 import { FormsProps } from '@/app/features/forms/types/forms';
 import FormsFilters from '@/app/ui/filters/FormsFilters';
 import FormsTable from '@/app/ui/tables/FormsTable';
-import AddForm from '@/app/features/forms/pages/Forms/Sections/AddForm';
-import FormInfo from '@/app/features/forms/pages/Forms/Sections/FormInfo';
 import { useFormsStore } from '@/app/stores/formsStore';
 import { loadForms } from '@/app/features/forms/services/formService';
 import { useSearchStore } from '@/app/stores/searchStore';
@@ -24,6 +24,9 @@ import { PERMISSIONS } from '@/app/lib/permissions';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import Fallback from '@/app/ui/overlays/Fallback';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+
+const AddForm = dynamic(() => import('@/app/features/forms/pages/Forms/Sections/AddForm'));
+const FormInfo = dynamic(() => import('@/app/features/forms/pages/Forms/Sections/FormInfo'));
 
 const Forms = () => {
   const { can } = usePermissions();
@@ -165,7 +168,7 @@ const Forms = () => {
     <div className="relative min-w-0 flex h-full min-h-0 flex-col gap-4 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-3! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-3!">
       <div className="flex justify-between items-center w-full flex-wrap gap-2">
         <div className="flex flex-col gap-1">
-          <div className="text-text-primary text-heading-2 flex items-center gap-2">
+          <h1 className="text-text-primary text-heading-2 flex items-center gap-2">
             <span>
               {'Templates'}
               <span className="text-body-2 text-text-tertiary">{` (${list.length})`}</span>
@@ -182,7 +185,7 @@ const Forms = () => {
                 <IoInformationCircleOutline size={20} />
               </button>
             </GlassTooltip>
-          </div>
+          </h1>
         </div>
       </div>
 
@@ -233,9 +236,11 @@ const Forms = () => {
 
 const ProtectedForms = () => {
   return (
-    <ProtectedRoute>
-      <OrgGuard>
-        <Forms />
+    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
+      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+        <Suspense fallback={<PageSkeleton variant="list" />}>
+          <Forms />
+        </Suspense>
       </OrgGuard>
     </ProtectedRoute>
   );

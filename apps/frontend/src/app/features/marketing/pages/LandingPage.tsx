@@ -1,6 +1,5 @@
 'use client';
 import React, { useState } from 'react';
-import { Carousel } from 'react-bootstrap';
 import Image from 'next/image';
 import { Icon } from '@iconify/react';
 import { motion } from 'framer-motion';
@@ -34,14 +33,14 @@ const NewHeroSection = () => {
     <section className="new-hero-section">
       <StarRipple />
       <div className="new-hero-content">
-        <motion.div
+        <motion.h1
           className="text-display-1 text-text-primary text-center"
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: 'easeOut' }}
         >
           Open source operating system for animal health
-        </motion.div>
+        </motion.h1>
         <motion.div
           className="text-body-2 text-text-primary text-center max-w-[640px]"
           initial={{ opacity: 0, y: 20 }}
@@ -113,9 +112,9 @@ const OldHeroSection = ({
       <div className="HeroContainer">
         <div className="LeftHeroSection">
           <TextFade direction="up" className="LeftHeroText">
-            <div className="text-display-1 text-text-primary">
+            <h1 className="text-display-1 text-text-primary">
               Open source operating system for animal health
-            </div>
+            </h1>
             <div className="text-body-2 text-text-primary">
               Designed for pet businesses, pet parents, and developers to collaborate in improving
               animal care. Streamline workflows while enhancing health outcomes, in one unified
@@ -128,33 +127,46 @@ const OldHeroSection = ({
         </div>
 
         <div className="RightHeroSection">
-          <Carousel
-            activeIndex={index}
-            onSelect={handleSelect}
-            controls={true}
-            indicators={true}
-            nextIcon={
-              <span className="custom-arrow">
-                <Icon icon="solar:round-alt-arrow-right-outline" width="48" height="48" />
-              </span>
-            }
-            prevIcon={
-              <span className="custom-arrow">
-                <Icon icon="solar:round-alt-arrow-left-outline" width="48" height="48" />
-              </span>
-            }
-          >
-            {SlidesData.map((slide) => (
-              <Carousel.Item key={slide.id}>
-                <div className="LandingCarouselDiv">
-                  <Image src={slide.image} alt={slide.alt} width={887} height={565} />
-                  <div className="carousel-text">
-                    <div className="text-heading-1 text-text-primary">{slide.text}</div>
-                  </div>
-                </div>
-              </Carousel.Item>
-            ))}
-          </Carousel>
+          <div className="relative overflow-hidden">
+            <div className="LandingCarouselDiv">
+              <Image
+                src={SlidesData[index].image}
+                alt={SlidesData[index].alt}
+                width={887}
+                height={565}
+              />
+              <div className="carousel-text">
+                <p className="text-heading-1 text-text-primary">{SlidesData[index].text}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Previous slide"
+              className="custom-arrow absolute left-2 top-1/2 -translate-y-1/2 z-10"
+              onClick={() => handleSelect((index - 1 + SlidesData.length) % SlidesData.length)}
+            >
+              <Icon icon="solar:round-alt-arrow-left-outline" width="48" height="48" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next slide"
+              className="custom-arrow absolute right-2 top-1/2 -translate-y-1/2 z-10"
+              onClick={() => handleSelect((index + 1) % SlidesData.length)}
+            >
+              <Icon icon="solar:round-alt-arrow-right-outline" width="48" height="48" />
+            </button>
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+              {SlidesData.map((slide, i) => (
+                <button
+                  key={slide.id}
+                  type="button"
+                  aria-label={`Go to slide ${i + 1}`}
+                  className={`w-2 h-2 rounded-full transition-colors ${i === index ? 'bg-white' : 'bg-white/40'}`}
+                  onClick={() => handleSelect(i)}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>

@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useCallback, useMemo } from 'react';
+import React, { Suspense, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import Back from '@/app/ui/primitives/Icons/Back';
-import CompanionHistoryTimeline from '@/app/features/companionHistory/components/CompanionHistoryTimeline';
 import {
   useCompanionsParentsForPrimaryOrg,
   useLoadCompanionsForPrimaryOrg,
@@ -16,10 +17,18 @@ import Image from 'next/image';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { useCompanionStore } from '@/app/stores/companionStore';
 import { startRouteLoader } from '@/app/lib/routeLoader';
-import { YosemiteLoader } from '@/app/ui/overlays/Loader';
 
 const FALLBACK_BACK_PATH = '/companions';
 const APPOINTMENTS_BACK_PATH = '/appointments';
+
+const HistoryTimelineSkeleton = () => (
+  <div className="min-h-96 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
+);
+
+const CompanionHistoryTimeline = dynamic(
+  () => import('@/app/features/companionHistory/components/CompanionHistoryTimeline'),
+  { loading: () => <HistoryTimelineSkeleton /> }
+);
 
 const resolveSafeBackPath = (candidate: string | null, source: string | null): string => {
   if (candidate?.startsWith('/') && !candidate.startsWith('//')) {
@@ -31,7 +40,7 @@ const resolveSafeBackPath = (candidate: string | null, source: string | null): s
   return FALLBACK_BACK_PATH;
 };
 
-const CompanionHistoryPage = () => {
+const CompanionHistoryPageInner = () => {
   useLoadCompanionsForPrimaryOrg();
   const companions = useCompanionsParentsForPrimaryOrg();
   const companionsStatus = useCompanionStore((s) => s.status);
@@ -63,26 +72,22 @@ const CompanionHistoryPage = () => {
 
   if (companionsStatus === 'loading') {
     return (
-      <ProtectedRoute>
-        <OrgGuard>
-          <YosemiteLoader
-            variant="fullscreen-translucent"
-            size={150}
-            testId="companions-history-loader"
-          />
+      <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
+        <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+          <PageSkeleton variant="list" />
         </OrgGuard>
       </ProtectedRoute>
     );
   }
 
   return (
-    <ProtectedRoute>
-      <OrgGuard>
+    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
+      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
         <div className="flex flex-col gap-4 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-5! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-5!">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Back onClick={handleBack} />
-              <div className="text-heading-2 text-text-primary">{historyTitle}</div>
+              <h1 className="text-heading-2 text-text-primary">{historyTitle}</h1>
             </div>
 
             {activeCompanion ? (
@@ -128,5 +133,11 @@ const CompanionHistoryPage = () => {
     </ProtectedRoute>
   );
 };
+
+const CompanionHistoryPage = () => (
+  <Suspense fallback={<PageSkeleton variant="list" />}>
+    <CompanionHistoryPageInner />
+  </Suspense>
+);
 
 export default CompanionHistoryPage;

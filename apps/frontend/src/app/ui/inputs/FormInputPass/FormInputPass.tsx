@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { IoIosWarning } from 'react-icons/io';
 import { IoEye, IoEyeOff } from 'react-icons/io5';
 
@@ -9,6 +9,8 @@ type FormInputPassProps = {
   inlabel: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   autoComplete?: string;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
 };
 
 const FormInputPass = ({
@@ -18,8 +20,12 @@ const FormInputPass = ({
   value,
   onChange,
   autoComplete,
+  onBlur,
+  onFocus,
   error,
 }: FormInputPassProps & { error?: string }) => {
+  const uid = useId();
+  const errorId = error ? `${uid}-error` : undefined;
   const [showPassword, setShowPassword] = useState(false);
 
   const togglePasswordVisibility = () => {
@@ -32,12 +38,16 @@ const FormInputPass = ({
         <input
           type={showPassword ? 'text' : intype}
           name={inname}
-          id={inname}
+          id={uid}
           value={value ?? ''}
           autoComplete={autoComplete}
           onChange={onChange}
+          onBlur={onBlur}
+          onFocus={onFocus}
           required
           placeholder=" "
+          aria-invalid={Boolean(error)}
+          aria-describedby={errorId}
           className={`
             peer w-full min-h-12 rounded-2xl bg-transparent px-6 py-2.5
             text-body-4 text-text-primary
@@ -47,7 +57,7 @@ const FormInputPass = ({
           `}
         />
         <label
-          htmlFor={inname}
+          htmlFor={uid}
           className={`
             pointer-events-none absolute left-6
             top-1/2 -translate-y-1/2
@@ -79,12 +89,14 @@ const FormInputPass = ({
       {/* Show error as bottom red text only for input validation */}
       {error && (
         <div
+          id={errorId}
+          role="alert"
           className={`
                   mt-1.5 flex items-center gap-1 px-4
                   text-caption-2 text-text-error
                 `}
         >
-          <IoIosWarning className="text-text-error" size={14} />
+          <IoIosWarning className="text-text-error" size={14} aria-hidden="true" />
           <span>{error}</span>
         </div>
       )}

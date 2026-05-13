@@ -1,11 +1,11 @@
 'use client';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import Filters from '@/app/ui/filters/Filters';
 import CompanionsTable from '@/app/ui/tables/CompanionsTable';
-import AddCompanion from '@/app/features/companions/components/AddCompanion';
-import { CompanionInfo } from '@/app/features/companions/components';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
 import { useCompanionsParentsForPrimaryOrg } from '@/app/hooks/useCompanion';
 import {
@@ -13,9 +13,6 @@ import {
   CompanionsSpeciesFilters,
   CompanionsStatusFilters,
 } from '@/app/features/companions/pages/Companions/types';
-import BookAppointment from '@/app/features/companions/pages/Companions/BookAppointment';
-import AddTask from '@/app/features/companions/pages/Companions/AddTask';
-import ChangeCompanionStatus from '@/app/features/companions/pages/Companions/ChangeStatus';
 import { useSearchStore } from '@/app/stores/searchStore';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import { PERMISSIONS } from '@/app/lib/permissions';
@@ -25,6 +22,18 @@ import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+
+const AddCompanion = dynamic(() => import('@/app/features/companions/components/AddCompanion'));
+const CompanionInfo = dynamic(() =>
+  import('@/app/features/companions/components').then((m) => ({ default: m.CompanionInfo }))
+);
+const BookAppointment = dynamic(
+  () => import('@/app/features/companions/pages/Companions/BookAppointment')
+);
+const AddTask = dynamic(() => import('@/app/features/companions/pages/Companions/AddTask'));
+const ChangeCompanionStatus = dynamic(
+  () => import('@/app/features/companions/pages/Companions/ChangeStatus')
+);
 
 const Companions = () => {
   const companions = useCompanionsParentsForPrimaryOrg();
@@ -107,7 +116,7 @@ const Companions = () => {
     <div className="relative min-w-0 flex h-full min-h-0 flex-col gap-4 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-3! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-3!">
       <div className="flex justify-between items-center w-full flex-wrap gap-2">
         <div className="flex flex-col gap-1">
-          <div className="text-text-primary text-heading-2 flex items-center gap-2">
+          <h1 className="text-text-primary text-heading-2 flex items-center gap-2">
             <span>
               {'Companions'}
               <span className="text-body-2 text-text-tertiary">{` (${companions.length})`}</span>
@@ -124,7 +133,7 @@ const Companions = () => {
                 <IoInformationCircleOutline size={20} />
               </button>
             </GlassTooltip>
-          </div>
+          </h1>
         </div>
       </div>
       <PermissionGate allOf={[PERMISSIONS.COMPANIONS_VIEW_ANY]} fallback={<Fallback />}>
@@ -194,9 +203,11 @@ const Companions = () => {
 
 const ProtectedCompanions = () => {
   return (
-    <ProtectedRoute>
-      <OrgGuard>
-        <Companions />
+    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
+      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+        <Suspense fallback={<PageSkeleton variant="list" />}>
+          <Companions />
+        </Suspense>
       </OrgGuard>
     </ProtectedRoute>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -32,6 +32,7 @@ import { Appointment, Invoice } from '@yosemite-crew/types';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
 import {
+  IoWarning,
   IoCalendarOutline,
   IoDocumentTextOutline,
   IoCardOutline,
@@ -50,6 +51,7 @@ type AppointmentPopoverProps = {
   appointment: Appointment;
   invoicesByAppointmentId: Record<string, Invoice>;
   canEditAppointments: boolean;
+  popoverId: string;
   popoverDialogRef: React.RefObject<HTMLDialogElement | null>;
   popoverStyle: React.CSSProperties;
   handleViewAppointment: (appt: Appointment, intent?: AppointmentViewIntent) => void;
@@ -147,10 +149,11 @@ const StaffInput = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
+const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
   appointment,
   invoicesByAppointmentId,
   canEditAppointments,
+  popoverId,
   popoverDialogRef,
   popoverStyle,
   handleViewAppointment,
@@ -174,6 +177,8 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const statusTriggerRef = useRef<HTMLButtonElement>(null);
   const statusPanelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const statusMenuId = useId();
 
   const statusStyle = getStatusStyle(appointment.status);
   const allowedTransitions = getAllowedAppointmentStatusTransitions(appointment.status);
@@ -244,11 +249,19 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
 
   return (
     <dialog
+      id={popoverId}
       ref={popoverDialogRef}
       open
       className="fixed z-[1000] w-[440px] rounded-2xl border border-card-border bg-white p-4 shadow-[0_18px_45px_rgba(0,0,0,0.14)]"
       style={popoverStyle}
-      aria-label="Appointment quick actions"
+      aria-labelledby={titleId}
+      aria-modal="false"
+      data-popover-panel="true"
+      tabIndex={-1}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
     >
       <div className="flex items-center justify-between gap-3 border-b border-card-border pb-2.5">
         <div className="min-w-0 flex items-center gap-3">
@@ -266,6 +279,7 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
           <div className="min-w-0">
             <button
               type="button"
+              id={titleId}
               className="block max-w-full truncate font-satoshi text-[20px] font-bold leading-[120%] tracking-[-0.025rem] text-text-primary cursor-pointer hover:underline underline-offset-2 text-left"
               onClick={() => {
                 router.push(
@@ -288,7 +302,7 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
         </div>
 
         {/* Status pill — acts as dropdown trigger if status can be changed */}
-        <div className="relative flex-shrink-0">
+        <div className="relative flex-shrink-0 flex flex-col items-end gap-1.5">
           {canChangeStatus ? (
             <button
               ref={statusTriggerRef}
@@ -297,7 +311,10 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
               disabled={savingStatus}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setStatusDropdownOpen((v) => !v)}
-              className="flex h-8 w-[120px] items-center justify-end gap-1 rounded-2xl! px-3 py-2 font-satoshi text-[14px] font-medium leading-[120%] tracking-[-0.0175rem] whitespace-nowrap shadow-[0_1px_10px_0_rgba(169,163,158,0.10)]"
+              aria-haspopup="menu"
+              aria-expanded={statusDropdownOpen}
+              aria-controls={statusMenuId}
+              className="flex h-8 min-w-25 items-center justify-between gap-1.5 rounded-2xl! px-3 py-2 font-satoshi text-[14px] font-medium leading-[120%] tracking-[-0.0175rem] whitespace-nowrap shadow-[0_1px_10px_0_rgba(169,163,158,0.10)]"
               style={{
                 backgroundColor: statusStyle.backgroundColor,
                 color: statusStyle.color,
@@ -312,7 +329,7 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
                 opacity: savingStatus ? 0.6 : 1,
               }}
             >
-              {savingStatus ? 'Saving…' : toStatusLabel(appointment.status)}
+              <span>{savingStatus ? 'Saving…' : toStatusLabel(appointment.status)}</span>
               <FaCaretDown
                 size={10}
                 className={`shrink-0 transition-transform ${statusDropdownOpen ? 'rotate-180' : ''}`}
@@ -320,7 +337,7 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
             </button>
           ) : (
             <span
-              className="flex h-8 w-[120px] items-center justify-end rounded-2xl! px-3 py-2 font-satoshi text-[14px] font-medium leading-[120%] tracking-[-0.0175rem] whitespace-nowrap shadow-[0_1px_10px_0_rgba(169,163,158,0.10)]"
+              className="flex h-8 min-w-25 items-center justify-center rounded-2xl! px-3 py-2 font-satoshi text-[14px] font-medium leading-[120%] tracking-[-0.0175rem] whitespace-nowrap shadow-[0_1px_10px_0_rgba(169,163,158,0.10)]"
               style={{
                 backgroundColor: statusStyle.backgroundColor,
                 color: statusStyle.color,
@@ -338,8 +355,30 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
             </span>
           )}
 
+          {appointment.isEmergency && (
+            <div
+              className="flex h-5.5 items-center gap-1 rounded-lg px-2 whitespace-nowrap"
+              style={{
+                border: '1px solid var(--error-color)',
+                background: 'var(--color-danger-100)',
+                color: 'var(--error-color)',
+                fontFamily: 'var(--font-satoshi)',
+                fontSize: '11px',
+                fontWeight: 500,
+                lineHeight: '150%',
+                letterSpacing: '-0.22px',
+              }}
+            >
+              <IoWarning size={11} aria-hidden="true" />
+              {'Emergency'}
+            </div>
+          )}
+
           {statusError && (
-            <div className="absolute right-0 top-full mt-1 text-[10px] text-text-error whitespace-nowrap bg-white border border-card-border rounded-lg px-2 py-1 shadow-sm z-10">
+            <div
+              role="alert"
+              className="absolute right-0 top-full mt-1 text-[10px] text-text-error whitespace-nowrap bg-white border border-card-border rounded-lg px-2 py-1 shadow-sm z-10"
+            >
               {statusError}
             </div>
           )}
@@ -379,36 +418,47 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
               <button
                 type="button"
                 title="Accept request"
+                aria-label="Accept request"
                 className="h-12 w-12 shrink-0 rounded-full! flex items-center justify-center hover:bg-success-100 border border-card-border"
                 onClick={async () => {
                   await acceptAppointment(appointment);
                   onClose();
                 }}
               >
-                <FaCheckCircle size={18} color="var(--color-success-400)" />
+                <FaCheckCircle size={18} color="var(--color-success-400)" aria-hidden="true" />
               </button>
             </GlassTooltip>
             <GlassTooltip content="Decline request" side="top">
               <button
                 type="button"
                 title="Decline request"
+                aria-label="Decline request"
                 className="h-12 w-12 shrink-0 rounded-full! flex items-center justify-center hover:bg-danger-100 border border-card-border"
                 onClick={async () => {
                   await rejectAppointment(appointment);
                   onClose();
                 }}
               >
-                <IoIosCloseCircle size={20} color="var(--color-danger-600)" />
+                <IoIosCloseCircle size={20} color="var(--color-danger-600)" aria-hidden="true" />
               </button>
             </GlassTooltip>
           </>
         )}
         {!isRequestedLikeStatus(appointment.status) && (
-          <div className="scrollbar-hidden flex w-48 shrink-0 items-center gap-2 overflow-x-auto pr-1">
+          <div
+            className="scrollbar-hidden flex w-48 shrink-0 items-center gap-2 overflow-x-auto pr-1"
+            onWheel={(e) => {
+              if (e.deltaY !== 0) {
+                e.preventDefault();
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+          >
             <GlassTooltip content="Overview" side="top">
               <button
                 type="button"
                 title="Appointment overview"
+                aria-label="Appointment overview"
                 className="h-12 w-12 shrink-0 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                 onClick={() => {
                   router.push(
@@ -421,33 +471,35 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
                   onClose();
                 }}
               >
-                <RiHistoryLine size={20} />
+                <RiHistoryLine size={20} aria-hidden="true" />
               </button>
             </GlassTooltip>
             <GlassTooltip content="Finance summary" side="top">
               <button
                 type="button"
                 title="Finance summary"
+                aria-label="Finance summary"
                 className="h-12 w-12 shrink-0 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                 onClick={() => {
                   handleViewAppointment(appointment, { label: 'finance', subLabel: 'summary' });
                   onClose();
                 }}
               >
-                <IoCardOutline size={20} />
+                <IoCardOutline size={20} aria-hidden="true" />
               </button>
             </GlassTooltip>
             <GlassTooltip content="Lab tests" side="top">
               <button
                 type="button"
                 title="Lab tests"
+                aria-label="Lab tests"
                 className="h-12 w-12 shrink-0 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                 onClick={() => {
                   handleViewAppointment(appointment, { label: 'labs', subLabel: 'idexx-labs' });
                   onClose();
                 }}
               >
-                <IoFlaskOutline size={20} />
+                <IoFlaskOutline size={20} aria-hidden="true" />
               </button>
             </GlassTooltip>
             {canEditAppointments && allowReschedule(appointment.status) && (
@@ -455,13 +507,14 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
                 <button
                   type="button"
                   title="Reschedule"
+                  aria-label="Reschedule appointment"
                   className="h-12 w-12 shrink-0 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                   onClick={() => {
                     handleRescheduleAppointment(appointment);
                     onClose();
                   }}
                 >
-                  <IoCalendarOutline size={20} />
+                  <IoCalendarOutline size={20} aria-hidden="true" />
                 </button>
               </GlassTooltip>
             )}
@@ -470,13 +523,14 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
                 <button
                   type="button"
                   title="Assign room"
+                  aria-label="Assign room"
                   className="h-12 w-12 shrink-0 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                   onClick={() => {
                     handleChangeRoomAppointment?.(appointment);
                     onClose();
                   }}
                 >
-                  <MdMeetingRoom size={20} />
+                  <MdMeetingRoom size={20} aria-hidden="true" />
                 </button>
               </GlassTooltip>
             )}
@@ -484,23 +538,27 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
               <button
                 type="button"
                 title={clinicalNotesLabel}
+                aria-label={clinicalNotesLabel}
                 className="h-12 w-12 shrink-0 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                 onClick={() => {
                   handleViewAppointment(appointment, clinicalNotesIntent);
                   onClose();
                 }}
               >
-                <IoDocumentTextOutline size={20} />
+                <IoDocumentTextOutline size={20} aria-hidden="true" />
               </button>
             </GlassTooltip>
           </div>
         )}
         <button
           type="button"
-          title="View appointment"
+          title={primaryActionLabel}
           className="flex h-12 w-50 shrink-0 items-center justify-end gap-2 rounded-2xl! bg-black-bg px-4 font-satoshi text-[16px] font-medium leading-[120%] tracking-[-0.02rem] text-white-text hover:bg-black-hover"
           onClick={() => {
-            handleViewAppointment(appointment);
+            handleViewAppointment(
+              appointment,
+              appointment.status === 'UPCOMING' ? clinicalNotesIntent : undefined
+            );
             onClose();
           }}
         >
@@ -513,8 +571,10 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
       {statusDropdownOpen &&
         createPortal(
           <div
+            id={statusMenuId}
             ref={statusPanelRef}
             data-popover-panel="true"
+            role="menu"
             onPointerDown={(e) => e.stopPropagation()}
             className="rounded-2xl! bg-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] overflow-hidden whitespace-nowrap"
             style={{
@@ -531,6 +591,7 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
                 <button
                   key={nextStatus}
                   type="button"
+                  role="menuitem"
                   disabled={savingStatus}
                   onClick={() => void handleStatusChange(nextStatus)}
                   className="flex h-8 w-full items-center gap-1 rounded-none! px-3 py-2 text-left transition-colors hover:bg-card-hover"
@@ -562,4 +623,5 @@ const AppointmentPopover: React.FC<AppointmentPopoverProps> = ({
   );
 };
 
+const AppointmentPopover = React.memo(AppointmentPopoverComponent);
 export default AppointmentPopover;

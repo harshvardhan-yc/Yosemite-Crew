@@ -1,13 +1,16 @@
 'use client';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
-import AppointmentsTable from '@/app/ui/tables/Appointments';
-import AddAppointment from '@/app/features/appointments/pages/Appointments/Sections/AddAppointment';
-import AppoitmentInfo from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
+const AddAppointment = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/AddAppointment')
+);
+const AppoitmentInfo = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo')
+);
 import TitleCalendar from '@/app/ui/widgets/TitleCalendar';
-import AppointmentCalendar from '@/app/features/appointments/components/Calendar/AppointmentCalendar';
-import AppointmentBoard from '@/app/features/appointments/components/AppointmentBoard';
 import { startOfDay } from '@/app/features/appointments/components/Calendar/weekHelpers';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
 import { useAppointmentsForPrimaryOrg } from '@/app/hooks/useAppointments';
@@ -18,9 +21,15 @@ import {
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import { useAuthStore } from '@/app/stores/authStore';
 import { Appointment } from '@yosemite-crew/types';
-import Reschedule from '@/app/features/appointments/pages/Appointments/Sections/Reschedule';
-import ChangeStatus from '@/app/features/appointments/pages/Appointments/Sections/ChangeStatus';
-import ChangeRoom from '@/app/features/appointments/pages/Appointments/Sections/ChangeRoom';
+const Reschedule = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/Reschedule')
+);
+const ChangeStatus = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/ChangeStatus')
+);
+const ChangeRoom = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/ChangeRoom')
+);
 import { useSearchStore } from '@/app/stores/searchStore';
 import Filters from '@/app/ui/filters/Filters';
 import {
@@ -37,7 +46,7 @@ import { PERMISSIONS } from '@/app/lib/permissions';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import Fallback from '@/app/ui/overlays/Fallback';
 import { resolveDefaultAppointmentsView } from '@/app/lib/defaultAppointmentsView';
-import { normalizeAppointmentStatus, type LegacyAppointmentStatus } from '@/app/lib/appointments';
+import { normalizeAppointmentStatus } from '@/app/lib/appointments';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
 import { usePrimaryOrgProfile } from '@/app/hooks/useProfiles';
@@ -46,6 +55,24 @@ import {
   appointmentViewToLocal,
   normalizePmsPreferences,
 } from '@/app/features/settings/utils/pmsPreferences';
+
+const AppointmentsSkeleton = () => <PageSkeleton variant="planner" />;
+
+const PlannerViewSkeleton = () => (
+  <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
+);
+
+const AppointmentsTable = dynamic(() => import('@/app/ui/tables/Appointments'), {
+  loading: () => <PlannerViewSkeleton />,
+});
+const AppointmentCalendar = dynamic(
+  () => import('@/app/features/appointments/components/Calendar/AppointmentCalendar'),
+  { loading: () => <PlannerViewSkeleton /> }
+);
+const AppointmentBoard = dynamic(
+  () => import('@/app/features/appointments/components/AppointmentBoard'),
+  { loading: () => <PlannerViewSkeleton /> }
+);
 
 const Appointments = () => {
   const rawAppointments = useAppointmentsForPrimaryOrg();
@@ -165,6 +192,14 @@ const Appointments = () => {
   );
 
   const [activeCalendar, setActiveCalendar] = useState('team');
+  const handleActiveCalendarChange: React.Dispatch<React.SetStateAction<string>> = (
+    nextCalendar
+  ) => {
+    startTransition(() => {
+      setActiveCalendar(nextCalendar);
+    });
+  };
+
   const [activeView, setActiveView] = useState<string>(resolveDefaultAppointmentsView);
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [weekStart, setWeekStart] = useState(startOfDay(currentDate));
@@ -183,9 +218,11 @@ const Appointments = () => {
   }, [profile, primaryOrgType]);
 
   useEffect(() => {
-    if (activeCalendar === 'week') {
-      setWeekStart(startOfDay(currentDate));
-    }
+    if (activeCalendar !== 'week') return;
+    const nextWeekStart = startOfDay(currentDate);
+    setWeekStart((previous) =>
+      previous.getTime() === nextWeekStart.getTime() ? previous : nextWeekStart
+    );
   }, [currentDate, activeCalendar]);
 
   useEffect(() => {
@@ -297,9 +334,7 @@ const Appointments = () => {
     const statusWanted = activeStatus.toLowerCase();
 
     return appointments.filter((item) => {
-      const status = normalizeAppointmentStatus(
-        item.status as LegacyAppointmentStatus
-      )?.toLowerCase();
+      const status = normalizeAppointmentStatus(item.status)?.toLowerCase();
       const filter = item.isEmergency && 'emergencies';
 
       const matchesStatus =
@@ -341,7 +376,7 @@ const Appointments = () => {
         setChangeStatusPreferredStatus={setChangeStatusPreferredStatus}
         setChangeRoomPopup={setChangeRoomPopup}
         activeCalendar={activeCalendar}
-        setActiveCalendar={setActiveCalendar}
+        setActiveCalendar={handleActiveCalendarChange}
         currentDate={currentDate}
         setCurrentDate={setCurrentDate}
         weekStart={weekStart}
@@ -433,50 +468,52 @@ const Appointments = () => {
             </div>
           </div>
 
-          <AddAppointment
-            showModal={addPopup}
-            setShowModal={setAddPopup}
-            setActiveFilter={setActiveFilter}
-            setActiveStatus={setActiveStatus}
-            prefill={addAppointmentPrefill}
-            onPrefillConsumed={() => setAddAppointmentPrefill(null)}
-          />
-          {activeAppointment && (
-            <AppoitmentInfo
-              showModal={viewPopup}
-              setShowModal={setViewPopup}
-              activeAppointment={activeAppointment}
-              initialViewIntent={viewIntent}
-              canEditAppointments={canEditActiveAppointment}
-              onReschedule={(appointment) => {
-                setActiveAppointment(appointment);
-                setViewPopup(false);
-                setReschedulePopup(true);
-              }}
+          <React.Suspense fallback={null}>
+            <AddAppointment
+              showModal={addPopup}
+              setShowModal={setAddPopup}
+              setActiveFilter={setActiveFilter}
+              setActiveStatus={setActiveStatus}
+              prefill={addAppointmentPrefill}
+              onPrefillConsumed={() => setAddAppointmentPrefill(null)}
             />
-          )}
-          {canEditAppointments && activeAppointment && (
-            <Reschedule
-              showModal={reschedulePopup}
-              setShowModal={setReschedulePopup}
-              activeAppointment={activeAppointment}
-            />
-          )}
-          {canEditAppointments && activeAppointment && (
-            <ChangeStatus
-              showModal={changeStatusPopup}
-              setShowModal={setChangeStatusPopup}
-              activeAppointment={activeAppointment}
-              preferredStatus={changeStatusPreferredStatus}
-            />
-          )}
-          {canEditAppointments && activeAppointment && (
-            <ChangeRoom
-              showModal={changeRoomPopup}
-              setShowModal={setChangeRoomPopup}
-              activeAppointment={activeAppointment}
-            />
-          )}
+            {activeAppointment && (
+              <AppoitmentInfo
+                showModal={viewPopup}
+                setShowModal={setViewPopup}
+                activeAppointment={activeAppointment}
+                initialViewIntent={viewIntent}
+                canEditAppointments={canEditActiveAppointment}
+                onReschedule={(appointment) => {
+                  setActiveAppointment(appointment);
+                  setViewPopup(false);
+                  setReschedulePopup(true);
+                }}
+              />
+            )}
+            {canEditAppointments && activeAppointment && (
+              <Reschedule
+                showModal={reschedulePopup}
+                setShowModal={setReschedulePopup}
+                activeAppointment={activeAppointment}
+              />
+            )}
+            {canEditAppointments && activeAppointment && (
+              <ChangeStatus
+                showModal={changeStatusPopup}
+                setShowModal={setChangeStatusPopup}
+                activeAppointment={activeAppointment}
+                preferredStatus={changeStatusPreferredStatus}
+              />
+            )}
+            {canEditAppointments && activeAppointment && (
+              <ChangeRoom
+                showModal={changeRoomPopup}
+                setShowModal={setChangeRoomPopup}
+                activeAppointment={activeAppointment}
+              />
+            )}
+          </React.Suspense>
         </PermissionGate>
       </div>
     </div>
@@ -485,9 +522,11 @@ const Appointments = () => {
 
 const ProtectedAppoitments = () => {
   return (
-    <ProtectedRoute>
-      <OrgGuard>
-        <Appointments />
+    <ProtectedRoute skeleton={<AppointmentsSkeleton />}>
+      <OrgGuard skeleton={<AppointmentsSkeleton />}>
+        <Suspense fallback={<AppointmentsSkeleton />}>
+          <Appointments />
+        </Suspense>
       </OrgGuard>
     </ProtectedRoute>
   );

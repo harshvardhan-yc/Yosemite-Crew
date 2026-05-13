@@ -1,13 +1,47 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import ProtectedForms from '@/app/features/forms/pages/Forms';
 import { useFormsStore } from '@/app/stores/formsStore';
 import { loadForms } from '@/app/features/forms/services/formService';
+
+expect.extend(toHaveNoViolations);
 import {
   useLoadSpecialitiesForPrimaryOrg,
   useSpecialitiesForPrimaryOrg,
   useServicesForPrimaryOrgSpecialities,
 } from '@/app/hooks/useSpecialities';
+
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: (loader: () => Promise<unknown>) => {
+    const source = loader.toString();
+    const LoadableComponent = (props: Record<string, unknown>) => {
+      if (source.includes('Sections/AddForm')) {
+        const MockAddForm = (
+          jest.requireMock('@/app/features/forms/pages/Forms/Sections/AddForm') as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockAddForm {...props} />;
+      }
+
+      if (source.includes('Sections/FormInfo')) {
+        const MockFormInfo = (
+          jest.requireMock('@/app/features/forms/pages/Forms/Sections/FormInfo') as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockFormInfo {...props} />;
+      }
+
+      return null;
+    };
+
+    LoadableComponent.displayName = 'MockDynamicComponent';
+    return LoadableComponent;
+  },
+}));
 
 // --- Mocks ---
 
@@ -165,6 +199,18 @@ describe('Forms Page', () => {
 
   // --- Section 1: Rendering & Initialization ---
 
+  it('has no axe violations on initial render', async () => {
+    const { container } = render(<ProtectedForms />);
+    await screen.findByRole('heading', { level: 1, name: /Templates/ });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('renders h1 page heading', () => {
+    render(<ProtectedForms />);
+    expect(screen.getByRole('heading', { level: 1, name: /Templates/ })).toBeInTheDocument();
+  });
+
   it('renders structure, guards, and fetches data on mount if list is empty', async () => {
     // Mock empty store to trigger loadForms
     (useFormsStore as unknown as jest.Mock).mockReturnValue({
@@ -180,7 +226,7 @@ describe('Forms Page', () => {
     // Verify Guards
     expect(screen.getByTestId('protected-route')).toBeInTheDocument();
     expect(screen.getByTestId('org-guard')).toBeInTheDocument();
-    expect(screen.getByText('Templates')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Templates/ })).toBeInTheDocument();
 
     // Verify Load Effect
     await waitFor(() => {

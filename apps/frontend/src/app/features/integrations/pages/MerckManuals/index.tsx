@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import Close from '@/app/ui/primitives/Icons/Close';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import { YosemiteLoader } from '@/app/ui/overlays/Loader';
@@ -30,6 +31,7 @@ import {
   sanitizeMerckHtml,
 } from '@/app/features/integrations/constants/merck';
 import { formatDateTimeLocal } from '@/app/lib/date';
+import { getJsonStorageItem, setJsonStorageItem } from '@/app/lib/browserStorage';
 import {
   IoCloseOutline,
   IoCopyOutline,
@@ -93,29 +95,18 @@ const getRecentSearchesKey = (orgId: string, audience: MerckAudience) =>
   `yc:merck:recent:${orgId}:${audience}`;
 
 const getRecentSearches = (orgId: string, audience: MerckAudience): string[] => {
-  if (globalThis.window === undefined) return [];
-  try {
-    const raw = globalThis.window.localStorage.getItem(getRecentSearchesKey(orgId, audience));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : [];
-  } catch {
-    return [];
-  }
+  const parsed = getJsonStorageItem<unknown>('local', getRecentSearchesKey(orgId, audience));
+  return Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : [];
 };
 
 const saveRecentSearch = (orgId: string, audience: MerckAudience, value: string) => {
-  if (globalThis.window === undefined) return;
   const query = value.trim();
   if (!query) return;
   const prev = getRecentSearches(orgId, audience).filter(
     (item) => item.toLowerCase() !== query.toLowerCase()
   );
   const next = [query, ...prev].slice(0, RECENT_SEARCHES_LIMIT);
-  globalThis.window.localStorage.setItem(
-    getRecentSearchesKey(orgId, audience),
-    JSON.stringify(next)
-  );
+  setJsonStorageItem('local', getRecentSearchesKey(orgId, audience), next);
 };
 
 const safeDate = (value?: string | null) => {
@@ -214,11 +205,12 @@ const AudienceToggle = ({
   const consumerTextClass = isProfessional ? 'text-text-secondary' : 'text-neutral-0';
 
   return (
-    <div
+    <fieldset
       className={`relative inline-flex items-center h-11 w-full max-w-[320px] rounded-[999px]! border border-card-border bg-white overflow-hidden ${
         disabled ? 'opacity-70' : ''
       }`}
     >
+      <legend className="sr-only">Audience</legend>
       <div
         aria-hidden
         className={`absolute top-0 bottom-0 left-0 w-1/2 rounded-[999px]! border-0 transition-all duration-300 ease-in-out ${sliderClass}`}
@@ -227,6 +219,7 @@ const AudienceToggle = ({
         type="button"
         onClick={() => onChange('PROV')}
         disabled={disabled}
+        aria-pressed={isProfessional}
         className={`relative z-10 w-1/2 h-full text-body-3 transition-colors duration-200 ${
           disabled ? 'cursor-not-allowed' : 'cursor-pointer'
         } ${professionalTextClass}`}
@@ -237,13 +230,14 @@ const AudienceToggle = ({
         type="button"
         onClick={() => onChange('PAT')}
         disabled={disabled}
+        aria-pressed={!isProfessional}
         className={`relative z-10 w-1/2 h-full text-body-3 transition-colors duration-200 ${
           disabled ? 'cursor-not-allowed' : 'cursor-pointer'
         } ${consumerTextClass}`}
       >
         Consumer
       </button>
-    </div>
+    </fieldset>
   );
 };
 
@@ -259,6 +253,7 @@ const CompactFilterPill = ({
   <button
     type="button"
     onClick={onClick}
+    aria-pressed={active}
     className={`h-8 px-2.5 text-caption-1 rounded-2xl! border transition-all duration-200 ${
       active
         ? 'bg-blue-light text-blue-text! border-text-brand!'
@@ -509,8 +504,10 @@ const MerckSearchPanel = ({
           </button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="text-caption-1 text-text-secondary">Language</div>
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="text-caption-1 text-text-secondary" id="merck-language-label">
+            Language
+          </div>
+          <fieldset className="flex gap-1.5 flex-wrap" aria-labelledby="merck-language-label">
             <CompactFilterPill
               active={language === 'en'}
               label="EN"
@@ -521,7 +518,7 @@ const MerckSearchPanel = ({
               label="ES"
               onClick={() => setLanguage('es')}
             />
-          </div>
+          </fieldset>
         </div>
       </div>
     ) : null}
@@ -567,10 +564,17 @@ const MerckReaderPortal = ({
   if (!readerOpen || !readerUrl || typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <dialog
+      open
+      aria-modal="true"
+      aria-labelledby="merck-reader-title"
+      className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+    >
       <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
-          <div className="text-body-2 text-text-primary truncate pr-2">{readerTitle}</div>
+          <div id="merck-reader-title" className="text-body-2 text-text-primary truncate pr-2">
+            {readerTitle}
+          </div>
           <button
             type="button"
             onClick={() => setReaderOpen(false)}
@@ -591,6 +595,7 @@ const MerckReaderPortal = ({
             title={readerTitle}
             className="flex-1 w-full h-full border-0"
             loading="lazy"
+            referrerPolicy="strict-origin"
             onLoad={() => setReaderLoading(false)}
           />
         </div>
@@ -605,7 +610,7 @@ const MerckReaderPortal = ({
           </Link>
         </div>
       </div>
-    </div>,
+    </dialog>,
     document.body
   );
 };
@@ -715,6 +720,7 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
       <div className="flex w-full items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2 shrink-0">
           <div className="h-[88px] w-auto relative">
+            <h1 className="sr-only">MSD Veterinary Manual</h1>
             <Image
               src={MEDIA_SOURCES.futureAssets.merckLogoUrl}
               alt="MSD Veterinary Manual"
@@ -780,9 +786,13 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
           />
 
           <div className="min-h-0 flex flex-col gap-3">
-            {error ? <div className="text-body-4 text-text-error">{error}</div> : null}
+            {error ? (
+              <div role="alert" className="text-body-4 text-text-error">
+                {error}
+              </div>
+            ) : null}
             {copied ? (
-              <div className="text-body-4 text-green-700">Copied URL to clipboard.</div>
+              <output className="text-body-4 text-green-700">Copied URL to clipboard.</output>
             ) : null}
 
             <div className={resultsContainerClassName}>
@@ -820,17 +830,21 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
 };
 
 const ProtectedMerckManuals = () => (
-  <ProtectedRoute>
-    <OrgGuard>
-      <MerckManualsPage />
+  <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
+    <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+      <Suspense fallback={<PageSkeleton variant="list" />}>
+        <MerckManualsPage />
+      </Suspense>
     </OrgGuard>
   </ProtectedRoute>
 );
 
 export const EmbeddedMerckManuals = () => (
-  <ProtectedRoute>
-    <OrgGuard>
-      <MerckManualsPage embedded />
+  <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
+    <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+      <Suspense fallback={<PageSkeleton variant="list" />}>
+        <MerckManualsPage embedded />
+      </Suspense>
     </OrgGuard>
   </ProtectedRoute>
 );

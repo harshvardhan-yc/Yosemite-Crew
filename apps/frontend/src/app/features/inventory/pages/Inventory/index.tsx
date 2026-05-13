@@ -1,14 +1,12 @@
 'use client';
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { Suspense, useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import InventoryFilters from '@/app/ui/filters/InventoryFilters';
 import InventoryTurnoverFilters from '@/app/ui/filters/InventoryTurnoverFilters';
-import InventoryTable from '@/app/ui/tables/InventoryTable';
-import AddInventory from '@/app/features/inventory/components/AddInventory';
-import InventoryTurnoverTable from '@/app/ui/tables/InventoryTurnoverTable';
-import { InventoryInfo } from '@/app/features/inventory/components';
 import {
   CategoryOptionsByBusiness,
   InventoryFiltersState,
@@ -31,6 +29,23 @@ import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
 import BoardScopeToggle from '@/app/ui/primitives/BoardScopeToggle/BoardScopeToggle';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+
+const InventorySectionSkeleton = () => (
+  <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
+);
+
+const InventoryTable = dynamic(() => import('@/app/ui/tables/InventoryTable'), {
+  loading: () => <InventorySectionSkeleton />,
+});
+const InventoryTurnoverTable = dynamic(() => import('@/app/ui/tables/InventoryTurnoverTable'), {
+  loading: () => <InventorySectionSkeleton />,
+});
+const AddInventory = dynamic(() => import('@/app/features/inventory/components/AddInventory'));
+const InventoryInfo = dynamic(() =>
+  import('@/app/features/inventory/components').then((module) => ({
+    default: module.InventoryInfo,
+  }))
+);
 
 type InventoryView = 'inventory' | 'turnover';
 
@@ -82,8 +97,8 @@ const Inventory = () => {
 
   useEffect(() => {
     const org = primaryOrgId ? orgsById[primaryOrgId] : null;
-    if (org?.type && BusinessTypes.includes(org.type as BusinessType)) {
-      setBusinessType(org.type as BusinessType);
+    if (org?.type && BusinessTypes.includes(org.type)) {
+      setBusinessType(org.type);
     } else if (!businessType) {
       setBusinessType('GROOMER');
     }
@@ -276,7 +291,7 @@ const Inventory = () => {
     <div className="relative min-w-0 flex h-full min-h-0 flex-col gap-4 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-3! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-3!">
       <div className="flex justify-between items-center w-full flex-wrap gap-3">
         <div className="flex flex-col gap-1">
-          <div className="text-text-primary text-heading-2 flex items-center gap-2">
+          <h1 className="text-text-primary text-heading-2 flex items-center gap-2">
             <span>Inventory</span>
             <GlassTooltip
               content="Organize stock, track batches and expiry, and monitor turnover so you know what to reorder and which items need attention."
@@ -290,7 +305,7 @@ const Inventory = () => {
                 <IoInformationCircleOutline size={20} />
               </button>
             </GlassTooltip>
-          </div>
+          </h1>
         </div>
         <div className="ml-auto flex items-center justify-end gap-3 flex-wrap">
           <BoardScopeToggle
@@ -382,9 +397,11 @@ const Inventory = () => {
 
 const ProtectedInventory = () => {
   return (
-    <ProtectedRoute>
-      <OrgGuard>
-        <Inventory />
+    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
+      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+        <Suspense fallback={<PageSkeleton variant="list" />}>
+          <Inventory />
+        </Suspense>
       </OrgGuard>
     </ProtectedRoute>
   );

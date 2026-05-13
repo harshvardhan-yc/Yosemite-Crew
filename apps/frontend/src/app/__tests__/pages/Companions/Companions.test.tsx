@@ -1,6 +1,27 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
+
+expect.extend(toHaveNoViolations);
+
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: (loader: () => Promise<unknown>) => {
+    const source = loader.toString();
+    const LoadableComponent = (props: Record<string, unknown>) => {
+      if (source.includes('components/AddCompanion')) {
+        const Mock = jest.requireMock(
+          '@/app/features/companions/components/AddCompanion'
+        ) as React.FC<Record<string, unknown>>;
+        return <Mock {...props} />;
+      }
+      return null;
+    };
+    LoadableComponent.displayName = 'MockDynamicComponent';
+    return LoadableComponent;
+  },
+}));
 
 import ProtectedCompanions from '@/app/features/companions/pages/Companions/Companions';
 
@@ -8,6 +29,15 @@ const useCompanionsMock = jest.fn();
 const usePermissionsMock = jest.fn();
 const useSearchStoreMock = jest.fn();
 const companionsTableSpy = jest.fn();
+
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => ({ get: () => null }),
+}));
+
+jest.mock('@/app/ui/layout/PageSkeleton', () => ({
+  __esModule: true,
+  default: () => <div className="animate-pulse" />,
+}));
 
 jest.mock('@/app/ui/layout/guards/ProtectedRoute', () => ({
   __esModule: true,
@@ -102,6 +132,17 @@ describe('Companions page', () => {
       can: jest.fn(() => true),
     });
     useSearchStoreMock.mockImplementation((selector: any) => selector({ query: 'buddy' }));
+  });
+
+  it('has no axe violations', async () => {
+    const { container } = render(<ProtectedCompanions />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('renders h1 page heading', () => {
+    render(<ProtectedCompanions />);
+    expect(screen.getByRole('heading', { level: 1, name: /Companions/ })).toBeInTheDocument();
   });
 
   it('renders filtered companions and opens add modal', () => {

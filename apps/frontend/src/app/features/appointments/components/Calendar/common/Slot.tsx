@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { usePopoverManager } from '@/app/hooks/usePopoverManager';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import Image from 'next/image';
@@ -14,7 +14,7 @@ import { calcNearestAvailableMinute } from '@/app/features/appointments/componen
 import { createPortal } from 'react-dom';
 import AppointmentPopover from '@/app/features/appointments/components/Calendar/common/AppointmentPopover';
 import AppointmentContextMenu from '@/app/features/appointments/components/Calendar/common/AppointmentContextMenu';
-import { getDatePartsInPreferredTimeZone } from '@/app/lib/timezone';
+import { formatDateInPreferredTimeZone, getDatePartsInPreferredTimeZone } from '@/app/lib/timezone';
 import { CalendarZoomMode } from '@/app/features/appointments/components/Calendar/calendarLayout';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { useNotify } from '@/app/hooks/useNotify';
@@ -54,7 +54,7 @@ type ContextMenuState = {
   y: number;
 };
 
-const Slot: React.FC<SlotProps> = ({
+const SlotComponent: React.FC<SlotProps> = ({
   slotEvents,
   height,
   handleViewAppointment,
@@ -84,7 +84,6 @@ const Slot: React.FC<SlotProps> = ({
   const { notify } = useNotify();
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
   const [dropPreviewMinute, setDropPreviewMinute] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const {
@@ -96,10 +95,7 @@ const Slot: React.FC<SlotProps> = ({
     getPopoverStyle,
     registerAnchorEl,
   } = usePopoverManager({ closeOnHoverLeave: false });
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  const appointmentPopoverId = useId();
 
   useEffect(() => {
     if (!draggedAppointmentId) return;
@@ -360,18 +356,45 @@ const Slot: React.FC<SlotProps> = ({
     });
   };
 
+  const createAppointmentLabel = dropDate
+    ? `Create appointment on ${formatDateInPreferredTimeZone(dropDate, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })} at ${formatDateInPreferredTimeZone(
+        new Date(dropDate.getTime() + dropHour * 60 * 60 * 1000),
+        {
+          hour: 'numeric',
+          minute: '2-digit',
+        }
+      )}`
+    : 'Create appointment in this calendar slot';
+  const slotRegionLabel = dropDate
+    ? `Appointments slot for ${formatDateInPreferredTimeZone(dropDate, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })} at ${formatDateInPreferredTimeZone(
+        new Date(dropDate.getTime() + dropHour * 60 * 60 * 1000),
+        {
+          hour: 'numeric',
+          minute: '2-digit',
+        }
+      )}`
+    : 'Appointments slot';
+  const canPortal = typeof document !== 'undefined';
+
   return (
     <>
-      <div
-        role="application"
-        tabIndex={-1}
+      <section
+        aria-label={slotRegionLabel}
         className={`relative overflow-auto scrollbar-hidden border-l border-grey-light ${dayIndex === length && 'border-r'}`}
         style={{ height: `${height}px` }}
         onDragOver={(event) => {
           if (!draggedAppointmentId) return;
           event.preventDefault();
-          autoScrollCalendarHorizontally(event.clientX, event.currentTarget as HTMLDivElement);
-          autoScrollCalendarVertically(event.clientY, event.currentTarget as HTMLDivElement);
+          autoScrollCalendarHorizontally(event.clientX, event.currentTarget);
+          autoScrollCalendarVertically(event.clientY, event.currentTarget);
           if (dropDate) {
             onDragHoverTarget?.(dropDate, dropPractitionerId);
           }
@@ -404,7 +427,7 @@ const Slot: React.FC<SlotProps> = ({
         {dropDate && onCreateAppointmentAt && !draggedAppointmentId ? (
           <button
             type="button"
-            aria-label="Create appointment in this calendar slot"
+            aria-label={createAppointmentLabel}
             className="absolute inset-0 z-[1] rounded-none!"
             onClick={(event) => {
               const parent = event.currentTarget.parentElement as HTMLDivElement;
@@ -522,6 +545,9 @@ const Slot: React.FC<SlotProps> = ({
                       className={`min-w-0 absolute inset-x-0 -inset-y-2 z-20 ${
                         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                       }`}
+                      aria-haspopup="dialog"
+                      aria-expanded={activePopoverKey === itemKey}
+                      aria-controls={appointmentPopoverId}
                       onClick={(event) => handleMarkerClick(event, itemKey)}
                       onDoubleClick={() => handleMarkerDoubleClick(ev)}
                       onContextMenu={(event) => handleMarkerContextMenu(event, ev)}
@@ -662,6 +688,9 @@ const Slot: React.FC<SlotProps> = ({
                     <button
                       type="button"
                       className={`h-full w-full flex items-center justify-between gap-2.5 pl-3 pr-3 text-left ${verticalPadding} ${cursorClass}`}
+                      aria-haspopup="dialog"
+                      aria-expanded={activePopoverKey === itemKey}
+                      aria-controls={appointmentPopoverId}
                       onClick={(event) => handleMarkerClick(event, itemKey)}
                       onDoubleClick={() => handleMarkerDoubleClick(ev)}
                       onContextMenu={(event) => handleMarkerContextMenu(event, ev)}
@@ -701,8 +730,8 @@ const Slot: React.FC<SlotProps> = ({
             )}
           </div>
         )}
-      </div>
-      {isMounted &&
+      </section>
+      {canPortal &&
         !draggedAppointmentId &&
         activeEvent &&
         activeRect &&
@@ -711,6 +740,7 @@ const Slot: React.FC<SlotProps> = ({
             appointment={activeEvent}
             invoicesByAppointmentId={invoicesByAppointmentId}
             canEditAppointments={canEditAppointments}
+            popoverId={appointmentPopoverId}
             popoverDialogRef={popoverDialogRef}
             popoverStyle={popoverStyle}
             handleViewAppointment={handleViewAppointment}
@@ -721,7 +751,7 @@ const Slot: React.FC<SlotProps> = ({
           />,
           document.body
         )}
-      {isMounted &&
+      {canPortal &&
         contextMenu &&
         contextMenuStyle &&
         createPortal(
@@ -740,4 +770,5 @@ const Slot: React.FC<SlotProps> = ({
   );
 };
 
+const Slot = React.memo(SlotComponent);
 export default Slot;

@@ -1,7 +1,34 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import CompanionHistoryPage from '@/app/features/companionHistory/pages/CompanionHistoryPage';
+
+expect.extend(toHaveNoViolations);
+
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: (loader: () => Promise<unknown>) => {
+    const source = loader.toString();
+    const LoadableComponent = (props: Record<string, unknown>) => {
+      if (source.includes('CompanionHistoryTimeline')) {
+        const MockTimeline = (
+          jest.requireMock(
+            '@/app/features/companionHistory/components/CompanionHistoryTimeline'
+          ) as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockTimeline {...props} />;
+      }
+
+      return null;
+    };
+
+    LoadableComponent.displayName = 'MockDynamicComponent';
+    return LoadableComponent;
+  },
+}));
 
 const pushMock = jest.fn();
 const startRouteLoaderMock = jest.fn();
@@ -68,8 +95,9 @@ jest.mock('@/app/stores/companionStore', () => ({
     useCompanionStoreMock(selector),
 }));
 
-jest.mock('@/app/ui/overlays/Loader', () => ({
-  YosemiteLoader: ({ testId }: any) => <div data-testid={testId}>Loading...</div>,
+jest.mock('@/app/ui/layout/PageSkeleton', () => ({
+  __esModule: true,
+  default: () => <div className="animate-pulse" data-testid="page-skeleton" />,
 }));
 
 describe('CompanionHistoryPage', () => {
@@ -103,15 +131,17 @@ describe('CompanionHistoryPage', () => {
     expect(pushMock).toHaveBeenCalledWith('/companions');
   });
 
-  it('shows loader when companions are still loading', () => {
+  it('shows skeleton when companions are still loading', () => {
     useCompanionStoreMock.mockImplementation((selector: (s: { status: string }) => unknown) =>
       selector({ status: 'loading' })
     );
 
     render(<CompanionHistoryPage />);
 
-    expect(screen.getByTestId('companions-history-loader')).toBeInTheDocument();
+    // Loading state renders PageSkeleton — heading must not appear yet
     expect(screen.queryByText('Companion Overview')).not.toBeInTheDocument();
+    // Skeleton container is present
+    expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
   });
 
   it('renders timeline and companion summary when companion id is present', () => {
@@ -142,6 +172,13 @@ describe('CompanionHistoryPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(startRouteLoaderMock).toHaveBeenCalledTimes(1);
     expect(pushMock).toHaveBeenCalledWith('/appointments');
+  });
+
+  it('has no axe violations on initial render', async () => {
+    const { container } = render(<CompanionHistoryPage />);
+    await screen.findByRole('heading', { level: 1, name: 'Companion Overview' });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('prefers safe backTo path and falls back for unsafe value', () => {

@@ -1,7 +1,6 @@
 'use client';
 import Link from 'next/link';
 import React, { useState } from 'react';
-import { Form } from 'react-bootstrap';
 import { Icon } from '@iconify/react/dist/iconify.js';
 
 import FormInputPass from '@/app/ui/inputs/FormInputPass/FormInputPass';
@@ -15,6 +14,7 @@ import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { getEmailValidationError, normalizeEmail } from '@/app/lib/validators';
 import { YosemiteLoader } from '@/app/ui/overlays/Loader';
 import { resolvePostAuthRedirect } from '@/app/lib/postAuthRedirect';
+import { setStorageItem } from '@/app/lib/browserStorage';
 import { defaultSidebarToCollapsed } from '@/app/lib/sidebarPreference';
 
 import '../AuthPages.css';
@@ -86,7 +86,7 @@ const SignIn = ({
       await signIn(normalizedEmail, password);
       defaultSidebarToCollapsed();
       // Set devAuth flag BEFORE redirect so DevRouteGuard can read it
-      globalThis.window?.sessionStorage?.setItem('devAuth', isDeveloper ? 'true' : 'false');
+      setStorageItem('session', 'devAuth', isDeveloper ? 'true' : 'false');
       const signedInRole =
         typeof useAuthStore.getState === 'function' ? useAuthStore.getState().role : role;
       const nextRoute = await resolvePostAuthRedirect({
@@ -94,7 +94,7 @@ const SignIn = ({
         redirectPath,
         isDeveloper,
       });
-      router.push(nextRoute);
+      router.replace(nextRoute);
     } catch (error: any) {
       setIsSubmitting(false);
       if (error?.code === 'UserNotConfirmedException') {
@@ -145,11 +145,11 @@ const SignIn = ({
           elevation-1
         `}
       >
-        <Form onSubmit={handleSignIn} className="flex h-full w-full flex-col gap-6">
+        <form onSubmit={handleSignIn} className="flex h-full w-full flex-col gap-6">
           <div className="flex w-full flex-col gap-6">
-            <div className="text-display-2 text-text-primary text-center auth-title">
+            <h1 className="text-display-2 text-text-primary text-center auth-title">
               {isDeveloper ? 'Sign in to your developer account' : 'Sign in'}
-            </div>
+            </h1>
             <div className="flex w-full flex-col gap-3">
               <FormInput
                 intype="email"
@@ -168,7 +168,10 @@ const SignIn = ({
                 value={password}
                 inlabel="Password"
                 autoComplete="current-password"
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setInputErrors((prev) => ({ ...prev, pError: undefined }));
+                }}
                 error={inputErrors.pError}
               />
               <div className="flex items-end justify-end">
@@ -185,7 +188,6 @@ const SignIn = ({
             <Primary
               text={isSubmitting ? 'Signing in...' : 'Sign in'}
               onClick={handleSignIn}
-              href="#"
               isDisabled={isSubmitting}
               style={{ width: '100%' }}
             />
@@ -197,7 +199,7 @@ const SignIn = ({
               </Link>
             </div>
           </div>
-        </Form>
+        </form>
       </div>
       <OtpModal
         email={normalizeEmail(email)}
