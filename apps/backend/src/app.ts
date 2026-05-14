@@ -12,11 +12,28 @@ import {
   registerSuperTokensErrorHandler,
 } from "@yosemite-crew/auth";
 
-initSuperTokens();
+function isSuperTokensEnabled(): boolean {
+  const disabled =
+    process.env.SUPERTOKENS_DISABLED === "true" ||
+    process.env.SUPERTOKENS_DISABLED === "1";
+
+  if (disabled) return false;
+
+  return Boolean(
+    process.env.SUPERTOKENS_CONNECTION_URI &&
+    process.env.AUTH_API_DOMAIN &&
+    process.env.AUTH_WEBSITE_DOMAIN,
+  );
+}
 
 export function createApp() {
   const app = express();
-  registerSuperTokensBeforeRoutes(app);
+
+  const superTokensEnabled = isSuperTokensEnabled();
+  if (superTokensEnabled) {
+    initSuperTokens();
+    registerSuperTokensBeforeRoutes(app);
+  }
   app.disable("x-powered-by");
 
   const limiter = rateLimit({
@@ -63,7 +80,18 @@ export function createApp() {
         },
         credentials: true,
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization"],
+        allowedHeaders: [
+          "Content-Type",
+          "Authorization",
+          "X-Requested-With",
+          "x-org-id",
+          "x-documenso-signature",
+          // SuperTokens headers (required when using cookie-based sessions)
+          "rid",
+          "fdi-version",
+          "anti-csrf",
+          "st-auth-mode",
+        ],
       }),
     );
   }
@@ -75,6 +103,8 @@ export function createApp() {
 
   app.get("/health", (_, res) => res.status(200).json({ status: "ok" }));
 
-  registerSuperTokensErrorHandler(app);
+  if (superTokensEnabled) {
+    registerSuperTokensErrorHandler(app);
+  }
   return app;
 }

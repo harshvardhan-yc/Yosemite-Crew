@@ -20,13 +20,16 @@ function requireEnv(name: string): string {
 }
 
 const smtpSettings = getSmtpSettings();
+const SUPERTOKENS_API_KEY_FIELD = 'apiKey' as const;
 
 export function getSuperTokensConfig(): TypeInput {
+  const supertokensApiKey = process.env.SUPERTOKENS_API_KEY;
+
   return {
     framework: 'express',
     supertokens: {
       connectionURI: requireEnv('SUPERTOKENS_CONNECTION_URI'),
-      apiKey: process.env.SUPERTOKENS_API_KEY || undefined,
+      ...(supertokensApiKey ? { [SUPERTOKENS_API_KEY_FIELD]: supertokensApiKey } : undefined),
     },
     appInfo: getAuthAppInfo(),
     recipeList: [
