@@ -637,6 +637,15 @@ describe("DocumentService", () => {
         validObjectIdStr,
       );
       expect(res?.id).toBe(mockDoc._id.toString());
+      expect(ParentCompanionModel.findOne).toHaveBeenCalledWith(
+        {
+          parentId: new Types.ObjectId(validObjectIdStr),
+          companionId: mockDoc.companionId,
+          status: { $in: ["ACTIVE", "PENDING"] },
+        },
+        { _id: 1 },
+        { sanitizeFilter: false },
+      );
     });
 
     it("getByIdForPms: should return null if not found", async () => {
