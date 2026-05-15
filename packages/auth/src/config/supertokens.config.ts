@@ -8,6 +8,8 @@ import { SMTPService } from 'supertokens-node/recipe/emailpassword/emaildelivery
 import { SMTPService as EmailVerificationSMTPService } from 'supertokens-node/recipe/emailverification/emaildelivery';
 import MultiFactorAuth from 'supertokens-node/recipe/multifactorauth';
 import TOTP from 'supertokens-node/recipe/totp';
+import Passwordless from 'supertokens-node/recipe/passwordless';
+import { SMTPService as PasswordlessSMTPService } from 'supertokens-node/recipe/passwordless/emaildelivery';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -46,7 +48,16 @@ export function getSuperTokensConfig(): TypeInput {
       }),
       TOTP.init(),
       MultiFactorAuth.init({
-        firstFactors: [MultiFactorAuth.FactorIds.EMAILPASSWORD],
+        firstFactors: [MultiFactorAuth.FactorIds.EMAILPASSWORD, 'otp-email'],
+      }),
+      Passwordless.init({
+        flowType: 'USER_INPUT_CODE',
+        contactMethod: 'EMAIL',
+        emailDelivery: {
+          service: new PasswordlessSMTPService({
+            smtpSettings,
+          }),
+        },
       }),
       Session.init(),
     ],
