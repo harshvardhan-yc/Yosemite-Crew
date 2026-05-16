@@ -1,132 +1,36 @@
+type Styler = Record<string, string | number>;
+
+const r = (featureType: string, elementType: string, ...stylers: Styler[]) => ({
+  featureType,
+  elementType,
+  stylers,
+});
+
 export const YC_MAP_STYLE = [
-  {
-    featureType: 'landscape',
-    elementType: 'geometry',
-    stylers: [{color: '#F5F7FA'}],
-  },
-  {
-    featureType: 'landscape.man_made',
-    elementType: 'geometry',
-    stylers: [{color: '#F0F4FA'}],
-  },
-  {
-    featureType: 'landscape.natural',
-    elementType: 'geometry',
-    stylers: [{color: '#EDF4EE'}],
-  },
-  {
-    featureType: 'water',
-    elementType: 'geometry',
-    stylers: [{color: '#C8DCF0'}],
-  },
-  {
-    featureType: 'water',
-    elementType: 'labels.text.fill',
-    stylers: [{color: '#247AED'}],
-  },
-  {
-    featureType: 'road.local',
-    elementType: 'geometry',
-    stylers: [{color: '#FFFFFF'}],
-  },
-  {
-    featureType: 'road.local',
-    elementType: 'geometry.stroke',
-    stylers: [{color: '#EAEAEA'}, {weight: 1}],
-  },
-  {
-    featureType: 'road.arterial',
-    elementType: 'geometry',
-    stylers: [{color: '#F5F8FF'}],
-  },
-  {
-    featureType: 'road.arterial',
-    elementType: 'geometry.stroke',
-    stylers: [{color: '#D4E3F8'}, {weight: 1}],
-  },
-  {
-    featureType: 'road.arterial',
-    elementType: 'labels.text.fill',
-    stylers: [{color: '#747473'}],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry',
-    stylers: [{color: '#E9F2FD'}],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry.stroke',
-    stylers: [{color: '#247AED'}, {weight: 1.5}],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'labels.text.fill',
-    stylers: [{color: '#1A5FBD'}],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'labels.text.stroke',
-    stylers: [{color: '#FFFFFF'}, {weight: 2}],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'geometry',
-    stylers: [{color: '#EEF2F8'}],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'labels',
-    stylers: [{visibility: 'off'}],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'geometry',
-    stylers: [{color: '#D4EDDA'}],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'labels.text.fill',
-    stylers: [{color: '#008F5D'}],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'labels',
-    stylers: [{visibility: 'simplified'}],
-  },
-  {
-    featureType: 'transit',
-    elementType: 'geometry',
-    stylers: [{color: '#E9F2FD'}],
-  },
-  {
-    featureType: 'transit.station',
-    elementType: 'labels.text.fill',
-    stylers: [{color: '#747473'}],
-  },
-  {
-    featureType: 'administrative',
-    elementType: 'geometry.stroke',
-    stylers: [{color: '#EAEAEA'}, {weight: 1}],
-  },
-  {
-    featureType: 'administrative.locality',
-    elementType: 'labels.text.fill',
-    stylers: [{color: '#302F2E'}],
-  },
-  {
-    featureType: 'administrative.neighborhood',
-    elementType: 'labels.text.fill',
-    stylers: [{color: '#747473'}],
-  },
-  {
-    featureType: 'all',
-    elementType: 'labels.text.fill',
-    stylers: [{color: '#302F2E'}],
-  },
-  {
-    featureType: 'all',
-    elementType: 'labels.text.stroke',
-    stylers: [{color: '#FFFFFF'}, {weight: 2}],
-  },
+  r('landscape', 'geometry', {color: '#F5F7FA'}),
+  r('landscape.man_made', 'geometry', {color: '#F0F4FA'}),
+  r('landscape.natural', 'geometry', {color: '#EDF4EE'}),
+  r('water', 'geometry', {color: '#C8DCF0'}),
+  r('water', 'labels.text.fill', {color: '#247AED'}),
+  r('road.local', 'geometry', {color: '#FFFFFF'}),
+  r('road.local', 'geometry.stroke', {color: '#EAEAEA'}, {weight: 1}),
+  r('road.arterial', 'geometry', {color: '#F5F8FF'}),
+  r('road.arterial', 'geometry.stroke', {color: '#D4E3F8'}, {weight: 1}),
+  r('road.arterial', 'labels.text.fill', {color: '#747473'}),
+  r('road.highway', 'geometry', {color: '#E9F2FD'}),
+  r('road.highway', 'geometry.stroke', {color: '#247AED'}, {weight: 1.5}),
+  r('road.highway', 'labels.text.fill', {color: '#1A5FBD'}),
+  r('road.highway', 'labels.text.stroke', {color: '#FFFFFF'}, {weight: 2}),
+  r('poi', 'geometry', {color: '#EEF2F8'}),
+  r('poi', 'labels', {visibility: 'off'}),
+  r('poi.park', 'geometry', {color: '#D4EDDA'}),
+  r('poi.park', 'labels.text.fill', {color: '#008F5D'}),
+  r('poi.park', 'labels', {visibility: 'simplified'}),
+  r('transit', 'geometry', {color: '#E9F2FD'}),
+  r('transit.station', 'labels.text.fill', {color: '#747473'}),
+  r('administrative', 'geometry.stroke', {color: '#EAEAEA'}, {weight: 1}),
+  r('administrative.locality', 'labels.text.fill', {color: '#302F2E'}),
+  r('administrative.neighborhood', 'labels.text.fill', {color: '#747473'}),
+  r('all', 'labels.text.fill', {color: '#302F2E'}),
+  r('all', 'labels.text.stroke', {color: '#FFFFFF'}, {weight: 2}),
 ];

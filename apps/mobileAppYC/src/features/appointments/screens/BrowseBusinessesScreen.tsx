@@ -62,8 +62,8 @@ const resolveTargetCompanionId = (
 ): string | null =>
   selectedId ??
   companions[0]?.id ??
-  (companions[0] as any)?._id ??
-  (companions[0] as any)?.identifier?.[0]?.value ??
+  companions[0]?._id ??
+  companions[0]?.identifier?.[0]?.value ??
   null;
 
 export const BrowseBusinessesScreen: React.FC = () => {

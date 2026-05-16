@@ -43,10 +43,10 @@ const resolveDistanceText = (
   let distanceMi: number | undefined;
   if (business.distanceMi != null) {
     distanceMi = business.distanceMi;
-  } else if (business.distanceMeters != null) {
-    distanceMi = business.distanceMeters / 1609.344;
-  } else {
+  } else if (business.distanceMeters == null) {
     return undefined;
+  } else {
+    distanceMi = business.distanceMeters / 1609.344;
   }
   if (distanceUnit === 'km') {
     return `${convertDistance(distanceMi, 'mi', 'km').toFixed(1)} km`;
@@ -55,7 +55,7 @@ const resolveDistanceText = (
 };
 
 const resolveRatingText = (business: VetBusiness): string | undefined =>
-  business.rating != null ? `${business.rating}` : undefined;
+  business.rating == null ? undefined : `${business.rating}`;
 
 const ClinicBottomSheet = forwardRef<
   ClinicBottomSheetRef,
@@ -97,7 +97,8 @@ const ClinicBottomSheet = forwardRef<
     }, []);
 
     const renderItem = useCallback(
-      ({item}: {item: VetBusiness}) => {
+      (renderItemInfo: {item: VetBusiness}) => {
+        const {item} = renderItemInfo;
         const isSelected = item.id === selectedId;
         return (
           <View

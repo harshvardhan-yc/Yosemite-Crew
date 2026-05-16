@@ -41,6 +41,12 @@ type Nav = NativeStackNavigationProp<AppointmentStackParamList>;
 
 const MOCK_CLINIC_MAP = new Map(MOCK_CLINICS.map(c => [c.id, c]));
 
+const resolveCompanionSpecies = (raw: string): string => {
+  if (raw === 'cat') return 'feline';
+  if (raw === 'dog') return 'canine';
+  return raw;
+};
+
 export const BusinessDetailsScreen: React.FC = () => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -134,8 +140,7 @@ export const BusinessDetailsScreen: React.FC = () => {
       const serviceSpecies = specialtyToSpecies[specialtyName];
       if (serviceSpecies) {
         const raw = (selectedCompanion.category as string)?.toLowerCase() ?? '';
-        const companionSpecies =
-          raw === 'cat' ? 'feline' : raw === 'dog' ? 'canine' : raw;
+        const companionSpecies = resolveCompanionSpecies(raw);
         if (companionSpecies !== serviceSpecies) {
           Alert.alert(
             'Species Mismatch',
