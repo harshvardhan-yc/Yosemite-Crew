@@ -20,8 +20,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
 
-    if let apiKey = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String {
+    if let apiKey = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String, !apiKey.isEmpty {
       GMSServices.provideAPIKey(apiKey)
+    } else {
+      assertionFailure("GOOGLE_MAPS_API_KEY is not set. Copy ios/mobileAppYC/Secrets.xcconfig.example to Secrets.xcconfig and add your key.")
     }
 
     // ✅ Firebase

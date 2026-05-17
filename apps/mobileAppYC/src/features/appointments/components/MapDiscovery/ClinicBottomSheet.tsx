@@ -11,6 +11,7 @@ import BottomSheet, {
   BottomSheetFlatList,
   type BottomSheetFlatListMethods,
 } from '@gorhom/bottom-sheet';
+import type {SharedValue} from 'react-native-reanimated';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {AppointmentStackParamList} from '@/navigation/types';
 import type {VetBusiness} from '../../types';
@@ -31,6 +32,7 @@ export interface ClinicBottomSheetProps {
   fallbacks: Record<string, {photo?: string | null}>;
   distanceUnit: 'km' | 'mi';
   filterHeader?: React.ReactNode;
+  animatedIndex?: SharedValue<number>;
 }
 
 const SNAP_POINTS = ['22%', '88%'];
@@ -62,7 +64,15 @@ const ClinicBottomSheet = forwardRef<
   ClinicBottomSheetProps
 >(
   (
-    {clinics, selectedId, navigation, fallbacks, distanceUnit, filterHeader},
+    {
+      clinics,
+      selectedId,
+      navigation,
+      fallbacks,
+      distanceUnit,
+      filterHeader,
+      animatedIndex,
+    },
     ref,
   ) => {
     const {t} = useTranslation();
@@ -150,7 +160,8 @@ const ClinicBottomSheet = forwardRef<
         index={0}
         enablePanDownToClose={false}
         handleIndicatorStyle={styles.handle}
-        backgroundStyle={styles.background}>
+        backgroundStyle={styles.background}
+        animatedIndex={animatedIndex}>
         <BottomSheetFlatList<VetBusiness>
           ref={flatListRef}
           data={clinics}

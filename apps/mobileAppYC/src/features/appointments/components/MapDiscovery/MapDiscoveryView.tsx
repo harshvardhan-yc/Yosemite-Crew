@@ -1,5 +1,13 @@
 import React, {useCallback, useMemo, useRef} from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {StyleSheet, Switch, Text, View} from 'react-native';
+import {
+  createAnimatedComponent,
+  useSharedValue,
+  useAnimatedStyle,
+  interpolate,
+  Extrapolation,
+} from 'react-native-reanimated';
+
 import {useTranslation} from 'react-i18next';
 import MapView, {Marker, PROVIDER_GOOGLE, type Region} from 'react-native-maps';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -13,11 +21,16 @@ import {useTheme} from '@/hooks';
 import {Header} from '@/shared/components/common/Header/Header';
 import {SearchBar} from '@/shared/components/common/SearchBar/SearchBar';
 import {FilterPills} from '@/shared/components/common/FilterPills';
+import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
 import ClinicMapPin from './ClinicMapPin';
 import ClusterMapPin from './ClusterMapPin';
 import ClinicBottomSheet, {
   type ClinicBottomSheetRef,
 } from './ClinicBottomSheet';
+
+const AnimatedView = createAnimatedComponent(
+  View,
+) as unknown as React.ComponentType<any>;
 
 const INITIAL_LAT_DELTA = 0.0922;
 const INITIAL_LNG_DELTA = 0.0421;
@@ -94,6 +107,17 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
   );
   const mapRef = useRef<MapView>(null);
   const bottomSheetRef = useRef<ClinicBottomSheetRef>(null);
+  const animatedSheetIndex = useSharedValue(0);
+
+  const toggleAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      animatedSheetIndex.value,
+      [0, 0.15],
+      [1, 0],
+      Extrapolation.CLAMP,
+    ),
+    pointerEvents: animatedSheetIndex.value > 0.1 ? 'none' : 'box-none',
+  }));
 
   const initialRegion = useMemo(
     () => buildInitialRegion(userLocation),
@@ -127,37 +151,18 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
 
   const filterHeader = useMemo(
     () => (
-      <View style={styles.filterHeaderColumn}>
-        <TouchableOpacity
-          style={[styles.openNowChip, openNow && styles.openNowChipActive]}
-          activeOpacity={0.8}
-          onPress={() => onOpenNowChange(!openNow)}>
-          <Text
-            style={[styles.openNowText, openNow && styles.openNowTextActive]}>
-            {t('mapDiscovery.openNow')}
-          </Text>
-        </TouchableOpacity>
-        <FilterPills<BusinessCategory | undefined>
-          options={categories}
-          selected={category}
-          onSelect={onCategoryChange}
-        />
-      </View>
+      <FilterPills<BusinessCategory | undefined>
+        options={categories}
+        selected={category}
+        onSelect={onCategoryChange}
+      />
     ),
-    [
-      openNow,
-      onOpenNowChange,
-      category,
-      onCategoryChange,
-      styles,
-      categories,
-      t,
-    ],
+    [category, onCategoryChange, categories],
   );
 
-  const topBarStyle = useMemo(
-    () => [styles.topBar, {paddingTop: insets.top + theme.spacing['2']}],
-    [styles.topBar, insets.top, theme.spacing],
+  const headerCardStyle = useMemo(
+    () => [styles.headerCard, {paddingTop: insets.top}],
+    [styles.headerCard, insets.top],
   );
 
   return (
@@ -200,25 +205,47 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
           );
         })}
       </MapView>
-      <View style={topBarStyle} pointerEvents="box-none">
-        <View style={styles.headerCard} pointerEvents="auto">
-          <Header
-            title={t('mapDiscovery.title')}
-            showBackButton
-            onBack={onBack}
-            glass={false}
-          />
-          <SearchBar
-            placeholder={t('mapDiscovery.searchPlaceholder')}
-            mode="input"
-            value={searchQuery}
-            onChangeText={onSearchChange}
-            onSubmitEditing={onSearchSubmit}
-            onIconPress={onSearchSubmit}
-            containerStyle={styles.searchBar}
-          />
+      <View style={styles.topBar} pointerEvents="box-none">
+        <View style={styles.headerShadowWrapper} pointerEvents="auto">
+          <LiquidGlassCard
+            glassEffect="clear"
+            interactive={false}
+            shadow="none"
+            colorScheme="light"
+            style={headerCardStyle}
+            fallbackStyle={styles.headerCardFallback}>
+            <Header
+              title={t('mapDiscovery.title')}
+              showBackButton
+              onBack={onBack}
+              glass={false}
+            />
+            <SearchBar
+              placeholder={t('mapDiscovery.searchPlaceholder')}
+              mode="input"
+              value={searchQuery}
+              onChangeText={onSearchChange}
+              onSubmitEditing={onSearchSubmit}
+              onIconPress={onSearchSubmit}
+              containerStyle={styles.searchBar}
+            />
+          </LiquidGlassCard>
         </View>
       </View>
+      <AnimatedView style={[styles.openNowMapToggle, toggleAnimatedStyle]}>
+        <View style={styles.openNowToggleCard} pointerEvents="auto">
+          <Text style={styles.openNowToggleLabel}>Open</Text>
+          <Switch
+            value={openNow}
+            onValueChange={onOpenNowChange}
+            trackColor={{
+              false: theme.colors.borderMuted,
+              true: theme.colors.primary,
+            }}
+            thumbColor={theme.colors.white}
+          />
+        </View>
+      </AnimatedView>
       {searchResultsOverlay}
       <ClinicBottomSheet
         ref={bottomSheetRef}
@@ -228,6 +255,7 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
         fallbacks={fallbacks}
         distanceUnit={distanceUnit}
         filterHeader={filterHeader}
+        animatedIndex={animatedSheetIndex}
       />
     </View>
   );
@@ -244,47 +272,72 @@ const createStyles = (theme: any) =>
       top: 0,
       left: 0,
       right: 0,
-      paddingHorizontal: theme.spacing['4'],
       zIndex: 10,
+      backgroundColor: 'transparent',
+    },
+    headerShadowWrapper: {
+      borderTopLeftRadius: 0,
+      borderTopRightRadius: 0,
+      borderBottomLeftRadius: theme.borderRadius['2xl'],
+      borderBottomRightRadius: theme.borderRadius['2xl'],
+      shadowColor: theme.colors.neutralShadow ?? '#000000',
+      shadowOffset: {width: 0, height: 12},
+      shadowOpacity: 0.14,
+      shadowRadius: 18,
+      elevation: 10,
+      backgroundColor: 'transparent',
     },
     headerCard: {
-      backgroundColor: theme.colors.cardOverlay,
-      borderRadius: theme.borderRadius.xl,
-      padding: theme.spacing['3'],
+      borderTopLeftRadius: 0,
+      borderTopRightRadius: 0,
+      borderBottomLeftRadius: theme.borderRadius['2xl'],
+      borderBottomRightRadius: theme.borderRadius['2xl'],
+      paddingHorizontal: 0,
+      paddingTop: 0,
+      paddingBottom: theme.spacing['3'],
+      borderWidth: 0,
+      borderColor: 'transparent',
+      overflow: 'visible' as const,
       gap: theme.spacing['2'],
-      ...theme.shadows.md,
-      shadowColor: theme.colors.neutralShadow,
+    },
+    headerCardFallback: {
+      borderTopLeftRadius: 0,
+      borderTopRightRadius: 0,
+      borderBottomLeftRadius: theme.borderRadius['2xl'],
+      borderBottomRightRadius: theme.borderRadius['2xl'],
+      borderWidth: 0,
+      borderColor: 'transparent',
     },
     searchBar: {
-      marginBottom: 0,
+      marginBottom: theme.spacing['1'],
+      marginHorizontal: theme.spacing['6'],
     },
-    filterHeaderColumn: {
-      gap: theme.spacing['2'],
-      paddingBottom: theme.spacing['1'],
-    },
-    openNowChip: {
-      alignSelf: 'flex-start',
-      marginLeft: theme.spacing['4'],
+    openNowMapToggle: {
+      position: 'absolute',
+      bottom: '23%',
+      left: 0,
+      right: 0,
       paddingHorizontal: theme.spacing['4'],
-      paddingVertical: theme.spacing['1.25'],
-      height: 40,
-      borderRadius: theme.borderRadius.md,
-      borderWidth: 1,
-      borderColor: theme.colors.text,
-      backgroundColor: theme.colors.white,
-      justifyContent: 'center',
+      zIndex: 5,
+    },
+    openNowToggleCard: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
       alignItems: 'center',
+      gap: theme.spacing['3'],
+      backgroundColor: theme.colors.background,
+      borderRadius: theme.borderRadius.full,
+      paddingHorizontal: theme.spacing['4'],
+      paddingVertical: theme.spacing['2'],
+      shadowColor: '#000',
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.15,
+      shadowRadius: 4,
+      elevation: 4,
     },
-    openNowChipActive: {
-      backgroundColor: theme.colors.lightBlueBackground,
-      borderColor: theme.colors.primary,
-    },
-    openNowText: {
+    openNowToggleLabel: {
       ...theme.typography.pillSubtitleBold15,
       color: theme.colors.text,
-    },
-    openNowTextActive: {
-      color: theme.colors.primary,
     },
   });
 
