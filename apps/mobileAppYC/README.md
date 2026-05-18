@@ -57,6 +57,99 @@ This guide will walk you through setting up the mobile app on your local machine
 
 ---
 
+### Reference Development Environment
+
+The mobile app is known to build on the following local setup. Contributors do not need the exact same machine, but matching the major tooling versions below is the safest starting point when debugging native iOS or Android build failures.
+
+#### macOS / shell
+
+| Tool   | Version / value                 |
+| ------ | ------------------------------- |
+| macOS  | `26.4.1`                        |
+| CPU    | Apple Silicon `arm64`, Apple M4 |
+| Memory | `16 GB`                         |
+| Shell  | `zsh 5.9` at `/bin/zsh`         |
+
+#### JavaScript / package tooling
+
+| Tool                        | Version / value                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| Node.js                     | `24.7.0`                                                                            |
+| Node path                   | `/opt/homebrew/bin/node`                                                            |
+| npm                         | `11.5.1` at `/opt/homebrew/bin/npm`                                                 |
+| pnpm                        | `8.15.6`                                                                            |
+| Yarn                        | Not installed / not used                                                            |
+| nvm                         | `0.40.3` installed; active React Native CLI shell uses the Homebrew Node path above |
+| React                       | `19.1.0`                                                                            |
+| React Native                | `0.81.4`                                                                            |
+| React Native CLI            | `@react-native-community/cli 20.0.0`                                                |
+| Global React Native package | Not installed                                                                       |
+
+Use `pnpm` for this repository. Prefer `pnpm exec react-native ...` over `npx react-native ...` when matching the repo-local CLI exactly.
+
+#### iOS tooling
+
+| Tool                 | Version / value                                                              |
+| -------------------- | ---------------------------------------------------------------------------- |
+| Xcode                | `26.0`                                                                       |
+| Xcode build          | `17A324`                                                                     |
+| xcodebuild path      | `/usr/bin/xcodebuild`                                                        |
+| iOS SDK              | `26.0`                                                                       |
+| Other Apple SDKs     | DriverKit `25.0`, macOS `26.0`, tvOS `26.0`, visionOS `26.0`, watchOS `26.0` |
+| CocoaPods            | `1.16.2`                                                                     |
+| CocoaPods path       | `/Users/harshitwandhare/.rbenv/shims/pod`                                    |
+| Ruby                 | `3.3.9` at `/Users/harshitwandhare/.rbenv/shims/ruby`                        |
+| RubyGems             | `3.5.22`                                                                     |
+| Bundler              | `2.5.22`                                                                     |
+| Relevant gems        | `cocoapods 1.16.2`, `xcodeproj 1.27.0`, `activesupport 7.2.2.2`              |
+| iOS Hermes           | Enabled                                                                      |
+| iOS New Architecture | Enabled                                                                      |
+
+If an iOS build works on this setup but fails on a newer Xcode, first compare `xcodebuild -version` and the installed iOS SDK. For example, `Xcode 26.5` with `iOS SDK 26.5` may surface newer native compiler warnings than `Xcode 26.0`.
+
+#### Android tooling
+
+| Tool                     | Version / value                              |
+| ------------------------ | -------------------------------------------- | ----------------------- |
+| Java                     | `17.0.16`                                    |
+| JRE/JDK                  | OpenJDK Zulu `17.0.16+8-LTS`                 |
+| javac path               | `/usr/bin/javac`                             |
+| Android Studio           | `2025.1 AI-251.26094.121.2512.13930704`      |
+| Android SDK path         | `/Users/harshitwandhare/Library/Android/sdk` |
+| Android SDK API levels   | `35`, `36`                                   |
+| Android SDK Build Tools  | `35.0.0`                                     |
+| Android emulator         | `36.1.9.0`                                   |
+| adb                      | `1.0.41`, platform-tools `36.0.0-13206524`   |
+| Android system image     | `android-35                                  | Google Play ARM 64 v8a` |
+| Android NDK              | Not installed                                |
+| Android Hermes           | Enabled                                      |
+| Android New Architecture | Enabled                                      |
+| Gradle wrapper           | `8.14.3`                                     |
+
+#### Other native tooling
+
+| Tool     | Version / value                                 |
+| -------- | ----------------------------------------------- |
+| Watchman | `2025.09.01.00` at `/opt/homebrew/bin/watchman` |
+
+To compare a contributor machine against this setup, run:
+
+```sh
+pnpm exec react-native info
+node -v
+pnpm -v
+ruby -v
+gem -v
+bundle -v
+pod --version
+xcodebuild -version
+java -version
+javac -version
+watchman --version
+```
+
+---
+
 ### Step 1: Configure Your AWS Credentials
 
 Before you begin, the AWS Amplify CLI needs credentials to deploy resources to your AWS account.
@@ -144,7 +237,7 @@ Several config files are gitignored because they contain keys. We provide exampl
 
 Copy and tick off each item before trying to build:
 
-- [ ] **A. Amplify / Cognito** — `amplify_outputs.json`
+- [ ] **A. Amplify / Cognito** — `devamplify_outputs.json` (+ `prodamplify_outputs.json` if testing prod auth)
 - [ ] **B. JS variables** — `variables.local.ts`
 - [ ] **C. Android: Firebase** — `google-services.json`
 - [ ] **D. Android: Native keys** — `strings.xml` + `gradle.properties` + `local.properties`
@@ -153,21 +246,29 @@ Copy and tick off each item before trying to build:
 
 ---
 
-#### A. Amplify / Cognito (`amplify_outputs.json`)
+#### A. Amplify / Cognito (`devamplify_outputs.json` / `prodamplify_outputs.json`)
 
-The app uses AWS Amplify for authentication. Without this file the app will not boot.
+The app uses AWS Amplify for authentication. It automatically selects the correct Cognito pool at startup based on `USE_DEV_API` in `variables.local.ts` — **no manual file swapping needed**.
 
-**Option 1 — Use the shared contributor pool (no AWS account needed, recommended for UI work):**
+- `USE_DEV_API = true` → configures Amplify with `devamplify_outputs.json` → authenticates against the **dev Cognito pool** → hits `devapi.yosemitecrew.com`
+- `USE_DEV_API = false` → configures Amplify with `prodamplify_outputs.json` → authenticates against the **prod Cognito pool** → hits `api.yosemitecrew.com`
+
+Both files are gitignored and must be created locally. The app imports both files during JS bundling, so both must exist and contain valid JSON even if you only use the dev API. The Cognito pool and API must always match — mixing them causes 401s on every request.
+
+**Option 1 — Use the shared contributor dev pool (no AWS account needed, recommended for UI work):**
 
 ```sh
-cp apps/mobileAppYC/amplify_outputs.example.json apps/mobileAppYC/amplify_outputs.json
+cp apps/mobileAppYC/amplify_outputs.example.json apps/mobileAppYC/devamplify_outputs.json
+cp apps/mobileAppYC/amplify_outputs.example.json apps/mobileAppYC/prodamplify_outputs.json
 ```
 
-This connects you to a shared development Cognito pool. Log in with any email address via OTP, or use the review-login bypass (`test@yosemitecrew.com`) when running against the dev API.
+This connects you to the shared development Cognito pool (`eu-central-1_2jEniI2eQ`). Log in with any email address via OTP, or use the review-login bypass (`test@yosemitecrew.com`) when `enableReviewLogin` is active on the dev API. This is a shared dev environment — do not store sensitive data in it.
+
+> For normal development, keep `USE_DEV_API = true`. The `prodamplify_outputs.json` file can be the same stub as `devamplify_outputs.json`; it just needs to be present and valid so Metro/Hermes can compile the bundle.
 
 **Option 2 — Spin up your own isolated sandbox (requires AWS account):**
 
-Follow Step 3 above to run `npx ampx sandbox`. It generates a fresh `amplify_outputs.json` pointing to your own Cognito pool. No further changes needed.
+Follow Step 3 above to run `npx ampx sandbox`. Copy the generated `amplify_outputs.json` to `devamplify_outputs.json`. No further changes needed.
 
 ---
 
@@ -175,20 +276,20 @@ Follow Step 3 above to run `npx ampx sandbox`. It generates a fresh `amplify_out
 
 This file controls which backend environment the app points to and holds optional API keys for third-party services (Stream Chat, Stripe, Google Places, PostHog). It is gitignored and never committed.
 
-```sh
-cp apps/mobileAppYC/src/config/variables.local.ts apps/mobileAppYC/src/config/variables.local.ts
-# (the file already exists as a fully-commented template — open it and read the top section)
-```
-
-The only required change for development is the **master environment switch** at the top of the file:
+The file already exists in the repo as a fully-commented template — open it and read the top section. The only required change for development is the **master environment switch** at the top:
 
 ```ts
-// true  → dev backend  (https://devapi.yosemitecrew.com)
-// false → production backend  ← default
+// true  → dev Cognito pool + devapi.yosemitecrew.com
+// false → prod Cognito pool + api.yosemitecrew.com
 const USE_DEV_API = true;
 ```
 
-Set `USE_DEV_API = true` to route all API calls to the development backend. Everything else in the file has sensible defaults and inline comments explaining each option.
+Setting `USE_DEV_API = true` does two things automatically:
+
+1. Routes all API calls to `devapi.yosemitecrew.com`
+2. Loads `devamplify_outputs.json` so the Cognito pool matches the backend
+
+Everything else in the file has sensible defaults and inline comments explaining each option.
 
 PostHog mobile analytics are disabled by default. If you want to enable them for a non-production build, configure `POSTHOG_CONFIG` with a project API key and host, and only switch `enabled` or `defaultOptIn` on after your privacy/consent flow is ready.
 
@@ -214,6 +315,8 @@ The stub file has the correct structure. Firebase init will log a warning on sta
 ---
 
 #### D. Android: Native Keys (`strings.xml` + `gradle.properties` + `local.properties`)
+
+These files are local machine/project configuration and are intentionally gitignored. Keep them out of commits; use the example files below as the source of truth.
 
 1. **API keys** (Facebook, Google Maps):
 
@@ -264,6 +367,8 @@ Then add this stub file to the Xcode project the same way. Push notifications wi
 ---
 
 #### F. iOS: Native Keys (`Info.plist` + `.xcode.env.local`)
+
+`AppDelegate.swift` is application source code and must stay tracked. Do not place API keys or service tokens in `AppDelegate.swift`; put iOS native keys in the gitignored `Info.plist` or `GoogleService-Info.plist` files created below.
 
 1. **Info.plist** — contains Facebook SDK keys, Google Sign-In reverse client ID, and permission usage strings:
 

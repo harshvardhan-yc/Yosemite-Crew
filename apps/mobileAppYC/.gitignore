@@ -5,6 +5,8 @@
 # Xcode
 #
 build/
+# Local developer secrets — never commit
+ios/mobileAppYC/Secrets.xcconfig
 *.pbxuser
 !default.pbxuser
 *.mode1v3
@@ -21,6 +23,8 @@ DerivedData
 *.ipa
 *.xcuserstate
 **/.xcode.env.local
+ios/GoogleService-Info.plist
+ios/mobileAppYC/Info.plist
 
 # Android/IntelliJ
 #
@@ -28,6 +32,10 @@ build/
 .idea
 .gradle
 local.properties
+android/app/google-services.json
+android/app/src/main/res/values/strings.xml
+android/gradle.properties
+android/local.properties
 *.iml
 *.hprof
 .cxx/
@@ -79,3 +87,5 @@ yarn-error.log
 .amplify
 amplifyconfiguration*
 apps/mobileAppYC/amplify_outputs.json
+devamplify_outputs.json
+prodamplify_outputs.json

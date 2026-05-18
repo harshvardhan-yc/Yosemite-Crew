@@ -40,8 +40,9 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
     // Redirect any relative `setup/mockTheme` imports to the shared test helper
     '.*/setup/mockTheme$': '<rootDir>/__tests__/setup/mockTheme.ts',
-    // Mock amplify_outputs.json (gitignored file, safe mock for CI/CD)
-    '^.*/amplify_outputs\\.json$': '<rootDir>/__mocks__/amplify_outputs.json',
+    // Mock all amplify output files (gitignored, safe mock for CI/CD)
+    '^.*/(dev|prod)?amplify_outputs\\.json$':
+      '<rootDir>/__mocks__/amplify_outputs.json',
     // Stub asset imports if needed
     '\\.(svg)$': '<rootDir>/__mocks__/svgMock.js',
     '\\.(png|jpg|jpeg|gif|webp|bmp)$': '<rootDir>/__mocks__/fileMock.js',
@@ -57,6 +58,7 @@ module.exports = {
     '^react-native-pdf$': '<rootDir>/__mocks__/react-native-pdf.js',
     '^react-native-calendar-events$':
       '<rootDir>/__mocks__/react-native-calendar-events.js',
+    '^react-native-maps$': '<rootDir>/__mocks__/react-native-maps.js',
   },
   testPathIgnorePatterns: [
     '/node_modules/',
