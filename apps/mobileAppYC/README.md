@@ -242,7 +242,9 @@ Copy and tick off each item before trying to build:
 - [ ] **C. Android: Firebase** — `google-services.json`
 - [ ] **D. Android: Native keys** — `strings.xml` + `gradle.properties` + `local.properties`
 - [ ] **E. iOS: Firebase** — `GoogleService-Info.plist`
-- [ ] **F. iOS: Native keys** — `Info.plist` + `.xcode.env.local` (if needed)
+- [ ] **F. iOS: Native keys** — `Info.plist` + `Secrets.xcconfig` + `.xcode.env.local` (if needed)
+
+All committed setup templates live under `apps/mobileAppYC/config-templates/`. Files copied out of that folder into `android/`, `ios/`, or the app root are local-only unless this README explicitly says otherwise.
 
 ---
 
@@ -258,8 +260,10 @@ Both files are gitignored and must be created locally. The app imports both file
 **Option 1 — Use the shared contributor dev pool (no AWS account needed, recommended for UI work):**
 
 ```sh
-cp apps/mobileAppYC/amplify_outputs.example.json apps/mobileAppYC/devamplify_outputs.json
-cp apps/mobileAppYC/amplify_outputs.example.json apps/mobileAppYC/prodamplify_outputs.json
+cp apps/mobileAppYC/config-templates/amplify/amplify_outputs.example.json \
+   apps/mobileAppYC/devamplify_outputs.json
+cp apps/mobileAppYC/config-templates/amplify/amplify_outputs.example.json \
+   apps/mobileAppYC/prodamplify_outputs.json
 ```
 
 This connects you to the shared development Cognito pool (`eu-central-1_2jEniI2eQ`). Log in with any email address via OTP, or use the review-login bypass (`test@yosemitecrew.com`) when `enableReviewLogin` is active on the dev API. This is a shared dev environment — do not store sensitive data in it.
@@ -274,7 +278,7 @@ Follow Step 3 above to run `npx ampx sandbox`. Copy the generated `amplify_outpu
 
 #### B. JavaScript Variables (`variables.local.ts`)
 
-This file controls which backend environment the app points to and holds optional API keys for third-party services (Stream Chat, Stripe, Google Places, PostHog). It is gitignored and never committed.
+This file controls which backend environment the app points to and holds optional API keys for JavaScript/API services (Stream Chat, Stripe, Google Places web services, PostHog). It is gitignored and never committed.
 
 The file already exists in the repo as a fully-commented template — open it and read the top section. The only required change for development is the **master environment switch** at the top:
 
@@ -290,6 +294,8 @@ Setting `USE_DEV_API = true` does two things automatically:
 2. Loads `devamplify_outputs.json` so the Cognito pool matches the backend
 
 Everything else in the file has sensible defaults and inline comments explaining each option.
+
+`GOOGLE_PLACES_CONFIG.apiKey` is used by the React Native JavaScript Google Places service. It is separate from the native Google Maps SDK keys used by Android and iOS map rendering.
 
 PostHog mobile analytics are disabled by default. If you want to enable them for a non-production build, configure `POSTHOG_CONFIG` with a project API key and host, and only switch `enabled` or `defaultOptIn` on after your privacy/consent flow is ready.
 
@@ -318,33 +324,34 @@ The stub file has the correct structure. Firebase init will log a warning on sta
 
 These files are local machine/project configuration and are intentionally gitignored. Keep them out of commits; use the example files below as the source of truth.
 
-1. **API keys** (Facebook, Google Maps):
+1. **Facebook SDK keys**:
 
    ```sh
    cp apps/mobileAppYC/config-templates/android/strings.example.xml \
       apps/mobileAppYC/android/app/src/main/res/values/strings.xml
    ```
 
-   Open the file and replace `YOUR_FACEBOOK_APP_ID`, `YOUR_FACEBOOK_CLIENT_TOKEN`, and `YOUR_GOOGLE_MAPS_API_KEY` with real values. Facebook login and Google Maps will not work with placeholders, but the app still builds and runs.
+   Open the file and replace `YOUR_FACEBOOK_APP_ID` and `YOUR_FACEBOOK_CLIENT_TOKEN` with real values. Facebook login will not work with placeholders, but the app still builds and runs.
 
 2. **Gradle properties** (build settings + release signing):
 
    ```sh
-   cp apps/mobileAppYC/android/gradle.properties.example \
+   cp apps/mobileAppYC/config-templates/android/gradle.properties.example \
       apps/mobileAppYC/android/gradle.properties
    ```
 
    For debug builds no further changes are needed. Release/bundle builds require filling in the four keystore fields at the bottom of the file (`YC_RELEASE_STORE_FILE`, `YC_RELEASE_STORE_PASSWORD`, `YC_RELEASE_KEY_ALIAS`, `YC_RELEASE_KEY_PASSWORD`).
 
-3. **Android SDK path** (`local.properties`):
+3. **Android SDK path + Google Maps SDK key** (`local.properties`):
    ```sh
-   cp apps/mobileAppYC/android/local.properties.example \
+   cp apps/mobileAppYC/config-templates/android/local.properties.example \
       apps/mobileAppYC/android/local.properties
    ```
-   Open the file and set `sdk.dir` to your local Android SDK path. If you open the project in Android Studio it will generate this file automatically — you can skip this step in that case.
+   Open the file and set `sdk.dir` to your local Android SDK path. If you open the project in Android Studio it may generate this file automatically; still add `MAPS_API_KEY` afterward if you need Google Maps rendering.
    ```
    # macOS example:
    sdk.dir=/Users/YOUR_USERNAME/Library/Android/sdk
+   MAPS_API_KEY=YOUR_ANDROID_GOOGLE_MAPS_API_KEY
    ```
 
 ---
@@ -366,11 +373,11 @@ Then add this stub file to the Xcode project the same way. Push notifications wi
 
 ---
 
-#### F. iOS: Native Keys (`Info.plist` + `.xcode.env.local`)
+#### F. iOS: Native Keys (`Info.plist` + `Secrets.xcconfig` + `.xcode.env.local`)
 
-`AppDelegate.swift` is application source code and must stay tracked. Do not place API keys or service tokens in `AppDelegate.swift`; put iOS native keys in the gitignored `Info.plist` or `GoogleService-Info.plist` files created below.
+`AppDelegate.swift` is application source code and must stay tracked. Do not place API keys or service tokens in `AppDelegate.swift`; put iOS native keys in the gitignored `Info.plist`, `GoogleService-Info.plist`, or `Secrets.xcconfig` files created below.
 
-1. **Info.plist** — contains Facebook SDK keys, Google Sign-In reverse client ID, and permission usage strings:
+1. **Info.plist** — contains Facebook SDK keys, Google Sign-In reverse client ID, a `GMSApiKey` placeholder, and permission usage strings:
 
    ```sh
    cp apps/mobileAppYC/config-templates/ios/Info.plist.example \
@@ -387,7 +394,16 @@ Then add this stub file to the Xcode project the same way. Push notifications wi
 
    Facebook and Google Sign-In social auth will not work with placeholders, but OTP login and everything else in the app will function normally.
 
-2. **`.xcode.env.local`** — tells Xcode's build scripts where Node.js is on your machine. Required for Xcode builds (the Metro bundler script phase uses it). Create it manually:
+2. **Secrets.xcconfig** — contains the iOS Google Maps SDK key consumed by `Info.plist` as `$(GOOGLE_MAPS_API_KEY)`:
+
+   ```sh
+   cp apps/mobileAppYC/config-templates/ios/Secrets.xcconfig.example \
+      apps/mobileAppYC/ios/mobileAppYC/Secrets.xcconfig
+   ```
+
+   Open the file and replace `YOUR_IOS_GOOGLE_MAPS_API_KEY`. Google Maps rendering will not work with the placeholder.
+
+3. **`.xcode.env.local`** — tells Xcode's build scripts where Node.js is on your machine. Required for Xcode builds (the Metro bundler script phase uses it). Create it manually:
    ```sh
    echo "export NODE_BINARY=$(command -v node)" > apps/mobileAppYC/ios/.xcode.env.local
    ```
