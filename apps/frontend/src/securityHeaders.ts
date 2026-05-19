@@ -87,7 +87,7 @@ export const buildContentSecurityPolicy = ({
       .filter(Boolean)
       .join(' '),
     "style-src-attr 'unsafe-inline'",
-    "font-src 'self' https://fonts.gstatic.com",
+    "font-src 'self' https://fonts.gstatic.com https://cal.com https://app.cal.com",
     "img-src 'self' data: blob: https://d2il6osz49gpup.cloudfront.net https://d2kyjiikho62xx.cloudfront.net https://images.unsplash.com https://plus.unsplash.com https://yosemitecrew-backend.s3.eu-central-1.amazonaws.com https://cdn.yc.dev https://laika.aitemsolutions.com",
     [
       "connect-src 'self'",
@@ -98,6 +98,8 @@ export const buildContentSecurityPolicy = ({
       'https://chat.stream-io-api.com',
       'wss://chat.stream-io-api.com',
       'https://api.stripe.com',
+      'https://cal.com',
+      'https://app.cal.com',
       'https://api.openstatus.dev',
       'https://yosemite-crew.openstatus.dev',
       ...postHogConnectHosts,
