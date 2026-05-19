@@ -35,7 +35,7 @@ export interface ClinicBottomSheetProps {
   animatedIndex?: SharedValue<number>;
 }
 
-const SNAP_POINTS = ['22%', '88%'];
+const SNAP_POINTS = ['22%', '78%'];
 const ITEM_ESTIMATED_HEIGHT = 320;
 
 const resolveDistanceText = (
@@ -84,13 +84,15 @@ const ClinicBottomSheet = forwardRef<
     useImperativeHandle(ref, () => ({
       scrollToClinic: (id: string) => {
         const index = clinics.findIndex(c => c.id === id);
+        bottomSheetRef.current?.snapToIndex(1);
         if (index < 0 || !flatListRef.current) return;
-        flatListRef.current.scrollToIndex({
-          index,
-          animated: true,
-          viewPosition: 0.1,
-        });
-        bottomSheetRef.current?.snapToIndex(0);
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({
+            index,
+            animated: true,
+            viewPosition: 0.1,
+          });
+        }, 300);
       },
       snapToExpanded: () => bottomSheetRef.current?.snapToIndex(1),
       snapToCollapsed: () => bottomSheetRef.current?.snapToIndex(0),
@@ -207,7 +209,6 @@ const createStyles = (theme: any) =>
       height: 4,
     },
     filterRow: {
-      paddingHorizontal: theme.spacing['4'],
       paddingBottom: theme.spacing['2'],
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.borderMuted,
