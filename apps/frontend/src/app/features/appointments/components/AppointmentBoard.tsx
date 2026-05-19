@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useBoardDragScroll } from '@/app/hooks/useBoardDragScroll';
+import { useScrollBoundaryWheel } from '@/app/hooks/useScrollBoundaryWheel';
 import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import { buildDragPreview } from '@/app/lib/buildDragPreview';
 import AppointmentScopeToggle from '@/app/ui/primitives/AppointmentScopeToggle/AppointmentScopeToggle';
@@ -282,6 +283,7 @@ const AppointmentBoardComponent = ({
 
   const { autoScrollBoardOnDrag } = useBoardDragScroll();
   const onWheelHorizontal = useWheelToHorizontalScroll();
+  const onWheelBoundary = useScrollBoundaryWheel();
 
   const moveToStatus = useCallback(
     async (appointmentId: string, nextStatus: BoardStatus) => {
@@ -533,6 +535,7 @@ const AppointmentBoardComponent = ({
                     columnScrollRefs.current[column.key] = element;
                   }}
                   className="flex-1 min-h-0 h-0 flex flex-col gap-2 p-3 pb-4 bg-white overflow-y-auto"
+                  onWheel={onWheelBoundary}
                   data-calendar-scroll="true"
                 >
                   {columnAppointments.map((appointment) => {
