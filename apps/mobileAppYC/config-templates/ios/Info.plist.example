@@ -9,6 +9,7 @@
     YOUR_FACEBOOK_CLIENT_TOKEN   → Facebook Developer console → Settings → Advanced → Client Token
     YOUR_REVERSED_CLIENT_ID      → From ios/GoogleService-Info.plist → REVERSED_CLIENT_ID value
                                    (looks like: com.googleusercontent.apps.PROJECT_NUMBER-CLIENT_HASH)
+    GOOGLE_MAPS_API_KEY          → Supplied by ios/mobileAppYC/Secrets.xcconfig, do not hardcode it here
 -->
 <plist version="1.0">
 <dict>
@@ -75,6 +76,9 @@
 	<string>YOUR_FACEBOOK_CLIENT_TOKEN</string>
 	<key>FacebookDisplayName</key>
 	<string>Yosemite Crew</string>
+	<!-- Google Maps SDK for iOS key from Secrets.xcconfig -->
+	<key>GMSApiKey</key>
+	<string>$(GOOGLE_MAPS_API_KEY)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<!-- Required for Facebook SDK queries — keep as-is -->
