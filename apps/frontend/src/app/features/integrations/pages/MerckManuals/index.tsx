@@ -564,11 +564,9 @@ const MerckReaderPortal = ({
   if (!readerOpen || !readerUrl || typeof document === 'undefined') return null;
 
   return createPortal(
-    <dialog
-      open
-      aria-modal="true"
-      aria-labelledby="merck-reader-title"
-      className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+    <div
+      className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      data-merck-reader-overlay="true"
     >
       <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
@@ -610,7 +608,7 @@ const MerckReaderPortal = ({
           </Link>
         </div>
       </div>
-    </dialog>,
+    </div>,
     document.body
   );
 };

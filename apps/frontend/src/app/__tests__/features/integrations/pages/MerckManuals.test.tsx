@@ -223,6 +223,11 @@ describe('MerckManuals page', () => {
     fireEvent.click(screen.getByText('Open'));
 
     await waitFor(() => expect(screen.getByTitle('Canine Fever')).toBeInTheDocument());
+    expect(document.body.querySelector('[data-merck-reader-overlay="true"]')).toHaveClass(
+      'fixed',
+      'inset-0',
+      'z-[10000]'
+    );
     expect(screen.getByTitle('Canine Fever')).toHaveAttribute('referrerpolicy', 'strict-origin');
     fireEvent.click(screen.getByLabelText('Close Merck reader'));
     await waitFor(() => expect(screen.queryByTitle('Canine Fever')).not.toBeInTheDocument());
