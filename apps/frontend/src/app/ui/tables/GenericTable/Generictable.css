@@ -61,7 +61,7 @@
   font-size: 15px;
   line-height: 120%;
 }
-.TableDiv tbody tr td span {
+.TableDiv tbody tr td span:not(a span):not(button span) {
   margin: 0px;
   font-family: var(--satoshi-font);
   color: var(--black-text);

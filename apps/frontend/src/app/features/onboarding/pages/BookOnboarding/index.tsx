@@ -1,23 +1,13 @@
 'use client';
-import React, { useEffect } from 'react';
-import dynamic from 'next/dynamic';
+import React from 'react';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import { useRouter } from 'next/navigation';
 import { IoArrowBack } from 'react-icons/io5';
-
-const Cal = dynamic(() => import('@calcom/embed-react'), { ssr: false });
+import CalEmbedFrame from '@/app/ui/overlays/CalEmbedFrame';
 
 const BookOnboarding = () => {
   const router = useRouter();
-
-  useEffect(() => {
-    (async function () {
-      const { getCalApi } = await import('@calcom/embed-react');
-      const cal = await getCalApi({ namespace: '30min' });
-      cal('ui', { hideEventTypeDetails: false, layout: 'month_view' });
-    })();
-  }, []);
 
   return (
     <div className="flex flex-col gap-4 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-5! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-5!">
@@ -30,11 +20,10 @@ const BookOnboarding = () => {
         <IoArrowBack size={18} />
         <span>Back</span>
       </button>
-      <Cal
-        namespace="30min"
+      <CalEmbedFrame
         calLink="yosemitecrew/onboarding"
-        style={{ width: '100%', height: '100%', overflow: 'scroll' }}
-        config={{ theme: 'light', layout: 'month_view' }}
+        title="Book onboarding call"
+        className="min-h-[calc(100vh-120px)] w-full border-0"
       />
     </div>
   );

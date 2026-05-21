@@ -314,7 +314,7 @@ const createStyles = (theme: any) =>
     },
     openNowMapToggle: {
       position: 'absolute',
-      bottom: '23%',
+      bottom: '23.5%',
       left: 0,
       right: 0,
       paddingHorizontal: theme.spacing['4'],

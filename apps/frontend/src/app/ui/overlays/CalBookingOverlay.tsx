@@ -1,10 +1,8 @@
 'use client';
 import React, { useEffect } from 'react';
-import dynamic from 'next/dynamic';
+import { createPortal } from 'react-dom';
+import CalEmbedFrame from '@/app/ui/overlays/CalEmbedFrame';
 import Close from '@/app/ui/primitives/Icons/Close';
-import ModalBase from '@/app/ui/overlays/Modal/ModalBase';
-
-const Cal = dynamic(() => import('@calcom/embed-react'), { ssr: false });
 
 type CalBookingOverlayProps = {
   open: boolean;
@@ -14,48 +12,41 @@ type CalBookingOverlayProps = {
 const CalBookingOverlay = ({ open, onClose }: CalBookingOverlayProps) => {
   useEffect(() => {
     if (!open) return;
-    (async () => {
-      const { getCalApi } = await import('@calcom/embed-react');
-      const cal = await getCalApi({ namespace: '30min' });
-      cal('ui', { hideEventTypeDetails: false, layout: 'month_view' });
-    })();
-  }, [open]);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+      }
+    };
 
-  if (typeof document === 'undefined') return null;
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, open]);
 
-  return (
-    <ModalBase
-      showModal={open}
-      setShowModal={(nextValue) => {
-        if (!nextValue) onClose();
-      }}
-      onClose={onClose}
-      aria-label="Book onboarding call"
-      overlayClassName={`fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm transition-opacity ${open ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-      containerClassName={`fixed inset-0 z-5000 flex items-center justify-center p-4 ${open ? '' : 'pointer-events-none'}`}
+  if (!open || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      data-cal-booking-overlay="true"
+      style={{ pointerEvents: 'auto' }}
     >
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-300 max-h-[95vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 shrink-0">
-          <h2 className="text-body-2 text-text-primary">Book an onboarding call</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer"
-            aria-label="Close booking overlay"
-          >
-            <Close iconOnly />
-          </button>
-        </div>
-        <div className="flex-1 overflow-auto">
-          <Cal
-            namespace="30min"
-            calLink="yosemitecrew/onboarding"
-            style={{ width: '100%', height: '100%', minHeight: '600px' }}
-            config={{ theme: 'light', layout: 'month_view' }}
-          />
-        </div>
-      </div>
-    </ModalBase>
+      <button
+        type="button"
+        onClick={onClose}
+        className="fixed right-4 top-4 z-[10001] p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer bg-white/90 shadow-sm"
+        aria-label="Close booking overlay"
+        style={{ pointerEvents: 'auto' }}
+      >
+        <Close iconOnly />
+      </button>
+      <CalEmbedFrame
+        calLink="yosemitecrew/onboarding"
+        title="Book onboarding call"
+        className="h-full w-full border-0"
+      />
+    </div>,
+    document.body
   );
 };
 

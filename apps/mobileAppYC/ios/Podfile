@@ -8,20 +8,6 @@ require Pod::Executable.execute_command('node', ['-p',
 #Add react-native-permissions setup
 require_relative '../node_modules/react-native-permissions/scripts/setup'
 
-module ::Pod
-  class Project
-    prepend(Module.new do
-      def group_for_path_in_group(absolute_pathname, group, reflect_file_system_structure, base_path = nil)
-        return group if absolute_pathname.to_s.include?("\0")
-        return group if base_path && base_path.to_s.include?("\0")
-        super
-      rescue ArgumentError
-        group
-      end
-    end)
-  end
-end
-
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 

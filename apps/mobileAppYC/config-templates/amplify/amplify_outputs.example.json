@@ -6,7 +6,7 @@
     "file to amplify_outputs.json manually.",
     "",
     "SETUP (no AWS account needed, recommended for UI/feature work):",
-    "  cp amplify_outputs.example.json devamplify_outputs.json",
+    "  cp config-templates/amplify/amplify_outputs.example.json devamplify_outputs.json",
     "  Then set USE_DEV_API = true in src/config/variables.local.ts.",
     "  Log in with any email via OTP, or use test@yosemitecrew.com when",
     "  enableReviewLogin is active on the dev API.",

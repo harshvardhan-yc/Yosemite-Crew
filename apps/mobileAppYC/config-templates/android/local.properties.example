@@ -6,6 +6,10 @@
 # macOS (default location when installed via Android Studio):
 sdk.dir=/Users/YOUR_USERNAME/Library/Android/sdk
 
+# Google Maps SDK for Android key.
+# This value is injected into AndroidManifest.xml through build.gradle manifestPlaceholders.
+MAPS_API_KEY=YOUR_ANDROID_GOOGLE_MAPS_API_KEY
+
 # Linux:
 # sdk.dir=/home/YOUR_USERNAME/Android/Sdk
 
