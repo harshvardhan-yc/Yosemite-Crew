@@ -78,7 +78,18 @@ const DsraSchema = new Schema(
     },
     lawBasis: {
       type: String,
-      enum: ["GDPR", "CCPA", "UK_GDPR", "OTHER"],
+      enum: [
+        "GDPR",
+        "CCPA",
+        "UK_GDPR",
+        "LGPD",
+        "PIPEDA",
+        "POPIA",
+        "PDPA",
+        "PIPL",
+        "PA_1988_AU",
+        "OTHER",
+      ],
     },
     otherLawText: String,
     rightsRequested: {

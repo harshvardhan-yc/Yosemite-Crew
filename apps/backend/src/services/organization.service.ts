@@ -1,4 +1,4 @@
-import { isValidObjectId, Types } from "mongoose";
+import { isValidObjectId, Types, type PipelineStage } from "mongoose";
 import OrganizationModel, {
   type OrganizationDocument,
   type OrganizationMongo,
@@ -1177,7 +1177,9 @@ export const OrganizationService = {
     page = 1,
     limit = 10,
   ) {
-    if (!lat || !lng) throw new Error("lat/lng are required");
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new Error("lat/lng are required");
+    }
 
     const skip = (page - 1) * limit;
 
@@ -1303,82 +1305,111 @@ export const OrganizationService = {
       };
     }
 
-    let docs = await OrganizationModel.find(
-      {
-        "address.location": {
-          $near: {
-            $geometry: {
-              type: "Point",
-              coordinates: [lng, lat],
-            },
-            $maxDistance: radius,
-          },
-        },
-        isVerified: true,
-        isActive: true,
-      },
-      {
-        _id: 1,
-        name: 1,
-        imageURL: 1,
-        phoneNo: 1,
-        type: 1,
-        address: 1,
-        googlePlacesId: 1,
-        appointmentCheckInBufferMinutes: 1,
-        appointmentCheckInRadiusMeters: 1,
-      },
-    )
-      .skip(skip)
-      .limit(limit);
+    const projection = {
+      _id: 1,
+      name: 1,
+      imageURL: 1,
+      phoneNo: 1,
+      type: 1,
+      address: 1,
+      googlePlacesId: 1,
+      appointmentCheckInBufferMinutes: 1,
+      appointmentCheckInRadiusMeters: 1,
+      averageRating: 1,
+      distanceInMeters: 1,
+    };
 
-    if (docs.length == 0) {
-      logger.warn("No nearby organisations found, returning all organisations");
-      docs = await OrganizationModel.find(
-        {},
-        {
-          _id: 1,
-          name: 1,
-          imageURL: 1,
-          phoneNo: 1,
-          type: 1,
-          address: 1,
-          googlePlacesId: 1,
-          appointmentCheckInBufferMinutes: 1,
-          appointmentCheckInRadiusMeters: 1,
+    const pipeline: PipelineStage[] = [
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [lng, lat] },
+          distanceField: "distanceInMeters",
+          spherical: true,
+          maxDistance: radius,
+          key: "address.location",
+          query: { isVerified: true, isActive: true },
         },
-      )
+      } as PipelineStage,
+      {
+        $facet: {
+          data: [{ $project: projection }, { $skip: skip }, { $limit: limit }],
+          meta: [{ $count: "total" }],
+        },
+      } as PipelineStage,
+    ];
+
+    type NearbyFacetRow = { data: unknown[]; meta: Array<{ total: number }> };
+    const facetResult =
+      await OrganizationModel.aggregate<NearbyFacetRow>(pipeline);
+
+    const first = Array.isArray(facetResult) ? facetResult[0] : undefined;
+    type NearbyOrgDoc = {
+      _id: unknown;
+      name?: unknown;
+      imageURL?: unknown;
+      phoneNo?: unknown;
+      type?: unknown;
+      googlePlacesId?: unknown;
+      appointmentCheckInBufferMinutes?: number;
+      appointmentCheckInRadiusMeters?: number;
+      averageRating?: number;
+      distanceInMeters?: number;
+      address?: { location?: { coordinates?: [number, number] } };
+      [key: string]: unknown;
+    };
+
+    let docs = (first?.data ?? []) as NearbyOrgDoc[];
+
+    let total =
+      first?.meta && Array.isArray(first.meta) && first.meta.length > 0
+        ? Number(first.meta[0]?.total ?? 0)
+        : 0;
+
+    if (docs.length === 0) {
+      logger.warn("No nearby organisations found, returning all organisations");
+      total = await OrganizationModel.countDocuments({});
+      docs = await OrganizationModel.find({}, projection)
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .lean();
     }
 
-    const total = docs.length;
     const results = [];
 
     for (const org of docs) {
-      const specialities = await SpecialityModel.find(
+      const specialities = (await SpecialityModel.find(
         { organisationId: org._id },
         { name: 1 },
-      );
+      ).lean()) as Array<{ _id: unknown; [key: string]: unknown }>;
 
       // fetch services of org
-      const services = await ServiceModel.find(
+      const services = (await ServiceModel.find(
         { organisationId: org._id },
         { name: 1, cost: 1, specialityId: 1 },
-      );
+      ).lean()) as Array<{ specialityId?: unknown; [key: string]: unknown }>;
 
       // group services inside each speciality
       const specialitiesWithServices = specialities.map((spec) => {
-        const specServices = services.filter(
-          (srv) => srv.specialityId?.toString() === spec._id.toString(),
-        );
+        const specId =
+          spec._id instanceof Types.ObjectId ? spec._id.toString() : "";
+
+        const specServices = services.filter((srv) => {
+          const serviceSpecId =
+            srv.specialityId instanceof Types.ObjectId
+              ? srv.specialityId.toString()
+              : typeof srv.specialityId === "string"
+                ? srv.specialityId
+                : "";
+          return serviceSpecId === specId;
+        });
 
         return {
-          ...spec.toObject(),
+          ...spec,
           services: specServices,
         };
       });
 
+      const coords = org.address?.location?.coordinates;
       results.push({
         org: {
           ...org,
@@ -1389,14 +1420,16 @@ export const OrganizationService = {
             org.appointmentCheckInRadiusMeters ??
             DEFAULT_APPOINTMENT_CHECK_IN_RADIUS_METERS,
         },
-        distanceInMeters: org.address?.location
-          ? Math.round(
-              Math.sqrt(
-                Math.pow(lat - org.address.location.coordinates[1], 2) +
-                  Math.pow(lng - org.address.location.coordinates[0], 2),
-              ) * 111000,
-            )
-          : null,
+        distanceInMeters:
+          typeof org.distanceInMeters === "number"
+            ? Math.round(org.distanceInMeters)
+            : coords
+              ? Math.round(
+                  Math.sqrt(
+                    Math.pow(lat - coords[1], 2) + Math.pow(lng - coords[0], 2),
+                  ) * 111000,
+                )
+              : null,
         rating: org.averageRating,
         specialitiesWithServices,
       });
