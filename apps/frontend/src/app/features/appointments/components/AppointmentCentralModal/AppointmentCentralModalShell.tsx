@@ -1,3 +1,4 @@
+'use client';
 import React, { useId } from 'react';
 import ModalBase from '@/app/ui/overlays/Modal/ModalBase';
 import { IoClose } from 'react-icons/io5';
@@ -48,14 +49,13 @@ const AppointmentCentralModalShell = ({
       overlayStyle={{ backgroundColor: 'var(--color-overlay-backdrop)' }}
       containerClassName={[
         'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1200]',
-        'w-[calc(100vw-24px)] sm:w-[75vw] max-w-[900px]',
-        'max-h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-32px)]',
-        'bg-transparent flex flex-col',
+        'w-[calc(100vw-24px)] sm:w-[80vw] max-w-[1100px]',
+        'modal-max-h bg-transparent flex flex-col',
         showModal ? 'opacity-100' : 'opacity-0 pointer-events-none',
       ].join(' ')}
     >
       <div
-        className="relative flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-24px)] sm:max-h-[calc(100dvh-32px)] overflow-hidden rounded-3xl border border-card-border shadow-2xl"
+        className="modal-max-h relative flex flex-col flex-1 min-h-0 overflow-hidden rounded-3xl border border-card-border shadow-2xl"
         style={{ background: 'var(--color-neutral-0)' }}
       >
         {/* Full-panel loading overlay — sits above header + body */}

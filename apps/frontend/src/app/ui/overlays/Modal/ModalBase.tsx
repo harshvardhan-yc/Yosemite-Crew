@@ -40,7 +40,7 @@ const ModalBase = ({
   'aria-labelledby': ariaLabelledBy,
   'aria-describedby': ariaDescribedBy,
 }: ModalBaseProps) => {
-  const containerRef = useRef<HTMLDialogElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   /** Tracks the element focused before the modal opened so we can restore it. */
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -56,9 +56,14 @@ const ModalBase = ({
   useEffect(() => {
     if (showModal) {
       previousFocusRef.current = document.activeElement as HTMLElement;
-      const scrollbarWidth = globalThis.window.innerWidth - document.documentElement.clientWidth;
+      const scrollbarWidth =
+        typeof window !== 'undefined'
+          ? window.innerWidth - document.documentElement.clientWidth
+          : 0;
       document.body.style.overflow = 'hidden';
       document.body.style.paddingRight = `${scrollbarWidth}px`;
+      // Safari requires overflow:hidden on <html> to prevent body scroll
+      document.documentElement.style.overflow = 'hidden';
       const firstFocusable = containerRef.current?.querySelector<HTMLElement>(FOCUSABLE);
       if (firstFocusable) {
         firstFocusable.focus();
@@ -70,6 +75,7 @@ const ModalBase = ({
       previousFocusRef.current = null;
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
+      document.documentElement.style.overflow = '';
     }
   }, [showModal]);
 
@@ -129,22 +135,18 @@ const ModalBase = ({
       {/* Backdrop — purely visual; click-outside is handled via mousedown listener */}
       <div className={overlayClassName} style={overlayStyle} aria-hidden="true" />
 
-      <dialog
-        open
+      <div
         ref={containerRef}
+        role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
         tabIndex={-1}
-        onCancel={(event) => {
-          event.preventDefault();
-          closeModal();
-        }}
-        className={`inset-auto m-0 border-0 p-0 max-h-none max-w-none overflow-visible ${containerClassName} ${showModal ? '' : 'pointer-events-none'}`}
+        className={`${containerClassName} ${showModal ? '' : 'pointer-events-none'}`}
       >
         {children}
-      </dialog>
+      </div>
     </>,
     document.body
   );

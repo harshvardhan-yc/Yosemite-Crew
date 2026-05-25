@@ -108,6 +108,24 @@ textarea:focus-visible {
   }
 }
 @layer utilities {
+  /*
+   * Viewport-unit fallbacks for Safari < 15.4 (no dvh/svw support).
+   * CSS cascade: the browser applies the last declaration it understands,
+   * so the dvh/svw line wins on supporting browsers and the vh/vw line wins elsewhere.
+   * Used by the appointment central modal.
+   */
+  .modal-max-h {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  @media (min-width: 640px) {
+    .modal-max-h {
+      max-height: calc(100vh - 32px);
+      max-height: calc(100dvh - 32px);
+    }
+  }
+
   .scrollbar-hidden {
     &::-webkit-scrollbar {
       display: none;

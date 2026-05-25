@@ -35,12 +35,11 @@ describe('ModalBase', () => {
   it('renders hidden state styles when showModal is false', () => {
     renderModal({ showModal: false });
 
-    const dialog = document.body.querySelector('dialog');
+    const dialog = screen.getByRole('dialog');
     expect(dialog).toBeInTheDocument();
     expect(dialog).toHaveClass('container');
-    // dialog stays open at all times so CSS transitions can play;
+    // Modal stays mounted so CSS transitions can play;
     // interaction is blocked via pointer-events-none instead
-    expect(dialog).toHaveAttribute('open');
     expect(dialog).toHaveClass('pointer-events-none');
     expect(screen.getByText('Modal content')).toBeInTheDocument();
   });
