@@ -5,6 +5,12 @@
   width: 100%;
 }
 
+/* Spacious cell padding for the Specialities table */
+.specialities-table thead tr th,
+.specialities-table tbody tr td {
+  padding: 12px 20px;
+}
+
 /* table-layout:fixed + explicit colgroup widths on every column locks headers.
    The browser reads widths only from <colgroup>, never from cell content,
    so column positions never shift when the status filter changes or rows are

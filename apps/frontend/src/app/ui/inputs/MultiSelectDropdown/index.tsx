@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { IoIosWarning } from 'react-icons/io';
 import { Option } from '@/app/features/companions/types/companion';
 import { IoChevronDown } from 'react-icons/io5';
+import { FiCheck } from 'react-icons/fi';
 import { useDropdown, useFilteredOptions } from '@/app/hooks/useDropdown';
 
 type DropdownProps = {
@@ -72,13 +73,14 @@ const MultiSelectPanel = ({
           <button
             type="button"
             aria-pressed={isSelected}
-            className={`px-3 py-2 text-left text-body-4 hover:bg-card-hover rounded-lg hover:text-text-primary w-full ${
-              isSelected ? 'bg-blue-light text-blue-text font-medium' : 'text-text-secondary'
-            }`}
+            className="px-3 py-2 text-left text-body-4 hover:bg-card-hover rounded-lg text-text-primary w-full flex items-center justify-between gap-2"
             key={option.value + index}
             onClick={() => onToggleOption(option)}
           >
-            {option.label}
+            <span>{option.label}</span>
+            {isSelected && (
+              <FiCheck size={14} className="shrink-0 text-text-brand" aria-hidden="true" />
+            )}
           </button>
         );
       })
@@ -176,7 +178,6 @@ const MultiSelectDropdown = ({
     const isSelected = valueSet.has(option.value);
     const next = isSelected ? value.filter((v) => v !== option.value) : [...value, option.value];
     onChange(next);
-    closeDropdown();
   };
 
   const panel = (

@@ -5,8 +5,8 @@ import './ButtonEffects.css';
 type PrimaryProps = Omit<BaseButtonProps, 'sizeClasses' | 'baseClasses'>;
 
 const sizeClasses: Record<ButtonSize, string> = {
-  default: 'py-[12px]',
-  large: 'py-[12px] md:py-[15px]',
+  default: 'py-[11px]',
+  large: 'py-[11px] md:py-[14px]',
 };
 
 const baseClasses =
