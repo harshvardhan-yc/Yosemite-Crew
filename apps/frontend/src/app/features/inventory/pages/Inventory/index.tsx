@@ -29,6 +29,7 @@ import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
 import BoardScopeToggle from '@/app/ui/primitives/BoardScopeToggle/BoardScopeToggle';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const InventorySectionSkeleton = () => (
   <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
@@ -319,6 +320,7 @@ const Inventory = () => {
         </div>
       </div>
 
+      <MobileSearchBar placeholder="Search inventory" />
       {error && <div className="text-red-500 text-sm font-satoshi font-semibold">{error}</div>}
 
       <PermissionGate allOf={[PERMISSIONS.INVENTORY_VIEW_ANY]} fallback={<Fallback />}>

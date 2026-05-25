@@ -16,6 +16,7 @@ import { PERMISSIONS } from '@/app/lib/permissions';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import Fallback from '@/app/ui/overlays/Fallback';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const TaskPlannerSkeleton = () => (
   <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
@@ -206,6 +207,7 @@ const Tasks = () => {
           showAdd={false}
           viewOptions={['calendar', 'board', 'list']}
         />
+        <MobileSearchBar placeholder="Search tasks" />
 
         <PermissionGate allOf={[PERMISSIONS.TASKS_VIEW_ANY]} fallback={<Fallback />}>
           <div className={wrapperClassName}>

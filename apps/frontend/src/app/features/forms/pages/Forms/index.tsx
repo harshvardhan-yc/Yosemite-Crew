@@ -24,6 +24,7 @@ import { PERMISSIONS } from '@/app/lib/permissions';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import Fallback from '@/app/ui/overlays/Fallback';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const AddForm = dynamic(() => import('@/app/features/forms/pages/Forms/Sections/AddForm'));
 const FormInfo = dynamic(() => import('@/app/features/forms/pages/Forms/Sections/FormInfo'));
@@ -189,6 +190,7 @@ const Forms = () => {
         </div>
       </div>
 
+      <MobileSearchBar placeholder="Search templates" />
       <PermissionGate allOf={[PERMISSIONS.FORMS_VIEW_ANY]} fallback={<Fallback />}>
         <div className={wrapperClassName}>
           <FormsFilters

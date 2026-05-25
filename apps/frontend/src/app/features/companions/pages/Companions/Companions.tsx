@@ -22,6 +22,7 @@ import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const AddCompanion = dynamic(() => import('@/app/features/companions/components/AddCompanion'));
 const CompanionInfo = dynamic(() =>
@@ -136,6 +137,7 @@ const Companions = () => {
           </h1>
         </div>
       </div>
+      <MobileSearchBar placeholder="Search companions" />
       <PermissionGate allOf={[PERMISSIONS.COMPANIONS_VIEW_ANY]} fallback={<Fallback />}>
         <div className={wrapperClassName}>
           <Filters

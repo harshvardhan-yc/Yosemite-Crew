@@ -18,6 +18,7 @@ import { Primary } from '@/app/ui/primitives/Buttons';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const FinanceSectionSkeleton = () => (
   <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
@@ -109,6 +110,7 @@ const Finance = () => {
           </section>
         )}
       </PermissionGate>
+      <MobileSearchBar placeholder="Search invoices" />
       <PermissionGate allOf={[PERMISSIONS.BILLING_VIEW_ANY]} fallback={<Fallback />}>
         <div className={wrapperClassName}>
           <div className="flex items-center justify-between w-full flex-wrap gap-2">

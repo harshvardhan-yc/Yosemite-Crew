@@ -42,6 +42,7 @@ import { getSafeIdexxIframeUrl } from '@/app/lib/urls';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { IoInformationCircleOutline, IoOpenOutline } from 'react-icons/io5';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
 const MODALITY_FILTERS = [
@@ -1153,6 +1154,7 @@ const IdexxWorkspacePage = () => {
         onClose={() => s.setShowFollowUpFrame(false)}
       />
 
+      <MobileSearchBar placeholder="Search result / order" />
       <div className="flex justify-between items-start gap-3 flex-wrap">
         <div className="flex flex-col gap-1">
           <h1 className="text-heading-2 text-text-primary flex items-center gap-2">

@@ -63,6 +63,7 @@ import {
   appointmentViewToLocal,
   normalizePmsPreferences,
 } from '@/app/features/settings/utils/pmsPreferences';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const AppointmentsSkeleton = () => <PageSkeleton variant="planner" />;
 
@@ -479,6 +480,7 @@ const Appointments = () => {
           setActiveView={handleActiveViewChange}
           showAdd={false}
         />
+        <MobileSearchBar placeholder="Search appointments" />
 
         <PermissionGate allOf={[PERMISSIONS.APPOINTMENTS_VIEW_ANY]} fallback={<Fallback />}>
           <div className={wrapperClassName}>
