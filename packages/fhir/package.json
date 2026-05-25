@@ -1,0 +1,20 @@
+{
+  "name": "@yosemite-crew/fhir",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./dist/types/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@yosemite-crew/fhirtypes": "workspace:^",
+    "typescript": "5.0.4"
+  }
+}
