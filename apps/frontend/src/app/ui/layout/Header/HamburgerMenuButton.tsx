@@ -15,21 +15,24 @@ const HamburgerMenuButton = ({ menuOpen, onClick, controlsId }: HamburgerMenuBut
     aria-expanded={menuOpen}
     aria-controls={controlsId}
   >
-    <div className="yc-hamburger-lines">
+    <div className="relative flex items-center justify-center w-5 h-5">
       <span
-        className="yc-hamburger-line transition-transform duration-300"
+        className="yc-hamburger-line absolute transition-all duration-300"
         style={{
-          transform: menuOpen ? 'rotate(45deg) translateY(6px)' : 'none',
+          transform: menuOpen ? 'rotate(45deg)' : 'translateY(-5px)',
         }}
       />
       <span
-        className="yc-hamburger-line transition-opacity duration-300"
-        style={{ opacity: menuOpen ? 0 : 1 }}
+        className="yc-hamburger-line absolute transition-all duration-300"
+        style={{
+          opacity: menuOpen ? 0 : 1,
+          transform: menuOpen ? 'scaleX(0)' : 'none',
+        }}
       />
       <span
-        className="yc-hamburger-line transition-transform duration-300"
+        className="yc-hamburger-line absolute transition-all duration-300"
         style={{
-          transform: menuOpen ? 'rotate(-45deg) translateY(-6px)' : 'none',
+          transform: menuOpen ? 'rotate(-45deg)' : 'translateY(5px)',
         }}
       />
     </div>

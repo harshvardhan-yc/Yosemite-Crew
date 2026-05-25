@@ -272,13 +272,14 @@ const UserHeader = () => {
     if (pathname.startsWith('/companions')) return terminologyText('Search companions');
     if (pathname.startsWith('/tasks')) return 'Search tasks';
     if (pathname.startsWith('/finance')) return 'Search invoices';
+    if (pathname.startsWith('/organization/specialities')) return 'Search specialities';
     return 'Search';
   };
 
   const hideSearch =
     pathname.startsWith('/chat') ||
     pathname.startsWith('/settings') ||
-    pathname.startsWith('/organization') ||
+    (pathname.startsWith('/organization') && !pathname.startsWith('/organization/specialities')) ||
     pathname.startsWith('/organizations') ||
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/guides') ||
