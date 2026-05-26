@@ -2,6 +2,44 @@ import { StoredCompanion, StoredParent } from '@/app/features/companions/pages/C
 import countries from '@/app/lib/data/countryList';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
+export type AlertPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export type CompanionAlert = {
+  id: string;
+  label: string;
+  priority: AlertPriority;
+};
+
+export const ALERT_PRIORITY_CONFIG: Record<
+  AlertPriority,
+  { label: string; bg: string; text: string; border: string }
+> = {
+  low: {
+    label: 'Low',
+    bg: 'var(--color-neutral-100)',
+    text: 'var(--color-neutral-700)',
+    border: 'var(--color-neutral-300)',
+  },
+  medium: {
+    label: 'Medium',
+    bg: 'var(--color-warning-100)',
+    text: 'var(--color-warning-700)',
+    border: 'var(--color-warning-300)',
+  },
+  high: {
+    label: 'High',
+    bg: 'var(--color-danger-100)',
+    text: 'var(--color-danger-700)',
+    border: 'var(--color-danger-300)',
+  },
+  critical: {
+    label: 'Critical',
+    bg: 'var(--color-neutral-900)',
+    text: 'var(--color-neutral-0)',
+    border: 'var(--color-neutral-900)',
+  },
+};
+
 export type Option = {
   value: string;
   label: string;
@@ -173,7 +211,7 @@ export const EMPTY_STORED_PARENT: StoredParent = {
   createdFrom: 'pms',
 };
 
-export const EMPTY_STORED_COMPANION: StoredCompanion = {
+export const EMPTY_STORED_COMPANION: StoredCompanion & { alerts?: CompanionAlert[] } = {
   id: '',
   organisationId: '',
   parentId: '',
@@ -195,4 +233,5 @@ export const EMPTY_STORED_COMPANION: StoredCompanion = {
   insurance: undefined,
   countryOfOrigin: '',
   source: 'unknown',
+  alerts: [],
 };
