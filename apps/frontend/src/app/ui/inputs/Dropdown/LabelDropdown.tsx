@@ -169,7 +169,7 @@ const LabelDropdown = ({
       <div className="w-full relative" ref={dropdownRef}>
         <button
           type="button"
-          className={`relative w-full flex min-h-12 items-center px-5 pr-11 py-2.75 min-w-30 border cursor-pointer bg-(--whitebg) focus-visible:outline-none! ${open ? 'border-input-text-placeholder-active! rounded-t-2xl! z-20' : 'border-input-border-default! rounded-2xl!'} ${error || hasError ? 'border-input-border-error!' : ''}`}
+          className={`relative w-full flex min-h-12 items-center px-5 pr-11 py-2.75 min-w-30 border cursor-pointer bg-(--whitebg) focus-visible:outline-none! ${open ? 'border-input-text-placeholder-active! border-b-0! rounded-t-2xl! z-20' : 'border-input-border-default! rounded-2xl!'} ${error || hasError ? 'border-input-border-error!' : ''}`}
           onClick={() => {
             if (!open) {
               openDropdown();

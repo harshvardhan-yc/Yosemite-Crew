@@ -92,7 +92,7 @@ const SearchDropdown = ({
         {accessibleLabel}
       </label>
       <div
-        className={`h-12 border px-4 py-2.5 flex items-center justify-center w-full focus-within:border-input-border-active! ${canSearch ? 'border-input-border-active! rounded-t-2xl!' : 'border-input-border-default! rounded-2xl!'}`}
+        className={`h-12 border px-4 py-2.5 flex items-center justify-center w-full focus-within:border-input-border-active! ${canSearch ? 'border-input-border-active! border-b-0! rounded-t-2xl!' : 'border-input-border-default! rounded-2xl!'}`}
       >
         <input
           id={inputId}
@@ -126,7 +126,7 @@ const SearchDropdown = ({
         <div
           id={listboxId}
           aria-label={accessibleLabel}
-          className="border-input-border-active max-h-50 overflow-y-auto scrollbar-hidden z-99 absolute top-full left-0 rounded-b-2xl border-l border-r border-b bg-white flex flex-col items-center w-full px-3 py-2.5"
+          className="border-input-text-placeholder-active max-h-50 overflow-y-auto scrollbar-hidden z-99 absolute top-full left-0 rounded-b-2xl border-l border-r border-b border-t bg-white flex flex-col items-center w-full px-3 py-2.5"
           onScroll={handleScroll}
         >
           {filtered.map((option) => (
