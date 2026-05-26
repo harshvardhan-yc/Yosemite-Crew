@@ -29,16 +29,17 @@ type DateInputButtonProps = {
   isIconOnly: boolean;
   inputId: string;
   placeholder: string;
+  label: string;
   className?: string;
   errorId?: string;
 };
 
 const DateInputButton = forwardRef<HTMLButtonElement, DateInputButtonProps>(
   function DateInputButton(
-    { value, onClick, isIconOnly, inputId, placeholder, className, errorId },
+    { value, onClick, isIconOnly, inputId, label, className, errorId },
     ref
   ) {
-    const accessibleLabel = placeholder || 'Date';
+    const accessibleLabel = label || 'Date';
 
     if (isIconOnly) {
       return (
@@ -138,6 +139,7 @@ const Datepicker = ({
             isIconOnly={!isInput}
             inputId={inputId}
             placeholder={placeholder}
+            label={placeholder}
             errorId={errorId}
             className={`${error ? 'border-input-border-error!' : 'border-input-border-default!'} focus:border-input-border-active! ${className ?? ''}`}
           />

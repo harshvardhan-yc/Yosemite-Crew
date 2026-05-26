@@ -7,6 +7,11 @@
   border: 1px solid color-mix(in srgb, var(--color-text-primary) 86%, white);
   background: var(--color-text-primary);
   box-shadow: none !important;
+  font-family: 'Satoshi Variable', 'Satoshi', sans-serif !important;
+  font-size: 1rem !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  color: #fff !important;
   transition:
     background-color 200ms ease-out,
     border-color 200ms ease-out,

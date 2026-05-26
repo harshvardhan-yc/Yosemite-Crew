@@ -74,16 +74,16 @@ const FormInput = ({
             pointer-events-none absolute left-4
             top-1/2 -translate-y-1/2
             max-w-[calc(100%-2rem)] truncate
-            text-sm text-input-text-placeholder
+            text-body-4 text-input-text-placeholder
             transition-all duration-200
             peer-focus:-top-[11px] peer-focus:translate-y-0
-            peer-focus:text-xs
+            peer-focus:text-xs!
             peer-focus:text-input-text-placeholder-active
             peer-focus:bg-(--whitebg)
             peer-focus:px-1.5 peer-focus:max-w-none
             peer-not-placeholder-shown:px-1.5 peer-not-placeholder-shown:max-w-none
             peer-not-placeholder-shown:-top-[11px] peer-not-placeholder-shown:translate-y-0
-            peer-not-placeholder-shown:text-xs
+            peer-not-placeholder-shown:text-xs!
             peer-not-placeholder-shown:bg-(--whitebg)
           `}
         >

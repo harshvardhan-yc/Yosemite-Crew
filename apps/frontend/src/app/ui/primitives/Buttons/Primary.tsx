@@ -10,7 +10,7 @@ const sizeClasses: Record<ButtonSize, string> = {
 };
 
 const baseClasses =
-  'yc-primary-button px-8 flex items-center justify-center rounded-2xl! transition-[background-color,border-color] duration-200 ease-out text-body-3-emphasis text-center font-satoshi text-neutral-0!';
+  'yc-primary-button px-8 flex items-center justify-center rounded-2xl! transition-[background-color,border-color] duration-200 ease-out font-satoshi text-base font-medium leading-[1.2] text-center text-neutral-0!';
 
 const Primary = ({ className, style, ...rest }: Readonly<PrimaryProps>) => (
   <BaseButton
