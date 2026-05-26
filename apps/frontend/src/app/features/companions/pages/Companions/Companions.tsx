@@ -23,13 +23,20 @@ import { IoInformationCircleOutline } from 'react-icons/io5';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
 import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
+import { isCompanionRevampEnabled } from '@/app/lib/featureFlags';
 
 const AddCompanion = dynamic(() => import('@/app/features/companions/components/AddCompanion'));
+const AddCompanionCentralModal = dynamic(
+  () => import('@/app/features/companions/components/AddCompanionCentralModal')
+);
 const CompanionInfo = dynamic(() =>
   import('@/app/features/companions/components').then((m) => ({ default: m.CompanionInfo }))
 );
 const BookAppointment = dynamic(
   () => import('@/app/features/companions/pages/Companions/BookAppointment')
+);
+const AddAppointmentCentralModal = dynamic(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/AddAppointmentCentralModal')
 );
 const AddTask = dynamic(() => import('@/app/features/companions/pages/Companions/AddTask'));
 const ChangeCompanionStatus = dynamic(
@@ -167,15 +174,29 @@ const Companions = () => {
           </div>
         </div>
 
-        <AddCompanion showModal={addPopup} setShowModal={setAddPopup} />
-        {activeCompanion && viewCompanion && (
-          <CompanionInfo
-            showModal={viewCompanion}
-            setShowModal={setViewCompanion}
-            activeCompanion={activeCompanion}
-            canEditCompanionStatus={canEditCompanions}
-            initialLabel={companionInfoInitialLabel}
-          />
+        {isCompanionRevampEnabled() ? (
+          <>
+            <AddCompanionCentralModal showModal={addPopup} setShowModal={setAddPopup} />
+            <AddCompanionCentralModal
+              showModal={!!(activeCompanion && viewCompanion)}
+              setShowModal={setViewCompanion}
+              viewCompanion={activeCompanion}
+              canEditCompanionStatus={canEditCompanions}
+            />
+          </>
+        ) : (
+          <>
+            <AddCompanion showModal={addPopup} setShowModal={setAddPopup} />
+            {activeCompanion && viewCompanion && (
+              <CompanionInfo
+                showModal={viewCompanion}
+                setShowModal={setViewCompanion}
+                activeCompanion={activeCompanion}
+                canEditCompanionStatus={canEditCompanions}
+                initialLabel={companionInfoInitialLabel}
+              />
+            )}
+          </>
         )}
         {activeCompanion && canEditCompanions && (
           <ChangeCompanionStatus
@@ -184,13 +205,23 @@ const Companions = () => {
             activeCompanion={activeCompanion}
           />
         )}
-        {canEditAppointments && activeCompanion && (
-          <BookAppointment
-            showModal={bookAppointment}
-            setShowModal={setBookAppointment}
-            activeCompanion={activeCompanion}
-          />
-        )}
+        {canEditAppointments &&
+          activeCompanion &&
+          (isCompanionRevampEnabled() ? (
+            <AddAppointmentCentralModal
+              showModal={bookAppointment}
+              setShowModal={setBookAppointment}
+              setActiveFilter={() => undefined}
+              setActiveStatus={() => undefined}
+              initialCompanionId={activeCompanion.companion.id}
+            />
+          ) : (
+            <BookAppointment
+              showModal={bookAppointment}
+              setShowModal={setBookAppointment}
+              activeCompanion={activeCompanion}
+            />
+          ))}
         {canEditTasks && activeCompanion && (
           <AddTask
             showModal={addTask}
