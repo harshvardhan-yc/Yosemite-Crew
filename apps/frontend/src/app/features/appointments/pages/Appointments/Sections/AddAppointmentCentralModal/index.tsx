@@ -16,7 +16,7 @@ import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
 import Datepicker from '@/app/ui/inputs/Datepicker';
 import FormDesc from '@/app/ui/inputs/FormDesc/FormDesc';
-import AddCompanion from '@/app/features/companions/components/AddCompanion';
+import AddCompanionCentralModal from '@/app/features/companions/components/AddCompanionCentralModal';
 import AppointmentCentralModalShell from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentCentralModalShell';
 import AppointmentAvatar from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentAvatar';
 import AppointmentEstimatePanel from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentEstimatePanel';
@@ -73,6 +73,8 @@ type AddAppointmentCentralModalProps = {
   setActiveStatus: React.Dispatch<React.SetStateAction<string>>;
   prefill?: AppointmentDraftPrefill | null;
   onPrefillConsumed?: () => void;
+  /** Pre-selects a companion by ID when the modal opens (e.g. from the companions table). */
+  initialCompanionId?: string | null;
 };
 
 type NotifyChannel = 'app' | 'sms' | 'email';
@@ -217,8 +219,8 @@ const PersonRow = ({
             data-portal-dropdown
             className={clsx(
               'bg-white rounded-b-2xl overflow-y-auto max-h-44 scrollbar-hidden',
-              'border-l border-r border-b',
-              error ? 'border-input-border-error' : 'border-input-border-active'
+              'border-l border-r border-b border-t',
+              error ? 'border-input-border-error' : 'border-input-text-placeholder-active'
             )}
             style={portalStyle}
           >
@@ -263,7 +265,7 @@ const PersonRow = ({
         className={clsx(
           'relative flex items-center min-h-12 border bg-white transition-colors duration-150 cursor-text',
           open
-            ? 'rounded-t-2xl border-input-border-active'
+            ? 'rounded-t-2xl border-input-border-active border-b-0'
             : 'rounded-2xl border-input-border-default',
           error ? 'border-input-border-error!' : ''
         )}
@@ -506,8 +508,8 @@ const TimeSlotDropdown = ({
             data-portal-dropdown
             className={clsx(
               'bg-white rounded-b-2xl overflow-y-auto max-h-44 scrollbar-hidden',
-              'border-l border-r border-b',
-              error ? 'border-input-border-error' : 'border-input-border-active'
+              'border-l border-r border-b border-t',
+              error ? 'border-input-border-error' : 'border-input-text-placeholder-active'
             )}
             style={portalStyle}
           >
@@ -536,7 +538,7 @@ const TimeSlotDropdown = ({
         className={clsx(
           'relative flex w-full items-center min-h-12 border bg-white text-left transition-colors duration-150 select-none',
           open
-            ? 'rounded-t-2xl border-input-border-active'
+            ? 'rounded-t-2xl border-input-border-active border-b-0'
             : 'rounded-2xl border-input-border-default',
           error ? 'border-input-border-error!' : ''
         )}
@@ -582,6 +584,7 @@ const AddAppointmentCentralModal = ({
   setActiveStatus,
   prefill,
   onPrefillConsumed,
+  initialCompanionId,
 }: AddAppointmentCentralModalProps) => {
   const terminologyText = useCompanionTerminologyText();
   const companions = useCompanionsParentsForPrimaryOrg();
@@ -668,6 +671,20 @@ const AddAppointmentCentralModal = ({
     setPrefillActive(Boolean(prefill));
     setCalendarSlotFlowActive(false);
   }, [prefill]);
+
+  // ── Auto-select companion when opened from an external context (e.g. companions table) ──
+  useEffect(() => {
+    if (!showModal || !initialCompanionId) return;
+    const found = companions.find((c) => c.companion.id === initialCompanionId);
+    if (found) {
+      handlePatientSelect(found.companion.id);
+      setPatientQuery(formatCompanionNameWithOwnerLastName(found.companion.name, found.parent));
+    } else {
+      // Companions may not be loaded yet — park and auto-select when they arrive
+      setPendingAutoSelectCompanionId(initialCompanionId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showModal, initialCompanionId]);
 
   // ── Slot loading indicator (non-prefill flow only) ───────────────────────────
   const prevServiceIdRef = useRef<string | undefined>(undefined);
@@ -764,6 +781,7 @@ const AddAppointmentCentralModal = ({
     const found = companions.find((c) => c.companion.id === pendingAutoSelectCompanionId);
     if (!found) return;
     handlePatientSelect(found.companion.id);
+    setPatientQuery(formatCompanionNameWithOwnerLastName(found.companion.name, found.parent));
     setPendingAutoSelectCompanionId(null);
   }, [companions, handlePatientSelect, pendingAutoSelectCompanionId, showModal]);
 
@@ -773,11 +791,13 @@ const AddAppointmentCentralModal = ({
   );
 
   const canCloseModal = useCallback(() => {
+    // Never close the appointment modal while the add-companion sub-modal is open on top
+    if (showAddCompanionModal) return false;
     if (isLoading) return false;
     if (!hasUnsavedChanges) return true;
     setShowDiscardConfirm(true);
     return false;
-  }, [isLoading, hasUnsavedChanges]);
+  }, [showAddCompanionModal, isLoading, hasUnsavedChanges]);
 
   const handleDiscardAndClose = useCallback(() => {
     setShowDiscardConfirm(false);
@@ -893,9 +913,8 @@ const AddAppointmentCentralModal = ({
 
   return (
     <>
-      {/* Central modal — hidden (not unmounted) when AddCompanion is open for smooth slide transition */}
       <AppointmentCentralModalShell
-        showModal={showModal && !showAddCompanionModal}
+        showModal={showModal}
         setShowModal={setShowModal}
         title="Appointment details"
         canClose={canCloseModal}
@@ -1103,14 +1122,7 @@ const AddAppointmentCentralModal = ({
               type="button"
               onClick={handleSubmit}
               disabled={isLoading}
-              className="yc-primary-button flex items-center justify-center gap-2 rounded-2xl! px-6 py-3 whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{
-                fontFamily: FONT,
-                fontSize: 16,
-                fontWeight: 500,
-                lineHeight: '120%',
-                color: '#ffffff',
-              }}
+              className="yc-primary-button flex items-center justify-center gap-2 rounded-2xl! px-6 py-3 whitespace-nowrap font-satoshi text-base font-medium leading-[1.2] text-white! disabled:opacity-60 disabled:cursor-not-allowed"
               onPointerDown={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
                 e.currentTarget.style.setProperty('--yc-button-x', `${e.clientX - r.left}px`);
@@ -1128,15 +1140,15 @@ const AddAppointmentCentralModal = ({
         </div>
       </AppointmentCentralModalShell>
 
-      {/* AddCompanion slides in over the central modal — smooth transition */}
-      <AddCompanion
+      <AddCompanionCentralModal
         showModal={showAddCompanionModal}
         setShowModal={handleAddCompanionClose}
-        mode="fasttrack"
+        formMode="fasttrack"
         onCompanionCreated={(companionId) => {
           setPendingAutoSelectCompanionId(companionId);
           setAddCompanionTarget(null);
         }}
+        onGoToAppointment={() => setAddCompanionTarget(null)}
       />
 
       {/* Discard confirmation */}
@@ -1162,8 +1174,7 @@ const AddAppointmentCentralModal = ({
             <button
               type="button"
               onClick={handleDiscardAndClose}
-              className="yc-primary-button rounded-2xl! px-5 py-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ ...text14M, color: 'white' }}
+              className="yc-primary-button rounded-2xl! px-5 py-2.5 font-satoshi text-base font-medium leading-[1.2] text-white! disabled:opacity-60 disabled:cursor-not-allowed"
               onPointerDown={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
                 e.currentTarget.style.setProperty('--yc-button-x', `${e.clientX - r.left}px`);

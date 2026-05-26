@@ -111,7 +111,7 @@ const AppointmentCentralModalShell = ({
         </div>
 
         {/* Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hidden px-4 pb-4 pt-5 sm:px-6 sm:pb-6 sm:pt-5">
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hidden px-4 pb-4 pt-5 sm:px-6 sm:pb-4 sm:pt-5">
           {children}
         </div>
       </div>
