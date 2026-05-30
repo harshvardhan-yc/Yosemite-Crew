@@ -94,6 +94,7 @@ jest.mock('@/app/features/integrations/constants/merck', () => ({
   MERCK_COPYRIGHT_NOTICE: 'copyright',
   getMerckSubtopicPillStyle: () => ({}),
   sanitizeMerckHtml: (s: string) => s,
+  stripMerckHtml: (s: string) => s.replace(/<[^>]*>/g, '').trim(),
 }));
 
 jest.mock('@/app/lib/date', () => ({
@@ -226,7 +227,7 @@ describe('MerckManuals page', () => {
     expect(document.body.querySelector('[data-merck-reader-overlay="true"]')).toHaveClass(
       'fixed',
       'inset-0',
-      'z-[10000]'
+      'z-10000'
     );
     expect(screen.getByTitle('Canine Fever')).toHaveAttribute('referrerpolicy', 'strict-origin');
     fireEvent.click(screen.getByLabelText('Close Merck reader'));

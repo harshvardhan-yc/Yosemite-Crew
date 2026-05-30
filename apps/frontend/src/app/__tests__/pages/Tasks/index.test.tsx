@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 import ProtectedTasks from '@/app/features/tasks/pages/Tasks';
@@ -69,9 +69,32 @@ jest.mock('next/dynamic', () => ({
 const useTasksMock = jest.fn();
 const usePermissionsMock = jest.fn();
 const useSearchStoreMock = jest.fn();
+const useSearchParamsMock = jest.fn();
 const taskCalendarSpy = jest.fn();
 const taskTableSpy = jest.fn();
 const taskBoardSpy = jest.fn();
+const taskInfoSpy = jest.fn();
+const addTaskSpy = jest.fn();
+
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => useSearchParamsMock(),
+}));
+
+jest.mock('@/app/features/appointments/components/Calendar/weekHelpers', () => ({
+  startOfDay: (d: Date) => d,
+}));
+
+jest.mock('@/app/hooks/usePlannerLayout', () => ({
+  usePlannerAutoLock: () => ({ plannerSectionRef: { current: null } }),
+  getPlannerLayoutClassNames: () => ({
+    wrapperClassName: 'wrapper',
+    plannerSectionClassName: 'planner',
+  }),
+}));
+
+jest.mock('@/app/ui/layout/MobileSearchBar/MobileSearchBar', () => () => (
+  <div data-testid="mobile-search-bar" />
+));
 
 jest.mock('@/app/ui/layout/guards/ProtectedRoute', () => ({
   __esModule: true,
@@ -113,7 +136,15 @@ jest.mock('@/app/ui/widgets/TitleCalendar', () => (props: any) => (
   </div>
 ));
 
-jest.mock('@/app/ui/filters/Filters', () => () => <div data-testid="filters" />);
+jest.mock('@/app/ui/filters/Filters', () => (props: any) => (
+  <div data-testid="filters">
+    {props.showAddButton ? (
+      <button type="button" onClick={props.onAddButtonClick}>
+        Add
+      </button>
+    ) : null}
+  </div>
+));
 
 jest.mock('@/app/features/appointments/components/Calendar/TaskCalendar', () => (props: any) => {
   taskCalendarSpy(props);
@@ -130,13 +161,15 @@ jest.mock('@/app/features/tasks/components/TaskBoard', () => (props: any) => {
   return <div data-testid="task-board" />;
 });
 
-jest.mock('@/app/features/tasks/pages/Tasks/Sections/AddTask', () => () => (
-  <div data-testid="add-task" />
-));
+jest.mock('@/app/features/tasks/pages/Tasks/Sections/AddTask', () => (props: any) => {
+  addTaskSpy(props);
+  return <div data-testid="add-task" />;
+});
 
-jest.mock('@/app/features/tasks/pages/Tasks/Sections/TaskInfo', () => () => (
-  <div data-testid="task-info" />
-));
+jest.mock('@/app/features/tasks/pages/Tasks/Sections/TaskInfo', () => (props: any) => {
+  taskInfoSpy(props);
+  return <div data-testid="task-info" />;
+});
 
 jest.mock('@/app/features/tasks/pages/Tasks/Sections/ChangeStatus', () => () => (
   <div data-testid="task-change-status" />
@@ -155,6 +188,7 @@ describe('Tasks page', () => {
     ]);
     usePermissionsMock.mockReturnValue({ can: jest.fn(() => true) });
     useSearchStoreMock.mockImplementation((selector: any) => selector({ query: 'follow' }));
+    useSearchParamsMock.mockReturnValue({ get: () => null });
   });
 
   it('renders calendar view and switches to table', () => {
@@ -184,6 +218,137 @@ describe('Tasks page', () => {
     expect(taskBoardSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         tasks: [expect.objectContaining({ _id: 't1' })],
+      })
+    );
+  });
+
+  it('deep link: opens TaskInfo when searchParams taskId matches a task', async () => {
+    useTasksMock.mockReturnValue([
+      { _id: 'deep-task', status: 'pending', audience: 'EMPLOYEE_TASK', name: 'Deep Task' },
+    ]);
+    useSearchParamsMock.mockReturnValue({
+      get: (key: string) => (key === 'taskId' ? 'deep-task' : null),
+    });
+
+    await act(async () => {
+      render(<ProtectedTasks />);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('task-info')).toBeInTheDocument();
+    expect(taskInfoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        showModal: true,
+        activeTask: expect.objectContaining({ _id: 'deep-task' }),
+      })
+    );
+  });
+
+  it('activeTask is null when tasks list is empty', async () => {
+    useTasksMock.mockReturnValue([]);
+    useSearchStoreMock.mockImplementation((selector: any) => selector({ query: '' }));
+
+    await act(async () => {
+      render(<ProtectedTasks />);
+      await Promise.resolve();
+    });
+
+    // TaskInfo is not rendered when activeTask is null
+    expect(screen.queryByTestId('task-info')).not.toBeInTheDocument();
+  });
+
+  it('activeTask updates reactively when tasks list changes', async () => {
+    const { rerender } = render(<ProtectedTasks />);
+
+    // Initial render — t1 and t2 present, t1 is activeTask
+    expect(taskInfoSpy).not.toHaveBeenCalled();
+
+    // Update tasks list so t1 is replaced with updated t1
+    useTasksMock.mockReturnValue([
+      { _id: 't1', status: 'completed', audience: 'EMPLOYEE_TASK', name: 'Follow up updated' },
+    ]);
+
+    await act(async () => {
+      rerender(<ProtectedTasks />);
+      await Promise.resolve();
+    });
+
+    // After re-render with updated task list, taskCalendar should receive the updated filteredList
+    expect(taskCalendarSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allTasks: [expect.objectContaining({ _id: 't1', name: 'Follow up updated' })],
+      })
+    );
+  });
+
+  it('handleCreateFromCalendarSlot: onCreateFromCalendarSlot prop opens add popup', async () => {
+    render(<ProtectedTasks />);
+
+    const calendarProps = taskCalendarSpy.mock.calls[0][0];
+    expect(calendarProps.onCreateFromCalendarSlot).toBeInstanceOf(Function);
+
+    await act(async () => {
+      calendarProps.onCreateFromCalendarSlot({ dueAt: new Date('2025-01-01'), assignedTo: 'u1' });
+      await Promise.resolve();
+    });
+
+    expect(addTaskSpy).toHaveBeenCalledWith(expect.objectContaining({ showModal: true }));
+  });
+
+  it('handleReuseTask: onReuseTask prop on TaskInfo opens add popup', async () => {
+    useTasksMock.mockReturnValue([
+      { _id: 'deep-task', status: 'pending', audience: 'EMPLOYEE_TASK', name: 'Deep Task' },
+    ]);
+    useSearchParamsMock.mockReturnValue({
+      get: (key: string) => (key === 'taskId' ? 'deep-task' : null),
+    });
+
+    await act(async () => {
+      render(<ProtectedTasks />);
+      await Promise.resolve();
+    });
+
+    expect(taskInfoSpy).toHaveBeenCalled();
+    const taskInfoProps = taskInfoSpy.mock.calls[taskInfoSpy.mock.calls.length - 1][0];
+    expect(taskInfoProps.onReuseTask).toBeInstanceOf(Function);
+
+    await act(async () => {
+      taskInfoProps.onReuseTask({ _id: 'deep-task', name: 'Deep Task' });
+      await Promise.resolve();
+    });
+
+    expect(addTaskSpy).toHaveBeenCalledWith(expect.objectContaining({ showModal: true }));
+  });
+
+  it('openAddTask: clicking Add button in Filters calls openAddTask', async () => {
+    render(<ProtectedTasks />);
+
+    const addButton = screen.getByRole('button', { name: 'Add' });
+    await act(async () => {
+      fireEvent.click(addButton);
+      await Promise.resolve();
+    });
+
+    expect(addTaskSpy).toHaveBeenCalledWith(expect.objectContaining({ showModal: true }));
+  });
+
+  it('filteredList in board view ignores status filter (shows all matching query/audience)', async () => {
+    useTasksMock.mockReturnValue([
+      { _id: 't1', status: 'pending', audience: 'EMPLOYEE_TASK', name: 'Follow up' },
+      { _id: 't2', status: 'completed', audience: 'EMPLOYEE_TASK', name: 'Close out' },
+    ]);
+    useSearchStoreMock.mockImplementation((selector: any) => selector({ query: '' }));
+
+    render(<ProtectedTasks />);
+    fireEvent.click(screen.getByText('Board'));
+
+    // In board view, status filter is ignored — both tasks should appear
+    expect(taskBoardSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tasks: expect.arrayContaining([
+          expect.objectContaining({ _id: 't1' }),
+          expect.objectContaining({ _id: 't2' }),
+        ]),
       })
     );
   });

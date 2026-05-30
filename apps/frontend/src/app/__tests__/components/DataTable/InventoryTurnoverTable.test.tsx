@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, within } from '@testing-library/react';
-import InventoryTurnoverTable, { getStatusStyle } from '@/app/ui/tables/InventoryTurnoverTable';
+import InventoryTurnoverTable from '@/app/ui/tables/InventoryTurnoverTable';
+import { getInventoryTurnoverStatusStyle } from '@/app/ui/tables/tableUtils';
 import { InventoryTurnoverItem } from '@/app/features/inventory/pages/Inventory/types';
 
 // --- Mocks ---
@@ -63,49 +64,49 @@ describe('InventoryTurnoverTable Component', () => {
 
   describe('getStatusStyle', () => {
     it('returns correct style for excellent', () => {
-      expect(getStatusStyle('Excellent')).toEqual({
+      expect(getInventoryTurnoverStatusStyle('Excellent')).toEqual({
         color: 'var(--color-pill-success-text)',
         backgroundColor: 'var(--color-pill-success-bg)',
         borderColor: 'var(--color-pill-success-border)',
       });
     });
     it('returns correct style for low', () => {
-      expect(getStatusStyle('Low')).toEqual({
+      expect(getInventoryTurnoverStatusStyle('Low')).toEqual({
         color: 'var(--color-pill-warning-text)',
         backgroundColor: 'var(--color-pill-warning-bg)',
         borderColor: 'var(--color-pill-warning-border)',
       });
     });
     it('returns correct style for moderate', () => {
-      expect(getStatusStyle('Moderate')).toEqual({
+      expect(getInventoryTurnoverStatusStyle('Moderate')).toEqual({
         color: 'var(--color-pill-progress-text)',
         backgroundColor: 'var(--color-pill-progress-bg)',
         borderColor: 'var(--color-pill-progress-border)',
       });
     });
     it('returns correct style for out of stock', () => {
-      expect(getStatusStyle('Out of stock')).toEqual({
+      expect(getInventoryTurnoverStatusStyle('Out of stock')).toEqual({
         color: 'var(--color-pill-warning-text)',
         backgroundColor: 'var(--color-pill-warning-bg)',
         borderColor: 'var(--color-pill-warning-border)',
       });
     });
     it('returns correct style for healthy', () => {
-      expect(getStatusStyle('Healthy')).toEqual({
+      expect(getInventoryTurnoverStatusStyle('Healthy')).toEqual({
         color: 'var(--color-pill-success-text)',
         backgroundColor: 'var(--color-pill-success-bg)',
         borderColor: 'var(--color-pill-success-border)',
       });
     });
     it('returns default style for unknown', () => {
-      expect(getStatusStyle('Unknown')).toEqual({
+      expect(getInventoryTurnoverStatusStyle('Unknown')).toEqual({
         color: 'var(--color-pill-neutral-text)',
         backgroundColor: 'var(--color-pill-neutral-bg)',
         borderColor: 'var(--color-pill-neutral-border)',
       });
     });
     it('handles undefined status gracefully', () => {
-      expect(getStatusStyle()).toEqual({
+      expect(getInventoryTurnoverStatusStyle()).toEqual({
         color: 'var(--color-pill-neutral-text)',
         backgroundColor: 'var(--color-pill-neutral-bg)',
         borderColor: 'var(--color-pill-neutral-border)',

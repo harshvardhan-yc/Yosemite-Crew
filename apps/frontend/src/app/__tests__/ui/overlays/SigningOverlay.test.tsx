@@ -33,9 +33,9 @@ describe('SigningOverlay', () => {
     expect(iframe).toHaveAttribute('src', 'https://ds.yosemitecrew.com/sign/abc');
     expect(iframe).toHaveAttribute(
       'sandbox',
-      'allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts'
+      'allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts'
     );
-    expect(iframe).toHaveAttribute('referrerpolicy', 'strict-origin');
+    expect(iframe).toHaveAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
   });
 
   it('shows a fallback message for untrusted Documenso URLs', () => {

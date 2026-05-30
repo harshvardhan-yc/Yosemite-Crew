@@ -79,16 +79,7 @@ jest.mock(
     }: {
       children: React.ReactNode;
       onSubmit?: (e: React.FormEvent<HTMLFormElement>) => void;
-    }) => (
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSubmit?.(e);
-        }}
-      >
-        {children}
-      </form>
-    );
+    }) => <form onSubmit={onSubmit}>{children}</form>;
     jest.mock('@/app/ui/primitives/Buttons', () => ({
       Primary: ({
         text,

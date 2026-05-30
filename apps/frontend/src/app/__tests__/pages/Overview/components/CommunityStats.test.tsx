@@ -119,7 +119,7 @@ describe('CommunityStats Component', () => {
   it('1. renders the loading state correctly', () => {
     render(<CommunityStats trafficChart={[]} starsChart={[]} isLoading={true} />);
 
-    expect(screen.getByText('Loading Repository Data...')).toBeInTheDocument();
+    expect(screen.getByText('Loading Repository Data…')).toBeInTheDocument();
 
     // Ensure chart is NOT rendered
     expect(screen.queryByTestId('mock-dynamic-chart')).not.toBeInTheDocument();

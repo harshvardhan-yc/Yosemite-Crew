@@ -27,7 +27,7 @@ describe('CalBookingOverlay', () => {
     expect(
       screen.queryByRole('heading', { name: 'Book an onboarding call' })
     ).not.toBeInTheDocument();
-    expect(frame).toHaveClass('h-full', 'w-full', 'border-0');
+    expect(frame).toHaveClass('size-full', 'border-0');
   });
 
   it('closes from the close button and Escape key', () => {

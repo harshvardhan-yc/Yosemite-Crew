@@ -3,7 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
-import InvoiceTable, { getStatusStyle } from '@/app/ui/tables/InvoiceTable';
+import InvoiceTable from '@/app/ui/tables/InvoiceTable';
+import { getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 import { Invoice } from '@yosemite-crew/types';
 
 const useAppointmentsForPrimaryOrgMock = jest.fn();
@@ -134,7 +135,7 @@ describe('InvoiceTable', () => {
   });
 
   it('returns styles for known status', () => {
-    expect(getStatusStyle('pending')).toEqual({
+    expect(getInvoiceStatusStyle('pending')).toEqual({
       color: 'var(--color-pill-neutral-text)',
       backgroundColor: 'var(--color-pill-neutral-bg)',
       borderColor: 'var(--color-pill-neutral-border)',

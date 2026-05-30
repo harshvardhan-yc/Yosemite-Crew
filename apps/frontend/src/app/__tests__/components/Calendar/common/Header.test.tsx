@@ -32,7 +32,7 @@ describe('Header Component', () => {
 
   const getEmergencyDot = (button: HTMLElement) =>
     Array.from(button.querySelectorAll('span')).find((span) =>
-      span.className.includes('h-2.5')
+      span.className.includes('size-2.5')
     ) as HTMLElement;
 
   // --- 1. Rendering ---

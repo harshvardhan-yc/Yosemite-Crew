@@ -240,5 +240,116 @@ describe('revampCatalogStore', () => {
       expect(archived).toHaveLength(1);
       expect(archived[0].status).toBe('ARCHIVED');
     });
+
+    it('updates a package', () => {
+      const pkg = getStore().addPackage({
+        name: 'Before',
+        description: '',
+        specialityId: 'spec-1',
+        organisationId: 'org-1',
+        durationMinutes: 30,
+        isBookable: false,
+        leadCount: 1,
+        supportCount: 0,
+        additionalDiscount: 0,
+        breakdown: [],
+        status: 'ACTIVE',
+      });
+      getStore().updatePackage(pkg.id, { name: 'After', durationMinutes: 60 });
+      const found = getStore().packages.find((p) => p.id === pkg.id);
+      expect(found?.name).toBe('After');
+      expect(found?.durationMinutes).toBe(60);
+    });
+
+    it('deletes a package', () => {
+      const pkg = getStore().addPackage({
+        name: 'Gone',
+        description: '',
+        specialityId: 'spec-1',
+        organisationId: 'org-1',
+        durationMinutes: 30,
+        isBookable: false,
+        leadCount: 1,
+        supportCount: 0,
+        additionalDiscount: 0,
+        breakdown: [],
+        status: 'ACTIVE',
+      });
+      getStore().deletePackage(pkg.id);
+      expect(getStore().packages.find((p) => p.id === pkg.id)).toBeUndefined();
+    });
+
+    it('updates a breakdown item', () => {
+      const pkg = getStore().addPackage({
+        name: 'Pkg',
+        description: '',
+        specialityId: 'spec-1',
+        organisationId: 'org-1',
+        durationMinutes: 30,
+        isBookable: false,
+        leadCount: 1,
+        supportCount: 0,
+        additionalDiscount: 0,
+        breakdown: [],
+        status: 'ACTIVE',
+      });
+      getStore().addBreakdownItem(pkg.id, {
+        type: 'CONSULTATION',
+        name: 'Consult',
+        unitPrice: 100,
+        quantity: 1,
+        discount: 0,
+      });
+      const itemId = getStore().packages[0].breakdown[0].id;
+      getStore().updateBreakdownItem(pkg.id, itemId, { quantity: 3, discount: 15 });
+      const updated = getStore().packages[0].breakdown[0];
+      expect(updated.quantity).toBe(3);
+      expect(updated.discount).toBe(15);
+    });
+
+    it('updateBreakdownItem ignores non-matching packageId', () => {
+      const pkg = getStore().addPackage({
+        name: 'Pkg',
+        description: '',
+        specialityId: 'spec-1',
+        organisationId: 'org-1',
+        durationMinutes: 30,
+        isBookable: false,
+        leadCount: 1,
+        supportCount: 0,
+        additionalDiscount: 0,
+        breakdown: [],
+        status: 'ACTIVE',
+      });
+      getStore().addBreakdownItem(pkg.id, {
+        type: 'CONSULTATION',
+        name: 'Consult',
+        unitPrice: 100,
+        quantity: 1,
+        discount: 0,
+      });
+      const itemId = getStore().packages[0].breakdown[0].id;
+      getStore().updateBreakdownItem('wrong-pkg-id', itemId, { quantity: 99 });
+      // Original package should be unchanged
+      expect(getStore().packages[0].breakdown[0].quantity).toBe(1);
+    });
+  });
+
+  describe('generateItemCode', () => {
+    it('generates a service code matching CS-XXXX for CONSULTATION', () => {
+      const code = getStore().generateItemCode('CONSULTATION');
+      expect(code).toMatch(/^CS-\d{4}$/);
+    });
+
+    it('generates a package code matching PK-XXXX for PACKAGE', () => {
+      const code = getStore().generateItemCode('PACKAGE');
+      expect(code).toMatch(/^PK-\d{4}$/);
+    });
+
+    it('generates a code for PROCEDURE type', () => {
+      const code = getStore().generateItemCode('PROCEDURE');
+      expect(typeof code).toBe('string');
+      expect(code.length).toBeGreaterThan(0);
+    });
   });
 });

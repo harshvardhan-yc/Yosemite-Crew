@@ -34,7 +34,40 @@ jest.mock('next/dynamic', () => ({
 const useInvoicesMock = jest.fn();
 const useLoadInvoicesMock = jest.fn();
 const useSearchStoreMock = jest.fn();
+const useSearchParamsMock = jest.fn();
+const useSubscriptionMock = jest.fn();
 const invoiceTableSpy = jest.fn();
+
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => useSearchParamsMock(),
+}));
+
+const mockSearchParamsGet = jest.fn(() => null);
+
+jest.mock('@/app/hooks/useBilling', () => ({
+  useSubscriptionForPrimaryOrg: () => useSubscriptionMock(),
+}));
+
+jest.mock('@/app/hooks/usePlannerLayout', () => ({
+  usePlannerAutoLock: () => ({ plannerSectionRef: { current: null } }),
+  getPlannerLayoutClassNames: () => ({
+    wrapperClassName: 'wrapper',
+    plannerSectionClassName: 'planner',
+  }),
+}));
+
+jest.mock('@/app/ui/layout/MobileSearchBar/MobileSearchBar', () => () => (
+  <div data-testid="mobile-search-bar" />
+));
+
+jest.mock('@/app/ui/primitives/GlassTooltip/GlassTooltip', () => ({
+  __esModule: true,
+  default: ({ children }: any) => <>{children}</>,
+}));
+
+jest.mock('react-icons/io5', () => ({
+  IoInformationCircleOutline: () => <span data-testid="info-icon" />,
+}));
 
 jest.mock('@/app/ui/layout/guards/ProtectedRoute', () => ({
   __esModule: true,
@@ -73,7 +106,10 @@ jest.mock('@/app/features/finance/pages/Finance/Sections/InvoiceInfo', () => () 
 describe('Finance page', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSearchParamsGet.mockReturnValue(null);
+    useSearchParamsMock.mockReturnValue({ get: mockSearchParamsGet });
     useLoadInvoicesMock.mockReturnValue(undefined);
+    useSubscriptionMock.mockReturnValue(null);
     useInvoicesMock.mockReturnValue([
       { id: 'inv-1', status: 'paid', appointmentId: 'appt-1' },
       { id: 'inv-2', status: 'pending', appointmentId: 'appt-2' },

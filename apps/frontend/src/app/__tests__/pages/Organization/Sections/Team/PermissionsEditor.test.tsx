@@ -1,10 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import PermissionsEditor, {
-  uniq,
+import PermissionsEditor from '@/app/features/organization/pages/Organization/Sections/Team/PermissionsEditor';
+import {
   computeEffectivePermissions,
-} from '@/app/features/organization/pages/Organization/Sections/Team/PermissionsEditor';
+  uniq,
+} from '@/app/features/organization/pages/Organization/Sections/Team/permissionsEditorUtils';
 import { Permission, PERMISSIONS } from '@/app/lib/permissions';
 
 jest.mock('@/app/ui/primitives/Accordion/Accordion', () => ({
@@ -101,6 +102,7 @@ describe('PermissionsEditor utility functions', () => {
 
 describe('PermissionsEditor component', () => {
   const mockOnSave = jest.fn();
+  const adminRole = 'ADMIN' as const;
   const defaultPermissions: Permission[] = [
     PERMISSIONS.APPOINTMENTS_VIEW_ANY,
     PERMISSIONS.COMPANIONS_VIEW_ANY,
@@ -111,13 +113,13 @@ describe('PermissionsEditor component', () => {
   });
 
   it('renders permissions accordion', () => {
-    render(<PermissionsEditor role="ADMIN" value={defaultPermissions} onSave={mockOnSave} />);
+    render(<PermissionsEditor role={adminRole} value={defaultPermissions} onSave={mockOnSave} />);
 
     expect(screen.getByTestId('accordion-Permissions')).toBeInTheDocument();
   });
 
   it('renders permission rows with labels', () => {
-    render(<PermissionsEditor role="ADMIN" value={defaultPermissions} onSave={mockOnSave} />);
+    render(<PermissionsEditor role={adminRole} value={defaultPermissions} onSave={mockOnSave} />);
 
     expect(screen.getByText('Appointments')).toBeInTheDocument();
     expect(screen.getByText('Companions')).toBeInTheDocument();
@@ -127,13 +129,13 @@ describe('PermissionsEditor component', () => {
   });
 
   it('renders reset to defaults button', () => {
-    render(<PermissionsEditor role="ADMIN" value={defaultPermissions} onSave={mockOnSave} />);
+    render(<PermissionsEditor role={adminRole} value={defaultPermissions} onSave={mockOnSave} />);
 
     expect(screen.getByText('Reset to role defaults')).toBeInTheDocument();
   });
 
   it('shows save and cancel buttons when permissions are modified via reset', async () => {
-    render(<PermissionsEditor role="ADMIN" value={defaultPermissions} onSave={mockOnSave} />);
+    render(<PermissionsEditor role={adminRole} value={defaultPermissions} onSave={mockOnSave} />);
 
     const resetButton = screen.getByText('Reset to role defaults');
     fireEvent.click(resetButton);
@@ -145,14 +147,14 @@ describe('PermissionsEditor component', () => {
   });
 
   it('shows dash for rows without view or edit permissions', () => {
-    render(<PermissionsEditor role="ADMIN" value={defaultPermissions} onSave={mockOnSave} />);
+    render(<PermissionsEditor role={adminRole} value={defaultPermissions} onSave={mockOnSave} />);
 
     const dashes = screen.getAllByText('—');
     expect(dashes.length).toBeGreaterThan(0);
   });
 
   it('renders checkboxes for permission rows', () => {
-    render(<PermissionsEditor role="ADMIN" value={defaultPermissions} onSave={mockOnSave} />);
+    render(<PermissionsEditor role={adminRole} value={defaultPermissions} onSave={mockOnSave} />);
 
     const checkboxes = screen.getAllByRole('checkbox');
     expect(checkboxes.length).toBeGreaterThan(0);

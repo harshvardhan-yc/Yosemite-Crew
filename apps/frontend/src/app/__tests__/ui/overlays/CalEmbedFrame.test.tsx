@@ -2,7 +2,8 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { getCalApi } from '@calcom/embed-react';
-import CalEmbedFrame, { getCalEmbedUrl } from '@/app/ui/overlays/CalEmbedFrame';
+import CalEmbedFrame from '@/app/ui/overlays/CalEmbedFrame';
+import { getCalEmbedUrl } from '@/app/ui/overlays/calEmbedUtils';
 
 jest.mock('@calcom/embed-react', () => ({
   __esModule: true,

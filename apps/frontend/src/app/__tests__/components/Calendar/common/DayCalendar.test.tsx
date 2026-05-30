@@ -253,7 +253,7 @@ describe('DayCalendar (Appointments)', () => {
       />
     );
 
-    const timeline = screen.getByRole('region', {
+    const timeline = screen.getByRole('button', {
       name: 'Appointments timeline for Monday, January 6',
     });
 

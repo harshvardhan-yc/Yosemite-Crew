@@ -6,9 +6,8 @@ import CompanionCard from '@/app/ui/cards/CompanionCard/CompanionCard';
 
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ alt, src, ...props }: any) => (
-    <span role="img" aria-label={alt} data-src={src} {...props} />
-  ),
+  default: ({ alt, src, ...props }: any) =>
+    React.createElement('img', { alt, 'data-src': src, ...props }),
 }));
 
 jest.mock('@/app/ui/tables/CompanionsTable', () => ({

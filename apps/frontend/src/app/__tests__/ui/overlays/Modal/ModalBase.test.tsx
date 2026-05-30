@@ -35,13 +35,16 @@ describe('ModalBase', () => {
   it('renders hidden state styles when showModal is false', () => {
     renderModal({ showModal: false });
 
-    const dialog = screen.getByRole('dialog');
+    // inert hides the div from the a11y tree and prevents focus when closed;
+    // use { hidden: true } to still assert it stays mounted for CSS transitions.
+    const dialog = screen.getByRole('dialog', { hidden: true });
     expect(dialog).toBeInTheDocument();
     expect(dialog).toHaveClass('container');
+    expect(dialog).toHaveAttribute('inert');
     // Modal stays mounted so CSS transitions can play;
-    // interaction is blocked via pointer-events-none instead
+    // interaction is blocked via pointer-events-none and inert
     expect(dialog).toHaveClass('pointer-events-none');
-    expect(screen.getByText('Modal content')).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('Modal content');
   });
 
   it('closes on outside click (mousedown outside container)', () => {

@@ -1,42 +1,42 @@
-import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
-import RoomCard from "@/app/ui/cards/RoomCard";
-import { OrganisationRoom } from "@yosemite-crew/types";
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import RoomCard from '@/app/ui/cards/RoomCard';
+import { OrganisationRoom } from '@yosemite-crew/types';
 
 // --- Mocks ---
 
 // Mock helper function from RoomTable
-jest.mock("@/app/ui/tables/RoomTable", () => ({
+jest.mock('@/app/ui/tables/tableUtils', () => ({
   joinNames: jest.fn((map, ids) => {
-    if (!ids || ids.length === 0) return "-";
+    if (!ids || ids.length === 0) return '-';
     // Simple join logic for testing verification
-    return ids.map((id: string) => map[id] || id).join(", ");
+    return ids.map((id: string) => map[id] || id).join(', ');
   }),
 }));
 
-import { joinNames } from "@/app/ui/tables/RoomTable";
+import { joinNames } from '@/app/ui/tables/tableUtils';
 
 // --- Test Data ---
 
 const mockRoom: OrganisationRoom = {
-  _id: "room-101",
-  name: "Surgery Room A",
-  type: "Surgery",
+  _id: 'room-101',
+  name: 'Surgery Room A',
+  type: 'Surgery',
   // Note: Using spelling from source code interface
-  assignedSpecialiteis: ["spec-1", "spec-2"],
-  assignedStaffs: ["staff-1"],
+  assignedSpecialiteis: ['spec-1', 'spec-2'],
+  assignedStaffs: ['staff-1'],
 } as any;
 
 const mockSpecialityMap = {
-  "spec-1": "Orthopedics",
-  "spec-2": "General",
+  'spec-1': 'Orthopedics',
+  'spec-2': 'General',
 };
 
 const mockStaffMap = {
-  "staff-1": "Dr. Strange",
+  'staff-1': 'Dr. Strange',
 };
 
-describe("RoomCard Component", () => {
+describe('RoomCard Component', () => {
   const mockHandleView = jest.fn();
 
   beforeEach(() => {
@@ -45,7 +45,7 @@ describe("RoomCard Component", () => {
 
   // --- 1. Rendering Details ---
 
-  it("renders room information correctly", () => {
+  it('renders room information correctly', () => {
     render(
       <RoomCard
         room={mockRoom}
@@ -56,25 +56,22 @@ describe("RoomCard Component", () => {
     );
 
     // Title & Type
-    expect(screen.getByText("Surgery Room A")).toBeInTheDocument();
-    expect(screen.getByText("Type:")).toBeInTheDocument();
-    expect(screen.getByText("Surgery")).toBeInTheDocument();
+    expect(screen.getByText('Surgery Room A')).toBeInTheDocument();
+    expect(screen.getByText('Type:')).toBeInTheDocument();
+    expect(screen.getByText('Surgery')).toBeInTheDocument();
 
     // Verify helper function calls
-    expect(joinNames).toHaveBeenCalledWith(mockSpecialityMap, [
-      "spec-1",
-      "spec-2",
-    ]);
-    expect(joinNames).toHaveBeenCalledWith(mockStaffMap, ["staff-1"]);
+    expect(joinNames).toHaveBeenCalledWith(mockSpecialityMap, ['spec-1', 'spec-2']);
+    expect(joinNames).toHaveBeenCalledWith(mockStaffMap, ['staff-1']);
 
     // Verify Rendered output from helper
-    expect(screen.getByText("Orthopedics, General")).toBeInTheDocument();
-    expect(screen.getByText("Dr. Strange")).toBeInTheDocument();
+    expect(screen.getByText('Orthopedics, General')).toBeInTheDocument();
+    expect(screen.getByText('Dr. Strange')).toBeInTheDocument();
   });
 
   // --- 2. Interaction ---
 
-  it("calls handleViewRoom with room object when View button is clicked", () => {
+  it('calls handleViewRoom with room object when View button is clicked', () => {
     render(
       <RoomCard
         room={mockRoom}
@@ -84,7 +81,7 @@ describe("RoomCard Component", () => {
       />
     );
 
-    const viewBtn = screen.getByText("View");
+    const viewBtn = screen.getByText('View');
     fireEvent.click(viewBtn);
 
     expect(mockHandleView).toHaveBeenCalledTimes(1);
@@ -93,7 +90,7 @@ describe("RoomCard Component", () => {
 
   // --- 3. Edge Cases ---
 
-  it("handles empty assignments gracefully (via helper mock)", () => {
+  it('handles empty assignments gracefully (via helper mock)', () => {
     const emptyRoom = {
       ...mockRoom,
       assignedSpecialiteis: [],
@@ -110,7 +107,7 @@ describe("RoomCard Component", () => {
     );
 
     // Our mock returns "-" for empty arrays
-    const dashes = screen.getAllByText("-");
+    const dashes = screen.getAllByText('-');
     expect(dashes.length).toBeGreaterThanOrEqual(1);
   });
 });

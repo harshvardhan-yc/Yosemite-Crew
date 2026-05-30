@@ -65,6 +65,7 @@ jest.mock('@/app/features/integrations/constants/merck', () => ({
   MERCK_COPYRIGHT_NOTICE: 'copyright notice',
   getMerckSubtopicPillStyle: () => ({}),
   sanitizeMerckHtml: (value: string) => value,
+  stripMerckHtml: (value: string) => value.replace(/<[^>]*>/g, '').trim(),
 }));
 
 jest.mock('@/app/constants/mediaSources', () => ({
