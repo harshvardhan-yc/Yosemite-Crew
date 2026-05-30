@@ -370,6 +370,7 @@ const ContactusPage = () => {
                     <input
                       type="radio"
                       name="queryType"
+                      aria-label={type}
                       value={type}
                       checked={selectedQueryType === type}
                       onChange={() => setSelectedQueryType(type)}
@@ -391,6 +392,7 @@ const ContactusPage = () => {
                         <input
                           type="radio"
                           name="dsarSubmitAs"
+                          aria-label={`Submit data service access request as ${option.label}`}
                           value={option.value}
                           checked={subselectedRequest === option.value}
                           onChange={() => setSubselectedRequest(option.value)}
@@ -422,6 +424,7 @@ const ContactusPage = () => {
                         <input
                           type="radio"
                           name="dsarRequestTo"
+                          aria-label={`Submit data service access request to ${option.label}`}
                           value={option.value}
                           checked={selectedRequest === option.label}
                           onChange={() => setSelectedRequest(option.label)}
@@ -438,6 +441,7 @@ const ContactusPage = () => {
                     <textarea
                       rows={3}
                       id="dsar-message"
+                      aria-label="Data service access request details"
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Your Message"
@@ -462,6 +466,7 @@ const ContactusPage = () => {
                         <input
                           type="checkbox"
                           name="confirmDsar"
+                          aria-label={`Confirm ${option}`}
                           value={option}
                           checked={confirmSelections.includes(option)}
                           onChange={() => toggleConfirmOption(option)}
@@ -497,6 +502,7 @@ const ContactusPage = () => {
                         <input
                           type="radio"
                           name="complaintSubmitAs"
+                          aria-label={`Submit complaint as ${option.label}`}
                           value={option.value}
                           checked={subselectedRequest === option.value}
                           onChange={() => setSubselectedRequest(option.value)}
@@ -513,6 +519,7 @@ const ContactusPage = () => {
                     <textarea
                       rows={3}
                       id="complaint-message"
+                      aria-label="Complaint details"
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Your Message"
@@ -573,6 +580,7 @@ const ContactusPage = () => {
                         <input
                           type="checkbox"
                           name="confirmComplaint"
+                          aria-label={`Confirm ${option}`}
                           value={option}
                           checked={confirmSelections.includes(option)}
                           onChange={() => toggleConfirmOption(option)}
@@ -606,6 +614,7 @@ const ContactusPage = () => {
                     </label>
                     <textarea
                       rows={3}
+                      aria-label="Request details"
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Your Message"

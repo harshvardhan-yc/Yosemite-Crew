@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { motion } from 'framer-motion';
+import { LazyMotion, domAnimation, m } from 'framer-motion';
 
 // Pre-computed path for an 8-point smooth star (cx=500, cy=500, outer=400, inner=340).
 // Hardcoded to avoid SSR/client floating-point divergence (Math.cos/sin differs between
@@ -33,49 +33,51 @@ const Ripple: React.FC<RippleProps> = ({ delay, duration, size, color, position,
         justifyContent: 'center',
       }}
     >
-      <motion.svg
-        viewBox="0 0 1000 1000"
-        className="star-ripple"
-        style={{ width: '100%', height: '100%' }}
-        initial={{ scale: 0.6, opacity: 0 }}
-        animate={{
-          scale: [0.6, 1, 1.4],
-          opacity: [0, 0.5, 0],
-          rotate: [0, 8, 15],
-        }}
-        transition={{
-          duration: duration,
-          delay: delay,
-          repeat: Infinity,
-          repeatDelay: 0,
-          ease: [0.4, 0, 0.2, 1],
-        }}
-      >
-        <defs>
-          <linearGradient
-            id={gradientId}
-            gradientUnits="userSpaceOnUse"
-            x1="100"
-            y1="100"
-            x2="900"
-            y2="900"
-          >
-            <stop offset="0%" stopColor="#b8ddf5" stopOpacity="0.8" />
-            <stop offset="30%" stopColor={color} stopOpacity="0.5" />
-            <stop offset="50%" stopColor={color} stopOpacity="0.2" />
-            <stop offset="70%" stopColor={color} stopOpacity="0.5" />
-            <stop offset="100%" stopColor="#b8ddf5" stopOpacity="0.8" />
-          </linearGradient>
-        </defs>
-        <path
-          d={STAR_PATH}
-          fill="none"
-          stroke={`url(#${gradientId})`}
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </motion.svg>
+      <LazyMotion features={domAnimation}>
+        <m.svg
+          viewBox="0 0 1000 1000"
+          className="star-ripple"
+          style={{ width: '100%', height: '100%' }}
+          initial={{ scale: 0.6, opacity: 0 }}
+          animate={{
+            scale: [0.6, 1, 1.4],
+            opacity: [0, 0.5, 0],
+            rotate: [0, 8, 15],
+          }}
+          transition={{
+            duration: duration,
+            delay: delay,
+            repeat: Infinity,
+            repeatDelay: 0,
+            ease: [0.4, 0, 0.2, 1],
+          }}
+        >
+          <defs>
+            <linearGradient
+              id={gradientId}
+              gradientUnits="userSpaceOnUse"
+              x1="100"
+              y1="100"
+              x2="900"
+              y2="900"
+            >
+              <stop offset="0%" stopColor="#b8ddf5" stopOpacity="0.8" />
+              <stop offset="30%" stopColor={color} stopOpacity="0.5" />
+              <stop offset="50%" stopColor={color} stopOpacity="0.2" />
+              <stop offset="70%" stopColor={color} stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#b8ddf5" stopOpacity="0.8" />
+            </linearGradient>
+          </defs>
+          <path
+            d={STAR_PATH}
+            fill="none"
+            stroke={`url(#${gradientId})`}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </m.svg>
+      </LazyMotion>
     </div>
   );
 };
