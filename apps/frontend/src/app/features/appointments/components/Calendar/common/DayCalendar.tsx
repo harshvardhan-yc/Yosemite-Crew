@@ -92,6 +92,44 @@ type ContextMenuState = {
   y: number;
 };
 
+const swallowNextClick = () => {
+  const handleClickCapture = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if ('stopImmediatePropagation' in event) {
+      event.stopImmediatePropagation();
+    }
+    globalThis.removeEventListener('click', handleClickCapture, true);
+  };
+  globalThis.addEventListener('click', handleClickCapture, true);
+};
+
+const computeUnavailableSegments = (
+  visible: Array<{ startMinute: number; endMinute: number }>,
+  availabilityLoaded: boolean,
+  windowStart: number,
+  windowEnd: number
+): Array<{ startMinute: number; endMinute: number }> => {
+  if (!visible.length) {
+    return availabilityLoaded ? [{ startMinute: windowStart, endMinute: windowEnd }] : [];
+  }
+  const segments: { startMinute: number; endMinute: number }[] = [];
+  const sorted = visible.toSorted((a, b) => a.startMinute - b.startMinute);
+  if (sorted[0].startMinute > windowStart) {
+    segments.push({ startMinute: windowStart, endMinute: sorted[0].startMinute });
+  }
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (sorted[i].endMinute < sorted[i + 1].startMinute) {
+      segments.push({ startMinute: sorted[i].endMinute, endMinute: sorted[i + 1].startMinute });
+    }
+  }
+  const last = sorted.at(-1)!;
+  if (last.endMinute < windowEnd) {
+    segments.push({ startMinute: last.endMinute, endMinute: windowEnd });
+  }
+  return segments;
+};
+
 const DayCalendarComponent: React.FC<DayCalendarProps> = ({
   events,
   date,
@@ -193,10 +231,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
   const pixelsPerStep = getPixelsPerStepForZoom(zoomMode);
   const yScale = pixelsPerStep / PIXELS_PER_STEP;
 
-  const totalHeightPx = useMemo(
-    () => ((windowEnd - windowStart) / MINUTES_PER_STEP) * pixelsPerStep,
-    [pixelsPerStep, windowEnd, windowStart]
-  );
+  const totalHeightPx = ((windowEnd - windowStart) / MINUTES_PER_STEP) * pixelsPerStep;
 
   const laidOut: LaidOutEvent[] = useMemo(
     () => layoutDayEvents(timedEvents, windowStart, windowEnd),
@@ -255,18 +290,6 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
     if (!contextMenu) return;
 
     const closeContextMenu = () => setContextMenu(null);
-    const swallowDismissClick = () => {
-      const handleClickCapture = (event: MouseEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if ('stopImmediatePropagation' in event) {
-          event.stopImmediatePropagation();
-        }
-        globalThis.removeEventListener('click', handleClickCapture, true);
-      };
-
-      globalThis.addEventListener('click', handleClickCapture, true);
-    };
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (contextMenuRef.current?.contains(target)) return;
@@ -275,7 +298,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
       if ('stopImmediatePropagation' in event) {
         event.stopImmediatePropagation();
       }
-      swallowDismissClick();
+      swallowNextClick();
       setContextMenu(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -364,25 +387,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
 
   const unavailableSegments = useMemo(() => {
     const visible = getVisibleAvailabilityIntervals?.(date) ?? [];
-    if (!visible.length) {
-      if (!availabilityLoaded) return [];
-      return [{ startMinute: windowStart, endMinute: windowEnd }];
-    }
-    const segments: { startMinute: number; endMinute: number }[] = [];
-    const sorted = [...visible].sort((a, b) => a.startMinute - b.startMinute);
-    if (sorted[0].startMinute > windowStart) {
-      segments.push({ startMinute: windowStart, endMinute: sorted[0].startMinute });
-    }
-    for (let i = 0; i < sorted.length - 1; i++) {
-      if (sorted[i].endMinute < sorted[i + 1].startMinute) {
-        segments.push({ startMinute: sorted[i].endMinute, endMinute: sorted[i + 1].startMinute });
-      }
-    }
-    const last = sorted.at(-1)!;
-    if (last.endMinute < windowEnd) {
-      segments.push({ startMinute: last.endMinute, endMinute: windowEnd });
-    }
-    return segments;
+    return computeUnavailableSegments(visible, availabilityLoaded, windowStart, windowEnd);
   }, [availabilityLoaded, date, getVisibleAvailabilityIntervals, windowStart, windowEnd]);
 
   const getNearestAvailableMinute = (minute: number) =>
@@ -420,8 +425,44 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
     createAppointmentAtMinute(rect.top + offsetY, container);
   };
 
-  const shouldIgnoreTimelineCreate = (target: EventTarget | null) =>
-    target instanceof HTMLElement && !!target.closest('button, a, input, textarea, select');
+  const shouldIgnoreTimelineCreate = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+    const closest = target.closest('button, a, input, textarea, select');
+    return !!closest && !('timelineCreate' in (closest as HTMLElement).dataset);
+  };
+
+  const getTimelineGrid = (el: HTMLElement): HTMLDivElement | null =>
+    el.querySelector<HTMLDivElement>('[data-timeline-grid]');
+
+  const handleTimelineDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggedAppointmentId) return;
+    event.preventDefault();
+    onDragHoverTarget?.(date);
+    const grid = getTimelineGrid(event.currentTarget);
+    if (!grid) return;
+    const minute = getMinuteFromTimelinePointer(event.clientY, grid);
+    setDropPreviewMinute(getNearestAvailableMinute(minute));
+  };
+
+  const handleTimelineDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggedAppointmentId) return;
+    const nextTarget = event.relatedTarget as Node | null;
+    if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+      setDropPreviewMinute(null);
+    }
+  };
+
+  const handleTimelineDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!draggedAppointmentId || !onAppointmentDropAt) return;
+    event.preventDefault();
+    const grid = getTimelineGrid(event.currentTarget);
+    if (!grid) return;
+    const minute = getMinuteFromTimelinePointer(event.clientY, grid);
+    const nearest = getNearestAvailableMinute(minute);
+    setDropPreviewMinute(null);
+    if (nearest == null) return;
+    onAppointmentDropAt(date, nearest);
+  };
 
   const clearPendingMarkerClick = () => {
     if (!clickTimerRef.current) return;
@@ -461,31 +502,34 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
     });
   };
 
-  const handleTimelineCreate = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleTimelineCreate = (event: React.MouseEvent<HTMLElement>) => {
     if (shouldIgnoreTimelineCreate(event.target)) return;
-    createAppointmentAtMinute(event.clientY, event.currentTarget);
+    const container = event.currentTarget.closest<HTMLElement>('[data-timeline-grid]');
+    if (container) createAppointmentAtMinute(event.clientY, container as HTMLDivElement);
   };
 
-  const handleTimelineKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleTimelineKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    createAppointmentAtOffset(event.currentTarget.clientHeight / 2, event.currentTarget);
+    const container = event.currentTarget.closest<HTMLElement>('[data-timeline-grid]');
+    if (container)
+      createAppointmentAtOffset(container.clientHeight / 2, container as HTMLDivElement);
   };
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-2 py-2 border-b border-grey-light shrink-0">
+      <div className="flex items-center justify-between p-2 border-b border-grey-light shrink-0">
         <Back onClick={handlePrevDay} />
         <div className="flex items-center gap-2 text-center">
           <div className="text-body-4 text-(--color-primary-700)">{weekday}</div>
-          <div className="text-body-4-emphasis text-white h-10 w-10 flex items-center justify-center rounded-full bg-text-brand">
+          <div className="text-body-4-emphasis text-white size-10 flex items-center justify-center rounded-full bg-text-brand">
             {dateNumber}
           </div>
         </div>
         <Next onClick={handleNextDay} />
       </div>
       {allDayEvents.length > 0 && (
-        <div className="px-2 py-2 border-b border-grey-light bg-slate-50 shrink-0">
+        <div className="p-2 border-b border-grey-light bg-slate-50 shrink-0">
           <div className="text-xs font-satoshi text-grey-text mb-1">All-day</div>
           <div className="flex flex-wrap gap-2">
             {allDayEvents.map((ev, idx) => {
@@ -512,20 +556,21 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
                     height={20}
                     width={20}
                     priority
-                    className="h-5 w-5 rounded-full object-cover"
+                    className="size-5 rounded-full object-cover"
                     alt={''}
                   />
                   <span className="font-medium truncate max-w-40">
                     {getCompanionDisplayName(ev)}
                   </span>
-                  <span className="opacity-70 truncate max-w-[120px]">{ev.concern || ''}</span>
+                  <span className="opacity-70 truncate max-w-30">{ev.concern || ''}</span>
                 </button>
               );
             })}
           </div>
         </div>
       )}
-      <div
+      <section
+        aria-label="Appointment timeline"
         className="overflow-x-hidden flex-1 px-2 pt-2 overflow-y-auto"
         style={{
           height: '100%',
@@ -536,62 +581,35 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
         }}
         ref={scrollRef}
         onWheel={onWheelBoundary}
+        onDragOver={handleTimelineDragOver}
+        onDragLeave={handleTimelineDragLeave}
+        onDrop={handleTimelineDrop}
         data-calendar-scroll="true"
       >
-        <section
-          tabIndex={onCreateAppointmentAt && !draggedAppointmentId ? 0 : -1}
-          aria-label={timelineLabel}
-          aria-describedby={
-            onCreateAppointmentAt && !draggedAppointmentId ? timelineInstructionsId : undefined
-          }
-          className="grid grid-cols-[52px_1fr]"
+        <div
+          data-timeline-grid
+          className="relative grid grid-cols-[52px_1fr]"
           style={{
             height: totalHeightPx,
           }}
-          onClick={
-            onCreateAppointmentAt && !draggedAppointmentId ? handleTimelineCreate : undefined
-          }
-          onDoubleClick={
-            onCreateAppointmentAt && !draggedAppointmentId ? handleTimelineCreate : undefined
-          }
-          onKeyDown={
-            onCreateAppointmentAt && !draggedAppointmentId ? handleTimelineKeyDown : undefined
-          }
-          onDragOver={(event) => {
-            if (!draggedAppointmentId) return;
-            event.preventDefault();
-            onDragHoverTarget?.(date);
-            const minute = getMinuteFromTimelinePointer(
-              event.clientY,
-              event.currentTarget as HTMLDivElement
-            );
-            setDropPreviewMinute(getNearestAvailableMinute(minute));
-          }}
-          onDragLeave={(event) => {
-            if (!draggedAppointmentId) return;
-            const nextTarget = event.relatedTarget as Node | null;
-            if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
-              setDropPreviewMinute(null);
-            }
-          }}
-          onDrop={(event) => {
-            if (!draggedAppointmentId || !onAppointmentDropAt) return;
-            event.preventDefault();
-            const minute = getMinuteFromTimelinePointer(
-              event.clientY,
-              event.currentTarget as HTMLDivElement
-            );
-            const nearest = getNearestAvailableMinute(minute);
-            setDropPreviewMinute(null);
-            if (nearest == null) return;
-            onAppointmentDropAt(date, nearest);
-          }}
         >
           {onCreateAppointmentAt && !draggedAppointmentId ? (
-            <p id={timelineInstructionsId} className="sr-only">
-              Press Enter or Space to create an appointment at the middle of this visible timeline,
-              or click a time slot directly.
-            </p>
+            <>
+              <p id={timelineInstructionsId} className="sr-only">
+                Press Enter or Space to create an appointment at the middle of this visible
+                timeline, or click a time slot directly.
+              </p>
+              <button
+                type="button"
+                data-timeline-create
+                aria-label={timelineLabel}
+                aria-describedby={timelineInstructionsId}
+                className="absolute inset-0 col-span-2 z-0 w-full h-full cursor-default bg-transparent border-0 p-0"
+                onClick={handleTimelineCreate}
+                onDoubleClick={handleTimelineCreate}
+                onKeyDown={handleTimelineKeyDown}
+              />
+            </>
           ) : null}
           <TimeLabels
             windowStart={windowStart}
@@ -615,7 +633,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
               return (
                 <div
                   key={`unavailable-${seg.startMinute}-${seg.endMinute}`}
-                  className="pointer-events-none absolute left-0 right-0 z-[1]"
+                  className="pointer-events-none absolute left-0 right-0 z-1"
                   style={{
                     top,
                     height: segHeight,
@@ -638,7 +656,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
                 return (
                   <div
                     key={`drag-availability-${interval.startMinute}-${interval.endMinute}-${index}`}
-                    className="pointer-events-none absolute left-1 right-1 z-20 rounded-xl border border-grey-light bg-[var(--color-calendar-availability-overlay)]"
+                    className="pointer-events-none absolute left-1 right-1 z-20 rounded-xl border border-grey-light bg-calendar-availability-overlay"
                     style={{ top, height }}
                   />
                 );
@@ -651,7 +669,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
                 }}
               >
                 <div
-                  className="rounded-xl border-2 border-dashed border-grey-light bg-[var(--color-calendar-preview-overlay)]"
+                  className="rounded-xl border-2 border-dashed border-grey-light bg-calendar-preview-overlay"
                   style={{
                     height: Math.max(
                       12,
@@ -660,7 +678,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
                     ),
                   }}
                 >
-                  <div className="h-full w-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
+                  <div className="size-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
                     {draggedAppointmentLabel || 'Appointment'}
                   </div>
                 </div>
@@ -685,7 +703,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
               return (
                 <div
                   key={ev.companion.name + i}
-                  className={`absolute scrollbar-hidden ${isZoomOut ? 'rounded-md! px-0 py-0 bg-transparent' : 'rounded-xl! px-2 py-1.5 overflow-hidden'}`}
+                  className={`absolute scrollbar-hidden ${isZoomOut ? 'rounded-md! p-0 bg-transparent' : 'rounded-xl! px-2 py-1.5 overflow-hidden'}`}
                   style={{
                     top: ev.topPx * yScale,
                     height: Math.max(
@@ -718,7 +736,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
                     type="button"
                     className={`min-w-0 ${
                       draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                    } ${isZoomOut ? 'absolute inset-x-0 -inset-y-2 z-20' : 'h-full w-full flex items-center gap-2'}`}
+                    } ${isZoomOut ? 'absolute inset-x-0 -inset-y-2 z-20' : 'size-full flex items-center gap-2'}`}
                     aria-haspopup="dialog"
                     aria-expanded={activePopoverKey === itemKey}
                     aria-controls={appointmentPopoverId}
@@ -779,9 +797,9 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
               );
             })}
           </div>
-        </section>
+        </div>
         <div style={{ height: zoomMode === 'out' ? 72 : 12 }} />
-      </div>
+      </section>
       {isMounted &&
         !draggedAppointmentId &&
         activeEvent &&

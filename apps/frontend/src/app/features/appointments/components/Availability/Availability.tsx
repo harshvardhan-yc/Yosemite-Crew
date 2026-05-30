@@ -75,6 +75,7 @@ const Availability: React.FC<AvailabilityProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <input
             type="checkbox"
+            aria-label={`Enable availability for ${day}`}
             checked={availability[day].enabled}
             onChange={() => {
               if (readOnly) return;

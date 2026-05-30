@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { usePopoverManager } from '@/app/hooks/usePopoverManager';
 import { IoEyeOutline } from 'react-icons/io5';
-import { getStatusStyle } from '@/app/ui/tables/Tasks';
+import { getTaskStatusStyle } from '@/app/ui/tables/tableUtils';
 import { Task } from '@/app/features/tasks/types/task';
 import {
   autoScrollCalendarHorizontally,
@@ -21,6 +21,9 @@ import {
   getTaskStatusLabel,
 } from '@/app/lib/tasks';
 import { DropAvailabilityInterval } from '@/app/features/appointments/components/Calendar/availabilityIntervals';
+
+const DEFAULT_DROP_AVAILABILITY_INTERVALS: DropAvailabilityInterval[] = [];
+const DEFAULT_SLOT_OFFSET_MINUTES: number[] = [];
 
 type TaskSlotProps = {
   slotEvents: Task[];
@@ -73,11 +76,11 @@ const TaskSlot = ({
   onTaskDropAt,
   onCreateTaskAt,
   onDragHoverTarget,
-  dropAvailabilityIntervals = [],
+  dropAvailabilityIntervals = DEFAULT_DROP_AVAILABILITY_INTERVALS,
   draggedTaskDurationMinutes = 30,
   zoomMode = 'in',
   showGridLines = false,
-  slotOffsetMinutes = [],
+  slotOffsetMinutes = DEFAULT_SLOT_OFFSET_MINUTES,
   isLastVisibleHour = false,
   resolveDisplayName,
 }: TaskSlotProps) => {
@@ -142,16 +145,14 @@ const TaskSlot = ({
 
   const availabilitySegments = useMemo(() => {
     const duration = Math.max(5, draggedTaskDurationMinutes);
-    return dropAvailabilityIntervals
-      .map((interval) => {
-        const segmentStart = Math.max(hourStartMinute, interval.startMinute);
-        const segmentEnd = Math.min(hourEndMinute, interval.endMinute + duration);
-        if (segmentEnd <= segmentStart) return null;
-        const top = ((segmentStart - hourStartMinute) / 60) * height;
-        const segmentHeight = Math.max(6, ((segmentEnd - segmentStart) / 60) * height);
-        return { top, height: segmentHeight };
-      })
-      .filter(Boolean) as Array<{ top: number; height: number }>;
+    return dropAvailabilityIntervals.flatMap((interval) => {
+      const segmentStart = Math.max(hourStartMinute, interval.startMinute);
+      const segmentEnd = Math.min(hourEndMinute, interval.endMinute + duration);
+      if (segmentEnd <= segmentStart) return [];
+      const top = ((segmentStart - hourStartMinute) / 60) * height;
+      const segmentHeight = Math.max(6, ((segmentEnd - segmentStart) / 60) * height);
+      return [{ top, height: segmentHeight }];
+    });
   }, [
     draggedTaskDurationMinutes,
     dropAvailabilityIntervals,
@@ -161,7 +162,7 @@ const TaskSlot = ({
   ]);
 
   const laidOutEvents = useMemo(() => {
-    const sorted = [...slotEvents].sort(
+    const sorted = slotEvents.toSorted(
       (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
     );
     const laneEnds: number[] = [];
@@ -303,7 +304,7 @@ const TaskSlot = ({
                 height: Math.max(12, (Math.max(5, draggedTaskDurationMinutes) / 60) * height),
               }}
             >
-              <div className="h-full w-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
+              <div className="size-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
                 {draggedTaskLabel || 'Task'}
               </div>
             </div>
@@ -319,8 +320,8 @@ const TaskSlot = ({
           const isCompact = !isZoomOutMode && laneCount > 1;
           const compactPaddingClass = isCompact ? 'px-1.5 py-1' : 'px-2 py-1.5';
           const markerClassName = isZoomOutMode
-            ? 'h-full w-full text-left rounded-full! overflow-hidden px-0 py-0 border border-transparent'
-            : `h-full w-full text-left rounded-2xl! overflow-hidden ${compactPaddingClass} flex flex-col justify-between`;
+            ? 'size-full text-left rounded-full! overflow-hidden p-0 border border-transparent'
+            : `size-full text-left rounded-2xl! overflow-hidden ${compactPaddingClass} flex flex-col justify-between`;
           const taskKey = task._id || `${task.name}-${String(task.dueAt)}-${eventIndex}`;
           const dueTimeLabel = formatDateInPreferredTimeZone(new Date(task.dueAt), {
             hour: 'numeric',
@@ -346,7 +347,7 @@ const TaskSlot = ({
                 aria-expanded={activePopoverKey === taskKey}
                 aria-controls={taskPopoverId}
                 style={{
-                  ...getStatusStyle(task.status),
+                  ...getTaskStatusStyle(task.status),
                   borderColor: isZoomOutMode ? 'rgba(0,0,0,0.08)' : undefined,
                   borderRadius: isZoomOutMode ? 9999 : 16,
                 }}
@@ -401,7 +402,7 @@ const TaskSlot = ({
                 <button
                   type="button"
                   title="View task"
-                  className="h-6 w-6 rounded-full bg-white/95 border border-card-border flex items-center justify-center cursor-pointer shadow-sm"
+                  className="size-6 rounded-full bg-white/95 border border-card-border flex items-center justify-center cursor-pointer shadow-sm"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -463,7 +464,7 @@ const TaskSlot = ({
                     className="shrink-0 rounded-full px-2 py-0.5 text-[10px] leading-4 font-medium text-white whitespace-nowrap"
                     style={{
                       backgroundColor:
-                        getStatusStyle(activeTask.status).backgroundColor || '#1a73e8',
+                        getTaskStatusStyle(activeTask.status).backgroundColor || '#1a73e8',
                     }}
                   >
                     {getTaskStatusLabel(activeTask.status)}
@@ -503,7 +504,7 @@ const TaskSlot = ({
                       type="button"
                       title="View task"
                       aria-label="View task"
-                      className="h-8 w-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
+                      className="size-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                       onClick={() => {
                         handleViewTask(activeTask);
                         setActivePopoverKey(null);
@@ -518,7 +519,7 @@ const TaskSlot = ({
                         type="button"
                         title="Change status"
                         aria-label="Change task status"
-                        className="h-8 w-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
+                        className="size-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                         onClick={() => {
                           handleChangeStatusTask?.(activeTask);
                           setActivePopoverKey(null);
@@ -534,7 +535,7 @@ const TaskSlot = ({
                         type="button"
                         title="Reschedule"
                         aria-label="Reschedule task"
-                        className="h-8 w-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
+                        className="size-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                         onClick={() => {
                           handleRescheduleTask?.(activeTask);
                           setActivePopoverKey(null);

@@ -1,6 +1,6 @@
 import EditableAccordion from '@/app/ui/primitives/Accordion/EditableAccordion';
 import React, { useMemo } from 'react';
-import { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo';
+import { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
 import Image from 'next/image';
 import { Appointment } from '@yosemite-crew/types';
 import { AppointmentStatusOptions } from '@/app/features/appointments/types/appointments';
@@ -14,7 +14,7 @@ import { useInvoicesForPrimaryOrgAppointment } from '@/app/hooks/useInvoices';
 import InvoicePaymentActions from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Finance/InvoicePaymentActions';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { getInvoicePaymentMethodLabel } from '@/app/lib/invoicePaymentMethod';
-import { getStatusStyle } from '@/app/ui/tables/InvoiceTable';
+import { getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 
 const AppointmentFields = [
   { label: 'Service', key: 'service', type: 'text' },
@@ -45,7 +45,7 @@ const Summary = ({ activeAppointment, formData }: SummaryProps) => {
 
   const latestInvoice = useMemo(() => {
     if (!invoices.length) return undefined;
-    return [...invoices].sort((a, b) => {
+    return invoices.toSorted((a, b) => {
       const aTime = new Date(a.createdAt ?? 0).getTime();
       const bTime = new Date(b.createdAt ?? 0).getTime();
       return bTime - aTime;
@@ -54,8 +54,10 @@ const Summary = ({ activeAppointment, formData }: SummaryProps) => {
 
   const payableInvoice = useMemo(
     () =>
-      [...invoices]
-        .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
+      invoices
+        .toSorted(
+          (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+        )
         .find((inv) => PAYABLE_INVOICE_STATUSES.has(inv.status)),
     [invoices]
   );
@@ -175,7 +177,7 @@ const Summary = ({ activeAppointment, formData }: SummaryProps) => {
                   <span
                     className="rounded-2xl px-3 py-0.5 text-caption-1 border"
                     style={(() => {
-                      const s = getStatusStyle(actionInvoice.status);
+                      const s = getInvoiceStatusStyle(actionInvoice.status);
                       return { ...s, borderColor: s.color };
                     })()}
                   >

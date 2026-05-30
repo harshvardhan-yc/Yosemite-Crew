@@ -258,8 +258,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
       topPx = ((focusMinutes - currentRange.startHour * 60) / 60) * height + HOUR_ROW_TOP_OFFSET_PX;
     }
     scrollContainerToTarget(container, topPx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStartKey, scrollRef.current, draggedAppointmentId, skipAutoScroll, days.length, height]);
+  }, [weekStartKey, draggedAppointmentId, skipAutoScroll, days, height]);
 
   const unavailableByDay = useMemo(
     () =>
@@ -312,7 +311,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                         {weekday}
                       </div>
                       <div
-                        className={`text-body-4-emphasis h-10 w-10 flex items-center justify-center rounded-full border ${dateNumberClass}`}
+                        className={`text-body-4-emphasis size-10 flex items-center justify-center rounded-full border ${dateNumberClass}`}
                       >
                         {dateNumber}
                       </div>
@@ -406,26 +405,26 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                           className="relative"
                           style={{ height: `${height}px` }}
                         >
-                          {unavailableByDay[dayIndex]
-                            .filter((seg) => seg.endMinute > hourStart && seg.startMinute < hourEnd)
-                            .map((seg) => {
-                              const clampedStart = Math.max(seg.startMinute, hourStart);
-                              const clampedEnd = Math.min(seg.endMinute, hourEnd);
-                              const topPct = ((clampedStart - hourStart) / 60) * 100;
-                              const heightPct = ((clampedEnd - clampedStart) / 60) * 100;
-                              return (
-                                <div
-                                  key={`unavail-${dayIndex}-${hour}-${seg.startMinute}`}
-                                  className="pointer-events-none absolute left-0 right-0 z-1"
-                                  style={{
-                                    top: `${topPct}%`,
-                                    height: `${heightPct}%`,
-                                    backgroundColor: 'rgba(0,0,0,0.045)',
-                                    transition: 'opacity 0.25s ease',
-                                  }}
-                                />
-                              );
-                            })}
+                          {unavailableByDay[dayIndex].flatMap((seg) => {
+                            if (!(seg.endMinute > hourStart && seg.startMinute < hourEnd))
+                              return [];
+                            const clampedStart = Math.max(seg.startMinute, hourStart);
+                            const clampedEnd = Math.min(seg.endMinute, hourEnd);
+                            const topPct = ((clampedStart - hourStart) / 60) * 100;
+                            const heightPct = ((clampedEnd - clampedStart) / 60) * 100;
+                            return [
+                              <div
+                                key={`unavail-${dayIndex}-${hour}-${seg.startMinute}`}
+                                className="pointer-events-none absolute left-0 right-0 z-1"
+                                style={{
+                                  top: `${topPct}%`,
+                                  height: `${heightPct}%`,
+                                  backgroundColor: 'rgba(0,0,0,0.045)',
+                                  transition: 'opacity 0.25s ease',
+                                }}
+                              />,
+                            ];
+                          })}
                           <Slot
                             slotEvents={slotEvents}
                             height={height}
@@ -486,7 +485,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                                   {nowTimeLabel}
                                 </div>
                               )}
-                              <div className="absolute -left-1.25 w-3 h-3 rounded-full bg-red-500 -translate-y-1/2" />
+                              <div className="absolute -left-1.25 size-3 rounded-full bg-red-500 -translate-y-1/2" />
                               <div className="border-t-2 border-t-red-500 translate-y-[-50%]" />
                             </div>
                           )}

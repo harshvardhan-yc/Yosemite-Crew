@@ -200,11 +200,10 @@ const AppointmentBoardComponent = ({
   const todayAppointments = useMemo(
     () =>
       appointments
-        .filter((appointment) =>
-          isOnPreferredTimeZoneCalendarDay(appointment.startTime, currentDate)
-        )
-        .filter((appointment) =>
-          showMineOnly ? normalizeId(appointment.lead?.id) === currentUserLeadId : true
+        .filter(
+          (appointment) =>
+            isOnPreferredTimeZoneCalendarDay(appointment.startTime, currentDate) &&
+            (!showMineOnly || normalizeId(appointment.lead?.id) === currentUserLeadId)
         )
         .sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
     [appointments, currentDate, currentUserLeadId, showMineOnly]
@@ -336,6 +335,9 @@ const AppointmentBoardComponent = ({
     [moveToStatus]
   );
 
+  const handleDroppedAppointmentStatusRef = useRef(handleDroppedAppointmentStatus);
+  handleDroppedAppointmentStatusRef.current = handleDroppedAppointmentStatus;
+
   useEffect(() => {
     const boardRoot = boardRootRef.current;
     if (!boardRoot) return;
@@ -364,7 +366,7 @@ const AppointmentBoardComponent = ({
       const handleColumnDrop = (event: DragEvent) => {
         if (!draggedAppointmentId || !canEditAppointments) return;
         event.preventDefault();
-        handleDroppedAppointmentStatus(draggedAppointmentId, column.key);
+        handleDroppedAppointmentStatusRef.current(draggedAppointmentId, column.key);
       };
 
       const handleScrollDragOver = (event: DragEvent) => {
@@ -385,12 +387,7 @@ const AppointmentBoardComponent = ({
     });
 
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [
-    autoScrollBoardOnDrag,
-    canEditAppointments,
-    draggedAppointmentId,
-    handleDroppedAppointmentStatus,
-  ]);
+  }, [autoScrollBoardOnDrag, canEditAppointments, draggedAppointmentId]);
 
   return (
     <div className="h-full min-h-0 rounded-2xl border border-grey-light bg-white overflow-hidden flex flex-col">
@@ -458,7 +455,7 @@ const AppointmentBoardComponent = ({
                 {hasEmergency && (
                   <span
                     aria-label="Emergency appointments present"
-                    className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full"
+                    className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full"
                     style={{
                       backgroundColor: 'var(--color-semantic-error-700)',
                       outline: '2px solid white',
@@ -553,28 +550,25 @@ const AppointmentBoardComponent = ({
                         aria-label={
                           isCardDraggable
                             ? `Draggable appointment ${companionDisplayName}`
-                            : `Open appointment ${companionDisplayName}`
+                            : `Appointment ${companionDisplayName}`
                         }
                         className={`relative w-full min-h-[142px] shrink-0 rounded-2xl! overflow-hidden border border-card-border bg-white px-4 py-3 text-left transition-colors flex flex-col items-stretch justify-start ${
                           draggedAppointmentId === (appointment.id ?? null)
                             ? 'opacity-60 shadow-none'
                             : 'hover:border-input-border-active! hover:bg-card-hover!'
-                        } ${isCardDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
+                        } ${isCardDraggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
                         draggable={isCardDraggable}
                         onDragStart={(event) => handleAppointmentDragStart(event, appointment.id)}
                         onDragEnd={() => setDraggedAppointmentId(null)}
-                        onClick={isCardDraggable ? undefined : () => openAppointment(appointment)}
-                        onKeyDown={
-                          isCardDraggable
-                            ? undefined
-                            : (e) => {
-                                if (e.key === 'Enter' || e.key === ' ')
-                                  openAppointment(appointment);
-                              }
-                        }
-                        role={isCardDraggable ? undefined : 'button'}
-                        tabIndex={isCardDraggable ? undefined : 0}
                       >
+                        {!isCardDraggable && (
+                          <button
+                            type="button"
+                            aria-label={`Open appointment ${companionDisplayName}`}
+                            className="absolute inset-0 z-0 w-full h-full cursor-pointer bg-transparent border-0 p-0"
+                            onClick={() => openAppointment(appointment)}
+                          />
+                        )}
                         <div className="relative z-10 flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="text-caption-1 font-semibold text-text-primary">
@@ -612,7 +606,7 @@ const AppointmentBoardComponent = ({
                               )}
                               height={24}
                               width={24}
-                              className="h-6 w-6 rounded-full border border-card-border bg-white object-cover"
+                              className="size-6 rounded-full border border-card-border bg-white object-cover"
                               alt=""
                             />
                             <div className="text-[10px] text-text-secondary whitespace-nowrap">
@@ -637,7 +631,7 @@ const AppointmentBoardComponent = ({
                             <GlassTooltip content="Accept request" side="bottom">
                               <button
                                 type="button"
-                                className="h-7 w-7 rounded-full! bg-success-100 border border-success-200 flex items-center justify-center"
+                                className="size-7 rounded-full! bg-success-100 border border-success-200 flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -650,7 +644,7 @@ const AppointmentBoardComponent = ({
                             <GlassTooltip content="Decline request" side="bottom">
                               <button
                                 type="button"
-                                className="h-7 w-7 rounded-full! bg-danger-100 border border-danger-200 flex items-center justify-center"
+                                className="size-7 rounded-full! bg-danger-100 border border-danger-200 flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -667,7 +661,7 @@ const AppointmentBoardComponent = ({
                             <GlassTooltip content="View appointment" side="bottom">
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -680,7 +674,7 @@ const AppointmentBoardComponent = ({
                             <GlassTooltip content="Overview" side="bottom">
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -696,7 +690,7 @@ const AppointmentBoardComponent = ({
                                 <GlassTooltip content="Change status" side="bottom">
                                   <button
                                     type="button"
-                                    className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                    className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                     onClick={(event) => {
                                       event.preventDefault();
                                       event.stopPropagation();
@@ -714,7 +708,7 @@ const AppointmentBoardComponent = ({
                               <GlassTooltip content="Reschedule" side="bottom">
                                 <button
                                   type="button"
-                                  className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                  className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
@@ -730,7 +724,7 @@ const AppointmentBoardComponent = ({
                                 <GlassTooltip content="Assign room" side="bottom">
                                   <button
                                     type="button"
-                                    className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                    className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                     onClick={(event) => {
                                       event.preventDefault();
                                       event.stopPropagation();
@@ -749,7 +743,7 @@ const AppointmentBoardComponent = ({
                             >
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -768,7 +762,7 @@ const AppointmentBoardComponent = ({
                             <GlassTooltip content="Finance summary" side="bottom">
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -784,7 +778,7 @@ const AppointmentBoardComponent = ({
                             <GlassTooltip content="Lab tests" side="bottom">
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -801,7 +795,7 @@ const AppointmentBoardComponent = ({
                         )}
                         {updatingStatusId === appointment.id && (
                           <div className="relative z-10 mt-1 text-[10px] text-text-secondary">
-                            Updating...
+                            Updating…
                           </div>
                         )}
                       </article>

@@ -35,7 +35,7 @@ export const AppointmentCompanionHeader = ({ appointment }: AppointmentCardConte
       height={40}
       width={40}
       priority
-      className="h-10 w-10 rounded-full object-cover"
+      className="size-10 rounded-full object-cover"
     />
     <div className="flex flex-col gap-0">
       <div className="text-body-3-emphasis text-text-primary">

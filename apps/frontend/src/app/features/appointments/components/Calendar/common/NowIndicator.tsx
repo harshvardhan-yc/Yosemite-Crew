@@ -20,7 +20,7 @@ const NowIndicator = ({ topPx, timeLabel }: NowIndicatorProps) => (
             </div>
           )}
           <div
-            className="absolute -left-3 w-3 h-3 rounded-full translate-y-[-50%]"
+            className="absolute -left-3 size-3 rounded-full translate-y-[-50%]"
             style={{ backgroundColor: 'var(--color-danger-700)' }}
           />
           <div

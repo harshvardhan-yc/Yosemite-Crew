@@ -98,7 +98,7 @@ const AppointmentCentralModalShell = ({
             <button
               type="button"
               aria-label="Close"
-              className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-card-hover transition-colors"
+              className="flex items-center justify-center size-8 rounded-full hover:bg-card-hover transition-colors"
               onClick={() => {
                 if (canClose && !canClose()) return;
                 setShowModal(false);

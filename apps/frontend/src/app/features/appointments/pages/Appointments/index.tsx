@@ -66,6 +66,7 @@ import {
 import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const AppointmentsSkeleton = () => <PageSkeleton variant="planner" />;
+const APPOINTMENTS_SKELETON = <AppointmentsSkeleton />;
 
 const PlannerViewSkeleton = () => (
   <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
@@ -158,9 +159,9 @@ const Appointments = () => {
       }),
     [rawAppointments, companionMetaById]
   );
-  const { can } = usePermissions();
-  const canEditAny = can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
-  const canEditOwn = can(PERMISSIONS.APPOINTMENTS_EDIT_OWN);
+  const permissions = usePermissions();
+  const canEditAny = permissions.can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
+  const canEditOwn = permissions.can(PERMISSIONS.APPOINTMENTS_EDIT_OWN);
   const canEditAppointments = canEditAny || canEditOwn;
 
   const team = useTeamForPrimaryOrg();
@@ -231,7 +232,7 @@ const Appointments = () => {
     });
   };
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [weekStart, setWeekStart] = useState(startOfDay(currentDate));
+  const [weekStart, setWeekStart] = useState(() => startOfDay(currentDate));
   const { plannerSectionRef } = usePlannerAutoLock({
     activeView,
     topOffset: activeView === 'list' ? 72 : 16,
@@ -581,8 +582,8 @@ const Appointments = () => {
 
 const ProtectedAppoitments = () => {
   return (
-    <ProtectedRoute skeleton={<AppointmentsSkeleton />}>
-      <OrgGuard skeleton={<AppointmentsSkeleton />}>
+    <ProtectedRoute skeleton={APPOINTMENTS_SKELETON}>
+      <OrgGuard skeleton={APPOINTMENTS_SKELETON}>
         <Suspense fallback={<AppointmentsSkeleton />}>
           <Appointments />
         </Suspense>

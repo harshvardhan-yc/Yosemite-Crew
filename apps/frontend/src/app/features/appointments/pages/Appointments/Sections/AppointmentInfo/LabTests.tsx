@@ -41,16 +41,16 @@ const IDEXX_REGIONAL_AVAILABILITY_DISCLAIMER =
   'IDEXX integration availability is currently limited to the USA, Canada, and the UK.';
 
 const getOrderResultProgressFromResults = (allResults: LabResult[], orderId: string): string => {
+  const orderIdStr = String(orderId).trim();
   const statuses = new Set(
-    allResults
-      .filter((result) => getResultOrderId(result) === String(orderId).trim())
-      .map((result) => {
-        const raw = result.rawPayload;
-        return normalizeResultProgress(
-          result.statusDetail ?? result.status ?? raw?.statusDetail ?? raw?.status
-        );
-      })
-      .filter(Boolean)
+    allResults.flatMap((result) => {
+      if (getResultOrderId(result) !== orderIdStr) return [];
+      const raw = result.rawPayload;
+      const status = normalizeResultProgress(
+        result.statusDetail ?? result.status ?? raw?.statusDetail ?? raw?.status
+      );
+      return status ? [status] : [];
+    })
   );
   if (statuses.has('In process')) return 'In process';
   if (statuses.has('Error')) return 'Error';
@@ -59,7 +59,7 @@ const getOrderResultProgressFromResults = (allResults: LabResult[], orderId: str
 };
 
 const normalizeOrders = (orders: LabOrder[]): LabOrder[] =>
-  [...orders].sort((a, b) => {
+  orders.toSorted((a, b) => {
     const aDate = new Date(orderSortDate(a)).getTime();
     const bDate = new Date(orderSortDate(b)).getTime();
     return bDate - aDate;
@@ -100,11 +100,11 @@ const formatTestPrice = (test: IdexxTest) => {
   const numericAmount = Number.parseFloat(amount.replaceAll(',', '.').replaceAll(/[^0-9.+-]/g, ''));
   if (!Number.isFinite(numericAmount)) return `${currency.toUpperCase()} ${amount}`;
   try {
-    return new Intl.NumberFormat(undefined, {
+    return numericAmount.toLocaleString(undefined, {
       style: 'currency',
       currency: currency.toUpperCase(),
       currencyDisplay: 'symbol',
-    }).format(numericAmount);
+    });
   } catch {
     return `${currency.toUpperCase()} ${amount}`;
   }
@@ -610,7 +610,10 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     setRefreshingResults(true);
     try {
       const appointmentOrderIds = new Set(
-        appointmentOrders.map((order) => String(order.idexxOrderId ?? '').trim()).filter(Boolean)
+        appointmentOrders.flatMap((order) => {
+          const orderId = String(order.idexxOrderId ?? '').trim();
+          return orderId ? [orderId] : [];
+        })
       );
       if (appointmentOrderIds.size === 0) {
         setResults([]);
@@ -657,9 +660,10 @@ const useLabTests = (activeAppointment: Appointment | null) => {
 
         if (iframeOpenSource === 'followup' && activeAppointment?.id) {
           const appointmentOrderIds = new Set(
-            appointmentOrders
-              .map((order) => String(order.idexxOrderId ?? '').trim())
-              .filter(Boolean)
+            appointmentOrders.flatMap((order) => {
+              const orderId = String(order.idexxOrderId ?? '').trim();
+              return orderId ? [orderId] : [];
+            })
           );
           if (appointmentOrderIds.size > 0) {
             const allResults = await listIdexxResults(primaryOrgId);
@@ -1182,7 +1186,7 @@ const ReferenceLabForm = ({ s }: { s: UseLabTestsReturn }) => (
             key={test.code}
             type="button"
             onClick={() => s.removeTest(test.code)}
-            className="rounded-xl! border border-card-border bg-white px-3 py-2 text-left min-w-[220px] max-w-[280px] transition-colors hover:bg-white"
+            className="rounded-xl! border border-card-border bg-white px-3 py-2 text-left min-w-55 max-w-70 transition-colors hover:bg-white"
             title="Remove test from selection"
           >
             <div className="flex items-start justify-between gap-2">
@@ -1342,20 +1346,22 @@ const LabOrderStatus = ({
           {s.appointmentOrders.length > 1 ? (
             <div className="rounded-2xl border border-card-border p-3 flex flex-col gap-2">
               <div className="text-body-4 text-text-primary">Past orders in this appointment</div>
-              {s.appointmentOrders
-                .filter((order) => order._id !== s.latestOrder!._id)
-                .map((order) => (
-                  <PastOrderCard
-                    key={order._id}
-                    order={order}
-                    resultProgressByOrderId={s.resultProgressByOrderId}
-                    getOrderDisplayStatus={s.getOrderDisplayStatus}
-                    openOrderIframe={s.openOrderIframe}
-                    openResultPdfForOrder={s.openResultPdfForOrder}
-                    openOrderAcknowledgement={s.openOrderAcknowledgement}
-                    setActiveOrderForActions={s.setActiveOrderForActions}
-                  />
-                ))}
+              {s.appointmentOrders.flatMap((order) =>
+                order._id === s.latestOrder!._id
+                  ? []
+                  : [
+                      <PastOrderCard
+                        key={order._id}
+                        order={order}
+                        resultProgressByOrderId={s.resultProgressByOrderId}
+                        getOrderDisplayStatus={s.getOrderDisplayStatus}
+                        openOrderIframe={s.openOrderIframe}
+                        openResultPdfForOrder={s.openResultPdfForOrder}
+                        openOrderAcknowledgement={s.openOrderAcknowledgement}
+                        setActiveOrderForActions={s.setActiveOrderForActions}
+                      />,
+                    ]
+              )}
             </div>
           ) : null}
         </>
@@ -1387,7 +1393,7 @@ const LabResultsList = ({ s }: { s: UseLabTestsReturn }) => (
           <Link
             href="/appointments/idexx-workspace"
             aria-label="Open IDEXX Hub"
-            className="h-8 w-8 rounded-full border border-card-border bg-white text-text-secondary hover:text-text-brand hover:border-text-brand transition-colors inline-flex items-center justify-center"
+            className="size-8 rounded-full border border-card-border bg-white text-text-secondary hover:text-text-brand hover:border-text-brand transition-colors inline-flex items-center justify-center"
           >
             <MdOpenInNew size={16} />
           </Link>
@@ -1443,7 +1449,7 @@ const LabTests = ({ activeAppointment }: LabTestsProps) => {
   const s = useLabTests(activeAppointment);
 
   if (s.loading) {
-    return <div className="text-body-4 text-text-secondary">Loading IDEXX integration...</div>;
+    return <div className="text-body-4 text-text-secondary">Loading IDEXX integration…</div>;
   }
 
   if (!s.integrationEnabled) {
@@ -1477,11 +1483,11 @@ const LabTests = ({ activeAppointment }: LabTestsProps) => {
       {s.showOrderIframe && orderIframeUrl && typeof document !== 'undefined'
         ? createPortal(
             <div
-              className="fixed inset-0 z-[5000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+              className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
               data-signing-overlay="true"
               style={{ pointerEvents: 'auto' }}
             >
-              <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
+              <div className="relative bg-white rounded-2xl shadow-2xl size-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
                   <div className="text-body-2 text-text-primary">{iframeTitle}</div>
                   <button
@@ -1501,6 +1507,7 @@ const LabTests = ({ activeAppointment }: LabTestsProps) => {
                   loading="lazy"
                   allowFullScreen
                   referrerPolicy="strict-origin"
+                  sandbox="allow-scripts allow-popups allow-forms allow-downloads"
                   style={{ pointerEvents: 'auto' }}
                 />
               </div>

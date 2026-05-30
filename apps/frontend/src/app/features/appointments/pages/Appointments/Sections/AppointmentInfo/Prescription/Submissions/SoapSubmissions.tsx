@@ -1,6 +1,6 @@
 import React from 'react';
 import Accordion from '@/app/ui/primitives/Accordion/Accordion';
-import { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo';
+import { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
 import { useFormsStore } from '@/app/stores/formsStore';
 import {
   findFieldLabel,

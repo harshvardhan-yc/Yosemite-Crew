@@ -8,13 +8,13 @@ import Fallback from '@/app/ui/overlays/Fallback';
 import { PERMISSIONS } from '@/app/lib/permissions';
 import { useFormsForPrimaryOrgByCategory } from '@/app/hooks/useForms';
 import { FormsCategory, FormsProps } from '@/app/features/forms/types/forms';
-import { buildInitialValues } from '@/app/features/forms/pages/Forms/Sections/AddForm/Review';
+import { buildInitialValues } from '@/app/features/forms/pages/Forms/Sections/AddForm/reviewUtils';
 import FormRenderer from '@/app/features/forms/pages/Forms/Sections/AddForm/components/FormRenderer';
 import { createSubmission } from '@/app/features/appointments/services/soapService';
 import { useAuthStore } from '@/app/stores/authStore';
 import { linkAppointmentForms } from '@/app/features/forms/services/appointmentFormsService';
 import { hasSignatureField } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/signatureUtils';
-import { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo';
+import { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
 import SoapSubmissions from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/Submissions/SoapSubmissions';
 import { SoapNoteSubmission } from '@/app/features/appointments/types/soap';
 

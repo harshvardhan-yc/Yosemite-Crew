@@ -216,8 +216,7 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
       topPx = ((focusMinutes - currentRange.startHour * 60) / 60) * height + HOUR_ROW_TOP_OFFSET_PX;
     }
     scrollContainerToTarget(container, topPx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateKey, draggedAppointmentId, skipAutoScroll, height]);
+  }, [dateKey, date, draggedAppointmentId, skipAutoScroll, height]);
 
   return (
     <div className="h-full flex flex-col">
@@ -274,26 +273,26 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
                           className="relative"
                           style={{ height: `${height}px` }}
                         >
-                          {unavailableByMember[index]
-                            .filter((seg) => seg.endMinute > hourStart && seg.startMinute < hourEnd)
-                            .map((seg) => {
-                              const clampedStart = Math.max(seg.startMinute, hourStart);
-                              const clampedEnd = Math.min(seg.endMinute, hourEnd);
-                              const topPct = ((clampedStart - hourStart) / 60) * 100;
-                              const heightPct = ((clampedEnd - clampedStart) / 60) * 100;
-                              return (
-                                <div
-                                  key={`unavail-${user._id}-${hour}-${seg.startMinute}`}
-                                  className="pointer-events-none absolute left-0 right-0 z-1"
-                                  style={{
-                                    top: `${topPct}%`,
-                                    height: `${heightPct}%`,
-                                    backgroundColor: 'rgba(0,0,0,0.045)',
-                                    transition: 'opacity 0.25s ease',
-                                  }}
-                                />
-                              );
-                            })}
+                          {unavailableByMember[index].flatMap((seg) => {
+                            if (!(seg.endMinute > hourStart && seg.startMinute < hourEnd))
+                              return [];
+                            const clampedStart = Math.max(seg.startMinute, hourStart);
+                            const clampedEnd = Math.min(seg.endMinute, hourEnd);
+                            const topPct = ((clampedStart - hourStart) / 60) * 100;
+                            const heightPct = ((clampedEnd - clampedStart) / 60) * 100;
+                            return [
+                              <div
+                                key={`unavail-${user._id}-${hour}-${seg.startMinute}`}
+                                className="pointer-events-none absolute left-0 right-0 z-1"
+                                style={{
+                                  top: `${topPct}%`,
+                                  height: `${heightPct}%`,
+                                  backgroundColor: 'rgba(0,0,0,0.045)',
+                                  transition: 'opacity 0.25s ease',
+                                }}
+                              />,
+                            ];
+                          })}
                           <Slot
                             slotEvents={slotEvents}
                             height={height}

@@ -36,6 +36,7 @@ import { useLoadAvailabilities } from '@/app/hooks/useAvailabiities';
 import { useNotify } from '@/app/hooks/useNotify';
 import {
   DropAvailabilityInterval,
+  filterAppointmentsForWeek,
   resolveAvailabilityIntervalsForDay,
 } from '@/app/features/appointments/components/Calendar/availabilityIntervals';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
@@ -72,19 +73,6 @@ type DragContext = {
   appointmentId: string;
   serviceId?: string;
   durationMinutes: number;
-};
-
-export const filterAppointmentsForWeek = (appointments: Appointment[], weekStart: Date) => {
-  const weekDays = getWeekDays(weekStart);
-  const weekRangeStart = weekDays[0];
-  const weekRangeEnd = new Date(weekDays.at(-1) ?? weekRangeStart);
-  weekRangeEnd.setDate(weekRangeEnd.getDate() + 1);
-
-  return appointments.filter((event) => {
-    const eventStart = new Date(event.startTime);
-    const eventEnd = new Date(event.endTime);
-    return eventEnd > weekRangeStart && eventStart < weekRangeEnd;
-  });
 };
 
 const getErrorMessageFromCandidate = (
@@ -409,7 +397,10 @@ const AppointmentCalendar = ({
       if (!primaryOrgId) return [];
       const dayKey = getDayOfWeekKey(date);
       const ids = availabilityIdsByOrgId[primaryOrgId] ?? [];
-      const orgAvailabilities = ids.map((id) => availabilitiesById[id]).filter(Boolean);
+      const orgAvailabilities = ids.flatMap((id) => {
+        const availability = availabilitiesById[id];
+        return availability ? [availability] : [];
+      });
       if (!orgAvailabilities.length) return [];
 
       const normalizedTarget = normalizeId(targetLeadId);
