@@ -69,11 +69,10 @@ const ServiceFormDraft = ({
     if (!isEditing) {
       setPreviewCode(generateCode(type));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, isEditing]);
+  }, [type, isEditing, generateCode]);
 
-  const gross = parseFloat(grossAmount) || 0;
-  const disc = parseFloat(defaultDiscount) || 0;
+  const gross = Number.parseFloat(grossAmount) || 0;
+  const disc = Number.parseFloat(defaultDiscount) || 0;
   const { total } = computeServiceTotal({
     grossAmount: gross,
     defaultDiscount: disc,
@@ -82,11 +81,11 @@ const ServiceFormDraft = ({
   const validate = useCallback((): boolean => {
     const errs: FormErrors = {};
     if (!name.trim()) errs.name = 'Name is required.';
-    if (!grossAmount || isNaN(Number(grossAmount)) || Number(grossAmount) < 0)
+    if (!grossAmount || Number.isNaN(Number(grossAmount)) || Number(grossAmount) < 0)
       errs.grossAmount = 'Enter a valid gross amount.';
     if (
       maxDiscount &&
-      (isNaN(Number(maxDiscount)) || Number(maxDiscount) < 0 || Number(maxDiscount) > 100)
+      (Number.isNaN(Number(maxDiscount)) || Number(maxDiscount) < 0 || Number(maxDiscount) > 100)
     )
       errs.maxDiscount = 'Max discount must be 0–100.';
     setErrors(errs);
@@ -100,10 +99,10 @@ const ServiceFormDraft = ({
         name: name.trim(),
         description: description.trim(),
         type,
-        durationMinutes: parseInt(duration, 10),
-        grossAmount: parseFloat(grossAmount),
-        defaultDiscount: parseFloat(defaultDiscount) || 0,
-        maxDiscount: parseFloat(maxDiscount) || 0,
+        durationMinutes: Number.parseInt(duration, 10),
+        grossAmount: Number.parseFloat(grossAmount),
+        defaultDiscount: Number.parseFloat(defaultDiscount) || 0,
+        maxDiscount: Number.parseFloat(maxDiscount) || 0,
         isBookable,
         isInpatientPreferred: isInpatient,
       });
@@ -115,10 +114,10 @@ const ServiceFormDraft = ({
         type,
         specialityId,
         organisationId,
-        durationMinutes: parseInt(duration, 10),
-        grossAmount: parseFloat(grossAmount),
-        defaultDiscount: parseFloat(defaultDiscount) || 0,
-        maxDiscount: parseFloat(maxDiscount) || 0,
+        durationMinutes: Number.parseInt(duration, 10),
+        grossAmount: Number.parseFloat(grossAmount),
+        defaultDiscount: Number.parseFloat(defaultDiscount) || 0,
+        maxDiscount: Number.parseFloat(maxDiscount) || 0,
         isBookable,
         isInpatientPreferred: isInpatient,
         status: 'ACTIVE',
@@ -169,6 +168,7 @@ const ServiceFormDraft = ({
           <div className="relative w-full">
             <textarea
               id={descId}
+              aria-label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
@@ -208,20 +208,22 @@ const ServiceFormDraft = ({
             <label className="flex items-center gap-2 cursor-pointer select-none text-body-4 text-text-secondary whitespace-nowrap">
               <input
                 type="checkbox"
+                aria-label="Bookable"
                 checked={isBookable}
                 onChange={(e) => setIsBookable(e.target.checked)}
-                className="w-4 h-4 shrink-0 accent-(--color-input-border-active)"
+                className="size-4 shrink-0 accent-(--color-input-border-active)"
               />
-              Bookable
+              {'Bookable'}
             </label>
             <label className="flex items-center gap-2 cursor-pointer select-none text-body-4 text-text-secondary whitespace-nowrap">
               <input
                 type="checkbox"
+                aria-label="Inpatient preferred"
                 checked={isInpatient}
                 onChange={(e) => setIsInpatient(e.target.checked)}
-                className="w-4 h-4 shrink-0 accent-(--color-input-border-active)"
+                className="size-4 shrink-0 accent-(--color-input-border-active)"
               />
-              Inpatient preferred
+              {'Inpatient preferred'}
             </label>
           </div>
         </div>

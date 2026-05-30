@@ -2,56 +2,14 @@ import React, { useState } from 'react';
 import ProfileCard from '@/app/features/organization/pages/Organization/Sections/ProfileCard';
 import { Organisation } from '@yosemite-crew/types';
 import { updateOrg } from '@/app/features/organization/services/orgService';
-import { BusinessOptions } from '@/app/features/organization/types/org';
 import { PERMISSIONS } from '@/app/lib/permissions';
 import { usePermissions } from '@/app/hooks/usePermissions';
 import { useNotify } from '@/app/hooks/useNotify';
-
-type FieldType = 'text' | 'select' | 'country' | 'date' | 'number' | 'googleAddress';
-
-export type ProfileField = {
-  label: string;
-  key: string;
-  required: boolean;
-  editable: boolean;
-  type: FieldType;
-  options?: { label: string; value: string }[];
-};
-
-export const field = (
-  label: string,
-  key: string,
-  type: FieldType = 'text',
-  editable: boolean = true,
-  required: boolean = true,
-  options?: { label: string; value: string }[]
-): ProfileField => ({ label, key, type, editable, required, options });
-
-const BasicFields: ProfileField[] = [
-  field('Organization type', 'type', 'select', false, true, BusinessOptions),
-  field('Organization name', 'name', 'text', false),
-  field('Tax ID', 'taxId'),
-  field('Country', 'country', 'country'),
-  field('DUNS number', 'DUNSNumber', 'text', true, false),
-  field('Phone number', 'phoneNo'),
-];
-
-const AddressFields: ProfileField[] = [
-  field('Address line', 'addressLine', 'googleAddress'),
-  field('State / Province', 'state'),
-  field('City', 'city'),
-  field('Postal code', 'postalCode'),
-];
-
-const CheckInFields: ProfileField[] = [
-  field(
-    'Enable check-in this many minutes before start',
-    'appointmentCheckInBufferMinutes',
-    'number',
-    true
-  ),
-  field('Maximum check-in distance (meters)', 'appointmentCheckInRadiusMeters', 'number', true),
-];
+import {
+  AddressFields,
+  BasicFields,
+  CheckInFields,
+} from '@/app/features/organization/pages/Organization/Sections/profileFields';
 
 type ProfileProps = {
   primaryOrg: Organisation;

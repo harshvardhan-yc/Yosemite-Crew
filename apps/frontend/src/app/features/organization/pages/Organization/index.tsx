@@ -10,6 +10,7 @@ import { useOrgStore } from '@/app/stores/orgStore';
 const OrganizationSectionSkeleton = () => (
   <div className="min-h-40 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
 );
+const ORG_PAGE_SKELETON = <PageSkeleton variant="settings" />;
 
 const Profile = dynamic(
   () => import('@/app/features/organization/pages/Organization/Sections/Profile'),
@@ -55,7 +56,7 @@ const OrgPageSkeleton = () => (
         <div className="px-6 py-4 border-b border-card-border">
           <div className="h-4 w-32 bg-neutral-100 rounded" />
         </div>
-        <div className="px-6 py-6 flex flex-col gap-3">
+        <div className="p-6 flex flex-col gap-3">
           <div className="h-4 w-full bg-neutral-100 rounded" />
           <div className="h-4 w-3/4 bg-neutral-100 rounded" />
         </div>
@@ -92,8 +93,8 @@ export const Organization = () => {
 
 const ProtectedOrganizations = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="settings" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="settings" />}>
+    <ProtectedRoute skeleton={ORG_PAGE_SKELETON}>
+      <OrgGuard skeleton={ORG_PAGE_SKELETON}>
         <Organization />
       </OrgGuard>
     </ProtectedRoute>

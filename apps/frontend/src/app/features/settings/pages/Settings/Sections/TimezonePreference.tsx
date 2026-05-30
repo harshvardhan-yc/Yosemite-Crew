@@ -29,7 +29,7 @@ const TimezonePreference = () => {
     []
   );
   const profileTimezone = parseTimezoneFromProfile(profile?.personalDetails?.timezone);
-  const [syncMode, setSyncMode] = useState<TimezoneSyncMode>(
+  const [syncMode, setSyncMode] = useState<TimezoneSyncMode>(() =>
     getTimezoneSyncModeForOrg(primaryOrgId)
   );
   const [selectedTimezone, setSelectedTimezone] = useState<string>(profileTimezone);
@@ -107,7 +107,7 @@ const TimezonePreference = () => {
             onSelect={(option) => setSelectedTimezone(option.value)}
           />
         ) : (
-          <div className="px-6 py-[11px] border border-input-border-default rounded-2xl text-body-4 text-text-secondary">
+          <div className="px-6 py-2.75 border border-input-border-default rounded-2xl text-body-4 text-text-secondary">
             Device timezone: {getSystemTimeZone()}
           </div>
         )}

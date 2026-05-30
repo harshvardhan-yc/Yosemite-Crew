@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle } from 'react';
+import { useImperativeHandle, useState, type Dispatch, type SetStateAction, type Ref } from 'react';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import Availability from '@/app/features/appointments/components/Availability/Availability';
 import {
@@ -10,86 +10,81 @@ import {
 import { upsertAvailability } from '@/app/features/organization/services/availabilityService';
 import type { StepHandle } from './PersonalStep';
 
-type AvailabilityStepProps = {
+type AvailabilityStepProps = Readonly<{
   prevStep: () => void;
   orgIdFromQuery: string | null;
   availability: AvailabilityState;
   setAvailability: SetAvailability;
   isSaving: boolean;
-  setIsSaving: React.Dispatch<React.SetStateAction<boolean>>;
-  setIsRedirecting: React.Dispatch<React.SetStateAction<boolean>>;
-};
+  setIsSaving: Dispatch<SetStateAction<boolean>>;
+  setIsRedirecting: Dispatch<SetStateAction<boolean>>;
+  ref?: Ref<StepHandle>;
+}>;
 
-const AvailabilityStep = forwardRef<StepHandle, AvailabilityStepProps>(
-  (
-    {
-      prevStep,
-      orgIdFromQuery,
-      availability,
-      setAvailability,
-      isSaving,
-      setIsSaving,
-      setIsRedirecting,
-    },
-    ref
-  ) => {
-    const [availabilityError, setAvailabilityError] = React.useState<string | null>(null);
+function AvailabilityStep({
+  prevStep,
+  orgIdFromQuery,
+  availability,
+  setAvailability,
+  isSaving,
+  setIsSaving,
+  setIsRedirecting,
+  ref,
+}: AvailabilityStepProps) {
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
 
-    useImperativeHandle(ref, () => ({
-      validate: () => {
-        const converted = convertAvailability(availability);
-        if (!hasAtLeastOneAvailability(converted)) {
-          setAvailabilityError('Please enable at least one day with a valid time slot');
-          return false;
-        }
-        setAvailabilityError(null);
-        return true;
-      },
-    }));
-
-    const handleClick = async () => {
-      if (isSaving) return;
-
+  useImperativeHandle(ref, () => ({
+    validate: () => {
       const converted = convertAvailability(availability);
       if (!hasAtLeastOneAvailability(converted)) {
         setAvailabilityError('Please enable at least one day with a valid time slot');
-        return;
+        return false;
       }
       setAvailabilityError(null);
+      return true;
+    },
+  }));
 
-      try {
-        setIsSaving(true);
-        await upsertAvailability(converted, orgIdFromQuery);
-        setIsRedirecting(true);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setIsSaving(false);
-      }
-    };
+  const handleSaveAvailability = async () => {
+    if (isSaving) return;
 
-    return (
-      <div className="team-container">
-        <div className="team-title">Availability</div>
+    const converted = convertAvailability(availability);
+    if (!hasAtLeastOneAvailability(converted)) {
+      setAvailabilityError('Please enable at least one day with a valid time slot');
+      return;
+    }
+    setAvailabilityError(null);
 
-        <Availability availability={availability} setAvailability={setAvailability} />
+    try {
+      setIsSaving(true);
+      await upsertAvailability(converted, orgIdFromQuery);
+      setIsRedirecting(true);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-        {availabilityError && <div className="step-inline-error">{availabilityError}</div>}
+  return (
+    <div className="team-container">
+      <div className="team-title">Availability</div>
 
-        <div className="team-buttons">
-          <Secondary href="#" text="Back" onClick={prevStep} />
-          <Primary
-            href="#"
-            text={isSaving ? 'Saving...' : 'Finish'}
-            onClick={handleClick}
-            isDisabled={isSaving}
-          />
-        </div>
+      <Availability availability={availability} setAvailability={setAvailability} />
+
+      {availabilityError && <div className="step-inline-error">{availabilityError}</div>}
+
+      <div className="team-buttons">
+        <Secondary href="#" text="Back" onClick={prevStep} />
+        <Primary
+          href="#"
+          text={isSaving ? 'Saving...' : 'Finish'}
+          onClick={handleSaveAvailability}
+          isDisabled={isSaving}
+        />
       </div>
-    );
-  }
-);
-
-AvailabilityStep.displayName = 'AvailabilityStep';
+    </div>
+  );
+}
 
 export default AvailabilityStep;

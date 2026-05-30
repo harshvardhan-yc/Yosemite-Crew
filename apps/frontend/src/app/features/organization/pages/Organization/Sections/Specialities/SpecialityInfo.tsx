@@ -12,12 +12,11 @@ import {
 } from '@/app/features/organization/services/specialityService';
 import { SpecialityWeb } from '@/app/features/organization/types/speciality';
 import { Speciality } from '@yosemite-crew/types';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { MdDeleteForever } from 'react-icons/md';
-import { RiSettings3Line } from 'react-icons/ri';
+import { RiSettings3Line, RiTeamLine } from 'react-icons/ri';
 import Close from '@/app/ui/primitives/Icons/Close';
 import { useNotify } from '@/app/hooks/useNotify';
-import { RiTeamLine } from 'react-icons/ri';
 import { useRouter } from 'next/navigation';
 
 type SpecialityInfoProps = {
@@ -49,10 +48,6 @@ const SpecialityInfo = ({
   const { notify } = useNotify();
   const router = useRouter();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-
-  useEffect(() => {
-    if (!showModal) setShowDeleteModal(false);
-  }, [showModal]);
 
   const TeamOptions = useMemo(
     () =>
@@ -123,7 +118,7 @@ const SpecialityInfo = ({
               </span>
               <span className="text-body-4 text-text-secondary">
                 {activeSpeciality.teamMemberIds?.length ?? 0} member
-                {(activeSpeciality.teamMemberIds?.length ?? 0) !== 1 ? 's' : ''} assigned
+                {(activeSpeciality.teamMemberIds?.length ?? 0) === 1 ? '' : 's'} assigned
               </span>
             </div>
             {canEditSpecialities && (
@@ -131,7 +126,7 @@ const SpecialityInfo = ({
                 type="button"
                 aria-label="Delete speciality"
                 onClick={() => setShowDeleteModal(true)}
-                className="flex items-center justify-center w-9 h-9 rounded-full border border-transparent hover:border-danger-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600"
+                className="flex items-center justify-center size-9 rounded-full border border-transparent hover:border-danger-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600"
               >
                 <MdDeleteForever size={22} color="var(--color-danger-600)" aria-hidden="true" />
               </button>
@@ -176,14 +171,15 @@ const SpecialityInfo = ({
               e.preventDefault();
               setShowModal(false);
               const id = activeSpeciality._id ?? '';
-              router.push(`/organization/specialities${id ? `?open=${id}` : ''}`);
+              const openParam = id ? `?open=${id}` : '';
+              router.push(`/organization/specialities${openParam}`);
             }}
             className="w-full shrink-0"
           />
         </div>
       </Modal>
 
-      {showDeleteModal && (
+      {showModal && showDeleteModal && (
         <CenterModal
           showModal={showDeleteModal}
           setShowModal={setShowDeleteModal}

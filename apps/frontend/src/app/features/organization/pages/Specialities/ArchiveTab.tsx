@@ -83,7 +83,7 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
                         text: `"${svc.name}" is now active.`,
                       });
                     }}
-                    className="flex items-center justify-center w-9 h-9 rounded-full border border-card-border hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
+                    className="flex items-center justify-center size-9 rounded-full border border-card-border hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
                   >
                     <MdOutlineUnarchive
                       size={16}
@@ -101,7 +101,7 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
                         text: `"${svc.name}" has been permanently removed.`,
                       });
                     }}
-                    className="flex items-center justify-center w-9 h-9 rounded-full border border-card-border hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
+                    className="flex items-center justify-center size-9 rounded-full border border-card-border hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
                   >
                     <MdDeleteForever size={16} color="var(--color-danger-600)" aria-hidden="true" />
                   </button>
@@ -146,7 +146,7 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
                       text: `"${pkg.name}" is now active.`,
                     });
                   }}
-                  className="flex items-center justify-center w-9 h-9 rounded-full border border-card-border hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
+                  className="flex items-center justify-center size-9 rounded-full border border-card-border hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
                 >
                   <MdOutlineUnarchive
                     size={16}
@@ -164,7 +164,7 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
                       text: `"${pkg.name}" has been permanently removed.`,
                     });
                   }}
-                  className="flex items-center justify-center w-9 h-9 rounded-full border border-card-border hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
+                  className="flex items-center justify-center size-9 rounded-full border border-card-border hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
                 >
                   <MdDeleteForever size={16} color="var(--color-danger-600)" aria-hidden="true" />
                 </button>

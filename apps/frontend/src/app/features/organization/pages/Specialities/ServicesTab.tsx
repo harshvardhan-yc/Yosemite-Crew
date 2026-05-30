@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useState } from 'react';
+import { useImperativeHandle, useState, type Ref } from 'react';
 import { RiEdit2Line } from 'react-icons/ri';
 import { MdDeleteForever } from 'react-icons/md';
 import { AiOutlineInfoCircle, AiOutlinePlus } from 'react-icons/ai';
@@ -17,10 +17,11 @@ import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContai
 
 export type ServicesTabHandle = { openAdd: () => void };
 
-type ServicesTabProps = {
+type ServicesTabProps = Readonly<{
   specialityId: string;
   organisationId: string;
-};
+  ref?: Ref<ServicesTabHandle>;
+}>;
 
 type ActionMode = null | 'edit' | 'delete' | 'view';
 
@@ -61,7 +62,7 @@ const ServiceRow = ({
             type="button"
             aria-label={`Edit ${service.name}`}
             onClick={onEdit}
-            className="flex items-center justify-center w-10 h-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
+            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
           >
             <RiEdit2Line size={20} color="var(--color-neutral-900)" aria-hidden="true" />
           </button>
@@ -69,7 +70,7 @@ const ServiceRow = ({
             type="button"
             aria-label={`Delete ${service.name}`}
             onClick={onDelete}
-            className="flex items-center justify-center w-10 h-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
+            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
           >
             <MdDeleteForever size={20} color="var(--color-danger-600)" aria-hidden="true" />
           </button>
@@ -194,7 +195,7 @@ const ServiceRow = ({
               type="button"
               aria-label={`Edit ${service.name}`}
               onClick={onEdit}
-              className="flex items-center justify-center w-12 h-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
+              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
             >
               <RiEdit2Line size={24} color="var(--color-neutral-900)" aria-hidden="true" />
             </button>
@@ -202,7 +203,7 @@ const ServiceRow = ({
               type="button"
               aria-label={`Delete ${service.name}`}
               onClick={onDelete}
-              className="flex items-center justify-center w-12 h-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
+              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
             >
               <MdDeleteForever size={24} color="var(--color-danger-600)" aria-hidden="true" />
             </button>
@@ -213,10 +214,7 @@ const ServiceRow = ({
   );
 };
 
-const ServicesTab = forwardRef<ServicesTabHandle, ServicesTabProps>(function ServicesTab(
-  { specialityId, organisationId },
-  ref
-) {
+function ServicesTab({ specialityId, organisationId, ref }: ServicesTabProps) {
   const services = useRevampCatalogStore(
     useShallow((s) =>
       s.services.filter((svc) => svc.specialityId === specialityId && svc.status === 'ACTIVE')
@@ -361,6 +359,6 @@ const ServicesTab = forwardRef<ServicesTabHandle, ServicesTabProps>(function Ser
       )}
     </div>
   );
-});
+}
 
 export default ServicesTab;

@@ -38,7 +38,7 @@ const NestedBreakdownTooltip = ({
 
   return (
     <div style={{ minWidth: 360 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
           <tr style={{ opacity: 0.6 }}>
             <th style={{ textAlign: 'left', padding: '2px 6px' }}>#</th>
@@ -77,7 +77,7 @@ const NestedBreakdownTooltip = ({
             <tr style={{ borderTop: '1px solid rgba(255,255,255,0.15)' }}>
               <td
                 colSpan={6}
-                style={{ padding: '3px 6px', textAlign: 'right', opacity: 0.6, fontSize: 10 }}
+                style={{ padding: '3px 6px', textAlign: 'right', opacity: 0.6, fontSize: 12 }}
               >
                 Additional discount ({additionalDiscount}%)
               </td>
@@ -89,7 +89,7 @@ const NestedBreakdownTooltip = ({
           <tr style={{ borderTop: '1px solid rgba(255,255,255,0.2)' }}>
             <td
               colSpan={6}
-              style={{ padding: '4px 6px', textAlign: 'right', opacity: 0.7, fontSize: 10 }}
+              style={{ padding: '4px 6px', textAlign: 'right', opacity: 0.7, fontSize: 12 }}
             >
               Total
             </td>
@@ -134,15 +134,15 @@ const PackageBreakdownTable = ({
         </colgroup>
         <thead>
           <tr className="text-caption-1 text-text-secondary border-b border-card-border">
-            <th className="text-left px-3 py-3">#</th>
-            <th className="text-left px-3 py-3">Type</th>
-            <th className="text-left px-3 py-3">Name</th>
-            <th className="text-right px-3 py-3 whitespace-nowrap">Unit price</th>
-            <th className="text-center px-3 py-3">Qty.</th>
-            <th className="text-right px-3 py-3 whitespace-nowrap">Gross amt.</th>
-            <th className="text-right px-3 py-3 whitespace-nowrap">Discount %</th>
-            <th className="text-right px-3 py-3">Amount</th>
-            {editable && <th />}
+            <th className="text-left p-3">#</th>
+            <th className="text-left p-3">Type</th>
+            <th className="text-left p-3">Name</th>
+            <th className="text-right p-3 whitespace-nowrap">Unit price</th>
+            <th className="text-center p-3">Qty.</th>
+            <th className="text-right p-3 whitespace-nowrap">Gross amt.</th>
+            <th className="text-right p-3 whitespace-nowrap">Discount %</th>
+            <th className="text-right p-3">Amount</th>
+            {editable && <th aria-label="Actions" />}
           </tr>
         </thead>
         <tbody>
@@ -152,11 +152,9 @@ const PackageBreakdownTable = ({
             const hasNested = isPackage && item.nestedBreakdown && item.nestedBreakdown.length > 0;
             return (
               <tr key={item.id} className="border-t border-card-border">
-                <td className="px-3 py-3 text-text-secondary">{i + 1}.</td>
-                <td className="px-3 py-3 text-text-secondary">
-                  {TYPE_LABELS[item.type] ?? item.type}
-                </td>
-                <td className="px-3 py-3">
+                <td className="p-3 text-text-secondary">{i + 1}.</td>
+                <td className="p-3 text-text-secondary">{TYPE_LABELS[item.type] ?? item.type}</td>
+                <td className="p-3">
                   <span className="flex items-center gap-1.5">
                     {item.name}
                     {hasNested && (
@@ -177,17 +175,15 @@ const PackageBreakdownTable = ({
                     )}
                   </span>
                 </td>
-                <td className="px-3 py-3 text-right whitespace-nowrap">
-                  $ {item.unitPrice.toFixed(2)}
-                </td>
-                <td className="px-3 py-3 text-center">
+                <td className="p-3 text-right whitespace-nowrap">$ {item.unitPrice.toFixed(2)}</td>
+                <td className="p-3 text-center">
                   {editable ? (
                     <input
                       type="number"
                       min={1}
                       value={item.quantity}
                       onChange={(e) => {
-                        const v = Math.max(1, parseInt(e.target.value, 10) || 1);
+                        const v = Math.max(1, Number.parseInt(e.target.value, 10) || 1);
                         onChangeQty?.(item.id, v);
                       }}
                       className="w-20 text-center bg-transparent border border-input-border-default rounded-xl px-3 h-9 text-body-4 focus-visible:outline-none focus-visible:border-input-border-active"
@@ -197,8 +193,8 @@ const PackageBreakdownTable = ({
                     <span>×{item.quantity}</span>
                   )}
                 </td>
-                <td className="px-3 py-3 text-right whitespace-nowrap">$ {gross.toFixed(2)}</td>
-                <td className="px-3 py-3 text-right">
+                <td className="p-3 text-right whitespace-nowrap">$ {gross.toFixed(2)}</td>
+                <td className="p-3 text-right">
                   {editable ? (
                     <input
                       type="number"
@@ -206,9 +202,9 @@ const PackageBreakdownTable = ({
                       max={item.maxDiscount ?? 100}
                       value={item.discount}
                       onChange={(e) => {
-                        const raw = parseFloat(e.target.value);
+                        const raw = Number.parseFloat(e.target.value);
                         const max = item.maxDiscount ?? 100;
-                        const v = isNaN(raw) ? 0 : Math.min(max, Math.max(0, raw));
+                        const v = Number.isNaN(raw) ? 0 : Math.min(max, Math.max(0, raw));
                         onChangeDiscount?.(item.id, v);
                       }}
                       className="w-24 text-right bg-transparent border border-input-border-default rounded-xl px-3 h-9 text-body-4 focus-visible:outline-none focus-visible:border-input-border-active"
@@ -218,14 +214,14 @@ const PackageBreakdownTable = ({
                     <span>-{item.discount}%</span>
                   )}
                 </td>
-                <td className="px-3 py-3 text-right whitespace-nowrap">$ {net.toFixed(2)}</td>
+                <td className="p-3 text-right whitespace-nowrap">$ {net.toFixed(2)}</td>
                 {editable && (
-                  <td className="px-3 py-3">
+                  <td className="p-3">
                     <button
                       type="button"
                       aria-label={`Remove ${item.name}`}
                       onClick={() => onRemoveItem?.(item.id)}
-                      className="flex items-center justify-center w-7 h-7 rounded-full border border-transparent hover:border-danger-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600"
+                      className="flex items-center justify-center size-7 rounded-full border border-transparent hover:border-danger-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600"
                     >
                       <MdDeleteForever
                         size={16}

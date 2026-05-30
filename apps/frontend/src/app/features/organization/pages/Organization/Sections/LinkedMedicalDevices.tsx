@@ -116,7 +116,7 @@ const LinkedMedicalDevices = () => {
             onClick={() => {
               handleManualRefresh().catch(() => undefined);
             }}
-            className="h-8 w-8 rounded-full! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover"
+            className="size-8 rounded-full! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover"
             aria-label="Refresh linked medical devices"
             title="Refresh linked medical devices"
             disabled={refreshing}

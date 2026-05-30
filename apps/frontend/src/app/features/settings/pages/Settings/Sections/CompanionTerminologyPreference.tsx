@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useRef } from 'react';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import { useNotify } from '@/app/hooks/useNotify';
@@ -30,16 +30,17 @@ const CompanionTerminologyPreference = () => {
     profile?.personalDetails?.pmsPreferences,
     primaryOrgType
   );
-  const profileTerminology = isValidAnimalTerminology(
+  const profileTerminology: CompanionTerminologyOption = isValidAnimalTerminology(
     profile?.personalDetails?.pmsPreferences?.animalTerminology
   )
     ? profile?.personalDetails?.pmsPreferences?.animalTerminology
     : fallbackAnimalTerminology;
   const [selection, setSelection] = useState<CompanionTerminologyOption>(profileTerminology);
-
-  useEffect(() => {
+  const prevTerminologyRef = useRef(profileTerminology);
+  if (prevTerminologyRef.current !== profileTerminology) {
+    prevTerminologyRef.current = profileTerminology;
     setSelection(profileTerminology);
-  }, [profileTerminology]);
+  }
 
   const handleSave = async () => {
     if (!primaryOrgId) {

@@ -18,6 +18,8 @@ import Fallback from '@/app/ui/overlays/Fallback';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
 import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
+const TASKS_PAGE_SKELETON = <PageSkeleton variant="planner" />;
+
 const TaskPlannerSkeleton = () => (
   <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
 );
@@ -43,8 +45,8 @@ const RescheduleTask = dynamic(
 
 const Tasks = () => {
   const tasks = useTasksForPrimaryOrg();
-  const { can } = usePermissions();
-  const canEditTasks = can(PERMISSIONS.TASKS_EDIT_ANY);
+  const permissions = usePermissions();
+  const canEditTasks = permissions.can(PERMISSIONS.TASKS_EDIT_ANY);
   const query = useSearchStore((s) => s.query);
   const searchParams = useSearchParams();
   const handledDeepLinkRef = useRef<string | null>(null);
@@ -62,7 +64,7 @@ const Tasks = () => {
   const [activeCalendar, setActiveCalendar] = useState('week');
   const [activeView, setActiveView] = useState('calendar');
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [weekStart, setWeekStart] = useState(startOfDay(currentDate));
+  const [weekStart, setWeekStart] = useState(() => startOfDay(currentDate));
   const { plannerSectionRef } = usePlannerAutoLock({ activeView });
 
   useEffect(() => {
@@ -266,9 +268,9 @@ const Tasks = () => {
 
 const ProtectedTasks = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="planner" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="planner" />}>
-        <Suspense fallback={<PageSkeleton variant="planner" />}>
+    <ProtectedRoute skeleton={TASKS_PAGE_SKELETON}>
+      <OrgGuard skeleton={TASKS_PAGE_SKELETON}>
+        <Suspense fallback={TASKS_PAGE_SKELETON}>
           <Tasks />
         </Suspense>
       </OrgGuard>

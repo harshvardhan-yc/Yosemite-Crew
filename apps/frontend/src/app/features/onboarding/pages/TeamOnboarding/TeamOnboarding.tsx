@@ -104,7 +104,7 @@ const TeamOnboarding = () => {
   const [activeStep, setActiveStep] = useState(0);
   const [initialStepApplied, setInitialStepApplied] = useState(false);
   const [formData, setFormData] = useState<UserProfile>(EMPTY_PROFILE);
-  const [availability, setAvailability] = useState<AvailabilityState>(
+  const [availability, setAvailability] = useState<AvailabilityState>(() =>
     daysOfWeek.reduce<AvailabilityState>((acc, day) => {
       const isWeekday =
         day === 'Monday' ||
@@ -156,7 +156,6 @@ const TeamOnboarding = () => {
       router.replace('/dashboard');
       return;
     }
-    // Only set active step from store on very first load.
     if (!initialStepApplied) {
       setInitialStepApplied(true);
       if (computedStep >= 0 && computedStep <= 2) {
@@ -185,7 +184,7 @@ const TeamOnboarding = () => {
     return (
       <div className="create-profile-wrapper flex items-center justify-center min-h-[40vh]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 rounded-full border-4 border-neutral-200 border-t-text-brand animate-spin" />
+          <div className="size-8 rounded-full border-4 border-neutral-200 border-t-text-brand animate-spin" />
           <div className="text-body-4 text-text-secondary">Loading your profile…</div>
         </div>
       </div>

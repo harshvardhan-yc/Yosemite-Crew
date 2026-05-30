@@ -1,8 +1,7 @@
 import React, { useId, useRef, useState } from 'react';
 import type { ServicesTabHandle } from '@/app/features/organization/pages/Specialities/ServicesTab';
 import type { PackagesTabHandle } from '@/app/features/organization/pages/Specialities/PackagesTab';
-import { IoIosArrowDown } from 'react-icons/io';
-import { IoIosSearch } from 'react-icons/io';
+import { IoIosArrowDown, IoIosSearch } from 'react-icons/io';
 import { RiEdit2Line } from 'react-icons/ri';
 import { MdOutlineArchive } from 'react-icons/md';
 import { FiCheck, FiX } from 'react-icons/fi';
@@ -84,30 +83,36 @@ const SpecialityAccordionRevamp = ({
 
   const searchResults: SearchResult[] = searchQuery.trim()
     ? [
-        ...allServices
-          .filter(
-            (s) =>
-              s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-              s.code.toLowerCase().includes(searchQuery.toLowerCase())
-          )
-          .map((s) => ({
-            id: s.id,
-            name: s.name,
-            kind: 'service' as const,
-            meta: `${s.code} · ${s.type}`,
-          })),
-        ...allPackages
-          .filter(
-            (p) =>
-              p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-              p.code.toLowerCase().includes(searchQuery.toLowerCase())
-          )
-          .map((p) => ({
-            id: p.id,
-            name: p.name,
-            kind: 'package' as const,
-            meta: `${p.code} · ${p.breakdown.length} items`,
-          })),
+        ...allServices.reduce<SearchResult[]>((results, service) => {
+          const normalizedQuery = searchQuery.toLowerCase();
+          if (
+            service.name.toLowerCase().includes(normalizedQuery) ||
+            service.code.toLowerCase().includes(normalizedQuery)
+          ) {
+            results.push({
+              id: service.id,
+              name: service.name,
+              kind: 'service',
+              meta: `${service.code} · ${service.type}`,
+            });
+          }
+          return results;
+        }, []),
+        ...allPackages.reduce<SearchResult[]>((results, pack) => {
+          const normalizedQuery = searchQuery.toLowerCase();
+          if (
+            pack.name.toLowerCase().includes(normalizedQuery) ||
+            pack.code.toLowerCase().includes(normalizedQuery)
+          ) {
+            results.push({
+              id: pack.id,
+              name: pack.name,
+              kind: 'package',
+              meta: `${pack.code} · ${pack.breakdown.length} items`,
+            });
+          }
+          return results;
+        }, []),
       ]
     : [];
 
@@ -196,7 +201,7 @@ const SpecialityAccordionRevamp = ({
                   type="button"
                   aria-label="Save name"
                   onClick={handleSaveName}
-                  className="flex items-center justify-center w-8 h-8 rounded-full bg-text-brand text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand shrink-0"
+                  className="flex items-center justify-center size-8 rounded-full bg-text-brand text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand shrink-0"
                 >
                   <FiCheck size={14} aria-hidden="true" />
                 </button>
@@ -204,7 +209,7 @@ const SpecialityAccordionRevamp = ({
                   type="button"
                   aria-label="Cancel rename"
                   onClick={handleCancelName}
-                  className="flex items-center justify-center w-8 h-8 rounded-full border border-card-border hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors shrink-0"
+                  className="flex items-center justify-center size-8 rounded-full border border-card-border hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors shrink-0"
                 >
                   <FiX size={14} color="var(--color-danger-600)" aria-hidden="true" />
                 </button>
@@ -225,7 +230,7 @@ const SpecialityAccordionRevamp = ({
                   type="button"
                   aria-label={`Rename ${speciality.name}`}
                   onClick={handleEditClick}
-                  className="flex items-center justify-center w-9 h-9 rounded-full border border-transparent hover:border-card-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors shrink-0"
+                  className="flex items-center justify-center size-9 rounded-full border border-transparent hover:border-card-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors shrink-0"
                 >
                   <RiEdit2Line size={18} color="var(--color-neutral-700)" aria-hidden="true" />
                 </button>
@@ -242,7 +247,8 @@ const SpecialityAccordionRevamp = ({
               <div className="shrink-0 w-full sm:w-auto">
                 <Primary
                   href="#"
-                  text={activeTab === 'packages' ? '+ New Package' : '+ New Service'}
+                  icon={<span>+</span>}
+                  text={activeTab === 'packages' ? 'New Package' : 'New Service'}
                   onClick={(e) => {
                     e.preventDefault();
                     if (activeTab === 'packages') {

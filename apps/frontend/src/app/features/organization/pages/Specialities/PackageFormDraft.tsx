@@ -136,9 +136,7 @@ const PackageFormDraft = ({
 
   // Pull all active packages from store for cross-package inclusion
   const allActivePackages = useRevampCatalogStore(
-    useShallow((s) =>
-      s.packages.filter((p) => p.status === 'ACTIVE' && (!editPackage || p.id !== editPackage.id))
-    )
+    useShallow((s) => s.packages.filter((p) => p.status === 'ACTIVE' && p.id !== editPackage?.id))
   );
 
   const { notify } = useNotify();
@@ -163,12 +161,12 @@ const PackageFormDraft = ({
       defaultDiscount: s.defaultDiscount ?? 0,
       maxDiscount: s.maxDiscount ?? 100,
     })),
-    ...allActivePackages.map((pkg) => {
+    ...allActivePackages.map((pkg): CatalogEntry => {
       const { totalCost } = computePackageTotals(pkg);
       return {
         id: pkg.id,
         name: pkg.name,
-        type: 'PACKAGE' as CatalogItemType,
+        type: 'PACKAGE',
         unitPrice: totalCost,
         defaultDiscount: 0,
         maxDiscount: 100,
@@ -234,11 +232,11 @@ const PackageFormDraft = ({
       description: description.trim(),
       specialityId,
       organisationId,
-      durationMinutes: parseInt(duration, 10),
-      leadCount: parseInt(leadCount, 10),
-      supportCount: parseInt(supportCount, 10),
+      durationMinutes: Number.parseInt(duration, 10),
+      leadCount: Number.parseInt(leadCount, 10),
+      supportCount: Number.parseInt(supportCount, 10),
       isBookable,
-      additionalDiscount: parseFloat(additionalDiscount) || 0,
+      additionalDiscount: Number.parseFloat(additionalDiscount) || 0,
       breakdown,
       status: 'ACTIVE' as const,
     };
@@ -303,6 +301,7 @@ const PackageFormDraft = ({
           <div className="relative w-full">
             <textarea
               id={descId}
+              aria-label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder=" "
@@ -345,11 +344,12 @@ const PackageFormDraft = ({
           <label className="flex items-center justify-end gap-2 cursor-pointer select-none text-body-4 text-text-secondary whitespace-nowrap">
             <input
               type="checkbox"
+              aria-label="Package bookable"
               checked={isBookable}
               onChange={(e) => setIsBookable(e.target.checked)}
-              className="w-4 h-4 shrink-0 accent-(--color-input-border-active)"
+              className="size-4 shrink-0 accent-(--color-input-border-active)"
             />
-            Is this Package Bookable?
+            {'Is this Package Bookable?'}
           </label>
         </div>
       </div>
@@ -400,7 +400,7 @@ const PackageFormDraft = ({
           {breakdown.length > 0 ? (
             <PackageBreakdownTable
               items={breakdown}
-              additionalDiscount={parseFloat(additionalDiscount) || 0}
+              additionalDiscount={Number.parseFloat(additionalDiscount) || 0}
               editable
               onRemoveItem={removeBreakdownItem}
               onChangeQty={handleChangeQty}

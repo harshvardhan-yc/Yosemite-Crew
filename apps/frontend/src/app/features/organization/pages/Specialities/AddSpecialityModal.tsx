@@ -29,8 +29,7 @@ const AddSpecialityModal = ({
     setShowModal(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitSpeciality = () => {
     const trimmed = name.trim();
     if (!trimmed) {
       setError('Speciality name is required.');
@@ -39,6 +38,11 @@ const AddSpecialityModal = ({
     addSpeciality(trimmed, organisationId);
     notify('success', { title: 'Speciality added', text: `"${trimmed}" has been created.` });
     handleClose();
+  };
+
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    submitSpeciality();
   };
 
   return (
@@ -57,7 +61,7 @@ const AddSpecialityModal = ({
         />
         <div className="grid grid-cols-2 gap-3">
           <Secondary href="#" text="Cancel" onClick={handleClose} />
-          <Primary href="#" text="Add Speciality" onClick={handleSubmit} />
+          <Primary href="#" text="Add Speciality" onClick={submitSpeciality} />
         </div>
       </form>
     </CenterModal>

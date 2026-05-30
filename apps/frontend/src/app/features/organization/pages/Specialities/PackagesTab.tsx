@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useState } from 'react';
+import { useImperativeHandle, useState, type Ref } from 'react';
 import { RiEdit2Line } from 'react-icons/ri';
 import { MdDeleteForever } from 'react-icons/md';
 import { IoChevronDown } from 'react-icons/io5';
@@ -19,10 +19,11 @@ import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContai
 
 export type PackagesTabHandle = { openAdd: () => void };
 
-type PackagesTabProps = {
+type PackagesTabProps = Readonly<{
   specialityId: string;
   organisationId: string;
-};
+  ref?: Ref<PackagesTabHandle>;
+}>;
 
 type ActionMode = null | 'edit' | 'delete';
 
@@ -57,7 +58,7 @@ const PackageCard = ({
             type="button"
             aria-label={`View breakdown of ${pkg.name}`}
             onClick={() => setShowBreakdown((p) => !p)}
-            className="flex items-center justify-center w-10 h-10 rounded-full border-[1.5px] border-neutral-300 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
+            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
           >
             <IoChevronDown
               size={20}
@@ -72,7 +73,7 @@ const PackageCard = ({
             type="button"
             aria-label={`Edit ${pkg.name}`}
             onClick={onEdit}
-            className="flex items-center justify-center w-10 h-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
+            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
           >
             <RiEdit2Line size={20} color="var(--color-neutral-900)" aria-hidden="true" />
           </button>
@@ -80,7 +81,7 @@ const PackageCard = ({
             type="button"
             aria-label={`Delete ${pkg.name}`}
             onClick={onDelete}
-            className="flex items-center justify-center w-10 h-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
+            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
           >
             <MdDeleteForever size={20} color="var(--color-danger-600)" aria-hidden="true" />
           </button>
@@ -168,7 +169,7 @@ const PackageCard = ({
               type="button"
               aria-label={`View breakdown of ${pkg.name}`}
               onClick={() => setShowBreakdown((p) => !p)}
-              className="flex items-center justify-center w-12 h-12 rounded-full border-[1.5px] border-neutral-300 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
+              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
             >
               <IoChevronDown
                 size={24}
@@ -183,7 +184,7 @@ const PackageCard = ({
               type="button"
               aria-label={`Edit ${pkg.name}`}
               onClick={onEdit}
-              className="flex items-center justify-center w-12 h-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
+              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
             >
               <RiEdit2Line size={24} color="var(--color-neutral-900)" aria-hidden="true" />
             </button>
@@ -191,7 +192,7 @@ const PackageCard = ({
               type="button"
               aria-label={`Delete ${pkg.name}`}
               onClick={onDelete}
-              className="flex items-center justify-center w-12 h-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
+              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
             >
               <MdDeleteForever size={24} color="var(--color-danger-600)" aria-hidden="true" />
             </button>
@@ -217,10 +218,7 @@ const PackageCard = ({
   );
 };
 
-const PackagesTab = forwardRef<PackagesTabHandle, PackagesTabProps>(function PackagesTab(
-  { specialityId, organisationId },
-  ref
-) {
+function PackagesTab({ specialityId, organisationId, ref }: PackagesTabProps) {
   const packages = useRevampCatalogStore(
     useShallow((s) =>
       s.packages.filter((pkg) => pkg.specialityId === specialityId && pkg.status === 'ACTIVE')
@@ -363,6 +361,6 @@ const PackagesTab = forwardRef<PackagesTabHandle, PackagesTabProps>(function Pac
       )}
     </div>
   );
-});
+}
 
 export default PackagesTab;
