@@ -9,7 +9,7 @@
 
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import type { ChatScope } from '@/app/features/chat/components/ChatContainer';
@@ -139,8 +139,8 @@ function ChatPageContent() {
 
 export default function ChatPage() {
   return (
-    <React.Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div>Loading…</div>}>
       <ChatPageContent />
-    </React.Suspense>
+    </Suspense>
   );
 }

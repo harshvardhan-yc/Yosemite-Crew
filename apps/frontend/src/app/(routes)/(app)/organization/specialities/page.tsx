@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 export const metadata: Metadata = { title: 'Specialities — Yosemite Crew' };
-import React from 'react';
+import React, { Suspense } from 'react';
 import dynamic from 'next/dynamic';
 
 const SpecialitiesRevamp = dynamic(
@@ -11,7 +11,11 @@ const SpecialitiesRevamp = dynamic(
 );
 
 function page() {
-  return <SpecialitiesRevamp />;
+  return (
+    <Suspense fallback={<div className="min-h-[50vh]" aria-hidden="true" />}>
+      <SpecialitiesRevamp />
+    </Suspense>
+  );
 }
 
 export default page;
