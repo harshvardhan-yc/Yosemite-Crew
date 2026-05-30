@@ -112,7 +112,7 @@ const CompanionDocumentUploadForm = ({
                 id={issueDateInputId}
                 type="checkbox"
                 aria-label="Include issue date"
-                className="m-0 h-4 w-4 shrink-0 align-middle accent-text-primary"
+                className="m-0 size-4 shrink-0 align-middle accent-text-primary"
                 checked={formData.hasIssueDate ?? false}
                 onChange={(event) =>
                   setFormData({

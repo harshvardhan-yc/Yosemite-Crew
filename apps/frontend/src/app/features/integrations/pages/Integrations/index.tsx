@@ -5,6 +5,8 @@ import Image from 'next/image';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
 import PageSkeleton from '@/app/ui/layout/PageSkeleton';
+
+const INTEGRATIONS_PAGE_SKELETON = <PageSkeleton variant="list" />;
 import Modal from '@/app/ui/overlays/Modal';
 import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
@@ -462,11 +464,10 @@ const useIntegrationsPage = () => {
     });
 
   const linkedCount = useMemo(() => {
-    const enabledProviders = new Set(
-      integrations
-        .filter((integration) => integration.status?.toLowerCase() === 'enabled')
-        .map((integration) => integration.provider)
-    );
+    const enabledProviders = integrations.reduce<Set<string>>((providers, integration) => {
+      if (integration.status?.toLowerCase() === 'enabled') providers.add(integration.provider);
+      return providers;
+    }, new Set());
     if (merckEnabled) enabledProviders.add('MERCK_MANUALS');
     return enabledProviders.size;
   }, [integrations, merckEnabled]);
@@ -626,7 +627,7 @@ const IdexxSettingsModal = ({
             onClick={() => {
               handleManualRefresh().catch(() => undefined);
             }}
-            className="h-8 w-8 rounded-full! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover"
+            className="size-8 rounded-full! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover"
             aria-label="Refresh integrations"
             title="Refresh integrations"
             disabled={refreshing}
@@ -827,13 +828,13 @@ const IdexxIntegrationCard = ({
   return (
     <div className={INTEGRATION_CARD_CLASS}>
       <div className="shrink-0 w-[72px] flex flex-col items-center justify-between">
-        <div className="h-[72px] w-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center">
+        <div className="size-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center">
           <Image
             src={MEDIA_SOURCES.futureAssets.idexxLogoUrl}
             alt="IDEXX"
             width={56}
             height={56}
-            className="object-contain max-h-[56px] max-w-[56px] h-auto w-auto"
+            className="object-contain max-h-[56px] max-w-[56px] size-auto"
           />
         </div>
         {s.idexxEnabled ? (
@@ -842,12 +843,12 @@ const IdexxIntegrationCard = ({
             onClick={s.handleEnableDisable}
             aria-label="Disable IDEXX quick action"
             title="Disable IDEXX quick action"
-            className="h-10 w-10 rounded-2xl! border border-red-200 flex items-center justify-center hover:bg-red-50 transition-colors cursor-pointer"
+            className="size-10 rounded-2xl! border border-red-200 flex items-center justify-center hover:bg-red-50 transition-colors cursor-pointer"
           >
             <IoTrashOutline className="text-red-600" size={16} />
           </button>
         ) : (
-          <div className="h-10 w-10" />
+          <div className="size-10" />
         )}
       </div>
       <div className="flex-1 min-w-0 flex flex-col justify-between">
@@ -897,13 +898,13 @@ const MerckIntegrationCard = ({
   return (
     <div className={INTEGRATION_CARD_CLASS}>
       <div className="shrink-0 w-[72px] flex flex-col items-center justify-between">
-        <div className="h-[72px] w-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center">
+        <div className="size-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center">
           <Image
             src={MEDIA_SOURCES.futureAssets.msdLogoUrl}
             alt="MSD Veterinary Manual"
             width={60}
             height={60}
-            className="object-contain max-h-[60px] max-w-[60px] h-auto w-auto"
+            className="object-contain max-h-[60px] max-w-[60px] size-auto"
           />
         </div>
         {s.merckEnabled ? (
@@ -912,12 +913,12 @@ const MerckIntegrationCard = ({
             onClick={s.handleMerckEnableDisable}
             aria-label="Disable MSD Veterinary Manual"
             title="Disable MSD Veterinary Manual"
-            className="h-10 w-10 rounded-2xl! border border-red-200 flex items-center justify-center hover:bg-red-50 transition-colors cursor-pointer"
+            className="size-10 rounded-2xl! border border-red-200 flex items-center justify-center hover:bg-red-50 transition-colors cursor-pointer"
           >
             <IoTrashOutline className="text-red-600" size={16} />
           </button>
         ) : (
-          <div className="h-10 w-10" />
+          <div className="size-10" />
         )}
       </div>
       <div className="flex-1 min-w-0 flex flex-col justify-between">
@@ -965,16 +966,16 @@ const RadIntegrationCard = ({
   return (
     <div className={INTEGRATION_CARD_CLASS}>
       <div className="shrink-0 w-[72px] flex flex-col items-center justify-between">
-        <div className="h-[72px] w-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center overflow-hidden">
+        <div className="size-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center overflow-hidden">
           <Image
             src={MEDIA_SOURCES.futureAssets.radAnalyzerLogoUrl}
             alt="RadAnalyzer"
             width={56}
             height={56}
-            className="object-contain max-h-[56px] max-w-[56px] h-auto w-auto"
+            className="object-contain max-h-[56px] max-w-[56px] size-auto"
           />
         </div>
-        <div className="h-10 w-10" />
+        <div className="size-10" />
       </div>
       <div className="flex-1 min-w-0 flex flex-col justify-between">
         <div className="flex flex-col gap-3 pb-3">
@@ -1016,16 +1017,16 @@ const VetnioIntegrationCard = ({
   return (
     <div className={INTEGRATION_CARD_CLASS}>
       <div className="shrink-0 w-[72px] flex flex-col items-center justify-between">
-        <div className="h-[72px] w-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center overflow-hidden">
+        <div className="size-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center overflow-hidden">
           <Image
             src={MEDIA_SOURCES.futureAssets.vetnioLogoUrl}
             alt="Vetnio"
             width={56}
             height={56}
-            className="object-contain max-h-[56px] max-w-[56px] h-auto w-auto"
+            className="object-contain max-h-[56px] max-w-[56px] size-auto"
           />
         </div>
-        <div className="h-10 w-10" />
+        <div className="size-10" />
       </div>
       <div className="flex-1 min-w-0 flex flex-col justify-between">
         <div className="flex flex-col gap-3 pb-3">
@@ -1044,8 +1045,8 @@ const VetnioIntegrationCard = ({
             </span>
           </div>
           <div className="text-body-4 text-text-secondary line-clamp-4">
-            AI-powered documentation for veterinary practices — instantly generate clinical notes,
-            discharge summaries, and client communications from consultations.
+            AI-powered documentation for veterinary practices &mdash; instantly generate clinical
+            notes, discharge summaries, and client communications from consultations.
           </div>
         </div>
         <div className="flex flex-col gap-2">
@@ -1068,12 +1069,12 @@ const QuickBooksIntegrationCard = ({
   return (
     <div className={INTEGRATION_CARD_CLASS}>
       <div className="shrink-0 w-[72px] flex flex-col items-center justify-between">
-        <div className="h-[72px] w-[72px] rounded-xl border border-card-border bg-white p-1 flex items-center justify-center overflow-hidden">
+        <div className="size-[72px] rounded-xl border border-card-border bg-white p-1 flex items-center justify-center overflow-hidden">
           <span className="font-satoshi text-[28px] font-bold leading-none tracking-[-0.56px] text-[#2ca01c]">
             qb
           </span>
         </div>
-        <div className="h-10 w-10" />
+        <div className="size-10" />
       </div>
       <div className="flex-1 min-w-0 flex flex-col justify-between">
         <div className="flex flex-col gap-3 pb-3">
@@ -1116,17 +1117,17 @@ const LaikaIntegrationCard = ({
   return (
     <div className={INTEGRATION_CARD_CLASS}>
       <div className="shrink-0 w-[72px] flex flex-col items-center justify-between">
-        <div className="h-[72px] w-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center overflow-hidden">
+        <div className="size-[72px] rounded-xl border border-card-border bg-white p-2 flex items-center justify-center overflow-hidden">
           <Image
             src={MEDIA_SOURCES.futureAssets.laikaLogoUrl}
             alt="Laika"
             width={56}
             height={16}
-            className="object-contain max-h-14 max-w-14 h-auto w-auto"
+            className="object-contain max-h-14 max-w-14 size-auto"
             unoptimized
           />
         </div>
-        <div className="h-10 w-10" />
+        <div className="size-10" />
       </div>
       <div className="flex-1 min-w-0 flex flex-col justify-between">
         <div className="flex flex-col gap-3 pb-3">
@@ -1145,9 +1146,9 @@ const LaikaIntegrationCard = ({
             </span>
           </div>
           <div className="text-body-4 text-text-secondary line-clamp-4">
-            AI-powered diagnostic support for veterinary clinicians — interpret lab results, reason
-            through differentials, and get evidence-based guidance trained exclusively on veterinary
-            medical data.
+            AI-powered diagnostic support for veterinary clinicians &mdash; interpret lab results,
+            reason through differentials, and get evidence-based guidance trained exclusively on
+            veterinary medical data.
           </div>
         </div>
         <div className="flex flex-col gap-2">
@@ -1209,7 +1210,7 @@ const IntegrationsPage = () => {
               <button
                 type="button"
                 aria-label="Integrations info"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
               >
                 <IoInformationCircleOutline size={20} />
               </button>
@@ -1277,8 +1278,8 @@ const IntegrationsPage = () => {
 };
 
 const ProtectedIntegrations = () => (
-  <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
-    <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+  <ProtectedRoute skeleton={INTEGRATIONS_PAGE_SKELETON}>
+    <OrgGuard skeleton={INTEGRATIONS_PAGE_SKELETON}>
       <IntegrationsPage />
     </OrgGuard>
   </ProtectedRoute>

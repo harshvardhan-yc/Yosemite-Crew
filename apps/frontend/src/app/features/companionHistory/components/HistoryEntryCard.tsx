@@ -36,7 +36,11 @@ const ROLE_LABEL_MAP: Record<string, string> = {
 const getPayloadStringArray = (payload: Record<string, unknown>, key: string): string[] => {
   const value = payload?.[key];
   if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item ?? '').trim()).filter((item) => item.length > 0);
+  return value.reduce<string[]>((items, item) => {
+    const trimmed = String(item ?? '').trim();
+    if (trimmed.length > 0) items.push(trimmed);
+    return items;
+  }, []);
 };
 
 const getAppointmentDetails = (entry: HistoryEntry): DetailPair[] => {

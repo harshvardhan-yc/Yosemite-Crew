@@ -2,7 +2,6 @@ import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import EditableAccordion from '@/app/ui/primitives/Accordion/EditableAccordion';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import {
-  FormField,
   FormsCategoryOptions,
   FormsProps,
   RequiredSignerOptions,
@@ -13,6 +12,7 @@ import React, { useEffect } from 'react';
 import FormRenderer from '@/app/features/forms/pages/Forms/Sections/AddForm/components/FormRenderer';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { Organisation } from '@yosemite-crew/types';
+import { buildInitialValues } from '@/app/features/forms/pages/Forms/Sections/AddForm/reviewUtils';
 
 type ReviewProps = {
   formData: FormsProps;
@@ -28,34 +28,6 @@ const baseDetailsFields = [
   { label: 'Description', key: 'description', type: 'text' },
   { label: 'Signed by', key: 'requiredSigner', type: 'dropdown', options: RequiredSignerOptions },
 ];
-
-export const buildInitialValues = (fields: FormField[]): Record<string, any> => {
-  const acc: Record<string, any> = {};
-  const walk = (items: FormField[]) => {
-    items.forEach((field) => {
-      if (field.type === 'group') {
-        walk(field.fields ?? []);
-        return;
-      }
-      // Check for defaultValue first (for readonly fields from inventory)
-      const defaultValue = (field as any).defaultValue;
-
-      if (field.type === 'checkbox') {
-        acc[field.id] = defaultValue ?? [];
-      } else if (field.type === 'boolean') {
-        acc[field.id] = defaultValue ?? false;
-      } else if (field.type === 'date') {
-        acc[field.id] = defaultValue ?? '';
-      } else if (field.type === 'number') {
-        acc[field.id] = defaultValue ?? '';
-      } else {
-        acc[field.id] = defaultValue ?? '';
-      }
-    });
-  };
-  walk(fields);
-  return acc;
-};
 
 const Review = ({
   formData,

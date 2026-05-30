@@ -20,6 +20,8 @@ import { IoInformationCircleOutline } from 'react-icons/io5';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
 import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
+const FINANCE_PAGE_SKELETON = <PageSkeleton variant="list" />;
+
 const FinanceSectionSkeleton = () => (
   <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
 );
@@ -126,7 +128,7 @@ const Finance = () => {
                 <button
                   type="button"
                   aria-label="Finance info"
-                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+                  className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
                 >
                   <IoInformationCircleOutline size={20} />
                 </button>
@@ -161,9 +163,9 @@ const Finance = () => {
 
 const ProtectedFinance = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
-        <Suspense fallback={<PageSkeleton variant="list" />}>
+    <ProtectedRoute skeleton={FINANCE_PAGE_SKELETON}>
+      <OrgGuard skeleton={FINANCE_PAGE_SKELETON}>
+        <Suspense fallback={FINANCE_PAGE_SKELETON}>
           <Finance />
         </Suspense>
       </OrgGuard>

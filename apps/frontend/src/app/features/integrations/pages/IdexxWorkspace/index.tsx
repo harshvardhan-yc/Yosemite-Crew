@@ -393,7 +393,7 @@ const ResultDetailModalContent = ({
 }: ResultDetailModalContentProps) => {
   const onWheelHorizontal = useWheelToHorizontalScroll();
   if (resultDetailLoading) {
-    return <div className="text-body-4 text-text-secondary">Loading result details...</div>;
+    return <div className="text-body-4 text-text-secondary">Loading result details…</div>;
   }
   if (!activeResultDetail) {
     return <div className="text-body-4 text-text-secondary">No result selected.</div>;
@@ -546,7 +546,7 @@ const IdexxFollowUpPortal = ({ open, followUpFrameUrl, onClose }: IdexxFollowUpP
       data-signing-overlay="true"
       style={{ pointerEvents: 'auto' }}
     >
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-2xl size-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
           <div className="text-body-2 text-text-primary">IDEXX follow-up hub</div>
           <button
@@ -566,6 +566,7 @@ const IdexxFollowUpPortal = ({ open, followUpFrameUrl, onClose }: IdexxFollowUpP
           loading="lazy"
           allowFullScreen
           referrerPolicy="strict-origin"
+          sandbox="allow-scripts allow-popups allow-forms allow-downloads"
           style={{ pointerEvents: 'auto' }}
         />
       </div>
@@ -723,35 +724,18 @@ const useIdexxWorkspaceActions = (s: IdexxWorkspaceActionsState) => {
     pdfPreviewLoadingId,
     pdfPreviewUrl,
     appointmentIdByOrderId,
-    setLoading,
-    setError,
-    setResults,
-    setCensusEntries,
-    setAppointmentIdByOrderId,
-    setLastRefreshedAt,
-    setOrderLookupLoading,
-    setOrderLookup,
-    setShowResultModal,
-    setResultDetailLoading,
-    setActiveResultDetail,
-    setShowPdfPreview,
-    setPdfPreviewUrl,
-    setPdfPreviewTitle,
-    setPdfPreviewLoadingId,
-    setFollowUpFrameUrl,
-    setShowFollowUpFrame,
   } = s;
 
   const refresh = useCallback(async () => {
     if (!primaryOrgId) return;
-    setLoading(true);
-    setError(null);
+    s.setLoading(true);
+    s.setError(null);
     try {
       if (!integrationEnabled) {
-        setResults([]);
-        setCensusEntries([]);
-        setAppointmentIdByOrderId({});
-        setLastRefreshedAt(new Date().toISOString());
+        s.setResults([]);
+        s.setCensusEntries([]);
+        s.setAppointmentIdByOrderId({});
+        s.setLastRefreshedAt(new Date().toISOString());
         return;
       }
       const [allResults, census, orders] = await Promise.all([
@@ -759,25 +743,16 @@ const useIdexxWorkspaceActions = (s: IdexxWorkspaceActionsState) => {
         getIdexxCensus(primaryOrgId),
         listIdexxOrders({ organisationId: primaryOrgId }),
       ]);
-      setResults(allResults);
-      setCensusEntries(census);
-      setAppointmentIdByOrderId(buildAppointmentIdByOrderId(orders));
-      setLastRefreshedAt(new Date().toISOString());
+      s.setResults(allResults);
+      s.setCensusEntries(census);
+      s.setAppointmentIdByOrderId(buildAppointmentIdByOrderId(orders));
+      s.setLastRefreshedAt(new Date().toISOString());
     } catch (e) {
-      setError(getApiErrorMessage(e, 'Unable to load IDEXX Hub data.'));
+      s.setError(getApiErrorMessage(e, 'Unable to load IDEXX Hub data.'));
     } finally {
-      setLoading(false);
+      s.setLoading(false);
     }
-  }, [
-    primaryOrgId,
-    integrationEnabled,
-    setLoading,
-    setError,
-    setResults,
-    setCensusEntries,
-    setAppointmentIdByOrderId,
-    setLastRefreshedAt,
-  ]);
+  }, [primaryOrgId, integrationEnabled, s]);
 
   const getAppointmentLabsHref = useCallback(
     (result: LabResult) => {
@@ -816,58 +791,58 @@ const useIdexxWorkspaceActions = (s: IdexxWorkspaceActionsState) => {
 
   const handleLookupOrder = useCallback(async () => {
     if (!primaryOrgId || !orderLookupId.trim()) return;
-    setOrderLookupLoading(true);
-    setError(null);
+    s.setOrderLookupLoading(true);
+    s.setError(null);
     try {
       const order = await getIdexxOrderById({
         organisationId: primaryOrgId,
         idexxOrderId: orderLookupId.trim(),
       });
-      setOrderLookup(order);
+      s.setOrderLookup(order);
     } catch (e) {
-      setOrderLookup(null);
-      setError(getApiErrorMessage(e, 'Order lookup failed.'));
+      s.setOrderLookup(null);
+      s.setError(getApiErrorMessage(e, 'Order lookup failed.'));
     } finally {
-      setOrderLookupLoading(false);
+      s.setOrderLookupLoading(false);
     }
-  }, [primaryOrgId, orderLookupId, setOrderLookupLoading, setError, setOrderLookup]);
+  }, [primaryOrgId, orderLookupId, s]);
 
   const openResultDetails = useCallback(
     async (result: LabResult) => {
       if (!primaryOrgId) return;
-      setShowResultModal(true);
-      setResultDetailLoading(true);
-      setActiveResultDetail(result);
-      setError(null);
+      s.setShowResultModal(true);
+      s.setResultDetailLoading(true);
+      s.setActiveResultDetail(result);
+      s.setError(null);
       try {
         const detail = await getIdexxResultById({
           organisationId: primaryOrgId,
           resultId: result.resultId,
         });
-        setActiveResultDetail(detail);
+        s.setActiveResultDetail(detail);
       } catch (e) {
-        setError(getApiErrorMessage(e, 'Unable to load result details.'));
+        s.setError(getApiErrorMessage(e, 'Unable to load result details.'));
       } finally {
-        setResultDetailLoading(false);
+        s.setResultDetailLoading(false);
       }
     },
-    [primaryOrgId, setShowResultModal, setResultDetailLoading, setActiveResultDetail, setError]
+    [primaryOrgId, s]
   );
 
   const closePdfPreview = useCallback(() => {
-    setShowPdfPreview(false);
+    s.setShowPdfPreview(false);
     if (pdfPreviewUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(pdfPreviewUrl);
     }
-    setPdfPreviewUrl(null);
-    setPdfPreviewTitle('IDEXX PDF');
-  }, [pdfPreviewUrl, setShowPdfPreview, setPdfPreviewUrl, setPdfPreviewTitle]);
+    s.setPdfPreviewUrl(null);
+    s.setPdfPreviewTitle('IDEXX PDF');
+  }, [pdfPreviewUrl, s]);
 
   const openResultPdfPreview = useCallback(
     async (resultId: string) => {
       if (!primaryOrgId || !resultId || pdfPreviewLoadingId === resultId) return;
-      setPdfPreviewLoadingId(resultId);
-      setError(null);
+      s.setPdfPreviewLoadingId(resultId);
+      s.setError(null);
       try {
         const pdfBlob = await getIdexxResultPdfBlob({
           organisationId: primaryOrgId,
@@ -877,54 +852,45 @@ const useIdexxWorkspaceActions = (s: IdexxWorkspaceActionsState) => {
         if (pdfPreviewUrl?.startsWith('blob:')) {
           URL.revokeObjectURL(pdfPreviewUrl);
         }
-        setPdfPreviewUrl(objectUrl);
-        setPdfPreviewTitle(`IDEXX Result PDF #${resultId}`);
-        setShowPdfPreview(true);
+        s.setPdfPreviewUrl(objectUrl);
+        s.setPdfPreviewTitle(`IDEXX Result PDF #${resultId}`);
+        s.setShowPdfPreview(true);
       } catch (e) {
-        setError(getApiErrorMessage(e, 'Unable to load IDEXX PDF preview.'));
+        s.setError(getApiErrorMessage(e, 'Unable to load IDEXX PDF preview.'));
       } finally {
-        setPdfPreviewLoadingId(null);
+        s.setPdfPreviewLoadingId(null);
       }
     },
-    [
-      primaryOrgId,
-      pdfPreviewLoadingId,
-      pdfPreviewUrl,
-      setPdfPreviewLoadingId,
-      setError,
-      setPdfPreviewUrl,
-      setPdfPreviewTitle,
-      setShowPdfPreview,
-    ]
+    [primaryOrgId, pdfPreviewLoadingId, pdfPreviewUrl, s]
   );
 
   const openOrderAcknowledgement = useCallback(
     (order: LabOrder | null) => {
       const pdfUrl = getOrderPdfUrl(order);
       if (!pdfUrl) {
-        setError('Acknowledgment PDF is not available for this order yet.');
+        s.setError('Acknowledgment PDF is not available for this order yet.');
         return;
       }
-      setError(null);
-      setPdfPreviewTitle(`IDEXX Order Acknowledgment #${order?.idexxOrderId ?? ''}`.trim());
-      setPdfPreviewUrl(pdfUrl);
-      setShowPdfPreview(true);
+      s.setError(null);
+      s.setPdfPreviewTitle(`IDEXX Order Acknowledgment #${order?.idexxOrderId ?? ''}`.trim());
+      s.setPdfPreviewUrl(pdfUrl);
+      s.setShowPdfPreview(true);
     },
-    [setError, setPdfPreviewTitle, setPdfPreviewUrl, setShowPdfPreview]
+    [s]
   );
 
   const openFollowUpWorkspace = useCallback(
     (order: LabOrder | null) => {
       const uiUrl = getOrderUiUrl(order);
       if (!uiUrl) {
-        setError('Follow-up workspace URL is not available for this order.');
+        s.setError('Follow-up workspace URL is not available for this order.');
         return;
       }
-      setError(null);
-      setFollowUpFrameUrl(uiUrl);
-      setShowFollowUpFrame(true);
+      s.setError(null);
+      s.setFollowUpFrameUrl(uiUrl);
+      s.setShowFollowUpFrame(true);
     },
-    [setError, setFollowUpFrameUrl, setShowFollowUpFrame]
+    [s]
   );
 
   return {
@@ -1123,7 +1089,7 @@ const IdexxWorkspacePage = () => {
             <button
               type="button"
               aria-label="IDEXX Hub info"
-              className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+              className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
             >
               <IoInformationCircleOutline size={20} />
             </button>
@@ -1166,7 +1132,7 @@ const IdexxWorkspacePage = () => {
               <button
                 type="button"
                 aria-label="IDEXX Hub info"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
               >
                 <IoInformationCircleOutline size={20} />
               </button>

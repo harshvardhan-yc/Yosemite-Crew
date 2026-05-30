@@ -351,6 +351,7 @@ const SignUp = ({
               <label className="flex! gap-2! items-start text-caption-1 text-text-primary cursor-pointer">
                 <input
                   type="checkbox"
+                  aria-label="I agree to the terms and conditions and privacy policy"
                   onChange={(e) => {
                     setAgree(e.target.checked);
                     setInputErrors((prev) => ({ ...prev, agree: undefined }));
@@ -374,7 +375,7 @@ const SignUp = ({
                 </div>
               )}
               <label className="flex! gap-2! items-end! text-caption-1 text-text-primary cursor-pointer">
-                <input type="checkbox" />
+                <input type="checkbox" aria-label="Sign up for newsletter and promotional emails" />
                 <span>Sign me up for newsletter and promotional emails</span>
               </label>
             </div>

@@ -199,7 +199,7 @@ const AuditTrailSection = ({
   if (auditLoading) {
     return (
       <div className="rounded-2xl border border-card-border bg-white px-4 py-6 text-body-3 text-text-secondary">
-        Loading audit trail...
+        Loading audit trail…
       </div>
     );
   }
@@ -276,7 +276,7 @@ const HistoryEntriesSection = ({
   if (loading) {
     return (
       <div className="rounded-2xl border border-card-border bg-white px-4 py-6 text-body-3 text-text-secondary">
-        Loading overview...
+        Loading overview…
       </div>
     );
   }
@@ -634,7 +634,7 @@ const CompanionHistoryTimeline = ({
               <button
                 type="button"
                 aria-label="Overview info"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary transition-colors hover:text-text-primary"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary transition-colors hover:text-text-primary"
               >
                 <IoInformationCircleOutline size={18} />
               </button>

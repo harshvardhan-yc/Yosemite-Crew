@@ -31,6 +31,8 @@ import BoardScopeToggle from '@/app/ui/primitives/BoardScopeToggle/BoardScopeTog
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
 import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
+const INVENTORY_PAGE_SKELETON = <PageSkeleton variant="list" />;
+
 const InventorySectionSkeleton = () => (
   <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
 );
@@ -53,8 +55,8 @@ type InventoryView = 'inventory' | 'turnover';
 const Inventory = () => {
   useLoadOrg();
 
-  const { can } = usePermissions();
-  const canEditInventory = can(PERMISSIONS.INVENTORY_EDIT_ANY);
+  const permissions = usePermissions();
+  const canEditInventory = permissions.can(PERMISSIONS.INVENTORY_EDIT_ANY);
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const orgsById = useOrgStore((s) => s.orgsById);
   const primaryOrg = primaryOrgId ? orgsById[primaryOrgId] : null;
@@ -68,18 +70,8 @@ const Inventory = () => {
   );
   const resolvedBusinessType: BusinessType = businessType ?? 'GROOMER';
 
-  const {
-    inventory,
-    turnover,
-    status,
-    error: loadError,
-    createItem,
-    updateItem,
-    hideItem,
-    unhideItem,
-    addBatch,
-    updateBatch,
-  } = useInventoryModule(resolvedBusinessType);
+  const inventoryModule = useInventoryModule(resolvedBusinessType);
+  const { inventory, turnover, status, error: loadError } = inventoryModule;
 
   const [filters, setFilters] = useState<InventoryFiltersState>(defaultFilters);
   const [debouncedSearch, setDebouncedSearch] = useState(headerSearchQuery);
@@ -198,7 +190,7 @@ const Inventory = () => {
       setSavingItem(true);
       setActionError(null);
       try {
-        const created = await createItem(data);
+        const created = await inventoryModule.createItem(data);
         setActiveInventory(created);
         setAddPopup(false);
       } catch (err) {
@@ -208,7 +200,7 @@ const Inventory = () => {
         setSavingItem(false);
       }
     },
-    [primaryOrgId, createItem]
+    [primaryOrgId, inventoryModule]
   );
 
   const handleUpdateInventory = useCallback(
@@ -216,14 +208,14 @@ const Inventory = () => {
       if (!updatedItem.id) return;
       setActionError(null);
       try {
-        const mapped = await updateItem(updatedItem);
+        const mapped = await inventoryModule.updateItem(updatedItem);
         setActiveInventory(mapped);
       } catch (err) {
         setActionError('Unable to update inventory item.');
         throw err;
       }
     },
-    [updateItem]
+    [inventoryModule]
   );
 
   const handleAddBatch = useCallback(
@@ -231,13 +223,13 @@ const Inventory = () => {
       if (!itemId) return;
       setActionError(null);
       try {
-        await addBatch(itemId, batches);
+        await inventoryModule.addBatch(itemId, batches);
       } catch (err) {
         setActionError('Unable to add batch.');
         throw err;
       }
     },
-    [addBatch]
+    [inventoryModule]
   );
 
   const handleUpdateBatch = useCallback(
@@ -245,13 +237,13 @@ const Inventory = () => {
       if (!itemId) return;
       setActionError(null);
       try {
-        await updateBatch(itemId, batches);
+        await inventoryModule.updateBatch(itemId, batches);
       } catch (err) {
         setActionError('Unable to update batch.');
         throw err;
       }
     },
-    [updateBatch]
+    [inventoryModule]
   );
 
   const handleHideInventory = useCallback(
@@ -259,7 +251,7 @@ const Inventory = () => {
       if (!itemId) return;
       setActionError(null);
       try {
-        const res = await hideItem(itemId);
+        const res = await inventoryModule.hideItem(itemId);
         if (res) {
           setActiveInventory(res);
         }
@@ -268,7 +260,7 @@ const Inventory = () => {
         throw err;
       }
     },
-    [hideItem]
+    [inventoryModule]
   );
 
   const handleUnhideInventory = useCallback(
@@ -276,7 +268,7 @@ const Inventory = () => {
       if (!itemId) return;
       setActionError(null);
       try {
-        const res = await unhideItem(itemId);
+        const res = await inventoryModule.unhideItem(itemId);
         if (res) {
           setActiveInventory(res);
         }
@@ -285,7 +277,7 @@ const Inventory = () => {
         throw err;
       }
     },
-    [unhideItem]
+    [inventoryModule]
   );
 
   return (
@@ -301,7 +293,7 @@ const Inventory = () => {
               <button
                 type="button"
                 aria-label="Inventory info"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
               >
                 <IoInformationCircleOutline size={20} />
               </button>
@@ -399,9 +391,9 @@ const Inventory = () => {
 
 const ProtectedInventory = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
-        <Suspense fallback={<PageSkeleton variant="list" />}>
+    <ProtectedRoute skeleton={INVENTORY_PAGE_SKELETON}>
+      <OrgGuard skeleton={INVENTORY_PAGE_SKELETON}>
+        <Suspense fallback={INVENTORY_PAGE_SKELETON}>
           <Inventory />
         </Suspense>
       </OrgGuard>

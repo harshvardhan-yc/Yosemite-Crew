@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import Image from 'next/image';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
-import { getStatusStyle } from '@/app/ui/tables/InvoiceTable';
+import { getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 
 type ActiveTab = 'details' | 'payment';
 
@@ -60,7 +60,7 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
 
   const invoiceStatusLabel = toTitle(activeInvoice?.status ?? '');
   const invoiceStatusStyle = (() => {
-    const s = getStatusStyle(activeInvoice?.status ?? '');
+    const s = getInvoiceStatusStyle(activeInvoice?.status ?? '');
     return { ...s, borderColor: s.color };
   })();
 

@@ -37,6 +37,38 @@ export const sanitizeMerckHtml = (raw: string): string => {
   return sanitized;
 };
 
+const appendSpaceIfNeeded = (out: string, wasSpace: boolean): [string, boolean] =>
+  wasSpace ? [out, true] : [out + ' ', true];
+
+const processTextChar = (char: string, out: string, wasSpace: boolean): [string, boolean] => {
+  if (/\s/.test(char)) return appendSpaceIfNeeded(out, wasSpace);
+  return [out + char, false];
+};
+
+export const stripMerckHtml = (raw: string): string => {
+  const input = String(raw ?? '');
+  let stripped = '';
+  let insideTag = false;
+  let previousWasWhitespace = true;
+
+  for (const character of input) {
+    if (character === '<') {
+      insideTag = true;
+      [stripped, previousWasWhitespace] = appendSpaceIfNeeded(stripped, previousWasWhitespace);
+      continue;
+    }
+    if (character === '>') {
+      insideTag = false;
+      [stripped, previousWasWhitespace] = appendSpaceIfNeeded(stripped, previousWasWhitespace);
+      continue;
+    }
+    if (insideTag) continue;
+    [stripped, previousWasWhitespace] = processTextChar(character, stripped, previousWasWhitespace);
+  }
+
+  return stripped.trim();
+};
+
 export const MERCK_COPYRIGHT_NOTICE =
   'Copyright \u00a9 2021 Merck & Co., Inc., known as MSD outside of the US, Kenilworth, New Jersey, USA. All rights reserved.';
 

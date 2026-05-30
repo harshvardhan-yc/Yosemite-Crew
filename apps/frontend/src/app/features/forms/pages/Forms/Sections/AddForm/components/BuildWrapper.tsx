@@ -90,7 +90,7 @@ const BuilderWrapper: React.FC<{
     <section
       ref={wrapperRef}
       aria-label={`${title} field`}
-      className={`${compact ? 'border border-card-border rounded-xl px-3 py-2 gap-2 bg-white' : 'border border-grey-light rounded-2xl px-3 py-3 gap-3 bg-white'} flex flex-col ${
+      className={`${compact ? 'border border-card-border rounded-xl px-3 py-2 gap-2 bg-white' : 'border border-grey-light rounded-2xl p-3 gap-3 bg-white'} flex flex-col ${
         isDragging ? 'rounded-2xl' : ''
       }`}
       {...dragProps}
@@ -112,6 +112,7 @@ const BuilderWrapper: React.FC<{
         <div className="flex items-center gap-2">
           {onMoveUp && (
             <button
+              type="button"
               onClick={onMoveUp}
               disabled={!canMoveUp}
               className={`${canMoveUp ? 'cursor-pointer hover:bg-gray-100' : 'opacity-30 cursor-not-allowed'} rounded p-1`}
@@ -122,6 +123,7 @@ const BuilderWrapper: React.FC<{
           )}
           {onMoveDown && (
             <button
+              type="button"
               onClick={onMoveDown}
               disabled={!canMoveDown}
               className={`${canMoveDown ? 'cursor-pointer hover:bg-gray-100' : 'opacity-30 cursor-not-allowed'} rounded p-1`}
@@ -130,7 +132,7 @@ const BuilderWrapper: React.FC<{
               <IoMdArrowDown size={20} color="var(--color-neutral-900)" />
             </button>
           )}
-          <button onClick={onDelete} className="hover:bg-red-50 rounded p-1">
+          <button type="button" onClick={onDelete} className="hover:bg-red-50 rounded p-1">
             <MdDeleteForever size={20} color="var(--color-danger-600)" />
           </button>
         </div>
