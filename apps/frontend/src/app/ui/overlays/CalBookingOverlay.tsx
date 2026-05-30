@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import CalEmbedFrame from '@/app/ui/overlays/CalEmbedFrame';
 import Close from '@/app/ui/primitives/Icons/Close';
@@ -10,18 +10,21 @@ type CalBookingOverlayProps = {
 };
 
 const CalBookingOverlay = ({ open, onClose }: CalBookingOverlayProps) => {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open || typeof document === 'undefined') return null;
 
@@ -43,7 +46,7 @@ const CalBookingOverlay = ({ open, onClose }: CalBookingOverlayProps) => {
       <CalEmbedFrame
         calLink="yosemitecrew/onboarding"
         title="Book onboarding call"
-        className="h-full w-full border-0"
+        className="size-full border-0"
       />
     </div>,
     document.body
