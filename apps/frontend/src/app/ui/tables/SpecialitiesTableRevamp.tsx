@@ -49,9 +49,10 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
       width: '100px',
       render: (item: SpecialityWeb) => {
         const id = getRevampId(item);
-        const count = id
+        const revampCount = id
           ? allServices.filter((s) => s.specialityId === id && s.status === 'ACTIVE').length
-          : (item.services?.length ?? 0);
+          : 0;
+        const count = revampCount > 0 ? revampCount : (item.services?.length ?? 0);
         return <ProfileTitle>{count}</ProfileTitle>;
       },
     },
@@ -61,10 +62,10 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
       width: '100px',
       render: (item: SpecialityWeb) => {
         const id = getRevampId(item);
-        const count = id
+        const revampCount = id
           ? allPackages.filter((p) => p.specialityId === id && p.status === 'ACTIVE').length
           : 0;
-        return <ProfileTitle>{count}</ProfileTitle>;
+        return <ProfileTitle>{revampCount}</ProfileTitle>;
       },
     },
     {
