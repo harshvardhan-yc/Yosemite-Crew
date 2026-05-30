@@ -41,7 +41,7 @@ const OtpModal = ({
   const { signOut } = useSignOut();
   const { confirmSignUp, resendCode, signIn, role } = useAuthStore();
   const router = useRouter();
-  const [code, setCode] = useState(new Array(6).fill(''));
+  const [code, setCode] = useState(() => new Array(6).fill(''));
   const [activeInput, setActiveInput] = useState(0);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [invalidOtp, setInvalidOtp] = useState(false);
@@ -229,6 +229,10 @@ const OtpModal = ({
     }
   }, [showVerifyModal]);
 
+  useEffect(() => {
+    otpRefs.current[activeInput]?.focus();
+  }, [activeInput]);
+
   if (!showVerifyModal) return null;
 
   return (
@@ -277,7 +281,6 @@ const OtpModal = ({
                   type="text"
                   maxLength={1}
                   value={digit}
-                  autoFocus={activeInput === idx}
                   inputMode="numeric"
                   pattern="[0-9]*"
                   autoComplete={idx === 0 ? 'one-time-code' : 'off'}
@@ -309,11 +312,11 @@ const OtpModal = ({
             >
               {isVerifying ? 'Verifying...' : 'Verify Code'}
             </button>
-            <span role="status" aria-live="polite">
+            <output aria-live="polite">
               {timer > 0
                 ? `${String(Math.floor(timer / 60)).padStart(2, '0')}:${String(timer % 60).padStart(2, '0')} sec`
                 : 'Code expired'}
-            </span>
+            </output>
           </div>
           <div className="VerifyResent">
             <Link

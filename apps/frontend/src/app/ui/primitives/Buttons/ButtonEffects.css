@@ -10,7 +10,7 @@
   font-family: 'Satoshi Variable', 'Satoshi', sans-serif !important;
   font-size: 1rem !important;
   font-weight: 500 !important;
-  line-height: 1.2 !important;
+  line-height: 1.5rem !important;
   color: #fff !important;
   transition:
     background-color 200ms ease-out,
@@ -31,10 +31,9 @@
     rgba(92, 184, 255, 0.2) 36%,
     rgba(0, 150, 255, 0) 78%
   );
-  filter: blur(2px);
-  transition:
-    background 160ms ease,
-    opacity 160ms ease;
+  transform: translateZ(0);
+  will-change: opacity;
+  transition: opacity 160ms ease;
 }
 
 .yc-primary-button:hover::before,

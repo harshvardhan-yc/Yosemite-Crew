@@ -64,7 +64,7 @@ const Accordion: React.FC<AccordionProps> = ({
   return (
     <div className="flex flex-col w-full gap-0">
       <div
-        className={`flex items-center justify-between w-full border-card-border px-3 py-3 ${open ? 'border-x border-t rounded-t-2xl' : 'border rounded-2xl'}`}
+        className={`flex items-center justify-between w-full border-card-border p-3 ${open ? 'border-x border-t rounded-t-2xl' : 'border rounded-2xl'}`}
       >
         <button
           type="button"

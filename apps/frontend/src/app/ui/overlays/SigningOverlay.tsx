@@ -16,8 +16,8 @@ const renderSigningContent = (
         title="Document signing"
         className="flex-1 w-full border-0"
         allowFullScreen
-        sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
-        referrerPolicy="strict-origin"
+        sandbox="allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+        referrerPolicy="strict-origin-when-cross-origin"
         style={{ pointerEvents: 'auto' }}
       />
     );
