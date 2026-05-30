@@ -22,6 +22,11 @@ import { getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 
 type ActiveTab = 'details' | 'payment';
 
+const tabs: { key: ActiveTab; label: string }[] = [
+  { key: 'details', label: 'Details' },
+  { key: 'payment', label: 'Payment' },
+];
+
 const CompanionFields = [
   { label: 'Pet', key: 'pet', type: 'text' },
   { label: 'Parent', key: 'parent', type: 'text' },
@@ -100,11 +105,6 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
     router.push(`/appointments?${params.toString()}`);
     setShowModal(false);
   };
-
-  const tabs: { key: ActiveTab; label: string }[] = [
-    { key: 'details', label: 'Details' },
-    { key: 'payment', label: 'Payment' },
-  ];
 
   return (
     <Modal showModal={showModal} setShowModal={setShowModal}>

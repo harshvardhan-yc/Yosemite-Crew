@@ -5,6 +5,7 @@ import {
   use,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -821,25 +822,28 @@ const createPreviewComponent = (
   return PreviewComponent;
 };
 
+const CHAT_SORT = [{ last_message_at: -1 as const }];
+const CHAT_OPTIONS = { state: true, watch: true, presence: true };
+
+const formatClosedTime = (timestamp?: string) => {
+  if (!timestamp) return '';
+
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+
+  return formatDisplayDate(date);
+};
+
 const ChatClosedFooter: FC<{ closedAt?: string }> = ({ closedAt }) => {
-  const formatClosedTime = (timestamp?: string) => {
-    if (!timestamp) return '';
-
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-
-    return formatDisplayDate(date);
-  };
-
   const formattedClosedTime = formatClosedTime(closedAt);
 
   return (
@@ -1156,7 +1160,7 @@ export const ChatContainer: FC<ChatContainerProps> = ({
     setOrgUsers([]);
   }, [primaryOrgId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!appointmentId) return;
     setIsChannelSelected(false);
     setShowEmptyPlaceholder(true);
@@ -1308,7 +1312,7 @@ export const ChatContainer: FC<ChatContainerProps> = ({
     [onChannelSelect]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Reset selection when switching audience scopes so stale channels do not persist
     const hasInitialized = scopeInitialized.current;
     scopeInitialized.current = true;
@@ -1320,7 +1324,7 @@ export const ChatContainer: FC<ChatContainerProps> = ({
   }, [scope, onChannelSelect]);
 
   // Load org users for colleague/group creation flows
-  useEffect(() => {
+  useLayoutEffect(() => {
     const shouldLoadUsers = (scope === 'colleagues' || scope === 'groups') && primaryOrgId;
     if (!shouldLoadUsers) return;
     if (orgUsersLoaded || orgUsersLoading) return;
@@ -1839,19 +1843,11 @@ export const ChatContainer: FC<ChatContainerProps> = ({
     members: { $in: [client.userID!] },
   };
 
-  const sort = [{ last_message_at: -1 as const }];
-
-  const options = {
-    state: true,
-    watch: true,
-    presence: true,
-  };
-
   const chatContent = (
     <ChatLayout
       filters={filters}
-      sort={sort}
-      options={options}
+      sort={CHAT_SORT}
+      options={CHAT_OPTIONS}
       isMobile={isMobile}
       isChannelSelected={isChannelSelected}
       previewComponent={previewComponent}

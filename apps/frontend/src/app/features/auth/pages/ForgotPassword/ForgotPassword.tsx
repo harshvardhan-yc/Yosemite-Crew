@@ -15,6 +15,12 @@ import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { getEmailValidationError, normalizeEmail } from '@/app/lib/validators';
 
+const scrollToTop = () => {
+  if (globalThis.window) {
+    globalThis.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
 const ForgotPassword = () => {
   const router = useRouter();
   const { showErrorTost, ErrorTostPopup } = useErrorTost();
@@ -42,12 +48,6 @@ const ForgotPassword = () => {
 
   const clearPasswordErrors = () => {
     setInputErrors((prev) => ({ ...prev, password: undefined, confirmPassword: undefined }));
-  };
-
-  const scrollToTop = () => {
-    if (globalThis.window) {
-      globalThis.scrollTo({ top: 0, behavior: 'smooth' });
-    }
   };
 
   const resetPasswordFormState = () => {

@@ -1,5 +1,5 @@
 import Modal from '@/app/ui/overlays/Modal';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Details from '@/app/features/forms/pages/Forms/Sections/AddForm/Details';
 import Build from '@/app/features/forms/pages/Forms/Sections/AddForm/Build';
@@ -93,7 +93,7 @@ const AddForm = ({
     [merckEnabled]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (showModal && !wasOpenRef.current) {
       setActiveLabel('form-details');
       const next = {

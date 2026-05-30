@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 import { useOrgStore } from '@/app/stores/orgStore';
 import Fallback from '@/app/ui/overlays/Fallback';
@@ -404,11 +404,11 @@ const CompanionHistoryTimeline = ({
     [organisationId, companionId, requestedTypes]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setActiveFilter('ALL');
   }, [companionId, organisationId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (activeFilter === 'AUDIT_TRAIL') {
       return;
     }
@@ -422,7 +422,7 @@ const CompanionHistoryTimeline = ({
     });
   }, [companionId, organisationId, activeFilter, loadHistory]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (activeFilter !== 'AUDIT_TRAIL') {
       setAuditError(null);
       return;

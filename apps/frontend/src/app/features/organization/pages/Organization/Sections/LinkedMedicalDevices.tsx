@@ -14,6 +14,18 @@ import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { formatDateTimeLocal } from '@/app/lib/date';
 import { IoRefreshOutline } from 'react-icons/io5';
 
+const getIntegrationStatusClass = (key: string) => {
+  if (key === 'enabled') return 'bg-green-50 text-green-800';
+  if (key === 'error') return 'bg-red-50 text-red-700';
+  if (key === 'pending') return 'bg-blue-50 text-blue-700';
+  return 'bg-amber-50 text-amber-700';
+};
+
+const getDeviceStatusLabel = (value?: string) => {
+  const key = String(value || 'unknown').toLowerCase();
+  return `${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+};
+
 const LinkedMedicalDevices = () => {
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const integration = useIntegrationByProviderForPrimaryOrg('IDEXX');
@@ -23,17 +35,7 @@ const LinkedMedicalDevices = () => {
   const [refreshing, setRefreshing] = useState(false);
   const statusKey = (integration?.status ?? 'disabled').toLowerCase();
   const statusLabel = `${statusKey.charAt(0).toUpperCase()}${statusKey.slice(1)}`;
-  const getIntegrationStatusClass = (key: string) => {
-    if (key === 'enabled') return 'bg-green-50 text-green-800';
-    if (key === 'error') return 'bg-red-50 text-red-700';
-    if (key === 'pending') return 'bg-blue-50 text-blue-700';
-    return 'bg-amber-50 text-amber-700';
-  };
   const statusClasses = getIntegrationStatusClass(statusKey);
-  const getDeviceStatusLabel = (value?: string) => {
-    const key = String(value || 'unknown').toLowerCase();
-    return `${key.charAt(0).toUpperCase()}${key.slice(1)}`;
-  };
 
   useEffect(() => {
     const run = async () => {

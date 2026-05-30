@@ -359,19 +359,23 @@ const InputWithDropdown = ({
     });
   }, []);
 
+  const computeStyleRef = useRef(computeStyle);
+  computeStyleRef.current = computeStyle;
+
   useLayoutEffect(() => {
     if (!open) {
       setPortalStyle(null);
       return;
     }
-    computeStyle();
-  }, [open, computeStyle]);
+    computeStyleRef.current();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
-    window.addEventListener('resize', computeStyle);
-    return () => window.removeEventListener('resize', computeStyle);
-  }, [open, computeStyle]);
+    const stableResize = () => computeStyleRef.current();
+    window.addEventListener('resize', stableResize);
+    return () => window.removeEventListener('resize', stableResize);
+  }, [open]);
 
   const handleSelect = (opt: SearchOption) => {
     onSelect(opt);
@@ -710,7 +714,7 @@ const AddCompanionCentralModal = ({
   const [alertInput, setAlertInput] = useState('');
   const [alertPriority, setAlertPriority] = useState<AlertPriority>('medium');
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setMode(initialMode);
     setPendingStatus(null);
   }, [initialMode, showModal]);
@@ -732,7 +736,7 @@ const AddCompanionCentralModal = ({
     setAlertPriority('medium');
   }, [defaultPhoneData.selectedCode]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showModal) {
       resetAll();
       setMode(initialMode);

@@ -15,18 +15,19 @@ type ProfileProps = {
   primaryOrg: Organisation;
 };
 
+const parseNonNegativeInteger = (value: unknown, fallback: number): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+};
+
 const Profile = ({ primaryOrg }: ProfileProps) => {
   const [formData, setFormData] = useState<Organisation>(primaryOrg);
   const { can } = usePermissions();
   const canEditOrg = can(PERMISSIONS.ORG_EDIT);
   const { notify } = useNotify();
-  const parseNonNegativeInteger = (value: unknown, fallback: number): number => {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return fallback;
-    }
-    return Math.floor(parsed);
-  };
 
   const handleOrgSave = async (values: Record<string, string>) => {
     const updated: Organisation = {

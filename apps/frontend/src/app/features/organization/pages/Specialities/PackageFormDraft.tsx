@@ -123,6 +123,15 @@ type CatalogEntry = {
   nestedBreakdown?: PackageBreakdownItem[];
 };
 
+const TYPE_LABELS: Record<string, string> = {
+  CONSULTATION: 'Consultation',
+  PROCEDURE: 'Procedure',
+  LAB: 'Diagnostics',
+  INVENTORY: 'Inventory',
+  MEDICATION: 'Medication',
+  PACKAGE: 'Package',
+};
+
 const PackageFormDraft = ({
   specialityId,
   organisationId,
@@ -272,15 +281,6 @@ const PackageFormDraft = ({
       {isBookable && <Badge tone="brand">✓ Bookable</Badge>}
     </>
   );
-
-  const TYPE_LABELS: Record<string, string> = {
-    CONSULTATION: 'Consultation',
-    PROCEDURE: 'Procedure',
-    LAB: 'Diagnostics',
-    INVENTORY: 'Inventory',
-    MEDICATION: 'Medication',
-    PACKAGE: 'Package',
-  };
 
   return (
     <SectionContainer title={draftTitle} titleSlot={draftTitleSlot} className="flex flex-col gap-5">

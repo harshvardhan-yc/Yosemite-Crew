@@ -1,30 +1,30 @@
-import React, { useState } from "react";
-import Modal from "@/app/ui/overlays/Modal";
-import { InventoryItem, InventoryErrors } from "@/app/features/inventory/pages/Inventory/types";
-import { calculateBatchTotals } from "@/app/features/inventory/pages/Inventory/utils";
-import { BusinessType } from "@/app/features/organization/types/org";
-import FormSection from "@/app/features/inventory/components/AddInventory/FormSection";
-import { InventorySectionKey } from "@/app/features/inventory/components/AddInventory/InventoryConfig";
-import Close from "@/app/ui/primitives/Icons/Close";
-import Labels from "@/app/ui/widgets/Labels/Labels";
+import React, { useState } from 'react';
+import Modal from '@/app/ui/overlays/Modal';
+import { InventoryItem, InventoryErrors } from '@/app/features/inventory/pages/Inventory/types';
+import { calculateBatchTotals } from '@/app/features/inventory/pages/Inventory/utils';
+import { BusinessType } from '@/app/features/organization/types/org';
+import FormSection from '@/app/features/inventory/components/AddInventory/FormSection';
+import { InventorySectionKey } from '@/app/features/inventory/components/AddInventory/InventoryConfig';
+import Close from '@/app/ui/primitives/Icons/Close';
+import Labels from '@/app/ui/widgets/Labels/Labels';
 
 const labels: { key: InventorySectionKey; name: string }[] = [
-  { key: "basicInfo", name: "Basic Information" },
-  { key: "classification", name: "Classification attribute" },
-  { key: "pricing", name: "Pricing" },
-  { key: "vendor", name: "Vendor details" },
-  { key: "stock", name: "Stock and quantity details" },
-  { key: "batch", name: "Batch / Lot details" },
+  { key: 'basicInfo', name: 'Basic Information' },
+  { key: 'classification', name: 'Classification attribute' },
+  { key: 'pricing', name: 'Pricing' },
+  { key: 'vendor', name: 'Vendor details' },
+  { key: 'stock', name: 'Stock and quantity details' },
+  { key: 'batch', name: 'Batch / Lot details' },
 ];
 
 const emptyInventoryItem: InventoryItem = {
   basicInfo: {
-    name: "",
-    category: "",
-    subCategory: "",
-    department: "",
-    description: "",
-    status: "Active",
+    name: '',
+    category: '',
+    subCategory: '',
+    department: '',
+    description: '',
+    status: 'Active',
 
     // Hospital
     itemType: undefined,
@@ -47,10 +47,10 @@ const emptyInventoryItem: InventoryItem = {
     skuCode: undefined,
   },
   classification: {
-    form: "",
-    unitofMeasure: "",
+    form: '',
+    unitofMeasure: '',
     species: [],
-    administration: "",
+    administration: '',
     therapeuticClass: undefined,
     strength: undefined,
     dosageForm: undefined,
@@ -71,41 +71,47 @@ const emptyInventoryItem: InventoryItem = {
     brand: undefined,
   },
   pricing: {
-    purchaseCost: "",
-    selling: "",
-    maxDiscount: "",
-    tax: "",
+    purchaseCost: '',
+    selling: '',
+    maxDiscount: '',
+    tax: '',
   },
   vendor: {
-    supplierName: "",
-    brand: "",
-    vendor: "",
-    license: "",
-    paymentTerms: "",
+    supplierName: '',
+    brand: '',
+    vendor: '',
+    license: '',
+    paymentTerms: '',
     leadTime: undefined,
   },
   stock: {
-    current: "",
-    allocated: "",
-    available: "",
-    reorderLevel: "",
-    reorderQuantity: "",
-    stockLocation: "",
+    current: '',
+    allocated: '',
+    available: '',
+    reorderLevel: '',
+    reorderQuantity: '',
+    stockLocation: '',
     stockType: undefined,
     minStockAlert: undefined,
   },
   batch: {
-    batch: "",
-    manufactureDate: "",
-    expiryDate: "",
+    batch: '',
+    manufactureDate: '',
+    expiryDate: '',
     serial: undefined,
     tracking: undefined,
     litterId: undefined,
     nextRefillDate: undefined,
-    quantity: "",
-    allocated: "",
+    quantity: '',
+    allocated: '',
   },
   batches: [],
+};
+
+const logValidationFailure = (section: InventorySectionKey, details: Record<string, string>) => {
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(`[Inventory] Validation failed for ${section}`, JSON.stringify(details));
+  }
 };
 
 type AddInventoryProps = {
@@ -123,49 +129,30 @@ const AddInventory = ({
   onSubmit,
   stockLocationOptions,
 }: AddInventoryProps) => {
-  const [activeLabel, setActiveLabel] = useState<InventorySectionKey>(
-    labels[0].key
-  );
+  const [activeLabel, setActiveLabel] = useState<InventorySectionKey>(labels[0].key);
   const [formData, setFormData] = useState<InventoryItem>(emptyInventoryItem);
   const [errors, setErrors] = useState<InventoryErrors>({});
   const [isSaving, setIsSaving] = useState(false);
   const [sectionStatus, setSectionStatus] = useState<
-    Partial<Record<InventorySectionKey, "valid" | "error">>
+    Partial<Record<InventorySectionKey, 'valid' | 'error'>>
   >({});
-
-  const logValidationFailure = (
-    section: InventorySectionKey,
-    details: Record<string, string>
-  ) => {
-    if (process.env.NODE_ENV === "development") {
-      console.warn(
-        `[Inventory] Validation failed for ${section}`,
-        JSON.stringify(details)
-      );
-    }
-  };
 
   const updateSection = (
     section: InventorySectionKey,
     patch: Record<string, any>,
     index?: number
   ) => {
-    if (section === "batch") {
+    if (section === 'batch') {
       setFormData((prev) => {
-        const batches =
-          prev.batches && prev.batches.length > 0
-            ? [...prev.batches]
-            : [prev.batch];
+        const batches = prev.batches && prev.batches.length > 0 ? [...prev.batches] : [prev.batch];
         const targetIndex = index ?? 0;
         const currentBatch = batches[targetIndex] ?? emptyInventoryItem.batch;
         batches[targetIndex] = { ...currentBatch, ...patch };
         const totals = calculateBatchTotals(batches);
         const stock = { ...prev.stock };
         if (totals.onHand !== undefined) stock.current = String(totals.onHand);
-        if (totals.allocated !== undefined)
-          stock.allocated = String(totals.allocated);
-        if (totals.available !== undefined)
-          stock.available = String(totals.available);
+        if (totals.allocated !== undefined) stock.allocated = String(totals.allocated);
+        if (totals.available !== undefined) stock.available = String(totals.available);
         return {
           ...prev,
           batch: batches[0],
@@ -181,49 +168,43 @@ const AddInventory = ({
     }));
   };
 
-  const validateBasicInfo = (): Partial<
-    Record<keyof typeof formData.basicInfo, string>
-  > => {
+  const validateBasicInfo = (): Partial<Record<keyof typeof formData.basicInfo, string>> => {
     const basic = formData.basicInfo;
     const errors: Partial<Record<keyof typeof formData.basicInfo, string>> = {};
-    if (!basic.name) errors.name = "Name is required";
-    if (!basic.category) errors.category = "Category is required";
-    if (!basic.subCategory) errors.subCategory = "Sub category is required";
+    if (!basic.name) errors.name = 'Name is required';
+    if (!basic.category) errors.category = 'Category is required';
+    if (!basic.subCategory) errors.subCategory = 'Sub category is required';
     return errors;
   };
 
-  const validatePricing = (): Partial<
-    Record<keyof typeof formData.pricing, string>
-  > => {
+  const validatePricing = (): Partial<Record<keyof typeof formData.pricing, string>> => {
     const pricing = formData.pricing;
     const errors: Partial<Record<keyof typeof formData.pricing, string>> = {};
     if (!pricing.purchaseCost) {
-      errors.purchaseCost = "Purchase cost is required";
+      errors.purchaseCost = 'Purchase cost is required';
     } else if (Number.isNaN(Number(pricing.purchaseCost))) {
-      errors.purchaseCost = "Enter a valid number";
+      errors.purchaseCost = 'Enter a valid number';
     }
     if (!pricing.selling) {
-      errors.selling = "Selling price is required";
+      errors.selling = 'Selling price is required';
     } else if (Number.isNaN(Number(pricing.selling))) {
-      errors.selling = "Enter a valid number";
+      errors.selling = 'Enter a valid number';
     }
     return errors;
   };
 
-  const validateStock = (): Partial<
-    Record<keyof typeof formData.stock, string>
-  > => {
+  const validateStock = (): Partial<Record<keyof typeof formData.stock, string>> => {
     const stock = formData.stock;
     const errors: Partial<Record<keyof typeof formData.stock, string>> = {};
     if (!stock.current) {
-      errors.current = "On hand quantity is required";
+      errors.current = 'On hand quantity is required';
     } else if (Number.isNaN(Number(stock.current))) {
-      errors.current = "Enter a valid number";
+      errors.current = 'Enter a valid number';
     }
     if (!stock.reorderLevel) {
-      errors.reorderLevel = "Reorder level is required";
+      errors.reorderLevel = 'Reorder level is required';
     } else if (Number.isNaN(Number(stock.reorderLevel))) {
-      errors.reorderLevel = "Enter a valid number";
+      errors.reorderLevel = 'Enter a valid number';
     }
     return errors;
   };
@@ -233,11 +214,11 @@ const AddInventory = ({
     const updateStatus = (valid: boolean) => {
       setSectionStatus((prev) => ({
         ...prev,
-        [section]: valid ? "valid" : "error",
+        [section]: valid ? 'valid' : 'error',
       }));
     };
 
-    if (section === "basicInfo") {
+    if (section === 'basicInfo') {
       const sectionErrors = validateBasicInfo();
       if (Object.keys(sectionErrors).length > 0) {
         nextErrors.basicInfo = sectionErrors;
@@ -252,14 +233,14 @@ const AddInventory = ({
       return true;
     }
 
-    if (section === "classification") {
+    if (section === 'classification') {
       delete nextErrors.classification;
       setErrors(nextErrors);
       updateStatus(true);
       return true;
     }
 
-    if (section === "pricing") {
+    if (section === 'pricing') {
       const sectionErrors = validatePricing();
       if (Object.keys(sectionErrors).length > 0) {
         nextErrors.pricing = sectionErrors;
@@ -274,7 +255,7 @@ const AddInventory = ({
       return true;
     }
 
-    if (section === "stock") {
+    if (section === 'stock') {
       const sectionErrors = validateStock();
       if (Object.keys(sectionErrors).length > 0) {
         nextErrors.stock = sectionErrors;
@@ -298,12 +279,10 @@ const AddInventory = ({
     const allValid = labels.every((label) => validateSection(label.key));
     if (!allValid) {
       const firstInvalid = labels.find(
-        (l) => sectionStatus[l.key] === "error" || !validateSection(l.key)
+        (l) => sectionStatus[l.key] === 'error' || !validateSection(l.key)
       );
       if (firstInvalid) {
-        console.error(
-          `[Inventory] Validation halted at section ${firstInvalid.key}`
-        );
+        console.error(`[Inventory] Validation halted at section ${firstInvalid.key}`);
         setActiveLabel(firstInvalid.key);
       }
     }
@@ -329,7 +308,7 @@ const AddInventory = ({
       resetForm();
       setShowModal(false);
     } catch (err) {
-      console.error("Failed to submit inventory:", err);
+      console.error('Failed to submit inventory:', err);
     } finally {
       setIsSaving(false);
     }
@@ -348,7 +327,7 @@ const AddInventory = ({
   const handleNext = async () => {
     const currentValid = validateSection(activeLabel);
     if (!currentValid) {
-      if (process.env.NODE_ENV === "development") {
+      if (process.env.NODE_ENV === 'development') {
         console.warn(`[Inventory] Validation failed at step ${activeLabel}`);
       }
       return;
@@ -365,9 +344,9 @@ const AddInventory = ({
   const isLastSection = activeLabel === labels.at(-1)?.key;
   let ctaLabel: string;
   if (isLastSection) {
-    ctaLabel = isSaving ? "Saving..." : "Save";
+    ctaLabel = isSaving ? 'Saving...' : 'Save';
   } else {
-    ctaLabel = "Next";
+    ctaLabel = 'Next';
   }
 
   return (
@@ -394,9 +373,7 @@ const AddInventory = ({
           <FormSection
             businessType={businessType}
             sectionKey={activeLabel}
-            sectionTitle={
-              labels.find((l) => l.key === activeLabel)?.name || "Section"
-            }
+            sectionTitle={labels.find((l) => l.key === activeLabel)?.name || 'Section'}
             formData={formData}
             errors={errors}
             onFieldChange={(section, name, value, index) =>
@@ -409,31 +386,26 @@ const AddInventory = ({
             onAddBatch={() =>
               setFormData((prev) => {
                 const batches =
-                  prev.batches && prev.batches.length > 0
-                    ? [...prev.batches]
-                    : [prev.batch];
+                  prev.batches && prev.batches.length > 0 ? [...prev.batches] : [prev.batch];
                 const nextBatches = [
                   ...batches,
                   {
-                    batch: "",
-                    manufactureDate: "",
-                    expiryDate: "",
+                    batch: '',
+                    manufactureDate: '',
+                    expiryDate: '',
                     serial: undefined,
                     tracking: undefined,
                     litterId: undefined,
                     nextRefillDate: undefined,
-                    quantity: "",
-                    allocated: "",
+                    quantity: '',
+                    allocated: '',
                   },
                 ];
                 const totals = calculateBatchTotals(nextBatches);
                 const stock = { ...prev.stock };
-                if (totals.onHand !== undefined)
-                  stock.current = String(totals.onHand);
-                if (totals.allocated !== undefined)
-                  stock.allocated = String(totals.allocated);
-                if (totals.available !== undefined)
-                  stock.available = String(totals.available);
+                if (totals.onHand !== undefined) stock.current = String(totals.onHand);
+                if (totals.allocated !== undefined) stock.allocated = String(totals.allocated);
+                if (totals.available !== undefined) stock.available = String(totals.available);
                 return {
                   ...prev,
                   batches: nextBatches,
@@ -445,18 +417,13 @@ const AddInventory = ({
             onRemoveBatch={(index) =>
               setFormData((prev) => {
                 const batches =
-                  prev.batches && prev.batches.length > 0
-                    ? [...prev.batches]
-                    : [prev.batch];
+                  prev.batches && prev.batches.length > 0 ? [...prev.batches] : [prev.batch];
                 const next = batches.filter((_, i) => i !== index);
                 const totals = calculateBatchTotals(next);
                 const stock = { ...prev.stock };
-                if (totals.onHand !== undefined)
-                  stock.current = String(totals.onHand);
-                if (totals.allocated !== undefined)
-                  stock.allocated = String(totals.allocated);
-                if (totals.available !== undefined)
-                  stock.available = String(totals.available);
+                if (totals.onHand !== undefined) stock.current = String(totals.onHand);
+                if (totals.allocated !== undefined) stock.allocated = String(totals.allocated);
+                if (totals.available !== undefined) stock.available = String(totals.available);
                 return {
                   ...prev,
                   batch: next[0] ?? emptyInventoryItem.batch,

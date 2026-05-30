@@ -265,6 +265,12 @@ const ControlsList = ({ securityPillars }: { securityPillars: SecurityPillar[] }
   </div>
 );
 
+const handleCopyLink = (id: string) => {
+  const url = `${globalThis.location.origin}/trust-center#${id}`;
+  navigator.clipboard.writeText(url);
+  alert('Link copied to clipboard!');
+};
+
 const TrustCenter = () => {
   const [activeTab, setActiveTab] = useState('Overview');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -294,12 +300,6 @@ const TrustCenter = () => {
   const handleRequestAccess = (resourceTitle: string) => {
     setSelectedResource(resourceTitle);
     setIsModalOpen(true);
-  };
-
-  const handleCopyLink = (id: string) => {
-    const url = `${globalThis.location.origin}/trust-center#${id}`;
-    navigator.clipboard.writeText(url);
-    alert('Link copied to clipboard!');
   };
 
   const handleModalClose = () => {

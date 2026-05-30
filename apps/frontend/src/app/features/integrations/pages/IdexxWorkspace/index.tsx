@@ -565,8 +565,7 @@ const IdexxFollowUpPortal = ({ open, followUpFrameUrl, onClose }: IdexxFollowUpP
           className="flex-1 w-full border-0"
           loading="lazy"
           allowFullScreen
-          referrerPolicy="strict-origin"
-          sandbox="allow-scripts allow-popups allow-forms allow-downloads"
+          referrerPolicy="strict-origin-when-cross-origin"
           style={{ pointerEvents: 'auto' }}
         />
       </div>
@@ -717,181 +716,174 @@ type IdexxWorkspaceActionsState = {
 };
 
 const useIdexxWorkspaceActions = (s: IdexxWorkspaceActionsState) => {
-  const {
-    primaryOrgId,
-    integrationEnabled,
-    orderLookupId,
-    pdfPreviewLoadingId,
-    pdfPreviewUrl,
-    appointmentIdByOrderId,
-  } = s;
+  // Keep a stable ref to the latest state object so callbacks never need `s`
+  // in their dep arrays (which would cause a new ref every render → infinite loop).
+  const sRef = React.useRef(s);
+  sRef.current = s;
 
   const refresh = useCallback(async () => {
-    if (!primaryOrgId) return;
-    s.setLoading(true);
-    s.setError(null);
+    const { primaryOrgId: orgId, integrationEnabled: enabled } = sRef.current;
+    if (!orgId) return;
+    sRef.current.setLoading(true);
+    sRef.current.setError(null);
     try {
-      if (!integrationEnabled) {
-        s.setResults([]);
-        s.setCensusEntries([]);
-        s.setAppointmentIdByOrderId({});
-        s.setLastRefreshedAt(new Date().toISOString());
+      if (!enabled) {
+        sRef.current.setResults([]);
+        sRef.current.setCensusEntries([]);
+        sRef.current.setAppointmentIdByOrderId({});
+        sRef.current.setLastRefreshedAt(new Date().toISOString());
         return;
       }
       const [allResults, census, orders] = await Promise.all([
-        listIdexxResults(primaryOrgId),
-        getIdexxCensus(primaryOrgId),
-        listIdexxOrders({ organisationId: primaryOrgId }),
+        listIdexxResults(orgId),
+        getIdexxCensus(orgId),
+        listIdexxOrders({ organisationId: orgId }),
       ]);
-      s.setResults(allResults);
-      s.setCensusEntries(census);
-      s.setAppointmentIdByOrderId(buildAppointmentIdByOrderId(orders));
-      s.setLastRefreshedAt(new Date().toISOString());
+      sRef.current.setResults(allResults);
+      sRef.current.setCensusEntries(census);
+      sRef.current.setAppointmentIdByOrderId(buildAppointmentIdByOrderId(orders));
+      sRef.current.setLastRefreshedAt(new Date().toISOString());
     } catch (e) {
-      s.setError(getApiErrorMessage(e, 'Unable to load IDEXX Hub data.'));
+      sRef.current.setError(getApiErrorMessage(e, 'Unable to load IDEXX Hub data.'));
     } finally {
-      s.setLoading(false);
+      sRef.current.setLoading(false);
     }
-  }, [primaryOrgId, integrationEnabled, s]);
+  }, []);
 
-  const getAppointmentLabsHref = useCallback(
-    (result: LabResult) => {
-      const raw = result.rawPayload as
-        | {
-            orderId?: string | number;
-            requisitionId?: string | number;
-            accessionId?: string | number;
-            alternateOrderId?: string | number;
-            alternateRequisitionId?: string | number;
-          }
-        | undefined;
-      const lookupIds = [
-        result.orderId,
-        result.requisitionId,
-        result.accessionId,
-        raw?.orderId,
-        raw?.requisitionId,
-        raw?.accessionId,
-        raw?.alternateOrderId,
-        raw?.alternateRequisitionId,
-      ]
-        .map((value) => String(value ?? '').trim())
-        .filter(Boolean);
-      const matchedOrderIdentifier = lookupIds.find((id) => appointmentIdByOrderId[id]) ?? '';
-      if (!matchedOrderIdentifier) return '';
-      const params = new URLSearchParams({
-        appointmentId: appointmentIdByOrderId[matchedOrderIdentifier],
-        open: 'labs',
-        subLabel: 'idexx-labs',
-      });
-      return `/appointments?${params.toString()}`;
-    },
-    [appointmentIdByOrderId]
-  );
+  const getAppointmentLabsHref = useCallback((result: LabResult) => {
+    const { appointmentIdByOrderId: lookup } = sRef.current;
+    const raw = result.rawPayload as
+      | {
+          orderId?: string | number;
+          requisitionId?: string | number;
+          accessionId?: string | number;
+          alternateOrderId?: string | number;
+          alternateRequisitionId?: string | number;
+        }
+      | undefined;
+    const lookupIds = [
+      result.orderId,
+      result.requisitionId,
+      result.accessionId,
+      raw?.orderId,
+      raw?.requisitionId,
+      raw?.accessionId,
+      raw?.alternateOrderId,
+      raw?.alternateRequisitionId,
+    ]
+      .map((value) => String(value ?? '').trim())
+      .filter(Boolean);
+    const matchedOrderIdentifier = lookupIds.find((id) => lookup[id]) ?? '';
+    if (!matchedOrderIdentifier) return '';
+    const params = new URLSearchParams({
+      appointmentId: lookup[matchedOrderIdentifier],
+      open: 'labs',
+      subLabel: 'idexx-labs',
+    });
+    return `/appointments?${params.toString()}`;
+  }, []);
 
   const handleLookupOrder = useCallback(async () => {
-    if (!primaryOrgId || !orderLookupId.trim()) return;
-    s.setOrderLookupLoading(true);
-    s.setError(null);
+    const { primaryOrgId: orgId, orderLookupId: lookupId } = sRef.current;
+    if (!orgId || !lookupId.trim()) return;
+    sRef.current.setOrderLookupLoading(true);
+    sRef.current.setError(null);
     try {
       const order = await getIdexxOrderById({
-        organisationId: primaryOrgId,
-        idexxOrderId: orderLookupId.trim(),
+        organisationId: orgId,
+        idexxOrderId: lookupId.trim(),
       });
-      s.setOrderLookup(order);
+      sRef.current.setOrderLookup(order);
     } catch (e) {
-      s.setOrderLookup(null);
-      s.setError(getApiErrorMessage(e, 'Order lookup failed.'));
+      sRef.current.setOrderLookup(null);
+      sRef.current.setError(getApiErrorMessage(e, 'Order lookup failed.'));
     } finally {
-      s.setOrderLookupLoading(false);
+      sRef.current.setOrderLookupLoading(false);
     }
-  }, [primaryOrgId, orderLookupId, s]);
+  }, []);
 
-  const openResultDetails = useCallback(
-    async (result: LabResult) => {
-      if (!primaryOrgId) return;
-      s.setShowResultModal(true);
-      s.setResultDetailLoading(true);
-      s.setActiveResultDetail(result);
-      s.setError(null);
-      try {
-        const detail = await getIdexxResultById({
-          organisationId: primaryOrgId,
-          resultId: result.resultId,
-        });
-        s.setActiveResultDetail(detail);
-      } catch (e) {
-        s.setError(getApiErrorMessage(e, 'Unable to load result details.'));
-      } finally {
-        s.setResultDetailLoading(false);
-      }
-    },
-    [primaryOrgId, s]
-  );
+  const openResultDetails = useCallback(async (result: LabResult) => {
+    const { primaryOrgId: orgId } = sRef.current;
+    if (!orgId) return;
+    sRef.current.setShowResultModal(true);
+    sRef.current.setResultDetailLoading(true);
+    sRef.current.setActiveResultDetail(result);
+    sRef.current.setError(null);
+    try {
+      const detail = await getIdexxResultById({
+        organisationId: orgId,
+        resultId: result.resultId,
+      });
+      sRef.current.setActiveResultDetail(detail);
+    } catch (e) {
+      sRef.current.setError(getApiErrorMessage(e, 'Unable to load result details.'));
+    } finally {
+      sRef.current.setResultDetailLoading(false);
+    }
+  }, []);
 
   const closePdfPreview = useCallback(() => {
-    s.setShowPdfPreview(false);
-    if (pdfPreviewUrl?.startsWith('blob:')) {
-      URL.revokeObjectURL(pdfPreviewUrl);
+    const { pdfPreviewUrl: url } = sRef.current;
+    sRef.current.setShowPdfPreview(false);
+    if (url?.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
     }
-    s.setPdfPreviewUrl(null);
-    s.setPdfPreviewTitle('IDEXX PDF');
-  }, [pdfPreviewUrl, s]);
+    sRef.current.setPdfPreviewUrl(null);
+    sRef.current.setPdfPreviewTitle('IDEXX PDF');
+  }, []);
 
-  const openResultPdfPreview = useCallback(
-    async (resultId: string) => {
-      if (!primaryOrgId || !resultId || pdfPreviewLoadingId === resultId) return;
-      s.setPdfPreviewLoadingId(resultId);
-      s.setError(null);
-      try {
-        const pdfBlob = await getIdexxResultPdfBlob({
-          organisationId: primaryOrgId,
-          resultId,
-        });
-        const objectUrl = URL.createObjectURL(pdfBlob);
-        if (pdfPreviewUrl?.startsWith('blob:')) {
-          URL.revokeObjectURL(pdfPreviewUrl);
-        }
-        s.setPdfPreviewUrl(objectUrl);
-        s.setPdfPreviewTitle(`IDEXX Result PDF #${resultId}`);
-        s.setShowPdfPreview(true);
-      } catch (e) {
-        s.setError(getApiErrorMessage(e, 'Unable to load IDEXX PDF preview.'));
-      } finally {
-        s.setPdfPreviewLoadingId(null);
+  const openResultPdfPreview = useCallback(async (resultId: string) => {
+    const {
+      primaryOrgId: orgId,
+      pdfPreviewLoadingId: loadingId,
+      pdfPreviewUrl: currentUrl,
+    } = sRef.current;
+    if (!orgId || !resultId || loadingId === resultId) return;
+    sRef.current.setPdfPreviewLoadingId(resultId);
+    sRef.current.setError(null);
+    try {
+      const pdfBlob = await getIdexxResultPdfBlob({
+        organisationId: orgId,
+        resultId,
+      });
+      const objectUrl = URL.createObjectURL(pdfBlob);
+      if (currentUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(currentUrl);
       }
-    },
-    [primaryOrgId, pdfPreviewLoadingId, pdfPreviewUrl, s]
-  );
+      sRef.current.setPdfPreviewUrl(objectUrl);
+      sRef.current.setPdfPreviewTitle(`IDEXX Result PDF #${resultId}`);
+      sRef.current.setShowPdfPreview(true);
+    } catch (e) {
+      sRef.current.setError(getApiErrorMessage(e, 'Unable to load IDEXX PDF preview.'));
+    } finally {
+      sRef.current.setPdfPreviewLoadingId(null);
+    }
+  }, []);
 
-  const openOrderAcknowledgement = useCallback(
-    (order: LabOrder | null) => {
-      const pdfUrl = getOrderPdfUrl(order);
-      if (!pdfUrl) {
-        s.setError('Acknowledgment PDF is not available for this order yet.');
-        return;
-      }
-      s.setError(null);
-      s.setPdfPreviewTitle(`IDEXX Order Acknowledgment #${order?.idexxOrderId ?? ''}`.trim());
-      s.setPdfPreviewUrl(pdfUrl);
-      s.setShowPdfPreview(true);
-    },
-    [s]
-  );
+  const openOrderAcknowledgement = useCallback((order: LabOrder | null) => {
+    const pdfUrl = getOrderPdfUrl(order);
+    if (!pdfUrl) {
+      sRef.current.setError('Acknowledgment PDF is not available for this order yet.');
+      return;
+    }
+    sRef.current.setError(null);
+    sRef.current.setPdfPreviewTitle(
+      `IDEXX Order Acknowledgment #${order?.idexxOrderId ?? ''}`.trim()
+    );
+    sRef.current.setPdfPreviewUrl(pdfUrl);
+    sRef.current.setShowPdfPreview(true);
+  }, []);
 
-  const openFollowUpWorkspace = useCallback(
-    (order: LabOrder | null) => {
-      const uiUrl = getOrderUiUrl(order);
-      if (!uiUrl) {
-        s.setError('Follow-up workspace URL is not available for this order.');
-        return;
-      }
-      s.setError(null);
-      s.setFollowUpFrameUrl(uiUrl);
-      s.setShowFollowUpFrame(true);
-    },
-    [s]
-  );
+  const openFollowUpWorkspace = useCallback((order: LabOrder | null) => {
+    const uiUrl = getOrderUiUrl(order);
+    if (!uiUrl) {
+      sRef.current.setError('Follow-up workspace URL is not available for this order.');
+      return;
+    }
+    sRef.current.setError(null);
+    sRef.current.setFollowUpFrameUrl(uiUrl);
+    sRef.current.setShowFollowUpFrame(true);
+  }, []);
 
   return {
     refresh,

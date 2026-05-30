@@ -235,6 +235,13 @@ type TaskBoardProps = {
   onAddTask?: () => void;
 };
 
+const normalizeId = (value?: string | null) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
+
 const TaskBoard = ({
   tasks,
   currentDate,
@@ -259,13 +266,6 @@ const TaskBoard = ({
   const boardRootRef = useRef<HTMLDivElement | null>(null);
   const columnDropRefs = useRef<Partial<Record<BoardStatus, HTMLDivElement | null>>>({});
   const columnScrollRefs = useRef<Partial<Record<BoardStatus, HTMLDivElement | null>>>({});
-
-  const normalizeId = (value?: string | null) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
 
   const currentUserAssigneeId = useMemo(() => {
     const normalizedCurrentUser = normalizeId(authUserId);

@@ -48,6 +48,44 @@ const runtimeComponentMap: Record<FormFieldType, React.ComponentType<RuntimeRend
   group: (() => null) as any,
 };
 
+const getInteractiveTarget = (target: EventTarget | null): HTMLElement | null => {
+  if (!(target instanceof HTMLElement)) return null;
+  const closest = target.closest(
+    "input, textarea, select, button, a, [tabindex], [contenteditable='true']"
+  );
+  return closest instanceof HTMLElement ? closest : null;
+};
+
+const isMedicationLikeGroup = (field: FormField): boolean =>
+  Boolean(field.meta?.medicationGroup || field.meta?.medicineId) ||
+  /medication|medications/i.test(field.id ?? '');
+
+const getGroupContainerClass = (level: number, medicationGroup: boolean): string => {
+  if (level === 0) {
+    return 'rounded-2xl border border-card-border bg-white p-4';
+  }
+  if (medicationGroup) {
+    return 'rounded-xl border border-card-border bg-white p-3';
+  }
+  if (level === 1) {
+    return 'rounded-xl border border-grey-light bg-white p-3';
+  }
+  return 'rounded-lg border-l-2 border-card-border bg-white px-3 py-2';
+};
+
+const getGroupTitleClass = (level: number): string =>
+  level <= 1
+    ? 'font-satoshi text-black-text text-[18px] font-medium'
+    : 'font-satoshi text-black-text text-[16px] font-medium';
+
+const labelForField = (field: FormField): string => {
+  const label = (field.label ?? '').trim();
+  const id = field.id ?? '';
+  if (label && label !== id) return label;
+  if (/_services$/i.test(id)) return 'Services';
+  return humanizeKey(id || 'Field');
+};
+
 type FormRendererProps = {
   fields: FormField[];
   values: Record<string, any>;
@@ -63,14 +101,6 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
   readOnly = false,
   depth = 0,
 }) => {
-  const getInteractiveTarget = (target: EventTarget | null): HTMLElement | null => {
-    if (!(target instanceof HTMLElement)) return null;
-    const closest = target.closest(
-      "input, textarea, select, button, a, [tabindex], [contenteditable='true']"
-    );
-    return closest instanceof HTMLElement ? closest : null;
-  };
-
   const preventReadOnlyFocus: React.PointerEventHandler<HTMLDivElement> = (e) => {
     if (!readOnly) return;
     const interactive = getInteractiveTarget(e.target);
@@ -84,36 +114,6 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
     const interactive = getInteractiveTarget(e.target);
     if (!interactive) return;
     interactive.blur?.();
-  };
-
-  const isMedicationLikeGroup = (field: FormField): boolean =>
-    Boolean(field.meta?.medicationGroup || field.meta?.medicineId) ||
-    /medication|medications/i.test(field.id ?? '');
-
-  const getGroupContainerClass = (level: number, medicationGroup: boolean): string => {
-    if (level === 0) {
-      return 'rounded-2xl border border-card-border bg-white p-4';
-    }
-    if (medicationGroup) {
-      return 'rounded-xl border border-card-border bg-white p-3';
-    }
-    if (level === 1) {
-      return 'rounded-xl border border-grey-light bg-white p-3';
-    }
-    return 'rounded-lg border-l-2 border-card-border bg-white px-3 py-2';
-  };
-
-  const getGroupTitleClass = (level: number): string =>
-    level <= 1
-      ? 'font-satoshi text-black-text text-[18px] font-medium'
-      : 'font-satoshi text-black-text text-[16px] font-medium';
-
-  const labelForField = (field: FormField): string => {
-    const label = (field.label ?? '').trim();
-    const id = field.id ?? '';
-    if (label && label !== id) return label;
-    if (/_services$/i.test(id)) return 'Services';
-    return humanizeKey(id || 'Field');
   };
 
   return (

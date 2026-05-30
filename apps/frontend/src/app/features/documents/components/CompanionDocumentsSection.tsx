@@ -20,6 +20,39 @@ import CompanionDocumentUploadForm, {
   DocumentUploadFormErrors,
 } from '@/app/features/documents/components/CompanionDocumentUploadForm';
 
+const handleDownload = async (id: string | undefined) => {
+  try {
+    const data = await loadDocumentDownloadURL(id);
+    if (data.length > 0) {
+      const docURL = data[0].url;
+      globalThis.open(docURL, '_blank');
+    }
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+const formatTextValue = (value?: string | null) => {
+  if (!value) return '-';
+  return toTitle(value);
+};
+
+const getDocumentSource = (doc: CompanionRecord) => {
+  if (doc.issuingBusinessName) return doc.issuingBusinessName;
+  if (doc.syncedFromPms) return 'PMS';
+  if (doc.uploadedByParentId) return 'Pet parent';
+  return 'Staff';
+};
+
+const getAttachmentSummary = (doc: CompanionRecord) => {
+  if (!doc.attachments?.length) return 'No attachments';
+  const first = doc.attachments[0];
+  const mime = first?.mimeType ? first.mimeType.split('/').pop()?.toUpperCase() : 'FILE';
+  return doc.attachments.length > 1
+    ? `${doc.attachments.length} files (${mime || 'FILE'})`
+    : `1 file (${mime || 'FILE'})`;
+};
+
 type CompanionDocumentsSectionProps = {
   companionId: string;
 };
@@ -85,39 +118,6 @@ const CompanionDocumentsSection = ({ companionId }: CompanionDocumentsSectionPro
     } catch (error) {
       console.log(error);
     }
-  };
-
-  const handleDownload = async (id: string | undefined) => {
-    try {
-      const data = await loadDocumentDownloadURL(id);
-      if (data.length > 0) {
-        const docURL = data[0].url;
-        globalThis.open(docURL, '_blank');
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const formatTextValue = (value?: string | null) => {
-    if (!value) return '-';
-    return toTitle(value);
-  };
-
-  const getDocumentSource = (doc: CompanionRecord) => {
-    if (doc.issuingBusinessName) return doc.issuingBusinessName;
-    if (doc.syncedFromPms) return 'PMS';
-    if (doc.uploadedByParentId) return 'Pet parent';
-    return 'Staff';
-  };
-
-  const getAttachmentSummary = (doc: CompanionRecord) => {
-    if (!doc.attachments?.length) return 'No attachments';
-    const first = doc.attachments[0];
-    const mime = first?.mimeType ? first.mimeType.split('/').pop()?.toUpperCase() : 'FILE';
-    return doc.attachments.length > 1
-      ? `${doc.attachments.length} files (${mime || 'FILE'})`
-      : `1 file (${mime || 'FILE'})`;
   };
 
   return (

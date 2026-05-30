@@ -21,6 +21,68 @@ import { defaultSidebarToCollapsed } from '@/app/lib/sidebarPreference';
 
 import '../AuthPages.css';
 
+const passwordErrors = (
+  password: string,
+  confirmPassword: string
+): { pError?: string; confirmPError?: string } => {
+  const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
+
+  if (!password) {
+    return {
+      pError: 'Password is required',
+      ...(confirmPassword ? {} : { confirmPError: 'Confirm Password is required' }),
+    };
+  }
+
+  if (!strongPasswordRegex.test(password)) {
+    return {
+      pError:
+        'Password must be at least 8 characters long, include uppercase, lowercase, number, and special character',
+    };
+  }
+
+  if (!confirmPassword) {
+    return { confirmPError: 'Confirm Password is required' };
+  }
+
+  if (password !== confirmPassword) {
+    return { confirmPError: 'Passwords do not match' };
+  }
+
+  return {};
+};
+
+const validateSignUpInputs = (
+  firstName: string,
+  lastName: string,
+  email: string,
+  password: string,
+  confirmPassword: string,
+  agree: boolean
+) => {
+  const errors: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    pError?: string;
+    confirmPError?: string;
+    agree?: string;
+  } = {};
+
+  if (!firstName) errors.firstName = 'First name is required';
+  if (!lastName) errors.lastName = 'Last name is required';
+  const emailError = getEmailValidationError(email);
+  if (emailError) errors.email = emailError;
+
+  Object.assign(errors, passwordErrors(password, confirmPassword));
+
+  if (!agree) {
+    errors.agree = 'Please check the Terms and Conditions box';
+  }
+
+  return errors;
+};
+
 type SignUpProps = {
   postAuthRedirect?: string;
   signinHref?: string;
@@ -63,68 +125,6 @@ const SignUp = ({
     pError?: string;
     agree?: string;
   }>({});
-
-  const passwordErrors = (
-    password: string,
-    confirmPassword: string
-  ): { pError?: string; confirmPError?: string } => {
-    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
-
-    if (!password) {
-      return {
-        pError: 'Password is required',
-        ...(confirmPassword ? {} : { confirmPError: 'Confirm Password is required' }),
-      };
-    }
-
-    if (!strongPasswordRegex.test(password)) {
-      return {
-        pError:
-          'Password must be at least 8 characters long, include uppercase, lowercase, number, and special character',
-      };
-    }
-
-    if (!confirmPassword) {
-      return { confirmPError: 'Confirm Password is required' };
-    }
-
-    if (password !== confirmPassword) {
-      return { confirmPError: 'Passwords do not match' };
-    }
-
-    return {};
-  };
-
-  const validateSignUpInputs = (
-    firstName: string,
-    lastName: string,
-    email: string,
-    password: string,
-    confirmPassword: string,
-    agree: boolean
-  ) => {
-    const errors: {
-      firstName?: string;
-      lastName?: string;
-      email?: string;
-      pError?: string;
-      confirmPError?: string;
-      agree?: string;
-    } = {};
-
-    if (!firstName) errors.firstName = 'First name is required';
-    if (!lastName) errors.lastName = 'Last name is required';
-    const emailError = getEmailValidationError(email);
-    if (emailError) errors.email = emailError;
-
-    Object.assign(errors, passwordErrors(password, confirmPassword));
-
-    if (!agree) {
-      errors.agree = 'Please check the Terms and Conditions box';
-    }
-
-    return errors;
-  };
 
   const handleSignupSuccess = () => {
     defaultSidebarToCollapsed();

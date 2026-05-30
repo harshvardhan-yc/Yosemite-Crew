@@ -6,19 +6,19 @@ import {
 } from '@/app/features/inventory/pages/Inventory/utils';
 import { Secondary } from '@/app/ui/primitives/Buttons';
 
+const displayValue = (val?: string | number | null) => {
+  if (val === undefined || val === null) return '—';
+  if (typeof val === 'string' && val.trim() === '') return '—';
+  return val;
+};
+
+const formatCurrency = (value: string | number | undefined) => {
+  const num = Number(value ?? 0);
+  if (!Number.isFinite(num)) return '—';
+  return `$ ${num}`;
+};
+
 const InventoryCard = ({ item, handleViewInventory }: any) => {
-  const displayValue = (val?: string | number | null) => {
-    if (val === undefined || val === null) return '—';
-    if (typeof val === 'string' && val.trim() === '') return '—';
-    return val;
-  };
-
-  const formatCurrency = (value: string | number | undefined) => {
-    const num = Number(value ?? 0);
-    if (!Number.isFinite(num)) return '—';
-    return `$ ${num}`;
-  };
-
   const totalValue = () => {
     const price = Number(item.pricing?.selling ?? 0);
     const onHand = Number(item.stock?.current ?? 0);

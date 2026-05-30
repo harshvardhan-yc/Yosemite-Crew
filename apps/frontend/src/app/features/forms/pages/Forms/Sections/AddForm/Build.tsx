@@ -748,6 +748,20 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
   );
 };
 
+const updateFieldInForm = (
+  prev: FormsProps,
+  fieldId: string,
+  updatedField: FormField
+): FormsProps => ({
+  ...prev,
+  schema: (prev.schema || []).map((field) => (field.id === fieldId ? updatedField : field)),
+});
+
+const removeFieldById = (form: FormsProps, id: string): FormsProps => ({
+  ...form,
+  schema: (form.schema || []).filter((field) => field.id !== id),
+});
+
 const Build = ({
   formData,
   setFormData,
@@ -771,15 +785,6 @@ const Build = ({
     [canUseSignature]
   );
 
-  const updateFieldInForm = (
-    prev: FormsProps,
-    fieldId: string,
-    updatedField: FormField
-  ): FormsProps => ({
-    ...prev,
-    schema: (prev.schema || []).map((field) => (field.id === fieldId ? updatedField : field)),
-  });
-
   const handleFieldChange = (fieldId: string, updatedField: FormField) => {
     setFormData((prev) => updateFieldInForm(prev, fieldId, updatedField));
   };
@@ -799,11 +804,6 @@ const Build = ({
     setBuildError('');
     setFormData((prev) => removeFieldById(prev, fieldId));
   };
-
-  const removeFieldById = (form: FormsProps, id: string): FormsProps => ({
-    ...form,
-    schema: (form.schema || []).filter((field) => field.id !== id),
-  });
 
   const addMedicationGroup = () => {
     setFormData((prev) => {

@@ -18,6 +18,16 @@ export type BaseButtonProps = {
   baseClasses: string;
 };
 
+const updateInteractionPosition = (
+  event: React.PointerEvent<HTMLAnchorElement | HTMLButtonElement>
+) => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  event.currentTarget.style.setProperty('--yc-button-x', `${x}px`);
+  event.currentTarget.style.setProperty('--yc-button-y', `${y}px`);
+};
+
 const BaseButton = ({
   text,
   icon,
@@ -38,15 +48,6 @@ const BaseButton = ({
       {icon}
     </span>
   ) : null;
-  const updateInteractionPosition = (
-    event: React.PointerEvent<HTMLAnchorElement | HTMLButtonElement>
-  ) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    event.currentTarget.style.setProperty('--yc-button-x', `${x}px`);
-    event.currentTarget.style.setProperty('--yc-button-y', `${y}px`);
-  };
 
   if (href) {
     return (

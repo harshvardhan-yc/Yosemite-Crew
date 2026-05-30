@@ -345,7 +345,7 @@ const Inventory = () => {
           </div>
 
           {loadingList && activeView === 'inventory' && (
-            <div className="text-grey-noti text-sm font-satoshi">Loading inventory...</div>
+            <div className="text-grey-noti text-sm font-satoshi">Loading inventory…</div>
           )}
 
           <div ref={plannerSectionRef} className={plannerSectionClassName}>

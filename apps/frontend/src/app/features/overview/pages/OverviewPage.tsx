@@ -9,6 +9,13 @@ import { Primary } from '@/app/ui/primitives/Buttons';
 import { useAuthStore } from '@/app/stores/authStore';
 import { resolveDefaultOpenScreenRoute } from '@/app/lib/defaultOpenScreen';
 
+const formatStat = (num: number) => {
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'k';
+  }
+  return num.toString();
+};
+
 const OverviewPage = () => {
   const {
     trafficChart,
@@ -26,13 +33,6 @@ const OverviewPage = () => {
       return role === 'developer' ? '/developers/home' : resolveDefaultOpenScreenRoute(role);
     }
     return '/signup';
-  };
-
-  const formatStat = (num: number) => {
-    if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'k';
-    }
-    return num.toString();
   };
 
   return (

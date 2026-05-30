@@ -261,6 +261,12 @@ const buildTrafficChartConfig = (
   };
 };
 
+const chartKeys = [
+  { name: 'Self Hosters', color: 'var(--color-badge-blue-bg)' },
+  { name: 'Builders', color: '#10B981' },
+  { name: 'Github Stars', color: 'var(--color-warning-600)' },
+];
+
 const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsProps) => {
   const [view, setView] = useState<ViewType>('Unique');
   const [granularity, setGranularity] = useState<GranularityType>('Daily');
@@ -273,13 +279,6 @@ const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsP
       </div>
     );
   }
-
-  // We ALWAYS pass all three keys so the legend permanently shows them all.
-  const chartKeys = [
-    { name: 'Self Hosters', color: 'var(--color-badge-blue-bg)' },
-    { name: 'Builders', color: '#10B981' },
-    { name: 'Github Stars', color: 'var(--color-warning-600)' },
-  ];
 
   const granularityOptions = getGranularityOptions(view);
   const effectiveGranularity = granularityOptions.includes(granularity) ? granularity : 'Monthly';

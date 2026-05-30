@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import SelectLabel from '@/app/ui/inputs/SelectLabel';
@@ -600,7 +600,7 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     [formData.isInsured, formData.insurance?.companyName, formData.insurance?.policyNumber]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setIsEditing(false);
     setIsStatusEditing(false);
     setStatusValue(companion.companion.status ?? 'active');
@@ -632,7 +632,7 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     };
   }, [isEditing]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isEditing) return;
     const speciesQuery = SPECIES_QUERY_BY_TYPE[formData.type];
     if (!speciesQuery) {
