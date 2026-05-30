@@ -97,7 +97,7 @@ const CompanionInfo = ({
                   activeCompanion?.companion.photoUrl,
                   activeCompanion?.companion.type.toLowerCase() as ImageType
                 )}
-                className="rounded-full h-10 w-10 object-cover"
+                className="rounded-full size-10 object-cover"
                 height={40}
                 width={40}
               />

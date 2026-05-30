@@ -1,5 +1,13 @@
 'use client';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { IoClose, IoPencilOutline, IoInformationCircleOutline } from 'react-icons/io5';
 import { IoIosWarning } from 'react-icons/io';
@@ -20,19 +28,20 @@ import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import { useNotify } from '@/app/hooks/useNotify';
 import { useFilteredOptions } from '@/app/hooks/useDropdown';
-import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 import { useCompanionsParentsForPrimaryOrg } from '@/app/hooks/useCompanion';
-import { searchParent } from '@/app/features/companions/services/companionService';
 import {
+  searchParent,
   createCompanion,
   createParent,
   getCompanionForParent,
   linkCompanion,
   updateCompanion,
+  updateParent,
 } from '@/app/features/companions/services/companionService';
 import {
   fetchBreedCodeEntries,
   fetchSpeciesCodeEntries,
+  BreedCodeEntry,
 } from '@/app/features/companions/services/codeEntriesService';
 import {
   StoredCompanion,
@@ -63,9 +72,8 @@ import { CompanionType, RecordStatus, Gender, SourceType } from '@yosemite-crew/
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { buildCompanionOverviewHref } from '@/app/lib/companionHistoryRoute';
-import { formatDisplayDate } from '@/app/lib/date';
-import { getAgeInYears } from '@/app/lib/date';
-import { getStatusStyle } from '@/app/ui/tables/CompanionsTable';
+import { formatDisplayDate, getAgeInYears } from '@/app/lib/date';
+import { getCompanionStatusStyle } from '@/app/ui/tables/tableUtils';
 import clsx from 'clsx';
 
 // ─── Species / breed constants ────────────────────────────────────────────────
@@ -156,6 +164,47 @@ const ALERT_PRIORITY_OPTIONS: { value: AlertPriority; label: string }[] = [
   { value: 'critical', label: 'Critical' },
 ];
 
+const buildFullName = (firstName: string, lastName?: string | null): string =>
+  lastName ? `${firstName} ${lastName}` : firstName;
+
+const deduplicateBreedEntries = (
+  entries: BreedCodeEntry[],
+  fallbackSpeciesCode: string
+): BreedOption[] => {
+  const seen = new Set<string>();
+  return entries.reduce<BreedOption[]>((acc, e) => {
+    if (!seen.has(e.display)) {
+      seen.add(e.display);
+      acc.push({
+        value: e.display,
+        label: e.display,
+        breedCode: e.code,
+        speciesCode: e.meta?.speciesCode ?? fallbackSpeciesCode,
+      });
+    }
+    return acc;
+  }, []);
+};
+
+const loadBreedOptions = async (
+  speciesOptions: SpeciesOption[],
+  companionType: string,
+  setBreedOptions: (opts: BreedOption[]) => void,
+  signal: { cancelled: boolean }
+) => {
+  const sel = speciesOptions.find((o) => o.type === companionType);
+  if (!sel) {
+    setBreedOptions([]);
+    return;
+  }
+  try {
+    const entries = await fetchBreedCodeEntries(sel.speciesQuery);
+    if (!signal.cancelled) setBreedOptions(deduplicateBreedEntries(entries, sel.speciesCode));
+  } catch {
+    if (!signal.cancelled) setBreedOptions([]);
+  }
+};
+
 const fmtDate = (v?: Date | string) => {
   if (!v) return '-';
   return formatDisplayDate(v, '-');
@@ -226,7 +275,7 @@ const AlertChipEdit = ({
         type="button"
         aria-label={`Remove alert ${alert.label}`}
         onClick={() => onRemove(alert.id)}
-        className="flex items-center justify-center rounded-full w-3.5 h-3.5 hover:opacity-70 transition-opacity"
+        className="flex items-center justify-center rounded-full size-3.5 hover:opacity-70 transition-opacity"
         style={{ color: cfg.text }}
       >
         <IoClose size={11} />
@@ -236,6 +285,9 @@ const AlertChipEdit = ({
 };
 
 // ─── Inline search input with design-system dropdown ─────────────────────────
+
+const getInputBorderClass = (error?: string): string =>
+  error ? 'border-input-border-error!' : 'border-input-border-default!';
 
 type SearchOption = { value: string; label: string };
 
@@ -268,7 +320,7 @@ const InputWithDropdown = ({
   const wrapRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
-  const uid = useRef(`iwd-${Math.random().toString(36).slice(2)}`).current;
+  const uid = useId();
   // Only auto-open after the user has typed — prevents dropdown firing when
   // edit mode mounts with a pre-filled value that matches existing companions.
   const userHasTypedRef = useRef(false);
@@ -354,6 +406,7 @@ const InputWithDropdown = ({
           id={uid}
           type="text"
           name={inname}
+          aria-label={inlabel}
           value={value}
           autoComplete="off"
           placeholder=" "
@@ -368,7 +421,7 @@ const InputWithDropdown = ({
           className={`
             peer w-full min-h-12 rounded-2xl bg-transparent px-6 py-2.5
             text-body-4 text-text-primary outline-none border
-            ${open ? 'border-input-border-active! rounded-b-none! border-b-0!' : error ? 'border-input-border-error!' : 'border-input-border-default!'}
+            ${open ? 'border-input-border-active! rounded-b-none! border-b-0!' : getInputBorderClass(error)}
           `}
         />
         <label
@@ -421,6 +474,175 @@ type AddCompanionCentralModalProps = {
   onGoToAppointment?: () => void;
 };
 
+type ExtCompanionForValidation = StoredCompanion & { alerts?: CompanionAlert[] };
+
+const validateParentFields = (
+  parentFormData: StoredParent,
+  selectedCountryCode: CountryDialCodeOption | null,
+  localPhoneNumber: string
+): Partial<Record<string, string>> => {
+  const errs: Partial<Record<string, string>> = {};
+  if (!parentFormData.firstName) errs.firstName = 'First name is required';
+  if (!parentFormData.lastName) errs.lastName = 'Last name is required';
+  const emailError = getEmailValidationError(parentFormData.email);
+  if (emailError) errs.email = emailError;
+  if (!selectedCountryCode?.dialCode) errs.countryCode = 'Country code is required';
+  if (!localPhoneNumber) errs.phoneNumber = 'Number is required';
+  if (!parentFormData.address.addressLine?.trim()) errs.addressLine = 'Address is required';
+  if (!parentFormData.address.city?.trim()) errs.city = 'City is required';
+  if (!parentFormData.address.state?.trim()) errs.state = 'State/Province is required';
+  if (!parentFormData.address.postalCode?.trim()) errs.postalCode = 'Postal code is required';
+  if (selectedCountryCode?.dialCode && localPhoneNumber) {
+    if (!validatePhone(`${selectedCountryCode.dialCode}${localPhoneNumber}`))
+      errs.phoneNumber = 'Enter a valid phone number';
+  }
+  return errs;
+};
+
+const validateCompanionFields = (
+  companionFormData: ExtCompanionForValidation,
+  isFastTrack: boolean
+): Partial<Record<string, string>> => {
+  const errs: Partial<Record<string, string>> = {};
+  if (!companionFormData.name) errs.name = 'Name is required';
+  if (!companionFormData.type) errs.species = 'Species is required';
+  if (!companionFormData.breed) errs.breed = 'Breed is required';
+  if (!isFastTrack && companionFormData.isInsured) {
+    if (!companionFormData.insurance?.companyName)
+      errs.insuranceCompany = 'Company name is required';
+    if (!companionFormData.insurance?.policyNumber)
+      errs.insuranceNumber = 'Policy number is required';
+  }
+  return errs;
+};
+
+type EditSnapshot = {
+  companionName: string;
+  companionType: string;
+  companionBreed: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+};
+
+const EMPTY_SNAPSHOT: EditSnapshot = {
+  companionName: EMPTY_STORED_COMPANION.name,
+  companionType: EMPTY_STORED_COMPANION.type,
+  companionBreed: EMPTY_STORED_COMPANION.breed,
+  firstName: EMPTY_STORED_PARENT.firstName,
+  lastName: EMPTY_STORED_PARENT.lastName ?? '',
+  email: EMPTY_STORED_PARENT.email,
+  phone: '',
+};
+
+const computeHasUnsavedChanges = (
+  snap: EditSnapshot,
+  companionFormData: ExtCompanionForValidation,
+  parentFormData: StoredParent,
+  localPhoneNumber: string
+): boolean =>
+  companionFormData.name !== snap.companionName ||
+  (companionFormData.type ?? '') !== snap.companionType ||
+  (companionFormData.breed ?? '') !== snap.companionBreed ||
+  (parentFormData.firstName ?? '') !== snap.firstName ||
+  (parentFormData.lastName ?? '') !== snap.lastName ||
+  (parentFormData.email ?? '') !== snap.email ||
+  localPhoneNumber !== snap.phone;
+
+const fetchParentResults = async (q: string): Promise<StoredParent[]> => {
+  try {
+    return await searchParent(q);
+  } catch {
+    return [];
+  }
+};
+
+const createCompanionFlow = async (
+  normalizedParent: StoredParent,
+  companionFormData: ExtCompanionForValidation
+): Promise<StoredCompanion | undefined> => {
+  if (normalizedParent.id) {
+    const payload: StoredCompanion = { ...companionFormData, parentId: normalizedParent.id };
+    if (companionFormData.id) {
+      return (await linkCompanion(payload, normalizedParent)) ?? undefined;
+    }
+    return (await createCompanion(payload, normalizedParent)) ?? undefined;
+  }
+  const parentId = await createParent(normalizedParent);
+  const pp: StoredParent = { ...normalizedParent, id: parentId! };
+  return (await createCompanion({ ...companionFormData, parentId: parentId! }, pp)) ?? undefined;
+};
+
+const getModalTitle = (mode: ModalMode, companionTitle: string): string => {
+  if (mode === 'view') return companionTitle || 'Patient Details';
+  if (mode === 'edit') return 'Edit Patient / Client';
+  return 'New Patient / Client';
+};
+
+type FooterLeftProps = {
+  mode: ModalMode;
+  onGoToAppointment?: () => void;
+  hasUnsavedChanges: boolean;
+  pendingGoToAppointmentRef: React.RefObject<boolean>;
+  setShowDiscardConfirm: (v: boolean) => void;
+  setMode: (m: ModalMode) => void;
+  setCompanionErrors: (e: Partial<Record<string, string>>) => void;
+  setParentErrors: (e: Partial<Record<string, string>>) => void;
+};
+
+const FooterLeft = ({
+  mode,
+  onGoToAppointment,
+  hasUnsavedChanges,
+  pendingGoToAppointmentRef,
+  setShowDiscardConfirm,
+  setMode,
+  setCompanionErrors,
+  setParentErrors,
+}: FooterLeftProps) => {
+  if (onGoToAppointment && mode === 'create') {
+    return (
+      <Secondary
+        href="#"
+        text="← Go to Appointment"
+        onClick={(e) => {
+          e?.preventDefault();
+          if (hasUnsavedChanges) {
+            pendingGoToAppointmentRef.current = true;
+            setShowDiscardConfirm(true);
+          } else {
+            onGoToAppointment();
+          }
+        }}
+      />
+    );
+  }
+  if (mode === 'edit') {
+    return (
+      <Secondary
+        href="#"
+        text="Discard changes"
+        onClick={() => {
+          setMode('view');
+          setCompanionErrors({});
+          setParentErrors({});
+        }}
+      />
+    );
+  }
+  return <div />;
+};
+
+const getSexLabel = (gender: string | undefined, isneutered: boolean | undefined): string => {
+  if (!gender) return '-';
+  return (
+    GENDER_NEUTER_OPTIONS.find(
+      (o) => o.data.gender === gender && o.data.neutered === (isneutered ?? false)
+    )?.label ?? toTitleCase(gender)
+  );
+};
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const AddCompanionCentralModal = ({
@@ -433,9 +655,8 @@ const AddCompanionCentralModal = ({
   onGoToAppointment,
 }: AddCompanionCentralModalProps) => {
   const isFastTrack = formMode === 'fasttrack';
-  const terminologyText = useCompanionTerminologyText();
   const router = useRouter();
-  const { notify } = useNotify();
+  const notifyHook = useNotify();
 
   // ── Derived initial mode ──
   const initialMode: ModalMode = viewCompanion ? 'view' : 'create';
@@ -472,20 +693,11 @@ const AddCompanionCentralModal = ({
   const allCompanionParents = useCompanionsParentsForPrimaryOrg();
 
   // ── Edit-mode dirty tracking — snapshot of field values at the moment edit starts ──
-  type EditSnapshot = {
-    companionName: string;
-    companionType: string;
-    companionBreed: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-  };
   const editSnapshotRef = useRef<EditSnapshot | null>(null);
 
   // ── Companion form state ──
-  type ExtCompanion = StoredCompanion & { alerts?: CompanionAlert[] };
-  const [companionFormData, setCompanionFormData] = useState<ExtCompanion>(EMPTY_STORED_COMPANION);
+  const [companionFormData, setCompanionFormData] =
+    useState<ExtCompanionForValidation>(EMPTY_STORED_COMPANION);
   const [companionErrors, setCompanionErrors] = useState<Partial<Record<string, string>>>({});
   const [companionDOB, setCompanionDOB] = useState<Date | null>(null);
   const [companionResults, setCompanionResults] = useState<StoredCompanion[]>([]);
@@ -498,11 +710,10 @@ const AddCompanionCentralModal = ({
   const [alertInput, setAlertInput] = useState('');
   const [alertPriority, setAlertPriority] = useState<AlertPriority>('medium');
 
-  // ── Sync mode when viewCompanion changes ──
   useEffect(() => {
-    setMode(viewCompanion ? 'view' : 'create');
+    setMode(initialMode);
     setPendingStatus(null);
-  }, [viewCompanion, showModal]);
+  }, [initialMode, showModal]);
 
   // ── Reset on close ──
   const resetAll = useCallback(() => {
@@ -524,9 +735,9 @@ const AddCompanionCentralModal = ({
   useEffect(() => {
     if (!showModal) {
       resetAll();
-      setMode(viewCompanion ? 'view' : 'create');
+      setMode(initialMode);
     }
-  }, [showModal, resetAll, viewCompanion]);
+  }, [showModal, resetAll, initialMode]);
 
   // ── Populate edit form from viewCompanion ──
   useEffect(() => {
@@ -565,12 +776,8 @@ const AddCompanionCentralModal = ({
       parentSelectionRef.current = false;
       return;
     }
-    const t = globalThis.setTimeout(async () => {
-      try {
-        setParentResults(await searchParent(q));
-      } catch {
-        setParentResults([]);
-      }
+    const t = globalThis.setTimeout(() => {
+      fetchParentResults(q).then(setParentResults);
     }, 300);
     return () => globalThis.clearTimeout(t);
   }, [parentSearchQuery]);
@@ -628,29 +835,10 @@ const AddCompanionCentralModal = ({
 
   // ── Breed codes ──
   useEffect(() => {
-    const sel = speciesOptions.find((o) => o.type === companionFormData.type);
-    if (!sel) {
-      setBreedOptions([]);
-      return;
-    }
-    let mounted = true;
-    fetchBreedCodeEntries(sel.speciesQuery)
-      .then((entries) => {
-        if (!mounted) return;
-        setBreedOptions(
-          entries.map((e) => ({
-            value: e.display,
-            label: e.display,
-            breedCode: e.code,
-            speciesCode: e.meta?.speciesCode ?? sel.speciesCode,
-          }))
-        );
-      })
-      .catch(() => {
-        if (mounted) setBreedOptions([]);
-      });
+    const signal = { cancelled: false };
+    loadBreedOptions(speciesOptions, companionFormData.type, setBreedOptions, signal);
     return () => {
-      mounted = false;
+      signal.cancelled = true;
     };
   }, [companionFormData.type, speciesOptions]);
 
@@ -665,7 +853,7 @@ const AddCompanionCentralModal = ({
     setLocalPhoneNumber(pd.localNumber);
     setParentDOB(sel.birthDate ? new Date(sel.birthDate) : null);
     setParentResults([]); // clear results so dropdown closes
-    setParentSearchQuery(`${sel.firstName}${sel.lastName ? ` ${sel.lastName}` : ''}`);
+    setParentSearchQuery(buildFullName(sel.firstName, sel.lastName));
   };
 
   const handlePhoneChange = (value: string) => {
@@ -735,7 +923,7 @@ const AddCompanionCentralModal = ({
       setLocalPhoneNumber(pd.localNumber);
       setParentDOB(p.birthDate ? new Date(p.birthDate) : null);
       parentSelectionRef.current = true;
-      setParentSearchQuery(`${p.firstName}${p.lastName ? ` ${p.lastName}` : ''}`);
+      setParentSearchQuery(buildFullName(p.firstName, p.lastName));
     }
     setCompanionResults([]); // clear so dropdown closes
   };
@@ -764,12 +952,12 @@ const AddCompanionCentralModal = ({
     setSavingStatus(true);
     try {
       await updateCompanion({ ...viewCompanion.companion, status: newStatus });
-      notify('success', {
+      notifyHook.notify('success', {
         title: 'Status updated',
         text: `Companion is now ${toTitleCase(newStatus)}.`,
       });
     } catch {
-      notify('error', { title: 'Failed to update status', text: 'Please try again.' });
+      notifyHook.notify('error', { title: 'Failed to update status', text: 'Please try again.' });
       setPendingStatus(null);
     } finally {
       setSavingStatus(false);
@@ -778,38 +966,29 @@ const AddCompanionCentralModal = ({
 
   // ── Validation ──
   const validateParent = (): boolean => {
-    const errs: Partial<Record<string, string>> = {};
-    if (!parentFormData.firstName) errs.firstName = 'First name is required';
-    if (!parentFormData.lastName) errs.lastName = 'Last name is required';
-    const emailError = getEmailValidationError(parentFormData.email);
-    if (emailError) errs.email = emailError;
-    if (!selectedCountryCode?.dialCode) errs.countryCode = 'Country code is required';
-    if (!localPhoneNumber) errs.phoneNumber = 'Number is required';
-    if (!parentFormData.address.addressLine?.trim()) errs.addressLine = 'Address is required';
-    if (!parentFormData.address.city?.trim()) errs.city = 'City is required';
-    if (!parentFormData.address.state?.trim()) errs.state = 'State/Province is required';
-    if (!parentFormData.address.postalCode?.trim()) errs.postalCode = 'Postal code is required';
-    if (selectedCountryCode?.dialCode && localPhoneNumber) {
-      if (!validatePhone(`${selectedCountryCode.dialCode}${localPhoneNumber}`))
-        errs.phoneNumber = 'Enter a valid phone number';
-    }
+    const errs = validateParentFields(parentFormData, selectedCountryCode, localPhoneNumber);
     setParentErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
   const validateCompanion = (): boolean => {
-    const errs: Partial<Record<string, string>> = {};
-    if (!companionFormData.name) errs.name = 'Name is required';
-    if (!companionFormData.type) errs.species = 'Species is required';
-    if (!companionFormData.breed) errs.breed = 'Breed is required';
-    if (!isFastTrack && companionFormData.isInsured) {
-      if (!companionFormData.insurance?.companyName)
-        errs.insuranceCompany = 'Company name is required';
-      if (!companionFormData.insurance?.policyNumber)
-        errs.insuranceNumber = 'Policy number is required';
-    }
+    const errs = validateCompanionFields(companionFormData, isFastTrack);
     setCompanionErrors(errs);
     return Object.keys(errs).length === 0;
+  };
+
+  // ── Submit helpers ──
+  const handleEditSave = async (normalizedParent: StoredParent) => {
+    const companionPayload: StoredCompanion = {
+      ...companionFormData,
+      parentId: normalizedParent.id,
+    };
+    await Promise.all([updateCompanion(companionPayload), updateParent(normalizedParent)]);
+    notifyHook.notify('success', {
+      title: 'Companion updated',
+      text: 'Companion has been updated successfully.',
+    });
+    setMode('view');
   };
 
   // ── Submit (create / edit save) ──
@@ -818,32 +997,21 @@ const AddCompanionCentralModal = ({
     setIsSubmitting(true);
     try {
       const normalizedParent = { ...parentFormData, email: normalizeEmail(parentFormData.email) };
-      let createdCompanion: StoredCompanion | undefined;
-      if (normalizedParent.id) {
-        const payload: StoredCompanion = { ...companionFormData, parentId: normalizedParent.id };
-        if (companionFormData.id) {
-          createdCompanion = (await linkCompanion(payload, normalizedParent)) ?? undefined;
-        } else {
-          createdCompanion = (await createCompanion(payload, normalizedParent)) ?? undefined;
-        }
-      } else {
-        const parentId = await createParent(normalizedParent);
-        const pp: StoredParent = { ...normalizedParent, id: parentId! };
-        createdCompanion =
-          (await createCompanion({ ...companionFormData, parentId: parentId! }, pp)) ?? undefined;
+
+      if (mode === 'edit') {
+        await handleEditSave(normalizedParent);
+        return;
       }
-      notify('success', {
+
+      const createdCompanion = await createCompanionFlow(normalizedParent, companionFormData);
+      notifyHook.notify('success', {
         title: 'Companion saved',
         text: 'Companion has been saved successfully.',
       });
       if (createdCompanion) onCompanionCreated?.(createdCompanion.id);
-      if (viewCompanion) {
-        setMode('view');
-      } else {
-        setShowModal(false);
-      }
+      setShowModal(false);
     } catch {
-      notify('error', {
+      notifyHook.notify('error', {
         title: 'Unable to save',
         text: 'Failed to save companion. Please try again.',
       });
@@ -856,7 +1024,7 @@ const AddCompanionCentralModal = ({
   const vc = viewCompanion?.companion;
   const vp = viewCompanion?.parent;
   const displayStatus: RecordStatus = pendingStatus ?? vc?.status ?? 'active';
-  const statusStyle = vc ? getStatusStyle(displayStatus) : {};
+  const statusStyle = vc ? getCompanionStatusStyle(displayStatus) : {};
   const speciesLabel = vc ? (SPECIES_LABEL[vc.type?.toLowerCase()] ?? toTitleCase(vc.type)) : '';
   const vcAlerts: CompanionAlert[] = (vc as any)?.alerts ?? [];
   const companionTitle = vc && vp ? formatCompanionNameWithOwnerLastName(vc.name, vp) : '';
@@ -865,7 +1033,7 @@ const AddCompanionCentralModal = ({
     () =>
       parentResults.map((p) => ({
         value: p.id,
-        label: `${p.firstName}${p.lastName ? ` ${p.lastName}` : ''}`,
+        label: buildFullName(p.firstName, p.lastName),
       })),
     [parentResults]
   );
@@ -879,15 +1047,8 @@ const AddCompanionCentralModal = ({
       .map((cp) => ({ value: cp.companion.id, label: cp.companion.name }));
   }, [allCompanionParents, companionFormData.name]);
 
-  void terminologyText;
-
   // ── Modal title ──
-  const modalTitle =
-    mode === 'view'
-      ? companionTitle || 'Patient Details'
-      : mode === 'edit'
-        ? 'Edit Patient / Client'
-        : 'New Patient / Client';
+  const modalTitle = getModalTitle(mode, companionTitle);
 
   // ── Current gender+neuter combined value ──
   const genderNeuterValue = getGenderNeuterValue(
@@ -896,42 +1057,25 @@ const AddCompanionCentralModal = ({
   );
 
   // ── Dirty detection — compare current values against clean baseline ──
-  const hasUnsavedChanges = useMemo(() => {
-    if (mode === 'view') return false;
-    const snap = editSnapshotRef.current ?? {
-      companionName: EMPTY_STORED_COMPANION.name,
-      companionType: EMPTY_STORED_COMPANION.type,
-      companionBreed: EMPTY_STORED_COMPANION.breed,
-      firstName: EMPTY_STORED_PARENT.firstName,
-      lastName: EMPTY_STORED_PARENT.lastName ?? '',
-      email: EMPTY_STORED_PARENT.email,
-      phone: '',
-    };
-    return (
-      companionFormData.name !== snap.companionName ||
-      (companionFormData.type ?? '') !== snap.companionType ||
-      (companionFormData.breed ?? '') !== snap.companionBreed ||
-      (parentFormData.firstName ?? '') !== snap.firstName ||
-      (parentFormData.lastName ?? '') !== snap.lastName ||
-      (parentFormData.email ?? '') !== snap.email ||
-      localPhoneNumber !== snap.phone
-    );
-  }, [
-    mode,
-    companionFormData.name,
-    companionFormData.type,
-    companionFormData.breed,
-    parentFormData.firstName,
-    parentFormData.lastName,
-    parentFormData.email,
-    localPhoneNumber,
-  ]);
+  const hasUnsavedChanges = useMemo(
+    () =>
+      mode !== 'view' &&
+      computeHasUnsavedChanges(
+        editSnapshotRef.current ?? EMPTY_SNAPSHOT,
+        companionFormData,
+        parentFormData,
+        localPhoneNumber
+      ),
+    [mode, companionFormData, parentFormData, localPhoneNumber]
+  );
 
   const canCloseModal = useCallback(() => {
     if (isSubmitting || savingStatus) return false;
-    if (!hasUnsavedChanges) return true;
-    setShowDiscardConfirm(true);
-    return false;
+    if (hasUnsavedChanges) {
+      setShowDiscardConfirm(true);
+      return false;
+    }
+    return true;
   }, [isSubmitting, savingStatus, hasUnsavedChanges]);
 
   const handleDiscardAndClose = useCallback(() => {
@@ -1040,18 +1184,7 @@ const AddCompanionCentralModal = ({
                     <InfoRow label="Breed" value={fmt(vc.breed)} />
                     <InfoRow label="DOB" value={fmtDate(vc.dateOfBirth)} />
                     <InfoRow label="Age" value={fmtAge(vc.dateOfBirth)} />
-                    <InfoRow
-                      label="Sex"
-                      value={
-                        vc.gender
-                          ? (GENDER_NEUTER_OPTIONS.find(
-                              (o) =>
-                                o.data.gender === vc.gender &&
-                                o.data.neutered === (vc.isneutered ?? false)
-                            )?.label ?? toTitleCase(vc.gender))
-                          : '-'
-                      }
-                    />
+                    <InfoRow label="Sex" value={getSexLabel(vc.gender, vc.isneutered)} />
                   </div>
 
                   {/* Alerts */}
@@ -1254,16 +1387,11 @@ const AddCompanionCentralModal = ({
                     <span className="text-body-4 text-text-secondary">Alerts (optional)</span>
 
                     {/* Input row — grid: input takes remaining, dropdown fixed, button fixed */}
-                    <div
+                    <fieldset
                       className="grid items-center gap-2"
                       style={{ gridTemplateColumns: '1fr 160px 48px' }}
-                      onKeyDown={(e: React.KeyboardEvent) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          addAlert();
-                        }
-                      }}
                     >
+                      <legend className="sr-only">Add alert</legend>
                       <FormInput
                         intype="text"
                         inname="alertLabel"
@@ -1285,7 +1413,7 @@ const AddCompanionCentralModal = ({
                         onClick={addAlert}
                         disabled={!alertInput.trim()}
                         className={clsx(
-                          'flex items-center justify-center w-12 h-12 rounded-full border transition-colors',
+                          'flex items-center justify-center size-12 rounded-full border transition-colors',
                           alertInput.trim()
                             ? 'border-input-border-active text-text-brand hover:bg-neutral-50'
                             : 'border-card-border text-text-tertiary opacity-40 cursor-not-allowed'
@@ -1293,7 +1421,7 @@ const AddCompanionCentralModal = ({
                       >
                         <FiPlus size={16} />
                       </button>
-                    </div>
+                    </fieldset>
 
                     {/* Added chips */}
                     {(companionFormData.alerts ?? []).length > 0 && (
@@ -1339,9 +1467,9 @@ const AddCompanionCentralModal = ({
                           intype="number"
                           inname="weight"
                           value={
-                            companionFormData.currentWeight != null
-                              ? String(companionFormData.currentWeight)
-                              : ''
+                            companionFormData.currentWeight == null
+                              ? ''
+                              : String(companionFormData.currentWeight)
                           }
                           inlabel="Weight (lbs)"
                           onChange={(e) =>
@@ -1535,7 +1663,7 @@ const AddCompanionCentralModal = ({
                         <button
                           type="button"
                           aria-label="Date of birth information"
-                          className="mt-3 inline-flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+                          className="mt-3 inline-flex size-5 shrink-0 items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
                         >
                           <IoInformationCircleOutline size={18} />
                         </button>
@@ -1613,33 +1741,16 @@ const AddCompanionCentralModal = ({
 
               {/* Footer */}
               <div className="flex items-center justify-between flex-wrap gap-3 pt-2 border-t border-card-border">
-                {onGoToAppointment && mode === 'create' ? (
-                  <Secondary
-                    href="#"
-                    text="← Go to Appointment"
-                    onClick={(e) => {
-                      e?.preventDefault();
-                      if (hasUnsavedChanges) {
-                        pendingGoToAppointmentRef.current = true;
-                        setShowDiscardConfirm(true);
-                      } else {
-                        onGoToAppointment();
-                      }
-                    }}
-                  />
-                ) : mode === 'edit' ? (
-                  <Secondary
-                    href="#"
-                    text="Discard changes"
-                    onClick={() => {
-                      setMode('view');
-                      setCompanionErrors({});
-                      setParentErrors({});
-                    }}
-                  />
-                ) : (
-                  <div />
-                )}
+                <FooterLeft
+                  mode={mode}
+                  onGoToAppointment={onGoToAppointment}
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  pendingGoToAppointmentRef={pendingGoToAppointmentRef}
+                  setShowDiscardConfirm={setShowDiscardConfirm}
+                  setMode={setMode}
+                  setCompanionErrors={setCompanionErrors}
+                  setParentErrors={setParentErrors}
+                />
                 <Primary
                   type="button"
                   text={mode === 'edit' ? 'Save changes' : 'Save Patient Info'}
@@ -1699,7 +1810,7 @@ const AddCompanionCentralModal = ({
             <button
               type="button"
               onClick={handleDiscardAndClose}
-              className="yc-primary-button rounded-2xl! px-5 py-2.5 font-satoshi text-base font-medium leading-[1.2] text-white!"
+              className="yc-primary-button rounded-2xl! px-4 py-[11px] font-satoshi text-base font-medium leading-[1.5rem] text-white!"
               onPointerDown={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
                 e.currentTarget.style.setProperty('--yc-button-x', `${e.clientX - r.left}px`);

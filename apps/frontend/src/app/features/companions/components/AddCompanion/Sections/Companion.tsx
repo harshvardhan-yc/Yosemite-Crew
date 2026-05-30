@@ -206,12 +206,19 @@ const Companion = ({
         if (!mounted) {
           return;
         }
-        const nextOptions: BreedOption[] = entries.map((entry) => ({
-          value: entry.display,
-          label: entry.display,
-          breedCode: entry.code,
-          speciesCode: entry.meta?.speciesCode ?? selected.speciesCode,
-        }));
+        const seen = new Set<string>();
+        const nextOptions: BreedOption[] = entries.reduce<BreedOption[]>((acc, entry) => {
+          if (!seen.has(entry.display)) {
+            seen.add(entry.display);
+            acc.push({
+              value: entry.display,
+              label: entry.display,
+              breedCode: entry.code,
+              speciesCode: entry.meta?.speciesCode ?? selected.speciesCode,
+            });
+          }
+          return acc;
+        }, []);
         setBreedOptions(nextOptions);
       })
       .catch(() => {

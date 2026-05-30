@@ -643,12 +643,19 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     fetchBreedCodeEntries(speciesQuery)
       .then((entries) => {
         if (!mounted) return;
-        const nextOptions: BreedOption[] = entries.map((entry) => ({
-          value: entry.display,
-          label: entry.display,
-          breedCode: entry.code,
-          speciesCode: entry.meta?.speciesCode ?? '',
-        }));
+        const seen = new Set<string>();
+        const nextOptions: BreedOption[] = entries.reduce<BreedOption[]>((acc, entry) => {
+          if (!seen.has(entry.display)) {
+            seen.add(entry.display);
+            acc.push({
+              value: entry.display,
+              label: entry.display,
+              breedCode: entry.code,
+              speciesCode: entry.meta?.speciesCode ?? '',
+            });
+          }
+          return acc;
+        }, []);
         setBreedOptions(nextOptions);
       })
       .catch(() => {
