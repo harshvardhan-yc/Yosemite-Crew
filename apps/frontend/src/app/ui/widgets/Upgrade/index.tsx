@@ -47,12 +47,14 @@ const Upgrade = () => {
         <div className="w-full flex items-center justify-between gap-2 flex-col">
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => setSelectedLabel('month')}
               className={`${selectedLabel === 'month' ? 'border-blue-text! bg-blue-light text-blue-text' : 'border-black-text! hover:bg-card-hover'} px-3 h-9 flex items-center justify-center border! rounded-2xl! cursor-pointer`}
             >
               <span className="text-caption-1 text-text-primary">Pay monthly</span>
             </button>
             <button
+              type="button"
               onClick={() => setSelectedLabel('year')}
               className={`${selectedLabel === 'year' ? 'border-blue-text! bg-blue-light text-blue-text' : 'border-black-text! hover:bg-card-hover'} px-3 h-9 flex items-center justify-center border! rounded-2xl! cursor-pointer`}
             >

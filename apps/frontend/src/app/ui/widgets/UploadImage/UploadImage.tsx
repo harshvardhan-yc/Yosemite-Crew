@@ -12,6 +12,9 @@ const allowedTypes = new Set([
   'image/jpeg',
 ]);
 
+const DEFAULT_FILES: File[] = [];
+const DEFAULT_EXISTING_FILES: ExistingFile[] = [];
+
 function getFileIcon(type: string) {
   if (type === 'application/pdf') return <FaFilePdf className="file-icon pdf" />;
   if (type.includes('word')) return <FaFileWord className="file-icon word" />;
@@ -34,8 +37,8 @@ type Props = {
 
 const UploadImage = ({
   onChange,
-  value = [],
-  existingFiles = [],
+  value = DEFAULT_FILES,
+  existingFiles = DEFAULT_EXISTING_FILES,
   placeholder,
 }: Readonly<Props>) => {
   const inputRef = useRef<HTMLInputElement>(null);

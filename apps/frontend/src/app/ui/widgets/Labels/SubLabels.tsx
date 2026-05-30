@@ -17,6 +17,8 @@ type SubLabelsProps = {
   disableClicking?: boolean;
 };
 
+const DEFAULT_STATUSES: Record<string, 'valid' | 'error' | undefined> = {};
+
 const getContainerClassName = (isLogoOnlyIdexx: boolean): string => {
   if (isLogoOnlyIdexx) {
     return 'inline-flex justify-center items-center w-fit mx-auto pb-2';
@@ -84,14 +86,14 @@ const getRedirectClassName = (
   if (hasEmbeddedRedirect) {
     return 'h-full pr-3 pl-1 inline-flex items-center justify-center text-text-secondary hover:text-text-brand focus-visible:outline-none rounded-r-2xl!';
   }
-  return 'h-6 w-6 rounded-full border border-card-border bg-white text-text-secondary hover:text-text-brand hover:border-text-brand transition-colors inline-flex items-center justify-center';
+  return 'size-6 rounded-full border border-card-border bg-white text-text-secondary hover:text-text-brand hover:border-text-brand transition-colors inline-flex items-center justify-center';
 };
 
 const SubLabels = ({
   labels,
   activeLabel,
   setActiveLabel,
-  statuses = {},
+  statuses = DEFAULT_STATUSES,
   disableClicking = false,
 }: SubLabelsProps) => {
   const isLogoOnlyIdexx = labels.length === 1 && labels[0]?.key === 'idexx-labs';

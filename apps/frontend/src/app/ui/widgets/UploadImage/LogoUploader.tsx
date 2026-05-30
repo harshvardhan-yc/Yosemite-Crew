@@ -1,5 +1,5 @@
-/* eslint-disable @next/next/no-img-element */
 import React, { useEffect, useId, useState } from 'react';
+import Image from 'next/image';
 import { IoCamera } from 'react-icons/io5';
 import { FiMinusCircle } from 'react-icons/fi';
 import { postData } from '@/app/services/axios';
@@ -86,16 +86,13 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
       <div className="step-logo-upload">
         {preview && isSafePreviewUrl(preview) && sanitizeUrl(preview) !== 'about:blank' ? (
           <>
-            <img
+            <Image
               src={sanitizeUrl(preview)}
               alt="Logo Preview"
-              style={{
-                width: 58,
-                height: 58,
-                objectFit: 'cover',
-                borderRadius: '50%',
-              }}
-              className="step-logo-preview"
+              width={58}
+              height={58}
+              unoptimized
+              className="step-logo-preview rounded-full object-cover"
             />
             <button
               type="button"
@@ -111,6 +108,7 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
             <input
               type="file"
               id={inputId}
+              aria-label="Upload logo image"
               accept="image/*"
               onChange={handleImageChange}
               style={{ display: 'none' }}

@@ -75,6 +75,7 @@ const LaunchGrowTab = () => {
       <div className="desktop-tabs-container">
         {Launchtabs.map((growtab) => (
           <button
+            type="button"
             key={growtab.id}
             className={`LaunchTabDiv ${activeTab === growtab.id ? 'active' : ''}`}
             style={{ backgroundColor: growtab.color }}
@@ -166,6 +167,7 @@ const LaunchGrowTab = () => {
       <div className="mobile-tab-nav">
         {Launchtabs.map((tab) => (
           <button
+            type="button"
             key={tab.id}
             className={`mobile-tab-button ${activeTab === tab.id ? 'active' : ''}`}
             onClick={() => setActiveTab(tab.id)}

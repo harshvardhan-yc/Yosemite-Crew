@@ -62,6 +62,7 @@ const DynamicSelect: React.FC<DynamicSelectProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={selectedLabel}
+            aria-label={`Search ${placeholder}`}
             className="dropdown-inline-search"
           />
         ) : (
