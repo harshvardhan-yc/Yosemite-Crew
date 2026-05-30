@@ -90,12 +90,14 @@ jest.mock('@/app/constants/mediaSources', () => ({
   },
 }));
 
-jest.mock('@/app/features/integrations/constants/merck', () => ({
-  MERCK_COPYRIGHT_NOTICE: 'copyright',
-  getMerckSubtopicPillStyle: () => ({}),
-  sanitizeMerckHtml: (s: string) => s,
-  stripMerckHtml: (s: string) => s.replace(/<[^>]*>/g, '').trim(),
-}));
+jest.mock('@/app/features/integrations/constants/merck', () => {
+  const actual = jest.requireActual('@/app/features/integrations/constants/merck');
+  return {
+    ...actual,
+    MERCK_COPYRIGHT_NOTICE: 'copyright',
+    getMerckSubtopicPillStyle: () => ({}),
+  };
+});
 
 jest.mock('@/app/lib/date', () => ({
   formatDateTimeLocal: (value: string | null | undefined, fallback: string) => value || fallback,
