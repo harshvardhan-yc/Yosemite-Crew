@@ -1,0 +1,46 @@
+name: React Doctor
+
+'on':
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run React Doctor
+        id: react-doctor
+        uses: millionco/react-doctor@main
+        with:
+          directory: apps/frontend
+          fail-on: error
+          annotations: true
+          node-version: '22'
+
+      - name: Enforce React Doctor score
+        env:
+          REACT_DOCTOR_SCORE: ${{ steps.react-doctor.outputs.score }}
+          REACT_DOCTOR_MIN_SCORE: '75'
+        run: |
+          if [ -z "$REACT_DOCTOR_SCORE" ]; then
+            echo "React Doctor did not return a score."
+            exit 1
+          fi
+
+          echo "React Doctor score: $REACT_DOCTOR_SCORE"
+          if [ "$REACT_DOCTOR_SCORE" -lt "$REACT_DOCTOR_MIN_SCORE" ]; then
+            echo "React Doctor score must be at least $REACT_DOCTOR_MIN_SCORE."
+            exit 1
+          fi
