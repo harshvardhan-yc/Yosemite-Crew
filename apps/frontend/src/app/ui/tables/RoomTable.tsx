@@ -8,21 +8,14 @@ import { Team } from '@/app/features/organization/types/team';
 import { toTitle } from '@/app/lib/validators';
 import { Column, NoDataMessage, ViewButton, ProfileTitle } from '@/app/ui/tables/common';
 
+import { joinNames } from '@/app/ui/tables/tableUtils';
+
 import './DataTable.css';
 
 type RoomTableProps = {
   filteredList: OrganisationRoom[];
   setActive?: (team: any) => void;
   setView?: (open: boolean) => void;
-};
-
-export const getStringified = (services: string[] = []): string => {
-  return services.join(', ');
-};
-
-export const joinNames = (byId: Record<string, string>, ids: string[] = []) => {
-  const names = ids.map((id) => byId[id]).filter(Boolean);
-  return names.length ? names.join(', ') : '-';
 };
 
 const RoomTable = ({ filteredList, setActive, setView }: RoomTableProps) => {

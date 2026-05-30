@@ -179,7 +179,7 @@ const AppointmentsComponent = ({
       key: 'logo',
       width: '56px',
       render: (item: Appointment) => (
-        <div className="appointment-profile w-10 h-10">
+        <div className="appointment-profile size-10">
           <Image
             src={getSafeImageUrl(
               getAppointmentCompanionPhotoUrl(item.companion),
@@ -188,7 +188,7 @@ const AppointmentsComponent = ({
             alt=""
             height={40}
             width={40}
-            className="h-10 w-10 rounded-full object-cover"
+            className="size-10 rounded-full object-cover"
           />
         </div>
       ),
@@ -280,8 +280,8 @@ const AppointmentsComponent = ({
         return (
           <div className="appointment-profile-two">
             {supportStaff.length > 0 ? (
-              supportStaff.map((sup, i) => (
-                <div key={'sup' + i} className="appointment-profile-sub">
+              supportStaff.map((sup) => (
+                <div key={sup.id} className="appointment-profile-sub">
                   {sup.name}
                 </div>
               ))
@@ -341,6 +341,7 @@ const AppointmentsComponent = ({
                   className="table-action-tooltip"
                 >
                   <button
+                    type="button"
                     className="action-btn"
                     style={{ background: 'var(--color-success-100)' }}
                     onClick={() => handleAcceptAppointment(item)}
@@ -354,6 +355,7 @@ const AppointmentsComponent = ({
                   className="table-action-tooltip"
                 >
                   <button
+                    type="button"
                     onClick={() => handleCancelAppointment(item)}
                     className="action-btn"
                     style={{ background: 'var(--color-danger-100)' }}
@@ -375,16 +377,18 @@ const AppointmentsComponent = ({
                 className="table-action-tooltip"
               >
                 <button
+                  type="button"
                   onClick={() => handleViewAppointment(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 >
                   <IoEyeOutline size={20} color="var(--color-neutral-900)" />
                 </button>
               </GlassTooltip>
               <GlassTooltip content="Overview" side="bottom" className="table-action-tooltip">
                 <button
+                  type="button"
                   onClick={() => handleViewAppointmentHistory(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Appointment overview"
                 >
                   <RiHistoryLine size={18} color="var(--color-neutral-900)" />
@@ -397,8 +401,9 @@ const AppointmentsComponent = ({
                   className="table-action-tooltip"
                 >
                   <button
+                    type="button"
                     onClick={() => handleChangeStatusAppointment(item)}
-                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   >
                     <MdOutlineAutorenew size={18} color="var(--color-neutral-900)" />
                   </button>
@@ -407,8 +412,9 @@ const AppointmentsComponent = ({
               {canEditAppointments && allowCalendarDrag(item.status as any) && (
                 <GlassTooltip content="Reschedule" side="bottom" className="table-action-tooltip">
                   <button
+                    type="button"
                     onClick={() => handleRescheduleAppointment(item)}
-                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   >
                     <IoIosCalendar size={18} color="var(--color-neutral-900)" />
                   </button>
@@ -417,8 +423,9 @@ const AppointmentsComponent = ({
               {canEditAppointments && canAssignAppointmentRoom(item.status) && (
                 <GlassTooltip content="Assign room" side="bottom" className="table-action-tooltip">
                   <button
+                    type="button"
                     onClick={() => handleChangeRoomAppointment(item)}
-                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   >
                     <MdMeetingRoom size={18} color="var(--color-neutral-900)" />
                   </button>
@@ -430,8 +437,9 @@ const AppointmentsComponent = ({
                 className="table-action-tooltip"
               >
                 <button
+                  type="button"
                   onClick={() => handleDetailAppointment(item, getSoapViewIntent(item))}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title={clinicalNotesLabel}
                 >
                   <IoDocumentTextOutline size={18} color="var(--color-neutral-900)" />
@@ -443,26 +451,28 @@ const AppointmentsComponent = ({
                 className="table-action-tooltip"
               >
                 <button
+                  type="button"
                   onClick={() =>
                     handleDetailAppointment(item, {
                       label: 'finance',
                       subLabel: 'summary',
                     })
                   }
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 >
                   <IoCardOutline size={18} color="var(--color-neutral-900)" />
                 </button>
               </GlassTooltip>
               <GlassTooltip content="Lab tests" side="bottom" className="table-action-tooltip">
                 <button
+                  type="button"
                   onClick={() =>
                     handleDetailAppointment(item, {
                       label: 'labs',
                       subLabel: 'idexx-labs',
                     })
                   }
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 >
                   <MdScience size={18} color="var(--color-neutral-900)" />
                 </button>
@@ -495,9 +505,9 @@ const AppointmentsComponent = ({
               </div>
             );
           }
-          return filteredList.map((item, i) => (
+          return filteredList.map((item) => (
             <AppointmentCard
-              key={'key-appointment' + i}
+              key={item.id}
               appointment={item}
               handleViewAppointment={handleViewAppointment}
               handleDetailAppointment={handleDetailAppointment}

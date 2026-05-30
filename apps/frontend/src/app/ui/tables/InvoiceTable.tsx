@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import GenericTable from '@/app/ui/tables/GenericTable/GenericTable';
 import { IoEye, IoOpenOutline } from 'react-icons/io5';
 import InvoiceCard from '@/app/ui/cards/InvoiceCard';
-import { Invoice, InvoiceItem } from '@yosemite-crew/types';
+import { Invoice } from '@yosemite-crew/types';
 import { formatDateLabel, formatTimeLabel } from '@/app/lib/forms';
 import { toTitle } from '@/app/lib/validators';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,7 @@ import {
   getParentNameFromAppointments,
 } from '@/app/lib/invoice';
 import { getInvoicePaymentMethodLabel } from '@/app/lib/invoicePaymentMethod';
+import { getInvoiceItemNames, getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 
 type Column<T> = {
   label: string;
@@ -29,50 +30,6 @@ type InvoiceTableProps = {
   filteredList: Invoice[];
   setActiveInvoice?: (inventory: Invoice) => void;
   setViewInvoice?: (open: boolean) => void;
-};
-
-export const getInvoiceItemNames = (items: InvoiceItem[]): string => {
-  return items
-    .map((item) => item.name?.trim())
-    .filter(Boolean)
-    .join(', ');
-};
-
-export const getStatusStyle = (status: string) => {
-  switch (status?.toLowerCase()) {
-    case 'awaiting_payment':
-      return {
-        color: 'var(--color-pill-info-text)',
-        backgroundColor: 'var(--color-pill-info-bg)',
-        borderColor: 'var(--color-pill-info-border)',
-      };
-    case 'paid':
-      return {
-        color: 'var(--color-pill-success-text)',
-        backgroundColor: 'var(--color-pill-success-bg)',
-        borderColor: 'var(--color-pill-success-border)',
-      };
-    case 'failed':
-    case 'cancelled':
-      return {
-        color: 'var(--color-pill-warning-text)',
-        backgroundColor: 'var(--color-pill-warning-bg)',
-        borderColor: 'var(--color-pill-warning-border)',
-      };
-    case 'refunded':
-      return {
-        color: 'var(--color-pill-progress-text)',
-        backgroundColor: 'var(--color-pill-progress-bg)',
-        borderColor: 'var(--color-pill-progress-border)',
-      };
-    case 'pending':
-    default:
-      return {
-        color: 'var(--color-pill-neutral-text)',
-        backgroundColor: 'var(--color-pill-neutral-bg)',
-        borderColor: 'var(--color-pill-neutral-border)',
-      };
-  }
 };
 
 const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: InvoiceTableProps) => {
@@ -220,7 +177,7 @@ const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: Invoic
       key: 'status',
       width: '110px',
       render: (item: Invoice) => (
-        <div className="appointment-status" style={getStatusStyle(item?.status)}>
+        <div className="appointment-status" style={getInvoiceStatusStyle(item?.status)}>
           {toTitle(item?.status)}
         </div>
       ),
@@ -243,7 +200,7 @@ const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: Invoic
             type="button"
             onClick={() => handleViewInvoice(item)}
             aria-label={`View invoice ${item.id ?? ''}`.trim()}
-            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
           >
             <IoEye size={20} color="var(--color-neutral-900)" />
           </button>
@@ -269,13 +226,12 @@ const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: Invoic
         {(() => {
           if (filteredList.length === 0) {
             return (
-              <div
+              <output
                 className="w-full py-6 flex items-center justify-center text-body-4 text-text-primary"
-                role="status"
                 aria-live="polite"
               >
                 No invoices match the current filters.
-              </div>
+              </output>
             );
           }
           return filteredList.map((item, i) => (

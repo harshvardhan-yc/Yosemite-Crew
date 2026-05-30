@@ -4,6 +4,8 @@ import { SpecialityWeb } from '@/app/features/organization/types/speciality';
 import SpecialitiesCard from '@/app/ui/cards/SpecialitiesCard';
 import { Column, NoDataMessage, ViewButton, ProfileTitle } from '@/app/ui/tables/common';
 
+import { getServiceNames } from '@/app/ui/tables/tableUtils';
+
 import './DataTable.css';
 
 type SpecialitiesTableProps = {
@@ -11,9 +13,6 @@ type SpecialitiesTableProps = {
   setActive: (speciality: any) => void;
   setView: (open: boolean) => void;
 };
-
-export const getServiceNames = (services: any[] = []): string =>
-  services.map((s) => s.name).join(', ');
 
 const SpecialitiesTable = ({ filteredList, setActive, setView }: SpecialitiesTableProps) => {
   const handleViewSpeciality = (speciality: any) => {

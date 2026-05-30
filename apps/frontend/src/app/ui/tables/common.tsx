@@ -21,8 +21,9 @@ type ActionButtonProps = {
 
 export const ViewButton = ({ onClick }: ActionButtonProps) => (
   <button
+    type="button"
     onClick={onClick}
-    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
   >
     <IoEye size={18} color="var(--color-neutral-900)" />
   </button>
@@ -30,8 +31,9 @@ export const ViewButton = ({ onClick }: ActionButtonProps) => (
 
 export const RescheduleButton = ({ onClick }: ActionButtonProps) => (
   <button
+    type="button"
     onClick={onClick}
-    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
   >
     <IoIosCalendar size={18} color="var(--color-neutral-900)" />
   </button>

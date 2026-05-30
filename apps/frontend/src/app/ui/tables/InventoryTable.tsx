@@ -7,8 +7,8 @@ import { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import {
   displayStatusLabel,
   formatDisplayDate,
-  getStatusBadgeStyle,
 } from '@/app/features/inventory/pages/Inventory/utils';
+import { getInventoryStatusStyle } from '@/app/ui/tables/tableUtils';
 
 import './DataTable.css';
 
@@ -23,10 +23,6 @@ type InventoryTableProps = {
   filteredList: InventoryItem[];
   setActiveInventory: (inventory: InventoryItem) => void;
   setViewInventory: (open: boolean) => void;
-};
-
-export const getStatusStyle = (status: string) => {
-  return getStatusBadgeStyle(status);
 };
 
 const InventoryTable = ({
@@ -132,7 +128,10 @@ const InventoryTable = ({
       key: 'status',
       width: '110px',
       render: (item: InventoryItem) => (
-        <div className="appointment-status" style={getStatusStyle(displayStatusLabel(item))}>
+        <div
+          className="appointment-status"
+          style={getInventoryStatusStyle(displayStatusLabel(item))}
+        >
           {displayStatusLabel(item)}
         </div>
       ),
@@ -144,8 +143,9 @@ const InventoryTable = ({
       render: (item: InventoryItem) => (
         <div className="action-btn-col">
           <button
+            type="button"
             onClick={() => handleViewInventory(item)}
-            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
           >
             <IoEye size={20} color="var(--color-neutral-900)" />
           </button>

@@ -32,9 +32,10 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
       width: '30%',
       render: (item: SpecialityWeb) => {
         const id = getRevampId(item);
+        const openParam = id ? `?open=${id}` : '';
         return (
           <Link
-            href={`/organization/specialities${id ? `?open=${id}` : ''}`}
+            href={`/organization/specialities${openParam}`}
             className="appointment-profile-title hover:underline! text-text-primary cursor-pointer"
           >
             {item.name}
@@ -71,7 +72,7 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
       key: 'Head',
       width: '28%',
       render: (item: SpecialityWeb) => {
-        if (!item.headName) return <ProfileTitle>—</ProfileTitle>;
+        if (!item.headName) return <ProfileTitle>{'—'}</ProfileTitle>;
         const headTeam = teams?.find((t) => t.practionerId === item.headUserId);
         const picUrl = headTeam?.image ?? item.headProfilePicUrl;
         return (
@@ -81,7 +82,7 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
               alt={item.headName}
               width={36}
               height={36}
-              className="w-9 h-9 rounded-full object-cover shrink-0"
+              className="size-9 rounded-full object-cover shrink-0"
             />
             <div className="appointment-profile-two min-w-0">
               <div className="appointment-profile-title truncate">{item.headName}</div>
