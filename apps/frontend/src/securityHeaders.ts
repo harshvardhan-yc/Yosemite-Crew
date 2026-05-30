@@ -88,9 +88,10 @@ export const buildContentSecurityPolicy = ({
       .join(' '),
     "style-src-attr 'unsafe-inline'",
     "font-src 'self' https://fonts.gstatic.com https://cal.com https://app.cal.com",
-    "img-src 'self' data: blob: https://d2il6osz49gpup.cloudfront.net https://d2kyjiikho62xx.cloudfront.net https://images.unsplash.com https://plus.unsplash.com https://yosemitecrew-backend.s3.eu-central-1.amazonaws.com https://cdn.yc.dev https://laika.aitemsolutions.com",
+    "img-src 'self' data: blob: https://d2il6osz49gpup.cloudfront.net https://d2kyjiikho62xx.cloudfront.net https://images.unsplash.com https://plus.unsplash.com https://yosemitecrew-backend.s3.eu-central-1.amazonaws.com https://cdn.yc.dev https://laika.aitemsolutions.com https://upload.wikimedia.org",
     [
       "connect-src 'self'",
+      'blob:',
       'https://devapi.yosemitecrew.com',
       'https://api.yosemitecrew.com',
       'https://*.amazonaws.com',
@@ -114,6 +115,7 @@ export const buildContentSecurityPolicy = ({
       .join(' '),
     [
       "frame-src 'self'",
+      'blob:',
       'https://js.stripe.com',
       'https://hooks.stripe.com',
       'https://cal.com',
@@ -121,6 +123,8 @@ export const buildContentSecurityPolicy = ({
       'https://*.merckvetmanual.com',
       'https://*.msdvetmanual.com',
       'https://*.merckmanuals.com',
+      'https://*.idexx.com',
+      'https://*.vetconnectplus.com',
       documensoHost,
     ]
       .filter(Boolean)
