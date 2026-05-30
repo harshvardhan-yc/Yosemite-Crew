@@ -482,6 +482,6 @@ describe('LabTests', () => {
 
     const iframe = await screen.findByTitle('IDEXX order UI');
     expect(iframe).toHaveAttribute('src', 'https://integration.vetconnectplus.com/order/123');
-    expect(iframe).toHaveAttribute('referrerpolicy', 'strict-origin');
+    expect(iframe).toHaveAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
   });
 });

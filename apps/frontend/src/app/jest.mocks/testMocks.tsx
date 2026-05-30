@@ -80,26 +80,26 @@ jest.mock('framer-motion', () => {
 });
 
 jest.mock('@/app/ui/primitives/Buttons', () => ({
-  Primary: ({ text, href, onClick, ...props }: any) =>
-    href ? (
-      <a
+  Primary: ({ text, href, onClick, ...props }: any) => {
+    if (href && href !== '#') {
+      return (
+        <a data-testid="primary-btn" href={href} onClick={(e) => onClick?.(e)} {...props}>
+          {text}
+        </a>
+      );
+    }
+    return (
+      <button
+        type="button"
         data-testid="primary-btn"
         href={href}
-        onClick={(e) => {
-          if (onClick) {
-            e.preventDefault();
-            onClick(e);
-          }
-        }}
+        onClick={(e) => onClick?.(e)}
         {...props}
       >
         {text}
-      </a>
-    ) : (
-      <button type="button" data-testid="primary-btn" onClick={(e) => onClick?.(e)} {...props}>
-        {text}
       </button>
-    ),
+    );
+  },
   Secondary: ({ text, onClick, ...props }: any) => (
     <button type="button" onClick={(e) => onClick?.(e)} {...props}>
       {text}

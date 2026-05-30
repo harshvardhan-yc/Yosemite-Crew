@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 import ProtectedFinance from '@/app/features/finance/pages/Finance';
@@ -92,6 +92,14 @@ jest.mock('@/app/ui/layout/guards/PermissionGate', () => ({
   PermissionGate: ({ children }: any) => <div>{children}</div>,
 }));
 
+jest.mock('@/app/ui/primitives/Buttons', () => ({
+  Primary: ({ href, text, ariaLabel }: any) => (
+    <a href={href} aria-label={ariaLabel}>
+      {text}
+    </a>
+  ),
+}));
+
 jest.mock('@/app/ui/filters/Filters', () => () => <div data-testid="filters" />);
 
 jest.mock('@/app/ui/tables/InvoiceTable', () => (props: any) => {
@@ -99,9 +107,11 @@ jest.mock('@/app/ui/tables/InvoiceTable', () => (props: any) => {
   return <div data-testid="invoice-table" />;
 });
 
-jest.mock('@/app/features/finance/pages/Finance/Sections/InvoiceInfo', () => () => (
-  <div data-testid="invoice-info" />
-));
+const invoiceInfoSpy = jest.fn();
+jest.mock('@/app/features/finance/pages/Finance/Sections/InvoiceInfo', () => (props: any) => {
+  invoiceInfoSpy(props);
+  return <div data-testid="invoice-info" />;
+});
 
 describe('Finance page', () => {
   beforeEach(() => {
@@ -127,5 +137,105 @@ describe('Finance page', () => {
         filteredList: [expect.objectContaining({ id: 'inv-1' })],
       })
     );
+  });
+
+  it('shows InvoiceInfo when an invoice is present', () => {
+    render(<ProtectedFinance />);
+    expect(screen.getByTestId('invoice-info')).toBeInTheDocument();
+    expect(invoiceInfoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ activeInvoice: expect.objectContaining({ id: 'inv-1' }) })
+    );
+  });
+
+  it('does not show InvoiceInfo when invoice list is empty', async () => {
+    useInvoicesMock.mockReturnValue([]);
+    useSearchStoreMock.mockImplementation((selector: any) => selector({ query: '' }));
+
+    await act(async () => {
+      render(<ProtectedFinance />);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId('invoice-info')).not.toBeInTheDocument();
+  });
+
+  it('shows stripe connect banner when subscription cannot accept payments', () => {
+    useSubscriptionMock.mockReturnValue({ orgId: 'org-1', canAcceptPayments: false });
+
+    render(<ProtectedFinance />);
+
+    expect(screen.getByText('Connect Stripe account')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Connect Stripe account' })).toHaveAttribute(
+      'href',
+      '/stripe-onboarding?orgId=org-1'
+    );
+  });
+
+  it('does not show stripe banner when subscription can accept payments', () => {
+    useSubscriptionMock.mockReturnValue({ orgId: 'org-1', canAcceptPayments: true });
+
+    render(<ProtectedFinance />);
+
+    expect(screen.queryByText('Connect Stripe account')).not.toBeInTheDocument();
+  });
+
+  it('deep link: opens InvoiceInfo when invoiceId matches', async () => {
+    useInvoicesMock.mockReturnValue([{ id: 'inv-deep', status: 'paid', appointmentId: 'appt-x' }]);
+    useSearchStoreMock.mockImplementation((selector: any) => selector({ query: '' }));
+    useSearchParamsMock.mockReturnValue({
+      get: (key: string) => (key === 'invoiceId' ? 'inv-deep' : null),
+    });
+
+    await act(async () => {
+      render(<ProtectedFinance />);
+      await Promise.resolve();
+    });
+
+    expect(invoiceInfoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        showModal: true,
+        activeInvoice: expect.objectContaining({ id: 'inv-deep' }),
+      })
+    );
+  });
+
+  it('does not trigger deep link when invoiceId does not match any invoice', async () => {
+    useSearchParamsMock.mockReturnValue({
+      get: (key: string) => (key === 'invoiceId' ? 'no-match' : null),
+    });
+    useSearchStoreMock.mockImplementation((selector: any) => selector({ query: '' }));
+
+    await act(async () => {
+      render(<ProtectedFinance />);
+      await Promise.resolve();
+    });
+
+    expect(invoiceInfoSpy).toHaveBeenCalledWith(expect.objectContaining({ showModal: false }));
+  });
+
+  it('activeInvoice updates when invoices list changes', async () => {
+    const { rerender } = render(<ProtectedFinance />);
+    useSearchStoreMock.mockImplementation((selector: any) => selector({ query: '' }));
+
+    useInvoicesMock.mockReturnValue([
+      { id: 'inv-1', status: 'paid', appointmentId: 'appt-1-updated' },
+    ]);
+
+    await act(async () => {
+      rerender(<ProtectedFinance />);
+      await Promise.resolve();
+    });
+
+    expect(invoiceInfoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeInvoice: expect.objectContaining({ appointmentId: 'appt-1-updated' }),
+      })
+    );
+  });
+
+  it('shows invoice count in heading', () => {
+    useSearchStoreMock.mockImplementation((selector: any) => selector({ query: '' }));
+    render(<ProtectedFinance />);
+    expect(screen.getByText('(2)')).toBeInTheDocument();
   });
 });

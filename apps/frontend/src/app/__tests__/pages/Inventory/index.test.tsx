@@ -353,7 +353,7 @@ describe('Inventory Page', () => {
     });
 
     render(<ProtectedInventory />);
-    expect(screen.getByText('Loading inventory...')).toBeInTheDocument();
+    expect(screen.getByText('Loading inventory…')).toBeInTheDocument();
   });
 
   it('defaults businessType to GROOMER if no org type present', () => {
