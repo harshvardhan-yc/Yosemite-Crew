@@ -343,7 +343,7 @@ const AppointmentCalendar = ({
     }
     if (appointmentServiceId && targetPractitionerId) {
       const availableStartMinutes = await ensureDragAvailability(date, targetLeadId);
-      if (availableStartMinutes.length > 0 && !availableStartMinutes.includes(snappedMinutes)) {
+      if (availableStartMinutes.length === 0 || !availableStartMinutes.includes(snappedMinutes)) {
         warnDrag('No available slot for this service at the selected position.');
         return;
       }
