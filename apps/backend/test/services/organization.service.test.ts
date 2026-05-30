@@ -29,6 +29,8 @@ jest.mock("../../src/models/organization", () => ({
   findOne: jest.fn(),
   find: jest.fn(),
   findOneAndDelete: jest.fn(),
+  countDocuments: jest.fn(),
+  aggregate: jest.fn(),
 }));
 
 jest.mock("../../src/models/speciality", () => ({
@@ -1057,30 +1059,34 @@ describe("OrganizationService", () => {
   describe("listNearbyForAppointmentsPaginated", () => {
     it("should throw if lat or lng is missing", async () => {
       await expect(
-        OrganizationService.listNearbyForAppointmentsPaginated(0, 0),
+        OrganizationService.listNearbyForAppointmentsPaginated(Number.NaN, 0),
       ).rejects.toThrow("lat/lng are required");
     });
 
     it("should return paginated data with specialities and services", async () => {
-      const mockChain = {
-        skip: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([
-          {
-            _id: new Types.ObjectId(),
-            name: "Org1",
-            address: { location: { coordinates: [20, 10] } },
-          },
-        ]),
-      };
-      (OrganizationModel.find as jest.Mock).mockReturnValue(mockChain);
+      (OrganizationModel.aggregate as jest.Mock).mockResolvedValueOnce([
+        {
+          data: [
+            {
+              _id: new Types.ObjectId(),
+              name: "Org1",
+              address: { location: { coordinates: [20, 10] } },
+              distanceInMeters: 0,
+            },
+          ],
+          meta: [{ total: 1 }],
+        },
+      ]);
 
       const specId = new Types.ObjectId();
-      (SpecialityModel.find as jest.Mock).mockResolvedValue([
-        { _id: specId, toObject: () => ({ name: "Cardio" }) },
-      ]);
-      (ServiceModel.find as jest.Mock).mockResolvedValue([
-        { name: "ECG", specialityId: specId },
-      ]);
+      (SpecialityModel.find as jest.Mock).mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ _id: specId, name: "Cardio" }]),
+      });
+      (ServiceModel.find as jest.Mock).mockReturnValue({
+        lean: jest
+          .fn()
+          .mockResolvedValue([{ name: "ECG", specialityId: specId }]),
+      });
 
       const res = await OrganizationService.listNearbyForAppointmentsPaginated(
         10,
@@ -1094,13 +1100,14 @@ describe("OrganizationService", () => {
     });
 
     it("should fallback to all organizations if no nearby are found", async () => {
-      const emptyMockChain = {
-        skip: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([]),
-      };
+      (OrganizationModel.aggregate as jest.Mock).mockResolvedValueOnce([
+        { data: [], meta: [{ total: 0 }] },
+      ]);
+
       const allMockChain = {
         skip: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([
           {
             _id: new Types.ObjectId(),
             name: "FallbackOrg",
@@ -1108,12 +1115,15 @@ describe("OrganizationService", () => {
         ]),
       };
 
-      (OrganizationModel.find as jest.Mock)
-        .mockReturnValueOnce(emptyMockChain)
-        .mockReturnValueOnce(allMockChain);
+      (OrganizationModel.find as jest.Mock).mockReturnValue(allMockChain);
+      (OrganizationModel.countDocuments as jest.Mock).mockResolvedValueOnce(1);
 
-      (SpecialityModel.find as jest.Mock).mockResolvedValue([]);
-      (ServiceModel.find as jest.Mock).mockResolvedValue([]);
+      (SpecialityModel.find as jest.Mock).mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+      (ServiceModel.find as jest.Mock).mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
 
       const res = await OrganizationService.listNearbyForAppointmentsPaginated(
         10,

@@ -131,7 +131,7 @@ const assertParentCanAccessCompanion = async (
       status: { $in: ["ACTIVE", "PENDING"] },
     },
     { _id: 1 },
-    { sanitizeFilter: true },
+    { sanitizeFilter: false },
   )
     .lean()
     .exec();
@@ -172,7 +172,7 @@ const assertPmsCanAccessCompanion = async (
       status: { $in: ["ACTIVE", "PENDING"] },
     },
     { _id: 1 },
-    { sanitizeFilter: true },
+    { sanitizeFilter: false },
   )
     .lean()
     .exec();
@@ -205,7 +205,7 @@ const getParentAccessibleCompanionIds = async (
       status: { $in: ["ACTIVE", "PENDING"] },
     },
     { companionId: 1 },
-    { sanitizeFilter: true },
+    { sanitizeFilter: false },
   )
     .lean()
     .exec()) as unknown as Array<{ companionId: Types.ObjectId | string }>;
@@ -238,7 +238,7 @@ const getOrganisationAccessibleCompanionIds = async (
       status: { $in: ["ACTIVE", "PENDING"] },
     },
     { companionId: 1 },
-    { sanitizeFilter: true },
+    { sanitizeFilter: false },
   )
     .lean()
     .exec()) as unknown as Array<{ companionId: Types.ObjectId | string }>;
@@ -601,10 +601,7 @@ const syncDocumentToPostgres = async (doc: DocumentDocument) => {
       update: data,
     });
     const obj = doc.toObject() as DocumentMongo & { _id: Types.ObjectId };
-    await syncDocumentAttachmentsToPostgres(
-      data.id,
-      (obj.attachments ?? []) as DocumentAttachmentInput[],
-    );
+    await syncDocumentAttachmentsToPostgres(data.id, obj.attachments ?? []);
   } catch (err) {
     handleDualWriteError("Document", err);
   }
