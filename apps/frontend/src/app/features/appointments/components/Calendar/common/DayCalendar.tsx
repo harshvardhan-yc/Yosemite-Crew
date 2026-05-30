@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useScrollBoundaryWheel } from '@/app/hooks/useScrollBoundaryWheel';
 import { usePopoverManager } from '@/app/hooks/usePopoverManager';
 import { calcNearestAvailableMinute } from '@/app/features/appointments/components/Calendar/calendarDrop';
@@ -85,6 +93,42 @@ const getAllDayAppointmentAriaLabel = (appointment: Appointment) => {
 };
 
 const MARKER_CLICK_DELAY_MS = 180;
+
+const getEventKey = (event: Appointment, index: number, source: 'all-day' | 'timed') =>
+  `${source}-${event.companion.name}-${event.startTime.toISOString()}-${index}`;
+
+const setCustomDragGhost = (
+  event: React.DragEvent<HTMLButtonElement>,
+  appointment: Appointment
+) => {
+  const ghost = document.createElement('img');
+  ghost.src = getSafeImageUrl(
+    getAppointmentCompanionPhotoUrl(appointment.companion),
+    appointment.companion.species.toLowerCase() as ImageType
+  );
+  ghost.width = 24;
+  ghost.height = 24;
+  ghost.style.position = 'fixed';
+  ghost.style.top = '-9999px';
+  ghost.style.left = '-9999px';
+  ghost.style.width = '24px';
+  ghost.style.height = '24px';
+  ghost.style.borderRadius = '999px';
+  document.body.appendChild(ghost);
+  event.dataTransfer.setDragImage(ghost, 12, 12);
+  globalThis.setTimeout(() => {
+    ghost.remove();
+  }, 0);
+};
+
+const shouldIgnoreTimelineCreate = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  const closest = target.closest('button, a, input, textarea, select');
+  return !!closest && !('timelineCreate' in (closest as HTMLElement).dataset);
+};
+
+const getTimelineGrid = (el: HTMLElement): HTMLDivElement | null =>
+  el.querySelector<HTMLDivElement>('[data-timeline-grid]');
 
 type ContextMenuState = {
   appointment: Appointment;
@@ -270,7 +314,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
     setIsMounted(true);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!draggedAppointmentId) return;
     setActivePopoverKey(null);
     setDropPreviewMinute(null);
@@ -320,9 +364,6 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
     };
   }, [contextMenu]);
 
-  const getEventKey = (event: Appointment, index: number, source: 'all-day' | 'timed') =>
-    `${source}-${event.companion.name}-${event.startTime.toISOString()}-${index}`;
-
   const activeEvent = useMemo(() => {
     if (!activePopoverKey) return null;
     const allDayMatch = allDayEvents.find(
@@ -350,30 +391,6 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
     const top = Math.max(margin, Math.min(contextMenu.y, globalThis.innerHeight - height - margin));
     return { left, top, width };
   }, [contextMenu]);
-
-  const setCustomDragGhost = (
-    event: React.DragEvent<HTMLButtonElement>,
-    appointment: Appointment
-  ) => {
-    const ghost = document.createElement('img');
-    ghost.src = getSafeImageUrl(
-      getAppointmentCompanionPhotoUrl(appointment.companion),
-      appointment.companion.species.toLowerCase() as ImageType
-    );
-    ghost.width = 24;
-    ghost.height = 24;
-    ghost.style.position = 'fixed';
-    ghost.style.top = '-9999px';
-    ghost.style.left = '-9999px';
-    ghost.style.width = '24px';
-    ghost.style.height = '24px';
-    ghost.style.borderRadius = '999px';
-    document.body.appendChild(ghost);
-    event.dataTransfer.setDragImage(ghost, 12, 12);
-    globalThis.setTimeout(() => {
-      ghost.remove();
-    }, 0);
-  };
 
   const getMinuteFromTimelinePointer = (clientY: number, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();
@@ -424,15 +441,6 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
     const rect = container.getBoundingClientRect();
     createAppointmentAtMinute(rect.top + offsetY, container);
   };
-
-  const shouldIgnoreTimelineCreate = (target: EventTarget | null) => {
-    if (!(target instanceof HTMLElement)) return false;
-    const closest = target.closest('button, a, input, textarea, select');
-    return !!closest && !('timelineCreate' in (closest as HTMLElement).dataset);
-  };
-
-  const getTimelineGrid = (el: HTMLElement): HTMLDivElement | null =>
-    el.querySelector<HTMLDivElement>('[data-timeline-grid]');
 
   const handleTimelineDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     if (!draggedAppointmentId) return;

@@ -456,6 +456,11 @@ const useLabTests = (activeAppointment: Appointment | null) => {
 
   const companionId = activeAppointment?.companion?.id;
   const parentId = activeAppointment?.companion?.parent?.id;
+
+  // Stable ref so callbacks can read the latest appointmentOrders without
+  // listing the array as a dep (new array ref every render → infinite loop).
+  const appointmentOrdersRef = React.useRef(appointmentOrders);
+  appointmentOrdersRef.current = appointmentOrders;
   const normalizedOrderStatus = getNormalizedLifecycleStatus(latestOrder);
   const needsInitialOrderPlacement = normalizedOrderStatus === 'CREATED';
 
@@ -564,6 +569,10 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     void fetchTestsPage(testsPage + 1, true);
   }, [fetchTestsPage, testsHasMore, testsLoadingMore, testsPage]);
 
+  // refreshResultsRef lets refreshAppointmentOrders call refreshResults without
+  // creating a circular dep — refreshResults is defined after this callback.
+  const refreshResultsRef = React.useRef<() => Promise<void>>(async () => undefined);
+
   const refreshAppointmentOrders = useCallback(async () => {
     if (!primaryOrgId || !integrationEnabled || !activeAppointment?.id) {
       setAppointmentOrders([]);
@@ -580,11 +589,13 @@ const useLabTests = (activeAppointment: Appointment | null) => {
       });
       const normalized = normalizeOrders(orders);
       setAppointmentOrders(normalized);
+      appointmentOrdersRef.current = normalized;
       setLatestOrder((prev) => {
         if (!normalized.length) return null;
         if (!prev) return normalized[0];
         return normalized.find((order) => order._id === prev._id) ?? normalized[0];
       });
+      await refreshResultsRef.current();
     } catch (e) {
       setAppointmentOrders([]);
       setLatestOrder(null);
@@ -610,7 +621,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     setRefreshingResults(true);
     try {
       const appointmentOrderIds = new Set(
-        appointmentOrders.flatMap((order) => {
+        appointmentOrdersRef.current.flatMap((order) => {
           const orderId = String(order.idexxOrderId ?? '').trim();
           return orderId ? [orderId] : [];
         })
@@ -632,7 +643,10 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     } finally {
       setRefreshingResults(false);
     }
-  }, [appointmentOrders, companionId, integrationEnabled, primaryOrgId]);
+  }, [companionId, integrationEnabled, primaryOrgId]);
+
+  // Keep the ref current so refreshAppointmentOrders can call the latest version.
+  refreshResultsRef.current = refreshResults;
 
   useEffect(() => {
     void refreshResults();
@@ -660,7 +674,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
 
         if (iframeOpenSource === 'followup' && activeAppointment?.id) {
           const appointmentOrderIds = new Set(
-            appointmentOrders.flatMap((order) => {
+            appointmentOrdersRef.current.flatMap((order) => {
               const orderId = String(order.idexxOrderId ?? '').trim();
               return orderId ? [orderId] : [];
             })
@@ -732,7 +746,6 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     iframeInitialUpdatedAt,
     iframeSawNonSubmittedStatus,
     upsertAppointmentOrder,
-    appointmentOrders,
     companionId,
   ]);
 
@@ -1506,8 +1519,7 @@ const LabTests = ({ activeAppointment }: LabTestsProps) => {
                   className="flex-1 w-full border-0"
                   loading="lazy"
                   allowFullScreen
-                  referrerPolicy="strict-origin"
-                  sandbox="allow-scripts allow-popups allow-forms allow-downloads"
+                  referrerPolicy="strict-origin-when-cross-origin"
                   style={{ pointerEvents: 'auto' }}
                 />
               </div>

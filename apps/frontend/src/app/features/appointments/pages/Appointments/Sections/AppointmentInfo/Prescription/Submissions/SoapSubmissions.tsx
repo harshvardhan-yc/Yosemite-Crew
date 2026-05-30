@@ -18,6 +18,11 @@ type SoapSubmissionsProps<K extends SoapKey> = {
   title: string;
 };
 
+const toStringPairs = (answers: Record<string, any>) =>
+  Object.entries(answers ?? {}).filter(
+    ([k, v]) => typeof k === 'string' && typeof v === 'string'
+  ) as Array<[string, string]>;
+
 const SoapSubmissions = <K extends SoapKey>({
   formData,
   setFormData,
@@ -26,11 +31,6 @@ const SoapSubmissions = <K extends SoapKey>({
 }: SoapSubmissionsProps<K>) => {
   const formsById = useFormsStore((s) => s.formsById);
   const submissions = formData[formDataKey] ?? [];
-
-  const toStringPairs = (answers: Record<string, any>) =>
-    Object.entries(answers ?? {}).filter(
-      ([k, v]) => typeof k === 'string' && typeof v === 'string'
-    ) as Array<[string, string]>;
 
   const resolveLabel = (formId: string | undefined, key: string) => {
     const schema = formId ? formsById[formId]?.schema : undefined;

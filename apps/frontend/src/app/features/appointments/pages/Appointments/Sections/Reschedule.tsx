@@ -8,7 +8,7 @@ import {
 import { Slot } from '@/app/features/appointments/types/appointments';
 import { buildUtcDateFromDateAndTime, getDurationMinutes, toUtcCalendarDate } from '@/app/lib/date';
 import { Appointment } from '@yosemite-crew/types';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import DateTimePickerSection from '@/app/features/appointments/components/DateTimePickerSection';
 import { allowReschedule } from '@/app/lib/appointments';
@@ -67,7 +67,7 @@ const Reschedule = ({ showModal, setShowModal, activeAppointment }: ReschedulePr
     return getLeadOptionsForSlot(selectedSlot);
   }, [getLeadOptionsForSlot, selectedSlot]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!selectedSlot) return;
     const options = getLeadOptionsForSlot(selectedSlot);
     const currentLeadId = formData.lead?.id || '';
@@ -167,7 +167,7 @@ const Reschedule = ({ showModal, setShowModal, activeAppointment }: ReschedulePr
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const appointmentTypeId = formData.appointmentType?.id;
     if (!appointmentTypeId || !selectedDate) {
       setTimeSlots([]);

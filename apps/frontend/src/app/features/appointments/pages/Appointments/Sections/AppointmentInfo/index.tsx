@@ -181,6 +181,26 @@ const CustomFormsSection: React.FC<CustomFormsSectionProps> = ({
   />
 );
 
+const getFormBadge = (
+  entry: AppointmentFormEntry,
+  needsSignature: boolean | undefined,
+  isSigned: boolean,
+  isClientSigner: boolean
+) => {
+  const isCompleted = entry.status === 'completed' && (!needsSignature || isSigned);
+  let label = 'Pending';
+  if (isClientSigner) {
+    label = isSigned ? 'Signed by pet parent' : 'Pending parent signature';
+  } else if (isCompleted) {
+    label = 'Completed';
+  } else if (needsSignature && !isSigned) {
+    label = 'Signature Pending';
+  }
+  const badgeClass =
+    isSigned || isCompleted ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-700';
+  return { label, badgeClass };
+};
+
 const CustomFormsView = ({
   forms,
   loading,
@@ -221,26 +241,6 @@ const CustomFormsView = ({
   if (error) {
     return <div className="text-body-3 text-error-main">{error}</div>;
   }
-
-  const getFormBadge = (
-    entry: AppointmentFormEntry,
-    needsSignature: boolean | undefined,
-    isSigned: boolean,
-    isClientSigner: boolean
-  ) => {
-    const isCompleted = entry.status === 'completed' && (!needsSignature || isSigned);
-    let label = 'Pending';
-    if (isClientSigner) {
-      label = isSigned ? 'Signed by pet parent' : 'Pending parent signature';
-    } else if (isCompleted) {
-      label = 'Completed';
-    } else if (needsSignature && !isSigned) {
-      label = 'Signature Pending';
-    }
-    const badgeClass =
-      isSigned || isCompleted ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-700';
-    return { label, badgeClass };
-  };
 
   return (
     <Accordion
@@ -681,6 +681,42 @@ const hospitalLabels = [
   },
 ];
 
+const COMPONENT_MAP: Record<string, Record<string, React.FC<any>>> = {
+  info: {
+    appointment: AppointmentInfo,
+    companion: Companion,
+    history: History,
+  },
+  prescription: {
+    subjective: Subjective,
+    objective: Objective,
+    assessment: Assessment,
+    plan: Plan,
+    'audit-trail': Audit,
+    'discharge-summary': Discharge,
+    forms: CustomFormsSection,
+    documents: Documents,
+    'merck-manuals': AppointmentMerckSearch,
+  },
+  care: {
+    forms: CustomFormsSection,
+    documents: Documents,
+    'discharge-summary': Discharge,
+  },
+  tasks: {
+    'parent-chat': Chat,
+    task: Task,
+    'parent-task': ParentTask,
+  },
+  finance: {
+    summary: Summary,
+    'payment-details': Details,
+  },
+  labs: {
+    'idexx-labs': LabTests,
+  },
+};
+
 const AppoitmentInfo = ({
   showModal,
   setShowModal,
@@ -842,42 +878,6 @@ const AppoitmentInfo = ({
       lastOpenedAppointmentIdRef.current = currentAppointmentId;
     }
   }, [showModal, activeAppointment?.id, initialViewIntent, labels]);
-
-  const COMPONENT_MAP: Record<string, Record<string, React.FC<any>>> = {
-    info: {
-      appointment: AppointmentInfo,
-      companion: Companion,
-      history: History,
-    },
-    prescription: {
-      subjective: Subjective,
-      objective: Objective,
-      assessment: Assessment,
-      plan: Plan,
-      'audit-trail': Audit,
-      'discharge-summary': Discharge,
-      forms: CustomFormsSection,
-      documents: Documents,
-      'merck-manuals': AppointmentMerckSearch,
-    },
-    care: {
-      forms: CustomFormsSection,
-      documents: Documents,
-      'discharge-summary': Discharge,
-    },
-    tasks: {
-      'parent-chat': Chat,
-      task: Task,
-      'parent-task': ParentTask,
-    },
-    finance: {
-      summary: Summary,
-      'payment-details': Details,
-    },
-    labs: {
-      'idexx-labs': LabTests,
-    },
-  };
 
   const Content = COMPONENT_MAP[activeLabel]?.[activeSubLabel];
   const [formData, setFormData] = useState<FormDataProps>(() => createEmptyFormData());

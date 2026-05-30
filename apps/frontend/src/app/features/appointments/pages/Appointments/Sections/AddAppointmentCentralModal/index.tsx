@@ -2,6 +2,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -206,7 +207,7 @@ const PersonRow = ({
     return () => document.removeEventListener('mousedown', handler);
   }, [selectedName, setQuery]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (selectedName) setOpen(false);
   }, [selectedName]);
 
@@ -662,7 +663,7 @@ const AddAppointmentCentralModal = ({
   const showAddCompanionModal = Boolean(addCompanionTarget) && showModal;
 
   // ── Reset on close ───────────────────────────────────────────────────────────
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showModal) {
       setSubmitAttempted(false);
       setPatientQuery('');
@@ -678,14 +679,14 @@ const AddAppointmentCentralModal = ({
     }
   }, [showModal, resetForm, onPrefillConsumed, prefill]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setPrefillActive(Boolean(prefill));
     setCalendarSlotFlowActive(false);
   }, [prefill]);
 
   // ── Slot loading indicator (non-prefill flow only) ───────────────────────────
   const prevServiceIdRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const svcId = formData.appointmentType?.id;
     if (svcId !== prevServiceIdRef.current) {
       prevServiceIdRef.current = svcId;
@@ -693,12 +694,12 @@ const AddAppointmentCentralModal = ({
     }
   }, [formData.appointmentType?.id, calendarSlotFlowActive]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setIsLoadingTimeSlots(false);
   }, [timeSlots]);
 
   // ── Revalidate after submit attempt ─────────────────────────────────────────
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!submitAttempted) return;
     const errors = validateForm(true);
     setFormDataErrors(errors);
@@ -792,7 +793,7 @@ const AddAppointmentCentralModal = ({
     setSelectedClientId(null);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showModal || !pendingAutoSelectCompanionId) return;
     const found = companions.find((c) => c.companion.id === pendingAutoSelectCompanionId);
     if (!found) return;

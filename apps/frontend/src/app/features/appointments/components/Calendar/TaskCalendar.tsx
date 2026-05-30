@@ -70,6 +70,8 @@ const clampCalendarMinutes = (minutes: number) =>
 const getCalendarDayKey = (date: Date) =>
   formatDateInPreferredTimeZone(date, { weekday: 'long' }).toUpperCase();
 
+const toLocalClockFromUtcTime = (utcTime: string) => utcClockTimeToPreferredTimeZoneClock(utcTime);
+
 const shouldAllowTaskAvailabilityBypass = (
   authUserId: string,
   task: Task,
@@ -492,11 +494,6 @@ const TaskCalendar = ({
   const TASK_BLOCK_DURATION_MINUTES = 30;
   const normalizeId = useCallback((value?: string) => normalizeCalendarId(value), []);
 
-  const toLocalClockFromUtcTime = (utcTime: string) =>
-    utcClockTimeToPreferredTimeZoneClock(utcTime);
-
-  const getDayKey = (date: Date) => getCalendarDayKey(date);
-
   const shiftDayKey = useCallback((dayKey: string, offset: number): string => {
     const index = WEEKDAY_ORDER.indexOf(String(dayKey || '').toUpperCase());
     if (index < 0) return String(dayKey || '').toUpperCase();
@@ -642,7 +639,7 @@ const TaskCalendar = ({
       const resolvedAssigneeId = resolveAssigneeId(targetAssigneeId);
       if (!resolvedAssigneeId) return [];
       const assigneeKey = normalizeId(resolvedAssigneeId);
-      const dayKey = getDayKey(date);
+      const dayKey = getCalendarDayKey(date);
       return availabilityCacheRef.current[assigneeKey]?.[dayKey] || [];
     },
     [allTaskItems, draggedTaskId, normalizeId, resolveAssigneeId, shouldEnforceAvailability]

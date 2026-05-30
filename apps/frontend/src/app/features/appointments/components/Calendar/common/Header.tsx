@@ -52,6 +52,12 @@ const getEmergencyPillStyle = (isActive: boolean): React.CSSProperties => ({
   color: isActive ? 'var(--color-semantic-error-700)' : 'var(--color-neutral-700)',
 });
 
+const CALENDAR_OPTIONS = [
+  { key: 'day', label: 'Day' },
+  { key: 'week', label: 'Week' },
+  { key: 'team', label: 'Team' },
+];
+
 type Headerprops = {
   currentDate: Date;
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
@@ -101,12 +107,6 @@ const Header = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const calendarTriggerRef = useRef<HTMLButtonElement>(null);
   const calendarPanelRef = useRef<HTMLDivElement>(null);
-
-  const CALENDAR_OPTIONS = [
-    { key: 'day', label: 'Day' },
-    { key: 'week', label: 'Week' },
-    { key: 'team', label: 'Team' },
-  ];
 
   const selectedStatus = statusOptions?.find((s) => s.key === activeStatus) ?? statusOptions?.[0];
   const isEmergencyFilterActive = activeFilter === 'emergencies';

@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePopoverManager } from '@/app/hooks/usePopoverManager';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import Image from 'next/image';
@@ -48,6 +48,33 @@ type SlotProps = {
 };
 
 const MARKER_CLICK_DELAY_MS = 180;
+
+const getCompanionDisplayName = (appointment: Appointment) =>
+  formatCompanionNameWithOwnerLastName(appointment.companion?.name, appointment.companion?.parent);
+
+const setCustomDragGhost = (
+  event: React.DragEvent<HTMLButtonElement>,
+  appointment: Appointment
+) => {
+  const ghost = document.createElement('img');
+  ghost.src = getSafeImageUrl(
+    getAppointmentCompanionPhotoUrl(appointment.companion),
+    appointment.companion.species.toLowerCase() as ImageType
+  );
+  ghost.width = 24;
+  ghost.height = 24;
+  ghost.style.position = 'fixed';
+  ghost.style.top = '-9999px';
+  ghost.style.left = '-9999px';
+  ghost.style.width = '24px';
+  ghost.style.height = '24px';
+  ghost.style.borderRadius = '999px';
+  document.body.appendChild(ghost);
+  event.dataTransfer.setDragImage(ghost, 12, 12);
+  globalThis.setTimeout(() => {
+    ghost.remove();
+  }, 0);
+};
 const DEFAULT_DROP_AVAILABILITY_INTERVALS: Array<{ startMinute: number; endMinute: number }> = [];
 const DEFAULT_UNAVAILABLE_SEGMENTS: Array<{ startMinute: number; endMinute: number }> = [];
 const DEFAULT_INVOICES_BY_APPOINTMENT_ID: Record<string, Invoice> = {};
@@ -102,7 +129,7 @@ const SlotComponent: React.FC<SlotProps> = ({
   } = usePopoverManager({ closeOnHoverLeave: false });
   const appointmentPopoverId = useId();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!draggedAppointmentId) return;
     setActivePopoverKey(null);
     setDropPreviewMinute(null);
@@ -177,12 +204,6 @@ const SlotComponent: React.FC<SlotProps> = ({
       ) ?? null,
     [sortedSlotEvents, activePopoverKey]
   );
-  const getCompanionDisplayName = (appointment: Appointment) =>
-    formatCompanionNameWithOwnerLastName(
-      appointment.companion?.name,
-      appointment.companion?.parent
-    );
-
   const handleOpenPopover = (
     key: string,
     target: HTMLButtonElement,
@@ -200,30 +221,6 @@ const SlotComponent: React.FC<SlotProps> = ({
     const top = Math.max(margin, Math.min(contextMenu.y, globalThis.innerHeight - height - margin));
     return { left, top, width };
   }, [contextMenu]);
-
-  const setCustomDragGhost = (
-    event: React.DragEvent<HTMLButtonElement>,
-    appointment: Appointment
-  ) => {
-    const ghost = document.createElement('img');
-    ghost.src = getSafeImageUrl(
-      getAppointmentCompanionPhotoUrl(appointment.companion),
-      appointment.companion.species.toLowerCase() as ImageType
-    );
-    ghost.width = 24;
-    ghost.height = 24;
-    ghost.style.position = 'fixed';
-    ghost.style.top = '-9999px';
-    ghost.style.left = '-9999px';
-    ghost.style.width = '24px';
-    ghost.style.height = '24px';
-    ghost.style.borderRadius = '999px';
-    document.body.appendChild(ghost);
-    event.dataTransfer.setDragImage(ghost, 12, 12);
-    globalThis.setTimeout(() => {
-      ghost.remove();
-    }, 0);
-  };
 
   const getMinuteFromSlotPointer = (clientY: number, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();

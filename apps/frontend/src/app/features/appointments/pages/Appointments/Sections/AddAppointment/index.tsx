@@ -4,7 +4,7 @@ import SearchDropdown from '@/app/ui/inputs/SearchDropdown';
 import Modal from '@/app/ui/overlays/Modal';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import { YosemiteLoader } from '@/app/ui/overlays/Loader';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useCompanionsParentsForPrimaryOrg } from '@/app/hooks/useCompanion';
 import EditableAccordion from '@/app/ui/primitives/Accordion/EditableAccordion';
 import { useAppointmentForm } from '@/app/hooks/useAppointmentForm';
@@ -206,7 +206,7 @@ const AddAppointment = ({
     }
   }, [showModal, resetForm, onPrefillConsumed]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!(showModal && companionSatisfied && maxUnlockedStep < 2)) return;
     setMaxUnlockedStep(2);
     setActiveStep(2);
@@ -259,7 +259,7 @@ const AddAppointment = ({
     [companions, scrollToStep, setFormData, setFormDataErrors]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showModal || !pendingAutoSelectCompanionId) return;
     const selected = companions.find((item) => item.companion.id === pendingAutoSelectCompanionId);
     if (!selected) return;

@@ -143,6 +143,13 @@ type AppointmentBoardProps = {
   hasEmergency?: boolean;
 };
 
+const normalizeId = (value?: string | null) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
+
 const AppointmentBoardComponent = ({
   appointments,
   currentDate,
@@ -175,13 +182,6 @@ const AppointmentBoardComponent = ({
   const columnScrollRefs = useRef<Partial<Record<BoardStatus, HTMLDivElement | null>>>({});
   const invoices = useInvoicesForPrimaryOrg();
   const invoicesByAppointmentId = useMemo(() => createInvoiceByAppointmentId(invoices), [invoices]);
-
-  const normalizeId = (value?: string | null) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
 
   const currentUserLeadId = useMemo(() => {
     const normalizedCurrentUser = normalizeId(authUserId);

@@ -92,6 +92,13 @@ preloadDynamic(AppointmentBoard);
 
 const revampEnabled = isAppointmentRevampEnabled();
 
+const normalizeLeadId = (value?: string | null) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
+
 const Appointments = () => {
   const rawAppointments = useAppointmentsForPrimaryOrg();
   useLoadCompanionsForPrimaryOrg();
@@ -168,12 +175,6 @@ const Appointments = () => {
   const authUserId = useAuthStore(
     (s) => s.attributes?.sub || s.attributes?.email || s.attributes?.['cognito:username'] || ''
   );
-  const normalizeLeadId = (value?: string | null) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
   const currentUserLeadId = useMemo(() => {
     const normalizedCurrentUser = normalizeLeadId(authUserId);
     if (!normalizedCurrentUser) return '';

@@ -15,7 +15,7 @@ import {
 } from '@/app/features/appointments/types/appointments';
 import { buildUtcDateFromDateAndTime, getDurationMinutes, toUtcCalendarDate } from '@/app/lib/date';
 import { Appointment } from '@yosemite-crew/types';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import FormDesc from '@/app/ui/inputs/FormDesc/FormDesc';
@@ -459,7 +459,7 @@ const AppointmentInfo = ({
   const canAssignRoomByStatus = canAssignAppointmentRoom(activeAppointment.status);
   const canChangeStatusByStatus = canShowStatusChangeAction(activeAppointment.status);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const currentId = activeAppointment.id;
     const previousId = lastAppointmentIdRef.current;
     if (previousId && currentId && previousId !== currentId) {
@@ -482,7 +482,7 @@ const AppointmentInfo = ({
     setErrors({});
   }, [activeAppointment]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isEditingAppointment || !canRescheduleByStatus) return;
     if (!appointmentValues.serviceId || !selectedDate) {
       setTimeSlots([]);
@@ -534,7 +534,7 @@ const AppointmentInfo = ({
     activeAppointment.lead?.id,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isEditingAppointment || !canRescheduleByStatus || !selectedSlot) return;
     const options = getLeadOptionsForSlot(selectedSlot);
     const currentLeadId = appointmentValues.leadId;
