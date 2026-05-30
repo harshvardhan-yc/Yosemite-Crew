@@ -28,6 +28,13 @@ const getSafePreviewUrl = (src: string | null): string | null => {
   return value;
 };
 
+const uploadToS3 = async (uploadUrl: string, f: File) => {
+  await axios.put(uploadUrl, f, {
+    headers: { 'Content-Type': f.type },
+    withCredentials: false,
+  });
+};
+
 const LogoUpdator = ({ imageUrl, apiUrl, title, onSave, disabled }: LogoUpdatorProps) => {
   const [updatePopup, setUpdatePopup] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -64,13 +71,6 @@ const LogoUpdator = ({ imageUrl, apiUrl, title, onSave, disabled }: LogoUpdatorP
       mimeType: f.type,
     });
     return res.data;
-  };
-
-  const uploadToS3 = async (uploadUrl: string, f: File) => {
-    await axios.put(uploadUrl, f, {
-      headers: { 'Content-Type': f.type },
-      withCredentials: false,
-    });
   };
 
   const handlePickFile = (e: ChangeEvent<HTMLInputElement>) => {

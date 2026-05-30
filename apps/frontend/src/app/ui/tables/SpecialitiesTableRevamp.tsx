@@ -17,13 +17,13 @@ type SpecialitiesTableRevampProps = {
   onManageTeam: (speciality: SpecialityWeb) => void;
 };
 
+const getRevampId = (item: SpecialityWeb): string =>
+  (item as SpecialityWeb & { revampId?: string }).revampId ?? item._id ?? '';
+
 const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTableRevampProps) => {
   const allServices = useRevampCatalogStore(useShallow((s) => s.services));
   const allPackages = useRevampCatalogStore(useShallow((s) => s.packages));
   const teams = useTeamForPrimaryOrg();
-
-  const getRevampId = (item: SpecialityWeb): string =>
-    (item as SpecialityWeb & { revampId?: string }).revampId ?? item._id ?? '';
 
   const columns: Column<SpecialityWeb>[] = [
     {

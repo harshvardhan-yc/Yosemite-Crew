@@ -19,13 +19,13 @@ type InventoryTurnoverTableProps = {
   filteredList: InventoryTurnoverItem[];
 };
 
+const getAverageInventory = (item: InventoryTurnoverItem) =>
+  item.averageInventory ?? item.avgInventory ?? 0;
+
+const getTotalPurchased = (item: InventoryTurnoverItem) =>
+  item.totalPurchases ?? item.totalPurchased ?? 0;
+
 const InventoryTurnoverTable = ({ filteredList }: InventoryTurnoverTableProps) => {
-  const getAverageInventory = (item: InventoryTurnoverItem) =>
-    item.averageInventory ?? item.avgInventory ?? 0;
-
-  const getTotalPurchased = (item: InventoryTurnoverItem) =>
-    item.totalPurchases ?? item.totalPurchased ?? 0;
-
   const columns: Column<InventoryTurnoverItem>[] = [
     {
       label: 'Item name',

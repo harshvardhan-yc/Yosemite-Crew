@@ -26,6 +26,12 @@ const writeCache = (o: string, r: string, value: number) => {
   setJsonStorageItem('local', cacheKey(o, r), payload);
 };
 
+const formatStars = (n: number) =>
+  Intl.NumberFormat(undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(n);
+
 const Github = () => {
   const [isOpen, setIsOpen] = useState(true);
   const [stars, setStars] = useState<number | null>(null);
@@ -35,12 +41,6 @@ const Github = () => {
   const onClose = () => {
     setIsOpen(false);
   };
-
-  const formatStars = (n: number) =>
-    Intl.NumberFormat(undefined, {
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(n);
 
   useEffect(() => {
     let cancelled = false;

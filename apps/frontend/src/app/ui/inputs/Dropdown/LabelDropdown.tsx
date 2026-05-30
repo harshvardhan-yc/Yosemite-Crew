@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IoChevronDown } from 'react-icons/io5';
 import { IoIosWarning } from 'react-icons/io';
@@ -56,7 +56,11 @@ const LabelDropdown = ({
   portal = true,
   noOptionsMessage,
 }: DropdownProps) => {
-  const [selected, setSelected] = useState<DropdownOption | null>(null);
+  const findSelectedOption = () => {
+    if (defaultOption === undefined) return null;
+    return options.find((o) => o.value === defaultOption || o.label === defaultOption) ?? null;
+  };
+  const [selected, setSelected] = useState<DropdownOption | null>(findSelectedOption);
   const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
   const listboxId = useId();
   const triggerLabel = selected ? `${placeholder}: ${selected.label}` : placeholder;
@@ -70,15 +74,6 @@ const LabelDropdown = ({
     toggleDropdown,
     closeDropdown,
   } = useDropdown({ searchable });
-
-  useEffect(() => {
-    if (defaultOption === undefined) {
-      setSelected(null);
-      return;
-    }
-    const found = options.find((o) => o.value === defaultOption || o.label === defaultOption);
-    setSelected(found ?? null);
-  }, [defaultOption, options]);
 
   const filteredOptions = useFilteredOptions(options, searchQuery);
   const shouldPortal = portal && typeof document !== 'undefined';
@@ -102,28 +97,32 @@ const LabelDropdown = ({
     });
   }, [dropdownRef]);
 
+  const computeStyleRef = useRef(computeStyle);
+  computeStyleRef.current = computeStyle;
+
   useLayoutEffect(() => {
     if (!open || !portal) {
       setPortalStyle(null);
       return;
     }
-    computeStyle();
-  }, [computeStyle, open, portal]);
+    computeStyleRef.current();
+  }, [open, portal]);
 
   useEffect(() => {
     if (!open || !portal) return;
+    const stableResize = () => computeStyleRef.current();
     const handleOuterScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('[data-portal-dropdown]')) return;
       closeDropdown();
     };
-    globalThis.window.addEventListener('resize', computeStyle);
+    globalThis.window.addEventListener('resize', stableResize);
     globalThis.window.addEventListener('scroll', handleOuterScroll, true);
     return () => {
-      globalThis.window.removeEventListener('resize', computeStyle);
+      globalThis.window.removeEventListener('resize', stableResize);
       globalThis.window.removeEventListener('scroll', handleOuterScroll, true);
     };
-  }, [closeDropdown, computeStyle, open, portal]);
+  }, [closeDropdown, open, portal]);
 
   // Same visual style for both portal and inline — connected panel below trigger
   const panel = (

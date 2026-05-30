@@ -15,13 +15,20 @@ type LogoUploaderProps = {
 };
 type GetSignedUrlResponse = { uploadUrl: string; s3Key: string };
 
+const isSafePreviewUrl = (url: string) => url.startsWith('blob:');
+
+const uploadLogoToS3 = async (uploadUrl: string, file: File) => {
+  await axios.put(uploadUrl, file, {
+    headers: { 'Content-Type': file?.type },
+    withCredentials: false,
+  });
+};
+
 const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
   const inputId = useId();
   const [preview, setPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const isSafePreviewUrl = (url: string) => url.startsWith('blob:');
 
   useEffect(() => {
     return () => {
@@ -43,13 +50,6 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
     return res.data;
   };
 
-  const uploadToS3 = async (uploadUrl: string, file: File) => {
-    await axios.put(uploadUrl, file, {
-      headers: { 'Content-Type': file?.type },
-      withCredentials: false,
-    });
-  };
-
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -65,7 +65,7 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
     setPreview(localUrl);
     try {
       const signed = await getSignedUrl(file);
-      await uploadToS3(signed.uploadUrl, file);
+      await uploadLogoToS3(signed.uploadUrl, file);
       setImageUrl(signed.s3Key);
     } catch (err: any) {
       setError(err?.message || 'Upload failed');

@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useRef, useEffect, useId } from 'react';
+import React, { useState, useRef, useEffect, useId, useLayoutEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -206,7 +206,7 @@ const OtpModal = ({
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (showVerifyModal && timerActive && timer > 0) {
       interval = setInterval(() => {
@@ -222,7 +222,7 @@ const OtpModal = ({
     };
   }, [showVerifyModal, timerActive, timer]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (showVerifyModal) {
       setTimer(150);
       setTimerActive(true);

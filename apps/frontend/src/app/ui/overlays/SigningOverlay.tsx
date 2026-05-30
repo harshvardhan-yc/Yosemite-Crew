@@ -4,11 +4,15 @@ import Close from '@/app/ui/primitives/Icons/Close';
 import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
 import { getSafeDocumensoIframeUrl } from '@/app/lib/urls';
 
-const renderSigningContent = (
-  safeUrl: string | null,
-  url: string | null,
-  pending: boolean
-): React.ReactNode => {
+const SigningContent = ({
+  safeUrl,
+  url,
+  pending,
+}: {
+  safeUrl: string | null;
+  url: string | null;
+  pending: boolean;
+}) => {
   if (safeUrl) {
     return (
       <iframe
@@ -61,7 +65,7 @@ const SigningOverlay = () => {
             <Close iconOnly />
           </button>
         </div>
-        {renderSigningContent(safeUrl, url, pending)}
+        <SigningContent safeUrl={safeUrl} url={url} pending={pending} />
       </div>
     </div>,
     document.body

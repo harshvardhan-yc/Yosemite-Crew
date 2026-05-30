@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GrNext, GrPrevious } from 'react-icons/gr';
 import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import { isSameDay } from '@/app/features/appointments/components/Calendar/helpers';
 import { Slot } from '@/app/features/appointments/types/appointments';
 import { formatUtcTimeToLocalLabel } from '@/app/features/appointments/components/Availability/utils';
+
+const isSameSlot = (a: Slot | null, b: Slot) =>
+  !!a && a.startTime === b.startTime && a.endTime === b.endTime;
 
 const monthNames = [
   'January',
@@ -89,7 +92,7 @@ const Slotpicker = ({
     strip.scrollTo({ left: btnLeft - stripWidth / 2 + btnWidth / 2, behavior: 'smooth' });
   }, [selectedDate, viewMonth, viewYear]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const strip = dateStripRef.current;
     if (!strip) return;
 
@@ -141,9 +144,6 @@ const Slotpicker = ({
       slotListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 80);
   };
-
-  const isSameSlot = (a: Slot | null, b: Slot) =>
-    !!a && a.startTime === b.startTime && a.endTime === b.endTime;
 
   const scrollDateStrip = (direction: 'left' | 'right') => {
     const strip = dateStripRef.current;

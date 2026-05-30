@@ -9,6 +9,9 @@ type ModalProps = {
   containerClassName?: string;
 };
 
+const ignorePortalDropdownClick = (target: HTMLElement | null) =>
+  Boolean(target?.closest('[data-portal-dropdown]'));
+
 const CenterModal = ({
   children,
   showModal,
@@ -20,6 +23,7 @@ const CenterModal = ({
     showModal={showModal}
     setShowModal={setShowModal}
     onClose={onClose}
+    ignoreOutsideClick={ignorePortalDropdownClick}
     overlayClassName={`fixed backdrop-blur-[2px] inset-0 z-[1100] transition-opacity duration-200 ease-in-out ${
       showModal ? 'opacity-100' : 'opacity-0 pointer-events-none'
     }`}

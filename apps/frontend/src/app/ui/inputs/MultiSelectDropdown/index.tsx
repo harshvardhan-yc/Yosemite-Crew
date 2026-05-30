@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { IoIosWarning } from 'react-icons/io';
 import { Option } from '@/app/features/companions/types/companion';
@@ -152,28 +152,32 @@ const MultiSelectDropdown = ({
     });
   }, [dropdownRef]);
 
+  const computeStyleRef = useRef(computeStyle);
+  computeStyleRef.current = computeStyle;
+
   useLayoutEffect(() => {
     if (!open || !portal) {
       setPortalStyle(null);
       return;
     }
-    computeStyle();
-  }, [computeStyle, open, portal]);
+    computeStyleRef.current();
+  }, [open, portal]);
 
   useEffect(() => {
     if (!open || !portal) return;
+    const stableResize = () => computeStyleRef.current();
     const handleOuterScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('[data-portal-dropdown]')) return;
       closeDropdown();
     };
-    globalThis.window.addEventListener('resize', computeStyle);
+    globalThis.window.addEventListener('resize', stableResize);
     globalThis.window.addEventListener('scroll', handleOuterScroll, true);
     return () => {
-      globalThis.window.removeEventListener('resize', computeStyle);
+      globalThis.window.removeEventListener('resize', stableResize);
       globalThis.window.removeEventListener('scroll', handleOuterScroll, true);
     };
-  }, [closeDropdown, computeStyle, open, portal]);
+  }, [closeDropdown, open, portal]);
 
   const toggleOption = (option: Option) => {
     const isSelected = valueSet.has(option.value);

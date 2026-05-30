@@ -71,6 +71,26 @@ type AppointmentTableProps = {
   small?: boolean;
 };
 
+const handleAcceptAppointment = async (appointment: Appointment) => {
+  try {
+    await acceptAppointment(appointment);
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+const handleCancelAppointment = async (appointment: Appointment) => {
+  try {
+    if (appointment.status === 'REQUESTED') {
+      await rejectAppointment(appointment);
+      return;
+    }
+    await cancelAppointment(appointment);
+  } catch (error) {
+    console.log(error);
+  }
+};
+
 const AppointmentsComponent = ({
   filteredList,
   setActiveAppointment,
@@ -151,26 +171,6 @@ const AppointmentsComponent = ({
   const handleChangeRoomAppointment = (appointment: Appointment) => {
     setActiveAppointment?.(appointment);
     setChangeRoomPopup?.(true);
-  };
-
-  const handleAcceptAppointment = async (appointment: Appointment) => {
-    try {
-      await acceptAppointment(appointment);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const handleCancelAppointment = async (appointment: Appointment) => {
-    try {
-      if (appointment.status === 'REQUESTED') {
-        await rejectAppointment(appointment);
-        return;
-      }
-      await cancelAppointment(appointment);
-    } catch (error) {
-      console.log(error);
-    }
   };
 
   const columns: Column<Appointment>[] = [

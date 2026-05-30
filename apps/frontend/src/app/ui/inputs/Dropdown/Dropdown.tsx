@@ -134,29 +134,33 @@ const Dropdown = ({
     });
   }, []);
 
+  const computePortalStyleRef = useRef(computePortalStyle);
+  computePortalStyleRef.current = computePortalStyle;
+
   useLayoutEffect(() => {
     if (!open || !portal) {
       setPortalStyle(null);
       return;
     }
-    computePortalStyle();
-  }, [computePortalStyle, open, portal]);
+    computePortalStyleRef.current();
+  }, [open, portal]);
 
   useEffect(() => {
     if (!open || !portal) return;
+    const stableResize = () => computePortalStyleRef.current();
     const handleOuterScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('[data-portal-dropdown]')) return;
       setOpen(false);
       setQuery('');
     };
-    globalThis.window.addEventListener('resize', computePortalStyle);
+    globalThis.window.addEventListener('resize', stableResize);
     globalThis.window.addEventListener('scroll', handleOuterScroll, true);
     return () => {
-      globalThis.window.removeEventListener('resize', computePortalStyle);
+      globalThis.window.removeEventListener('resize', stableResize);
       globalThis.window.removeEventListener('scroll', handleOuterScroll, true);
     };
-  }, [computePortalStyle, open, portal]);
+  }, [open, portal]);
 
   // Close on Escape key
   useEffect(() => {

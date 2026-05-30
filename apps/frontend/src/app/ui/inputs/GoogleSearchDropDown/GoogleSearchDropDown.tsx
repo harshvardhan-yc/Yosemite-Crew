@@ -55,6 +55,19 @@ type Prediction = {
   distanceMeters?: number;
 };
 
+const normalizeGooglePhoneNumber = (number: string) => {
+  if (!number) return '';
+  let cleaned = number.replaceAll(/\D+/g, '');
+  cleaned = cleaned.replace(/^0+/, '');
+  return cleaned;
+};
+
+const getAddrComponent = (
+  comps: NonNullable<PlaceDetails['addressComponents']>,
+  type: string,
+  pref: 'longText' | 'shortText' = 'longText'
+) => comps.find((c) => c.types?.includes(type))?.[pref] ?? '';
+
 const getPredictionPrimaryText = (prediction: Prediction) =>
   prediction.mainText?.trim() || prediction.description?.trim() || 'Unknown location';
 
@@ -92,9 +105,12 @@ const GoogleSearchDropDown = ({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const suppressNextOpenRef = useRef(false);
   const shouldFetchRef = useRef(false);
-  const lastQueriedRef = useRef<string>((value ?? '').trim());
+  const lastQueriedRef = useRef<string | null>(null);
+  lastQueriedRef.current ??= (value ?? '').trim();
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const fetchDetails = true;
+  const canShowPredictions = !readonly && (value ?? '').trim().length >= 2;
+  const isDropdownOpen = open && canShowPredictions;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -111,8 +127,6 @@ const GoogleSearchDropDown = ({
   useEffect(() => {
     const q = (value ?? '').trim();
     if (readonly || q.length < 2) {
-      setOpen(false);
-      setPredictions([]);
       return;
     }
     if (!shouldFetchRef.current) {
@@ -224,35 +238,22 @@ const GoogleSearchDropDown = ({
     }, 0);
   };
 
-  const normalizePhoneNumber = (number: string) => {
-    if (!number) return '';
-    let cleaned = number.replaceAll(/\D+/g, '');
-    cleaned = cleaned.replace(/^0+/, '');
-    return cleaned;
-  };
-
-  const getAddr = (
-    comps: NonNullable<PlaceDetails['addressComponents']>,
-    type: string,
-    pref: 'longText' | 'shortText' = 'longText'
-  ) => comps.find((c) => c.types?.includes(type))?.[pref] ?? '';
-
   const autofillFromPlace = (details: PlaceDetails, fullPredictionText?: string) => {
     const comps = details.addressComponents ?? [];
     const name = details.displayName?.text || '';
     const website = details.websiteUri || '';
     const phone = details.nationalPhoneNumber || '';
 
-    const countryCode = getAddr(comps, 'country', 'shortText');
+    const countryCode = getAddrComponent(comps, 'country', 'shortText');
     const country = countries.find((c) => c.code === countryCode);
     const city =
-      getAddr(comps, 'locality') ||
-      getAddr(comps, 'postal_town') ||
-      getAddr(comps, 'administrative_area_level_2');
+      getAddrComponent(comps, 'locality') ||
+      getAddrComponent(comps, 'postal_town') ||
+      getAddrComponent(comps, 'administrative_area_level_2');
     const state =
-      getAddr(comps, 'administrative_area_level_1') ||
-      getAddr(comps, 'administrative_area_level_1', 'shortText');
-    const postalCode = getAddr(comps, 'postal_code');
+      getAddrComponent(comps, 'administrative_area_level_1') ||
+      getAddrComponent(comps, 'administrative_area_level_1', 'shortText');
+    const postalCode = getAddrComponent(comps, 'postal_code');
 
     // Derive addressLine from the full prediction text by finding where the
     // city/state/country tail begins and cutting there. State is matched using
@@ -315,7 +316,7 @@ const GoogleSearchDropDown = ({
       setFormData?.((prev: Organisation) => ({
         ...prev,
         name,
-        phoneNo: normalizePhoneNumber(phone),
+        phoneNo: normalizeGooglePhoneNumber(phone),
         website,
         googlePlacesId: details.id,
         address: {
@@ -361,7 +362,7 @@ const GoogleSearchDropDown = ({
             outline-none border
             ${error && 'border-input-border-error'}
             focus:border-input-border-active!
-            ${open ? 'border-input-border-active! rounded-t-2xl!' : 'border-input-border-default! rounded-2xl!'}
+            ${isDropdownOpen ? 'border-input-border-active! rounded-t-2xl!' : 'border-input-border-default! rounded-2xl!'}
           `}
         />
         <label
@@ -384,7 +385,7 @@ const GoogleSearchDropDown = ({
           {inlabel}
         </label>
       </div>
-      {open && (
+      {isDropdownOpen && (
         <div
           className="border-input-border-active max-h-[200px] overflow-y-auto scrollbar-hidden z-99 absolute top-[100%] left-0 rounded-b-2xl border-l border-r border-b bg-white flex flex-col items-center w-full px-[12px] py-[10px]"
           onPointerDown={(e) => e.preventDefault()}

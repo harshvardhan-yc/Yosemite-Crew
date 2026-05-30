@@ -25,6 +25,25 @@ type InventoryTableProps = {
   setViewInventory: (open: boolean) => void;
 };
 
+const displayValue = (val?: string | number | null) => {
+  if (val === undefined || val === null) return '—';
+  if (typeof val === 'string' && val.trim() === '') return '—';
+  return val;
+};
+
+const formatCurrency = (value: string | number | undefined) => {
+  const num = Number(value ?? 0);
+  if (!Number.isFinite(num)) return '—';
+  return `$ ${num}`;
+};
+
+const totalValue = (item: InventoryItem) => {
+  const price = Number(item.pricing.selling ?? 0);
+  const onHand = Number(item.stock.current ?? 0);
+  if (!Number.isFinite(price) || !Number.isFinite(onHand)) return '—';
+  return `$ ${Math.round(price * onHand)}`;
+};
+
 const InventoryTable = ({
   filteredList,
   setActiveInventory,
@@ -33,25 +52,6 @@ const InventoryTable = ({
   const handleViewInventory = (inventory: InventoryItem) => {
     setActiveInventory(inventory);
     setViewInventory(true);
-  };
-
-  const displayValue = (val?: string | number | null) => {
-    if (val === undefined || val === null) return '—';
-    if (typeof val === 'string' && val.trim() === '') return '—';
-    return val;
-  };
-
-  const formatCurrency = (value: string | number | undefined) => {
-    const num = Number(value ?? 0);
-    if (!Number.isFinite(num)) return '—';
-    return `$ ${num}`;
-  };
-
-  const totalValue = (item: InventoryItem) => {
-    const price = Number(item.pricing.selling ?? 0);
-    const onHand = Number(item.stock.current ?? 0);
-    if (!Number.isFinite(price) || !Number.isFinite(onHand)) return '—';
-    return `$ ${Math.round(price * onHand)}`;
   };
 
   const columns: Column<InventoryItem>[] = [

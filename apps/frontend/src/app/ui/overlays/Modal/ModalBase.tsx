@@ -154,7 +154,7 @@ const ModalBase = ({
       <div className={overlayClassName} style={overlayStyle} aria-hidden="true" />
 
       <div
-        role="dialog" // NOSONAR — native <dialog> is display:none without `open`; div stays mounted for CSS transitions
+        role="dialog"
         ref={containerRef}
         aria-modal={showModal ? 'true' : undefined}
         aria-label={ariaLabel}

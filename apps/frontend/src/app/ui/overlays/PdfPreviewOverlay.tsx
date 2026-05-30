@@ -40,14 +40,27 @@ const PdfPreviewOverlay = ({
             <Close iconOnly />
           </button>
         </div>
-        <iframe
-          src={safePdfUrl}
-          title={title}
-          className="flex-1 w-full border-0"
-          referrerPolicy="strict-origin"
-          sandbox="allow-scripts allow-popups allow-downloads"
-          style={{ pointerEvents: 'auto' }}
-        />
+        {safePdfUrl.startsWith('blob:') ? (
+          // Safari enforces frame-ancestors 'none' on blob: frames and blocks them.
+          // <object> is not subject to frame-ancestors and works cross-browser for inline PDFs.
+          <object
+            data={safePdfUrl}
+            type="application/pdf"
+            aria-label={title}
+            className="flex-1 w-full border-0"
+            style={{ pointerEvents: 'auto', minHeight: 0 }}
+          >
+            <span className="sr-only">{title}</span>
+          </object>
+        ) : (
+          <iframe
+            src={safePdfUrl}
+            title={title}
+            className="flex-1 w-full border-0"
+            referrerPolicy="strict-origin-when-cross-origin"
+            style={{ pointerEvents: 'auto' }}
+          />
+        )}
       </div>
     </div>,
     document.body
