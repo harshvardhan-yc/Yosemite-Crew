@@ -877,3 +877,15 @@ input[type='number'] {
 .yc-datepicker-calendar.react-datepicker--time-only {
   border-radius: 16px !important;
 }
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-6px);
+    opacity: 0.6;
+  }
+}
