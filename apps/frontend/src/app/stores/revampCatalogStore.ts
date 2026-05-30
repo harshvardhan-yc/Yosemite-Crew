@@ -44,6 +44,26 @@ type RevampCatalogState = {
   generateItemCode: (type: CatalogItemType) => string;
 };
 
+const applyBreakdownUpdate = (
+  packages: PackageRevamp[],
+  packageId: string,
+  updateFn: (breakdown: PackageBreakdownItem[]) => PackageBreakdownItem[]
+): PackageRevamp[] =>
+  packages.map((p) => {
+    if (p.id !== packageId) return p;
+    return { ...p, breakdown: updateFn(p.breakdown) };
+  });
+
+const patchBreakdownItem =
+  (itemId: string, patch: Partial<PackageBreakdownItem>) =>
+  (bi: PackageBreakdownItem): PackageBreakdownItem =>
+    bi.id === itemId ? { ...bi, ...patch } : bi;
+
+const excludeBreakdownItem =
+  (itemId: string) =>
+  (bi: PackageBreakdownItem): boolean =>
+    bi.id !== itemId;
+
 export const useRevampCatalogStore = create<RevampCatalogState>()((set, _get) => ({
   specialities: MOCK_SPECIALITIES,
   services: MOCK_SERVICES,
@@ -132,20 +152,15 @@ export const useRevampCatalogStore = create<RevampCatalogState>()((set, _get) =>
 
   updateBreakdownItem: (packageId, itemId, patch) =>
     set((state) => ({
-      packages: state.packages.map((p) =>
-        p.id === packageId
-          ? {
-              ...p,
-              breakdown: p.breakdown.map((bi) => (bi.id === itemId ? { ...bi, ...patch } : bi)),
-            }
-          : p
+      packages: applyBreakdownUpdate(state.packages, packageId, (breakdown) =>
+        breakdown.map(patchBreakdownItem(itemId, patch))
       ),
     })),
 
   removeBreakdownItem: (packageId, itemId) =>
     set((state) => ({
-      packages: state.packages.map((p) =>
-        p.id === packageId ? { ...p, breakdown: p.breakdown.filter((bi) => bi.id !== itemId) } : p
+      packages: applyBreakdownUpdate(state.packages, packageId, (breakdown) =>
+        breakdown.filter(excludeBreakdownItem(itemId))
       ),
     })),
 
