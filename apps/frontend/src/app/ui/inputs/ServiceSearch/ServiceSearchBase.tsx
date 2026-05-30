@@ -77,6 +77,7 @@ const ServiceSearchBase = ({
         id={inputId}
         name={inputId}
         placeholder="Search or create service"
+        aria-label="Search or create service"
         className="service-search-input"
         value={query}
         onChange={(e) => {

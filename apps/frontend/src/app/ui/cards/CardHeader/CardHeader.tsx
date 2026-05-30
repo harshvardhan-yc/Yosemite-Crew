@@ -21,11 +21,9 @@ const CardHeader = ({ title, options, selected, onSelect }: CardHeaderProps) => 
     setOpen(false);
   };
 
-  useEffect(() => {
-    if (!selected && options.length > 0 && !options.includes(internalSelected)) {
-      setInternalSelected(options[0]);
-    }
-  }, [selected, options, internalSelected]);
+  if (!selected && options.length > 0 && !options.includes(internalSelected)) {
+    setInternalSelected(options[0]);
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -68,6 +66,7 @@ const CardHeader = ({ title, options, selected, onSelect }: CardHeaderProps) => 
           >
             {options.map((option: string) => (
               <button
+                type="button"
                 aria-pressed={option === selectedValue}
                 className="outline-none border-0 bg-white hover:bg-card-hover! rounded-2xl! transition-all duration-300 p-2"
                 key={option}

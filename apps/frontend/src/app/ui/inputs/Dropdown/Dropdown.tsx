@@ -187,6 +187,7 @@ const Dropdown = ({
           <input
             id={searchInputId}
             type="search"
+            aria-label={`Search ${placeholder}`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="border-0 text-[16px]! w-full px-2 focus-visible:outline-none"
@@ -207,7 +208,7 @@ const Dropdown = ({
         const isSelected = valueToSend === value;
         return (
           <button
-            key={label + 'team-key' + index}
+            key={valueToSend || label}
             type="button"
             aria-pressed={isSelected}
             className={`select-input-dropdown-item ${index === list.length - 1 ? '' : 'border-b border-grey-light'}`}

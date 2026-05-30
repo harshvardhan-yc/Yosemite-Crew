@@ -15,7 +15,7 @@ const HamburgerMenuButton = ({ menuOpen, onClick, controlsId }: HamburgerMenuBut
     aria-expanded={menuOpen}
     aria-controls={controlsId}
   >
-    <div className="relative flex items-center justify-center w-5 h-5">
+    <div className="relative flex items-center justify-center size-5">
       <span
         className="yc-hamburger-line absolute transition-all duration-300"
         style={{

@@ -343,11 +343,11 @@ const OrgGuard = ({ children, skeleton = null }: OrgGuardProps) => {
     setChecked(true);
   }, [
     isAuthGuardDisabled,
+    router,
     primaryOrgId,
     primaryOrg,
     getSpecialitiesByOrgId,
     pathname,
-    router,
     profile,
     orgStatus,
     getAvailabilitiesByOrgId,

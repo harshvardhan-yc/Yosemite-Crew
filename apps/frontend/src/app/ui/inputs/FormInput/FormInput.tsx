@@ -56,6 +56,7 @@ const FormInput = ({
           tabIndex={tabIndex}
           aria-invalid={Boolean(error)}
           aria-describedby={errorId}
+          aria-label={inlabel}
           onFocus={onFocus}
           onBlur={onBlur}
           onClick={handleInputClick}

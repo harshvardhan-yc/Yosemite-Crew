@@ -76,14 +76,8 @@ const LabelDropdown = ({
       setSelected(null);
       return;
     }
-    const found = options.find(
-      (option) => option.value === defaultOption || option.label === defaultOption
-    );
-    if (found) {
-      setSelected(found);
-    } else {
-      setSelected(null);
-    }
+    const found = options.find((o) => o.value === defaultOption || o.label === defaultOption);
+    setSelected(found ?? null);
   }, [defaultOption, options]);
 
   const filteredOptions = useFilteredOptions(options, searchQuery);
@@ -141,9 +135,9 @@ const LabelDropdown = ({
       style={shouldPortal ? (portalStyle ?? undefined) : undefined}
     >
       {filteredOptions.length > 0 &&
-        filteredOptions.map((option, i) => (
+        filteredOptions.map((option) => (
           <button
-            key={option.value + i}
+            key={option.value}
             type="button"
             aria-pressed={selected?.value === option.value}
             className="px-5 py-3 text-left text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full"
@@ -182,10 +176,13 @@ const LabelDropdown = ({
           {open && searchable && (
             <input
               ref={inputRef}
+              id={`${listboxId}-search`}
+              name={`${listboxId}-search`}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={selected ? selected.label : ''}
+              aria-label={`Search ${placeholder}`}
               className="w-full min-w-0 bg-transparent text-left text-body-4 text-black-text focus-visible:outline-none placeholder:text-input-text-placeholder"
             />
           )}

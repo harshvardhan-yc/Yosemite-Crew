@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { IoIosWarning } from 'react-icons/io';
 import { Option } from '@/app/features/companions/types/companion';
@@ -67,14 +67,14 @@ const MultiSelectPanel = ({
     style={shouldPortal ? (portalStyle ?? undefined) : undefined}
   >
     {filteredOptions.length > 0 ? (
-      filteredOptions.map((option, index: number) => {
+      filteredOptions.map((option) => {
         const isSelected = valueSet.has(option.value);
         return (
           <button
             type="button"
             aria-pressed={isSelected}
             className="px-3 py-2 text-left text-body-4 hover:bg-card-hover rounded-lg text-text-primary w-full flex items-center justify-between gap-2"
-            key={option.value + index}
+            key={option.value}
             onClick={() => onToggleOption(option)}
           >
             <span>{option.label}</span>
@@ -102,6 +102,7 @@ const MultiSelectDropdown = ({
   icon,
   portal = true,
 }: DropdownProps) => {
+  const searchId = useId();
   const {
     open,
     searchQuery,
@@ -208,7 +209,10 @@ const MultiSelectDropdown = ({
           {open && searchable ? (
             <input
               ref={inputRef}
+              id={searchId}
+              name={searchId}
               type="text"
+              aria-label={`Search ${placeholder}`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={hasSelection ? selectedLabel : ''}

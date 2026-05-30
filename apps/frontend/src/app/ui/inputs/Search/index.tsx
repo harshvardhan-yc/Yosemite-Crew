@@ -28,6 +28,7 @@ const Search = ({
       <input
         id={inputId}
         type="search"
+        aria-label={label}
         value={value}
         onChange={(e) => setSearch(e.target.value)}
         className="font-satoshi outline-none border-0 w-full text-body-4 placeholder:text-text-secondary text-text-primary"

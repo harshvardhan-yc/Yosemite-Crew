@@ -75,14 +75,15 @@ const groupRoutes = (
   routes: RouteItem[],
   groups: readonly { label: string; routeNames: readonly string[] }[]
 ) =>
-  groups
-    .map((group) => ({
-      label: group.label,
-      routes: group.routeNames
-        .map((routeName) => routes.find((route) => route.name === routeName))
-        .filter((route): route is RouteItem => Boolean(route)),
-    }))
-    .filter((group) => group.routes.length > 0);
+  groups.reduce<Array<{ label: string; routes: RouteItem[] }>>((visibleGroups, group) => {
+    const groupRoutes = group.routeNames.reduce<RouteItem[]>((items, routeName) => {
+      const route = routes.find((item) => item.name === routeName);
+      if (route) items.push(route);
+      return items;
+    }, []);
+    if (groupRoutes.length > 0) visibleGroups.push({ label: group.label, routes: groupRoutes });
+    return visibleGroups;
+  }, []);
 
 const Sidebar = () => {
   useLoadSpecialitiesForPrimaryOrg();

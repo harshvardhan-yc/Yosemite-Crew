@@ -20,6 +20,7 @@ const MobileSearchBar = ({ placeholder = 'Search' }: MobileSearchBarProps) => {
       <input
         id={inputId}
         type="search"
+        aria-label={placeholder}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}

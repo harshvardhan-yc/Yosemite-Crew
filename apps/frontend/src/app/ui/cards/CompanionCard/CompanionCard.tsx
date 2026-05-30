@@ -3,7 +3,7 @@ import React from 'react';
 import { FaCalendar, FaTasks } from 'react-icons/fa';
 import { IoEye } from 'react-icons/io5';
 import { MdOutlineAutorenew } from 'react-icons/md';
-import { getStatusStyle } from '@/app/ui/tables/CompanionsTable';
+import { getCompanionStatusStyle } from '@/app/ui/tables/tableUtils';
 import { CompanionParent } from '@/app/features/companions/pages/Companions/types';
 import { getAgeInYears } from '@/app/lib/date';
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
@@ -46,7 +46,7 @@ const CompanionCard = ({
   canEditCompanions,
 }: CompanionCardProps) => {
   return (
-    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white px-3 py-3 flex flex-col justify-between gap-2 cursor-pointer">
+    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white p-3 flex flex-col justify-between gap-2 cursor-pointer">
       <div className="flex gap-2 items-center">
         <Image
           alt={''}
@@ -57,7 +57,7 @@ const CompanionCard = ({
           height={40}
           width={40}
           style={{ borderRadius: '50%' }}
-          className="h-10 w-10 rounded-full"
+          className="size-10 rounded-full"
         />
         <div className="flex flex-col gap-0">
           <div className="text-body-3-emphasis text-text-primary">
@@ -93,7 +93,7 @@ const CompanionCard = ({
         <div className="text-caption-1 text-text-primary">{'-'}</div>
       </div>
       <div
-        style={getStatusStyle(companion.companion.status || 'inactive')}
+        style={getCompanionStatusStyle(companion.companion.status || 'inactive')}
         className="w-full rounded-2xl h-12 flex items-center justify-center text-body-4"
       >
         {toTitleCase(companion.companion.status || 'inactive')}
@@ -101,8 +101,9 @@ const CompanionCard = ({
       <div className="flex gap-2 justify-center">
         <GlassTooltip content="View" side="top">
           <button
+            type="button"
             onClick={() => handleViewCompanion(companion)}
-            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
           >
             <IoEye size={20} color="var(--color-neutral-900)" />
           </button>
@@ -110,8 +111,9 @@ const CompanionCard = ({
         {canEditCompanions && (
           <GlassTooltip content="Change status" side="top">
             <button
+              type="button"
               onClick={() => handleChangeStatus(companion)}
-              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
             >
               <MdOutlineAutorenew size={18} color="var(--color-neutral-900)" />
             </button>
@@ -120,8 +122,9 @@ const CompanionCard = ({
         {canEditAppointments && (
           <GlassTooltip content="Schedule" side="top">
             <button
+              type="button"
               onClick={() => handleBookAppointment(companion)}
-              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
             >
               <FaCalendar size={14} color="var(--color-neutral-900)" />
             </button>
@@ -130,8 +133,9 @@ const CompanionCard = ({
         {canEditTasks && (
           <GlassTooltip content="Task" side="top">
             <button
+              type="button"
               onClick={() => handleAddTask(companion)}
-              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
             >
               <FaTasks size={14} color="var(--color-neutral-900)" />
             </button>

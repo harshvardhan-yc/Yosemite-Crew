@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import CardHeader from '@/app/ui/cards/CardHeader/CardHeader';
 
 import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
@@ -36,21 +36,18 @@ const Explorecard = () => {
   const [selectedDuration, setSelectedDuration] = useState<DashboardDurationOption>('Last week');
   const analytics = useDashboardAnalytics(mapDashboardDurationOption(selectedDuration));
   const currency = useCurrencyForPrimaryOrg();
-  const stats = getExploreStats(analytics.explore, currency);
   const durationOptions = analytics.durationOptions.explore;
-
-  useEffect(() => {
-    if (!durationOptions.includes(selectedDuration)) {
-      setSelectedDuration(durationOptions[0] ?? 'Last week');
-    }
-  }, [durationOptions, selectedDuration]);
+  const effectiveDuration = durationOptions.includes(selectedDuration)
+    ? selectedDuration
+    : (durationOptions[0] ?? 'Last week');
+  const stats = getExploreStats(analytics.explore, currency);
 
   return (
     <div className="flex flex-col w-full gap-3">
       <CardHeader
         title={'Explore'}
         options={durationOptions}
-        selected={selectedDuration}
+        selected={effectiveDuration}
         onSelect={(next) => setSelectedDuration(next as DashboardDurationOption)}
       />
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

@@ -99,9 +99,13 @@ const InventoryFilters = ({
 }: InventoryFiltersProps) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
-  const [isMounted, setIsMounted] = useState(false);
+  const isMounted = typeof document !== 'undefined';
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const categoryOptions = useMemo(
     () =>
@@ -113,14 +117,10 @@ const InventoryFilters = ({
   );
 
   useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (filters.category !== 'all' && !categories.includes(filters.category)) {
-      onChange({ ...filters, category: 'all' });
+    const f = filtersRef.current;
+    if (f.category !== 'all' && !categories.includes(f.category)) {
+      onChangeRef.current({ ...f, category: 'all' });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categories]);
 
   const updateFilters = (patch: Partial<InventoryFiltersState>) => {
@@ -254,7 +254,7 @@ const InventoryFilters = ({
                     )}
                   >
                     <span
-                      className="inline-block h-3 w-3 rounded-full shrink-0"
+                      className="inline-block size-3 rounded-full shrink-0"
                       style={{
                         backgroundColor: option.border,
                         borderWidth: '1px',

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import countries from '@/app/lib/data/countryList';
 import { Organisation } from '@yosemite-crew/types';
 import { UserProfile } from '@/app/features/users/types/profile';
@@ -85,13 +85,14 @@ const GoogleSearchDropDown = ({
   onlyAddress = false,
   onAddressSelect,
 }: Readonly<GoogleSearchDropDownProps>) => {
+  const uid = useId();
   const [isFocused, setIsFocused] = useState(false);
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const suppressNextOpenRef = useRef(false);
   const shouldFetchRef = useRef(false);
-  const lastQueriedRef = useRef<string>('');
+  const lastQueriedRef = useRef<string>((value ?? '').trim());
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const fetchDetails = true;
 
@@ -105,12 +106,6 @@ const GoogleSearchDropDown = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
-
-  useEffect(() => {
-    lastQueriedRef.current = (value ?? '').trim();
-    setOpen(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount to initialize lastQueriedRef
   }, []);
 
   useEffect(() => {
@@ -342,7 +337,8 @@ const GoogleSearchDropDown = ({
         <input
           type={intype}
           name={inname}
-          id={inname}
+          id={uid}
+          aria-label={inlabel}
           value={value ?? ''}
           onChange={onChange}
           autoComplete="off"
@@ -369,7 +365,7 @@ const GoogleSearchDropDown = ({
           `}
         />
         <label
-          htmlFor={inname}
+          htmlFor={uid}
           className={`
             pointer-events-none absolute left-6
             top-1/2 -translate-y-1/2

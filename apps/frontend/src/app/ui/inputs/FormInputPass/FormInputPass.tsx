@@ -48,6 +48,7 @@ const FormInputPass = ({
           placeholder=" "
           aria-invalid={Boolean(error)}
           aria-describedby={errorId}
+          aria-label={inlabel}
           className={`
             peer w-full min-h-12 rounded-2xl bg-transparent px-6 py-2.5
             text-body-4 text-text-primary

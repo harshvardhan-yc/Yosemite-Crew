@@ -96,18 +96,14 @@ const SearchDropdown = ({
       >
         <input
           id={inputId}
-          type="search"
+          type="text"
+          aria-label={accessibleLabel}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={canSearch}
-          aria-controls={listboxId}
-          aria-haspopup="listbox"
           aria-invalid={!!error}
           aria-describedby={error ? errorId : undefined}
           className="border-0 text-body-4 text-text-primary w-full placeholder:text-input-text-placeholder placeholder:text-body-4 focus-visible:outline-none"
@@ -131,6 +127,7 @@ const SearchDropdown = ({
         >
           {filtered.map((option) => (
             <button
+              type="button"
               key={option.value}
               onClick={() => onSelectOption(option.value)}
               className={
