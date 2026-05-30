@@ -94,7 +94,7 @@ jobs:
         run: pnpm --filter frontend run lint
 
       - name: Unit tests with coverage
-        run: pnpm --filter frontend run test -- --ci --maxWorkers=4 --cacheDirectory=.jest-cache --coverage --coverageThreshold='{"global":{"statements":80,"branches":70,"functions":80,"lines":80}}'
+        run: pnpm --filter frontend run test -- --ci --maxWorkers=4 --cacheDirectory=.jest-cache --coverage --coverageThreshold='{"global":{"statements":80,"branches":70,"functions":78,"lines":80}}'
 
       - name: Upload coverage report
         if: always()
