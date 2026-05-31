@@ -190,7 +190,7 @@ const Chat = ({ activeAppointment }: ChatProps) => {
     if (isCheckingStatus) {
       return (
         <p className="font-satoshi font-normal text-[14px] text-grey-noti italic">
-          Loading chat status...
+          Loading chat status…
         </p>
       );
     }

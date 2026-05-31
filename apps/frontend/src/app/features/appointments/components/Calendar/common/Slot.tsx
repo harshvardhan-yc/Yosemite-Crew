@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePopoverManager } from '@/app/hooks/usePopoverManager';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import Image from 'next/image';
@@ -49,6 +49,36 @@ type SlotProps = {
 
 const MARKER_CLICK_DELAY_MS = 180;
 
+const getCompanionDisplayName = (appointment: Appointment) =>
+  formatCompanionNameWithOwnerLastName(appointment.companion?.name, appointment.companion?.parent);
+
+const setCustomDragGhost = (
+  event: React.DragEvent<HTMLButtonElement>,
+  appointment: Appointment
+) => {
+  const ghost = document.createElement('img');
+  ghost.src = getSafeImageUrl(
+    getAppointmentCompanionPhotoUrl(appointment.companion),
+    appointment.companion.species.toLowerCase() as ImageType
+  );
+  ghost.width = 24;
+  ghost.height = 24;
+  ghost.style.position = 'fixed';
+  ghost.style.top = '-9999px';
+  ghost.style.left = '-9999px';
+  ghost.style.width = '24px';
+  ghost.style.height = '24px';
+  ghost.style.borderRadius = '999px';
+  document.body.appendChild(ghost);
+  event.dataTransfer.setDragImage(ghost, 12, 12);
+  globalThis.setTimeout(() => {
+    ghost.remove();
+  }, 0);
+};
+const DEFAULT_DROP_AVAILABILITY_INTERVALS: Array<{ startMinute: number; endMinute: number }> = [];
+const DEFAULT_UNAVAILABLE_SEGMENTS: Array<{ startMinute: number; endMinute: number }> = [];
+const DEFAULT_INVOICES_BY_APPOINTMENT_ID: Record<string, Invoice> = {};
+
 type ContextMenuState = {
   appointment: Appointment;
   x: number;
@@ -73,14 +103,14 @@ const SlotComponent: React.FC<SlotProps> = ({
   onAppointmentDropAt,
   onDragHoverTarget,
   onCreateAppointmentAt,
-  dropAvailabilityIntervals = [],
-  unavailableSegments = [],
+  dropAvailabilityIntervals = DEFAULT_DROP_AVAILABILITY_INTERVALS,
+  unavailableSegments = DEFAULT_UNAVAILABLE_SEGMENTS,
   draggedAppointmentDurationMinutes,
   dropDate,
   dropHour = 0,
   dropPractitionerId,
   zoomMode = 'in',
-  invoicesByAppointmentId = {},
+  invoicesByAppointmentId = DEFAULT_INVOICES_BY_APPOINTMENT_ID,
 }) => {
   const isZoomOutMode = zoomMode === 'out';
   const { notify } = useNotify();
@@ -99,7 +129,7 @@ const SlotComponent: React.FC<SlotProps> = ({
   } = usePopoverManager({ closeOnHoverLeave: false });
   const appointmentPopoverId = useId();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!draggedAppointmentId) return;
     setActivePopoverKey(null);
     setDropPreviewMinute(null);
@@ -163,7 +193,7 @@ const SlotComponent: React.FC<SlotProps> = ({
   }, [contextMenu]);
 
   const sortedSlotEvents = useMemo(
-    () => [...slotEvents].sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
+    () => slotEvents.toSorted((a, b) => a.startTime.getTime() - b.startTime.getTime()),
     [slotEvents]
   );
 
@@ -174,12 +204,6 @@ const SlotComponent: React.FC<SlotProps> = ({
       ) ?? null,
     [sortedSlotEvents, activePopoverKey]
   );
-  const getCompanionDisplayName = (appointment: Appointment) =>
-    formatCompanionNameWithOwnerLastName(
-      appointment.companion?.name,
-      appointment.companion?.parent
-    );
-
   const handleOpenPopover = (
     key: string,
     target: HTMLButtonElement,
@@ -198,30 +222,6 @@ const SlotComponent: React.FC<SlotProps> = ({
     return { left, top, width };
   }, [contextMenu]);
 
-  const setCustomDragGhost = (
-    event: React.DragEvent<HTMLButtonElement>,
-    appointment: Appointment
-  ) => {
-    const ghost = document.createElement('img');
-    ghost.src = getSafeImageUrl(
-      getAppointmentCompanionPhotoUrl(appointment.companion),
-      appointment.companion.species.toLowerCase() as ImageType
-    );
-    ghost.width = 24;
-    ghost.height = 24;
-    ghost.style.position = 'fixed';
-    ghost.style.top = '-9999px';
-    ghost.style.left = '-9999px';
-    ghost.style.width = '24px';
-    ghost.style.height = '24px';
-    ghost.style.borderRadius = '999px';
-    document.body.appendChild(ghost);
-    event.dataTransfer.setDragImage(ghost, 12, 12);
-    globalThis.setTimeout(() => {
-      ghost.remove();
-    }, 0);
-  };
-
   const getMinuteFromSlotPointer = (clientY: number, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();
     const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
@@ -239,17 +239,17 @@ const SlotComponent: React.FC<SlotProps> = ({
   const hourEnd = hourStart + 60;
   const availabilitySegments = useMemo(() => {
     const effectiveDuration = Math.max(5, draggedAppointmentDurationMinutes ?? 5);
-    return dropAvailabilityIntervals
-      .map((interval) => {
-        const segmentStart = Math.max(hourStart, interval.startMinute);
-        const segmentEnd = Math.min(hourEnd, interval.endMinute + effectiveDuration);
-        if (segmentEnd <= segmentStart) return null;
-        return {
+    return dropAvailabilityIntervals.flatMap((interval) => {
+      const segmentStart = Math.max(hourStart, interval.startMinute);
+      const segmentEnd = Math.min(hourEnd, interval.endMinute + effectiveDuration);
+      if (segmentEnd <= segmentStart) return [];
+      return [
+        {
           top: ((segmentStart - hourStart) / 60) * height,
           segmentHeight: Math.max(4, ((segmentEnd - segmentStart) / 60) * height),
-        };
-      })
-      .filter(Boolean) as Array<{ top: number; segmentHeight: number }>;
+        },
+      ];
+    });
   }, [draggedAppointmentDurationMinutes, dropAvailabilityIntervals, height, hourEnd, hourStart]);
 
   const laidOutZoomInEvents = useMemo(() => {
@@ -455,7 +455,7 @@ const SlotComponent: React.FC<SlotProps> = ({
           <button
             type="button"
             aria-label={createAppointmentLabel}
-            className="absolute inset-0 z-[1] rounded-none!"
+            className="absolute inset-0 z-1 rounded-none!"
             onClick={(event) => {
               const parent = event.currentTarget.parentElement as HTMLDivElement;
               tryCreateAppointmentAt(getMinuteFromSlotPointer(event.clientY, parent));
@@ -470,13 +470,13 @@ const SlotComponent: React.FC<SlotProps> = ({
           availabilitySegments.map((segment, index) => (
             <div
               key={`drop-availability-${index}-${segment.top}`}
-              className="pointer-events-none absolute inset-x-1 z-20 rounded-md border border-grey-light bg-[var(--color-calendar-availability-overlay)]"
+              className="pointer-events-none absolute inset-x-1 z-20 rounded-md border border-grey-light bg-calendar-availability-overlay"
               style={{ top: segment.top, height: segment.segmentHeight }}
             />
           ))}
         {draggedAppointmentId && dropPreviewMinute != null && (
           <div
-            className="pointer-events-none absolute inset-x-1 z-30 rounded-md border-2 border-dashed border-grey-light bg-[var(--color-calendar-preview-overlay)]"
+            className="pointer-events-none absolute inset-x-1 z-30 rounded-md border-2 border-dashed border-grey-light bg-calendar-preview-overlay"
             style={{
               top: `${((dropPreviewMinute % 60) / 60) * height}px`,
               height: `${Math.max(
@@ -490,7 +490,7 @@ const SlotComponent: React.FC<SlotProps> = ({
               )}px`,
             }}
           >
-            <div className="h-full w-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
+            <div className="size-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
               {draggedAppointmentLabel || 'Appointment'}
             </div>
           </div>
@@ -526,7 +526,7 @@ const SlotComponent: React.FC<SlotProps> = ({
                 return (
                   <div
                     key={itemKey}
-                    className="relative z-20 rounded-md px-0 py-0 border-0 bg-transparent"
+                    className="relative z-20 rounded-md p-0 border-0 bg-transparent"
                     style={{
                       marginTop: marginTopPx,
                       minHeight: blockHeightPx,
@@ -672,25 +672,27 @@ const SlotComponent: React.FC<SlotProps> = ({
                   onAppointmentDragEnd?.();
                 };
 
+                const appointmentBlockStyle: React.CSSProperties = {
+                  ...statusStyle,
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
+                  borderColor: statusStyle.borderColor,
+                  top: topPx,
+                  left: `calc(${leftPercent}% + ${laneGapPx}px)`,
+                  width: `calc(${widthPercent}% - ${laneGapPx * 2}px)`,
+                  minHeight: blockHeightPx,
+                  height: blockHeightPx,
+                };
+
                 return (
                   <div
                     key={itemKey}
                     className="absolute z-20 overflow-hidden rounded-2xl!"
-                    style={{
-                      ...statusStyle,
-                      borderWidth: '1px',
-                      borderStyle: 'solid',
-                      borderColor: statusStyle.borderColor,
-                      top: topPx,
-                      left: `calc(${leftPercent}% + ${laneGapPx}px)`,
-                      width: `calc(${widthPercent}% - ${laneGapPx * 2}px)`,
-                      minHeight: blockHeightPx,
-                      height: blockHeightPx,
-                    }}
+                    style={appointmentBlockStyle}
                   >
                     <button
                       type="button"
-                      className={`h-full w-full flex items-center justify-between gap-2.5 pl-3 pr-3 text-left ${verticalPadding} ${cursorClass}`}
+                      className={`size-full flex items-center justify-between gap-2.5 pl-3 pr-3 text-left ${verticalPadding} ${cursorClass}`}
                       aria-haspopup="dialog"
                       aria-expanded={activePopoverKey === itemKey}
                       aria-controls={appointmentPopoverId}

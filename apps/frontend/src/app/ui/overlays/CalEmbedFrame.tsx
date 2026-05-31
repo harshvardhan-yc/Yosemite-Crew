@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { getCalApi } from '@calcom/embed-react';
+import { getCalEmbedUrl } from '@/app/ui/overlays/calEmbedUtils';
 
 type CalEmbedFrameProps = {
   calLink: 'yosemitecrew/demo' | 'yosemitecrew/onboarding';
@@ -13,17 +14,6 @@ const CAL_EMBED_NAMESPACE = '30min';
 const CAL_EMBED_CONFIG = {
   theme: 'light' as const,
   layout: 'month_view' as const,
-};
-
-export const getCalEmbedUrl = (calLink: CalEmbedFrameProps['calLink']): string => {
-  const params = new URLSearchParams({
-    theme: 'light',
-    layout: 'month_view',
-    embedType: 'inline',
-    embed: CAL_EMBED_NAMESPACE,
-  });
-
-  return `https://app.cal.com/${calLink}/embed?${params.toString()}`;
 };
 
 const CalEmbedFrame = ({

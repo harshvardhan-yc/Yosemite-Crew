@@ -49,14 +49,15 @@ const AppointmentCard = ({
   const clinicalNotesIntent = getClinicalNotesIntent(orgType);
 
   return (
-    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white px-3 py-3 flex flex-col justify-between gap-2 cursor-pointer">
+    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white p-3 flex flex-col justify-between gap-2 cursor-pointer">
       <AppointmentCardContent appointment={appointment} />
       <div className="flex gap-3 w-full justify-center">
         {isRequestedLikeStatus(appointment.status) ? (
           <>
             <GlassTooltip content="Accept request" side="bottom">
               <button
-                className="h-10 w-10 rounded-full! flex items-center justify-center cursor-pointer"
+                type="button"
+                className="size-10 rounded-full! flex items-center justify-center cursor-pointer"
                 style={{ background: 'var(--color-success-100)' }}
                 onClick={() => void acceptAppointment(appointment)}
               >
@@ -65,7 +66,8 @@ const AppointmentCard = ({
             </GlassTooltip>
             <GlassTooltip content="Decline request" side="bottom">
               <button
-                className="h-10 w-10 rounded-full! flex items-center justify-center cursor-pointer"
+                type="button"
+                className="size-10 rounded-full! flex items-center justify-center cursor-pointer"
                 style={{ background: 'var(--color-danger-100)' }}
                 onClick={() => void rejectAppointment(appointment)}
               >
@@ -77,8 +79,9 @@ const AppointmentCard = ({
           <div className="flex gap-2 w-full flex-wrap justify-center">
             <GlassTooltip content="View appointment" side="bottom">
               <button
+                type="button"
                 onClick={() => handleViewAppointment(appointment)}
-                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 title="View"
               >
                 <IoEyeOutline size={20} color="var(--color-neutral-900)" />
@@ -87,8 +90,9 @@ const AppointmentCard = ({
             {canEditAppointments && canShowStatusChangeAction(appointment.status) && (
               <GlassTooltip content="Change status" side="bottom">
                 <button
+                  type="button"
                   onClick={() => handleChangeStatusAppointment?.(appointment)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Change status"
                 >
                   <MdOutlineAutorenew size={18} color="var(--color-neutral-900)" />
@@ -98,8 +102,9 @@ const AppointmentCard = ({
             {canEditAppointments && allowCalendarDrag(appointment.status) && (
               <GlassTooltip content="Reschedule" side="bottom">
                 <button
+                  type="button"
                   onClick={() => handleRescheduleAppointment(appointment)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Reschedule"
                 >
                   <IoIosCalendar size={18} color="var(--color-neutral-900)" />
@@ -109,8 +114,9 @@ const AppointmentCard = ({
             {canEditAppointments && canAssignAppointmentRoom(appointment.status) && (
               <GlassTooltip content="Assign room" side="bottom">
                 <button
+                  type="button"
                   onClick={() => handleChangeRoomAppointment?.(appointment)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Assign room"
                 >
                   <MdMeetingRoom size={18} color="var(--color-neutral-900)" />
@@ -119,13 +125,14 @@ const AppointmentCard = ({
             )}
             <GlassTooltip content={clinicalNotesLabel} side="bottom">
               <button
+                type="button"
                 onClick={() =>
                   handleDetailAppointment(
                     appointment,
                     orgType === 'HOSPITAL' ? getSoapViewIntent(appointment) : clinicalNotesIntent
                   )
                 }
-                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 title={clinicalNotesLabel}
               >
                 <IoDocumentTextOutline size={18} color="var(--color-neutral-900)" />
@@ -133,13 +140,14 @@ const AppointmentCard = ({
             </GlassTooltip>
             <GlassTooltip content="Finance summary" side="bottom">
               <button
+                type="button"
                 onClick={() =>
                   handleDetailAppointment(appointment, {
                     label: 'finance',
                     subLabel: 'summary',
                   })
                 }
-                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 title="Finance"
               >
                 <IoCardOutline size={18} color="var(--color-neutral-900)" />
@@ -147,13 +155,14 @@ const AppointmentCard = ({
             </GlassTooltip>
             <GlassTooltip content="Lab tests" side="bottom">
               <button
+                type="button"
                 onClick={() =>
                   handleDetailAppointment(appointment, {
                     label: 'labs',
                     subLabel: 'idexx-labs',
                   })
                 }
-                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 title="Lab tests"
               >
                 <MdScience size={18} color="var(--color-neutral-900)" />

@@ -6,7 +6,7 @@ import Fallback from '@/app/ui/overlays/Fallback';
 import { useInvoicesForPrimaryOrgAppointment } from '@/app/hooks/useInvoices';
 import { Appointment } from '@yosemite-crew/types';
 import { formatDateLabel } from '@/app/lib/forms';
-import { getStatusStyle } from '@/app/ui/tables/InvoiceTable';
+import { getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 import { toTitle } from '@/app/lib/validators';
 import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
 import { formatMoney } from '@/app/lib/money';
@@ -110,7 +110,7 @@ const Details = ({ activeAppointment }: DetailsProps) => {
                     <span
                       className="rounded-2xl px-3 py-0.5 text-caption-1 border"
                       style={(() => {
-                        const s = getStatusStyle(payment.status);
+                        const s = getInvoiceStatusStyle(payment.status);
                         return { ...s, borderColor: s.color };
                       })()}
                     >

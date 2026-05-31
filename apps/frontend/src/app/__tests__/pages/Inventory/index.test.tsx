@@ -314,6 +314,11 @@ describe('Inventory Page', () => {
     jest.useRealTimers();
     const { container } = render(<ProtectedInventory />);
     expect(screen.getByRole('heading', { level: 1, name: /Inventory/ })).toBeInTheDocument();
+    // Drain the 300 ms debounce inside act so React 19 doesn't warn about an
+    // unwrapped state update after the test assertion.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
@@ -353,7 +358,7 @@ describe('Inventory Page', () => {
     });
 
     render(<ProtectedInventory />);
-    expect(screen.getByText('Loading inventory...')).toBeInTheDocument();
+    expect(screen.getByText('Loading inventory…')).toBeInTheDocument();
   });
 
   it('defaults businessType to GROOMER if no org type present', () => {

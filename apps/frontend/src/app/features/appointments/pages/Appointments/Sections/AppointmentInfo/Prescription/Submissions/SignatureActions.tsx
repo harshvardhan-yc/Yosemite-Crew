@@ -113,7 +113,6 @@ const SignatureActions = ({ submission, onStatusChange }: SignatureActionsProps)
       for (let i = 0; i < attempts; i += 1) {
         const url = await resolveSignedUrl();
         if (url) return url;
-        // small delay before next retry
         await new Promise((r) => setTimeout(r, 750 * (i + 1)));
       }
       return undefined;

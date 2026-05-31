@@ -146,12 +146,18 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
   }, [activeTask.assignedTo, resolveMemberDisplay, teams]);
 
   const parentTaskOptions = useMemo(() => {
-    const options = companions
-      .filter((companion) => Boolean(companion.parentId))
-      .map((companion) => ({
-        label: resolveMemberDisplay(companion.parentId) || companion.parentId || companion.id,
-        value: companion.parentId,
-      }));
+    const options = companions.reduce<Array<{ label: string; value: string }>>(
+      (items, companion) => {
+        const parentId = companion.parentId;
+        if (!parentId) return items;
+        items.push({
+          label: resolveMemberDisplay(parentId) || parentId || companion.id,
+          value: parentId,
+        });
+        return items;
+      },
+      []
+    );
     if (
       activeTask.assignedTo &&
       !options.some((option) => option.value === activeTask.assignedTo)
@@ -164,10 +170,7 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
     return options;
   }, [activeTask.assignedTo, companions, resolveMemberDisplay]);
 
-  const assigneeOptions = useMemo(
-    () => (activeTask.audience === 'PARENT_TASK' ? parentTaskOptions : teamOptions),
-    [activeTask.audience, parentTaskOptions, teamOptions]
-  );
+  const assigneeOptions = activeTask.audience === 'PARENT_TASK' ? parentTaskOptions : teamOptions;
 
   const categoryOptions = useMemo(() => {
     if (!activeTask.category) return TaskKindOptions;

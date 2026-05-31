@@ -36,6 +36,7 @@ import { useLoadAvailabilities } from '@/app/hooks/useAvailabiities';
 import { useNotify } from '@/app/hooks/useNotify';
 import {
   DropAvailabilityInterval,
+  filterAppointmentsForWeek,
   resolveAvailabilityIntervalsForDay,
 } from '@/app/features/appointments/components/Calendar/availabilityIntervals';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
@@ -74,18 +75,17 @@ type DragContext = {
   durationMinutes: number;
 };
 
-export const filterAppointmentsForWeek = (appointments: Appointment[], weekStart: Date) => {
-  const weekDays = getWeekDays(weekStart);
-  const weekRangeStart = weekDays[0];
-  const weekRangeEnd = new Date(weekDays.at(-1) ?? weekRangeStart);
-  weekRangeEnd.setDate(weekRangeEnd.getDate() + 1);
-
-  return appointments.filter((event) => {
-    const eventStart = new Date(event.startTime);
-    const eventEnd = new Date(event.endTime);
-    return eventEnd > weekRangeStart && eventStart < weekRangeEnd;
+const snapToStep = (minutes: number, step = 5) => Math.round(minutes / step) * step;
+const clampMinutes = (minutes: number) => Math.max(0, Math.min(24 * 60 - 5, snapToStep(minutes)));
+const toLocalDayKey = (date: Date) =>
+  formatDateInPreferredTimeZone(date, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   });
-};
+const getDayOfWeekKey = (date: Date) =>
+  formatDateInPreferredTimeZone(date, { weekday: 'long' }).toUpperCase();
+const toLocalClockFromUtcTime = (utcTime: string) => utcClockTimeToPreferredTimeZoneClock(utcTime);
 
 const getErrorMessageFromCandidate = (
   candidate: { response?: { data?: unknown } } | { data?: unknown } | { message?: string },
@@ -111,6 +111,34 @@ const getErrorMessageFromCandidate = (
   const candidateMessage = candidateRecord?.message;
 
   return getResponseMessage(responseData) || getTrimmedMessage(candidateMessage) || fallback;
+};
+
+const hasAppointmentConflict = (
+  moved: Appointment,
+  nextStart: Date,
+  nextEnd: Date,
+  sourceAppointments: Appointment[],
+  targetLeadId?: string
+) => {
+  return sourceAppointments.some((existing) => {
+    if (!existing.id || existing.id === moved.id) return false;
+    if (existing.status === 'CANCELLED' || existing.status === 'NO_SHOW') return false;
+    const existingStart = new Date(existing.startTime);
+    const existingEnd = new Date(existing.endTime);
+    const overlaps =
+      nextStart.getTime() < existingEnd.getTime() && nextEnd.getTime() > existingStart.getTime();
+    if (!overlaps) return false;
+
+    const movedLead = targetLeadId || moved.lead?.id;
+    const existingLead = existing.lead?.id;
+    const leadConflict = !!movedLead && movedLead === existingLead;
+
+    const movedRoom = moved.room?.id;
+    const existingRoom = existing.room?.id;
+    const roomConflict = !!movedRoom && movedRoom === existingRoom;
+
+    return leadConflict || roomConflict;
+  });
 };
 
 const AppointmentCalendar = ({
@@ -197,46 +225,10 @@ const AppointmentCalendar = ({
         ?.toLowerCase() ?? '',
     []
   );
-  const snapToStep = (minutes: number, step = 5) => Math.round(minutes / step) * step;
-  const clampMinutes = (minutes: number) => Math.max(0, Math.min(24 * 60 - 5, snapToStep(minutes)));
-  const toLocalDayKey = (date: Date) =>
-    formatDateInPreferredTimeZone(date, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-  const getDayOfWeekKey = (date: Date) =>
-    formatDateInPreferredTimeZone(date, { weekday: 'long' }).toUpperCase();
   const isAppointmentDraggable = (appointment: Appointment) =>
     !!appointment.id && canEditAppointments && allowCalendarDrag(appointment.status);
 
-  const hasConflict = (
-    moved: Appointment,
-    nextStart: Date,
-    nextEnd: Date,
-    sourceAppointments: Appointment[],
-    targetLeadId?: string
-  ) => {
-    return sourceAppointments.some((existing) => {
-      if (!existing.id || existing.id === moved.id) return false;
-      if (existing.status === 'CANCELLED' || existing.status === 'NO_SHOW') return false;
-      const existingStart = new Date(existing.startTime);
-      const existingEnd = new Date(existing.endTime);
-      const overlaps =
-        nextStart.getTime() < existingEnd.getTime() && nextEnd.getTime() > existingStart.getTime();
-      if (!overlaps) return false;
-
-      const movedLead = targetLeadId || moved.lead?.id;
-      const existingLead = existing.lead?.id;
-      const leadConflict = !!movedLead && movedLead === existingLead;
-
-      const movedRoom = moved.room?.id;
-      const existingRoom = existing.room?.id;
-      const roomConflict = !!movedRoom && movedRoom === existingRoom;
-
-      return leadConflict || roomConflict;
-    });
-  };
+  const hasConflict = hasAppointmentConflict;
 
   const resolvePractitionerId = useCallback(
     (candidateId?: string) => {
@@ -265,10 +257,6 @@ const AppointmentCalendar = ({
     );
     return member?.practionerId || member?._id;
   }, [authUserId, normalizeId, teams]);
-
-  const toLocalClockFromUtcTime = (utcTime: string) => {
-    return utcClockTimeToPreferredTimeZoneClock(utcTime);
-  };
 
   const supportsSpeciality = useCallback(
     (targetLeadId: string, appointment: Appointment) => {
@@ -355,7 +343,7 @@ const AppointmentCalendar = ({
     }
     if (appointmentServiceId && targetPractitionerId) {
       const availableStartMinutes = await ensureDragAvailability(date, targetLeadId);
-      if (availableStartMinutes.length > 0 && !availableStartMinutes.includes(snappedMinutes)) {
+      if (availableStartMinutes.length === 0 || !availableStartMinutes.includes(snappedMinutes)) {
         warnDrag('No available slot for this service at the selected position.');
         return;
       }
@@ -409,7 +397,10 @@ const AppointmentCalendar = ({
       if (!primaryOrgId) return [];
       const dayKey = getDayOfWeekKey(date);
       const ids = availabilityIdsByOrgId[primaryOrgId] ?? [];
-      const orgAvailabilities = ids.map((id) => availabilitiesById[id]).filter(Boolean);
+      const orgAvailabilities = ids.flatMap((id) => {
+        const availability = availabilitiesById[id];
+        return availability ? [availability] : [];
+      });
       if (!orgAvailabilities.length) return [];
 
       const normalizedTarget = normalizeId(targetLeadId);
@@ -500,7 +491,7 @@ const AppointmentCalendar = ({
         params.minutesSet.add(minute);
       }
     },
-    [allAppointments, buildAppointmentStartFromCalendarMinutes, normalizeId]
+    [allAppointments, buildAppointmentStartFromCalendarMinutes, hasConflict, normalizeId]
   );
 
   const buildAvailableStartMinutes = useCallback(

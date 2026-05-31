@@ -56,8 +56,10 @@ const parseCultureResult = (raw: string): ParsedCultureResult => {
   const lines = raw
     .replaceAll('\r', '')
     .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .flatMap((line) => {
+      const trimmedLine = line.trim();
+      return trimmedLine ? [trimmedLine] : [];
+    });
 
   const parsed: ParsedCultureResult = {
     summary: [],

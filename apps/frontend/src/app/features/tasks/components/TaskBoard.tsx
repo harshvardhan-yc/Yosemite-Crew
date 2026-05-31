@@ -138,10 +138,10 @@ const TaskCard = ({
               alt={item.value.name}
               width={18}
               height={18}
-              className="h-[18px] w-[18px] rounded-full border border-card-border object-cover"
+              className="size-[18px] rounded-full border border-card-border object-cover"
             />
           ) : (
-            <div className="h-[18px] w-[18px] rounded-full border border-card-border bg-white text-[8px] font-semibold text-text-secondary flex items-center justify-center">
+            <div className="size-[18px] rounded-full border border-card-border bg-white text-[8px] font-semibold text-text-secondary flex items-center justify-center">
               {getInitialsStatic(item.value.name)}
             </div>
           )}
@@ -174,7 +174,7 @@ const TaskCard = ({
       <GlassTooltip content="View task" side="bottom">
         <button
           type="button"
-          className="h-7 w-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+          className="size-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -188,7 +188,7 @@ const TaskCard = ({
         <GlassTooltip content="Change status" side="bottom">
           <button
             type="button"
-            className="h-7 w-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+            className="size-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -203,7 +203,7 @@ const TaskCard = ({
         <GlassTooltip content="Reschedule" side="bottom">
           <button
             type="button"
-            className="h-7 w-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+            className="size-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -235,6 +235,13 @@ type TaskBoardProps = {
   onAddTask?: () => void;
 };
 
+const normalizeId = (value?: string | null) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
+
 const TaskBoard = ({
   tasks,
   currentDate,
@@ -259,13 +266,6 @@ const TaskBoard = ({
   const boardRootRef = useRef<HTMLDivElement | null>(null);
   const columnDropRefs = useRef<Partial<Record<BoardStatus, HTMLDivElement | null>>>({});
   const columnScrollRefs = useRef<Partial<Record<BoardStatus, HTMLDivElement | null>>>({});
-
-  const normalizeId = (value?: string | null) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
 
   const currentUserAssigneeId = useMemo(() => {
     const normalizedCurrentUser = normalizeId(authUserId);
@@ -347,9 +347,10 @@ const TaskBoard = ({
   const todayTasks = useMemo(
     () =>
       tasks
-        .filter((task) => isOnPreferredTimeZoneCalendarDay(new Date(task.dueAt), currentDate))
-        .filter((task) =>
-          showMineOnly ? normalizeId(task.assignedTo) === currentUserAssigneeId : true
+        .filter(
+          (task) =>
+            isOnPreferredTimeZoneCalendarDay(new Date(task.dueAt), currentDate) &&
+            (!showMineOnly || normalizeId(task.assignedTo) === currentUserAssigneeId)
         )
         .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()),
     [tasks, currentDate, showMineOnly, currentUserAssigneeId]
@@ -416,6 +417,9 @@ const TaskBoard = ({
     [canEditTasks, notify, todayTasks]
   );
 
+  const moveToStatusRef = useRef(moveToStatus);
+  moveToStatusRef.current = moveToStatus;
+
   const handleTaskCardDragStart = useCallback((event: React.DragEvent<HTMLElement>, task: Task) => {
     setDraggedTaskId(task._id ?? null);
     event.dataTransfer.effectAllowed = 'move';
@@ -455,7 +459,7 @@ const TaskBoard = ({
       const handleColumnDrop = (event: DragEvent) => {
         if (!draggedTaskId || !canEditTasks) return;
         event.preventDefault();
-        void moveToStatus(draggedTaskId, column.key);
+        void moveToStatusRef.current(draggedTaskId, column.key);
         setDraggedTaskId(null);
       };
 
@@ -477,7 +481,7 @@ const TaskBoard = ({
     });
 
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [autoScrollBoardOnDrag, canEditTasks, draggedTaskId, moveToStatus]);
+  }, [autoScrollBoardOnDrag, canEditTasks, draggedTaskId]);
 
   return (
     <div className="h-full min-h-0 rounded-2xl border border-grey-light bg-white overflow-hidden flex flex-col">

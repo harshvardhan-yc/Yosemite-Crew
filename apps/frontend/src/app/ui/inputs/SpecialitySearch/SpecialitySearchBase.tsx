@@ -5,6 +5,8 @@ import { useOrgStore } from '@/app/stores/orgStore';
 
 import './SpecialitySearch.css';
 
+const DEFAULT_CURRENT_SPECIALITIES: never[] = [];
+
 type SpecialitySearchBaseProps<T extends { name: string }> = {
   organisationId?: string | null;
   specialities: T[];
@@ -18,7 +20,7 @@ const SpecialitySearchBase = <T extends { name: string }>({
   specialities,
   setSpecialities,
   multiple = true,
-  currentSpecialities = [],
+  currentSpecialities = DEFAULT_CURRENT_SPECIALITIES,
 }: SpecialitySearchBaseProps<T>) => {
   const uid = useId();
   const inputId = `speciality-search-input-${uid}`;
@@ -108,6 +110,7 @@ const SpecialitySearchBase = <T extends { name: string }>({
         type="text"
         id={inputId}
         name={inputId}
+        aria-label="Search or create specialty"
         placeholder="Search or create specialty"
         className="step-search-input"
         value={query}

@@ -11,7 +11,7 @@ const BookDemo = () => {
       <CalEmbedFrame
         calLink="yosemitecrew/demo"
         title="Book a demo"
-        className="h-full w-full border-0"
+        className="size-full border-0"
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IoChevronDown } from 'react-icons/io5';
 import { IoIosWarning } from 'react-icons/io';
@@ -56,7 +56,11 @@ const LabelDropdown = ({
   portal = true,
   noOptionsMessage,
 }: DropdownProps) => {
-  const [selected, setSelected] = useState<DropdownOption | null>(null);
+  const findSelectedOption = () => {
+    if (defaultOption === undefined) return null;
+    return options.find((o) => o.value === defaultOption || o.label === defaultOption) ?? null;
+  };
+  const [selected, setSelected] = useState<DropdownOption | null>(findSelectedOption);
   const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
   const listboxId = useId();
   const triggerLabel = selected ? `${placeholder}: ${selected.label}` : placeholder;
@@ -70,21 +74,6 @@ const LabelDropdown = ({
     toggleDropdown,
     closeDropdown,
   } = useDropdown({ searchable });
-
-  useEffect(() => {
-    if (defaultOption === undefined) {
-      setSelected(null);
-      return;
-    }
-    const found = options.find(
-      (option) => option.value === defaultOption || option.label === defaultOption
-    );
-    if (found) {
-      setSelected(found);
-    } else {
-      setSelected(null);
-    }
-  }, [defaultOption, options]);
 
   const filteredOptions = useFilteredOptions(options, searchQuery);
   const shouldPortal = portal && typeof document !== 'undefined';
@@ -108,28 +97,32 @@ const LabelDropdown = ({
     });
   }, [dropdownRef]);
 
+  const computeStyleRef = useRef(computeStyle);
+  computeStyleRef.current = computeStyle;
+
   useLayoutEffect(() => {
     if (!open || !portal) {
       setPortalStyle(null);
       return;
     }
-    computeStyle();
-  }, [computeStyle, open, portal]);
+    computeStyleRef.current();
+  }, [open, portal]);
 
   useEffect(() => {
     if (!open || !portal) return;
+    const stableResize = () => computeStyleRef.current();
     const handleOuterScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('[data-portal-dropdown]')) return;
       closeDropdown();
     };
-    globalThis.window.addEventListener('resize', computeStyle);
+    globalThis.window.addEventListener('resize', stableResize);
     globalThis.window.addEventListener('scroll', handleOuterScroll, true);
     return () => {
-      globalThis.window.removeEventListener('resize', computeStyle);
+      globalThis.window.removeEventListener('resize', stableResize);
       globalThis.window.removeEventListener('scroll', handleOuterScroll, true);
     };
-  }, [closeDropdown, computeStyle, open, portal]);
+  }, [closeDropdown, open, portal]);
 
   // Same visual style for both portal and inline — connected panel below trigger
   const panel = (
@@ -141,9 +134,9 @@ const LabelDropdown = ({
       style={shouldPortal ? (portalStyle ?? undefined) : undefined}
     >
       {filteredOptions.length > 0 &&
-        filteredOptions.map((option, i) => (
+        filteredOptions.map((option) => (
           <button
-            key={option.value + i}
+            key={option.value}
             type="button"
             aria-pressed={selected?.value === option.value}
             className="px-5 py-3 text-left text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full"
@@ -169,7 +162,7 @@ const LabelDropdown = ({
       <div className="w-full relative" ref={dropdownRef}>
         <button
           type="button"
-          className={`relative w-full flex min-h-12 items-center px-5 pr-11 py-2.75 min-w-30 border cursor-pointer bg-(--whitebg) focus-visible:outline-none! ${open ? 'border-input-text-placeholder-active! rounded-t-2xl! z-20' : 'border-input-border-default! rounded-2xl!'} ${error || hasError ? 'border-input-border-error!' : ''}`}
+          className={`relative w-full flex min-h-12 items-center px-5 pr-11 py-2.75 min-w-30 border cursor-pointer bg-(--whitebg) focus-visible:outline-none! ${open ? 'border-input-text-placeholder-active! border-b-0! rounded-t-2xl! z-20' : 'border-input-border-default! rounded-2xl!'} ${error || hasError ? 'border-input-border-error!' : ''}`}
           onClick={() => {
             if (!open) {
               openDropdown();
@@ -182,10 +175,13 @@ const LabelDropdown = ({
           {open && searchable && (
             <input
               ref={inputRef}
+              id={`${listboxId}-search`}
+              name={`${listboxId}-search`}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={selected ? selected.label : ''}
+              aria-label={`Search ${placeholder}`}
               className="w-full min-w-0 bg-transparent text-left text-body-4 text-black-text focus-visible:outline-none placeholder:text-input-text-placeholder"
             />
           )}

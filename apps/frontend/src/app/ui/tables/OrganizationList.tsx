@@ -9,6 +9,7 @@ import { OrgWithMembership } from '@/app/features/organization/types/org';
 
 import './DataTable.css';
 import { toTitleCase } from '@/app/lib/validators';
+import { getOrganizationStatusStyle } from '@/app/ui/tables/tableUtils';
 import { resolveOrgScopedRedirect } from '@/app/lib/postAuthRedirect';
 import { startRouteLoader, stopRouteLoader } from '@/app/lib/routeLoader';
 import { useFullscreenLoaderStore } from '@/app/stores/fullscreenLoaderStore';
@@ -22,17 +23,6 @@ type Column<T> = {
 
 type OrganizationListProps = {
   orgs: OrgWithMembership[];
-};
-
-export const getStatusStyle = (status: string) => {
-  switch (status?.toLowerCase()) {
-    case 'active':
-      return { color: 'var(--color-success-400)', backgroundColor: 'var(--color-success-100)' };
-    case 'pending':
-      return { color: 'var(--color-warning-600)', backgroundColor: '#FEF3E9' };
-    default:
-      return { color: 'var(--color-neutral-0)', backgroundColor: 'var(--color-badge-blue-bg)' };
-  }
 };
 
 const OrganizationList = ({ orgs }: OrganizationListProps) => {
@@ -61,7 +51,11 @@ const OrganizationList = ({ orgs }: OrganizationListProps) => {
       key: 'name',
       width: '30%',
       render: (item: OrgWithMembership) => (
-        <button onClick={() => handleOrgClick(item)} className="OrgListDetails text-left">
+        <button
+          type="button"
+          onClick={() => handleOrgClick(item)}
+          className="OrgListDetails text-left"
+        >
           {item.org.name}
         </button>
       ),
@@ -89,7 +83,7 @@ const OrganizationList = ({ orgs }: OrganizationListProps) => {
       render: (item: OrgWithMembership) => (
         <div
           className="OrgStatus"
-          style={getStatusStyle(item.org.isVerified ? 'Active' : 'Pending')}
+          style={getOrganizationStatusStyle(item.org.isVerified ? 'Active' : 'Pending')}
         >
           {item.org.isVerified ? 'Active' : 'Pending'}
         </div>

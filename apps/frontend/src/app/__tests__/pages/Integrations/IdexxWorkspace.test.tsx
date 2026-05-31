@@ -40,8 +40,8 @@ jest.mock('@/app/ui/primitives/Accordion/Accordion', () => ({
 
 jest.mock('@/app/ui/inputs/FormInput/FormInput', () => ({
   __esModule: true,
-  default: ({ inname, value, onChange }: any) => (
-    <input data-testid={inname} value={value} onChange={onChange} />
+  default: ({ inname, inlabel, value, onChange }: any) => (
+    <input aria-label={inlabel ?? inname} data-testid={inname} value={value} onChange={onChange} />
   ),
 }));
 
@@ -49,6 +49,7 @@ jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
   __esModule: true,
   default: ({ placeholder, options, defaultOption, onSelect }: any) => (
     <select
+      aria-label={placeholder}
       data-testid={placeholder}
       value={defaultOption ?? ''}
       onChange={(e) => onSelect({ value: e.target.value })}
@@ -78,6 +79,83 @@ jest.mock('@/app/ui/primitives/Buttons', () => ({
 jest.mock('@/app/ui/overlays/Modal', () => ({
   __esModule: true,
   default: ({ showModal, children }: any) => (showModal ? <div>{children}</div> : null),
+}));
+
+jest.mock('@/app/ui/overlays/Modal/ModalBase', () => ({
+  __esModule: true,
+  default: ({ showModal, children }: any) => (showModal ? <div>{children}</div> : null),
+}));
+
+jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
+  __esModule: true,
+  default: ({ open }: any) => (open ? <div data-testid="pdf-preview" /> : null),
+}));
+
+jest.mock('@/app/ui/tables/GenericTable/GenericTable', () => ({
+  __esModule: true,
+  default: () => <div data-testid="generic-table" />,
+}));
+
+jest.mock('@/app/ui/primitives/Icons/Back', () => ({
+  __esModule: true,
+  default: ({ onClick, disabled }: any) => (
+    <button type="button" onClick={onClick} disabled={disabled} aria-label="Back">
+      Back
+    </button>
+  ),
+}));
+
+jest.mock('@/app/ui/primitives/Icons/Next', () => ({
+  __esModule: true,
+  default: ({ onClick, disabled }: any) => (
+    <button type="button" onClick={onClick} disabled={disabled} aria-label="Next">
+      Next
+    </button>
+  ),
+}));
+
+jest.mock('@/app/ui/widgets/LabResultValue', () => ({
+  __esModule: true,
+  default: ({ test }: any) => <span>{test?.result ?? ''}</span>,
+}));
+
+jest.mock('@/app/ui/layout/MobileSearchBar/MobileSearchBar', () => ({
+  __esModule: true,
+  default: () => <div data-testid="mobile-search-bar" />,
+}));
+
+jest.mock('@/app/ui/primitives/GlassTooltip/GlassTooltip', () => ({
+  __esModule: true,
+  default: ({ children }: any) => <>{children}</>,
+}));
+
+jest.mock('@/app/stores/searchStore', () => ({
+  useSearchStore: (selector: any) => selector({ query: '' }),
+}));
+
+jest.mock('react-icons/io5', () => ({
+  IoInformationCircleOutline: () => <span />,
+  IoOpenOutline: () => <span />,
+}));
+
+jest.mock('@/app/lib/date', () => ({
+  formatDateTimeLocal: (value: string | null | undefined, fallback?: string) =>
+    value || fallback || '',
+}));
+
+jest.mock('@/app/lib/urls', () => ({
+  getSafeIdexxIframeUrl: (url: string) => url,
+}));
+
+jest.mock('@/app/constants/mediaSources', () => ({
+  MEDIA_SOURCES: {
+    futureAssets: { idexxLogoUrl: '/idexx.png' },
+  },
+}));
+
+jest.mock('next/image', () => ({
+  __esModule: true,
+  default: ({ alt }: any) => <span data-testid="next-image" role="img" aria-label={alt} />,
 }));
 
 jest.mock('@/app/ui/primitives/Icons/Close', () => ({
@@ -131,7 +209,7 @@ describe('IDEXX Hub page', () => {
     render(<ProtectedIdexxWorkspace />);
 
     await waitFor(() => {
-      expect(screen.getByAltText('IDEXX')).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: 'IDEXX' })).toBeInTheDocument();
       expect(screen.getByText('Hub')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'IDEXX Hub info' })).toBeInTheDocument();
       expect(screen.getByText('Open Integrations')).toBeInTheDocument();
@@ -320,5 +398,150 @@ describe('IDEXX Hub page', () => {
     render(<ProtectedIdexxWorkspace />);
     await screen.findByRole('heading', { name: /IDEXX.*Hub/i });
     expect(screen.getByRole('navigation', { name: 'Results pagination' })).toBeInTheDocument();
+  });
+
+  it('shows loading state while refreshing', async () => {
+    listIdexxResultsMock.mockImplementation(() => new Promise(() => {}));
+    render(<ProtectedIdexxWorkspace />);
+    // Loading state shows "Refreshing..." button
+    await screen.findByRole('button', { name: 'Refreshing...' });
+  });
+
+  it('toggles auto-refresh off and on', async () => {
+    listIdexxResultsMock.mockResolvedValue([]);
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('heading', { name: /IDEXX.*Hub/i });
+    const autoRefreshBtn = screen.getByRole('button', { name: 'Auto-refresh: On' });
+    expect(autoRefreshBtn).toBeInTheDocument();
+    fireEvent.click(autoRefreshBtn);
+    expect(await screen.findByRole('button', { name: 'Auto-refresh: Off' })).toBeInTheDocument();
+  });
+
+  it('shows no-results placeholder in mobile list when results empty', async () => {
+    listIdexxResultsMock.mockResolvedValue([]);
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('heading', { name: /IDEXX.*Hub/i });
+    expect(screen.getByText('No results found.')).toBeInTheDocument();
+  });
+
+  it('shows no census entries placeholder', async () => {
+    listIdexxResultsMock.mockResolvedValue([]);
+    getIdexxCensusMock.mockResolvedValue([]);
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('heading', { name: /IDEXX.*Hub/i });
+    expect(screen.getByText('No in-house census entries found.')).toBeInTheDocument();
+  });
+
+  it('shows error message from API when fetch fails', async () => {
+    listIdexxResultsMock.mockRejectedValue(new Error('network error'));
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert')).toHaveTextContent('Unable to load IDEXX Hub data.');
+  });
+
+  it('closes result modal via Close button', async () => {
+    listIdexxResultsMock.mockResolvedValue([
+      {
+        resultId: 'r1',
+        orderId: 'o1',
+        patientId: 'p1',
+        patientName: 'Buddy',
+        status: 'FINAL',
+      },
+    ]);
+    getIdexxResultByIdMock.mockResolvedValue({
+      resultId: 'r1',
+      orderId: 'o1',
+      patientId: 'p1',
+      patientName: 'Buddy',
+      status: 'FINAL',
+      rawPayload: { categories: [] },
+    });
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('button', { name: 'Details' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Details' })[0]);
+    await screen.findByText('Result details');
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
+    await waitFor(() => {
+      expect(screen.queryByText('Result details')).not.toBeInTheDocument();
+    });
+  });
+
+  it('displays run summaries in result detail modal', async () => {
+    listIdexxResultsMock.mockResolvedValue([
+      {
+        resultId: 'r1',
+        orderId: 'o1',
+        patientId: 'p1',
+        patientName: 'Buddy',
+        status: 'FINAL',
+      },
+    ]);
+    getIdexxResultByIdMock.mockResolvedValue({
+      resultId: 'r1',
+      patientName: 'Buddy',
+      status: 'FINAL',
+      rawPayload: {
+        categories: [],
+        runSummaries: [{ id: 'rs1', name: 'Chemistry Panel', code: 'CP' }],
+      },
+    });
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('button', { name: 'Details' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Details' })[0]);
+    await screen.findByText('Run summaries');
+    expect(screen.getByText('Chemistry Panel (CP)')).toBeInTheDocument();
+  });
+
+  it('shows loading PDF label while fetching PDF', async () => {
+    const pdfBlobMock = jest.fn(async () => new Blob(['pdf'], { type: 'application/pdf' }));
+    const { getIdexxResultPdfBlob } = jest.requireMock(
+      '@/app/features/integrations/services/idexxService'
+    );
+    (getIdexxResultPdfBlob as jest.Mock).mockImplementation(pdfBlobMock);
+
+    global.URL.createObjectURL = jest.fn(() => 'blob:fake');
+    global.URL.revokeObjectURL = jest.fn();
+
+    listIdexxResultsMock.mockResolvedValue([
+      {
+        resultId: 'r1',
+        orderId: 'o1',
+        patientId: 'p1',
+        patientName: 'Buddy',
+        status: 'FINAL',
+      },
+    ]);
+
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('button', { name: 'PDF' });
+  });
+
+  it('displays IDEXX disclaimer text', async () => {
+    listIdexxResultsMock.mockResolvedValue([]);
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('heading', { name: /IDEXX.*Hub/i });
+    expect(
+      screen.getByText(
+        'IDEXX integration availability is currently limited to the USA, Canada, and the UK.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('shows result detail loading state when loading', async () => {
+    listIdexxResultsMock.mockResolvedValue([
+      {
+        resultId: 'r1',
+        orderId: 'o1',
+        patientId: 'p1',
+        patientName: 'Buddy',
+        status: 'FINAL',
+      },
+    ]);
+    getIdexxResultByIdMock.mockImplementation(() => new Promise(() => {}));
+    render(<ProtectedIdexxWorkspace />);
+    await screen.findByRole('button', { name: 'Details' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Details' })[0]);
+    await screen.findByText('Loading result details…');
   });
 });

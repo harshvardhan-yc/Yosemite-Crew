@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
 import React from 'react';
 
 const MOTION_PROPS = new Set([
@@ -48,7 +47,11 @@ jest.mock('next/image', () => ({
       ...imgProps
     } = rest;
 
-    return <img alt={alt} src={typeof src === 'string' ? src : ''} {...imgProps} />;
+    return React.createElement('img', {
+      alt,
+      src: typeof src === 'string' ? src : '',
+      ...imgProps,
+    });
   },
 }));
 
@@ -70,25 +73,33 @@ jest.mock('framer-motion', () => {
     }
   );
 
-  const AnimatePresence = ({ children }: any) => <>{children}</>;
+  const AnimatePresence = React.Fragment;
+  const domAnimation = {};
 
-  return { motion, AnimatePresence };
+  return { motion, m: motion, AnimatePresence, LazyMotion: React.Fragment, domAnimation };
 });
 
 jest.mock('@/app/ui/primitives/Buttons', () => ({
-  Primary: ({ text, href = '#', onClick, ...props }: any) => (
-    <a
-      data-testid="primary-btn"
-      href={href}
-      onClick={(e) => {
-        e.preventDefault();
-        onClick?.(e);
-      }}
-      {...props}
-    >
-      {text}
-    </a>
-  ),
+  Primary: ({ text, href, onClick, ...props }: any) => {
+    if (href && href !== '#') {
+      return (
+        <a data-testid="primary-btn" href={href} onClick={(e) => onClick?.(e)} {...props}>
+          {text}
+        </a>
+      );
+    }
+    return (
+      <button
+        type="button"
+        data-testid="primary-btn"
+        href={href}
+        onClick={(e) => onClick?.(e)}
+        {...props}
+      >
+        {text}
+      </button>
+    );
+  },
   Secondary: ({ text, onClick, ...props }: any) => (
     <button type="button" onClick={(e) => onClick?.(e)} {...props}>
       {text}
@@ -101,7 +112,7 @@ jest.mock('@/app/ui/inputs/FormInput/FormInput', () => ({
   default: ({ inlabel, value, onChange, error }: any) => (
     <label>
       {inlabel}
-      <input value={value} onChange={onChange} />
+      <input aria-label={inlabel} value={value} onChange={onChange} />
       {error && <span>{error}</span>}
     </label>
   ),
@@ -112,7 +123,7 @@ jest.mock('@/app/ui/inputs/Dropdown/Dropdown', () => ({
   default: ({ placeholder, value, onChange }: any) => (
     <label>
       {placeholder}
-      <input value={value} onChange={(e) => onChange(e.target.value)} />
+      <input aria-label={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
   ),
 }));
@@ -122,7 +133,7 @@ jest.mock('@/app/ui/inputs/GoogleSearchDropDown/GoogleSearchDropDown', () => ({
   default: ({ inlabel, value, onChange }: any) => (
     <label>
       {inlabel}
-      <input value={value} onChange={onChange} />
+      <input aria-label={inlabel} value={value} onChange={onChange} />
     </label>
   ),
 }));

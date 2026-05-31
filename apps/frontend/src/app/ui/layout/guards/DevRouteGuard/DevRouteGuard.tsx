@@ -18,7 +18,8 @@ const isLocalDeveloperFallbackEnabled = () => {
 const DevRouteGuard = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
   const pathname = usePathname();
-  const { status, role, signout } = useAuthStore();
+  const authStore = useAuthStore();
+  const { status, role } = authStore;
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
@@ -53,10 +54,10 @@ const DevRouteGuard = ({ children }: { children: React.ReactNode }) => {
 
     // Authenticated but not a developer - sign out and redirect
     if (isAuthenticated && !isDevRole) {
-      signout();
+      authStore.signout();
       router.replace('/developers/signin');
     }
-  }, [status, role, pathname, router, signout]);
+  }, [status, role, pathname, router, authStore]);
 
   if (!allowed) return null;
 

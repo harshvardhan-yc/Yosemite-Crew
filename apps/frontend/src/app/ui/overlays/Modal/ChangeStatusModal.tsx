@@ -121,14 +121,14 @@ const ChangeStatusModal = <S extends string>({
             text="Cancel"
             onClick={handleCancel}
             isDisabled={saving}
-            className="w-auto min-w-[120px]"
+            className="w-auto min-w-30"
           />
           <Primary
             href="#"
             text={saving ? 'Saving...' : 'Update'}
             onClick={handleSave}
             isDisabled={saving}
-            className="w-auto min-w-[120px]"
+            className="w-auto min-w-30"
           />
         </div>
       </div>

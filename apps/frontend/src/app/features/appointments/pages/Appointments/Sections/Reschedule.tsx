@@ -8,7 +8,7 @@ import {
 import { Slot } from '@/app/features/appointments/types/appointments';
 import { buildUtcDateFromDateAndTime, getDurationMinutes, toUtcCalendarDate } from '@/app/lib/date';
 import { Appointment } from '@yosemite-crew/types';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import DateTimePickerSection from '@/app/features/appointments/components/DateTimePickerSection';
 import { allowReschedule } from '@/app/lib/appointments';
@@ -24,7 +24,7 @@ const Reschedule = ({ showModal, setShowModal, activeAppointment }: ReschedulePr
   const { notify } = useNotify();
   const teams = useTeamForPrimaryOrg();
   const [formData, setFormData] = useState<Appointment>(activeAppointment);
-  const [selectedDate, setSelectedDate] = useState<Date>(
+  const [selectedDate, setSelectedDate] = useState<Date>(() =>
     toUtcCalendarDate(activeAppointment.appointmentDate)
   );
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
@@ -35,6 +35,13 @@ const Reschedule = ({ showModal, setShowModal, activeAppointment }: ReschedulePr
     slot?: string;
   }>({});
 
+  const prevActiveAppointmentRef = useRef(activeAppointment);
+  if (prevActiveAppointmentRef.current !== activeAppointment) {
+    prevActiveAppointmentRef.current = activeAppointment;
+    setFormData(activeAppointment);
+    setSelectedDate(toUtcCalendarDate(activeAppointment.appointmentDate));
+  }
+
   const getLeadOptionsForSlot = useCallback(
     (slot: Slot | null) => {
       if (!teams?.length || !slot) return [];
@@ -43,31 +50,24 @@ const Reschedule = ({ showModal, setShowModal, activeAppointment }: ReschedulePr
       );
       if (!foundSlot?.vetIds?.length) return [];
       const vetIdSet = new Set(foundSlot.vetIds);
-      return teams
-        .filter((team) => {
-          const id = team.practionerId || team._id;
-          return !!id && vetIdSet.has(id);
-        })
-        .map((team) => ({
-          label: team.name || team.practionerId || team._id,
-          value: team.practionerId || team._id,
-        }));
+      return teams.reduce<Array<{ label: string; value: string }>>((options, team) => {
+        const id = team.practionerId || team._id;
+        if (!id || !vetIdSet.has(id)) return options;
+        options.push({
+          label: team.name || id,
+          value: id,
+        });
+        return options;
+      }, []);
     },
     [teams, timeSlots]
   );
-
-  useEffect(() => {
-    if (activeAppointment) {
-      setFormData(activeAppointment);
-      setSelectedDate(toUtcCalendarDate(activeAppointment.appointmentDate));
-    }
-  }, [activeAppointment]);
 
   const LeadOptions = useMemo(() => {
     return getLeadOptionsForSlot(selectedSlot);
   }, [getLeadOptionsForSlot, selectedSlot]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!selectedSlot) return;
     const options = getLeadOptionsForSlot(selectedSlot);
     const currentLeadId = formData.lead?.id || '';
@@ -167,7 +167,7 @@ const Reschedule = ({ showModal, setShowModal, activeAppointment }: ReschedulePr
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const appointmentTypeId = formData.appointmentType?.id;
     if (!appointmentTypeId || !selectedDate) {
       setTimeSlots([]);

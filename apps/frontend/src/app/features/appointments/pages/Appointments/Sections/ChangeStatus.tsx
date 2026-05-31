@@ -61,7 +61,7 @@ const ChangeStatus = ({
         .filter((item): item is { value: string; label: string } => item !== null),
     [teams]
   );
-  const [selectedLeadId, setSelectedLeadId] = React.useState<string>(
+  const [selectedLeadId, setSelectedLeadId] = React.useState<string>(() =>
     normalizeId(activeAppointment.lead?.id)
   );
 

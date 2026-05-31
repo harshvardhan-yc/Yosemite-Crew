@@ -26,12 +26,249 @@ type RequestAccessFormState = {
   reason: string;
 };
 
+const SECTION_HEADER_STYLE: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: '20px',
+};
+
+const SECTION_LINK_BUTTON_STYLE: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  color: 'var(--blue-text)',
+  fontWeight: '500',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+};
+
+const CERT_CARD_STYLE: React.CSSProperties = {
+  alignItems: 'center',
+  flexDirection: 'row',
+  padding: '24px',
+};
+
+const CERT_ICON_WRAPPER_STYLE: React.CSSProperties = {
+  position: 'relative',
+  width: '60px',
+  height: '60px',
+  flexShrink: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '2rem',
+};
+
+const getCertStatusStyle = (status: string): React.CSSProperties => {
+  let color: string;
+  let background: string;
+  if (status === 'Compliant') {
+    color = 'var(--color-success-600)';
+    background = 'var(--color-success-100)';
+  } else if (status === 'Planned') {
+    color = 'var(--color-text-tertiary)';
+    background = 'var(--color-neutral-100)';
+  } else {
+    color = 'var(--color-warning-700)';
+    background = 'var(--color-warning-100)';
+  }
+  return {
+    fontSize: '0.8rem',
+    fontWeight: '700',
+    fontFamily: 'var(--satoshi-font)',
+    color,
+    background,
+    padding: '4px 10px',
+    borderRadius: '100px',
+    display: 'inline-block',
+  };
+};
+
 const EMPTY_REQUEST_ACCESS_FORM: RequestAccessFormState = {
   firstName: '',
   lastName: '',
   workEmail: '',
   companyName: '',
   reason: '',
+};
+
+type Certification = (typeof trustCenterData.certifications)[number];
+type Resource = (typeof trustCenterData.resources)[number];
+type SecurityPillar = (typeof trustCenterData.securityPillars)[number] & { icon?: React.ReactNode };
+
+const CertificationList = ({ certifications }: { certifications: Certification[] }) => (
+  <div className="SectionGrid">
+    {certifications.map((cert) => {
+      let certIcon: React.ReactNode;
+      if (cert.icon.startsWith('http')) {
+        certIcon = (
+          <Image
+            src={cert.icon}
+            alt={cert.name}
+            fill
+            sizes="64px"
+            style={{ objectFit: 'contain' }}
+          />
+        );
+      } else if (cert.icon.length <= 3) {
+        certIcon = (
+          <span
+            style={{
+              fontFamily: 'var(--satoshi-font)',
+              fontWeight: '700',
+              fontSize: '1.75rem',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {cert.icon}
+          </span>
+        );
+      } else {
+        certIcon = <span style={{ fontSize: '2.5rem' }}>{cert.icon}</span>;
+      }
+      return (
+        <div className="PremiumCard" key={cert.name} style={CERT_CARD_STYLE}>
+          <div style={CERT_ICON_WRAPPER_STYLE}>{certIcon}</div>
+          <div style={{ flex: 1, paddingLeft: '20px' }}>
+            <h3
+              style={{
+                fontFamily: 'var(--satoshi-font)',
+                fontWeight: '500',
+                margin: '0 0 6px 0',
+                fontSize: '1.25rem',
+              }}
+            >
+              {cert.name}
+            </h3>
+            <span style={getCertStatusStyle(cert.status)}>{cert.status}</span>
+            {cert.description && (
+              <p
+                style={{
+                  fontSize: '0.9rem',
+                  color: 'var(--color-text-secondary)',
+                  marginTop: '8px',
+                  lineHeight: '1.4',
+                }}
+              >
+                {cert.description}
+              </p>
+            )}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
+const ResourceListSection = ({
+  resources,
+  onCopyLink,
+  onRequestAccess,
+}: {
+  resources: Resource[];
+  onCopyLink: (id: string) => void;
+  onRequestAccess: (title: string) => void;
+}) => (
+  <div className="ResourceList">
+    {resources.map((res) => (
+      <div
+        className="OverviewResourceItem"
+        key={res.title}
+        style={{ width: '100%', border: 'none', textAlign: 'left', font: 'inherit' }}
+      >
+        <div>
+          <h3
+            style={{
+              fontFamily: 'var(--satoshi-font)',
+              fontWeight: '500',
+              fontSize: '1.125rem',
+              margin: 0,
+              marginBottom: '4px',
+            }}
+          >
+            {res.title}
+          </h3>
+          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-tertiary)' }}>
+            {res.type}
+          </span>
+        </div>
+        <div className="ResourceActions">
+          <button
+            type="button"
+            className="ActionBtn Outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopyLink(res.id);
+            }}
+          >
+            <FiLink /> Copy link
+          </button>
+          {res.locked ? (
+            <button
+              type="button"
+              className="ActionBtn Filled"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestAccess(res.title);
+              }}
+            >
+              <FiLock /> Request access
+            </button>
+          ) : (
+            <Link
+              href={res.link || '#'}
+              className="ActionBtn Filled"
+              style={{ textDecoration: 'none' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FiDownload /> Download
+            </Link>
+          )}
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const ControlsList = ({ securityPillars }: { securityPillars: SecurityPillar[] }) => (
+  <div className="SectionGrid">
+    {securityPillars.map((pillar) => (
+      <div className="PremiumCard" key={pillar.title}>
+        <div className="CardHeader">
+          <span className="CardIcon">{pillar.icon}</span>
+          <h3 className="CardTitle">{pillar.title}</h3>
+        </div>
+        <p
+          style={{
+            fontSize: '1rem',
+            color: 'var(--color-text-secondary)',
+            lineHeight: '1.5',
+          }}
+        >
+          {pillar.description}
+        </p>
+        <ul style={{ paddingLeft: '0', listStyle: 'none', marginTop: '10px' }}>
+          {pillar.items.map((item: string) => (
+            <li
+              key={item}
+              style={{ marginBottom: '8px', display: 'flex', gap: '10px', fontSize: '1rem' }}
+            >
+              <span style={{ color: 'var(--color-success-500)', fontWeight: 'bold' }}>✓</span>
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))}
+  </div>
+);
+
+const handleCopyLink = (id: string) => {
+  const url = `${globalThis.location.origin}/trust-center#${id}`;
+  navigator.clipboard.writeText(url);
+  alert('Link copied to clipboard!');
 };
 
 const TrustCenter = () => {
@@ -65,12 +302,6 @@ const TrustCenter = () => {
     setIsModalOpen(true);
   };
 
-  const handleCopyLink = (id: string) => {
-    const url = `${globalThis.location.origin}/trust-center#${id}`;
-    navigator.clipboard.writeText(url);
-    alert('Link copied to clipboard!');
-  };
-
   const handleModalClose = () => {
     setIsModalOpen(false);
     setRequestAccessForm(EMPTY_REQUEST_ACCESS_FORM);
@@ -90,230 +321,6 @@ const TrustCenter = () => {
     alert('Request sent! Our team will review your credentials.');
     handleModalClose();
   };
-
-  // --- Render Helpers ---
-
-  const renderCertifications = () => (
-    <div className="SectionGrid">
-      {certifications.map((cert) => {
-        let statusColor: string;
-        let statusBackground: string;
-        if (cert.status === 'Compliant') {
-          statusColor = 'var(--color-success-600)';
-          statusBackground = 'var(--color-success-100)';
-        } else if (cert.status === 'Planned') {
-          statusColor = 'var(--color-text-tertiary)';
-          statusBackground = 'var(--color-neutral-100)';
-        } else {
-          statusColor = 'var(--color-warning-700)';
-          statusBackground = 'var(--color-warning-100)';
-        }
-        let certIcon: React.ReactNode;
-        if (cert.icon.startsWith('http')) {
-          certIcon = (
-            <Image src={cert.icon} alt={cert.name} fill style={{ objectFit: 'contain' }} />
-          );
-        } else if (cert.icon.length <= 3) {
-          certIcon = (
-            <span
-              style={{
-                fontFamily: 'var(--satoshi-font)',
-                fontWeight: '700',
-                fontSize: '1.75rem',
-                color: 'var(--color-text-primary)',
-              }}
-            >
-              {cert.icon}
-            </span>
-          );
-        } else {
-          certIcon = <span style={{ fontSize: '2.5rem' }}>{cert.icon}</span>;
-        }
-        return (
-          <div
-            className="PremiumCard"
-            key={cert.name}
-            style={{
-              alignItems: 'center',
-              flexDirection: 'row',
-              padding: '24px',
-            }}
-          >
-            <div
-              style={{
-                position: 'relative',
-                width: '60px',
-                height: '60px',
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '2rem',
-              }}
-            >
-              {certIcon}
-            </div>
-
-            <div style={{ flex: 1, paddingLeft: '20px' }}>
-              <h3
-                style={{
-                  fontFamily: 'var(--satoshi-font)',
-                  fontWeight: '500',
-                  margin: '0 0 6px 0',
-                  fontSize: '1.25rem',
-                }}
-              >
-                {cert.name}
-              </h3>
-              <span
-                style={{
-                  fontSize: '0.8rem',
-                  fontWeight: '700',
-                  fontFamily: 'var(--satoshi-font)',
-                  color: statusColor,
-                  background: statusBackground,
-                  padding: '4px 10px',
-                  borderRadius: '100px',
-                  display: 'inline-block',
-                }}
-              >
-                {cert.status}
-              </span>
-              {cert.description && (
-                <p
-                  style={{
-                    fontSize: '0.9rem',
-                    color: 'var(--color-text-secondary)',
-                    marginTop: '8px',
-                    lineHeight: '1.4',
-                  }}
-                >
-                  {cert.description}
-                </p>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-
-  const renderResources = () => (
-    <div className="ResourceList">
-      {resources.map((res) => (
-        <div
-          className="OverviewResourceItem"
-          key={res.title}
-          style={{
-            width: '100%',
-            border: 'none',
-            textAlign: 'left',
-            font: 'inherit',
-          }}
-        >
-          <div>
-            <h3
-              style={{
-                fontFamily: 'var(--satoshi-font)',
-                fontWeight: '500',
-                fontSize: '1.125rem',
-                margin: 0,
-                marginBottom: '4px',
-              }}
-            >
-              {res.title}
-            </h3>
-            <span
-              style={{
-                fontSize: '0.9rem',
-                color: 'var(--color-text-tertiary)',
-              }}
-            >
-              {res.type}
-            </span>
-          </div>
-          <div className="ResourceActions">
-            <button
-              type="button"
-              className="ActionBtn Outline"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCopyLink(res.id);
-              }}
-            >
-              <FiLink /> Copy link
-            </button>
-            {res.locked ? (
-              <button
-                type="button"
-                className="ActionBtn Filled"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRequestAccess(res.title);
-                }}
-              >
-                <FiLock /> Request access
-              </button>
-            ) : (
-              <Link
-                href={res.link || '#'}
-                className="ActionBtn Filled"
-                style={{ textDecoration: 'none' }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <FiDownload /> Download
-              </Link>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  const renderControls = () => (
-    <div className="SectionGrid">
-      {securityPillars.map((pillar: any) => (
-        <div className="PremiumCard" key={pillar.title}>
-          <div className="CardHeader">
-            <span className="CardIcon">{pillar.icon}</span>
-            <h3 className="CardTitle">{pillar.title}</h3>
-          </div>
-          <p
-            style={{
-              fontSize: '1rem',
-              color: 'var(--color-text-secondary)',
-              lineHeight: '1.5',
-            }}
-          >
-            {pillar.description}
-          </p>
-          <ul style={{ paddingLeft: '0', listStyle: 'none', marginTop: '10px' }}>
-            {pillar.items.map((item: string) => (
-              <li
-                key={item}
-                style={{
-                  marginBottom: '8px',
-                  display: 'flex',
-                  gap: '10px',
-                  fontSize: '1rem',
-                }}
-              >
-                <span
-                  style={{
-                    color: 'var(--color-success-500)',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  ✓
-                </span>
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
-  );
 
   return (
     <div className="TrustPageWrapper">
@@ -354,6 +361,7 @@ const TrustCenter = () => {
         <div className="TrustNavContainer">
           {tabs.map((tab) => (
             <button
+              type="button"
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`TrustTabBtn ${activeTab === tab ? 'Active' : ''}`}
@@ -373,33 +381,18 @@ const TrustCenter = () => {
               <h2 className="SectionTitle" style={{ margin: 0, marginBottom: '20px' }}>
                 Compliance & Regulations
               </h2>
-              {renderCertifications()}
+              <CertificationList certifications={certifications} />
             </div>
             <div className="OverviewSplit">
               <div className="OverviewLeftCol">
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '20px',
-                  }}
-                >
+                <div style={SECTION_HEADER_STYLE}>
                   <h2 className="SectionTitle" style={{ fontSize: '1.5rem', margin: 0 }}>
                     Security Controls
                   </h2>
                   <button
+                    type="button"
                     onClick={() => setActiveTab('Controls')}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--blue-text)',
-                      fontWeight: '500',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
+                    style={SECTION_LINK_BUTTON_STYLE}
                   >
                     View all <FiChevronRight />
                   </button>
@@ -429,29 +422,14 @@ const TrustCenter = () => {
               </div>
 
               <div className="OverviewResourceCard">
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '20px',
-                  }}
-                >
+                <div style={SECTION_HEADER_STYLE}>
                   <h2 className="SectionTitle" style={{ fontSize: '1.5rem', margin: 0 }}>
                     Resources
                   </h2>
                   <button
+                    type="button"
                     onClick={() => setActiveTab('Resources')}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--blue-text)',
-                      fontWeight: '500',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
+                    style={SECTION_LINK_BUTTON_STYLE}
                   >
                     View all <FiChevronRight />
                   </button>
@@ -500,29 +478,14 @@ const TrustCenter = () => {
             </div>
 
             <div className="OverviewSubproc">
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '20px',
-                }}
-              >
+              <div style={SECTION_HEADER_STYLE}>
                 <h2 className="SectionTitle" style={{ fontSize: '1.5rem', margin: 0 }}>
                   Sub-processors
                 </h2>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('Subprocessors')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--blue-text)',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
+                  style={SECTION_LINK_BUTTON_STYLE}
                 >
                   View all <FiChevronRight />
                 </button>
@@ -536,6 +499,7 @@ const TrustCenter = () => {
                           src={sub.logo}
                           alt={sub.name}
                           fill
+                          sizes="64px"
                           style={{ objectFit: 'contain' }}
                         />
                       )}
@@ -553,7 +517,11 @@ const TrustCenter = () => {
             <h2 className="SectionTitle" style={{ marginBottom: '30px' }}>
               Security Resources
             </h2>
-            {renderResources()}
+            <ResourceListSection
+              resources={resources}
+              onCopyLink={handleCopyLink}
+              onRequestAccess={handleRequestAccess}
+            />
           </div>
         )}
 
@@ -562,7 +530,7 @@ const TrustCenter = () => {
             <h2 className="SectionTitle" style={{ marginBottom: '30px' }}>
               Security Controls (ISMS)
             </h2>
-            {renderControls()}
+            <ControlsList securityPillars={securityPillars} />
           </div>
         )}
 
@@ -602,7 +570,13 @@ const TrustCenter = () => {
                             height: '24px',
                           }}
                         >
-                          <Image src={sub.logo} alt="" fill style={{ objectFit: 'contain' }} />
+                          <Image
+                            src={sub.logo}
+                            alt=""
+                            fill
+                            sizes="24px"
+                            style={{ objectFit: 'contain' }}
+                          />
                         </div>
                       )}
                       {sub.name}
@@ -675,6 +649,7 @@ const TrustCenter = () => {
                   <input
                     id="firstName"
                     type="text"
+                    aria-label="First Name"
                     className="FormInput"
                     placeholder="Jane"
                     value={requestAccessForm.firstName}
@@ -688,6 +663,7 @@ const TrustCenter = () => {
                   <input
                     id="lastName"
                     type="text"
+                    aria-label="Last Name"
                     className="FormInput"
                     placeholder="Doe"
                     value={requestAccessForm.lastName}
@@ -703,6 +679,7 @@ const TrustCenter = () => {
                 <input
                   id="workEmail"
                   type="email"
+                  aria-label="Work Email"
                   placeholder="jane@company.com"
                   className="FormInput"
                   value={requestAccessForm.workEmail}
@@ -723,6 +700,7 @@ const TrustCenter = () => {
                 <input
                   id="companyName"
                   type="text"
+                  aria-label="Company Name"
                   placeholder="Acme Inc."
                   className="FormInput"
                   value={requestAccessForm.companyName}
@@ -743,7 +721,7 @@ const TrustCenter = () => {
                   }
                 >
                   <option value="" disabled>
-                    Select a reason...
+                    Select a reason…
                   </option>
                   <option value="due_diligence">Due Diligence</option>
                   <option value="audit">Customer Audit</option>

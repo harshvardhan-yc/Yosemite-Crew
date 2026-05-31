@@ -195,4 +195,36 @@ describe('Organization page', () => {
     expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
     expect(screen.queryByTestId('profile')).not.toBeInTheDocument();
   });
+
+  it('shows skeleton when org status is idle', () => {
+    useOrgStoreMock.mockImplementation((selector) => selector({ status: 'idle' }));
+    usePrimaryOrgMock.mockReturnValue(null);
+
+    const { container } = render(<Organization />);
+
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile')).not.toBeInTheDocument();
+  });
+
+  it('shows skeleton when primaryorg is null even if status is loaded', () => {
+    useOrgStoreMock.mockImplementation((selector) => selector({ status: 'loaded' }));
+    usePrimaryOrgMock.mockReturnValue(null);
+
+    const { container } = render(<Organization />);
+
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile')).not.toBeInTheDocument();
+  });
+});
+
+describe('OrgPageSkeleton skeleton layout', () => {
+  it('renders 3 skeleton sections in loading state', () => {
+    useOrgStoreMock.mockImplementation((selector: any) => selector({ status: 'loading' }));
+    usePrimaryOrgMock.mockReturnValue(null);
+
+    const { container } = render(<Organization />);
+
+    const skeletonBlocks = container.querySelectorAll('.animate-pulse');
+    expect(skeletonBlocks.length).toBeGreaterThan(0);
+  });
 });

@@ -19,14 +19,16 @@ describe('PdfPreviewOverlay', () => {
       />
     );
 
-    expect(screen.getByTitle('Preview')).toHaveAttribute(
+    const iframe = screen.getByTitle('Preview');
+    expect(iframe).toHaveAttribute(
       'src',
       'https://integration.vetconnectplus.com/acknowledgment/1'
     );
-    expect(screen.getByTitle('Preview')).toHaveAttribute('referrerpolicy', 'strict-origin');
+    expect(iframe).toHaveAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    expect(iframe).not.toHaveAttribute('sandbox');
   });
 
-  it('renders iframe for blob URL', () => {
+  it('renders object element for blob URL (Safari frame-ancestors workaround)', () => {
     render(
       <PdfPreviewOverlay
         open
@@ -36,11 +38,13 @@ describe('PdfPreviewOverlay', () => {
       />
     );
 
-    expect(screen.getByTitle('Blob Preview')).toHaveAttribute(
-      'src',
-      'blob:https://app.yosemitecrew.com/abc'
-    );
-    expect(screen.getByTitle('Blob Preview')).toHaveAttribute('referrerpolicy', 'strict-origin');
+    // blob: URLs use <object> not <iframe> — Safari enforces frame-ancestors 'none'
+    // on blob frames and blocks them; <object> is not subject to frame-ancestors.
+    const obj = screen.getByLabelText('Blob Preview');
+    expect(obj.tagName).toBe('OBJECT');
+    expect(obj).toHaveAttribute('data', 'blob:https://app.yosemitecrew.com/abc');
+    expect(obj).toHaveAttribute('type', 'application/pdf');
+    expect(screen.queryByTitle('Blob Preview')).not.toBeInTheDocument();
   });
 
   it('does not render iframe for unsafe URL schemes', () => {

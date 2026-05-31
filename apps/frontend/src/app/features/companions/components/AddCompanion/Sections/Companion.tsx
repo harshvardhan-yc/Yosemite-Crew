@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import SelectLabel from '@/app/ui/inputs/SelectLabel';
@@ -143,7 +143,7 @@ const Companion = ({
     [results]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const parentId = parentFormData.id;
     if (!parentId) {
       setResults([]);
@@ -194,7 +194,7 @@ const Companion = ({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const selected = speciesOptions.find((option) => option.type === formData.type);
     if (!selected) {
       setBreedOptions([]);
@@ -206,12 +206,19 @@ const Companion = ({
         if (!mounted) {
           return;
         }
-        const nextOptions: BreedOption[] = entries.map((entry) => ({
-          value: entry.display,
-          label: entry.display,
-          breedCode: entry.code,
-          speciesCode: entry.meta?.speciesCode ?? selected.speciesCode,
-        }));
+        const seen = new Set<string>();
+        const nextOptions: BreedOption[] = entries.reduce<BreedOption[]>((acc, entry) => {
+          if (!seen.has(entry.display)) {
+            seen.add(entry.display);
+            acc.push({
+              value: entry.display,
+              label: entry.display,
+              breedCode: entry.code,
+              speciesCode: entry.meta?.speciesCode ?? selected.speciesCode,
+            });
+          }
+          return acc;
+        }, []);
         setBreedOptions(nextOptions);
       })
       .catch(() => {

@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GrNext, GrPrevious } from 'react-icons/gr';
 import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import { isSameDay } from '@/app/features/appointments/components/Calendar/helpers';
 import { Slot } from '@/app/features/appointments/types/appointments';
 import { formatUtcTimeToLocalLabel } from '@/app/features/appointments/components/Availability/utils';
+
+const isSameSlot = (a: Slot | null, b: Slot) =>
+  !!a && a.startTime === b.startTime && a.endTime === b.endTime;
 
 const monthNames = [
   'January',
@@ -56,8 +59,16 @@ const Slotpicker = ({
     return d;
   }, []);
 
-  const [viewYear, setViewYear] = useState(selectedDate.getFullYear());
-  const [viewMonth, setViewMonth] = useState(selectedDate.getMonth());
+  const [viewYear, setViewYear] = useState(() => selectedDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => selectedDate.getMonth());
+  const prevSelectedDateRef = useRef(selectedDate);
+  if (prevSelectedDateRef.current !== selectedDate) {
+    prevSelectedDateRef.current = selectedDate;
+    const newYear = selectedDate.getFullYear();
+    const newMonth = selectedDate.getMonth();
+    if (viewYear !== newYear) setViewYear(newYear);
+    if (viewMonth !== newMonth) setViewMonth(newMonth);
+  }
 
   const dateStripRef = useRef<HTMLDivElement | null>(null);
   const slotListRef = useRef<HTMLDivElement | null>(null);
@@ -70,12 +81,6 @@ const Slotpicker = ({
 
   const days = useMemo(() => getDaysInMonth(viewYear, viewMonth), [viewYear, viewMonth]);
 
-  // Sync view month/year when selectedDate changes externally
-  useEffect(() => {
-    setViewYear(selectedDate.getFullYear());
-    setViewMonth(selectedDate.getMonth());
-  }, [selectedDate]);
-
   // Auto-scroll selected date into center of strip whenever it changes
   useEffect(() => {
     const btn = selectedDateRef.current;
@@ -87,7 +92,7 @@ const Slotpicker = ({
     strip.scrollTo({ left: btnLeft - stripWidth / 2 + btnWidth / 2, behavior: 'smooth' });
   }, [selectedDate, viewMonth, viewYear]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const strip = dateStripRef.current;
     if (!strip) return;
 
@@ -139,9 +144,6 @@ const Slotpicker = ({
       slotListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 80);
   };
-
-  const isSameSlot = (a: Slot | null, b: Slot) =>
-    !!a && a.startTime === b.startTime && a.endTime === b.endTime;
 
   const scrollDateStrip = (direction: 'left' | 'right') => {
     const strip = dateStripRef.current;
@@ -205,6 +207,7 @@ const Slotpicker = ({
             const labelClass = isCurrent || isTodayDay ? 'text-blue-text' : 'text-text-primary';
             return (
               <button
+                type="button"
                 key={day.toISOString()}
                 ref={isCurrent ? selectedDateRef : null}
                 onClick={() => handleClickDate(day)}
@@ -248,6 +251,7 @@ const Slotpicker = ({
             const selected = isSameSlot(selectedSlot, slot);
             return (
               <button
+                type="button"
                 key={slot.startTime + i}
                 onClick={() => setSelectedSlot(slot)}
                 className={`${selected ? 'text-blue-text bg-blue-light border-blue-text!' : 'border-grey-text! bg-white'} px-3.5 py-2 flex items-center justify-center border rounded-xl! font-satoshi text-[12px]!`}

@@ -18,6 +18,16 @@ export type BaseButtonProps = {
   baseClasses: string;
 };
 
+const updateInteractionPosition = (
+  event: React.PointerEvent<HTMLAnchorElement | HTMLButtonElement>
+) => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  event.currentTarget.style.setProperty('--yc-button-x', `${x}px`);
+  event.currentTarget.style.setProperty('--yc-button-y', `${y}px`);
+};
+
 const BaseButton = ({
   text,
   icon,
@@ -34,19 +44,10 @@ const BaseButton = ({
 }: Readonly<BaseButtonProps>) => {
   const classes = `${sizeClasses[size]} ${baseClasses} ${isDisabled ? 'pointer-events-none opacity-60' : ''} ${className ?? ''}`;
   const iconNode = icon ? (
-    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-current [&>svg]:h-[18px] [&>svg]:w-[18px]">
+    <span className="inline-flex size-5 shrink-0 items-center justify-center text-current [&>svg]:h-[18px] [&>svg]:w-[18px]">
       {icon}
     </span>
   ) : null;
-  const updateInteractionPosition = (
-    event: React.PointerEvent<HTMLAnchorElement | HTMLButtonElement>
-  ) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    event.currentTarget.style.setProperty('--yc-button-x', `${x}px`);
-    event.currentTarget.style.setProperty('--yc-button-y', `${y}px`);
-  };
 
   if (href) {
     return (

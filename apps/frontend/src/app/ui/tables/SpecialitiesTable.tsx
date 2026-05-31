@@ -1,9 +1,10 @@
 import React from 'react';
 import GenericTable from '@/app/ui/tables/GenericTable/GenericTable';
 import { SpecialityWeb } from '@/app/features/organization/types/speciality';
-import { Service } from '@yosemite-crew/types';
 import SpecialitiesCard from '@/app/ui/cards/SpecialitiesCard';
 import { Column, NoDataMessage, ViewButton, ProfileTitle } from '@/app/ui/tables/common';
+
+import { getServiceNames } from '@/app/ui/tables/tableUtils';
 
 import './DataTable.css';
 
@@ -11,10 +12,6 @@ type SpecialitiesTableProps = {
   filteredList: SpecialityWeb[];
   setActive: (speciality: any) => void;
   setView: (open: boolean) => void;
-};
-
-export const getServiceNames = (services: Service[] = []): string => {
-  return services.map((s) => s.name).join(', ');
 };
 
 const SpecialitiesTable = ({ filteredList, setActive, setView }: SpecialitiesTableProps) => {
@@ -27,15 +24,15 @@ const SpecialitiesTable = ({ filteredList, setActive, setView }: SpecialitiesTab
     {
       label: 'Speciality',
       key: 'Speciality',
-      width: '18%',
+      width: '22%',
       render: (item: SpecialityWeb) => <ProfileTitle>{item.name}</ProfileTitle>,
     },
     {
       label: 'Services',
       key: 'Services',
-      width: '40%',
+      width: '30%',
       render: (item: SpecialityWeb) => (
-        <ProfileTitle>{getServiceNames(item.services) || '-'}</ProfileTitle>
+        <ProfileTitle>{getServiceNames(item.services) || '—'}</ProfileTitle>
       ),
     },
     {
@@ -43,18 +40,14 @@ const SpecialitiesTable = ({ filteredList, setActive, setView }: SpecialitiesTab
       key: 'Team members',
       width: '14%',
       render: (item: SpecialityWeb) => (
-        <ProfileTitle>{item.teamMemberIds?.length || 0}</ProfileTitle>
+        <ProfileTitle>{item.teamMemberIds?.length ?? 0}</ProfileTitle>
       ),
     },
     {
       label: 'Head',
       key: 'Head',
       width: '22%',
-      render: (item: SpecialityWeb) => (
-        <div className="flex items-center gap-2">
-          <ProfileTitle>{item.headName || '-'}</ProfileTitle>
-        </div>
-      ),
+      render: (item: SpecialityWeb) => <ProfileTitle>{item.headName || '—'}</ProfileTitle>,
     },
     {
       label: 'Actions',

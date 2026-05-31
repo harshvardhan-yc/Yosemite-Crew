@@ -51,6 +51,8 @@ const STATUS_OPTIONS = [
   },
 ];
 
+const DEFAULT_CATEGORIES: string[] = [];
+
 const getTurnoverStatusButtonStyle = (
   option: (typeof STATUS_OPTIONS)[number]
 ): React.CSSProperties => {
@@ -80,13 +82,13 @@ type InventoryTurnoverFiltersProps = {
 const InventoryTurnoverFilters = ({
   list,
   setFilteredList,
-  categories = [],
+  categories = DEFAULT_CATEGORIES,
 }: InventoryTurnoverFiltersProps) => {
   const [activeStatus, setActiveStatus] = useState('ALL');
   const [activeCategory, setActiveCategory] = useState('all');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
-  const [isMounted, setIsMounted] = useState(false);
+  const isMounted = typeof document !== 'undefined';
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -99,26 +101,23 @@ const InventoryTurnoverFilters = ({
     [categories]
   );
 
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  const effectiveCategory =
+    activeCategory !== 'all' && !categories.includes(activeCategory) ? 'all' : activeCategory;
 
   useEffect(() => {
-    if (activeCategory !== 'all' && !categories.includes(activeCategory)) {
-      setActiveCategory('all');
-    }
-  }, [activeCategory, categories]);
+    if (effectiveCategory !== activeCategory) setActiveCategory(effectiveCategory);
+  }, [activeCategory, effectiveCategory]);
 
   const filteredList = useMemo(() => {
     return list.filter((item) => {
       const categoryMatch =
-        activeCategory === 'all' ||
-        (item.category || '').toLowerCase() === activeCategory.toLowerCase();
+        effectiveCategory === 'all' ||
+        (item.category || '').toLowerCase() === effectiveCategory.toLowerCase();
       const statusMatch =
         activeStatus === 'ALL' || (item.status || '').toUpperCase() === activeStatus;
       return categoryMatch && statusMatch;
     });
-  }, [activeCategory, activeStatus, list]);
+  }, [effectiveCategory, activeStatus, list]);
 
   useEffect(() => {
     setFilteredList(filteredList);
@@ -204,7 +203,7 @@ const InventoryTurnoverFilters = ({
                     )}
                   >
                     <span
-                      className="inline-block h-3 w-3 rounded-full shrink-0"
+                      className="inline-block size-3 rounded-full shrink-0"
                       style={{
                         backgroundColor: option.border,
                         borderWidth: '1px',

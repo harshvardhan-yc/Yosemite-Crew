@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { IoIosWarning } from 'react-icons/io';
 import { Option } from '@/app/features/companions/types/companion';
 import { IoChevronDown } from 'react-icons/io5';
+import { FiCheck } from 'react-icons/fi';
 import { useDropdown, useFilteredOptions } from '@/app/hooks/useDropdown';
 
 type DropdownProps = {
@@ -66,19 +67,20 @@ const MultiSelectPanel = ({
     style={shouldPortal ? (portalStyle ?? undefined) : undefined}
   >
     {filteredOptions.length > 0 ? (
-      filteredOptions.map((option, index: number) => {
+      filteredOptions.map((option) => {
         const isSelected = valueSet.has(option.value);
         return (
           <button
             type="button"
             aria-pressed={isSelected}
-            className={`px-3 py-2 text-left text-body-4 hover:bg-card-hover rounded-lg hover:text-text-primary w-full ${
-              isSelected ? 'bg-blue-light text-blue-text font-medium' : 'text-text-secondary'
-            }`}
-            key={option.value + index}
+            className="px-3 py-2 text-left text-body-4 hover:bg-card-hover rounded-lg text-text-primary w-full flex items-center justify-between gap-2"
+            key={option.value}
             onClick={() => onToggleOption(option)}
           >
-            {option.label}
+            <span>{option.label}</span>
+            {isSelected && (
+              <FiCheck size={14} className="shrink-0 text-text-brand" aria-hidden="true" />
+            )}
           </button>
         );
       })
@@ -100,6 +102,7 @@ const MultiSelectDropdown = ({
   icon,
   portal = true,
 }: DropdownProps) => {
+  const searchId = useId();
   const {
     open,
     searchQuery,
@@ -149,34 +152,37 @@ const MultiSelectDropdown = ({
     });
   }, [dropdownRef]);
 
+  const computeStyleRef = useRef(computeStyle);
+  computeStyleRef.current = computeStyle;
+
   useLayoutEffect(() => {
     if (!open || !portal) {
       setPortalStyle(null);
       return;
     }
-    computeStyle();
-  }, [computeStyle, open, portal]);
+    computeStyleRef.current();
+  }, [open, portal]);
 
   useEffect(() => {
     if (!open || !portal) return;
+    const stableResize = () => computeStyleRef.current();
     const handleOuterScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('[data-portal-dropdown]')) return;
       closeDropdown();
     };
-    globalThis.window.addEventListener('resize', computeStyle);
+    globalThis.window.addEventListener('resize', stableResize);
     globalThis.window.addEventListener('scroll', handleOuterScroll, true);
     return () => {
-      globalThis.window.removeEventListener('resize', computeStyle);
+      globalThis.window.removeEventListener('resize', stableResize);
       globalThis.window.removeEventListener('scroll', handleOuterScroll, true);
     };
-  }, [closeDropdown, computeStyle, open, portal]);
+  }, [closeDropdown, open, portal]);
 
   const toggleOption = (option: Option) => {
     const isSelected = valueSet.has(option.value);
     const next = isSelected ? value.filter((v) => v !== option.value) : [...value, option.value];
     onChange(next);
-    closeDropdown();
   };
 
   const panel = (
@@ -207,7 +213,10 @@ const MultiSelectDropdown = ({
           {open && searchable ? (
             <input
               ref={inputRef}
+              id={searchId}
+              name={searchId}
               type="text"
+              aria-label={`Search ${placeholder}`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={hasSelection ? selectedLabel : ''}

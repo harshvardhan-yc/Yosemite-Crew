@@ -30,12 +30,12 @@ const StripeOnboarding = () => {
 
   const { onboard } = useStripeOnboarding(orgIdFromQuery);
   const subscription = useSubscriptionByOrgId(orgIdFromQuery);
-  const { refetch: refetchData } = useSubscriptionCounterUpdate(orgIdFromQuery);
+  const subscriptionCounterUpdate = useSubscriptionCounterUpdate(orgIdFromQuery);
 
   const handleExit = useCallback(async () => {
-    await refetchData();
+    await subscriptionCounterUpdate.refetch();
     router.push('/dashboard');
-  }, [refetchData, router]);
+  }, [subscriptionCounterUpdate, router]);
 
   const createAccountIfNeeded = useCallback(async () => {
     if (!orgIdFromQuery) return;
@@ -110,10 +110,10 @@ const StripeOnboarding = () => {
   const handleStepChange = useCallback(
     async ({ step }: { step: string }) => {
       if (step === 'stripe_user_authentication') {
-        await refetchData();
+        await subscriptionCounterUpdate.refetch();
       }
     },
-    [refetchData]
+    [subscriptionCounterUpdate]
   );
 
   if (!onboard) {
@@ -145,14 +145,13 @@ const StripeOnboarding = () => {
         </div>
       )}
       {!setupError && !connectInstance && (
-        <div
+        <output
           className="max-w-3xl rounded-2xl border border-card-border bg-card-bg px-4 py-3 text-body-4 text-text-primary"
-          role="status"
           aria-live="polite"
           aria-busy={isPreparing}
         >
           Preparing your secure Stripe onboarding experience…
-        </div>
+        </output>
       )}
       {connectInstance && (
         <ConnectComponentsProvider connectInstance={connectInstance}>

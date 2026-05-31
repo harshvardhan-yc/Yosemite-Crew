@@ -13,11 +13,9 @@ import Modal from '@/app/ui/overlays/Modal';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import { Team } from '@/app/features/organization/types/team';
-import React, { useEffect, useMemo, useState } from 'react';
-import { flushSync } from 'react-dom';
-import PermissionsEditor, {
-  computeEffectivePermissions,
-} from '@/app/features/organization/pages/Organization/Sections/Team/PermissionsEditor';
+import React, { useEffect, useLayoutEffect, useMemo, useState, startTransition } from 'react';
+import PermissionsEditor from '@/app/features/organization/pages/Organization/Sections/Team/PermissionsEditor';
+import { computeEffectivePermissions } from '@/app/features/organization/pages/Organization/Sections/Team/permissionsEditorUtils';
 import { Permission, RoleCode } from '@/app/lib/permissions';
 import {
   getProfileForUserForPrimaryOrg,
@@ -111,6 +109,13 @@ const ProfessionalFields = [
   { label: 'Biography or short description', key: 'description', type: 'text' },
 ];
 
+const normalizeId = (value?: string) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
+
 const TeamInfo = ({ showModal, setShowModal, activeTeam, canEditTeam }: TeamInfoProps) => {
   const specialities = useSpecialitiesForPrimaryOrg();
   const { membership } = usePrimaryOrgWithMembership();
@@ -119,7 +124,7 @@ const TeamInfo = ({ showModal, setShowModal, activeTeam, canEditTeam }: TeamInfo
   const [perms, setPerms] = React.useState<Permission[]>([]);
   const [role, setRole] = useState<RoleCode | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [availability, setAvailability] = useState<AvailabilityState>(
+  const [availability, setAvailability] = useState<AvailabilityState>(() =>
     daysOfWeek.reduce<AvailabilityState>((acc, day) => {
       const isWeekday =
         day === 'Monday' ||
@@ -138,13 +143,6 @@ const TeamInfo = ({ showModal, setShowModal, activeTeam, canEditTeam }: TeamInfo
   const [isSavingAvailability, setIsSavingAvailability] = useState(false);
 
   const [profile, setProfile] = useState<any>(null);
-
-  const normalizeId = (value?: string) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
 
   const isSelfMember =
     normalizeId(activeTeam?.practionerId) === normalizeId(membership?.practitionerReference) ||
@@ -213,7 +211,7 @@ const TeamInfo = ({ showModal, setShowModal, activeTeam, canEditTeam }: TeamInfo
     };
   }, [showModal, activeTeam]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showModal) {
       setShowDeleteModal(false);
     }
@@ -468,9 +466,7 @@ const TeamInfo = ({ showModal, setShowModal, activeTeam, canEditTeam }: TeamInfo
   const updateAvailability = async () => {
     if (isSavingAvailability) return;
     try {
-      flushSync(() => {
-        setIsSavingAvailability(true);
-      });
+      startTransition(() => setIsSavingAvailability(true));
       await new Promise<void>((resolve) => {
         setTimeout(resolve, 0);
       });

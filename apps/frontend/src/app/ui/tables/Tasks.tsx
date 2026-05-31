@@ -13,6 +13,8 @@ import {
 } from '@/app/lib/tasks';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 
+import { getTaskStatusStyle } from '@/app/ui/tables/tableUtils';
+
 import './DataTable.css';
 import { toTitleCase } from '@/app/lib/validators';
 import { useMemberMap } from '@/app/hooks/useMemberMap';
@@ -33,35 +35,6 @@ type TaskTableProps = {
   setReschedulePopup?: (open: boolean) => void;
   canEditTasks?: boolean;
   small?: boolean;
-};
-
-export const getStatusStyle = (status: string) => {
-  switch (status?.toLowerCase()) {
-    case 'pending':
-      return {
-        color: 'var(--color-pill-neutral-text)',
-        backgroundColor: 'var(--color-pill-neutral-bg)',
-        borderColor: 'var(--color-pill-neutral-border)',
-      };
-    case 'in_progress':
-      return {
-        color: 'var(--color-pill-progress-text)',
-        backgroundColor: 'var(--color-pill-progress-bg)',
-        borderColor: 'var(--color-pill-progress-border)',
-      };
-    case 'completed':
-      return {
-        color: 'var(--color-pill-success-text)',
-        backgroundColor: 'var(--color-pill-success-bg)',
-        borderColor: 'var(--color-pill-success-border)',
-      };
-    default:
-      return {
-        color: 'var(--color-pill-warning-text)',
-        backgroundColor: 'var(--color-pill-warning-bg)',
-        borderColor: 'var(--color-pill-warning-border)',
-      };
-  }
 };
 
 const Tasks = ({
@@ -147,7 +120,7 @@ const Tasks = ({
       key: 'status',
       width: '130px',
       render: (item: Task) => (
-        <div className="appointment-status" style={getStatusStyle(item.status)}>
+        <div className="appointment-status" style={getTaskStatusStyle(item.status)}>
           {toTitleCase(item.status)}
         </div>
       ),
@@ -161,8 +134,9 @@ const Tasks = ({
           <div className="action-btn-grid">
             <GlassTooltip content="View task" side="bottom" className="table-action-tooltip">
               <button
+                type="button"
                 onClick={() => handleViewTask(item)}
-                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 title="View task"
               >
                 <IoEyeOutline size={18} color="var(--color-neutral-900)" />
@@ -171,8 +145,9 @@ const Tasks = ({
             {canEditTasks && canShowTaskStatusChangeAction(item.status) && (
               <GlassTooltip content="Change status" side="bottom" className="table-action-tooltip">
                 <button
+                  type="button"
                   onClick={() => handleChangeStatusTask(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Change status"
                 >
                   <MdOutlineAutorenew size={18} color="var(--color-neutral-900)" />
@@ -182,8 +157,9 @@ const Tasks = ({
             {canEditTasks && canRescheduleTask(item.status) && (
               <GlassTooltip content="Reschedule" side="bottom" className="table-action-tooltip">
                 <button
+                  type="button"
                   onClick={() => handleRescheduleTask(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Reschedule"
                 >
                   <IoIosCalendar size={18} color="var(--color-neutral-900)" />

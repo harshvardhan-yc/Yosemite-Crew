@@ -1,5 +1,5 @@
-/* eslint-disable @next/next/no-img-element */
-import React, { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react';
+import Image from 'next/image';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import { MdArrowRightAlt } from 'react-icons/md';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
@@ -26,6 +26,13 @@ const getSafePreviewUrl = (src: string | null): string | null => {
   // Restrict to `blob:` to avoid any scriptable URL schemes (including SVG/data URLs).
   if (!value.startsWith('blob:')) return null;
   return value;
+};
+
+const uploadToS3 = async (uploadUrl: string, f: File) => {
+  await axios.put(uploadUrl, f, {
+    headers: { 'Content-Type': f.type },
+    withCredentials: false,
+  });
 };
 
 const LogoUpdator = ({ imageUrl, apiUrl, title, onSave, disabled }: LogoUpdatorProps) => {
@@ -66,14 +73,7 @@ const LogoUpdator = ({ imageUrl, apiUrl, title, onSave, disabled }: LogoUpdatorP
     return res.data;
   };
 
-  const uploadToS3 = async (uploadUrl: string, f: File) => {
-    await axios.put(uploadUrl, f, {
-      headers: { 'Content-Type': f.type },
-      withCredentials: false,
-    });
-  };
-
-  const handlePickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setUploadError(null);
@@ -119,23 +119,24 @@ const LogoUpdator = ({ imageUrl, apiUrl, title, onSave, disabled }: LogoUpdatorP
 
   return (
     <>
-      <div className="flex justify-center h-10 w-10 shrink-0">
+      <div className="flex justify-center size-10 shrink-0">
         <button
           type="button"
           onClick={() => !disabled && setUpdatePopup(true)}
-          className="rounded-full cursor-pointer h-10 w-10 p-0 border-0 bg-transparent"
+          className="rounded-full cursor-pointer size-10 p-0 border-0 bg-transparent"
           aria-label="Update logo"
           disabled={disabled}
         >
-          <img
+          <Image
             src={safeImageSrc}
             alt="Logo"
             height={40}
             width={40}
+            unoptimized
             onError={(e) => {
               e.currentTarget.src = MEDIA_SOURCES.avatars.person;
             }}
-            className="rounded-full h-10 w-10 object-cover"
+            className="rounded-full size-10 object-cover"
           />
         </button>
       </div>
@@ -145,15 +146,16 @@ const LogoUpdator = ({ imageUrl, apiUrl, title, onSave, disabled }: LogoUpdatorP
             <div className="text-body-1 text-text-primary">{title}</div>
           </div>
           <div className="flex gap-6 sm:gap-10 items-center justify-center w-full px-3">
-            <img
+            <Image
               src={safeImageSrc}
               alt="Logo"
               height={100}
               width={100}
+              unoptimized
               onError={(e) => {
                 e.currentTarget.src = MEDIA_SOURCES.avatars.person;
               }}
-              className="rounded-full h-25 w-25 object-cover"
+              className="rounded-full size-25 object-cover"
             />
             <MdArrowRightAlt size={24} color="var(--color-neutral-900)" />
             <div className="flex flex-col items-center gap-3">
@@ -162,20 +164,24 @@ const LogoUpdator = ({ imageUrl, apiUrl, title, onSave, disabled }: LogoUpdatorP
                   ref={fileRef}
                   type="file"
                   id={inputId}
+                  aria-label="Update logo image"
                   accept="image/png, image/jpeg, image/jpg, image/webp"
                   onChange={handlePickFile}
                   className="hidden"
                 />
                 <label
                   htmlFor={inputId}
-                  className={`h-25 w-25 relative rounded-full bg-white hover:bg-card-hover! transition-all duration-200 border-text-primary! cursor-pointer flex items-center justify-center ${safePreviewSrc ? 'border-0' : 'border'} ${isUploading ? 'pointer-events-none' : ''}`}
+                  className={`size-25 relative rounded-full bg-white hover:bg-card-hover! transition-all duration-200 border-text-primary! cursor-pointer flex items-center justify-center ${safePreviewSrc ? 'border-0' : 'border'} ${isUploading ? 'pointer-events-none' : ''}`}
                   aria-label="Upload logo"
                 >
                   {safePreviewSrc ? (
-                    <img
+                    <Image
                       src={safePreviewSrc}
                       alt="New Logo"
-                      className="rounded-full object-cover h-25 w-25"
+                      width={100}
+                      height={100}
+                      unoptimized
+                      className="rounded-full object-cover size-25"
                     />
                   ) : (
                     <IoCamera

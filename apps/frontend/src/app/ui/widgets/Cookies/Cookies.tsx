@@ -7,6 +7,13 @@ import { COOKIE_CONSENT_KEY } from '@/app/lib/posthog';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 
+const setConsent = (value: 'true' | 'false') => {
+  setStorageItem('local', COOKIE_CONSENT_KEY, value);
+  globalThis.dispatchEvent(
+    new StorageEvent('storage', { key: COOKIE_CONSENT_KEY, newValue: value })
+  );
+};
+
 const Cookies = () => {
   const [showCookiePopup, setShowCookiePopup] = useState(false);
 
@@ -16,13 +23,6 @@ const Cookies = () => {
       setShowCookiePopup(true);
     }
   }, []);
-
-  const setConsent = (value: 'true' | 'false') => {
-    setStorageItem('local', COOKIE_CONSENT_KEY, value);
-    globalThis.dispatchEvent(
-      new StorageEvent('storage', { key: COOKIE_CONSENT_KEY, newValue: value })
-    );
-  };
 
   const handleConsent = () => {
     setShowCookiePopup(false);

@@ -1,5 +1,5 @@
-/* eslint-disable @next/next/no-img-element */
 import React, { useEffect, useId, useState } from 'react';
+import Image from 'next/image';
 import { IoCamera } from 'react-icons/io5';
 import { FiMinusCircle } from 'react-icons/fi';
 import { postData } from '@/app/services/axios';
@@ -15,13 +15,20 @@ type LogoUploaderProps = {
 };
 type GetSignedUrlResponse = { uploadUrl: string; s3Key: string };
 
+const isSafePreviewUrl = (url: string) => url.startsWith('blob:');
+
+const uploadLogoToS3 = async (uploadUrl: string, file: File) => {
+  await axios.put(uploadUrl, file, {
+    headers: { 'Content-Type': file?.type },
+    withCredentials: false,
+  });
+};
+
 const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
   const inputId = useId();
   const [preview, setPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const isSafePreviewUrl = (url: string) => url.startsWith('blob:');
 
   useEffect(() => {
     return () => {
@@ -43,13 +50,6 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
     return res.data;
   };
 
-  const uploadToS3 = async (uploadUrl: string, file: File) => {
-    await axios.put(uploadUrl, file, {
-      headers: { 'Content-Type': file?.type },
-      withCredentials: false,
-    });
-  };
-
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -65,7 +65,7 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
     setPreview(localUrl);
     try {
       const signed = await getSignedUrl(file);
-      await uploadToS3(signed.uploadUrl, file);
+      await uploadLogoToS3(signed.uploadUrl, file);
       setImageUrl(signed.s3Key);
     } catch (err: any) {
       setError(err?.message || 'Upload failed');
@@ -86,16 +86,13 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
       <div className="step-logo-upload">
         {preview && isSafePreviewUrl(preview) && sanitizeUrl(preview) !== 'about:blank' ? (
           <>
-            <img
+            <Image
               src={sanitizeUrl(preview)}
               alt="Logo Preview"
-              style={{
-                width: 58,
-                height: 58,
-                objectFit: 'cover',
-                borderRadius: '50%',
-              }}
-              className="step-logo-preview"
+              width={58}
+              height={58}
+              unoptimized
+              className="step-logo-preview rounded-full object-cover"
             />
             <button
               type="button"
@@ -111,6 +108,7 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
             <input
               type="file"
               id={inputId}
+              aria-label="Upload logo image"
               accept="image/*"
               onChange={handleImageChange}
               style={{ display: 'none' }}

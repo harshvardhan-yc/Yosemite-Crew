@@ -17,6 +17,6 @@ describe('BookDemo Page', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Book a demo' })).toBeInTheDocument();
     const frame = screen.getByTestId('cal-embed-frame');
 
-    expect(frame).toHaveClass('h-full', 'w-full', 'border-0');
+    expect(frame).toHaveClass('size-full', 'border-0');
   });
 });

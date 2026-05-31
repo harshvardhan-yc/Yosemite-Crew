@@ -8,6 +8,8 @@ import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import { PERMISSIONS } from '@/app/lib/permissions';
 
+const DASHBOARD_PAGE_SKELETON = <PageSkeleton variant="dashboard" />;
+
 const DashboardStatSkeleton = () => (
   <div className="min-h-64 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
 );
@@ -83,8 +85,8 @@ const Dashboard = () => {
 
 const ProtectedDashboard = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="dashboard" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="dashboard" />}>
+    <ProtectedRoute skeleton={DASHBOARD_PAGE_SKELETON}>
+      <OrgGuard skeleton={DASHBOARD_PAGE_SKELETON}>
         <Dashboard />
       </OrgGuard>
     </ProtectedRoute>

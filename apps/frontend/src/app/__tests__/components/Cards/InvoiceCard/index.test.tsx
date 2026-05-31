@@ -5,8 +5,8 @@ import { Invoice } from '@yosemite-crew/types';
 
 // --- Mocks ---
 
-jest.mock('@/app/ui/tables/InvoiceTable', () => ({
-  getStatusStyle: jest.fn(() => ({ color: 'green' })),
+jest.mock('@/app/ui/tables/tableUtils', () => ({
+  getInvoiceStatusStyle: jest.fn(() => ({ color: 'green' })),
   getInvoiceItemNames: jest.fn(() => 'Grooming'),
 }));
 

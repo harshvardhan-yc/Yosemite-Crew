@@ -8,7 +8,7 @@ import {
 } from '@/app/features/forms/types/forms';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
 import Dropdown from '@/app/ui/inputs/Dropdown/Dropdown';
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { IoIosAddCircleOutline, IoIosWarning } from 'react-icons/io';
 import TextBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Text/TextBuilder';
 import InputBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Input/InputBuilder';
@@ -197,6 +197,7 @@ const AddFieldDropdown: React.FC<{
         <div className="absolute top-[120%] z-10 right-0 rounded-2xl border border-grey-noti bg-white shadow-md! flex flex-col items-center w-[160px]">
           {options.map((option, i) => (
             <button
+              type="button"
               key={option.key}
               onClick={() => {
                 onSelect(option.key);
@@ -280,21 +281,20 @@ const addMedicationToTreatmentPlan = (schema: FormField[], medicationField: Form
   });
 
 const useOutsideClick = (ref: React.RefObject<HTMLElement | null>, onClose: () => void) => {
-  const handleClickOutside = useCallback(
-    (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        onClose();
-      }
-    },
-    [ref, onClose]
-  );
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onCloseRef.current();
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [handleClickOutside]);
+  }, [ref]);
 };
 
 export const FieldBuilder: React.FC<{
@@ -748,6 +748,20 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
   );
 };
 
+const updateFieldInForm = (
+  prev: FormsProps,
+  fieldId: string,
+  updatedField: FormField
+): FormsProps => ({
+  ...prev,
+  schema: (prev.schema || []).map((field) => (field.id === fieldId ? updatedField : field)),
+});
+
+const removeFieldById = (form: FormsProps, id: string): FormsProps => ({
+  ...form,
+  schema: (form.schema || []).filter((field) => field.id !== id),
+});
+
 const Build = ({
   formData,
   setFormData,
@@ -771,15 +785,6 @@ const Build = ({
     [canUseSignature]
   );
 
-  const updateFieldInForm = (
-    prev: FormsProps,
-    fieldId: string,
-    updatedField: FormField
-  ): FormsProps => ({
-    ...prev,
-    schema: (prev.schema || []).map((field) => (field.id === fieldId ? updatedField : field)),
-  });
-
   const handleFieldChange = (fieldId: string, updatedField: FormField) => {
     setFormData((prev) => updateFieldInForm(prev, fieldId, updatedField));
   };
@@ -799,11 +804,6 @@ const Build = ({
     setBuildError('');
     setFormData((prev) => removeFieldById(prev, fieldId));
   };
-
-  const removeFieldById = (form: FormsProps, id: string): FormsProps => ({
-    ...form,
-    schema: (form.schema || []).filter((field) => field.id !== id),
-  });
 
   const addMedicationGroup = () => {
     setFormData((prev) => {

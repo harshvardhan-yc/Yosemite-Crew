@@ -20,6 +20,39 @@ import CompanionDocumentUploadForm, {
   DocumentUploadFormErrors,
 } from '@/app/features/documents/components/CompanionDocumentUploadForm';
 
+const handleDownload = async (id: string | undefined) => {
+  try {
+    const data = await loadDocumentDownloadURL(id);
+    if (data.length > 0) {
+      const docURL = data[0].url;
+      globalThis.open(docURL, '_blank');
+    }
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+const formatTextValue = (value?: string | null) => {
+  if (!value) return '-';
+  return toTitle(value);
+};
+
+const getDocumentSource = (doc: CompanionRecord) => {
+  if (doc.issuingBusinessName) return doc.issuingBusinessName;
+  if (doc.syncedFromPms) return 'PMS';
+  if (doc.uploadedByParentId) return 'Pet parent';
+  return 'Staff';
+};
+
+const getAttachmentSummary = (doc: CompanionRecord) => {
+  if (!doc.attachments?.length) return 'No attachments';
+  const first = doc.attachments[0];
+  const mime = first?.mimeType ? first.mimeType.split('/').pop()?.toUpperCase() : 'FILE';
+  return doc.attachments.length > 1
+    ? `${doc.attachments.length} files (${mime || 'FILE'})`
+    : `1 file (${mime || 'FILE'})`;
+};
+
 type CompanionDocumentsSectionProps = {
   companionId: string;
 };
@@ -87,39 +120,6 @@ const CompanionDocumentsSection = ({ companionId }: CompanionDocumentsSectionPro
     }
   };
 
-  const handleDownload = async (id: string | undefined) => {
-    try {
-      const data = await loadDocumentDownloadURL(id);
-      if (data.length > 0) {
-        const docURL = data[0].url;
-        globalThis.open(docURL, '_blank');
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const formatTextValue = (value?: string | null) => {
-    if (!value) return '-';
-    return toTitle(value);
-  };
-
-  const getDocumentSource = (doc: CompanionRecord) => {
-    if (doc.issuingBusinessName) return doc.issuingBusinessName;
-    if (doc.syncedFromPms) return 'PMS';
-    if (doc.uploadedByParentId) return 'Pet parent';
-    return 'Staff';
-  };
-
-  const getAttachmentSummary = (doc: CompanionRecord) => {
-    if (!doc.attachments?.length) return 'No attachments';
-    const first = doc.attachments[0];
-    const mime = first?.mimeType ? first.mimeType.split('/').pop()?.toUpperCase() : 'FILE';
-    return doc.attachments.length > 1
-      ? `${doc.attachments.length} files (${mime || 'FILE'})`
-      : `1 file (${mime || 'FILE'})`;
-  };
-
   return (
     <PermissionGate allOf={[PERMISSIONS.COMPANIONS_VIEW_ANY]} fallback={<Fallback />}>
       <div className="flex flex-col gap-6 w-full flex-1 overflow-y-auto scrollbar-hidden">
@@ -151,7 +151,7 @@ const CompanionDocumentsSection = ({ companionId }: CompanionDocumentsSectionPro
               {records.map((doc) => (
                 <div
                   key={doc.id}
-                  className="w-full rounded-2xl border border-card-border bg-white px-4 py-4 flex flex-col gap-3"
+                  className="w-full rounded-2xl border border-card-border bg-white p-4 flex flex-col gap-3"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

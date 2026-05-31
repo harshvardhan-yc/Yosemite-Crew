@@ -128,10 +128,7 @@ const ViewAppointmentOverviewModal = ({
     : '-';
 
   const supportDisplay =
-    activeAppointment.supportStaff
-      ?.map((s) => s.name)
-      .filter(Boolean)
-      .join(', ') || '-';
+    activeAppointment.supportStaff?.flatMap((s) => (s.name ? [s.name] : [])).join(', ') || '-';
 
   const handleRoomChange = useCallback(
     async (option: { label: string; value: string }) => {

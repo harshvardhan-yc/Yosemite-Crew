@@ -19,7 +19,7 @@ const config: Config = {
   // bail: 0,
 
   // The directory where Jest should store its cached dependency information
-  // cacheDirectory: "/private/var/folders/vv/3t3btncj0416sw4f557ff9km0000gn/T/jest_dx",
+  cacheDirectory: '.jest-cache',
 
   // Disable watchman to avoid permission issues in constrained environments.
   watchman: false,

@@ -63,8 +63,10 @@ import {
   appointmentViewToLocal,
   normalizePmsPreferences,
 } from '@/app/features/settings/utils/pmsPreferences';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const AppointmentsSkeleton = () => <PageSkeleton variant="planner" />;
+const APPOINTMENTS_SKELETON = <AppointmentsSkeleton />;
 
 const PlannerViewSkeleton = () => (
   <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
@@ -89,6 +91,13 @@ preloadDynamic(AppointmentCalendar);
 preloadDynamic(AppointmentBoard);
 
 const revampEnabled = isAppointmentRevampEnabled();
+
+const normalizeLeadId = (value?: string | null) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
 
 const Appointments = () => {
   const rawAppointments = useAppointmentsForPrimaryOrg();
@@ -157,21 +166,15 @@ const Appointments = () => {
       }),
     [rawAppointments, companionMetaById]
   );
-  const { can } = usePermissions();
-  const canEditAny = can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
-  const canEditOwn = can(PERMISSIONS.APPOINTMENTS_EDIT_OWN);
+  const permissions = usePermissions();
+  const canEditAny = permissions.can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
+  const canEditOwn = permissions.can(PERMISSIONS.APPOINTMENTS_EDIT_OWN);
   const canEditAppointments = canEditAny || canEditOwn;
 
   const team = useTeamForPrimaryOrg();
   const authUserId = useAuthStore(
     (s) => s.attributes?.sub || s.attributes?.email || s.attributes?.['cognito:username'] || ''
   );
-  const normalizeLeadId = (value?: string | null) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
   const currentUserLeadId = useMemo(() => {
     const normalizedCurrentUser = normalizeLeadId(authUserId);
     if (!normalizedCurrentUser) return '';
@@ -230,7 +233,7 @@ const Appointments = () => {
     });
   };
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [weekStart, setWeekStart] = useState(startOfDay(currentDate));
+  const [weekStart, setWeekStart] = useState(() => startOfDay(currentDate));
   const { plannerSectionRef } = usePlannerAutoLock({
     activeView,
     topOffset: activeView === 'list' ? 72 : 16,
@@ -479,6 +482,7 @@ const Appointments = () => {
           setActiveView={handleActiveViewChange}
           showAdd={false}
         />
+        <MobileSearchBar placeholder="Search appointments" />
 
         <PermissionGate allOf={[PERMISSIONS.APPOINTMENTS_VIEW_ANY]} fallback={<Fallback />}>
           <div className={wrapperClassName}>
@@ -579,8 +583,8 @@ const Appointments = () => {
 
 const ProtectedAppoitments = () => {
   return (
-    <ProtectedRoute skeleton={<AppointmentsSkeleton />}>
-      <OrgGuard skeleton={<AppointmentsSkeleton />}>
+    <ProtectedRoute skeleton={APPOINTMENTS_SKELETON}>
+      <OrgGuard skeleton={APPOINTMENTS_SKELETON}>
         <Suspense fallback={<AppointmentsSkeleton />}>
           <Appointments />
         </Suspense>

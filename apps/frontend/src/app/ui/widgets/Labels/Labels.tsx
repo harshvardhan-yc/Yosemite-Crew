@@ -23,13 +23,15 @@ type LabelsProps = {
   disableClicking?: boolean;
 };
 
+const DEFAULT_STATUSES: Record<string, 'valid' | 'error' | undefined> = {};
+
 const Labels = ({
   labels,
   activeLabel,
   setActiveLabel,
   activeSubLabel,
   setActiveSubLabel,
-  statuses = {},
+  statuses = DEFAULT_STATUSES,
   disableClicking = false,
 }: LabelsProps) => {
   const active = labels.find((l) => l.key === activeLabel);

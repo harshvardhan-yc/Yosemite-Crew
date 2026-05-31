@@ -84,18 +84,66 @@ const DEV_MOBILE_ROUTE_GROUPS = [
   { label: 'Account', routeNames: ['Settings', 'Sign out'] },
 ] as const;
 
+const buildMobileRoutes = (
+  routes: typeof headerAppRoutes,
+  merckEnabled: boolean
+): typeof headerAppRoutes => {
+  const next = [...routes];
+  const signOutIndex = next.findIndex((route) => route.name === 'Sign out');
+  const insertIndex = signOutIndex === -1 ? next.length : signOutIndex;
+  if (merckEnabled) {
+    next.splice(insertIndex, 0, {
+      name: 'MSD Veterinary Manual',
+      href: '/integrations/merck-manuals',
+      verify: true,
+    });
+  }
+  next.splice(insertIndex, 0, { name: 'Guides', href: '/guides', verify: false });
+  return next;
+};
+
 const groupRoutesByName = (
   routes: typeof headerAppRoutes,
   groups: readonly { label: string; routeNames: readonly string[] }[]
 ) =>
-  groups
-    .map((group) => ({
-      label: group.label,
-      routes: group.routeNames
-        .map((routeName) => routes.find((route) => route.name === routeName))
-        .filter((route): route is (typeof routes)[number] => Boolean(route)),
-    }))
-    .filter((group) => group.routes.length > 0);
+  groups.reduce<Array<{ label: string; routes: Array<(typeof routes)[number]> }>>(
+    (visibleGroups, group) => {
+      const groupRoutes = group.routeNames.reduce<Array<(typeof routes)[number]>>(
+        (items, routeName) => {
+          const route = routes.find((item) => item.name === routeName);
+          if (route) items.push(route);
+          return items;
+        },
+        []
+      );
+      if (groupRoutes.length > 0) visibleGroups.push({ label: group.label, routes: groupRoutes });
+      return visibleGroups;
+    },
+    []
+  );
+
+const shouldHideSearch = (pathname: string): boolean =>
+  pathname.startsWith('/chat') ||
+  pathname.startsWith('/settings') ||
+  (pathname.startsWith('/organization') && !pathname.startsWith('/organization/specialities')) ||
+  pathname.startsWith('/organizations') ||
+  pathname.startsWith('/dashboard') ||
+  pathname.startsWith('/guides') ||
+  (pathname.startsWith('/integrations') && !pathname.startsWith('/integrations/idexx-workspace'));
+
+const getSearchPlaceholder = (pathname: string, terminologyText: (s: string) => string): string => {
+  if (pathname.startsWith('/appointments/idexx-workspace')) return 'Search result / order';
+  if (pathname.startsWith('/appointments')) return 'Search appointments';
+  if (pathname.startsWith('/inventory')) return 'Search inventory';
+  if (pathname.startsWith('/integrations/idexx-workspace')) return 'Search result / order';
+  if (pathname.startsWith('/integrations')) return 'Search integrations';
+  if (pathname.startsWith('/forms')) return 'Search forms';
+  if (pathname.startsWith('/companions')) return terminologyText('Search companions');
+  if (pathname.startsWith('/tasks')) return 'Search tasks';
+  if (pathname.startsWith('/finance')) return 'Search invoices';
+  if (pathname.startsWith('/organization/specialities')) return 'Search specialities';
+  return 'Search';
+};
 
 const UserHeader = () => {
   const terminologyText = useCompanionTerminologyText();
@@ -108,22 +156,7 @@ const UserHeader = () => {
   const isDev = pathname.startsWith('/developers');
   const { isEnabled: merckEnabled } = useResolvedMerckIntegrationForPrimaryOrg();
   const routes = isDev ? headerDevRoutes : headerAppRoutes;
-  const mobileRoutes = isDev
-    ? routes
-    : (() => {
-        const next = [...routes];
-        const signOutIndex = next.findIndex((route) => route.name === 'Sign out');
-        const insertIndex = signOutIndex === -1 ? next.length : signOutIndex;
-        if (merckEnabled) {
-          next.splice(insertIndex, 0, {
-            name: 'MSD Veterinary Manual',
-            href: '/integrations/merck-manuals',
-            verify: true,
-          });
-        }
-        next.splice(insertIndex, 0, { name: 'Guides', href: '/guides', verify: false });
-        return next;
-      })();
+  const mobileRoutes = isDev ? routes : buildMobileRoutes(routes, merckEnabled);
   const mobileRouteGroups = groupRoutesByName(
     mobileRoutes,
     isDev ? DEV_MOBILE_ROUTE_GROUPS : APP_MOBILE_ROUTE_GROUPS
@@ -148,15 +181,18 @@ const UserHeader = () => {
 
   const logoutRedirect = pathname.startsWith('/developers') ? '/developers/signin' : '/signin';
 
-  useEffect(() => {
-    clear();
-  }, [pathname, clear]);
+  const prevPathnameRef = useRef(pathname);
+  if (prevPathnameRef.current !== pathname) {
+    prevPathnameRef.current = pathname;
+    handlePathnameChange();
+  }
 
-  useEffect(() => {
-    setMenuOpen(false);
-    setSelectOrg(false);
-    setSelectProfile(false);
-  }, [pathname]);
+  function handlePathnameChange() {
+    clear();
+    if (menuOpen) setMenuOpen(false);
+    if (selectOrg) setSelectOrg(false);
+    if (selectProfile) setSelectProfile(false);
+  }
 
   useEffect(() => {
     const closeMenuOnDesktop = () => {
@@ -206,18 +242,20 @@ const UserHeader = () => {
     setMenuOpen(false);
     const { show, hide } = useFullscreenLoaderStore.getState();
     show('org-switch');
-    setTimeout(() => {
-      startRouteLoader();
-      const role = membershipsByOrgId[orgId]?.roleDisplay ?? membershipsByOrgId[orgId]?.roleCode;
-      void resolveOrgScopedRedirect({ orgId, fallbackRole: role })
-        .then((nextRoute) => {
-          router.push(nextRoute);
-        })
-        .catch(() => {
-          hide('org-switch');
-          stopRouteLoader();
-        });
-    }, 300);
+    setTimeout(() => navigateToOrg(orgId, hide), 300);
+  };
+
+  const navigateToOrg = (orgId: string, hide: (key: string) => void) => {
+    startRouteLoader();
+    const role = membershipsByOrgId[orgId]?.roleDisplay ?? membershipsByOrgId[orgId]?.roleCode;
+    void resolveOrgScopedRedirect({ orgId, fallbackRole: role })
+      .then((nextRoute) => {
+        router.push(nextRoute);
+      })
+      .catch(() => {
+        hide('org-switch');
+        stopRouteLoader();
+      });
   };
 
   const handleClick = (item: any) => {
@@ -262,27 +300,9 @@ const UserHeader = () => {
   const orgMissing = !primaryOrg;
   const orgVerified = !!primaryOrg?.isVerified;
 
-  const getSearchPlaceholder = () => {
-    if (pathname.startsWith('/appointments/idexx-workspace')) return 'Search result / order';
-    if (pathname.startsWith('/appointments')) return 'Search appointments';
-    if (pathname.startsWith('/inventory')) return 'Search inventory';
-    if (pathname.startsWith('/integrations/idexx-workspace')) return 'Search result / order';
-    if (pathname.startsWith('/integrations')) return 'Search integrations';
-    if (pathname.startsWith('/forms')) return 'Search forms';
-    if (pathname.startsWith('/companions')) return terminologyText('Search companions');
-    if (pathname.startsWith('/tasks')) return 'Search tasks';
-    if (pathname.startsWith('/finance')) return 'Search invoices';
-    return 'Search';
-  };
+  const searchPlaceholder = getSearchPlaceholder(pathname, terminologyText);
 
-  const hideSearch =
-    pathname.startsWith('/chat') ||
-    pathname.startsWith('/settings') ||
-    pathname.startsWith('/organization') ||
-    pathname.startsWith('/organizations') ||
-    pathname.startsWith('/dashboard') ||
-    pathname.startsWith('/guides') ||
-    (pathname.startsWith('/integrations') && !pathname.startsWith('/integrations/idexx-workspace'));
+  const hideSearch = shouldHideSearch(pathname);
   const primaryOrgId = primaryOrg?._id?.toString();
   const currentMembership = primaryOrgId ? membershipsByOrgId[primaryOrgId] : null;
   const currentRole = currentMembership?.roleDisplay ?? currentMembership?.roleCode;
@@ -488,7 +508,7 @@ const UserHeader = () => {
             value={query}
             setSearch={setQuery}
             className="yc-header-search"
-            placeholder={getSearchPlaceholder()}
+            placeholder={searchPlaceholder}
           />
         )}
         <button

@@ -277,7 +277,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                                 </div>
                               )}
                               <div
-                                className="absolute -left-1.25 w-3 h-3 rounded-full translate-y-[-50%]"
+                                className="absolute -left-1.25 size-3 rounded-full translate-y-[-50%]"
                                 style={{ backgroundColor: 'var(--color-danger-700)' }}
                               />
                               <div

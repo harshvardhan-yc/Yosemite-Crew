@@ -86,6 +86,7 @@ const Availability = () => {
             const isActive = label.value === selectedLabel;
             return (
               <button
+                type="button"
                 key={label.name + i}
                 className={`min-w-20 text-body-4 px-3 py-1.5 rounded-2xl! border! transition-all duration-300 hover:bg-card-hover text-text-tertiary${isActive ? '' : ' border-card-border! hover:border-card-hover!'}`}
                 style={

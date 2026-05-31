@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -33,6 +33,11 @@ const GuestHeader = () => {
   const status = useAuthStore((s) => s.status);
   const { user, role } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const prevPathnameRef = useRef(pathname);
+  if (prevPathnameRef.current !== pathname) {
+    prevPathnameRef.current = pathname;
+    if (menuOpen) setMenuOpen(false);
+  }
   const logoUrl = MEDIA_SOURCES.logo;
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
@@ -42,10 +47,6 @@ const GuestHeader = () => {
       void useAuthStore.getState().checkSession();
     }
   }, [status]);
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     const closeMenuOnDesktop = () => {
@@ -145,7 +146,7 @@ const GuestHeader = () => {
         />
       </Link>
 
-      <div className="max-w-[800px] flex-1 hidden lg:flex">
+      <div className="max-w-200 flex-1 hidden lg:flex">
         <ul className="list-none flex items-center justify-between flex-1 p-0 m-0">
           {publicNavItems.map((item) => (
             <li key={item.label}>

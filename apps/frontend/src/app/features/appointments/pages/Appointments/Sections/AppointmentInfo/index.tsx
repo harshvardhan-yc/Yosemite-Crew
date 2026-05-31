@@ -17,13 +17,7 @@ import Documents from '@/app/features/appointments/pages/Appointments/Sections/A
 import Discharge from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/Discharge';
 import Audit from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/Audit';
 import Plan from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/Plan';
-import {
-  Appointment,
-  FormSubmission,
-  InvoiceItem,
-  Organisation,
-  Service,
-} from '@yosemite-crew/types';
+import { Appointment, FormSubmission, Organisation } from '@yosemite-crew/types';
 import {
   createSubmission,
   fetchSubmissions,
@@ -39,7 +33,7 @@ import { useOrgStore } from '@/app/stores/orgStore';
 import { AppointmentFormEntry } from '@/app/features/appointments/types/appointmentForms';
 import { FormField } from '@/app/features/forms/types/forms';
 import FormRenderer from '@/app/features/forms/pages/Forms/Sections/AddForm/components/FormRenderer';
-import { buildInitialValues } from '@/app/features/forms/pages/Forms/Sections/AddForm/Review';
+import { buildInitialValues } from '@/app/features/forms/pages/Forms/Sections/AddForm/reviewUtils';
 import { useAuthStore } from '@/app/stores/authStore';
 import SearchDropdown from '@/app/ui/inputs/SearchDropdown';
 import { useFormsStore } from '@/app/stores/formsStore';
@@ -139,6 +133,8 @@ const getLabelsForOrgType = (orgType: string | undefined, hospitalLabels: any[])
   ];
 };
 
+const createSubmissionTimestamp = () => new Date();
+
 type CustomFormsSectionProps = {
   forms: AppointmentFormEntry[];
   loading: boolean;
@@ -185,6 +181,26 @@ const CustomFormsSection: React.FC<CustomFormsSectionProps> = ({
   />
 );
 
+const getFormBadge = (
+  entry: AppointmentFormEntry,
+  needsSignature: boolean | undefined,
+  isSigned: boolean,
+  isClientSigner: boolean
+) => {
+  const isCompleted = entry.status === 'completed' && (!needsSignature || isSigned);
+  let label = 'Pending';
+  if (isClientSigner) {
+    label = isSigned ? 'Signed by pet parent' : 'Pending parent signature';
+  } else if (isCompleted) {
+    label = 'Completed';
+  } else if (needsSignature && !isSigned) {
+    label = 'Signature Pending';
+  }
+  const badgeClass =
+    isSigned || isCompleted ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-700';
+  return { label, badgeClass };
+};
+
 const CustomFormsView = ({
   forms,
   loading,
@@ -225,26 +241,6 @@ const CustomFormsView = ({
   if (error) {
     return <div className="text-body-3 text-error-main">{error}</div>;
   }
-
-  const getFormBadge = (
-    entry: AppointmentFormEntry,
-    needsSignature: boolean | undefined,
-    isSigned: boolean,
-    isClientSigner: boolean
-  ) => {
-    const isCompleted = entry.status === 'completed' && (!needsSignature || isSigned);
-    let label = 'Pending';
-    if (isClientSigner) {
-      label = isSigned ? 'Signed by pet parent' : 'Pending parent signature';
-    } else if (isCompleted) {
-      label = 'Completed';
-    } else if (needsSignature && !isSigned) {
-      label = 'Signature Pending';
-    }
-    const badgeClass =
-      isSigned || isCompleted ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-700';
-    return { label, badgeClass };
-  };
 
   return (
     <Accordion
@@ -358,7 +354,7 @@ const CustomFormsView = ({
                           const submission: FormSubmission = {
                             _id: '',
                             formVersion: 1,
-                            submittedAt: new Date(),
+                            submittedAt: createSubmissionTimestamp(),
                             formId: template.value,
                             appointmentId: activeAppointment.id,
                             companionId: companion?.id ?? '',
@@ -498,7 +494,7 @@ const CustomFormsView = ({
                           const submission: FormSubmission = {
                             _id: '',
                             formVersion: entry.submission?.formVersion ?? 1,
-                            submittedAt: new Date(),
+                            submittedAt: createSubmissionTimestamp(),
                             formId: entry.form._id,
                             appointmentId: activeAppointment.id,
                             companionId: companion?.id ?? '',
@@ -581,35 +577,13 @@ type AppoitmentInfoProps = {
   onReschedule?: (appointment: Appointment) => void;
 };
 
-export type ServiceEdit = Service & {
-  discount: string;
-};
-
-export type FormDataProps = {
-  subjective: SoapNoteSubmission[];
-  objective: SoapNoteSubmission[];
-  assessment: SoapNoteSubmission[];
-  discharge: SoapNoteSubmission[];
-  plan: SoapNoteSubmission[];
-  total: string;
-  subTotal: string;
-  tax: string;
-  discount: string;
-  lineItems: InvoiceItem[];
-};
-
-export const createEmptyFormData = (): FormDataProps => ({
-  subjective: [],
-  objective: [],
-  assessment: [],
-  discharge: [],
-  plan: [],
-  total: '',
-  discount: '',
-  subTotal: '',
-  tax: '',
-  lineItems: [],
-});
+export type {
+  ServiceEdit,
+  FormDataProps,
+} from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
+export { createEmptyFormData } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
+import type { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
+import { createEmptyFormData } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
 
 type LabelKey = 'info' | 'prescription' | 'care' | 'tasks' | 'finance' | 'labs';
 
@@ -707,6 +681,42 @@ const hospitalLabels = [
   },
 ];
 
+const COMPONENT_MAP: Record<string, Record<string, React.FC<any>>> = {
+  info: {
+    appointment: AppointmentInfo,
+    companion: Companion,
+    history: History,
+  },
+  prescription: {
+    subjective: Subjective,
+    objective: Objective,
+    assessment: Assessment,
+    plan: Plan,
+    'audit-trail': Audit,
+    'discharge-summary': Discharge,
+    forms: CustomFormsSection,
+    documents: Documents,
+    'merck-manuals': AppointmentMerckSearch,
+  },
+  care: {
+    forms: CustomFormsSection,
+    documents: Documents,
+    'discharge-summary': Discharge,
+  },
+  tasks: {
+    'parent-chat': Chat,
+    task: Task,
+    'parent-task': ParentTask,
+  },
+  finance: {
+    summary: Summary,
+    'payment-details': Details,
+  },
+  labs: {
+    'idexx-labs': LabTests,
+  },
+};
+
 const AppoitmentInfo = ({
   showModal,
   setShowModal,
@@ -765,7 +775,10 @@ const AppoitmentInfo = ({
   const formsById = useFormsStore((s) => s.formsById);
   useLoadFormsForPrimaryOrg();
   const formIds = useFormsStore((s) => s.formIds);
-  const allForms = formIds.map((id) => formsById[id]).filter(Boolean);
+  const allForms = formIds.flatMap((id) => {
+    const form = formsById[id];
+    return form ? [form] : [];
+  });
   const signingOverlayOpen = useSigningOverlayStore((s) => s.open);
   const { isEnabled: merckEnabled } = useResolvedMerckIntegrationForPrimaryOrg();
   const templatesForOrg = useMemo(() => {
@@ -776,14 +789,11 @@ const AppoitmentInfo = ({
       return allowed.includes(category) || allowed.includes(normalized);
     };
     const allowedCategories = getAllowedCategories(orgType);
-    return allForms
-      .filter((f) => matchesAllowed(f.category, allowedCategories))
-      .map((f) => ({
-        value: f._id ?? f.name,
-        label: trimPrefix(f.name),
-        schema: f.schema ?? [],
-        form: f,
-      }));
+    return allForms.flatMap((f) =>
+      matchesAllowed(f.category, allowedCategories)
+        ? [{ value: f._id ?? f.name, label: trimPrefix(f.name), schema: f.schema ?? [], form: f }]
+        : []
+    );
   }, [allForms, orgType]);
 
   const labels = useMemo(() => {
@@ -869,44 +879,8 @@ const AppoitmentInfo = ({
     }
   }, [showModal, activeAppointment?.id, initialViewIntent, labels]);
 
-  const COMPONENT_MAP: Record<string, Record<string, React.FC<any>>> = {
-    info: {
-      appointment: AppointmentInfo,
-      companion: Companion,
-      history: History,
-    },
-    prescription: {
-      subjective: Subjective,
-      objective: Objective,
-      assessment: Assessment,
-      plan: Plan,
-      'audit-trail': Audit,
-      'discharge-summary': Discharge,
-      forms: CustomFormsSection,
-      documents: Documents,
-      'merck-manuals': AppointmentMerckSearch,
-    },
-    care: {
-      forms: CustomFormsSection,
-      documents: Documents,
-      'discharge-summary': Discharge,
-    },
-    tasks: {
-      'parent-chat': Chat,
-      task: Task,
-      'parent-task': ParentTask,
-    },
-    finance: {
-      summary: Summary,
-      'payment-details': Details,
-    },
-    labs: {
-      'idexx-labs': LabTests,
-    },
-  };
-
   const Content = COMPONENT_MAP[activeLabel]?.[activeSubLabel];
-  const [formData, setFormData] = useState<FormDataProps>(createEmptyFormData());
+  const [formData, setFormData] = useState<FormDataProps>(() => createEmptyFormData());
 
   const loadAppointmentForms = useCallback(async () => {
     if (!activeAppointment?.id) {
@@ -1117,7 +1091,7 @@ const AppoitmentInfo = ({
               <Image
                 alt="pet image"
                 src={companionImageSrc}
-                className="h-10 w-10 rounded-full object-cover border border-card-border bg-white"
+                className="size-10 rounded-full object-cover border border-card-border bg-white"
                 height={40}
                 width={40}
               />

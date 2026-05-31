@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { BatchValues, InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { BusinessType } from '@/app/features/organization/types/org';
 import { formatDisplayDate, toStringSafe } from '@/app/features/inventory/pages/Inventory/utils';
@@ -102,6 +102,54 @@ const sectionValidationHandlers: Partial<
   stock: getStockErrors,
 };
 
+const parseDate = (value?: string): Date | null => {
+  if (!value) return null;
+  if (value.includes('/')) {
+    const [dd, mm, yyyy] = value.split('/');
+    const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDate = (date: Date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const normalizeOptions = (options?: Array<string | { label: string; value: string }>) =>
+  options?.map((option: any) =>
+    typeof option === 'string' ? { label: option, value: option } : option
+  ) ?? [];
+
+const resolveLabel = (options: Array<{ label: string; value: string }>, value: string) =>
+  options.find((o) => o.value === value)?.label ?? value;
+
+const formatDateValue = (value?: string) => {
+  return formatDisplayDate(value) || '—';
+};
+
+const formatFinalValue = (display: string | string[]): string => {
+  if (Array.isArray(display)) {
+    return display.length > 0 ? display.join(', ') : '—';
+  }
+  if (display !== undefined && display !== '') {
+    return String(display);
+  }
+  return '—';
+};
+
 type BatchEditorProps = {
   businessType: BusinessType;
   inventory: InventoryItem;
@@ -135,7 +183,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editableExistingBatches, setEditableExistingBatches] = useState<BatchValues[]>([]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setNewBatches([]);
     setIsEditing(false);
     setEditableExistingBatches([]);
@@ -147,32 +195,6 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     () => configForBusiness.batch || [],
     [configForBusiness.batch]
   );
-
-  const parseDate = (value?: string): Date | null => {
-    if (!value) return null;
-    if (value.includes('/')) {
-      const [dd, mm, yyyy] = value.split('/');
-      const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-    if (isoMatch) {
-      const [, yyyy, mm, dd] = isoMatch;
-      const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
-  };
-
-  const formatDate = (date: Date) => {
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
 
   const beginEditing = useCallback(() => {
     if (disableEditing) return;
@@ -276,7 +298,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     setIsEditing(false);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (disableEditing && isEditing) {
       setIsEditing(false);
     }
@@ -291,18 +313,6 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     });
     return () => onRegisterActions?.(null);
   }, [onRegisterActions, handleSave, handleCancel, beginEditing, inventory, isEditing]);
-
-  const normalizeOptions = (options?: Array<string | { label: string; value: string }>) =>
-    options?.map((option: any) =>
-      typeof option === 'string' ? { label: option, value: option } : option
-    ) ?? [];
-
-  const resolveLabel = (options: Array<{ label: string; value: string }>, value: string) =>
-    options.find((o) => o.value === value)?.label ?? value;
-
-  const formatDateValue = (value?: string) => {
-    return formatDisplayDate(value) || '—';
-  };
 
   const renderField = (
     field: any,
@@ -365,62 +375,6 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     );
   };
 
-  const getFieldDisplay = (
-    component: string,
-    value: any,
-    normalizedOptions: any[]
-  ): string | string[] => {
-    if (component === 'multiSelect') {
-      if (Array.isArray(value)) return value;
-      if (typeof value === 'string' && value.trim() !== '') {
-        return value.split(',').map((v: string) => v.trim());
-      }
-      return [];
-    }
-
-    if (component === 'dropdown') {
-      if (value !== undefined && value !== '') {
-        return resolveLabel(normalizedOptions, String(value));
-      }
-      return '—';
-    }
-
-    if (component === 'date') {
-      return formatDateValue(String(value ?? ''));
-    }
-
-    return String(value ?? '');
-  };
-
-  const formatFinalValue = (display: string | string[]): string => {
-    if (Array.isArray(display)) {
-      return display.length > 0 ? display.join(', ') : '—';
-    }
-    if (display !== undefined && display !== '') {
-      return String(display);
-    }
-    return '—';
-  };
-
-  const renderPreviewField = (field: any, batchData: BatchValues, key?: React.Key) => {
-    const { placeholder, label, component, options, name } = field;
-    const value = batchData[name as keyof BatchValues];
-    const displayLabel = placeholder || label || name;
-    const normalizedOptions = normalizeOptions(options);
-
-    const display = getFieldDisplay(component, value, normalizedOptions);
-    const finalValue = formatFinalValue(display);
-
-    return (
-      <div key={key ?? name} className="flex flex-col gap-1">
-        <div className="font-satoshi font-semibold text-grey-bg text-[14px]">{displayLabel}</div>
-        <div className="font-satoshi font-semibold text-black-text text-[15px] overflow-scroll scrollbar-hidden">
-          {finalValue}
-        </div>
-      </div>
-    );
-  };
-
   const renderItem = (
     item: ConfigItem<any>,
     index: number,
@@ -444,25 +398,6 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     return (
       <div key={fullKey} className="w-full">
         {renderField(item.field, batchIndex, index, source, changeHandler)}
-      </div>
-    );
-  };
-
-  const renderPreviewItem = (item: ConfigItem<any>, index: number, batchData: BatchValues) => {
-    const itemKey =
-      item.kind === 'row' ? item.fields.map((field) => field.name).join('-') : item.field.name;
-    const fullKey = `${batchData?._id ?? 'batch'}-${itemKey}`;
-    if ('fields' in item && item.kind === 'row') {
-      return (
-        <div key={fullKey} className="grid grid-cols-2 gap-3">
-          {item.fields.map((field, i) => renderPreviewField(field, batchData, `${index}-${i}`))}
-        </div>
-      );
-    }
-
-    return (
-      <div key={fullKey} className="w-full">
-        {renderPreviewField(item.field, batchData, index)}
       </div>
     );
   };
@@ -501,7 +436,11 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
                             : existingBatches;
                         return renderItem(item, index, batchIdx, batchSource, handleExistingChange);
                       }
-                      return renderPreviewItem(item, index, batch);
+                      const itemKey =
+                        item.kind === 'row'
+                          ? item.fields.map((f: any) => f.name).join('-')
+                          : item.field.name;
+                      return <PreviewItem key={itemKey} item={item} batchData={batch} />;
                     })}
                   </div>
                 </div>
@@ -590,6 +529,70 @@ const getPrimaryButtonText = (
   return isHidden ? 'Unhide item' : 'Hide item';
 };
 
+const getFieldDisplay = (
+  component: string,
+  value: any,
+  normalizedOptions: any[]
+): string | string[] => {
+  if (component === 'multiSelect') {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value.split(',').map((v: string) => v.trim());
+    }
+    return [];
+  }
+
+  if (component === 'dropdown') {
+    if (value !== undefined && value !== '') {
+      return resolveLabel(normalizedOptions, String(value));
+    }
+    return '—';
+  }
+
+  if (component === 'date') {
+    return formatDateValue(String(value ?? ''));
+  }
+
+  return String(value ?? '');
+};
+
+const PreviewField = ({ field, batchData }: { field: any; batchData: BatchValues }) => {
+  const { placeholder, label, component, options, name } = field;
+  const value = batchData[name as keyof BatchValues];
+  const displayLabel = placeholder || label || name;
+  const normalizedOptions = normalizeOptions(options);
+  const display = getFieldDisplay(component, value, normalizedOptions);
+  const finalValue = formatFinalValue(display);
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="font-satoshi font-semibold text-grey-bg text-[14px]">{displayLabel}</div>
+      <div className="font-satoshi font-semibold text-black-text text-[15px] overflow-scroll scrollbar-hidden">
+        {finalValue}
+      </div>
+    </div>
+  );
+};
+
+const PreviewItem = ({ item, batchData }: { item: ConfigItem<any>; batchData: BatchValues }) => {
+  const itemKey =
+    item.kind === 'row' ? item.fields.map((field) => field.name).join('-') : item.field.name;
+  const fullKey = `${batchData?._id ?? 'batch'}-${itemKey}`;
+  if ('fields' in item && item.kind === 'row') {
+    return (
+      <div key={fullKey} className="grid grid-cols-2 gap-3">
+        {item.fields.map((field) => (
+          <PreviewField key={field.name} field={field} batchData={batchData} />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div key={fullKey} className="w-full">
+      <PreviewField field={item.field} batchData={batchData} />
+    </div>
+  );
+};
+
 const InventoryInfo = ({
   showModal,
   setShowModal,
@@ -621,7 +624,7 @@ const InventoryInfo = ({
   } | null>(null);
   const currentLabelConfig = modalSections.find((l) => l.key === activeLabel) || modalSections[0];
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setIsSectionEditing(false);
     sectionActions.current = null;
     batchActions.current = null;

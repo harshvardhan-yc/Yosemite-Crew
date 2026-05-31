@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { flushSync } from 'react-dom';
+import React, { useEffect, useMemo, useState, startTransition } from 'react';
 import ProfileCard from '@/app/features/organization/pages/Organization/Sections/ProfileCard';
 import Availability from '@/app/features/appointments/components/Availability/Availability';
 import { usePrimaryOrgWithMembership } from '@/app/hooks/useOrgSelectors';
@@ -153,7 +152,7 @@ const OrgSection = () => {
   const { availabilities } = usePrimaryAvailability();
   const { notify } = useNotify();
   const profile = usePrimaryOrgProfile();
-  const [availability, setAvailability] = useState<AvailabilityState>(
+  const [availability, setAvailability] = useState<AvailabilityState>(() =>
     daysOfWeek.reduce<AvailabilityState>((acc, day) => {
       const isWeekday =
         day === 'Monday' ||
@@ -234,12 +233,10 @@ const OrgSection = () => {
     };
   }, [membership?.practitionerReference]);
 
-  const handleClick = async () => {
+  const handleSaveAvailability = async () => {
     if (isSavingAvailability) return;
     try {
-      flushSync(() => {
-        setIsSavingAvailability(true);
-      });
+      startTransition(() => setIsSavingAvailability(true));
       await new Promise<void>((resolve) => {
         setTimeout(resolve, 0);
       });
@@ -397,7 +394,7 @@ const OrgSection = () => {
             <Primary
               href="#"
               text={isSavingAvailability ? 'Saving...' : 'Save'}
-              onClick={handleClick}
+              onClick={handleSaveAvailability}
               isDisabled={isSavingAvailability}
             />
           </div>

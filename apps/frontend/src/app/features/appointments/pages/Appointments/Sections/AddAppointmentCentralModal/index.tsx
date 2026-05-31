@@ -1,5 +1,16 @@
 'use client';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 import { createPortal } from 'react-dom';
 import '@/app/ui/primitives/Buttons/ButtonEffects.css';
 import { useCompanionsParentsForPrimaryOrg } from '@/app/hooks/useCompanion';
@@ -16,7 +27,7 @@ import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
 import Datepicker from '@/app/ui/inputs/Datepicker';
 import FormDesc from '@/app/ui/inputs/FormDesc/FormDesc';
-import AddCompanion from '@/app/features/companions/components/AddCompanion';
+import AddCompanionCentralModal from '@/app/features/companions/components/AddCompanionCentralModal';
 import AppointmentCentralModalShell from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentCentralModalShell';
 import AppointmentAvatar from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentAvatar';
 import AppointmentEstimatePanel from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentEstimatePanel';
@@ -33,7 +44,7 @@ const INPUT_PLACEHOLDER = 'var(--color-input-text-placeholder)';
 const INPUT_PLACEHOLDER_ACTIVE = 'var(--color-input-text-placeholder-active)';
 
 // 16-R: values / selected text / input content
-const text16R: React.CSSProperties = {
+const text16R: CSSProperties = {
   fontFamily: FONT,
   fontSize: 16,
   fontWeight: 400,
@@ -41,7 +52,7 @@ const text16R: React.CSSProperties = {
   color: NEUTRAL_900,
 };
 // 14-M: labels, checkboxes, emergency
-const text14M: React.CSSProperties = {
+const text14M: CSSProperties = {
   fontFamily: FONT,
   fontSize: 14,
   fontWeight: 500,
@@ -49,7 +60,7 @@ const text14M: React.CSSProperties = {
   color: NEUTRAL_900,
 };
 // 12px floated label — neutral-900 per spec (not blue)
-const floatLabelActive: React.CSSProperties = {
+const floatLabelActive: CSSProperties = {
   fontFamily: FONT,
   fontSize: 12,
   fontWeight: 400,
@@ -57,7 +68,7 @@ const floatLabelActive: React.CSSProperties = {
   color: NEUTRAL_900,
 };
 // resting placeholder — neutral-700 (input-text-placeholder token)
-const floatLabelResting: React.CSSProperties = {
+const floatLabelResting: CSSProperties = {
   fontFamily: FONT,
   fontSize: 16,
   fontWeight: 400,
@@ -68,11 +79,13 @@ const floatLabelResting: React.CSSProperties = {
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type AddAppointmentCentralModalProps = {
   showModal: boolean;
-  setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
-  setActiveFilter: React.Dispatch<React.SetStateAction<string>>;
-  setActiveStatus: React.Dispatch<React.SetStateAction<string>>;
+  setShowModal: Dispatch<SetStateAction<boolean>>;
+  setActiveFilter: Dispatch<SetStateAction<string>>;
+  setActiveStatus: Dispatch<SetStateAction<string>>;
   prefill?: AppointmentDraftPrefill | null;
   onPrefillConsumed?: () => void;
+  /** Pre-selects a companion by ID when the modal opens (e.g. from the companions table). */
+  initialCompanionId?: string | null;
 };
 
 type NotifyChannel = 'app' | 'sms' | 'email';
@@ -103,7 +116,7 @@ const Arrow = ({ open }: { open: boolean }) => (
 );
 
 // ─── Floating label ─────────────────────────────────────────────────────────────
-const FloatLabel = ({ floated, children }: { floated: boolean; children: React.ReactNode }) => (
+const FloatLabel = ({ floated, children }: { floated: boolean; children: ReactNode }) => (
   <span
     className="pointer-events-none absolute left-5 z-10 flex items-center gap-1 bg-white px-1 transition-all duration-150"
     style={
@@ -128,7 +141,7 @@ const FieldError = ({ message }: { message?: string }) => {
 };
 
 // ─── Portal position helper ─────────────────────────────────────────────────────
-const getPortalStyle = (el: HTMLElement | null): React.CSSProperties | null => {
+const getPortalStyle = (el: HTMLElement | null): CSSProperties | null => {
   if (!el) return null;
   const rect = el.getBoundingClientRect();
   const viewportHeight = globalThis.window.innerHeight;
@@ -149,7 +162,7 @@ const getPortalStyle = (el: HTMLElement | null): React.CSSProperties | null => {
 type PersonRowProps = {
   fieldId: string;
   label: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   selectedName?: string;
   selectedPhotoUrl?: string;
   query: string;
@@ -194,7 +207,7 @@ const PersonRow = ({
     return () => document.removeEventListener('mousedown', handler);
   }, [selectedName, setQuery]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (selectedName) setOpen(false);
   }, [selectedName]);
 
@@ -217,8 +230,8 @@ const PersonRow = ({
             data-portal-dropdown
             className={clsx(
               'bg-white rounded-b-2xl overflow-y-auto max-h-44 scrollbar-hidden',
-              'border-l border-r border-b',
-              error ? 'border-input-border-error' : 'border-input-border-active'
+              'border-l border-r border-b border-t',
+              error ? 'border-input-border-error' : 'border-input-text-placeholder-active'
             )}
             style={portalStyle}
           >
@@ -263,7 +276,7 @@ const PersonRow = ({
         className={clsx(
           'relative flex items-center min-h-12 border bg-white transition-colors duration-150 cursor-text',
           open
-            ? 'rounded-t-2xl border-input-border-active'
+            ? 'rounded-t-2xl border-input-border-active border-b-0'
             : 'rounded-2xl border-input-border-default',
           error ? 'border-input-border-error!' : ''
         )}
@@ -306,7 +319,7 @@ const PersonRow = ({
                   setOpen(false);
                   inputRef.current?.focus();
                 }}
-                className="flex items-center justify-center w-5 h-5 rounded-full text-text-secondary hover:text-text-primary hover:bg-card-hover transition-colors text-[11px] shrink-0"
+                className="flex items-center justify-center size-5 rounded-full text-text-secondary hover:text-text-primary hover:bg-card-hover transition-colors text-[11px] shrink-0"
                 aria-label="Clear selection"
               >
                 ✕
@@ -347,7 +360,7 @@ const isSameSlot = (a: Slot | null, b: Slot) =>
 type TimeSlotDropdownProps = {
   timeSlots: Slot[];
   selectedSlot: Slot | null;
-  setSelectedSlot: React.Dispatch<React.SetStateAction<Slot | null>>;
+  setSelectedSlot: Dispatch<SetStateAction<Slot | null>>;
   isLoading: boolean;
   hasService: boolean;
   noSlotsMessage?: string;
@@ -358,7 +371,7 @@ type TimeSlotDropdownProps = {
 
 const TimeSlotLoadingMessage = () => (
   <div className="flex items-center justify-center gap-2 px-5 py-4">
-    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path
         className="opacity-75"
@@ -366,7 +379,7 @@ const TimeSlotLoadingMessage = () => (
         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
       />
     </svg>
-    <span style={{ ...text14M, color: INPUT_PLACEHOLDER_ACTIVE }}>Loading slots...</span>
+    <span style={{ ...text14M, color: INPUT_PLACEHOLDER_ACTIVE }}>Loading slots…</span>
   </div>
 );
 
@@ -375,7 +388,7 @@ type TimeSlotMenuContentProps = {
   selectedSlot: Slot | null;
   hasService: boolean;
   noSlotsMessage?: string;
-  setSelectedSlot: React.Dispatch<React.SetStateAction<Slot | null>>;
+  setSelectedSlot: Dispatch<SetStateAction<Slot | null>>;
   closeMenu: () => void;
 };
 
@@ -434,7 +447,7 @@ const TimeSlotTriggerValue = ({ isLoading, selectedLabel }: TimeSlotTriggerValue
         style={{ ...text16R, color: INPUT_PLACEHOLDER_ACTIVE }}
       >
         <svg
-          className="animate-spin h-3.5 w-3.5 shrink-0"
+          className="animate-spin size-3.5 shrink-0"
           viewBox="0 0 24 24"
           fill="none"
           aria-hidden="true"
@@ -506,8 +519,8 @@ const TimeSlotDropdown = ({
             data-portal-dropdown
             className={clsx(
               'bg-white rounded-b-2xl overflow-y-auto max-h-44 scrollbar-hidden',
-              'border-l border-r border-b',
-              error ? 'border-input-border-error' : 'border-input-border-active'
+              'border-l border-r border-b border-t',
+              error ? 'border-input-border-error' : 'border-input-text-placeholder-active'
             )}
             style={portalStyle}
           >
@@ -536,7 +549,7 @@ const TimeSlotDropdown = ({
         className={clsx(
           'relative flex w-full items-center min-h-12 border bg-white text-left transition-colors duration-150 select-none',
           open
-            ? 'rounded-t-2xl border-input-border-active'
+            ? 'rounded-t-2xl border-input-border-active border-b-0'
             : 'rounded-2xl border-input-border-default',
           error ? 'border-input-border-error!' : ''
         )}
@@ -582,6 +595,7 @@ const AddAppointmentCentralModal = ({
   setActiveStatus,
   prefill,
   onPrefillConsumed,
+  initialCompanionId,
 }: AddAppointmentCentralModalProps) => {
   const terminologyText = useCompanionTerminologyText();
   const companions = useCompanionsParentsForPrimaryOrg();
@@ -604,32 +618,7 @@ const AddAppointmentCentralModal = ({
   // Date/time prefill still works via pendingPrefill — the slot-time auto-selects after service pick.
   const [calendarSlotFlowActive, setCalendarSlotFlowActive] = useState(false);
 
-  const {
-    formData,
-    setFormData,
-    formDataErrors,
-    selectedDate,
-    setSelectedDate,
-    selectedSlot,
-    setSelectedSlot,
-    timeSlots,
-    LeadOptions,
-    leadEmptyStateMessage,
-    TeamOptions,
-    SpecialitiesOptions,
-    ServicesOptions,
-    ServiceInfoData,
-    handleCreate,
-    handleSpecialitySelect,
-    handleServiceSelect,
-    handleLeadSelect,
-    handleSupportStaffChange,
-    isLoading,
-    isLoadingSlotScopedOptions,
-    setFormDataErrors,
-    validateForm,
-    resetForm,
-  } = useAppointmentForm({
+  const appointmentForm = useAppointmentForm({
     onSuccess: () => {
       setShowModal(false);
       setActiveFilter('all');
@@ -639,6 +628,32 @@ const AddAppointmentCentralModal = ({
     initialPrefill: showModal ? prefill : null,
     calendarSlotFlow: calendarSlotFlowActive,
   });
+  const {
+    formData,
+    formDataErrors,
+    selectedDate,
+    selectedSlot,
+    timeSlots,
+    LeadOptions,
+    leadEmptyStateMessage,
+    TeamOptions,
+    SpecialitiesOptions,
+    ServicesOptions,
+    ServiceInfoData,
+    isLoading,
+    isLoadingSlotScopedOptions,
+    setFormData,
+    setFormDataErrors,
+    setSelectedDate,
+    setSelectedSlot,
+    handleCreate,
+    handleSpecialitySelect,
+    handleServiceSelect,
+    handleLeadSelect,
+    handleSupportStaffChange,
+    resetForm,
+    validateForm,
+  } = appointmentForm;
 
   const hasUnsavedChanges = useMemo(
     () => hasUnsavedCentralChanges(formData, selectedSlot),
@@ -648,7 +663,7 @@ const AddAppointmentCentralModal = ({
   const showAddCompanionModal = Boolean(addCompanionTarget) && showModal;
 
   // ── Reset on close ───────────────────────────────────────────────────────────
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showModal) {
       setSubmitAttempted(false);
       setPatientQuery('');
@@ -664,14 +679,14 @@ const AddAppointmentCentralModal = ({
     }
   }, [showModal, resetForm, onPrefillConsumed, prefill]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setPrefillActive(Boolean(prefill));
     setCalendarSlotFlowActive(false);
   }, [prefill]);
 
   // ── Slot loading indicator (non-prefill flow only) ───────────────────────────
   const prevServiceIdRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const svcId = formData.appointmentType?.id;
     if (svcId !== prevServiceIdRef.current) {
       prevServiceIdRef.current = svcId;
@@ -679,27 +694,32 @@ const AddAppointmentCentralModal = ({
     }
   }, [formData.appointmentType?.id, calendarSlotFlowActive]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setIsLoadingTimeSlots(false);
   }, [timeSlots]);
 
   // ── Revalidate after submit attempt ─────────────────────────────────────────
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!submitAttempted) return;
     const errors = validateForm(true);
     setFormDataErrors(errors);
-  }, [formData, selectedSlot, submitAttempted, validateForm, setFormDataErrors]);
+  }, [formData, selectedSlot, submitAttempted, setFormDataErrors, validateForm]);
 
   // ── Options ──────────────────────────────────────────────────────────────────
   const patientOptions = useMemo(
     () =>
-      companions
-        .filter((c) => !selectedClientId || c.parent.id === selectedClientId)
-        .map((c) => ({
-          value: c.companion.id,
-          label: formatCompanionNameWithOwnerLastName(c.companion.name, c.parent),
-          photoUrl: typeof c.companion.photoUrl === 'string' ? c.companion.photoUrl : undefined,
-        })),
+      companions.reduce<Array<{ value: string; label: string; photoUrl?: string }>>(
+        (options, c) => {
+          if (selectedClientId && c.parent.id !== selectedClientId) return options;
+          options.push({
+            value: c.companion.id,
+            label: formatCompanionNameWithOwnerLastName(c.companion.name, c.parent),
+            photoUrl: typeof c.companion.photoUrl === 'string' ? c.companion.photoUrl : undefined,
+          });
+          return options;
+        },
+        []
+      ),
     [companions, selectedClientId]
   );
 
@@ -707,10 +727,11 @@ const AddAppointmentCentralModal = ({
     const seen = new Set<string>();
     const result: Array<{ value: string; label: string }> = [];
     for (const c of companions) {
-      if (!seen.has(c.parent.id)) {
-        seen.add(c.parent.id);
-        const name = [c.parent.firstName, c.parent.lastName].filter(Boolean).join(' ');
-        result.push({ value: c.parent.id, label: name || c.parent.id });
+      const { id: parentId, firstName, lastName } = c.parent;
+      if (!seen.has(parentId)) {
+        seen.add(parentId);
+        const name = [firstName, lastName].filter(Boolean).join(' ');
+        result.push({ value: parentId, label: name || parentId });
       }
     }
     return result;
@@ -740,6 +761,19 @@ const AddAppointmentCentralModal = ({
     [companions, setFormData, setFormDataErrors, submitAttempted]
   );
 
+  // ── Auto-select companion when opened from an external context (e.g. companions table) ──
+  useEffect(() => {
+    if (!showModal || !initialCompanionId) return;
+    const found = companions.find((c) => c.companion.id === initialCompanionId);
+    if (found) {
+      handlePatientSelect(found.companion.id);
+      setPatientQuery(formatCompanionNameWithOwnerLastName(found.companion.name, found.parent));
+    } else {
+      // Companions may not be loaded yet — park and auto-select when they arrive
+      setPendingAutoSelectCompanionId(initialCompanionId);
+    }
+  }, [showModal, initialCompanionId, companions, handlePatientSelect]);
+
   const handlePatientClear = useCallback(() => {
     setFormData((prev) => ({
       ...prev,
@@ -759,11 +793,12 @@ const AddAppointmentCentralModal = ({
     setSelectedClientId(null);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showModal || !pendingAutoSelectCompanionId) return;
     const found = companions.find((c) => c.companion.id === pendingAutoSelectCompanionId);
     if (!found) return;
     handlePatientSelect(found.companion.id);
+    setPatientQuery(formatCompanionNameWithOwnerLastName(found.companion.name, found.parent));
     setPendingAutoSelectCompanionId(null);
   }, [companions, handlePatientSelect, pendingAutoSelectCompanionId, showModal]);
 
@@ -773,11 +808,13 @@ const AddAppointmentCentralModal = ({
   );
 
   const canCloseModal = useCallback(() => {
+    // Never close the appointment modal while the add-companion sub-modal is open on top
+    if (showAddCompanionModal) return false;
     if (isLoading) return false;
     if (!hasUnsavedChanges) return true;
     setShowDiscardConfirm(true);
     return false;
-  }, [isLoading, hasUnsavedChanges]);
+  }, [showAddCompanionModal, isLoading, hasUnsavedChanges]);
 
   const handleDiscardAndClose = useCallback(() => {
     setShowDiscardConfirm(false);
@@ -792,7 +829,7 @@ const AddAppointmentCentralModal = ({
     await handleCreate(true);
   };
 
-  const handleAddCompanionClose = (value: React.SetStateAction<boolean>) => {
+  const handleAddCompanionClose = (value: SetStateAction<boolean>) => {
     const nextOpen = typeof value === 'function' ? value(showAddCompanionModal) : value;
     if (!nextOpen) {
       setAddCompanionTarget(null);
@@ -824,7 +861,7 @@ const AddAppointmentCentralModal = ({
   }, [prefillActive, calendarSlotFlowActive, resetForm]);
 
   const handleDateChange = useCallback(
-    (date: React.SetStateAction<Date>) => {
+    (date: SetStateAction<Date>) => {
       exitPrefillMode();
       setSelectedDate(date);
     },
@@ -893,9 +930,8 @@ const AddAppointmentCentralModal = ({
 
   return (
     <>
-      {/* Central modal — hidden (not unmounted) when AddCompanion is open for smooth slide transition */}
       <AppointmentCentralModalShell
-        showModal={showModal && !showAddCompanionModal}
+        showModal={showModal}
         setShowModal={setShowModal}
         title="Appointment details"
         canClose={canCloseModal}
@@ -1062,11 +1098,12 @@ const AddAppointmentCentralModal = ({
               <label className="ml-auto flex items-center justify-end gap-2 cursor-pointer select-none mt-auto">
                 <input
                   type="checkbox"
+                  aria-label="Mark appointment as emergency"
                   checked={formData.isEmergency ?? false}
                   onChange={(e) =>
                     setFormData((prev) => ({ ...prev, isEmergency: e.target.checked }))
                   }
-                  className="w-4 h-4 cursor-pointer shrink-0"
+                  className="size-4 cursor-pointer shrink-0"
                 />
                 <span style={text14M}>Is this an Emergency?</span>
               </label>
@@ -1090,9 +1127,10 @@ const AddAppointmentCentralModal = ({
                 <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
+                    aria-label={`Notify by ${label}`}
                     checked={notifyChannels.has(key)}
                     onChange={() => toggleNotify(key)}
-                    className="w-4 h-4 cursor-pointer shrink-0"
+                    className="size-4 cursor-pointer shrink-0"
                   />
                   <span style={text14M}>{label}</span>
                 </label>
@@ -1103,14 +1141,7 @@ const AddAppointmentCentralModal = ({
               type="button"
               onClick={handleSubmit}
               disabled={isLoading}
-              className="yc-primary-button flex items-center justify-center gap-2 rounded-2xl! px-6 py-3 whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{
-                fontFamily: FONT,
-                fontSize: 16,
-                fontWeight: 500,
-                lineHeight: '120%',
-                color: '#ffffff',
-              }}
+              className="yc-primary-button flex items-center justify-center gap-2 rounded-2xl! px-4 py-[11px] whitespace-nowrap font-satoshi text-base font-medium leading-[1.5rem] text-white! disabled:opacity-60 disabled:cursor-not-allowed"
               onPointerDown={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
                 e.currentTarget.style.setProperty('--yc-button-x', `${e.clientX - r.left}px`);
@@ -1128,15 +1159,15 @@ const AddAppointmentCentralModal = ({
         </div>
       </AppointmentCentralModalShell>
 
-      {/* AddCompanion slides in over the central modal — smooth transition */}
-      <AddCompanion
+      <AddCompanionCentralModal
         showModal={showAddCompanionModal}
         setShowModal={handleAddCompanionClose}
-        mode="fasttrack"
+        formMode="fasttrack"
         onCompanionCreated={(companionId) => {
           setPendingAutoSelectCompanionId(companionId);
           setAddCompanionTarget(null);
         }}
+        onGoToAppointment={() => setAddCompanionTarget(null)}
       />
 
       {/* Discard confirmation */}
@@ -1162,8 +1193,7 @@ const AddAppointmentCentralModal = ({
             <button
               type="button"
               onClick={handleDiscardAndClose}
-              className="yc-primary-button rounded-2xl! px-5 py-2.5 disabled:opacity-60 disabled:cursor-not-allowed"
-              style={{ ...text14M, color: 'white' }}
+              className="yc-primary-button rounded-2xl! px-5 py-2.5 font-satoshi text-base font-medium leading-[1.2] text-white! disabled:opacity-60 disabled:cursor-not-allowed"
               onPointerDown={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
                 e.currentTarget.style.setProperty('--yc-button-x', `${e.clientX - r.left}px`);

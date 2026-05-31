@@ -47,7 +47,7 @@ const OrgStep = ({ errors, nextStep, formData, setFormData }: OrgStepProps) => {
     taxId?: string;
     website?: string;
   }>({});
-  const [companionTerminology, setCompanionTerminology] = useState<CompanionTerminologyOption>(
+  const [companionTerminology, setCompanionTerminology] = useState<CompanionTerminologyOption>(() =>
     getCompanionTerminologyForOrg(undefined, formData.type)
   );
   const initialPhoneData = findPhoneData(formData.phoneNo || '', formData.address?.country);
@@ -131,6 +131,7 @@ const OrgStep = ({ errors, nextStep, formData, setFormData }: OrgStepProps) => {
           <div className="step-type-options">
             {BusinessTypes.map((type) => (
               <button
+                type="button"
                 key={type}
                 className={classNames('step-type-option', {
                   activetype: formData.type === type,

@@ -4,6 +4,8 @@ import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import PageSkeleton from '@/app/ui/layout/PageSkeleton';
+
+const COMPANIONS_PAGE_SKELETON = <PageSkeleton variant="list" />;
 import Filters from '@/app/ui/filters/Filters';
 import CompanionsTable from '@/app/ui/tables/CompanionsTable';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
@@ -22,13 +24,21 @@ import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
+import { isCompanionRevampEnabled } from '@/app/lib/featureFlags';
 
 const AddCompanion = dynamic(() => import('@/app/features/companions/components/AddCompanion'));
+const AddCompanionCentralModal = dynamic(
+  () => import('@/app/features/companions/components/AddCompanionCentralModal')
+);
 const CompanionInfo = dynamic(() =>
   import('@/app/features/companions/components').then((m) => ({ default: m.CompanionInfo }))
 );
 const BookAppointment = dynamic(
   () => import('@/app/features/companions/pages/Companions/BookAppointment')
+);
+const AddAppointmentCentralModal = dynamic(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/AddAppointmentCentralModal')
 );
 const AddTask = dynamic(() => import('@/app/features/companions/pages/Companions/AddTask'));
 const ChangeCompanionStatus = dynamic(
@@ -37,10 +47,10 @@ const ChangeCompanionStatus = dynamic(
 
 const Companions = () => {
   const companions = useCompanionsParentsForPrimaryOrg();
-  const { can } = usePermissions();
-  const canEditCompanions = can(PERMISSIONS.COMPANIONS_EDIT_ANY);
-  const canEditAppointments = can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
-  const canEditTasks = can(PERMISSIONS.TASKS_EDIT_ANY);
+  const permissions = usePermissions();
+  const canEditCompanions = permissions.can(PERMISSIONS.COMPANIONS_EDIT_ANY);
+  const canEditAppointments = permissions.can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
+  const canEditTasks = permissions.can(PERMISSIONS.TASKS_EDIT_ANY);
   const query = useSearchStore((s) => s.query);
   const searchParams = useSearchParams();
   const handledDeepLinkRef = useRef<string | null>(null);
@@ -128,7 +138,7 @@ const Companions = () => {
               <button
                 type="button"
                 aria-label="Companions info"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
               >
                 <IoInformationCircleOutline size={20} />
               </button>
@@ -136,6 +146,7 @@ const Companions = () => {
           </h1>
         </div>
       </div>
+      <MobileSearchBar placeholder="Search companions" />
       <PermissionGate allOf={[PERMISSIONS.COMPANIONS_VIEW_ANY]} fallback={<Fallback />}>
         <div className={wrapperClassName}>
           <Filters
@@ -165,15 +176,29 @@ const Companions = () => {
           </div>
         </div>
 
-        <AddCompanion showModal={addPopup} setShowModal={setAddPopup} />
-        {activeCompanion && viewCompanion && (
-          <CompanionInfo
-            showModal={viewCompanion}
-            setShowModal={setViewCompanion}
-            activeCompanion={activeCompanion}
-            canEditCompanionStatus={canEditCompanions}
-            initialLabel={companionInfoInitialLabel}
-          />
+        {isCompanionRevampEnabled() ? (
+          <>
+            <AddCompanionCentralModal showModal={addPopup} setShowModal={setAddPopup} />
+            <AddCompanionCentralModal
+              showModal={!!(activeCompanion && viewCompanion)}
+              setShowModal={setViewCompanion}
+              viewCompanion={activeCompanion}
+              canEditCompanionStatus={canEditCompanions}
+            />
+          </>
+        ) : (
+          <>
+            <AddCompanion showModal={addPopup} setShowModal={setAddPopup} />
+            {activeCompanion && viewCompanion && (
+              <CompanionInfo
+                showModal={viewCompanion}
+                setShowModal={setViewCompanion}
+                activeCompanion={activeCompanion}
+                canEditCompanionStatus={canEditCompanions}
+                initialLabel={companionInfoInitialLabel}
+              />
+            )}
+          </>
         )}
         {activeCompanion && canEditCompanions && (
           <ChangeCompanionStatus
@@ -182,13 +207,23 @@ const Companions = () => {
             activeCompanion={activeCompanion}
           />
         )}
-        {canEditAppointments && activeCompanion && (
-          <BookAppointment
-            showModal={bookAppointment}
-            setShowModal={setBookAppointment}
-            activeCompanion={activeCompanion}
-          />
-        )}
+        {canEditAppointments &&
+          activeCompanion &&
+          (isCompanionRevampEnabled() ? (
+            <AddAppointmentCentralModal
+              showModal={bookAppointment}
+              setShowModal={setBookAppointment}
+              setActiveFilter={() => undefined}
+              setActiveStatus={() => undefined}
+              initialCompanionId={activeCompanion.companion.id}
+            />
+          ) : (
+            <BookAppointment
+              showModal={bookAppointment}
+              setShowModal={setBookAppointment}
+              activeCompanion={activeCompanion}
+            />
+          ))}
         {canEditTasks && activeCompanion && (
           <AddTask
             showModal={addTask}
@@ -203,9 +238,9 @@ const Companions = () => {
 
 const ProtectedCompanions = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
-        <Suspense fallback={<PageSkeleton variant="list" />}>
+    <ProtectedRoute skeleton={COMPANIONS_PAGE_SKELETON}>
+      <OrgGuard skeleton={COMPANIONS_PAGE_SKELETON}>
+        <Suspense fallback={COMPANIONS_PAGE_SKELETON}>
           <Companions />
         </Suspense>
       </OrgGuard>

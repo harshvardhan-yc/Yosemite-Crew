@@ -83,6 +83,18 @@ const Timepicker = ({
 }: TimepickerProps) => {
   const selectedTime = useMemo(() => toDateFromTimeString(value), [value]);
   const errorId = useId();
+  const customInput = useMemo(
+    () => (
+      <TimeInputButton
+        value={value}
+        label={label}
+        error={error}
+        errorId={error ? errorId : undefined}
+        className={className}
+      />
+    ),
+    [value, label, error, errorId, className]
+  );
 
   return (
     <div className="w-full">
@@ -103,15 +115,7 @@ const Timepicker = ({
         popperClassName="yc-datepicker-popper"
         portalId="yc-datepicker-portal"
         wrapperClassName="w-full"
-        customInput={
-          <TimeInputButton
-            value={value}
-            label={label}
-            error={error}
-            errorId={error ? errorId : undefined}
-            className={className}
-          />
-        }
+        customInput={customInput}
         id={name}
       />
 

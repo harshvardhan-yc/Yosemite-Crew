@@ -1,50 +1,44 @@
-import React from "react";
-import { getStatusStyle } from "@/app/ui/tables/InventoryTable";
+import React from 'react';
+import { getInventoryStatusStyle } from '@/app/ui/tables/tableUtils';
 import {
   displayStatusLabel,
   formatDisplayDate,
-} from "@/app/features/inventory/pages/Inventory/utils";
-import { Secondary } from "@/app/ui/primitives/Buttons";
+} from '@/app/features/inventory/pages/Inventory/utils';
+import { Secondary } from '@/app/ui/primitives/Buttons';
+
+const displayValue = (val?: string | number | null) => {
+  if (val === undefined || val === null) return '—';
+  if (typeof val === 'string' && val.trim() === '') return '—';
+  return val;
+};
+
+const formatCurrency = (value: string | number | undefined) => {
+  const num = Number(value ?? 0);
+  if (!Number.isFinite(num)) return '—';
+  return `$ ${num}`;
+};
 
 const InventoryCard = ({ item, handleViewInventory }: any) => {
-  const displayValue = (val?: string | number | null) => {
-    if (val === undefined || val === null) return "—";
-    if (typeof val === "string" && val.trim() === "") return "—";
-    return val;
-  };
-
-  const formatCurrency = (value: string | number | undefined) => {
-    const num = Number(value ?? 0);
-    if (!Number.isFinite(num)) return "—";
-    return `$ ${num}`;
-  };
-
   const totalValue = () => {
     const price = Number(item.pricing?.selling ?? 0);
     const onHand = Number(item.stock?.current ?? 0);
-    if (!Number.isFinite(price) || !Number.isFinite(onHand)) return "—";
+    if (!Number.isFinite(price) || !Number.isFinite(onHand)) return '—';
     return `$ ${Math.round(price * onHand)}`;
   };
 
   return (
-    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white px-3 py-3 flex flex-col justify-between gap-2 cursor-pointer">
+    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white p-3 flex flex-col justify-between gap-2 cursor-pointer">
       <div className="flex gap-1">
-        <div className="text-body-3-emphasis text-text-primary">
-          {item.basicInfo.name}
-        </div>
+        <div className="text-body-3-emphasis text-text-primary">{item.basicInfo.name}</div>
       </div>
       <div className="flex gap-1">
         <div className="text-caption-1 text-text-extra">Category:</div>
-        <div className="text-caption-1 text-text-primary">
-          {item.basicInfo.category}
-        </div>
+        <div className="text-caption-1 text-text-primary">{item.basicInfo.category}</div>
       </div>
       <div className="flex gap-1">
         <div className="text-caption-1 text-text-extra">Stock:</div>
         <div className="text-caption-1 text-text-primary">
-          {displayValue(item.stock.current || "") === "—"
-            ? "—"
-            : `${item.stock.current} units`}
+          {displayValue(item.stock.current || '') === '—' ? '—' : `${item.stock.current} units`}
         </div>
       </div>
       <div className="flex gap-1">
@@ -66,7 +60,7 @@ const InventoryCard = ({ item, handleViewInventory }: any) => {
       <div className="flex gap-1">
         <div className="text-caption-1 text-text-extra">Expiry:</div>
         <div className="text-caption-1 text-text-primary">
-          {formatDisplayDate(item.batch.expiryDate) || "—"}
+          {formatDisplayDate(item.batch.expiryDate) || '—'}
         </div>
       </div>
       <div className="flex gap-1">
@@ -76,7 +70,7 @@ const InventoryCard = ({ item, handleViewInventory }: any) => {
         </div>
       </div>
       <div
-        style={getStatusStyle(displayStatusLabel(item))}
+        style={getInventoryStatusStyle(displayStatusLabel(item))}
         className="w-full rounded-2xl h-12 flex items-center justify-center text-body-4"
       >
         {displayStatusLabel(item)}

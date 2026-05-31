@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import AvailabilityTable, { getStatusStyle } from '@/app/ui/tables/AvailabilityTable';
+import AvailabilityTable from '@/app/ui/tables/AvailabilityTable';
+import { getAvailabilityStatusStyle } from '@/app/ui/tables/tableUtils';
 import { Team } from '@/app/features/organization/types/team';
 
 // --- Mocks ---
@@ -98,7 +99,7 @@ describe('AvailabilityTable Component', () => {
 
   describe('getStatusStyle', () => {
     it("returns correct style for 'Available'", () => {
-      const style = getStatusStyle('Available');
+      const style = getAvailabilityStatusStyle('Available');
       expect(style).toEqual({
         color: 'var(--color-pill-success-text)',
         backgroundColor: 'var(--color-pill-success-bg)',
@@ -107,7 +108,7 @@ describe('AvailabilityTable Component', () => {
     });
 
     it("returns correct style for 'Consulting'", () => {
-      const style = getStatusStyle('Consulting');
+      const style = getAvailabilityStatusStyle('Consulting');
       expect(style).toEqual({
         color: 'var(--color-pill-progress-text)',
         backgroundColor: 'var(--color-pill-progress-bg)',
@@ -116,7 +117,7 @@ describe('AvailabilityTable Component', () => {
     });
 
     it("returns correct style for 'Off-duty'", () => {
-      const style = getStatusStyle('Off-duty');
+      const style = getAvailabilityStatusStyle('Off-duty');
       expect(style).toEqual({
         color: 'var(--color-pill-warning-text)',
         backgroundColor: 'var(--color-pill-warning-bg)',
@@ -125,7 +126,7 @@ describe('AvailabilityTable Component', () => {
     });
 
     it('returns default style for unknown status', () => {
-      const style = getStatusStyle('Unknown');
+      const style = getAvailabilityStatusStyle('Unknown');
       expect(style).toEqual({
         color: 'var(--color-pill-neutral-text)',
         backgroundColor: 'var(--color-pill-neutral-bg)',
@@ -134,7 +135,7 @@ describe('AvailabilityTable Component', () => {
     });
 
     it('handles case insensitivity', () => {
-      const style = getStatusStyle('available');
+      const style = getAvailabilityStatusStyle('available');
       expect(style).toEqual({
         color: 'var(--color-pill-success-text)',
         backgroundColor: 'var(--color-pill-success-bg)',

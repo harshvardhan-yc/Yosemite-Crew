@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import SelectLabel from '@/app/ui/inputs/SelectLabel';
@@ -600,7 +600,7 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     [formData.isInsured, formData.insurance?.companyName, formData.insurance?.policyNumber]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setIsEditing(false);
     setIsStatusEditing(false);
     setStatusValue(companion.companion.status ?? 'active');
@@ -632,7 +632,7 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     };
   }, [isEditing]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isEditing) return;
     const speciesQuery = SPECIES_QUERY_BY_TYPE[formData.type];
     if (!speciesQuery) {
@@ -643,12 +643,19 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     fetchBreedCodeEntries(speciesQuery)
       .then((entries) => {
         if (!mounted) return;
-        const nextOptions: BreedOption[] = entries.map((entry) => ({
-          value: entry.display,
-          label: entry.display,
-          breedCode: entry.code,
-          speciesCode: entry.meta?.speciesCode ?? '',
-        }));
+        const seen = new Set<string>();
+        const nextOptions: BreedOption[] = entries.reduce<BreedOption[]>((acc, entry) => {
+          if (!seen.has(entry.display)) {
+            seen.add(entry.display);
+            acc.push({
+              value: entry.display,
+              label: entry.display,
+              breedCode: entry.code,
+              speciesCode: entry.meta?.speciesCode ?? '',
+            });
+          }
+          return acc;
+        }, []);
         setBreedOptions(nextOptions);
       })
       .catch(() => {

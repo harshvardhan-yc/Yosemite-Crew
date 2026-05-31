@@ -2,6 +2,7 @@ import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import { Permission, PERMISSIONS, ROLE_PERMISSIONS, RoleCode } from '@/app/lib/permissions';
 import React, { useEffect } from 'react';
+import { uniq } from '@/app/features/organization/pages/Organization/Sections/Team/permissionsEditorUtils';
 
 type PermissionRow = {
   key: string;
@@ -161,10 +162,6 @@ const PERMISSION_ROWS: PermissionRow[] = [
   },
 ];
 
-export function uniq<T>(arr: T[]) {
-  return Array.from(new Set(arr));
-}
-
 function hasAny(perms: Permission[], candidates?: Permission[]) {
   if (!candidates?.length) return false;
   const set = new Set(perms);
@@ -175,19 +172,6 @@ function removeAll(perms: Permission[], candidates?: Permission[]) {
   if (!candidates?.length) return perms;
   const remove = new Set(candidates);
   return perms.filter((p) => !remove.has(p));
-}
-
-export function computeEffectivePermissions(args: {
-  role: RoleCode;
-  extraPerissions?: Permission[]; // keep your backend spelling
-  revokedPermissions?: Permission[];
-}): Permission[] {
-  const roleDefaults = ROLE_PERMISSIONS[args.role] ?? [];
-  const extra = args.extraPerissions ?? [];
-  const revoked = args.revokedPermissions ?? [];
-
-  const revokedSet = new Set(revoked);
-  return uniq([...roleDefaults, ...extra]).filter((p) => !revokedSet.has(p));
 }
 
 function pickEnablePermission(
@@ -325,8 +309,8 @@ const PermissionsEditor = ({ value, onSave, role, readOnly = false }: Permission
           <div className="flex w-full items-center py-3 justify-between border-b border-b-grey-light px-2 bg-white">
             <div className="text-body-4 text-grey-text">Permission</div>
             <div className="flex gap-10 items-center">
-              <div className="text-body-4 text-grey-text w-[72px] text-center">View</div>
-              <div className="text-body-4 text-grey-text w-[72px] text-center">Edit</div>
+              <div className="text-body-4 text-grey-text w-18 text-center">View</div>
+              <div className="text-body-4 text-grey-text w-18 text-center">Edit</div>
             </div>
           </div>
           {PERMISSION_ROWS.map((row) => {
@@ -343,31 +327,33 @@ const PermissionsEditor = ({ value, onSave, role, readOnly = false }: Permission
                   <div className="text-body-3 text-text-primary">{row.label}</div>
                 </div>
                 <div className="flex gap-10 items-center">
-                  <div className="w-[72px] flex justify-center">
+                  <div className="w-18 flex justify-center">
                     {viewDisabled ? (
-                      <span className="text-[var(--color-muted-400)]">—</span>
+                      <span className="text-muted-400">{'—'}</span>
                     ) : (
                       <input
                         type="checkbox"
                         name={`${row.key}-view`}
+                        aria-label={`${row.label} view permission`}
                         checked={viewChecked}
                         onChange={(e) => !readOnly && toggle('view', row, e.target.checked)}
                         disabled={readOnly}
-                        className="h-2 w-2"
+                        className="size-2"
                       />
                     )}
                   </div>
-                  <div className="w-[72px] flex justify-center">
+                  <div className="w-18 flex justify-center">
                     {editDisabled ? (
-                      <span className="text-[var(--color-muted-400)]">—</span>
+                      <span className="text-muted-400">{'—'}</span>
                     ) : (
                       <input
                         type="checkbox"
                         name={`${row.key}-edit`}
+                        aria-label={`${row.label} edit permission`}
                         checked={editChecked}
                         onChange={(e) => !readOnly && toggle('edit', row, e.target.checked)}
                         disabled={readOnly}
-                        className="h-2 w-2"
+                        className="size-2"
                       />
                     )}
                   </div>

@@ -1,25 +1,23 @@
-import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import EditableAccordion, { FieldConfig } from '@/app/ui/primitives/Accordion/EditableAccordion';
-import ServiceSearchEdit from '@/app/ui/inputs/ServiceSearch/ServiceSearchEdit';
 import Modal from '@/app/ui/overlays/Modal';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import { Secondary } from '@/app/ui/primitives/Buttons';
+import Primary from '@/app/ui/primitives/Buttons/Primary';
 import Delete from '@/app/ui/primitives/Buttons/Delete';
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
   deleteSpeciality,
-  updateService,
   updateSpeciality,
 } from '@/app/features/organization/services/specialityService';
 import { SpecialityWeb } from '@/app/features/organization/types/speciality';
-import { Service, Speciality } from '@yosemite-crew/types';
-import React, { useEffect, useMemo, useState } from 'react';
+import { Speciality } from '@yosemite-crew/types';
+import React, { useMemo, useState } from 'react';
 import { MdDeleteForever } from 'react-icons/md';
-import { deleteService } from '@/app/features/organization/services/serviceService';
+import { RiSettings3Line, RiTeamLine } from 'react-icons/ri';
 import Close from '@/app/ui/primitives/Icons/Close';
-import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
 import { useNotify } from '@/app/hooks/useNotify';
+import { useRouter } from 'next/navigation';
 
 type SpecialityInfoProps = {
   showModal: boolean;
@@ -47,36 +45,9 @@ const SpecialityInfo = ({
   canEditSpecialities,
 }: SpecialityInfoProps) => {
   const teams = useTeamForPrimaryOrg();
-  const currency = useCurrencyForPrimaryOrg();
   const { notify } = useNotify();
+  const router = useRouter();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-
-  useEffect(() => {
-    if (!showModal) {
-      setShowDeleteModal(false);
-    }
-  }, [showModal]);
-
-  const ServiceFields = useMemo(
-    () => [
-      { label: 'Description', key: 'description', type: 'text' },
-      {
-        label: 'Duration (mins)',
-        key: 'durationMinutes',
-        type: 'number',
-        required: true,
-      },
-      {
-        label: `Service charge (${currency})`,
-        key: 'cost',
-        type: 'number',
-        required: true,
-      },
-      { label: 'Max discount (%)', key: 'maxDiscount', type: 'number' },
-      { label: 'Name', key: 'name', type: 'text' },
-    ],
-    [currency]
-  );
 
   const TeamOptions = useMemo(
     () =>
@@ -121,42 +92,52 @@ const SpecialityInfo = ({
     }
   };
 
-  const handleDeleteCancel = () => {
-    setShowDeleteModal(false);
-  };
+  const handleDeleteCancel = () => setShowDeleteModal(false);
 
   return (
     <>
       <Modal showModal={showModal} setShowModal={setShowModal}>
         <div className="flex flex-col h-full gap-6">
+          {/* Header */}
           <div className="flex justify-between items-center">
-            <div className="opacity-0">
+            <div className="opacity-0 pointer-events-none">
               <Close onClick={() => {}} />
             </div>
-            <div className="flex justify-center items-center gap-2">
-              <div className="text-body-1 text-text-primary">View speciality</div>
+            <div className="flex items-center gap-2 text-body-1 text-text-primary">
+              <RiTeamLine size={20} color="var(--color-neutral-700)" aria-hidden="true" />
+              Manage team
             </div>
             <Close onClick={() => setShowModal(false)} />
           </div>
 
-          <div className="flex flex-col gap-6 flex-1 overflow-y-auto scrollbar-hidden">
-            <div className={`flex items-center gap-2`}>
-              <div className="flex items-center justify-between w-full">
-                <div className="text-body-2 text-text-primary">{activeSpeciality.name || '-'}</div>
-                {canEditSpecialities && (
-                  <MdDeleteForever
-                    className="cursor-pointer"
-                    onClick={() => setShowDeleteModal(true)}
-                    size={26}
-                    color="var(--color-danger-600)"
-                  />
-                )}
-              </div>
+          {/* Speciality name + delete */}
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-body-2 font-semibold text-text-primary">
+                {activeSpeciality.name || '—'}
+              </span>
+              <span className="text-body-4 text-text-secondary">
+                {activeSpeciality.teamMemberIds?.length ?? 0} member
+                {(activeSpeciality.teamMemberIds?.length ?? 0) === 1 ? '' : 's'} assigned
+              </span>
             </div>
+            {canEditSpecialities && (
+              <button
+                type="button"
+                aria-label="Delete speciality"
+                onClick={() => setShowDeleteModal(true)}
+                className="flex items-center justify-center size-9 rounded-full border border-transparent hover:border-danger-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600"
+              >
+                <MdDeleteForever size={22} color="var(--color-danger-600)" aria-hidden="true" />
+              </button>
+            )}
+          </div>
 
+          {/* Team fields */}
+          <div className="flex flex-col gap-4 flex-1 overflow-y-auto scrollbar-hidden">
             <EditableAccordion
-              key={activeSpeciality.name + 'core-key'}
-              title={'Core'}
+              key={activeSpeciality.name + 'team-key'}
+              title="Team"
               fields={BasicFields}
               data={basicInfoData}
               defaultOpen={true}
@@ -178,61 +159,38 @@ const SpecialityInfo = ({
                 await updateSpeciality(payload);
               }}
             />
-
-            <Accordion
-              key={activeSpeciality.name}
-              title={'Services'}
-              defaultOpen={true}
-              showEditIcon={false}
-              isEditing={false}
-            >
-              <div className="flex flex-col gap-3">
-                <ServiceSearchEdit speciality={activeSpeciality} />
-                {activeSpeciality.services?.map((service, i) => (
-                  <EditableAccordion
-                    key={service.name + i}
-                    title={service.name}
-                    fields={ServiceFields}
-                    data={service}
-                    defaultOpen={false}
-                    showDeleteIcon={canEditSpecialities}
-                    showEditIcon={canEditSpecialities}
-                    onDelete={() => {
-                      deleteService(service);
-                    }}
-                    onSave={async (values) => {
-                      const payload: Service = {
-                        ...service,
-                        name: values.name ?? service.name,
-                        description: values.description ?? service.description ?? null,
-                        durationMinutes: Number(values.durationMinutes ?? service.durationMinutes),
-                        cost: Number(values.cost ?? service.cost),
-                        maxDiscount:
-                          values.maxDiscount === '' || values.maxDiscount == null
-                            ? null
-                            : Number(values.maxDiscount),
-                      };
-                      await updateService(payload);
-                    }}
-                  />
-                ))}
-              </div>
-            </Accordion>
           </div>
+
+          {/* Manage Services CTA */}
+          <Primary
+            href="#"
+            text="Manage Services"
+            icon={<RiSettings3Line size={18} aria-hidden="true" />}
+            size="large"
+            onClick={(e) => {
+              e.preventDefault();
+              setShowModal(false);
+              const id = activeSpeciality._id ?? '';
+              const openParam = id ? `?open=${id}` : '';
+              router.push(`/organization/specialities${openParam}`);
+            }}
+            className="w-full shrink-0"
+          />
         </div>
       </Modal>
-      {showDeleteModal && (
+
+      {showModal && showDeleteModal && (
         <CenterModal
           showModal={showDeleteModal}
           setShowModal={setShowDeleteModal}
           onClose={handleDeleteCancel}
         >
           <ModalHeader title="Delete speciality" onClose={handleDeleteCancel} />
-          <div className="text-body-4 text-text-primary">
-            Are you sure you want to delete{''}
-            <span className="text-body-4-emphasis"> {activeSpeciality.name}</span>
-            {''}? This action cannot be undone.
-          </div>
+          <p className="text-body-4 text-text-primary">
+            Are you sure you want to delete{' '}
+            <span className="font-semibold">{activeSpeciality.name}</span>? This action cannot be
+            undone.
+          </p>
           <div className="grid grid-cols-2 gap-2">
             <Secondary href="#" text="Cancel" onClick={handleDeleteCancel} />
             <Delete href="#" onClick={handleDelete} text="Delete" />

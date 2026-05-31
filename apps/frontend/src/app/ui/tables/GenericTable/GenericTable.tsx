@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 
 import Next from '@/app/ui/primitives/Icons/Next';
 import Back from '@/app/ui/primitives/Icons/Back';
@@ -40,14 +40,9 @@ const GenericTable = <T extends object>({
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   const [autoPageSize, setAutoPageSize] = useState(pageSize);
 
-  useEffect(() => {
-    const totalPages = Math.ceil(data.length / autoPageSize);
-    if (currentPage > totalPages && totalPages > 0) {
-      setCurrentPage(totalPages);
-    } else if (totalPages === 0) {
-      setCurrentPage(1);
-    }
-  }, [autoPageSize, currentPage, data.length]);
+  const totalPagesForClamp = Math.ceil(data.length / autoPageSize);
+  const clampedPage = totalPagesForClamp === 0 ? 1 : Math.min(currentPage, totalPagesForClamp);
+  if (clampedPage !== currentPage) setCurrentPage(clampedPage);
 
   useLayoutEffect(() => {
     const container = containerRef.current;

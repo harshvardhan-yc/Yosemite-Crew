@@ -1,6 +1,5 @@
 'use client';
-import React, { ReactNode } from 'react';
-import Link from 'next/link';
+import React from 'react';
 import Image from 'next/image';
 
 import Footer from '@/app/ui/widgets/Footer/Footer';
@@ -11,6 +10,7 @@ import data from './data';
 import { useAuthStore } from '@/app/stores/authStore';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { resolveDefaultOpenScreenRoute } from '@/app/lib/defaultOpenScreen';
+export { FillBtn, UnFillBtn } from './HomePageButtons';
 
 import './HomePage.css';
 
@@ -286,40 +286,3 @@ const HomePage = () => {
 };
 
 export default HomePage;
-
-// ButtonProps
-
-type ButtonProps = {
-  icon: ReactNode;
-  text: string;
-  href: string;
-  onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
-  style?: React.CSSProperties;
-};
-
-const FillBtn = ({ icon, text, onClick, href, style }: Readonly<ButtonProps>) => {
-  return (
-    <Link
-      href={href}
-      className="Fillbtn"
-      onClick={(e) => {
-        if (onClick) {
-          e.preventDefault(); // ✅ stops immediate navigation
-          onClick(e); // ✅ trigger your handler
-        }
-      }}
-      style={style}
-    >
-      {icon} {text}
-    </Link>
-  );
-};
-const UnFillBtn = ({ icon, text, href, onClick, style }: Readonly<ButtonProps>) => {
-  return (
-    <Link className="UnFillbtn" href={href} onClick={onClick} style={style}>
-      {icon} {text}
-    </Link>
-  );
-};
-
-export { FillBtn, UnFillBtn };

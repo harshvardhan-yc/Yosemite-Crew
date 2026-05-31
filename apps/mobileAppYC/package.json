@@ -13,7 +13,8 @@
     "e2e:build:ios": "detox build -c ios.sim.debug",
     "e2e:ios": "detox test -c ios.sim.debug",
     "e2e:build:android": "detox build -c android.emu.debug",
-    "e2e:android": "detox test -c android.emu.debug"
+    "e2e:android": "detox test -c android.emu.debug",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@aws-amplify/react-native": "^1.1.10",

@@ -48,6 +48,7 @@ const VideoPlayerModal = ({
           <video
             key={activeVideo.videoUrl}
             className="w-full h-auto"
+            aria-label={activeVideo.title}
             controls
             preload="metadata"
             poster={activeVideo.thumbnailUrl}

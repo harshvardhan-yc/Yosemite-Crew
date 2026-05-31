@@ -52,6 +52,12 @@ const getEmergencyPillStyle = (isActive: boolean): React.CSSProperties => ({
   color: isActive ? 'var(--color-semantic-error-700)' : 'var(--color-neutral-700)',
 });
 
+const CALENDAR_OPTIONS = [
+  { key: 'day', label: 'Day' },
+  { key: 'week', label: 'Week' },
+  { key: 'team', label: 'Team' },
+];
+
 type Headerprops = {
   currentDate: Date;
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
@@ -101,12 +107,6 @@ const Header = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const calendarTriggerRef = useRef<HTMLButtonElement>(null);
   const calendarPanelRef = useRef<HTMLDivElement>(null);
-
-  const CALENDAR_OPTIONS = [
-    { key: 'day', label: 'Day' },
-    { key: 'week', label: 'Week' },
-    { key: 'team', label: 'Team' },
-  ];
 
   const selectedStatus = statusOptions?.find((s) => s.key === activeStatus) ?? statusOptions?.[0];
   const isEmergencyFilterActive = activeFilter === 'emergencies';
@@ -232,7 +232,7 @@ const Header = ({
         {isEmergencyFilter && hasEmergency && (
           <span
             aria-hidden="true"
-            className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full"
+            className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full"
             style={{
               backgroundColor: 'var(--color-semantic-error-700)',
               outline: '2px solid white',
@@ -244,7 +244,7 @@ const Header = ({
   });
 
   return (
-    <div className="sticky top-0 z-[140] shrink-0 flex w-full items-center gap-4 border-b border-grey-light bg-white px-3 py-2">
+    <div className="sticky top-0 z-140 shrink-0 flex w-full items-center gap-4 border-b border-grey-light bg-white px-3 py-2">
       <div className="flex shrink-0 items-center gap-3">
         <GlassTooltip content="Select date" side="bottom">
           <div className="relative z-150">
@@ -324,7 +324,7 @@ const Header = ({
                         >
                           {status.border && (
                             <span
-                              className="inline-block h-3 w-3 rounded-full shrink-0"
+                              className="inline-block size-3 rounded-full shrink-0"
                               style={{
                                 backgroundColor: status.border,
                                 borderWidth: '1px',
@@ -422,7 +422,7 @@ const Header = ({
                 type="button"
                 onClick={() => setZoomMode('in')}
                 title="Zoom in timeline"
-                className={`h-9 w-9 rounded-full! cursor-pointer inline-flex items-center justify-center transition-colors ${
+                className={`size-9 rounded-full! cursor-pointer inline-flex items-center justify-center transition-colors ${
                   isZoomIn
                     ? 'bg-white text-text-primary border border-card-border'
                     : 'text-text-secondary hover:bg-card-hover border border-transparent'
@@ -434,7 +434,7 @@ const Header = ({
                 type="button"
                 onClick={() => setZoomMode('out')}
                 title="Zoom out timeline"
-                className={`h-9 w-9 rounded-full! cursor-pointer inline-flex items-center justify-center transition-colors ${
+                className={`size-9 rounded-full! cursor-pointer inline-flex items-center justify-center transition-colors ${
                   isZoomOut
                     ? 'bg-white text-text-primary border border-card-border'
                     : 'text-text-secondary hover:bg-card-hover border border-transparent'

@@ -68,6 +68,7 @@ const TimeSlot: React.FC<TimeSlotProps> = ({
   return (
     <div className="relative w-[100px] sm:w-[110px]" ref={availabilityContainerRef}>
       <button
+        type="button"
         className="bg-white rounded-2xl! border border-text-primary justify-center w-full outline-none py-[11px]"
         onClick={() => {
           if (disabled) return;
@@ -80,9 +81,10 @@ const TimeSlot: React.FC<TimeSlotProps> = ({
         </span>
       </button>
       {open && !disabled && (
-        <div className="max-h-[200px] z-10 w-[110px] overflow-y-scroll scrollbar-hidden flex flex-col bg-white rounded-2xl border border-card-border absolute left-0 top-[110%] py-2 px-2">
+        <div className="max-h-[200px] z-10 w-[110px] overflow-y-scroll scrollbar-hidden flex flex-col bg-white rounded-2xl border border-card-border absolute left-0 top-[110%] p-2">
           {timeOptions.map((opt: TimeOption) => (
             <button
+              type="button"
               key={opt.value}
               className="border-none outline-none bg-white text-center py-2 hover:bg-card-hover! rounded-2xl! transition-all duration-300"
               onClick={() => handleTimeChange(opt.value)}

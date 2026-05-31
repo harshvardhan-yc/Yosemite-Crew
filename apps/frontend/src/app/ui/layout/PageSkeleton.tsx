@@ -19,7 +19,7 @@ const PlannerSkeleton = () => (
       </div>
       <div className="flex items-center gap-2">
         <div className={`h-10 w-24 rounded-2xl ${shimmer}`} />
-        <div className={`h-10 w-10 rounded-2xl ${shimmer}`} />
+        <div className={`size-10 rounded-2xl ${shimmer}`} />
         <div className={`h-10 w-28 rounded-2xl ${shimmer}`} />
       </div>
     </div>

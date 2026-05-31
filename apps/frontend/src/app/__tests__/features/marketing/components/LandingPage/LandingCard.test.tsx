@@ -5,7 +5,8 @@ import LandingCard from '@/app/features/marketing/components/LandingPage/Landing
 
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ alt, ...props }: any) => <div role="img" aria-label={alt} {...props} />,
+  default: ({ alt, ...props }: any) =>
+    React.createElement('img', { alt, 'aria-label': alt, ...props }),
 }));
 
 jest.mock('@/app/ui/primitives/Buttons', () => ({

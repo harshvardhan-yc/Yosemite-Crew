@@ -42,6 +42,7 @@ import { getSafeIdexxIframeUrl } from '@/app/lib/urls';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { IoInformationCircleOutline, IoOpenOutline } from 'react-icons/io5';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
 const MODALITY_FILTERS = [
@@ -392,7 +393,7 @@ const ResultDetailModalContent = ({
 }: ResultDetailModalContentProps) => {
   const onWheelHorizontal = useWheelToHorizontalScroll();
   if (resultDetailLoading) {
-    return <div className="text-body-4 text-text-secondary">Loading result details...</div>;
+    return <div className="text-body-4 text-text-secondary">Loading result details…</div>;
   }
   if (!activeResultDetail) {
     return <div className="text-body-4 text-text-secondary">No result selected.</div>;
@@ -545,7 +546,7 @@ const IdexxFollowUpPortal = ({ open, followUpFrameUrl, onClose }: IdexxFollowUpP
       data-signing-overlay="true"
       style={{ pointerEvents: 'auto' }}
     >
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-2xl size-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
           <div className="text-body-2 text-text-primary">IDEXX follow-up hub</div>
           <button
@@ -564,7 +565,7 @@ const IdexxFollowUpPortal = ({ open, followUpFrameUrl, onClose }: IdexxFollowUpP
           className="flex-1 w-full border-0"
           loading="lazy"
           allowFullScreen
-          referrerPolicy="strict-origin"
+          referrerPolicy="strict-origin-when-cross-origin"
           style={{ pointerEvents: 'auto' }}
         />
       </div>
@@ -715,216 +716,174 @@ type IdexxWorkspaceActionsState = {
 };
 
 const useIdexxWorkspaceActions = (s: IdexxWorkspaceActionsState) => {
-  const {
-    primaryOrgId,
-    integrationEnabled,
-    orderLookupId,
-    pdfPreviewLoadingId,
-    pdfPreviewUrl,
-    appointmentIdByOrderId,
-    setLoading,
-    setError,
-    setResults,
-    setCensusEntries,
-    setAppointmentIdByOrderId,
-    setLastRefreshedAt,
-    setOrderLookupLoading,
-    setOrderLookup,
-    setShowResultModal,
-    setResultDetailLoading,
-    setActiveResultDetail,
-    setShowPdfPreview,
-    setPdfPreviewUrl,
-    setPdfPreviewTitle,
-    setPdfPreviewLoadingId,
-    setFollowUpFrameUrl,
-    setShowFollowUpFrame,
-  } = s;
+  // Keep a stable ref to the latest state object so callbacks never need `s`
+  // in their dep arrays (which would cause a new ref every render → infinite loop).
+  const sRef = React.useRef(s);
+  sRef.current = s;
 
   const refresh = useCallback(async () => {
-    if (!primaryOrgId) return;
-    setLoading(true);
-    setError(null);
+    const { primaryOrgId: orgId, integrationEnabled: enabled } = sRef.current;
+    if (!orgId) return;
+    sRef.current.setLoading(true);
+    sRef.current.setError(null);
     try {
-      if (!integrationEnabled) {
-        setResults([]);
-        setCensusEntries([]);
-        setAppointmentIdByOrderId({});
-        setLastRefreshedAt(new Date().toISOString());
+      if (!enabled) {
+        sRef.current.setResults([]);
+        sRef.current.setCensusEntries([]);
+        sRef.current.setAppointmentIdByOrderId({});
+        sRef.current.setLastRefreshedAt(new Date().toISOString());
         return;
       }
       const [allResults, census, orders] = await Promise.all([
-        listIdexxResults(primaryOrgId),
-        getIdexxCensus(primaryOrgId),
-        listIdexxOrders({ organisationId: primaryOrgId }),
+        listIdexxResults(orgId),
+        getIdexxCensus(orgId),
+        listIdexxOrders({ organisationId: orgId }),
       ]);
-      setResults(allResults);
-      setCensusEntries(census);
-      setAppointmentIdByOrderId(buildAppointmentIdByOrderId(orders));
-      setLastRefreshedAt(new Date().toISOString());
+      sRef.current.setResults(allResults);
+      sRef.current.setCensusEntries(census);
+      sRef.current.setAppointmentIdByOrderId(buildAppointmentIdByOrderId(orders));
+      sRef.current.setLastRefreshedAt(new Date().toISOString());
     } catch (e) {
-      setError(getApiErrorMessage(e, 'Unable to load IDEXX Hub data.'));
+      sRef.current.setError(getApiErrorMessage(e, 'Unable to load IDEXX Hub data.'));
     } finally {
-      setLoading(false);
+      sRef.current.setLoading(false);
     }
-  }, [
-    primaryOrgId,
-    integrationEnabled,
-    setLoading,
-    setError,
-    setResults,
-    setCensusEntries,
-    setAppointmentIdByOrderId,
-    setLastRefreshedAt,
-  ]);
+  }, []);
 
-  const getAppointmentLabsHref = useCallback(
-    (result: LabResult) => {
-      const raw = result.rawPayload as
-        | {
-            orderId?: string | number;
-            requisitionId?: string | number;
-            accessionId?: string | number;
-            alternateOrderId?: string | number;
-            alternateRequisitionId?: string | number;
-          }
-        | undefined;
-      const lookupIds = [
-        result.orderId,
-        result.requisitionId,
-        result.accessionId,
-        raw?.orderId,
-        raw?.requisitionId,
-        raw?.accessionId,
-        raw?.alternateOrderId,
-        raw?.alternateRequisitionId,
-      ]
-        .map((value) => String(value ?? '').trim())
-        .filter(Boolean);
-      const matchedOrderIdentifier = lookupIds.find((id) => appointmentIdByOrderId[id]) ?? '';
-      if (!matchedOrderIdentifier) return '';
-      const params = new URLSearchParams({
-        appointmentId: appointmentIdByOrderId[matchedOrderIdentifier],
-        open: 'labs',
-        subLabel: 'idexx-labs',
-      });
-      return `/appointments?${params.toString()}`;
-    },
-    [appointmentIdByOrderId]
-  );
+  const getAppointmentLabsHref = useCallback((result: LabResult) => {
+    const { appointmentIdByOrderId: lookup } = sRef.current;
+    const raw = result.rawPayload as
+      | {
+          orderId?: string | number;
+          requisitionId?: string | number;
+          accessionId?: string | number;
+          alternateOrderId?: string | number;
+          alternateRequisitionId?: string | number;
+        }
+      | undefined;
+    const lookupIds = [
+      result.orderId,
+      result.requisitionId,
+      result.accessionId,
+      raw?.orderId,
+      raw?.requisitionId,
+      raw?.accessionId,
+      raw?.alternateOrderId,
+      raw?.alternateRequisitionId,
+    ]
+      .map((value) => String(value ?? '').trim())
+      .filter(Boolean);
+    const matchedOrderIdentifier = lookupIds.find((id) => lookup[id]) ?? '';
+    if (!matchedOrderIdentifier) return '';
+    const params = new URLSearchParams({
+      appointmentId: lookup[matchedOrderIdentifier],
+      open: 'labs',
+      subLabel: 'idexx-labs',
+    });
+    return `/appointments?${params.toString()}`;
+  }, []);
 
   const handleLookupOrder = useCallback(async () => {
-    if (!primaryOrgId || !orderLookupId.trim()) return;
-    setOrderLookupLoading(true);
-    setError(null);
+    const { primaryOrgId: orgId, orderLookupId: lookupId } = sRef.current;
+    if (!orgId || !lookupId.trim()) return;
+    sRef.current.setOrderLookupLoading(true);
+    sRef.current.setError(null);
     try {
       const order = await getIdexxOrderById({
-        organisationId: primaryOrgId,
-        idexxOrderId: orderLookupId.trim(),
+        organisationId: orgId,
+        idexxOrderId: lookupId.trim(),
       });
-      setOrderLookup(order);
+      sRef.current.setOrderLookup(order);
     } catch (e) {
-      setOrderLookup(null);
-      setError(getApiErrorMessage(e, 'Order lookup failed.'));
+      sRef.current.setOrderLookup(null);
+      sRef.current.setError(getApiErrorMessage(e, 'Order lookup failed.'));
     } finally {
-      setOrderLookupLoading(false);
+      sRef.current.setOrderLookupLoading(false);
     }
-  }, [primaryOrgId, orderLookupId, setOrderLookupLoading, setError, setOrderLookup]);
+  }, []);
 
-  const openResultDetails = useCallback(
-    async (result: LabResult) => {
-      if (!primaryOrgId) return;
-      setShowResultModal(true);
-      setResultDetailLoading(true);
-      setActiveResultDetail(result);
-      setError(null);
-      try {
-        const detail = await getIdexxResultById({
-          organisationId: primaryOrgId,
-          resultId: result.resultId,
-        });
-        setActiveResultDetail(detail);
-      } catch (e) {
-        setError(getApiErrorMessage(e, 'Unable to load result details.'));
-      } finally {
-        setResultDetailLoading(false);
-      }
-    },
-    [primaryOrgId, setShowResultModal, setResultDetailLoading, setActiveResultDetail, setError]
-  );
+  const openResultDetails = useCallback(async (result: LabResult) => {
+    const { primaryOrgId: orgId } = sRef.current;
+    if (!orgId) return;
+    sRef.current.setShowResultModal(true);
+    sRef.current.setResultDetailLoading(true);
+    sRef.current.setActiveResultDetail(result);
+    sRef.current.setError(null);
+    try {
+      const detail = await getIdexxResultById({
+        organisationId: orgId,
+        resultId: result.resultId,
+      });
+      sRef.current.setActiveResultDetail(detail);
+    } catch (e) {
+      sRef.current.setError(getApiErrorMessage(e, 'Unable to load result details.'));
+    } finally {
+      sRef.current.setResultDetailLoading(false);
+    }
+  }, []);
 
   const closePdfPreview = useCallback(() => {
-    setShowPdfPreview(false);
-    if (pdfPreviewUrl?.startsWith('blob:')) {
-      URL.revokeObjectURL(pdfPreviewUrl);
+    const { pdfPreviewUrl: url } = sRef.current;
+    sRef.current.setShowPdfPreview(false);
+    if (url?.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
     }
-    setPdfPreviewUrl(null);
-    setPdfPreviewTitle('IDEXX PDF');
-  }, [pdfPreviewUrl, setShowPdfPreview, setPdfPreviewUrl, setPdfPreviewTitle]);
+    sRef.current.setPdfPreviewUrl(null);
+    sRef.current.setPdfPreviewTitle('IDEXX PDF');
+  }, []);
 
-  const openResultPdfPreview = useCallback(
-    async (resultId: string) => {
-      if (!primaryOrgId || !resultId || pdfPreviewLoadingId === resultId) return;
-      setPdfPreviewLoadingId(resultId);
-      setError(null);
-      try {
-        const pdfBlob = await getIdexxResultPdfBlob({
-          organisationId: primaryOrgId,
-          resultId,
-        });
-        const objectUrl = URL.createObjectURL(pdfBlob);
-        if (pdfPreviewUrl?.startsWith('blob:')) {
-          URL.revokeObjectURL(pdfPreviewUrl);
-        }
-        setPdfPreviewUrl(objectUrl);
-        setPdfPreviewTitle(`IDEXX Result PDF #${resultId}`);
-        setShowPdfPreview(true);
-      } catch (e) {
-        setError(getApiErrorMessage(e, 'Unable to load IDEXX PDF preview.'));
-      } finally {
-        setPdfPreviewLoadingId(null);
+  const openResultPdfPreview = useCallback(async (resultId: string) => {
+    const {
+      primaryOrgId: orgId,
+      pdfPreviewLoadingId: loadingId,
+      pdfPreviewUrl: currentUrl,
+    } = sRef.current;
+    if (!orgId || !resultId || loadingId === resultId) return;
+    sRef.current.setPdfPreviewLoadingId(resultId);
+    sRef.current.setError(null);
+    try {
+      const pdfBlob = await getIdexxResultPdfBlob({
+        organisationId: orgId,
+        resultId,
+      });
+      const objectUrl = URL.createObjectURL(pdfBlob);
+      if (currentUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(currentUrl);
       }
-    },
-    [
-      primaryOrgId,
-      pdfPreviewLoadingId,
-      pdfPreviewUrl,
-      setPdfPreviewLoadingId,
-      setError,
-      setPdfPreviewUrl,
-      setPdfPreviewTitle,
-      setShowPdfPreview,
-    ]
-  );
+      sRef.current.setPdfPreviewUrl(objectUrl);
+      sRef.current.setPdfPreviewTitle(`IDEXX Result PDF #${resultId}`);
+      sRef.current.setShowPdfPreview(true);
+    } catch (e) {
+      sRef.current.setError(getApiErrorMessage(e, 'Unable to load IDEXX PDF preview.'));
+    } finally {
+      sRef.current.setPdfPreviewLoadingId(null);
+    }
+  }, []);
 
-  const openOrderAcknowledgement = useCallback(
-    (order: LabOrder | null) => {
-      const pdfUrl = getOrderPdfUrl(order);
-      if (!pdfUrl) {
-        setError('Acknowledgment PDF is not available for this order yet.');
-        return;
-      }
-      setError(null);
-      setPdfPreviewTitle(`IDEXX Order Acknowledgment #${order?.idexxOrderId ?? ''}`.trim());
-      setPdfPreviewUrl(pdfUrl);
-      setShowPdfPreview(true);
-    },
-    [setError, setPdfPreviewTitle, setPdfPreviewUrl, setShowPdfPreview]
-  );
+  const openOrderAcknowledgement = useCallback((order: LabOrder | null) => {
+    const pdfUrl = getOrderPdfUrl(order);
+    if (!pdfUrl) {
+      sRef.current.setError('Acknowledgment PDF is not available for this order yet.');
+      return;
+    }
+    sRef.current.setError(null);
+    sRef.current.setPdfPreviewTitle(
+      `IDEXX Order Acknowledgment #${order?.idexxOrderId ?? ''}`.trim()
+    );
+    sRef.current.setPdfPreviewUrl(pdfUrl);
+    sRef.current.setShowPdfPreview(true);
+  }, []);
 
-  const openFollowUpWorkspace = useCallback(
-    (order: LabOrder | null) => {
-      const uiUrl = getOrderUiUrl(order);
-      if (!uiUrl) {
-        setError('Follow-up workspace URL is not available for this order.');
-        return;
-      }
-      setError(null);
-      setFollowUpFrameUrl(uiUrl);
-      setShowFollowUpFrame(true);
-    },
-    [setError, setFollowUpFrameUrl, setShowFollowUpFrame]
-  );
+  const openFollowUpWorkspace = useCallback((order: LabOrder | null) => {
+    const uiUrl = getOrderUiUrl(order);
+    if (!uiUrl) {
+      sRef.current.setError('Follow-up workspace URL is not available for this order.');
+      return;
+    }
+    sRef.current.setError(null);
+    sRef.current.setFollowUpFrameUrl(uiUrl);
+    sRef.current.setShowFollowUpFrame(true);
+  }, []);
 
   return {
     refresh,
@@ -1122,7 +1081,7 @@ const IdexxWorkspacePage = () => {
             <button
               type="button"
               aria-label="IDEXX Hub info"
-              className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+              className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
             >
               <IoInformationCircleOutline size={20} />
             </button>
@@ -1153,6 +1112,7 @@ const IdexxWorkspacePage = () => {
         onClose={() => s.setShowFollowUpFrame(false)}
       />
 
+      <MobileSearchBar placeholder="Search result / order" />
       <div className="flex justify-between items-start gap-3 flex-wrap">
         <div className="flex flex-col gap-1">
           <h1 className="text-heading-2 text-text-primary flex items-center gap-2">
@@ -1164,7 +1124,7 @@ const IdexxWorkspacePage = () => {
               <button
                 type="button"
                 aria-label="IDEXX Hub info"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
               >
                 <IoInformationCircleOutline size={20} />
               </button>

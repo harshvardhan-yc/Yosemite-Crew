@@ -30,6 +30,8 @@ const CompanionHistoryTimeline = dynamic(
   { loading: () => <HistoryTimelineSkeleton /> }
 );
 
+const PAGE_SKELETON = <PageSkeleton variant="list" />;
+
 const resolveSafeBackPath = (candidate: string | null, source: string | null): string => {
   if (candidate?.startsWith('/') && !candidate.startsWith('//')) {
     return candidate;
@@ -72,17 +74,15 @@ const CompanionHistoryPageInner = () => {
 
   if (companionsStatus === 'loading') {
     return (
-      <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
-        <OrgGuard skeleton={<PageSkeleton variant="list" />}>
-          <PageSkeleton variant="list" />
-        </OrgGuard>
+      <ProtectedRoute skeleton={PAGE_SKELETON}>
+        <OrgGuard skeleton={PAGE_SKELETON}>{PAGE_SKELETON}</OrgGuard>
       </ProtectedRoute>
     );
   }
 
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+    <ProtectedRoute skeleton={PAGE_SKELETON}>
+      <OrgGuard skeleton={PAGE_SKELETON}>
         <div className="flex flex-col gap-4 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-5! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-5!">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -98,7 +98,7 @@ const CompanionHistoryPageInner = () => {
                     activeCompanion.companion.photoUrl,
                     activeCompanion.companion.type.toLowerCase() as ImageType
                   )}
-                  className="h-9 w-9 rounded-full object-cover"
+                  className="size-9 rounded-full object-cover"
                   height={36}
                   width={36}
                 />
@@ -135,7 +135,7 @@ const CompanionHistoryPageInner = () => {
 };
 
 const CompanionHistoryPage = () => (
-  <Suspense fallback={<PageSkeleton variant="list" />}>
+  <Suspense fallback={PAGE_SKELETON}>
     <CompanionHistoryPageInner />
   </Suspense>
 );

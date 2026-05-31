@@ -4,6 +4,8 @@ import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import React from 'react';
 import dynamic from 'next/dynamic';
 
+const SETTINGS_PAGE_SKELETON = <PageSkeleton variant="settings" />;
+
 const SettingsSectionSkeleton = () => (
   <div className="min-h-40 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
 );
@@ -49,7 +51,7 @@ const Settings = () => {
 
 const ProtectedSettings = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="settings" />}>
+    <ProtectedRoute skeleton={SETTINGS_PAGE_SKELETON}>
       <Settings />
     </ProtectedRoute>
   );

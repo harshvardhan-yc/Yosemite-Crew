@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import { MdOutlineCalendarMonth, MdTableRows, MdViewKanban } from 'react-icons/md';
 import { IoInformationCircleOutline } from 'react-icons/io5';
@@ -56,14 +56,8 @@ const TitleCalendar = ({
   actionBeforeAdd,
   viewOptions = ['calendar', 'board', 'list'],
 }: TitleCalendarProps) => {
-  // Local state drives pill visuals instantly on click, independent of parent re-render.
-  const [displayView, setDisplayView] = useState(activeView);
-  useEffect(() => {
-    setDisplayView(activeView);
-  }, [activeView]);
-
   const n = viewOptions.length;
-  const activeIndex = viewOptions.indexOf(displayView as 'calendar' | 'board' | 'list');
+  const activeIndex = viewOptions.indexOf(activeView as 'calendar' | 'board' | 'list');
   const safeIndex = activeIndex === -1 ? 0 : activeIndex;
   const activeConfig = VIEW_OPTION_CONFIG[viewOptions[safeIndex]];
   const containerW = SEGMENT_WIDTH[n] ?? 'w-[300px]';
@@ -83,7 +77,7 @@ const TitleCalendar = ({
               <button
                 type="button"
                 aria-label={`${title} info`}
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none text-text-secondary transition-colors hover:text-text-primary"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none text-text-secondary transition-colors hover:text-text-primary"
               >
                 <IoInformationCircleOutline size={20} />
               </button>
@@ -94,12 +88,7 @@ const TitleCalendar = ({
       <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
         {actionBeforeAdd}
         {showAdd && (
-          <Primary
-            href="#"
-            text="Add"
-            onClick={() => setAddPopup(true)}
-            className="h-12 px-7 py-0"
-          />
+          <Primary href="#" text="Add" onClick={() => setAddPopup(true)} className="px-7" />
         )}
         <fieldset
           aria-label={`${title} view`}
@@ -113,13 +102,12 @@ const TitleCalendar = ({
           />
           {viewOptions.map((option) => {
             const { Icon, label, activeText } = VIEW_OPTION_CONFIG[option];
-            const isActive = displayView === option;
+            const isActive = activeView === option;
             return (
               <button
                 key={option}
                 type="button"
                 onClick={() => {
-                  setDisplayView(option);
                   setActiveView(option);
                 }}
                 aria-pressed={isActive}

@@ -1,5 +1,5 @@
 'use client';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 
 /**
  * Walk from `target` up to (but not including) `boundary`, returning true if
@@ -42,6 +42,24 @@ function hasVerticalScrollRoomAbove(boundary: HTMLElement, deltaY: number): bool
   return false;
 }
 
+const handledNativeWheelEvents = new WeakSet<Event>();
+const wheelListenerByElement = new WeakMap<HTMLElement, EventListener>();
+
+const scrollHorizontallyFromWheel = (
+  event: Pick<WheelEvent, 'deltaY' | 'target' | 'cancelable' | 'preventDefault'>,
+  boundary: HTMLElement,
+  ignoreAncestors: boolean,
+  shouldPreventDefault: boolean
+) => {
+  if (event.deltaY === 0) return;
+  if (hasVerticalScrollRoomBelow(event.target, boundary, event.deltaY)) return;
+  if (!ignoreAncestors && hasVerticalScrollRoomAbove(boundary, event.deltaY)) return;
+  if (shouldPreventDefault && event.cancelable) {
+    event.preventDefault();
+  }
+  boundary.scrollLeft += event.deltaY;
+};
+
 /**
  * Returns an onWheel handler that converts vertical mouse wheel delta into
  * horizontal scrolling — but only when:
@@ -55,14 +73,23 @@ function hasVerticalScrollRoomAbove(boundary: HTMLElement, deltaY: number): bool
  * Exception: containers that explicitly opt out of the ancestor check by passing
  * `ignoreAncestors={true}` (e.g. popovers rendered in a portal with no outer scroll).
  */
-export const useWheelToHorizontalScroll = ({ ignoreAncestors = false } = {}) =>
-  useCallback(
-    (e: React.WheelEvent<HTMLElement>) => {
-      if (e.deltaY === 0) return;
-      if (hasVerticalScrollRoomBelow(e.target, e.currentTarget, e.deltaY)) return;
-      if (!ignoreAncestors && hasVerticalScrollRoomAbove(e.currentTarget, e.deltaY)) return;
-      e.preventDefault();
-      e.currentTarget.scrollLeft += e.deltaY;
-    },
-    [ignoreAncestors]
-  );
+export const useWheelToHorizontalScroll = ({ ignoreAncestors = false } = {}) => {
+  const ignoreAncestorsRef = useRef(ignoreAncestors);
+  ignoreAncestorsRef.current = ignoreAncestors;
+
+  return useCallback((e: React.WheelEvent<HTMLElement>) => {
+    const boundary = e.currentTarget;
+    if (!wheelListenerByElement.has(boundary)) {
+      const wheelListener: EventListener = (event) => {
+        if (!(event instanceof WheelEvent)) return;
+        handledNativeWheelEvents.add(event);
+        scrollHorizontallyFromWheel(event, boundary, ignoreAncestorsRef.current, true);
+      };
+      boundary.addEventListener('wheel', wheelListener, { passive: false });
+      wheelListenerByElement.set(boundary, wheelListener);
+    }
+
+    if (handledNativeWheelEvents.has(e.nativeEvent)) return;
+    scrollHorizontallyFromWheel(e.nativeEvent, boundary, ignoreAncestorsRef.current, false);
+  }, []);
+};

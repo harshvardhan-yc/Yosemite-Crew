@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
@@ -468,10 +468,14 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
   const [formValues, setFormValues] = useState<FormValues>(() => buildInitialValues(fields, data));
   const [formValuesErrors, setFormValuesErrors] = useState<Record<string, string | undefined>>({});
 
-  useEffect(() => {
+  const prevDataRef = useRef(data);
+  const prevFieldsRef = useRef(fields);
+  if (prevDataRef.current !== data || prevFieldsRef.current !== fields) {
+    prevDataRef.current = data;
+    prevFieldsRef.current = fields;
     setFormValues(buildInitialValues(fields, data));
     setFormValuesErrors({});
-  }, [data, fields]);
+  }
 
   const handleChange = (key: string, value: string | string[]) => {
     setFormValues((prev) => ({ ...prev, [key]: value }));
@@ -508,12 +512,10 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
     setIsEditing(false);
   }, [data, fields, isSaving]);
 
-  useEffect(() => {
-    if (readOnly && isEditing) {
-      setIsEditing(false);
-      onEditingChange?.(false);
-    }
-  }, [readOnly, isEditing, onEditingChange]);
+  if (readOnly && isEditing) {
+    setIsEditing(false);
+    onEditingChange?.(false);
+  }
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;

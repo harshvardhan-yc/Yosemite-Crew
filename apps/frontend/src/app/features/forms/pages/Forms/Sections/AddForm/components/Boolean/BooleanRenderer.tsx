@@ -11,10 +11,11 @@ const BooleanRenderer: React.FC<{
     <input
       type="checkbox"
       id={field.id}
+      aria-label={field.label}
       checked={!!value}
       onChange={(e) => onChange(e.target.checked)}
       disabled={readOnly}
-      className="w-5 h-5 accent-blue-text"
+      className="size-5 accent-blue-text"
     />
     <label htmlFor={field.id} className="font-satoshi text-black-text text-[16px] font-medium">
       {field.label}

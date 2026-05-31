@@ -4,7 +4,9 @@ import '@testing-library/jest-dom';
 import StarRipple from '@/app/features/marketing/components/LandingPage/StarRipple';
 
 jest.mock('framer-motion', () => ({
-  motion: {
+  LazyMotion: ({ children }: any) => <>{children}</>,
+  domAnimation: {},
+  m: {
     svg: ({ children, className }: any) => <svg className={className}>{children}</svg>,
   },
 }));

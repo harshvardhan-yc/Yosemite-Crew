@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import CardHeader from '@/app/ui/cards/CardHeader/CardHeader';
 import dynamic from 'next/dynamic';
 const DynamicChartCard = dynamic(() => import('@/app/ui/widgets/DynamicChart/DynamicChartCard'), {
@@ -14,12 +14,10 @@ const AppointmentStat = () => {
   const [selectedDuration, setSelectedDuration] = useState<DashboardDurationOption>('Last week');
   const analytics = useDashboardAnalytics(mapDashboardDurationOption(selectedDuration));
   const durationOptions = analytics.durationOptions.appointments;
-
-  useEffect(() => {
-    if (!durationOptions.includes(selectedDuration)) {
-      setSelectedDuration(durationOptions[0] ?? 'Last week');
-    }
-  }, [durationOptions, selectedDuration]);
+  const effectiveDuration = durationOptions.includes(selectedDuration)
+    ? selectedDuration
+    : (durationOptions[0] ?? 'Last week');
+  if (effectiveDuration !== selectedDuration) setSelectedDuration(effectiveDuration);
 
   return (
     <div className="flex flex-col gap-2">

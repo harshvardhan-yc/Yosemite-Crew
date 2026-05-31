@@ -473,16 +473,6 @@
   color: var(--color-text-primary);
 }
 
-.yc-hamburger-lines {
-  display: flex;
-  width: 20px;
-  height: 20px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
-
 .yc-hamburger-line {
   width: 18px;
   height: 2px;

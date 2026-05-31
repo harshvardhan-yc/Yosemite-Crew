@@ -4,6 +4,8 @@ import GenericTable from '@/app/ui/tables/GenericTable/GenericTable';
 import { InventoryTurnoverItem } from '@/app/features/inventory/pages/Inventory/types';
 import InventoryTurnoverCard from '@/app/ui/cards/InventoryTurnoverCard';
 
+import { formatTurnoverStatus, getInventoryTurnoverStatusStyle } from '@/app/ui/tables/tableUtils';
+
 import './DataTable.css';
 
 type Column<T> = {
@@ -17,55 +19,13 @@ type InventoryTurnoverTableProps = {
   filteredList: InventoryTurnoverItem[];
 };
 
-export const getStatusStyle = (status?: string) => {
-  const key = (status || '').toLowerCase();
-  switch (key) {
-    case 'excellent':
-    case 'healthy':
-      return {
-        color: 'var(--color-pill-success-text)',
-        backgroundColor: 'var(--color-pill-success-bg)',
-        borderColor: 'var(--color-pill-success-border)',
-      };
-    case 'low':
-    case 'out of stock':
-      return {
-        color: 'var(--color-pill-warning-text)',
-        backgroundColor: 'var(--color-pill-warning-bg)',
-        borderColor: 'var(--color-pill-warning-border)',
-      };
-    case 'moderate':
-      return {
-        color: 'var(--color-pill-progress-text)',
-        backgroundColor: 'var(--color-pill-progress-bg)',
-        borderColor: 'var(--color-pill-progress-border)',
-      };
-    default:
-      return {
-        color: 'var(--color-pill-neutral-text)',
-        backgroundColor: 'var(--color-pill-neutral-bg)',
-        borderColor: 'var(--color-pill-neutral-border)',
-      };
-  }
-};
+const getAverageInventory = (item: InventoryTurnoverItem) =>
+  item.averageInventory ?? item.avgInventory ?? 0;
 
-export const formatTurnoverStatus = (status?: string) => {
-  const label = (status || '').toString().trim();
-  if (!label) return '—';
-  return label
-    .toLowerCase()
-    .split(' ')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
+const getTotalPurchased = (item: InventoryTurnoverItem) =>
+  item.totalPurchases ?? item.totalPurchased ?? 0;
 
 const InventoryTurnoverTable = ({ filteredList }: InventoryTurnoverTableProps) => {
-  const getAverageInventory = (item: InventoryTurnoverItem) =>
-    item.averageInventory ?? item.avgInventory ?? 0;
-
-  const getTotalPurchased = (item: InventoryTurnoverItem) =>
-    item.totalPurchases ?? item.totalPurchased ?? 0;
-
   const columns: Column<InventoryTurnoverItem>[] = [
     {
       label: 'Item name',
@@ -136,7 +96,7 @@ const InventoryTurnoverTable = ({ filteredList }: InventoryTurnoverTableProps) =
       key: 'status',
       width: '100px',
       render: (item: InventoryTurnoverItem) => (
-        <div className="appointment-status" style={getStatusStyle(item.status)}>
+        <div className="appointment-status" style={getInventoryTurnoverStatusStyle(item.status)}>
           {formatTurnoverStatus(item.status)}
         </div>
       ),

@@ -14,7 +14,8 @@
     "lint-staged": "lint-staged",
     "commitlint": "commitlint --edit",
     "check:secrets": "secretlint \"**/*\" --maskSecrets",
-    "check:staged-secrets": "node scripts/check-staged-secrets.js"
+    "check:staged-secrets": "node scripts/check-staged-secrets.js",
+    "doctor": "npx react-doctor@latest"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",
@@ -25,6 +26,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^15.5.2",
     "prettier": "^3.2.5",
+    "react-doctor": "^0.2.14",
     "secretlint": "^11.3.0",
     "turbo": "^2.5.0"
   },

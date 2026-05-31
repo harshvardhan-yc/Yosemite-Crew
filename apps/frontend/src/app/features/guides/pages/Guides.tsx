@@ -5,6 +5,8 @@ import { FaCirclePlay } from 'react-icons/fa6';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
 import PageSkeleton from '@/app/ui/layout/PageSkeleton';
+
+const GUIDES_PAGE_SKELETON = <PageSkeleton variant="list" />;
 import VideoPlayerModal from '@/app/ui/overlays/Modal/VideoPlayerModal';
 import Search from '@/app/ui/inputs/Search';
 import { Primary } from '@/app/ui/primitives/Buttons';
@@ -93,14 +95,14 @@ const Guides = () => {
               aria-label={`Play featured video: ${featuredGuide.title}`}
             >
               <div className="absolute inset-0 bg-black/35" />
-              <div className="relative flex items-center justify-center h-16 w-16 rounded-full bg-white/20">
+              <div className="relative flex items-center justify-center size-16 rounded-full bg-white/20">
                 <FaCirclePlay size={50} color="var(--color-neutral-0)" />
               </div>
               <div className="absolute bottom-4 right-4 px-3 py-1 rounded-full bg-white/90 text-body-4 text-text-primary">
                 {featuredGuide.duration}
               </div>
             </button>
-            <div className="flex flex-col gap-3 px-6 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10 lg:justify-center">
+            <div className="flex flex-col gap-3 p-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10 lg:justify-center">
               <div className="flex flex-wrap items-center gap-2">
                 <div
                   className="text-body-4 px-3 py-1 rounded-full"
@@ -179,14 +181,14 @@ const Guides = () => {
                 className="relative aspect-video bg-no-repeat bg-cover bg-center w-full rounded-t-2xl flex items-center justify-center"
               >
                 <div className="absolute inset-0 bg-black/35 rounded-t-2xl" />
-                <div className="relative flex items-center justify-center h-14 w-14 rounded-full bg-white/20">
+                <div className="relative flex items-center justify-center size-14 rounded-full bg-white/20">
                   <FaCirclePlay size={46} color="var(--color-neutral-0)" />
                 </div>
                 <div className="absolute bottom-3 right-3 px-3 py-1 rounded-full bg-white/90 text-body-4 text-text-primary">
                   {video.duration}
                 </div>
               </div>
-              <div className="flex flex-col gap-2 px-4 py-4">
+              <div className="flex flex-col gap-2 p-4">
                 <div className="flex items-center gap-2">
                   <div className="text-body-4 text-text-brand bg-brand-100 px-3 py-1 rounded-full">
                     {video.category}
@@ -213,8 +215,8 @@ const Guides = () => {
 
 const ProtectedGuides = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
+    <ProtectedRoute skeleton={GUIDES_PAGE_SKELETON}>
+      <OrgGuard skeleton={GUIDES_PAGE_SKELETON}>
         <Guides />
       </OrgGuard>
     </ProtectedRoute>

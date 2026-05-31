@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Appointments from '@/app/ui/tables/Appointments';
 import Tasks from '@/app/ui/tables/Tasks';
 
@@ -38,30 +38,28 @@ const AppointmentTask = () => {
     appointments[0] ?? null
   );
   const [activeTask, setActiveTask] = useState<Task | null>(tasks[0] ?? null);
-  const activeLabels = useMemo(
-    () => (activeTable === 'Appointments' ? AppointmentStatusFiltersUI : TaskStatusFilters),
-    [activeTable]
-  );
+  const activeLabels =
+    activeTable === 'Appointments' ? AppointmentStatusFiltersUI : TaskStatusFilters;
   const [activeSubLabel, setActiveSubLabel] = useState('all');
 
   useEffect(() => {
-    if (!viewPopup) {
-      setViewIntent(null);
-    }
+    if (!viewPopup) setViewIntent(null);
   }, [viewPopup]);
 
-  useEffect(() => {
+  const prevActiveTableRef = useRef(activeTable);
+  if (prevActiveTableRef.current !== activeTable) {
+    prevActiveTableRef.current = activeTable;
+    if (activeSubLabel !== 'all') setActiveSubLabel('all');
     if (activeTable === 'Appointments') {
-      setViewTaskPopup(false);
-      return;
+      if (viewTaskPopup) setViewTaskPopup(false);
+    } else {
+      setViewPopup(false);
+      setReschedulePopup(false);
+      setChangeStatusPopup(false);
+      setChangeRoomPopup(false);
+      setViewIntent(null);
     }
-
-    setViewPopup(false);
-    setReschedulePopup(false);
-    setChangeStatusPopup(false);
-    setChangeRoomPopup(false);
-    setViewIntent(null);
-  }, [activeTable]);
+  }
 
   useEffect(() => {
     setActiveAppointment((prev) => {
@@ -84,10 +82,6 @@ const AppointmentTask = () => {
       return tasks[0];
     });
   }, [tasks]);
-
-  useEffect(() => {
-    setActiveSubLabel('all');
-  }, [activeTable]);
 
   const filteredList = useMemo(() => {
     if (activeTable !== 'Appointments') return [];
@@ -118,12 +112,14 @@ const AppointmentTask = () => {
         <div className="summary-labels flex-wrap gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              type="button"
               className={`min-w-20 text-body-4 px-3 py-1.5 text-text-tertiary rounded-2xl! border! transition-all duration-300${activeTable === 'Appointments' ? ' bg-blue-light text-blue-text! border-text-brand!' : ' border-card-border! hover:bg-card-hover!'}`}
               onClick={() => setActiveTable('Appointments')}
             >
               Appointments
             </button>
             <button
+              type="button"
               className={`min-w-20 text-body-4 px-3 py-1.5 text-text-tertiary rounded-2xl! border! transition-all duration-300${activeTable === 'Tasks' ? ' bg-blue-light text-blue-text! border-text-brand!' : ' border-card-border! hover:bg-card-hover!'}`}
               onClick={() => setActiveTable('Tasks')}
             >

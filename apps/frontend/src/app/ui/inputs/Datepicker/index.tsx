@@ -1,4 +1,4 @@
-import React, { forwardRef, useId } from 'react';
+import React, { forwardRef, useCallback, useId, useMemo, useRef } from 'react';
 import ReactDatePicker from 'react-datepicker';
 import { IoIosWarning } from 'react-icons/io';
 import { IoCalendarOutline } from 'react-icons/io5';
@@ -28,17 +28,17 @@ type DateInputButtonProps = {
   onClick?: () => void;
   isIconOnly: boolean;
   inputId: string;
-  placeholder: string;
+  label: string;
   className?: string;
   errorId?: string;
 };
 
 const DateInputButton = forwardRef<HTMLButtonElement, DateInputButtonProps>(
   function DateInputButton(
-    { value, onClick, isIconOnly, inputId, placeholder, className, errorId },
+    { value, onClick, isIconOnly, inputId, label, className, errorId },
     ref
   ) {
-    const accessibleLabel = placeholder || 'Date';
+    const accessibleLabel = label || 'Date';
 
     if (isIconOnly) {
       return (
@@ -90,6 +90,24 @@ const DateInputButton = forwardRef<HTMLButtonElement, DateInputButtonProps>(
   }
 );
 
+const getComparableDateTime = (date: Date | null | undefined) => {
+  if (!(date instanceof Date)) return null;
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : null;
+};
+
+const useStableDate = (date: Date | null | undefined) => {
+  const dateRef = useRef<Date | null>(date ?? null);
+  const time = getComparableDateTime(date);
+  const previousTime = getComparableDateTime(dateRef.current);
+
+  if (time !== previousTime) {
+    dateRef.current = date ?? null;
+  }
+
+  return dateRef.current;
+};
+
 const Datepicker = ({
   currentDate,
   setCurrentDate,
@@ -106,18 +124,38 @@ const Datepicker = ({
   const inputId = useId();
   const errorId = error ? `${inputId}-error` : undefined;
   const updateDate = setCurrentDate as React.Dispatch<React.SetStateAction<Date | null>>;
-  const minDate = minDateProp ?? new Date(minYear, 0, 1);
-  const maxDate = new Date(maxYear, 11, 31);
+  const selectedDate = useStableDate(currentDate);
+  const stableMinDateProp = useStableDate(minDateProp);
+  const minDate = useMemo(
+    () => stableMinDateProp ?? new Date(minYear, 0, 1),
+    [minYear, stableMinDateProp]
+  );
+  const maxDate = useMemo(() => new Date(maxYear, 11, 31), [maxYear]);
   const isInput = type === 'input';
 
-  const handleDateChange = (date: Date | null) => {
-    updateDate(date);
-  };
+  const handleDateChange = useCallback(
+    (date: Date | null) => {
+      updateDate(date);
+    },
+    [updateDate]
+  );
+  const customInput = useMemo(
+    () => (
+      <DateInputButton
+        isIconOnly={!isInput}
+        inputId={inputId}
+        label={placeholder}
+        errorId={errorId}
+        className={`${error ? 'border-input-border-error!' : 'border-input-border-default!'} focus:border-input-border-active! ${className ?? ''}`}
+      />
+    ),
+    [className, error, errorId, inputId, isInput, placeholder]
+  );
 
   return (
     <div className={`relative ${containerClassName ?? ''}`}>
       <ReactDatePicker
-        selected={currentDate}
+        selected={selectedDate}
         onChange={handleDateChange}
         minDate={minDate}
         maxDate={maxDate}
@@ -133,15 +171,7 @@ const Datepicker = ({
         popperClassName="yc-datepicker-popper"
         portalId={portal ? 'yc-datepicker-portal' : undefined}
         wrapperClassName={isInput ? 'w-full' : ''}
-        customInput={
-          <DateInputButton
-            isIconOnly={!isInput}
-            inputId={inputId}
-            placeholder={placeholder}
-            errorId={errorId}
-            className={`${error ? 'border-input-border-error!' : 'border-input-border-default!'} focus:border-input-border-active! ${className ?? ''}`}
-          />
-        }
+        customInput={customInput}
       />
 
       {error && (
@@ -158,4 +188,16 @@ const Datepicker = ({
   );
 };
 
-export default Datepicker;
+const areDatepickerPropsEqual = (prev: DatepickerProps, next: DatepickerProps) =>
+  getComparableDateTime(prev.currentDate) === getComparableDateTime(next.currentDate) &&
+  getComparableDateTime(prev.minDate) === getComparableDateTime(next.minDate) &&
+  prev.minYear === next.minYear &&
+  prev.maxYear === next.maxYear &&
+  prev.type === next.type &&
+  prev.className === next.className &&
+  prev.containerClassName === next.containerClassName &&
+  prev.placeholder === next.placeholder &&
+  prev.error === next.error &&
+  prev.portal === next.portal;
+
+export default React.memo(Datepicker, areDatepickerPropsEqual);

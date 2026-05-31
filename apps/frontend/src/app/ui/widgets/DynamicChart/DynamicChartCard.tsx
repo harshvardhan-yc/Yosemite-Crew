@@ -1,5 +1,5 @@
 'use client';
-import React from 'react';
+import { type FC, type ReactNode } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -33,9 +33,9 @@ type ChartProps = {
   xAxisTicks?: Array<string | number>;
   xAxisDomain?: [number | 'auto' | 'dataMin' | 'dataMax', number | 'auto' | 'dataMin' | 'dataMax'];
   xTickFormatter?: (value: string | number) => string;
-  tooltipLabelFormatter?: (label: string | number, payload?: any[]) => React.ReactNode;
-  headerContent?: React.ReactNode;
-  footerContent?: React.ReactNode;
+  tooltipLabelFormatter?: (label: string | number, payload?: any[]) => ReactNode;
+  headerContent?: ReactNode;
+  footerContent?: ReactNode;
 };
 
 type TiltedTickProps = { x: number; y: number; payload: { value: string } };
@@ -51,6 +51,11 @@ type AxisLabelConfig = {
 
 const MONTH_NAME_PATTERN = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i;
 const DAY_PATTERN = /\b([12]?\d|3[01])\b/;
+const axisMonthYearFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  year: 'numeric',
+});
+const axisDayFormatter = new Intl.DateTimeFormat('en-US', { day: 'numeric' });
 
 const parseAxisValueAsDate = (value: string): Date | null => {
   const timestamp = Date.parse(value);
@@ -84,7 +89,7 @@ const getMonthLabelFromData = (data: any[]): string | undefined => {
     );
 
     if (allSameMonthAndYear) {
-      return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(first);
+      return axisMonthYearFormatter.format(first);
     }
   }
 
@@ -95,7 +100,7 @@ const getMonthLabelFromData = (data: any[]): string | undefined => {
 const getDayTickLabel = (value: string): string => {
   const parsed = parseAxisValueAsDate(value);
   if (parsed) {
-    return new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(parsed);
+    return axisDayFormatter.format(parsed);
   }
 
   const dayToken = DAY_PATTERN.exec(value)?.[0];
@@ -136,7 +141,7 @@ type LineChartContentProps = {
   xAxisTicks?: Array<string | number>;
   xAxisDomain?: [number | 'auto' | 'dataMin' | 'dataMax', number | 'auto' | 'dataMin' | 'dataMax'];
   xTickFormatter?: (value: string | number) => string;
-  tooltipLabelFormatter?: (label: string | number, payload?: any[]) => React.ReactNode;
+  tooltipLabelFormatter?: (label: string | number, payload?: any[]) => ReactNode;
 };
 
 const LineChartContent = ({
@@ -292,7 +297,7 @@ const EmptyChartState = ({ height }: { height: number }) => (
   </div>
 );
 
-const DynamicChartCard: React.FC<ChartProps> = ({
+const DynamicChartCard: FC<ChartProps> = ({
   data,
   type = 'bar',
   keys,

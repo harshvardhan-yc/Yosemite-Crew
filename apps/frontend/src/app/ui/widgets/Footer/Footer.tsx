@@ -2,7 +2,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import React, { useEffect, useRef, useState } from 'react';
-import { motion, Variants, useInView } from 'framer-motion';
+import { LazyMotion, domAnimation, m, Variants, useInView } from 'framer-motion';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 
 import './Footer.css';
@@ -120,145 +120,148 @@ const Footer = () => {
   }, []);
 
   return (
-    <motion.footer
-      ref={footerRef}
-      className="Footersec"
-      aria-label="Site Footer"
-      initial={{ opacity: 0, y: 40 }}
-      animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
-      transition={{ duration: 0.7, ease: 'easeOut' }}
-    >
-      <div className="container mx-auto px-4">
-        <div className="FooterData">
-          <div className="FootTopData">
-            <div className="leftFooter">
-              <Link href={'/'}>
-                <Image
-                  src={MEDIA_SOURCES.logo}
-                  alt="Yosemite Crew Logo"
-                  width={90}
-                  height={83}
-                  style={{ height: 'auto' }}
-                />
-              </Link>
-              <div className="ClientLogoGroup">
-                <ul className="ClientLogo" aria-label="Certifications">
-                  <li>
-                    <Image
-                      src={MEDIA_SOURCES.footer.gdpr}
-                      alt=""
-                      width={55}
-                      height={56}
-                      className="gdpr-footer"
-                      style={{ height: 'auto' }}
-                    />
-                  </li>
-                  <li>
-                    <Image
-                      src={MEDIA_SOURCES.footer.soc2}
-                      alt=""
-                      width={56}
-                      height={56}
-                      className="soc-footer"
-                      style={{ height: 'auto' }}
-                    />
-                  </li>
-                  <li>
-                    <Image
-                      src={MEDIA_SOURCES.footer.iso}
-                      alt=""
-                      width={54}
-                      height={60}
-                      className="iso-footer"
-                      style={{ height: 'auto' }}
-                    />
-                  </li>
-                  <li>
-                    <Image
-                      src={MEDIA_SOURCES.footer.fhir}
-                      alt=""
-                      width={117}
-                      height={28}
-                      className="fhir-footer"
-                      style={{ height: 'auto' }}
-                    />
-                  </li>
-                </ul>
-                <Link
-                  href={PLATFORM_STATUS_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`platform-status-link platform-status-link-${platformStatus.tone}`}
-                >
-                  <span className="platform-status-dot" aria-hidden="true" />
-                  <span>{platformStatus.label}</span>
+    <LazyMotion features={domAnimation}>
+      <m.footer
+        ref={footerRef}
+        className="Footersec"
+        aria-label="Site Footer"
+        initial={{ opacity: 0, y: 40 }}
+        animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
+        transition={{ duration: 0.7, ease: 'easeOut' }}
+      >
+        <div className="container mx-auto px-4">
+          <div className="FooterData">
+            <div className="FootTopData">
+              <div className="leftFooter">
+                <Link href={'/'}>
+                  <Image
+                    src={MEDIA_SOURCES.logo}
+                    alt="Yosemite Crew Logo"
+                    width={90}
+                    height={83}
+                    style={{ height: 'auto' }}
+                  />
                 </Link>
-              </div>
-            </div>
-            <motion.nav
-              className="RytFooter"
-              aria-label="Footer Navigation"
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
-            >
-              {footerLinks.map((section) => (
-                <motion.div className="FtDiv" key={section.title} variants={ftDivVariants}>
-                  <h3 className="text-heading-3 text-text-tertiary">{section.title}</h3>
-                  <ul className="FtLinks">
-                    {section.links.map((link) => (
-                      <li key={link.label}>
-                        <Link
-                          href={link.href}
-                          target={section.title === 'Company' ? undefined : '_blank'}
-                          rel={section.title === 'Company' ? undefined : 'noopener noreferrer'}
-                          className="text-body-4 text-text-tertiary"
-                        >
-                          {link.label}
-                        </Link>
-                      </li>
-                    ))}
+                <div className="ClientLogoGroup">
+                  <ul className="ClientLogo" aria-label="Certifications">
+                    <li>
+                      <Image
+                        src={MEDIA_SOURCES.footer.gdpr}
+                        alt=""
+                        width={55}
+                        height={56}
+                        className="gdpr-footer"
+                        style={{ height: 'auto' }}
+                      />
+                    </li>
+                    <li>
+                      <Image
+                        src={MEDIA_SOURCES.footer.soc2}
+                        alt=""
+                        width={56}
+                        height={56}
+                        className="soc-footer"
+                        style={{ height: 'auto' }}
+                      />
+                    </li>
+                    <li>
+                      <Image
+                        src={MEDIA_SOURCES.footer.iso}
+                        alt=""
+                        width={54}
+                        height={60}
+                        className="iso-footer"
+                        style={{ height: 'auto' }}
+                      />
+                    </li>
+                    <li>
+                      <Image
+                        src={MEDIA_SOURCES.footer.fhir}
+                        alt=""
+                        width={117}
+                        height={28}
+                        className="fhir-footer"
+                        style={{ height: 'auto' }}
+                      />
+                    </li>
                   </ul>
-                </motion.div>
-              ))}
-            </motion.nav>
-          </div>
-          {/* <hr className="footer-divider" aria-hidden="true" /> */}
-          <div className="Footer_Bottom">
-            <div className="Bootom_Foot">
-              <div className="text-body-4-emphasis text-text-secondary text-center footer-copy-primary">
-                &copy; 2026 DuneXploration UG (haftungsbeschränkt)
+                  <Link
+                    href={PLATFORM_STATUS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`platform-status-link platform-status-link-${platformStatus.tone}`}
+                  >
+                    <span className="platform-status-dot" aria-hidden="true" />
+                    <span>{platformStatus.label}</span>
+                  </Link>
+                </div>
               </div>
-              <div className="text-body-4 text-text-secondary text-center footer-copy-secondary">
-                DuneXploration UG (haftungsbeschränkt), Am Finther Weg 7, 55127 Mainz
-                <br />
-                email:{' '}
-                <a
-                  className="text-body-4 text-text-brand footer-copy-link"
-                  href="mailto:support@yosemitecrew.com"
-                >
-                  support@yosemitecrew.com
-                </a>{' '}
-                , phone:{' '}
-                <a
-                  className="text-body-4 text-text-brand footer-copy-link"
-                  href="tel:+4915227763275"
-                >
-                  +49 152 277 63275
-                </a>
-              </div>
-              <div className="text-body-4 text-text-secondary text-center footer-copy-secondary">
-                Geschaftsfuhrer: Ankit Upadhyay Amtsgericht Mainz unter HRB 52778, VAT: DE367920596
-              </div>
-              <div className="text-body-4 text-text-secondary text-center footer-copy-secondary">
-                Yosemite Crew™ is a trademark of DuneXploration UG (haftungsbeschränkt) in the EU,
-                Australia, Great Britain, India, New Zealand, and the USA.
+              <m.nav
+                className="RytFooter"
+                aria-label="Footer Navigation"
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+              >
+                {footerLinks.map((section) => (
+                  <m.div className="FtDiv" key={section.title} variants={ftDivVariants}>
+                    <h3 className="text-heading-3 text-text-tertiary">{section.title}</h3>
+                    <ul className="FtLinks">
+                      {section.links.map((link) => (
+                        <li key={link.label}>
+                          <Link
+                            href={link.href}
+                            target={section.title === 'Company' ? undefined : '_blank'}
+                            rel={section.title === 'Company' ? undefined : 'noopener noreferrer'}
+                            className="text-body-4 text-text-tertiary"
+                          >
+                            {link.label}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </m.div>
+                ))}
+              </m.nav>
+            </div>
+            {/* <hr className="footer-divider" aria-hidden="true" /> */}
+            <div className="Footer_Bottom">
+              <div className="Bootom_Foot">
+                <div className="text-body-4-emphasis text-text-secondary text-center footer-copy-primary">
+                  &copy; 2026 DuneXploration UG (haftungsbeschränkt)
+                </div>
+                <div className="text-body-4 text-text-secondary text-center footer-copy-secondary">
+                  DuneXploration UG (haftungsbeschränkt), Am Finther Weg 7, 55127 Mainz
+                  <br />
+                  email:{' '}
+                  <a
+                    className="text-body-4 text-text-brand footer-copy-link"
+                    href="mailto:support@yosemitecrew.com"
+                  >
+                    support@yosemitecrew.com
+                  </a>{' '}
+                  , phone:{' '}
+                  <a
+                    className="text-body-4 text-text-brand footer-copy-link"
+                    href="tel:+4915227763275"
+                  >
+                    +49 152 277 63275
+                  </a>
+                </div>
+                <div className="text-body-4 text-text-secondary text-center footer-copy-secondary">
+                  Geschaftsfuhrer: Ankit Upadhyay Amtsgericht Mainz unter HRB 52778, VAT:
+                  DE367920596
+                </div>
+                <div className="text-body-4 text-text-secondary text-center footer-copy-secondary">
+                  Yosemite Crew™ is a trademark of DuneXploration UG (haftungsbeschränkt) in the EU,
+                  Australia, Great Britain, India, New Zealand, and the USA.
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </motion.footer>
+      </m.footer>
+    </LazyMotion>
   );
 };
 

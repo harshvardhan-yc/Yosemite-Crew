@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { Appointment } from '@yosemite-crew/types';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
@@ -23,10 +23,17 @@ const ChangeRoom = ({ showModal, setShowModal, activeAppointment }: ChangeRoomPr
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    setSelectedRoomId(activeAppointment.room?.id || '');
-    setErrorMessage(null);
-  }, [activeAppointment, showModal]);
+  const prevResetKeyRef = useRef({ appointment: activeAppointment, showModal });
+  const resetKey = { appointment: activeAppointment, showModal };
+  if (
+    prevResetKeyRef.current.appointment !== activeAppointment ||
+    prevResetKeyRef.current.showModal !== showModal
+  ) {
+    prevResetKeyRef.current = resetKey;
+    const newRoomId = activeAppointment.room?.id || '';
+    if (selectedRoomId !== newRoomId) setSelectedRoomId(newRoomId);
+    if (errorMessage !== null) setErrorMessage(null);
+  }
 
   const handleCancel = () => {
     setShowModal(false);

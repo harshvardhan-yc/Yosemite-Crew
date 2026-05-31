@@ -16,6 +16,33 @@ import {
   InventorySectionKey,
 } from '@/app/features/inventory/components/AddInventory/InventoryConfig';
 
+const parseDate = (value?: string): Date | null => {
+  if (!value) return null;
+
+  if (value.includes('/')) {
+    const [dd, mm, yyyy] = value.split('/');
+    const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDate = (date: Date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 type FormSectionProps = {
   businessType: BusinessType;
   sectionKey: InventorySectionKey;
@@ -61,33 +88,6 @@ const FormSection: React.FC<FormSectionProps> = ({
 
   const sectionData = formData[sectionKey] as any;
   const sectionErrors = (errors as Record<InventorySectionKey, any>)[sectionKey];
-
-  const parseDate = (value?: string): Date | null => {
-    if (!value) return null;
-
-    if (value.includes('/')) {
-      const [dd, mm, yyyy] = value.split('/');
-      const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-    if (isoMatch) {
-      const [, yyyy, mm, dd] = isoMatch;
-      const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
-  };
-
-  const formatDate = (date: Date) => {
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
 
   const getValue = (field: FieldDef<any>): string => sectionData?.[field.name] ?? '';
   const getError = (field: FieldDef<any>): string | undefined => sectionErrors?.[field.name];

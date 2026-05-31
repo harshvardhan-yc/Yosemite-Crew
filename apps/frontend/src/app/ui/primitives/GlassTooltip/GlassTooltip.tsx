@@ -5,7 +5,7 @@ import './GlassTooltip.css';
 type TooltipSide = 'top' | 'right' | 'bottom' | 'left';
 
 type GlassTooltipProps = {
-  content: string;
+  content: React.ReactNode;
   children: React.ReactNode;
   side?: TooltipSide;
   className?: string;

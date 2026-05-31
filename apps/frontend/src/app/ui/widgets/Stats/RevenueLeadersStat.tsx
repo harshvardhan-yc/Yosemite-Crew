@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import CardHeader from '@/app/ui/cards/CardHeader/CardHeader';
 import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
 import { formatMoney } from '@/app/lib/money';
@@ -15,11 +15,10 @@ const RevenueLeadersStat = () => {
   const durationOptions = analytics.durationOptions.revenueLeaders;
   const leaders = analytics.revenueLeaders;
 
-  useEffect(() => {
-    if (!durationOptions.includes(selectedDuration)) {
-      setSelectedDuration(durationOptions[0] ?? 'Last week');
-    }
-  }, [durationOptions, selectedDuration]);
+  const effectiveDuration = durationOptions.includes(selectedDuration)
+    ? selectedDuration
+    : (durationOptions[0] ?? 'Last week');
+  if (effectiveDuration !== selectedDuration) setSelectedDuration(effectiveDuration);
 
   const isEmpty = analytics.emptyState.revenueLeaders;
   const topLeader = leaders[0] ?? { label: 'No data', revenue: 0 };

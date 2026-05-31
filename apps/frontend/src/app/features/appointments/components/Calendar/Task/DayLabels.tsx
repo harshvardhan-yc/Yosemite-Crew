@@ -10,7 +10,12 @@ type DayLabels = {
 const DayLabels = ({ days, currentDate, columnsStyle }: DayLabels) => {
   const currentDateIso = currentDate?.toISOString() ?? '';
   return (
-    <div className="grid min-w-max py-3" style={columnsStyle} data-current-date={currentDateIso}>
+    <div
+      className="grid min-w-max py-3"
+      style={columnsStyle}
+      data-current-date={currentDateIso}
+      suppressHydrationWarning
+    >
       {days.map((day, idx) => {
         const weekday = day.toLocaleDateString('en-US', {
           weekday: 'short',
@@ -28,7 +33,7 @@ const DayLabels = ({ days, currentDate, columnsStyle }: DayLabels) => {
               {weekday}
             </div>
             <div
-              className={`text-body-4-emphasis h-10 w-10 flex items-center justify-center rounded-full border ${dateNumberClass}`}
+              className={`text-body-4-emphasis size-10 flex items-center justify-center rounded-full border ${dateNumberClass}`}
             >
               {dateNumber}
             </div>

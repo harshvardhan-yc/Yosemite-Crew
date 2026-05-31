@@ -92,22 +92,18 @@ const SearchDropdown = ({
         {accessibleLabel}
       </label>
       <div
-        className={`h-12 border px-4 py-2.5 flex items-center justify-center w-full focus-within:border-input-border-active! ${canSearch ? 'border-input-border-active! rounded-t-2xl!' : 'border-input-border-default! rounded-2xl!'}`}
+        className={`h-12 border px-4 py-2.5 flex items-center justify-center w-full focus-within:border-input-border-active! ${canSearch ? 'border-input-border-active! border-b-0! rounded-t-2xl!' : 'border-input-border-default! rounded-2xl!'}`}
       >
         <input
           id={inputId}
-          type="search"
+          type="text"
+          aria-label={accessibleLabel}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={canSearch}
-          aria-controls={listboxId}
-          aria-haspopup="listbox"
           aria-invalid={!!error}
           aria-describedby={error ? errorId : undefined}
           className="border-0 text-body-4 text-text-primary w-full placeholder:text-input-text-placeholder placeholder:text-body-4 focus-visible:outline-none"
@@ -126,11 +122,12 @@ const SearchDropdown = ({
         <div
           id={listboxId}
           aria-label={accessibleLabel}
-          className="border-input-border-active max-h-50 overflow-y-auto scrollbar-hidden z-99 absolute top-full left-0 rounded-b-2xl border-l border-r border-b bg-white flex flex-col items-center w-full px-3 py-2.5"
+          className="border-input-text-placeholder-active max-h-50 overflow-y-auto scrollbar-hidden z-99 absolute top-full left-0 rounded-b-2xl border-l border-r border-b border-t bg-white flex flex-col items-center w-full px-3 py-2.5"
           onScroll={handleScroll}
         >
           {filtered.map((option) => (
             <button
+              type="button"
               key={option.value}
               onClick={() => onSelectOption(option.value)}
               className={

@@ -76,11 +76,16 @@ describe('security headers', () => {
     expect(directives.get('style-src-elem')).toContain("'unsafe-inline'");
     expect(directives.get('style-src-attr')).toBe("'unsafe-inline'");
     expect(directives.get('font-src')).toContain('https://fonts.gstatic.com');
+    expect(directives.get('connect-src')).toContain('blob:');
     expect(directives.get('connect-src')).toContain('https://api.stripe.com');
     expect(directives.get('connect-src')).toContain('http:');
     expect(directives.get('connect-src')).toContain('ws:');
+    expect(directives.get('img-src')).toContain('https://upload.wikimedia.org');
+    expect(directives.get('frame-src')).toContain('blob:');
     expect(directives.get('frame-src')).toContain('https://js.stripe.com');
     expect(directives.get('frame-src')).toContain('https://*.merckvetmanual.com');
+    expect(directives.get('frame-src')).toContain('https://*.idexx.com');
+    expect(directives.get('frame-src')).toContain('https://*.vetconnectplus.com');
     expect(directives.get('frame-src')).toContain('https://sign.example.com');
   });
 

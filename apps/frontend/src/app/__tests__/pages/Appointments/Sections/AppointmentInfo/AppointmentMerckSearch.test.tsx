@@ -61,11 +61,14 @@ jest.mock('@/app/features/integrations/services/merckService', () => ({
   isAllowedMerckUrl: (url: string) => isAllowedMerckUrlMock(url),
 }));
 
-jest.mock('@/app/features/integrations/constants/merck', () => ({
-  MERCK_COPYRIGHT_NOTICE: 'copyright notice',
-  getMerckSubtopicPillStyle: () => ({}),
-  sanitizeMerckHtml: (value: string) => value,
-}));
+jest.mock('@/app/features/integrations/constants/merck', () => {
+  const actual = jest.requireActual('@/app/features/integrations/constants/merck');
+  return {
+    ...actual,
+    MERCK_COPYRIGHT_NOTICE: 'copyright notice',
+    getMerckSubtopicPillStyle: () => ({}),
+  };
+});
 
 jest.mock('@/app/constants/mediaSources', () => ({
   MEDIA_SOURCES: {

@@ -461,7 +461,7 @@ const TermsAndConditions = () => {
               </li>
               <li>
                 <strong>8.3.</strong> Service levels are specified in{' '}
-                <strong>Exhibit A – Support Services and Service Level Policy.</strong>
+                <strong>Exhibit A &ndash; Support Services and Service Level Policy.</strong>
               </li>
               <li>
                 <strong>8.4.</strong> As part of the SaaS Services, DuneXploration will provide
@@ -548,7 +548,7 @@ const TermsAndConditions = () => {
               <li>
                 <strong>10.3.</strong> If the SaaS Services have an error or malfunction, the
                 Customer shall immediately notify DuneXploration thereof in accordance with the
-                provisions of Exhibit A — SUPPORT SERVICES AND SERVICE LEVEL POLICY.
+                provisions of Exhibit A &mdash; SUPPORT SERVICES AND SERVICE LEVEL POLICY.
               </li>
               <li>
                 <strong>10.4.</strong> The Customer is responsible for ensuring that all Users
@@ -1062,7 +1062,12 @@ const TermsAndConditions = () => {
                 support@yosemitecrew.com
               </a>{' '}
               ) and a discord chat (
-              <a href="https://discord.gg/YVzMq97Bk" target="_blank" className="doc-link">
+              <a
+                href="https://discord.gg/YVzMq97Bk"
+                target="_blank"
+                rel="noreferrer"
+                className="doc-link"
+              >
                 https://discord.gg/YVzMq97Bk
               </a>{' '}
               ) or through other customer support center contacts, set forth below (the
@@ -1334,10 +1339,11 @@ const TermsAndConditions = () => {
             <div className="doc-title">Data Processing Agreement</div>
 
             <p>
-              The Customer as defined in the Yosemite Crew License and Subscription Terms (SaaS) –
-              hereinafter referred to as the Controller/Data Importer – and DuneXploration as
-              defined in the Yosemite Crew License and Subscription Terms (SaaS) – hereinafter
-              referred to as the Processor/Data Exporter – each a ‘party’; together ‘the parties’ –
+              The Customer as defined in the Yosemite Crew License and Subscription Terms (SaaS)
+              &ndash; hereinafter referred to as the Controller/Data Importer &ndash; and
+              DuneXploration as defined in the Yosemite Crew License and Subscription Terms (SaaS)
+              &ndash; hereinafter referred to as the Processor/Data Exporter &ndash; each a ‘party’;
+              together ‘the parties’ &ndash;
             </p>
 
             <p>
@@ -1556,7 +1562,7 @@ const TermsAndConditions = () => {
                 Clauses from the period prior to becoming a Party.
               </p>
 
-              <div className="doc-section-title">SECTION II – OBLIGATIONS OF THE PARTIES</div>
+              <div className="doc-section-title">SECTION II &ndash; OBLIGATIONS OF THE PARTIES</div>
               <div className="doc-section-title">Clause 6 - Description of processing(s)</div>
               <p>
                 The details of the processing operations, in particular the categories of personal
@@ -1858,7 +1864,7 @@ const TermsAndConditions = () => {
                 [OPTION 2] Articles 34 and 35 of Regulation (EU) 2018/1725.
               </p>
 
-              <div className="doc-section-title">SECTION III – FINAL PROVISIONS</div>
+              <div className="doc-section-title">SECTION III &ndash; FINAL PROVISIONS</div>
               <div className="doc-section-title">
                 Clause 10 - Non-compliance with the Clauses and termination
               </div>
@@ -2815,11 +2821,11 @@ const TermsAndConditions = () => {
                         rotate automatically every 12 months.
                       </li>
                       <li>
-                        Encryption in transit – External traffic is forced over TLS 1.3 with
+                        Encryption in transit &ndash; External traffic is forced over TLS 1.3 with
                         Perfect-Forward Secrecy. Internal service-to-service calls use mTLS.
                       </li>
                       <li>
-                        Pseudonymisation – We use salted bcrypt hashing for lookup tables for
+                        Pseudonymisation &ndash; We use salted bcrypt hashing for lookup tables for
                         password store
                       </li>
                     </ul>
@@ -2846,13 +2852,13 @@ const TermsAndConditions = () => {
                     </strong>
                     <br />
                     (RBAC) Role based access control: We use role-based access control (RBAC) to
-                    make sure each person only sees the data they need for their job – right down to
-                    individual rows in the database if needed. We don’t allow shared logins, so
-                    every action can be clearly traced to a specific user. Session management – We
-                    manage user sessions securely using encrypted tokens. If someone’s inactive for
-                    15 minutes, they’re logged out automatically, and all sessions end after 12
-                    hours no matter what — this helps reduce the risk from forgotten or unattended
-                    logins.
+                    make sure each person only sees the data they need for their job &ndash; right
+                    down to individual rows in the database if needed. We don’t allow shared logins,
+                    so every action can be clearly traced to a specific user. Session management
+                    &ndash; We manage user sessions securely using encrypted tokens. If someone’s
+                    inactive for 15 minutes, they’re logged out automatically, and all sessions end
+                    after 12 hours no matter what &mdash; this helps reduce the risk from forgotten
+                    or unattended logins.
                   </li>
                   <li className="measuresItem">
                     <strong className="measuresBold">
@@ -2862,7 +2868,7 @@ const TermsAndConditions = () => {
                     All data on AWS cloud instances volumes are encrypted using the latest and most
                     secure standard. We’ve disabled older, weaker encryption methods to keep
                     communications safe. For our mobile apps, we use certificate pinning to make
-                    sure the app only talks to our real servers — this helps prevent
+                    sure the app only talks to our real servers &mdash; this helps prevent
                     man-in-the-middle attacks. In sensitive industries like healthcare or legal, we
                     offer full end-to-end encryption so that even we can’t see the data in transit.
                     When it comes to file transfers, we use secure methods like SFTP with strong SSH
@@ -2877,11 +2883,11 @@ const TermsAndConditions = () => {
                     activity to system performance and security events. Combined with services like
                     CloudTrail and GuardDuty, this helps us detect and respond to threats quickly.
                     On the development side, GitHub audit logs let us monitor actions like code
-                    pushes, permission changes, and access to repositories — ensuring we have full
-                    traceability of who did what, and when. All logs are stored securely, protected
-                    from tampering, and kept according to our retention policy. We review them
-                    regularly and have automated alerts for anything suspicious, so our security
-                    team can act fast if something’s not right.
+                    pushes, permission changes, and access to repositories &mdash; ensuring we have
+                    full traceability of who did what, and when. All logs are stored securely,
+                    protected from tampering, and kept according to our retention policy. We review
+                    them regularly and have automated alerts for anything suspicious, so our
+                    security team can act fast if something’s not right.
                   </li>
                   <li className="measuresItem">
                     <strong className="measuresBold">
@@ -2939,7 +2945,7 @@ const TermsAndConditions = () => {
                     <br />
                     We generally do not store personal data unless it’s strictly necessary for the
                     functionality of our application. When personal data is required, we collect
-                    only what’s needed — no more, no less. Every feature goes through a
+                    only what’s needed &mdash; no more, no less. Every feature goes through a
                     privacy-by-design review to ensure we’re limiting the type, amount, and duration
                     of personal data used. Where possible, we replace identifiers with pseudonyms or
                     anonymised values, and we use aggregated data for analytics and reporting.
@@ -2962,15 +2968,15 @@ const TermsAndConditions = () => {
                   handle personal data on our behalf. Each sub-processor must sign a Data Processing
                   Agreement (DPA) that clearly sets out their responsibilities, including support
                   for the controller’s obligations under GDPR. Sub-processors are required to
-                  implement equivalent technical and organisational measures as we do — including
-                  encryption of data in transit and at rest, access controls, security logging, and
-                  staff training. We also require that they only process data under documented
-                  instructions and never for their own purposes. To ensure transparency and
-                  compliance: Sub-processors must promptly assist us (and therefore the controller)
-                  with requests from data subjects, such as access, rectification, or deletion. They
-                  must notify us of any data breach without undue delay, allowing us to meet the
-                  72-hour GDPR notification window. They are required to undergo regular security
-                  audits (ISO 27001 or SOC 2) and provide evidence on request.
+                  implement equivalent technical and organisational measures as we do &mdash;
+                  including encryption of data in transit and at rest, access controls, security
+                  logging, and staff training. We also require that they only process data under
+                  documented instructions and never for their own purposes. To ensure transparency
+                  and compliance: Sub-processors must promptly assist us (and therefore the
+                  controller) with requests from data subjects, such as access, rectification, or
+                  deletion. They must notify us of any data breach without undue delay, allowing us
+                  to meet the 72-hour GDPR notification window. They are required to undergo regular
+                  security audits (ISO 27001 or SOC 2) and provide evidence on request.
                 </p>
                 <h4 className="measuresSubtitle">
                   Technical and organisational measures of sub processors
@@ -3148,15 +3154,15 @@ const TermsAndConditions = () => {
                 <p className="clauseParagraph">
                   a. Data subjects may invoke and enforce these Clauses, as third-party
                   beneficiaries, against the data exporter and/or data importer, with the following
-                  exceptions: (i) Clause 1, Clause 2, Clause 3, Clause 6, Clause 7; (ii) Clause 8 –
-                  Module One: Clause 8.5 (e) and Clause 8.9(b); Module Two: Clause 8.1(b), 8.9(a),
-                  (c), (d) and (e); Module Three: Clause 8.1(a), (c) and (d) and Clause 8.9(a), (c),
-                  (d), (e), (f) and (g); Module Four: Clause 8.1 (b) and Clause 8.3(b); (iii) Clause
-                  9 – Module Two: Clause 9(a), (c), (d) and (e); Module Three: Clause 9(a), (c), (d)
-                  and (e); (iv) Clause 12 – Module One: Clause 12(a) and (d); Modules Two and Three:
-                  Clause 12(a), (d) and (f); (v) Clause 13; (vi) Clause 15.1(c), (d) and (e); (vii)
-                  Clause 16(e); (viii) Clause 18 – Modules One, Two and Three: Clause 18(a) and (b);
-                  Module Four:Clause 18.
+                  exceptions: (i) Clause 1, Clause 2, Clause 3, Clause 6, Clause 7; (ii) Clause 8
+                  &ndash; Module One: Clause 8.5 (e) and Clause 8.9(b); Module Two: Clause 8.1(b),
+                  8.9(a), (c), (d) and (e); Module Three: Clause 8.1(a), (c) and (d) and Clause
+                  8.9(a), (c), (d), (e), (f) and (g); Module Four: Clause 8.1 (b) and Clause 8.3(b);
+                  (iii) Clause 9 &ndash; Module Two: Clause 9(a), (c), (d) and (e); Module Three:
+                  Clause 9(a), (c), (d) and (e); (iv) Clause 12 – Module One: Clause 12(a) and (d);
+                  Modules Two and Three: Clause 12(a), (d) and (f); (v) Clause 13; (vi) Clause
+                  15.1(c), (d) and (e); (vii) Clause 16(e); (viii) Clause 18 &ndash; Modules One,
+                  Two and Three: Clause 18(a) and (b); Module Four:Clause 18.
                   <br />
                   b. Paragraph (a) is without prejudice to rights of data subjects under Regulation
                   (EU) 2016/679.
@@ -3192,7 +3198,7 @@ const TermsAndConditions = () => {
                 </p>
               </div>
               <div className="clauseContainer">
-                <h5 className="clauseHeader">Clause 7 – Optional Docking clause</h5>
+                <h5 className="clauseHeader">Clause 7 &ndash; Optional Docking clause</h5>
                 <p className="clauseParagraph">
                   a. An entity that is not a Party to these Clauses may, with the agreement of the
                   Parties, accede to these Clauses at any time, either as a data exporter or as a
@@ -3206,7 +3212,7 @@ const TermsAndConditions = () => {
                   Clauses from the period prior to becoming a Party.
                 </p>
               </div>
-              <h4 className="sectionTitle">SECTION II – OBLIGATIONS OF THE PARTIES</h4>
+              <h4 className="sectionTitle">SECTION II &ndash; OBLIGATIONS OF THE PARTIES</h4>
               <div className="clauseContainer">
                 <h5 className="clauseHeader">Clause 8 Data protection safeguards</h5>
                 <div className="clauseParagraph">
@@ -3834,10 +3840,10 @@ const TermsAndConditions = () => {
                   sub-processor to fulfil its obligations under that contract.
                   <br />
                   e. The data importer shall agree a third-party beneficiary clause with the
-                  sub-processor whereby – in the event the data importer has factually disappeared,
-                  ceased to exist in law or has become insolvent – the data exporter shall have the
-                  right to terminate the sub-processor contract and to instruct the sub-processor to
-                  erase or return the personal data.
+                  sub-processor whereby &ndash; in the event the data importer has factually
+                  disappeared, ceased to exist in law or has become insolvent &ndash; the data
+                  exporter shall have the right to terminate the sub-processor contract and to
+                  instruct the sub-processor to erase or return the personal data.
                   <br />
                   <strong className="subClauseTitle">
                     MODULE THREE: Transfer processor to processor
@@ -3886,10 +3892,10 @@ const TermsAndConditions = () => {
                   sub-processor to fulfil its obligations under that contract.
                   <br />
                   e. The data importer shall agree a third-party beneficiary clause with the
-                  sub-processor whereby – in the event the data importer has factually disappeared,
-                  ceased to exist in law or has become insolvent – the data exporter shall have the
-                  right to terminate the sub-processor contract and to instruct the sub-processor to
-                  erase or return the personal data.
+                  sub-processor whereby &ndash; in the event the data importer has factually
+                  disappeared, ceased to exist in law or has become insolvent &ndash; the data
+                  exporter shall have the right to terminate the sub-processor contract and to
+                  instruct the sub-processor to erase or return the personal data.
                 </p>
               </div>
               <div className="clauseContainer">
@@ -4186,7 +4192,8 @@ const TermsAndConditions = () => {
               </div>
               <div className="clauseContainer">
                 <h4 className="sectionTitle">
-                  SECTION III – LOCAL LAWS AND OBLIGATIONS IN CASE OF ACCESS BY PUBLIC AUTHORITIES
+                  SECTION III &ndash; LOCAL LAWS AND OBLIGATIONS IN CASE OF ACCESS BY PUBLIC
+                  AUTHORITIES
                 </h4>
                 <h5 className="clauseHeader">
                   Clause 14 Local laws and practices affecting compliance with the Clauses
@@ -4228,13 +4235,13 @@ const TermsAndConditions = () => {
                   transfers; the type of recipient; the purpose of processing; the categories and
                   format of the transferred personal data; the economic sector in which the transfer
                   occurs; the storage location of the data transferred; (ii) the laws and practices
-                  of the third country of destination– including those requiring the disclosure of
-                  data to public authorities or authorising access by such authorities – relevant in
-                  light of the specific circumstances of the transfer, and the applicable
-                  limitations and safeguards (12); (iii) any relevant contractual, technical or
-                  organisational safeguards put in place to supplement the safeguards under these
-                  Clauses, including measures applied during transmission and to the processing of
-                  the personal data in the country of destination.
+                  of the third country of destination&ndash; including those requiring the
+                  disclosure of data to public authorities or authorising access by such authorities
+                  &ndash; relevant in light of the specific circumstances of the transfer, and the
+                  applicable limitations and safeguards (12); (iii) any relevant contractual,
+                  technical or organisational safeguards put in place to supplement the safeguards
+                  under these Clauses, including measures applied during transmission and to the
+                  processing of the personal data in the country of destination.
                   <br />
                   c. The data importer warrants that, in carrying out the assessment under paragraph
                   (b), it has made its best efforts to provide the data exporter with relevant
@@ -4358,7 +4365,7 @@ const TermsAndConditions = () => {
                 </p>
               </div>
               <div className="clauseContainer">
-                <h4 className="sectionTitle">SECTION IV – FINAL PROVISIONS</h4>
+                <h4 className="sectionTitle">SECTION IV &ndash; FINAL PROVISIONS</h4>
                 <h5 className="clauseHeader">
                   Clause 16 Non-compliance with the Clauses and termination
                 </h5>

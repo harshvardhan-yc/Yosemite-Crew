@@ -74,7 +74,7 @@ const DocSigningPortal = ({ embedded = false }: DocSigningPortalProps) => {
     >
       <iframe
         src={portalUrl}
-        className="w-full h-full"
+        className="size-full"
         title="Doc Signing Portal"
         allow="clipboard-read; clipboard-write; fullscreen"
         sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"

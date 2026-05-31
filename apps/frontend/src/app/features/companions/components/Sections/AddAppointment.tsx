@@ -4,14 +4,11 @@ import Dropdown from '@/app/ui/inputs/Dropdown/Dropdown';
 import FormDesc from '@/app/ui/inputs/FormDesc/FormDesc';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
-
-export const SpecialityOptions: string[] = ['Internal medicine', 'Surgery', 'Dermatology'];
-export const LeadOptions: string[] = ['Dr. Emily brown', 'Dr. Drake ramoray', 'Dr. Philip philips'];
-export const SupportOptions: string[] = [
-  'Dr. Emily brown',
-  'Dr. Drake ramoray',
-  'Dr. Philip philips',
-];
+import {
+  LeadOptions,
+  SpecialityOptions,
+  SupportOptions,
+} from '@/app/features/companions/components/Sections/AddAppointmentOptions';
 
 type FormDataType = {
   speciality: string;

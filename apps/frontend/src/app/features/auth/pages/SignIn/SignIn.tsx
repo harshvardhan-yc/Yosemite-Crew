@@ -145,7 +145,7 @@ const SignIn = ({
           elevation-1
         `}
       >
-        <form onSubmit={handleSignIn} className="flex h-full w-full flex-col gap-6">
+        <form onSubmit={handleSignIn} className="flex size-full flex-col gap-6">
           <div className="flex w-full flex-col gap-6">
             <h1 className="text-display-2 text-text-primary text-center auth-title">
               {isDeveloper ? 'Sign in to your developer account' : 'Sign in'}

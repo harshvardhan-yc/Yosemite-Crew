@@ -4,6 +4,8 @@ import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import PageSkeleton from '@/app/ui/layout/PageSkeleton';
+
+const FORMS_PAGE_SKELETON = <PageSkeleton variant="list" />;
 import { Primary } from '@/app/ui/primitives/Buttons';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
@@ -24,14 +26,16 @@ import { PERMISSIONS } from '@/app/lib/permissions';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import Fallback from '@/app/ui/overlays/Fallback';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const AddForm = dynamic(() => import('@/app/features/forms/pages/Forms/Sections/AddForm'));
 const FormInfo = dynamic(() => import('@/app/features/forms/pages/Forms/Sections/FormInfo'));
 
 const Forms = () => {
-  const { can } = usePermissions();
-  const canEditForms = can(PERMISSIONS.FORMS_EDIT_ANY);
-  const { formsById, formIds, activeFormId, setActiveForm, loading } = useFormsStore();
+  const permissions = usePermissions();
+  const canEditForms = permissions.can(PERMISSIONS.FORMS_EDIT_ANY);
+  const formsStore = useFormsStore();
+  const { formsById, formIds, activeFormId, loading } = formsStore;
   const headerSearchQuery = useSearchStore((s) => s.query);
   const searchParams = useSearchParams();
   const handledDeepLinkRef = useRef<string | null>(null);
@@ -47,7 +51,11 @@ const Forms = () => {
   const fetchedRef = useRef(false);
 
   const list = useMemo<FormsProps[]>(
-    () => formIds.map((id) => formsById[id]).filter(Boolean),
+    () =>
+      formIds.flatMap((id) => {
+        const form = formsById[id];
+        return form ? [form] : [];
+      }),
     [formIds, formsById]
   );
 
@@ -110,15 +118,15 @@ const Forms = () => {
 
   useEffect(() => {
     if (!filteredList.length) {
-      setActiveForm(null);
+      formsStore.setActiveForm(null);
       return;
     }
     const isActiveInFilter = activeFormId && filteredList.some((item) => item._id === activeFormId);
     if (!isActiveInFilter) {
       const first = filteredList[0];
-      if (first?._id) setActiveForm(first._id);
+      if (first?._id) formsStore.setActiveForm(first._id);
     }
-  }, [activeFormId, filteredList, setActiveForm]);
+  }, [activeFormId, filteredList, formsStore]);
 
   useEffect(() => {
     const formId = String(searchParams.get('formId') ?? '').trim();
@@ -128,10 +136,10 @@ const Forms = () => {
     const target = list.find((form) => form?._id === formId);
     if (!target?._id) return;
 
-    setActiveForm(target._id);
+    formsStore.setActiveForm(target._id);
     setViewPopup(true);
     handledDeepLinkRef.current = formId;
-  }, [list, searchParams, setActiveForm]);
+  }, [list, searchParams, formsStore]);
 
   const openAddForm = () => {
     setEditingForm(null);
@@ -154,7 +162,7 @@ const Forms = () => {
 
   const handleSelectForm = (form: FormsProps) => {
     if (form?._id) {
-      setActiveForm(form._id);
+      formsStore.setActiveForm(form._id);
     }
   };
   const { wrapperClassName, plannerSectionClassName } = getPlannerLayoutClassNames({
@@ -180,7 +188,7 @@ const Forms = () => {
               <button
                 type="button"
                 aria-label="Templates info"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
               >
                 <IoInformationCircleOutline size={20} />
               </button>
@@ -189,6 +197,7 @@ const Forms = () => {
         </div>
       </div>
 
+      <MobileSearchBar placeholder="Search templates" />
       <PermissionGate allOf={[PERMISSIONS.FORMS_VIEW_ANY]} fallback={<Fallback />}>
         <div className={wrapperClassName}>
           <FormsFilters
@@ -236,9 +245,9 @@ const Forms = () => {
 
 const ProtectedForms = () => {
   return (
-    <ProtectedRoute skeleton={<PageSkeleton variant="list" />}>
-      <OrgGuard skeleton={<PageSkeleton variant="list" />}>
-        <Suspense fallback={<PageSkeleton variant="list" />}>
+    <ProtectedRoute skeleton={FORMS_PAGE_SKELETON}>
+      <OrgGuard skeleton={FORMS_PAGE_SKELETON}>
+        <Suspense fallback={FORMS_PAGE_SKELETON}>
           <Forms />
         </Suspense>
       </OrgGuard>

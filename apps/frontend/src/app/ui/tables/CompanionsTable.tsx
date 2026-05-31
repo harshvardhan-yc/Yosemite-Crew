@@ -21,6 +21,8 @@ import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { buildCompanionOverviewHref } from '@/app/lib/companionHistoryRoute';
 
+import { getCompanionStatusStyle } from '@/app/ui/tables/tableUtils';
+
 import './DataTable.css';
 
 const SPECIES_LABEL: Record<string, string> = {
@@ -48,30 +50,6 @@ type CompanionsTableProps = {
   canEditAppointments: boolean;
   canEditTasks: boolean;
   canEditCompanions: boolean;
-};
-
-export const getStatusStyle = (status: string) => {
-  switch (status.toLowerCase()) {
-    case 'active':
-      return {
-        color: 'var(--color-pill-success-text)',
-        backgroundColor: 'var(--color-pill-success-bg)',
-        borderColor: 'var(--color-pill-success-border)',
-      };
-    case 'archived':
-      return {
-        color: 'var(--color-pill-warning-text)',
-        backgroundColor: 'var(--color-pill-warning-bg)',
-        borderColor: 'var(--color-pill-warning-border)',
-      };
-    case 'inactive':
-    default:
-      return {
-        color: 'var(--color-pill-neutral-text)',
-        backgroundColor: 'var(--color-pill-neutral-bg)',
-        borderColor: 'var(--color-pill-neutral-border)',
-      };
-  }
 };
 
 const formatDisplayValue = (value?: string | null, fallback = '-') => {
@@ -178,7 +156,7 @@ const CompanionsTable = ({
       key: 'image',
       width: '56px',
       render: (item: CompanionParent) => (
-        <div className="appointment-profile w-10 h-10">
+        <div className="appointment-profile size-10">
           <Image
             src={getSafeImageUrl(
               item.companion.photoUrl,
@@ -306,7 +284,7 @@ const CompanionsTable = ({
       render: (item: CompanionParent) => (
         <div
           className="appointment-status"
-          style={getStatusStyle(item.companion.status || 'inactive')}
+          style={getCompanionStatusStyle(item.companion.status || 'inactive')}
         >
           {toTitleCase(item.companion.status || 'inactive')}
         </div>
@@ -321,8 +299,9 @@ const CompanionsTable = ({
           <div className="action-btn-grid action-btn-grid-capped">
             <GlassTooltip content="View companion" side="bottom" className="table-action-tooltip">
               <button
+                type="button"
                 onClick={() => handleViewCompanion(item)}
-                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 title="View companion"
               >
                 <IoEye size={20} color="var(--color-neutral-900)" />
@@ -330,8 +309,9 @@ const CompanionsTable = ({
             </GlassTooltip>
             <GlassTooltip content="View history" side="bottom" className="table-action-tooltip">
               <button
+                type="button"
                 onClick={() => handleViewHistory(item)}
-                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 title="View history"
               >
                 <RiHistoryLine size={16} color="var(--color-neutral-900)" />
@@ -340,8 +320,9 @@ const CompanionsTable = ({
             {canEditCompanions && (
               <GlassTooltip content="Change status" side="bottom" className="table-action-tooltip">
                 <button
+                  type="button"
                   onClick={() => handleChangeStatus(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Change status"
                 >
                   <MdOutlineAutorenew size={18} color="var(--color-neutral-900)" />
@@ -355,8 +336,9 @@ const CompanionsTable = ({
                 className="table-action-tooltip"
               >
                 <button
+                  type="button"
                   onClick={() => handleBookAppointment(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Book appointment"
                 >
                   <FaCalendar size={14} color="var(--color-neutral-900)" />
@@ -366,8 +348,9 @@ const CompanionsTable = ({
             {canEditTasks && (
               <GlassTooltip content="Add task" side="bottom" className="table-action-tooltip">
                 <button
+                  type="button"
                   onClick={() => handleAddTask(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Add task"
                 >
                   <FaTasks size={14} color="var(--color-neutral-900)" />

@@ -2,9 +2,8 @@ import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
-import AppointmentCalendar, {
-  filterAppointmentsForWeek,
-} from '@/app/features/appointments/components/Calendar/AppointmentCalendar';
+import AppointmentCalendar from '@/app/features/appointments/components/Calendar/AppointmentCalendar';
+import { filterAppointmentsForWeek } from '@/app/features/appointments/components/Calendar/availabilityIntervals';
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
   getSlotsForServiceAndDateForPrimaryOrg,
@@ -130,6 +129,7 @@ jest.mock('@/app/stores/authStore', () => ({
 }));
 
 jest.mock('@/app/features/appointments/components/Calendar/availabilityIntervals', () => ({
+  ...jest.requireActual('@/app/features/appointments/components/Calendar/availabilityIntervals'),
   resolveAvailabilityIntervalsForDay: jest.fn(() => []),
 }));
 

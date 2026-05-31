@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import { useNotify } from '@/app/hooks/useNotify';
@@ -46,10 +46,14 @@ const DefaultOpenScreenPreference = () => {
   const [defaultView, setDefaultView] = useState<DefaultAppointmentsView>(savedView);
   const shouldShowDefaultView = selection === '/appointments';
 
-  useEffect(() => {
+  const prevSavedRouteRef = useRef(savedRoute);
+  const prevSavedViewRef = useRef(savedView);
+  if (prevSavedRouteRef.current !== savedRoute || prevSavedViewRef.current !== savedView) {
+    prevSavedRouteRef.current = savedRoute;
+    prevSavedViewRef.current = savedView;
     setSelection(savedRoute);
     setDefaultView(savedView);
-  }, [savedRoute, savedView]);
+  }
 
   const handleSave = async () => {
     if (!primaryOrgId) {

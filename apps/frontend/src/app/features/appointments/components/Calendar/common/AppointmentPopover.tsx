@@ -1,7 +1,9 @@
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import PopoverDetail from './PopoverDetail';
+import StaffInput from './StaffInput';
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
 import {
   allowReschedule,
@@ -21,7 +23,6 @@ import { getAppointmentPaymentDisplay } from '@/app/lib/paymentStatus';
 import { normalizeAppointmentId } from '@/app/lib/invoice';
 import { formatMoney } from '@/app/lib/money';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
-import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import {
   acceptAppointment,
   changeAppointmentStatus,
@@ -39,7 +40,6 @@ import {
   IoCardOutline,
   IoFlaskOutline,
   IoArrowForward,
-  IoPerson,
   IoTimeOutline,
 } from 'react-icons/io5';
 import { MdMeetingRoom } from 'react-icons/md';
@@ -47,6 +47,7 @@ import { RiHistoryLine } from 'react-icons/ri';
 import { FaCaretDown, FaCheckCircle } from 'react-icons/fa';
 import { IoIosCloseCircle } from 'react-icons/io';
 import { AppointmentStatus } from '@/app/features/appointments/types/appointments';
+import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 
 type AppointmentPopoverProps = {
   appointment: Appointment;
@@ -146,74 +147,21 @@ const getPaymentValue = (paymentLabel: string | undefined, invoice: Invoice | un
   return formatMoney(invoice.totalAmount, invoice.currency);
 };
 
-const PopoverDetail = ({
-  label,
-  value,
-  emphasized = false,
-  icon,
-  scrollValue = false,
-}: {
-  label: string;
-  value: React.ReactNode;
-  emphasized?: boolean;
-  icon?: React.ReactNode;
-  scrollValue?: boolean;
-}) => (
-  <div className="min-w-0">
-    <div className="text-yc-12-b-neutral">{label}</div>
-    <div className={`mt-1 min-w-0 ${emphasized ? 'text-yc-16-b-primary' : 'text-yc-16-r-neutral'}`}>
-      <span className="relative block min-w-0 overflow-visible">
-        {icon ? (
-          <span className="pointer-events-none absolute -left-5 top-1/2 -translate-y-1/2 text-neutral-900">
-            {icon}
-          </span>
-        ) : null}
-        <span
-          className={
-            scrollValue
-              ? 'scrollbar-x-float block max-w-full overflow-x-auto overflow-y-hidden whitespace-nowrap pb-3'
-              : 'block truncate'
-          }
-          onWheel={
-            scrollValue
-              ? (e) => {
-                  if (e.deltaY !== 0) {
-                    e.preventDefault();
-                    e.currentTarget.scrollLeft += e.deltaY;
-                  }
-                }
-              : undefined
-          }
-        >
-          {value}
-        </span>
-      </span>
-    </div>
-  </div>
-);
-
-const StaffInput = ({ label, value }: { label: string; value: string }) => (
-  <div className="relative min-w-0">
-    <span className="text-yc-12-m-neutral pointer-events-none absolute left-5 top-0 z-10 flex -translate-y-1/2 items-center gap-1 bg-white px-1">
-      <IoPerson size={12} className="text-neutral-900" aria-hidden="true" />
-      {label}
-    </span>
-    <FormInput
-      intype="text"
-      inname={`appointment-popover-${label.toLowerCase()}`}
-      inlabel=""
-      value={value || '-'}
-      readonly
-      tabIndex={-1}
-      className="text-yc-16-r-neutral px-4! whitespace-normal wrap-break-word"
-    />
-  </div>
-);
-
 const updatePrimaryActionGlowPosition = (event: React.PointerEvent<HTMLButtonElement>) => {
   const rect = event.currentTarget.getBoundingClientRect();
   event.currentTarget.style.setProperty('--yc-button-x', `${event.clientX - rect.left}px`);
   event.currentTarget.style.setProperty('--yc-button-y', `${event.clientY - rect.top}px`);
+};
+
+const EMERGENCY_BADGE_STYLE: React.CSSProperties = {
+  border: '1px solid var(--error-color)',
+  background: 'var(--color-danger-100)',
+  color: 'var(--error-color)',
+  fontFamily: 'var(--font-satoshi)',
+  fontSize: '12px',
+  fontWeight: 500,
+  lineHeight: '150%',
+  letterSpacing: '-0.22px',
 };
 
 const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
@@ -258,8 +206,40 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
   const statusPanelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const statusMenuId = useId();
+  const onActionBarWheel = useWheelToHorizontalScroll({ ignoreAncestors: true });
 
   const statusStyle = getStatusStyle(appointment.status);
+  const statusButtonStyle = useMemo<React.CSSProperties>(
+    () => ({
+      backgroundColor: statusStyle.backgroundColor,
+      color: statusStyle.color,
+      fontFamily: 'var(--font-satoshi), sans-serif',
+      fontSize: '14px',
+      fontWeight: 500,
+      lineHeight: '120%',
+      letterSpacing: '-0.28px',
+      borderWidth: '1px',
+      borderStyle: 'solid',
+      borderColor: statusStyle.borderColor,
+      opacity: savingStatus ? 0.6 : 1,
+    }),
+    [statusStyle, savingStatus]
+  );
+  const statusDisplayStyle = useMemo<React.CSSProperties>(
+    () => ({
+      backgroundColor: statusStyle.backgroundColor,
+      color: statusStyle.color,
+      fontFamily: 'var(--font-satoshi), sans-serif',
+      fontSize: '14px',
+      fontWeight: 500,
+      lineHeight: '120%',
+      letterSpacing: '-0.28px',
+      borderWidth: '1px',
+      borderStyle: 'solid',
+      borderColor: statusStyle.borderColor,
+    }),
+    [statusStyle]
+  );
   const allowedTransitions = getAllowedAppointmentStatusTransitions(appointment.status);
   const appointmentInvoice = getInvoiceForAppointment(appointment.id, invoicesByAppointmentId);
   const paymentTitle = getPaymentTitle(payment?.state);
@@ -331,7 +311,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
       id={popoverId}
       ref={popoverDialogRef}
       open
-      className="fixed z-[1000] w-[440px] rounded-3xl border border-card-border bg-white px-5 py-5 shadow-[0_18px_45px_rgba(0,0,0,0.14)]"
+      className="fixed z-[1000] w-[440px] rounded-3xl border border-card-border bg-white p-5 shadow-[0_18px_45px_rgba(0,0,0,0.14)]"
       style={popoverStyle}
       aria-labelledby={titleId}
       aria-modal="false"
@@ -351,7 +331,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
             )}
             height={48}
             width={48}
-            className="flex aspect-square h-12 w-12 shrink-0 items-center justify-center rounded-full border border-card-border bg-white object-cover"
+            className="flex aspect-square size-12 shrink-0 items-center justify-center rounded-full border border-card-border bg-white object-cover"
             style={{ width: 48, height: 48 }}
             alt=""
           />
@@ -413,19 +393,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
               aria-expanded={statusDropdownOpen}
               aria-controls={statusMenuId}
               className="flex h-8 min-w-25 items-center justify-between gap-1.5 rounded-2xl! px-3 py-2 font-satoshi text-[14px] font-medium leading-[120%] tracking-[-0.0175rem] whitespace-nowrap shadow-[0_1px_10px_0_rgba(169,163,158,0.10)]"
-              style={{
-                backgroundColor: statusStyle.backgroundColor,
-                color: statusStyle.color,
-                fontFamily: 'var(--font-satoshi), sans-serif',
-                fontSize: '14px',
-                fontWeight: 500,
-                lineHeight: '120%',
-                letterSpacing: '-0.28px',
-                borderWidth: '1px',
-                borderStyle: 'solid',
-                borderColor: statusStyle.borderColor,
-                opacity: savingStatus ? 0.6 : 1,
-              }}
+              style={statusButtonStyle}
             >
               <span>{savingStatus ? 'Saving…' : toStatusLabel(appointment.status)}</span>
               <FaCaretDown
@@ -436,18 +404,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
           ) : (
             <span
               className="flex h-8 min-w-25 items-center justify-center rounded-2xl! px-3 py-2 font-satoshi text-[14px] font-medium leading-[120%] tracking-[-0.0175rem] whitespace-nowrap shadow-[0_1px_10px_0_rgba(169,163,158,0.10)]"
-              style={{
-                backgroundColor: statusStyle.backgroundColor,
-                color: statusStyle.color,
-                fontFamily: 'var(--font-satoshi), sans-serif',
-                fontSize: '14px',
-                fontWeight: 500,
-                lineHeight: '120%',
-                letterSpacing: '-0.28px',
-                borderWidth: '1px',
-                borderStyle: 'solid',
-                borderColor: statusStyle.borderColor,
-              }}
+              style={statusDisplayStyle}
             >
               {toStatusLabel(appointment.status)}
             </span>
@@ -456,16 +413,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
           {appointment.isEmergency && (
             <div
               className="flex h-5.5 items-center gap-1 rounded-lg px-2 whitespace-nowrap"
-              style={{
-                border: '1px solid var(--error-color)',
-                background: 'var(--color-danger-100)',
-                color: 'var(--error-color)',
-                fontFamily: 'var(--font-satoshi)',
-                fontSize: '11px',
-                fontWeight: 500,
-                lineHeight: '150%',
-                letterSpacing: '-0.22px',
-              }}
+              style={EMERGENCY_BADGE_STYLE}
             >
               <IoWarning size={11} aria-hidden="true" />
               {'Emergency'}
@@ -517,7 +465,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 type="button"
                 title="Accept request"
                 aria-label="Accept request"
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-success-100"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-success-100"
                 onClick={async () => {
                   await acceptAppointment(appointment);
                   onClose();
@@ -531,7 +479,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 type="button"
                 title="Decline request"
                 aria-label="Decline request"
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-danger-100"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-danger-100"
                 onClick={async () => {
                   await rejectAppointment(appointment);
                   onClose();
@@ -545,19 +493,14 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
         {!isRequestedLikeStatus(appointment.status) && (
           <div
             className="scrollbar-hidden flex w-48 shrink-0 items-center gap-2 overflow-x-auto pr-1"
-            onWheel={(e) => {
-              if (e.deltaY !== 0) {
-                e.preventDefault();
-                e.currentTarget.scrollLeft += e.deltaY;
-              }
-            }}
+            onWheel={onActionBarWheel}
           >
             <GlassTooltip content="Overview" side="top">
               <button
                 type="button"
                 title="Appointment overview"
                 aria-label="Appointment overview"
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                 onClick={() => {
                   router.push(
                     buildAppointmentCompanionHistoryHref(
@@ -577,7 +520,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 type="button"
                 title="Finance summary"
                 aria-label="Finance summary"
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                 onClick={() => {
                   handleDetailAppointment(appointment, { label: 'finance', subLabel: 'summary' });
                   onClose();
@@ -591,7 +534,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 type="button"
                 title="Lab tests"
                 aria-label="Lab tests"
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                 onClick={() => {
                   handleDetailAppointment(appointment, { label: 'labs', subLabel: 'idexx-labs' });
                   onClose();
@@ -606,7 +549,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                   type="button"
                   title="Reschedule"
                   aria-label="Reschedule appointment"
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
+                  className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                   onClick={() => {
                     handleRescheduleAppointment(appointment);
                     onClose();
@@ -622,7 +565,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                   type="button"
                   title="Assign room"
                   aria-label="Assign room"
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
+                  className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                   onClick={() => {
                     handleChangeRoomAppointment?.(appointment);
                     onClose();
@@ -637,7 +580,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 type="button"
                 title={clinicalNotesLabel}
                 aria-label={clinicalNotesLabel}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
+                className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                 onClick={() => {
                   handleDetailAppointment(appointment, clinicalNotesIntent);
                   onClose();
@@ -704,7 +647,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                   }}
                 >
                   <span
-                    className="inline-block h-2 w-2 rounded-full shrink-0"
+                    className="inline-block size-2 rounded-full shrink-0"
                     style={{
                       backgroundColor: s.borderColor,
                       borderWidth: '1px',
