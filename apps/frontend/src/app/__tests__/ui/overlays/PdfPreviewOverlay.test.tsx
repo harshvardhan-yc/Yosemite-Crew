@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
 
@@ -28,7 +28,7 @@ describe('PdfPreviewOverlay', () => {
     expect(iframe).not.toHaveAttribute('sandbox');
   });
 
-  it('renders object element for blob URL (Safari frame-ancestors workaround)', () => {
+  it('renders iframe for blob URL (CSP object-src none blocks <object>; frame-src blob: is allowed)', () => {
     render(
       <PdfPreviewOverlay
         open
@@ -38,13 +38,27 @@ describe('PdfPreviewOverlay', () => {
       />
     );
 
-    // blob: URLs use <object> not <iframe> — Safari enforces frame-ancestors 'none'
-    // on blob frames and blocks them; <object> is not subject to frame-ancestors.
-    const obj = screen.getByLabelText('Blob Preview');
-    expect(obj.tagName).toBe('OBJECT');
-    expect(obj).toHaveAttribute('data', 'blob:https://app.yosemitecrew.com/abc');
-    expect(obj).toHaveAttribute('type', 'application/pdf');
-    expect(screen.queryByTitle('Blob Preview')).not.toBeInTheDocument();
+    const iframe = screen.getByTitle('Blob Preview');
+    expect(iframe.tagName).toBe('IFRAME');
+    expect(iframe).toHaveAttribute('src', 'blob:https://app.yosemitecrew.com/abc');
+    expect(iframe).toHaveAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+  });
+
+  it('shows loader before iframe loads and hides it after', () => {
+    render(
+      <PdfPreviewOverlay
+        open
+        pdfUrl="https://integration.vetconnectplus.com/acknowledgment/1"
+        title="Preview"
+        onClose={jest.fn()}
+      />
+    );
+
+    expect(screen.getByRole('status', { name: 'Loading PDF' })).toBeInTheDocument();
+
+    fireEvent.load(screen.getByTitle('Preview'));
+
+    expect(screen.queryByRole('status', { name: 'Loading PDF' })).not.toBeInTheDocument();
   });
 
   it('does not render iframe for unsafe URL schemes', () => {

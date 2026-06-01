@@ -1,5 +1,0 @@
-{
-  "ignore": {
-    "files": ["public/dev-docs/assets/js/**", "src/app/__tests__/**"]
-  }
-}
