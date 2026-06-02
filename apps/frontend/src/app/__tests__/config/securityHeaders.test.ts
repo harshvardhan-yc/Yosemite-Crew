@@ -78,6 +78,7 @@ describe('security headers', () => {
     expect(directives.get('font-src')).toContain('https://fonts.gstatic.com');
     expect(directives.get('connect-src')).toContain('blob:');
     expect(directives.get('connect-src')).toContain('https://api.stripe.com');
+    expect(directives.get('connect-src')).toContain('https://raw.githubusercontent.com');
     expect(directives.get('connect-src')).toContain('http:');
     expect(directives.get('connect-src')).toContain('ws:');
     expect(directives.get('img-src')).toContain('https://upload.wikimedia.org');
