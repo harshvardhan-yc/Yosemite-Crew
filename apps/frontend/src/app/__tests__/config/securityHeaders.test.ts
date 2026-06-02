@@ -34,7 +34,7 @@ describe('security headers', () => {
     expect(routeHeaders?.source).toBe('/(.*)');
 
     const headers = routeHeaders?.headers as HeaderEntry[];
-    expect(findHeader(headers, 'X-Frame-Options')).toBe('DENY');
+    expect(findHeader(headers, 'X-Frame-Options')).toBe('SAMEORIGIN');
     expect(findHeader(headers, 'X-Content-Type-Options')).toBe('nosniff');
     expect(findHeader(headers, 'Strict-Transport-Security')).toBeUndefined();
     expect(findHeader(headers, 'Referrer-Policy')).toBe('strict-origin-when-cross-origin');
@@ -62,7 +62,7 @@ describe('security headers', () => {
     expect(directives.get('default-src')).toBe("'self'");
     expect(directives.get('object-src')).toBe("'none'");
     expect(directives.get('base-uri')).toBe("'self'");
-    expect(directives.get('frame-ancestors')).toBe("'none'");
+    expect(directives.get('frame-ancestors')).toBe("'self'");
     expect(directives.get('form-action')).toBe("'self'");
     expect(directives.get('upgrade-insecure-requests')).toBeUndefined();
 

@@ -10,7 +10,7 @@ const isProductionRuntime = () => process.env.NODE_ENV === 'production';
 export const buildSecurityHeaders = (isProduction = isProductionRuntime()): SecurityHeader[] => [
   {
     key: 'X-Frame-Options',
-    value: 'DENY',
+    value: 'SAMEORIGIN',
   },
   {
     key: 'X-Content-Type-Options',
@@ -132,7 +132,7 @@ export const buildContentSecurityPolicy = ({
       .join(' '),
     "object-src 'none'",
     "base-uri 'self'",
-    "frame-ancestors 'none'",
+    "frame-ancestors 'self'",
     "form-action 'self'",
     // upgrade-insecure-requests breaks localhost in Safari. Only send in production.
     ...(isProduction ? ['upgrade-insecure-requests'] : []),
