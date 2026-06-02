@@ -105,6 +105,7 @@ export const buildContentSecurityPolicy = ({
       'https://yosemite-crew.openstatus.dev',
       ...postHogConnectHosts,
       'https://api.github.com',
+      'https://raw.githubusercontent.com',
       'https://api.iconify.design',
       'https://api.unisvg.com',
       'https://api.simplesvg.com',

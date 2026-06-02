@@ -7,6 +7,8 @@ import { Icon } from '@iconify/react/dist/iconify.js';
 import { useAuthStore } from '@/app/stores/authStore';
 import { postData } from '@/app/services/axios';
 import { useSignOut } from '@/app/hooks/useAuth';
+import { Button } from '@/app/ui';
+import ModalBase from '@/app/ui/overlays/Modal/ModalBase';
 import Close from '@/app/ui/primitives/Icons/Close';
 import { resolvePostAuthRedirect } from '@/app/lib/postAuthRedirect';
 import { setStorageItem } from '@/app/lib/browserStorage';
@@ -236,14 +238,16 @@ const OtpModal = ({
   if (!showVerifyModal) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <dialog
-        open
-        className="VerifyModalSec"
-        aria-modal="true"
-        aria-labelledby={dialogTitleId}
-        aria-describedby={dialogDescriptionId}
-      >
+    <ModalBase
+      showModal={showVerifyModal}
+      setShowModal={setShowVerifyModal}
+      canClose={() => false}
+      overlayClassName="fixed inset-0 z-1001 bg-black/50"
+      containerClassName="fixed inset-0 z-1001 flex items-center justify-center p-4"
+      aria-labelledby={dialogTitleId}
+      aria-describedby={dialogDescriptionId}
+    >
+      <div className="VerifyModalSec">
         <div className="VerifyModalClose">
           <button
             type="button"
@@ -304,14 +308,14 @@ const OtpModal = ({
         </div>
         <div className="VerifyModalBottomInner">
           <div className="VerifyBtnDiv">
-            <button
+            <Button
+              variant="primary"
+              text={isVerifying ? 'Verifying...' : 'Verify Code'}
               type="button"
               onClick={handleVerify}
-              disabled={isVerifying || timer === 0 || code.includes('')}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {isVerifying ? 'Verifying...' : 'Verify Code'}
-            </button>
+              isDisabled={isVerifying || timer === 0 || code.includes('')}
+              className="w-full"
+            />
             <output aria-live="polite">
               {timer > 0
                 ? `${String(Math.floor(timer / 60)).padStart(2, '0')}:${String(timer % 60).padStart(2, '0')} sec`
@@ -333,8 +337,8 @@ const OtpModal = ({
             </Link>
           </div>
         </div>
-      </dialog>
-    </div>
+      </div>
+    </ModalBase>
   );
 };
 

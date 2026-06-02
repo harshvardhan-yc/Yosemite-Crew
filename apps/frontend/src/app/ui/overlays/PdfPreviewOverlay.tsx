@@ -1,4 +1,6 @@
-import React from 'react';
+'use client';
+
+import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Close from '@/app/ui/primitives/Icons/Close';
 import { getSafeIdexxIframeUrl } from '@/app/lib/urls';
@@ -18,6 +20,7 @@ const PdfPreviewOverlay = ({
   closeLabel = 'Close PDF preview',
   onClose,
 }: PdfPreviewOverlayProps) => {
+  const [loaded, setLoaded] = useState(false);
   const safePdfUrl = getSafeIdexxIframeUrl(pdfUrl, { allowBlob: true });
   if (!open || !safePdfUrl || typeof document === 'undefined') return null;
 
@@ -40,27 +43,27 @@ const PdfPreviewOverlay = ({
             <Close iconOnly />
           </button>
         </div>
-        {safePdfUrl.startsWith('blob:') ? (
-          // Safari enforces frame-ancestors 'none' on blob: frames and blocks them.
-          // <object> is not subject to frame-ancestors and works cross-browser for inline PDFs.
-          <object
-            data={safePdfUrl}
-            type="application/pdf"
-            aria-label={title}
-            className="flex-1 w-full border-0"
-            style={{ pointerEvents: 'auto', minHeight: 0 }}
-          >
-            <span className="sr-only">{title}</span>
-          </object>
-        ) : (
+        <div className="relative flex-1 min-h-0">
+          {!loaded && (
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white"
+              aria-label="Loading PDF"
+              role="status"
+            >
+              <div className="size-8 rounded-full border-2 border-card-border border-t-text-brand animate-spin" />
+              <span className="text-body-4 text-text-secondary">Loading PDF…</span>
+            </div>
+          )}
           <iframe
+            key={safePdfUrl}
             src={safePdfUrl}
             title={title}
-            className="flex-1 w-full border-0"
+            className="size-full border-0"
             referrerPolicy="strict-origin-when-cross-origin"
             style={{ pointerEvents: 'auto' }}
+            onLoad={() => setLoaded(true)}
           />
-        )}
+        </div>
       </div>
     </div>,
     document.body
