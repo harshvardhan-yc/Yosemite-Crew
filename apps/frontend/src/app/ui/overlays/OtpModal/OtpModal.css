@@ -1,10 +1,16 @@
 .VerifyModalSec {
   position: relative;
-  padding: 24px 44px;
-  border-radius: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 24px 32px;
+  border-radius: 20px;
   width: 100%;
-  max-width: 595px;
+  max-width: 460px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   background: var(--whitebg);
+  color: var(--black-text);
   box-sizing: border-box;
   margin: 0 auto;
 }
@@ -26,137 +32,98 @@
   cursor: pointer;
 }
 
-.VerifyModalSec .modal-body {
-  padding: 0 !important;
+.VerifyModalSec .VerifyModalTopInner {
   display: flex;
   flex-direction: column;
-  gap: 53px;
+  gap: 28px;
 }
 
-.VerifyModalSec .modal-body .VerifyModalTopInner {
+.VerifyModalSec .VerifyModalTopInner .VerifyTexted {
   display: flex;
   flex-direction: column;
-  gap: 50px;
-}
-
-.VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  gap: 12px;
   align-items: center;
   text-align: center;
 }
 
-.VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h2 {
-  font-weight: 500;
-  font-size: 40px;
-  line-height: 120%;
+/* Heading + email line use design-token classes from the JSX (text-display-2,
+   text-body-3-emphasis); only constrain sizes and the description paragraph here. */
+.VerifyModalSec .VerifyModalTopInner .VerifyTexted h2 {
+  margin: 0;
+}
+
+.VerifyModalSec .VerifyModalTopInner .VerifyTexted p {
+  margin: 0;
   font-family: var(--font-satoshi);
-  margin: 0;
-  color: var(--black-text);
-}
-
-.VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h6 {
-  font-weight: 700;
-  font-size: 18px;
-  line-height: 120%;
-  font-family: var(--satoshi-font);
-  margin: 0;
-  color: var(--black-text);
-}
-
-.VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h6 span {
-  font-weight: 900;
-}
-
-.VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted p {
+  font-size: 14px;
   font-weight: 400;
-  font-size: 18px;
-  line-height: 120%;
-  font-family: var(--satoshi-font);
-  margin: 0;
-  color: var(--black-text);
+  line-height: 140%;
+  color: var(--color-text-secondary);
 }
 
-.VerifyModalSec .modal-body .VerifyModalTopInner .verifyInput {
-  max-width: 415px;
+.VerifyModalSec .VerifyModalTopInner .verifyInput {
+  max-width: 320px;
   margin: 0 auto;
 }
 
-.VerifyModalSec .modal-body .VerifyModalBottomInner {
+.VerifyModalSec .VerifyModalBottomInner {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   align-items: center;
   text-align: center;
 }
 
-.VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyBtnDiv {
+.VerifyModalSec .VerifyModalBottomInner .VerifyBtnDiv {
   display: flex;
   flex-direction: column;
   gap: 10px;
   align-items: center;
   text-align: center;
-}
-
-.VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyBtnDiv button {
-  display: flex;
-  justify-content: center;
-  align-items: center;
   width: 100%;
-  max-width: 415px;
-  min-height: 60px;
-  border-radius: 36px;
-  padding: 10px 32px;
-  gap: 8px;
-  background: var(--black-bg) !important;
-  color: var(--white-text);
-  font-weight: 500;
-  font-size: 23px;
-  line-height: 120%;
-  font-family: var(--font-satoshi);
-  border: 1px solid var(--black-bg) !important;
+  max-width: 320px;
 }
 
-.VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyBtnDiv span {
-  color: var(--notibg);
-  font-weight: 500;
-  font-size: 19px;
-  line-height: 120%;
+.VerifyModalSec .VerifyModalBottomInner .VerifyBtnDiv output {
+  color: var(--color-text-secondary);
   font-family: var(--font-satoshi);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 120%;
 }
 
-.VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyResent {
+.VerifyModalSec .VerifyModalBottomInner .VerifyResent {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   flex-wrap: wrap;
 }
 
-.VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyResent a {
+.VerifyModalSec .VerifyModalBottomInner .VerifyResent a {
   font-family: var(--font-satoshi);
   font-weight: 500;
-  font-size: 19px;
+  font-size: 14px;
   line-height: 120%;
   color: var(--black-text);
 }
 
-.VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyResent a:first-child {
+.VerifyModalSec .VerifyModalBottomInner .VerifyResent a:first-child {
   color: var(--blue-text);
 }
 
 .verifyInputDiv {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .verifyInputDiv p {
   color: var(--delete);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 13px;
   line-height: 120%;
-  font-family: var(--satoshi-font);
+  font-family: var(--font-satoshi);
   margin: 0;
   display: flex;
   align-items: center;
@@ -168,141 +135,62 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
+  border: none;
+  padding: 0;
+  margin: 0;
 }
 
 .verifyInput input {
-  width: 60px;
-  height: 80px;
+  width: 44px;
+  height: 52px;
   background: transparent;
   border: 1px solid var(--greyborder);
-  border-radius: 12px;
+  border-radius: 10px;
   text-align: center;
   font-family: var(--font-satoshi);
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 500;
   line-height: 120%;
   color: var(--black-text);
 }
 
-@media screen and (max-width: 768px) {
-  .VerifyModalSec {
-    padding: 20px 24px;
-    max-width: 90%;
-  }
-
-  .VerifyModalSec .modal-body {
-    gap: 40px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h2 {
-    font-size: 32px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted p,
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h6 {
-    font-size: 16px;
-  }
-
-  .verifyInput input {
-    width: 50px;
-    height: 70px;
-  }
+.verifyInput input:focus-visible {
+  outline: none;
+  border-color: var(--color-text-primary);
 }
 
 @media screen and (max-width: 500px) {
   .VerifyModalSec {
-    padding: 16px 18px;
+    padding: 20px 20px;
     max-width: 95%;
     border-radius: 16px;
+    gap: 24px;
   }
 
-  .VerifyModalSec .modal-body {
-    gap: 32px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h2 {
-    font-size: 26px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted p,
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h6 {
-    font-size: 14px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyBtnDiv button {
-    min-height: 52px;
-    font-size: 18px;
+  .VerifyModalSec .VerifyModalTopInner {
+    gap: 20px;
   }
 
   .verifyInput input {
-    width: 42px;
-    height: 55px;
-  }
-}
-
-.modal.show .modal-dialog {
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-  margin: 0 auto !important;
-}
-
-@media screen and (max-width: 500px) {
-  .modal.show .modal-dialog {
-    padding: 0 10px;
+    width: 40px;
+    height: 48px;
   }
 }
 
 @media screen and (max-width: 360px) {
   .VerifyModalSec {
-    min-width: unset;
-    width: 90vw;
-    padding: 16px 20px;
-    border-radius: 16px;
+    width: 92vw;
+    padding: 16px;
+  }
+
+  .verifyInput {
+    gap: 6px;
   }
 
   .verifyInput input {
-    width: 32px;
-    height: 48px;
+    width: 34px;
+    height: 44px;
     font-size: 16px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h2 {
-    font-size: 28px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted h6,
-  .VerifyModalSec .modal-body .VerifyModalTopInner .VerifyTexted p {
-    font-size: 15px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalTopInner {
-    gap: 22px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalTopInner .verifyInput {
-    margin-top: 6px;
-    margin-bottom: 6px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyBtnDiv button {
-    min-width: 100%;
-    min-height: 50px;
-    font-size: 18px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyBtnDiv {
-    gap: 8px;
-  }
-
-  .VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyResent a,
-  .VerifyModalSec .modal-body .VerifyModalBottomInner .VerifyBtnDiv span {
-    font-size: 15px;
-  }
-
-  .modal.show .modal-dialog {
-    padding: 0 10px;
-    justify-content: center !important;
   }
 }
