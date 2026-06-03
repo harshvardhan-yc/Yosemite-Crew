@@ -99,6 +99,7 @@ export const buildContentSecurityPolicy = ({
       'https://chat.stream-io-api.com',
       'wss://chat.stream-io-api.com',
       'https://api.stripe.com',
+      'https://places.googleapis.com',
       'https://cal.com',
       'https://app.cal.com',
       'https://api.openstatus.dev',

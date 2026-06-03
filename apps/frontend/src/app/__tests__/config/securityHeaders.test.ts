@@ -78,6 +78,7 @@ describe('security headers', () => {
     expect(directives.get('font-src')).toContain('https://fonts.gstatic.com');
     expect(directives.get('connect-src')).toContain('blob:');
     expect(directives.get('connect-src')).toContain('https://api.stripe.com');
+    expect(directives.get('connect-src')).toContain('https://places.googleapis.com');
     expect(directives.get('connect-src')).toContain('https://raw.githubusercontent.com');
     expect(directives.get('connect-src')).toContain('http:');
     expect(directives.get('connect-src')).toContain('ws:');
@@ -123,6 +124,7 @@ describe('security headers', () => {
     expect(directives.get('style-src-elem')).not.toContain("'nonce-test-nonce'");
     expect(directives.get('style-src')).toContain("'unsafe-inline'");
     expect(directives.get('style-src-elem')).toContain("'unsafe-inline'");
+    expect(directives.get('connect-src')).toContain('https://places.googleapis.com');
     expect(directives.get('connect-src')).not.toContain('http:');
     expect(directives.get('connect-src')).not.toContain('ws:');
     expect(directives.get('upgrade-insecure-requests')).toBe('');
