@@ -1,10 +1,11 @@
 'use client';
 import React, { Suspense, startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import { isAppointmentRevampEnabled } from '@/app/lib/featureFlags';
+import { buildWorkspaceHref } from '@/app/lib/appointmentWorkspace';
 const AddAppointment = React.lazy(
   () => import('@/app/features/appointments/pages/Appointments/Sections/AddAppointment')
 );
@@ -100,6 +101,7 @@ const normalizeLeadId = (value?: string | null) =>
     ?.toLowerCase() ?? '';
 
 const Appointments = () => {
+  const router = useRouter();
   const rawAppointments = useAppointmentsForPrimaryOrg();
   useLoadCompanionsForPrimaryOrg();
   const companions = useCompanionsParentsForPrimaryOrg();
@@ -343,10 +345,13 @@ const Appointments = () => {
 
     setActiveAppointment(target);
     setViewIntent(initialIntent);
-    if (revampEnabled) setDetailPopup(true);
-    else setViewPopup(true);
+    if (revampEnabled) {
+      router.push(buildWorkspaceHref(appointmentId));
+    } else {
+      setViewPopup(true);
+    }
     handledDeepLinkRef.current = deepLinkKey;
-  }, [appointments, searchParams]);
+  }, [appointments, searchParams, router]);
 
   const hasEmergency = useMemo(() => {
     const now = new Date();
@@ -533,7 +538,7 @@ const Appointments = () => {
                   setActiveAppointment(appointment);
                   setViewIntent(intent ?? null);
                   setViewPopup(false);
-                  setDetailPopup(true);
+                  if (appointment.id) router.push(buildWorkspaceHref(appointment.id));
                 }}
               />
             )}

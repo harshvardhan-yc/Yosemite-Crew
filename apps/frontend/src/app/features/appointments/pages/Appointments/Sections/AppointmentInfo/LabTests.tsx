@@ -92,7 +92,7 @@ const getResultOrderId = (result: LabResult) => {
   ).trim();
 };
 
-const formatTestPrice = (test: IdexxTest) => {
+export const formatTestPrice = (test: IdexxTest) => {
   const amount = String(test.meta?.listPrice ?? '').trim();
   if (!amount) return 'Rate unavailable';
   const currency = String(test.meta?.currencyCode ?? '').trim();
@@ -110,10 +110,10 @@ const formatTestPrice = (test: IdexxTest) => {
   }
 };
 
-const getTestTurnaround = (test: IdexxTest) =>
+export const getTestTurnaround = (test: IdexxTest) =>
   String(test.meta?.turnaround ?? '').trim() || 'TAT not listed';
 
-const getTestSpecimen = (test: IdexxTest) =>
+export const getTestSpecimen = (test: IdexxTest) =>
   String(test.meta?.specimen ?? '').trim() || 'Specimen not listed';
 
 const formatCensusIvlsDevices = (entry: CensusEntry | null) => {
@@ -162,7 +162,7 @@ const getMeterMeta = (test: LabResultTest) => {
   return { canRender: true, percent, markerClass };
 };
 
-const toTitleCase = (value?: string | null) => {
+export const toTitleCase = (value?: string | null) => {
   const raw = String(value ?? '').trim();
   if (!raw) return '-';
   const normalized = raw.toLowerCase().replaceAll(/[_-]+/g, ' ');
@@ -171,7 +171,7 @@ const toTitleCase = (value?: string | null) => {
 
 const orderSortDate = (order: LabOrder) => order.updatedAt ?? order.createdAt ?? '';
 
-const resolveOrderUiUrl = (order: LabOrder | null) => {
+export const resolveOrderUiUrl = (order: LabOrder | null) => {
   if (!order) return '';
   const nested = String(
     (order as unknown as { responsePayload?: { uiURL?: string } })?.responsePayload?.uiURL ?? ''
@@ -180,7 +180,7 @@ const resolveOrderUiUrl = (order: LabOrder | null) => {
   return getSafeIdexxIframeUrl(raw);
 };
 
-const resolveOrderPdfUrl = (order: LabOrder | null) => {
+export const resolveOrderPdfUrl = (order: LabOrder | null) => {
   if (!order) return '';
   const nested = String(
     (order as unknown as { responsePayload?: { pdfURL?: string } })?.responsePayload?.pdfURL ?? ''
@@ -217,7 +217,7 @@ const normalizeResultProgress = (status?: string | null) => {
   return '';
 };
 
-const getOrderStatusBadgeClass = (
+export const getOrderStatusBadgeClass = (
   order: LabOrder,
   resultProgressByOrderId: Map<string, string>
 ) => {
@@ -305,7 +305,7 @@ const LabResultMeter = ({ test }: { test: LabResultTest }) => {
   );
 };
 
-const LabResultCategoryTable = ({
+export const LabResultCategoryTable = ({
   category,
   resultId,
 }: {
@@ -411,7 +411,7 @@ const PastOrderCard = ({
 
 // ---------- Custom hook ----------
 
-const useLabTests = (activeAppointment: Appointment | null) => {
+export const useLabTests = (activeAppointment: Appointment | null) => {
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const idexxIntegration = useIntegrationByProviderForPrimaryOrg('IDEXX');
   const [integrationEnabled, setIntegrationEnabled] = useState(false);
@@ -1055,7 +1055,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
 
 // ---------- Sub-components ----------
 
-type UseLabTestsReturn = ReturnType<typeof useLabTests>;
+export type UseLabTestsReturn = ReturnType<typeof useLabTests>;
 
 const getCensusStatusLabel = (selectedIvls: string, companionInCensus: boolean): string => {
   if (selectedIvls) return companionInCensus ? 'Already added to census' : 'Not added to census';
