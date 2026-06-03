@@ -19,6 +19,15 @@ type DropdownProps = {
 
 const DROPDOWN_MAX_HEIGHT = 200;
 const DROPDOWN_MIN_HEIGHT = 72;
+const TERMINOLOGY_LOCK_SELECTOR = "[data-terminology-lock='true']";
+
+const findDropdownOption = (options: DropdownOption[], defaultOption?: string) => {
+  if (defaultOption === undefined) return null;
+  return (
+    options.find((option) => option.value === defaultOption || option.label === defaultOption) ??
+    null
+  );
+};
 
 const getFloatingLabelStyle = (isFloated: boolean): React.CSSProperties => {
   const baseStyle: React.CSSProperties = {
@@ -56,13 +65,11 @@ const LabelDropdown = ({
   portal = true,
   noOptionsMessage,
 }: DropdownProps) => {
-  const findSelectedOption = () => {
-    if (defaultOption === undefined) return null;
-    return options.find((o) => o.value === defaultOption || o.label === defaultOption) ?? null;
-  };
-  const [selected, setSelected] = useState<DropdownOption | null>(findSelectedOption);
+  const [internalSelected, setInternalSelected] = useState<DropdownOption | null>(null);
   const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
   const listboxId = useId();
+  const controlledSelected = findDropdownOption(options, defaultOption);
+  const selected = defaultOption === undefined ? internalSelected : controlledSelected;
   const triggerLabel = selected ? `${placeholder}: ${selected.label}` : placeholder;
   const {
     open,
@@ -77,6 +84,7 @@ const LabelDropdown = ({
 
   const filteredOptions = useFilteredOptions(options, searchQuery);
   const shouldPortal = portal && typeof document !== 'undefined';
+  const isTerminologyLocked = Boolean(dropdownRef.current?.closest(TERMINOLOGY_LOCK_SELECTOR));
 
   const computeStyle = useCallback(() => {
     const rect = dropdownRef.current?.getBoundingClientRect();
@@ -130,6 +138,7 @@ const LabelDropdown = ({
       id={listboxId}
       aria-label={placeholder}
       data-portal-dropdown
+      data-terminology-lock={isTerminologyLocked ? 'true' : undefined}
       className="border-input-text-placeholder-active max-h-50 overflow-y-auto scrollbar-hidden z-200 rounded-b-2xl border border-t bg-white flex flex-col items-stretch w-full px-3 py-2.5"
       style={shouldPortal ? (portalStyle ?? undefined) : undefined}
     >
@@ -141,7 +150,7 @@ const LabelDropdown = ({
             aria-pressed={selected?.value === option.value}
             className="px-5 py-3 text-left text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full"
             onClick={() => {
-              setSelected(option);
+              setInternalSelected(option);
               onSelect(option);
               closeDropdown();
             }}

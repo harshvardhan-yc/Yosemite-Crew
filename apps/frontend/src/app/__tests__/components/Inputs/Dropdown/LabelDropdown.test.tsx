@@ -60,6 +60,157 @@ describe('LabelDropdown', () => {
     expect(screen.getByText('Canine')).toBeInTheDocument();
   });
 
+  it('preselects default option by label', () => {
+    render(
+      <LabelDropdown
+        placeholder="Species"
+        options={options}
+        defaultOption="Feline"
+        onSelect={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('Feline')).toBeInTheDocument();
+  });
+
+  it('updates the displayed selection when default option changes', () => {
+    const { rerender } = render(
+      <LabelDropdown
+        placeholder="Species"
+        options={options}
+        defaultOption="dog"
+        onSelect={jest.fn()}
+      />
+    );
+
+    rerender(
+      <LabelDropdown
+        placeholder="Species"
+        options={options}
+        defaultOption="cat"
+        onSelect={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('Feline')).toBeInTheDocument();
+    expect(screen.queryByText('Canine')).not.toBeInTheDocument();
+  });
+
+  it('keeps portaled options inside terminology locks', () => {
+    render(
+      <div data-terminology-lock="true">
+        <LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} />
+      </div>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Species/i }));
+
+    expect(document.querySelector('[data-portal-dropdown][aria-label="Species"]')).toHaveAttribute(
+      'data-terminology-lock',
+      'true'
+    );
+  });
+
+  it('filters searchable options and shows an empty state', () => {
+    render(<LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Species/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search Species' }), {
+      target: { value: 'wolf' },
+    });
+
+    expect(screen.getByText('No matches found')).toBeInTheDocument();
+    expect(screen.queryByText('Canine')).not.toBeInTheDocument();
+  });
+
+  it('shows a custom empty state before searching', () => {
+    render(
+      <LabelDropdown
+        placeholder="Species"
+        options={[]}
+        onSelect={jest.fn()}
+        noOptionsMessage="No species available"
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Species/i }));
+
+    expect(screen.getByText('No species available')).toBeInTheDocument();
+  });
+
+  it('shows the default empty state when no options are available', () => {
+    render(<LabelDropdown placeholder="Species" options={[]} onSelect={jest.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Species/i }));
+
+    expect(screen.getByText('No options')).toBeInTheDocument();
+  });
+
+  it('renders inline options when portal is disabled', () => {
+    render(
+      <LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} portal={false} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Species/i }));
+
+    expect(screen.getByText('Canine')).toBeInTheDocument();
+    expect(document.querySelector('[data-portal-dropdown]')).toBeInTheDocument();
+  });
+
+  it('closes and clears search when clicking outside', () => {
+    render(
+      <div>
+        <button type="button">Outside</button>
+        <LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} />
+      </div>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Species/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search Species' }), {
+      target: { value: 'cat' },
+    });
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Outside' }));
+
+    expect(screen.queryByRole('textbox', { name: 'Search Species' })).not.toBeInTheDocument();
+  });
+
+  it('repositions on resize and closes on outer scroll', () => {
+    render(<LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Species/i }));
+    fireEvent.resize(globalThis.window);
+
+    expect(screen.getByRole('textbox', { name: 'Search Species' })).toBeInTheDocument();
+
+    fireEvent.scroll(globalThis.window);
+
+    expect(screen.queryByRole('textbox', { name: 'Search Species' })).not.toBeInTheDocument();
+  });
+
+  it('stays open when scrolling inside the portaled options panel', () => {
+    render(<LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Species/i }));
+    fireEvent.scroll(document.querySelector('[data-portal-dropdown]') as HTMLElement);
+
+    expect(screen.getByRole('textbox', { name: 'Search Species' })).toBeInTheDocument();
+  });
+
+  it('toggles from the chevron icon without selecting an option', () => {
+    const { container } = render(
+      <LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} />
+    );
+
+    const chevron = container.querySelector('svg');
+    expect(chevron).toBeInTheDocument();
+
+    fireEvent.click(chevron as SVGElement);
+    expect(screen.getByRole('textbox', { name: 'Search Species' })).toBeInTheDocument();
+
+    fireEvent.click(chevron as SVGElement);
+    expect(screen.queryByRole('textbox', { name: 'Search Species' })).not.toBeInTheDocument();
+  });
+
   it('has no axe accessibility violations', async () => {
     const { container } = render(
       <LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} />
