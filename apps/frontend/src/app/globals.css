@@ -394,6 +394,13 @@ textarea:focus-visible {
   --status-no-show-bg: #fff7ed;
   --status-no-show-text: #9a3412;
   --status-no-show-border: #f97316;
+
+  /* Alert / document-category palette (workspace revamp — Figma "documents cat" sheet) */
+  --color-category-caution: #b9501f;
+  --color-category-medical: #6b3fd6;
+  --color-category-info: #0b6f92;
+  --color-category-attention: #7a6d00;
+  --color-category-admin: #2e4d85;
 }
 :root {
   --black-text: var(--color-black-text);
