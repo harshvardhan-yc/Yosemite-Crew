@@ -19,7 +19,111 @@ type GetDataOptions = {
   dedupe?: boolean;
 };
 
+type RetriableAxiosRequestConfig = AxiosRequestConfig & {
+  _retry?: boolean;
+  skipAuthRedirect?: boolean;
+};
+
+type AuthRedirectError = Error & {
+  __ycAuthRedirect: true;
+};
+
 const inFlightGetRequests = new Map<string, Promise<AxiosResponse<unknown>>>();
+let unauthorizedSessionPromise: Promise<void> | null = null;
+
+const AUTH_REDIRECT_ERROR_NAME = 'AuthRedirectError';
+const PUBLIC_API_PREFIXES = ['/v1/contact-us/contact-web'];
+const PUBLIC_PATHS = new Set([
+  '/',
+  '/about-us',
+  '/accessibility',
+  '/contact',
+  '/forgot-password',
+  '/pet-businesses',
+  '/pet-parents',
+  '/pricing',
+  '/signin',
+  '/signup',
+]);
+
+const createAuthRedirectError = (): AuthRedirectError => {
+  const error = new Error('Authentication required. Redirecting to sign in.') as AuthRedirectError;
+  error.name = AUTH_REDIRECT_ERROR_NAME;
+  error.__ycAuthRedirect = true;
+  return error;
+};
+
+export const isAuthRedirectError = (error: unknown): boolean =>
+  Boolean(
+    error &&
+    typeof error === 'object' &&
+    ('__ycAuthRedirect' in error || (error as { name?: string }).name === AUTH_REDIRECT_ERROR_NAME)
+  );
+
+const isBrowser = () => typeof globalThis.window !== 'undefined';
+
+const getCurrentRoute = () => {
+  if (!isBrowser()) return '/';
+  const { pathname, search } = globalThis.window.location;
+  return `${pathname}${search}`;
+};
+
+const shouldRedirectToSignIn = () => {
+  if (!isBrowser()) return false;
+  const { pathname } = globalThis.window.location;
+  if (PUBLIC_PATHS.has(pathname)) return false;
+  if (pathname.startsWith('/dev-docs') || pathname.startsWith('/accessibility/')) return false;
+  return !pathname.startsWith('/signin');
+};
+
+const redirectToSignIn = () => {
+  if (!shouldRedirectToSignIn()) return;
+  const next = encodeURIComponent(getCurrentRoute());
+  try {
+    globalThis.window.location.replace(`/signin?next=${next}`);
+  } catch (error) {
+    logger.warn('Failed to redirect to sign in after auth loss', error);
+  }
+};
+
+const normalizeRequestPath = (url?: string) => {
+  if (!url) return '';
+  try {
+    return new URL(url, BASE_URL || globalThis.window?.location?.origin || 'http://localhost')
+      .pathname;
+  } catch {
+    return url;
+  }
+};
+
+const isPublicApiRequest = (config: AxiosRequestConfig) => {
+  const path = normalizeRequestPath(config.url);
+  return PUBLIC_API_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+};
+
+const handleUnauthorizedSession = async () => {
+  if (!unauthorizedSessionPromise) {
+    unauthorizedSessionPromise = hardSignOut()
+      .catch((error) => {
+        logger.warn('Failed to clear expired session cleanly', error);
+      })
+      .finally(() => {
+        redirectToSignIn();
+        unauthorizedSessionPromise = null;
+      });
+  }
+  return unauthorizedSessionPromise;
+};
+
+const shouldSuppressApiError = (error: unknown): boolean => {
+  if (isAuthRedirectError(error)) return true;
+  return getResponseStatus(error) === 401 && useAuthStore.getState().status === 'unauthenticated';
+};
+
+const rejectForAuthRedirect = async () => {
+  await handleUnauthorizedSession();
+  throw createAuthRedirectError();
+};
 
 const stableSerialize = (value: unknown): string => {
   if (value === undefined) {
@@ -74,7 +178,8 @@ const getResponseStatus = (error: unknown): number | undefined => {
 api.interceptors.request.use(
   async (config) => {
     try {
-      const session = await useAuthStore.getState().getValidSession();
+      const authState = useAuthStore.getState();
+      const session = await authState.getValidSession();
       const primaryOrgId = useOrgStore.getState().primaryOrgId;
       if (config.headers) {
         if (session) {
@@ -89,7 +194,16 @@ api.interceptors.request.use(
           delete config.headers['x-org-id'];
         }
       }
+      if (!session && !isPublicApiRequest(config)) {
+        const status = useAuthStore.getState().status;
+        if (status === 'unauthenticated') {
+          await rejectForAuthRedirect();
+        }
+      }
     } catch (error) {
+      if (isAuthRedirectError(error)) {
+        throw error;
+      }
       logger.warn('No valid Cognito session available from AuthStore', error);
     }
     return config;
@@ -100,7 +214,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error.config as RetriableAxiosRequestConfig | undefined;
 
     // Rate-limited — never retry, just propagate immediately
     if (error.response?.status === 429) {
@@ -112,11 +226,14 @@ api.interceptors.response.use(
       throw error;
     }
 
+    if (!originalRequest || originalRequest.skipAuthRedirect) {
+      throw error;
+    }
+
     // Avoid infinite loop: only retry once
     if (originalRequest._retry) {
-      // Refresh already tried and failed → logout
-      await useAuthStore.getState().signout();
-      throw error;
+      await handleUnauthorizedSession();
+      throw createAuthRedirectError();
     }
 
     originalRequest._retry = true;
@@ -124,8 +241,8 @@ api.interceptors.response.use(
     try {
       const session = await useAuthStore.getState().getValidSession({ forceRefresh: true });
       if (!session) {
-        await hardSignOut();
-        throw error;
+        await handleUnauthorizedSession();
+        throw createAuthRedirectError();
       }
 
       // Update auth header and retry the original request
@@ -136,9 +253,11 @@ api.interceptors.response.use(
 
       return api(originalRequest);
     } catch (refreshError) {
-      logger.error('Session refresh failed after 401:', refreshError);
-      await hardSignOut();
-      throw error;
+      if (!isAuthRedirectError(refreshError)) {
+        logger.warn('Session refresh failed after 401:', refreshError);
+      }
+      await handleUnauthorizedSession();
+      throw createAuthRedirectError();
     }
   }
 );
@@ -177,7 +296,10 @@ export const getData = async <T>(
     return await trackedRequest;
   } catch (error: unknown) {
     const status = getResponseStatus(error);
-    if (status === undefined || !opts?.suppressStatuses?.includes(status)) {
+    if (
+      !shouldSuppressApiError(error) &&
+      (status === undefined || !opts?.suppressStatuses?.includes(status))
+    ) {
       logger.error('API getData error:', error);
     }
     throw error;
@@ -195,7 +317,9 @@ export const postData = async <T, D = unknown>(
       ...config,
     });
   } catch (error: unknown) {
-    logger.error('API postData error:', error);
+    if (!shouldSuppressApiError(error)) {
+      logger.error('API postData error:', error);
+    }
     throw error;
   }
 };
@@ -208,7 +332,9 @@ export const putData = async <T, D = unknown>(
   try {
     return await api.put<T>(endpoint, data);
   } catch (error: unknown) {
-    logger.error('API putData error:', error);
+    if (!shouldSuppressApiError(error)) {
+      logger.error('API putData error:', error);
+    }
     throw error;
   }
 };
@@ -223,7 +349,9 @@ export const deleteData = async <T>(
       params,
     });
   } catch (error: unknown) {
-    logger.error('API deleteData error:', error);
+    if (!shouldSuppressApiError(error)) {
+      logger.error('API deleteData error:', error);
+    }
     throw error;
   }
 };
@@ -238,7 +366,9 @@ export const patchData = async <T, D = unknown>(
       ...config,
     });
   } catch (error: unknown) {
-    logger.error('API patchData error:', error);
+    if (!shouldSuppressApiError(error)) {
+      logger.error('API patchData error:', error);
+    }
     throw error;
   }
 };

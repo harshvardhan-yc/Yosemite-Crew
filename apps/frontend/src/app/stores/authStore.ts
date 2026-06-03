@@ -8,7 +8,6 @@ import {
   ISignUpResult,
   AuthenticationDetails,
 } from 'amazon-cognito-identity-js';
-import { useOrgStore } from '@/app/stores/orgStore';
 import { removeStorageItem } from '@/app/lib/browserStorage';
 import { logger } from '@/app/lib/logger';
 import { clearSessionScopedStores } from '@/app/lib/resetSessionStores';
@@ -387,9 +386,9 @@ const resetAuthState = (set: (partial: Partial<AuthStore>) => void) => {
     loading: false,
   });
   try {
-    useOrgStore.getState().clearOrgs();
+    clearSessionScopedStores();
   } catch (err) {
-    logger.warn('Failed to clear org store on signout', err);
+    logger.warn('Failed to clear session-scoped stores on signout', err);
   }
 };
 
