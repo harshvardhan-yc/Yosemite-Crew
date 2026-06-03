@@ -142,7 +142,11 @@ const PackageBreakdownTable = ({
             <th className="text-right p-3 whitespace-nowrap">Gross amt.</th>
             <th className="text-right p-3 whitespace-nowrap">Discount %</th>
             <th className="text-right p-3">Amount</th>
-            {editable && <th aria-label="Actions" />}
+            {editable && (
+              <th className="p-3 text-right">
+                <span className="sr-only">Actions</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>

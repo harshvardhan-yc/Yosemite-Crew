@@ -116,6 +116,11 @@ describe('PackageBreakdownTable', () => {
       expect(qtyInput).toHaveValue(2);
     });
 
+    it('renders an accessible actions column header', () => {
+      render(<PackageBreakdownTable items={makeItems()} additionalDiscount={0} editable />);
+      expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+    });
+
     it('renders discount input with correct value', () => {
       render(<PackageBreakdownTable items={makeItems()} additionalDiscount={0} editable />);
       const discInput = screen.getByLabelText('Discount for Test Consult');

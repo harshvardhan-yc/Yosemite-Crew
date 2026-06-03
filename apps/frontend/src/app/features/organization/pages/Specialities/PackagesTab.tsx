@@ -16,6 +16,7 @@ import Badge from '@/app/ui/Badge';
 import { useNotify } from '@/app/hooks/useNotify';
 import { computePackageTotals } from '@/app/features/organization/services/revampMockData';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
+import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 
 export type PackagesTabHandle = { openAdd: () => void };
 
@@ -54,37 +55,32 @@ const PackageCard = ({
       >
         {/* Action buttons on mobile */}
         <div className="flex sm:hidden items-center justify-end gap-2 mb-3">
-          <button
-            type="button"
-            aria-label={`View breakdown of ${pkg.name}`}
+          <CircleIconButton
+            label={`${showBreakdown ? 'Hide' : 'View'} breakdown of ${pkg.name}`}
             onClick={() => setShowBreakdown((p) => !p)}
-            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
-          >
-            <IoChevronDown
-              size={20}
-              aria-hidden="true"
-              style={{
-                transform: showBreakdown ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 150ms ease',
-              }}
-            />
-          </button>
-          <button
-            type="button"
-            aria-label={`Edit ${pkg.name}`}
+            variant="dark"
+            icon={
+              <IoChevronDown
+                size={20}
+                aria-hidden="true"
+                style={{
+                  transform: showBreakdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 150ms ease',
+                }}
+              />
+            }
+          />
+          <CircleIconButton
+            label={`Edit ${pkg.name}`}
             onClick={onEdit}
-            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
-          >
-            <RiEdit2Line size={20} color="var(--color-neutral-900)" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            aria-label={`Delete ${pkg.name}`}
+            icon={<RiEdit2Line size={20} aria-hidden="true" />}
+          />
+          <CircleIconButton
+            label={`Delete ${pkg.name}`}
             onClick={onDelete}
-            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
-          >
-            <MdDeleteForever size={20} color="var(--color-danger-600)" aria-hidden="true" />
-          </button>
+            variant="danger"
+            icon={<MdDeleteForever size={20} aria-hidden="true" />}
+          />
         </div>
 
         <div className="flex items-start gap-4">
@@ -165,37 +161,32 @@ const PackageCard = ({
 
           {/* Action buttons — hidden on mobile (shown above) */}
           <div className="hidden sm:flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              aria-label={`View breakdown of ${pkg.name}`}
+            <CircleIconButton
+              label={`${showBreakdown ? 'Hide' : 'View'} breakdown of ${pkg.name}`}
               onClick={() => setShowBreakdown((p) => !p)}
-              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
-            >
-              <IoChevronDown
-                size={24}
-                aria-hidden="true"
-                style={{
-                  transform: showBreakdown ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 150ms ease',
-                }}
-              />
-            </button>
-            <button
-              type="button"
-              aria-label={`Edit ${pkg.name}`}
+              variant="dark"
+              icon={
+                <IoChevronDown
+                  size={20}
+                  aria-hidden="true"
+                  style={{
+                    transform: showBreakdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 150ms ease',
+                  }}
+                />
+              }
+            />
+            <CircleIconButton
+              label={`Edit ${pkg.name}`}
               onClick={onEdit}
-              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
-            >
-              <RiEdit2Line size={24} color="var(--color-neutral-900)" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label={`Delete ${pkg.name}`}
+              icon={<RiEdit2Line size={20} aria-hidden="true" />}
+            />
+            <CircleIconButton
+              label={`Delete ${pkg.name}`}
               onClick={onDelete}
-              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
-            >
-              <MdDeleteForever size={24} color="var(--color-danger-600)" aria-hidden="true" />
-            </button>
+              variant="danger"
+              icon={<MdDeleteForever size={20} aria-hidden="true" />}
+            />
           </div>
         </div>
 

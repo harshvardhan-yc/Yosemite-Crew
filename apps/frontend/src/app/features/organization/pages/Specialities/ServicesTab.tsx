@@ -14,6 +14,7 @@ import { useNotify } from '@/app/hooks/useNotify';
 import { computeServiceTotal } from '@/app/features/organization/services/revampMockData';
 import Badge from '@/app/ui/Badge';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
+import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 
 export type ServicesTabHandle = { openAdd: () => void };
 
@@ -58,22 +59,17 @@ const ServiceRow = ({
       >
         {/* Action buttons row on mobile, inline on desktop */}
         <div className="flex sm:hidden items-center justify-end gap-2 mb-3">
-          <button
-            type="button"
-            aria-label={`Edit ${service.name}`}
+          <CircleIconButton
+            label={`Edit ${service.name}`}
             onClick={onEdit}
-            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
-          >
-            <RiEdit2Line size={20} color="var(--color-neutral-900)" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            aria-label={`Delete ${service.name}`}
+            icon={<RiEdit2Line size={20} aria-hidden="true" />}
+          />
+          <CircleIconButton
+            label={`Delete ${service.name}`}
             onClick={onDelete}
-            className="flex items-center justify-center size-10 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
-          >
-            <MdDeleteForever size={20} color="var(--color-danger-600)" aria-hidden="true" />
-          </button>
+            variant="danger"
+            icon={<MdDeleteForever size={20} aria-hidden="true" />}
+          />
         </div>
 
         <div className="flex items-start gap-4">
@@ -191,22 +187,17 @@ const ServiceRow = ({
 
           {/* Action buttons — hidden on mobile (shown above), visible on sm+ */}
           <div className="hidden sm:flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              aria-label={`Edit ${service.name}`}
+            <CircleIconButton
+              label={`Edit ${service.name}`}
               onClick={onEdit}
-              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand transition-colors"
-            >
-              <RiEdit2Line size={24} color="var(--color-neutral-900)" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label={`Delete ${service.name}`}
+              icon={<RiEdit2Line size={20} aria-hidden="true" />}
+            />
+            <CircleIconButton
+              label={`Delete ${service.name}`}
               onClick={onDelete}
-              className="flex items-center justify-center size-12 rounded-full border-[1.5px] border-neutral-300 bg-white hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
-            >
-              <MdDeleteForever size={24} color="var(--color-danger-600)" aria-hidden="true" />
-            </button>
+              variant="danger"
+              icon={<MdDeleteForever size={20} aria-hidden="true" />}
+            />
           </div>
         </div>
       </SectionContainer>
