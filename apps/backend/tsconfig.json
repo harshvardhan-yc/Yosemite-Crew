@@ -16,8 +16,8 @@
     "baseUrl": ".",
     "paths": {
       "@yosemite-crew/types": ["../../packages/types/src"],
-      "@yosemite-crew/fhirtypes": ["../../packages/fhirtypes/src"],
-      "@yosemite-crew/fhir-types": ["../../packages/fhirtypes/src"]
+      "@yosemite-crew/fhir": ["../../packages/fhir/src"],
+      "@yosemite-crew/fhir-types": ["../../packages/fhir/src"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],

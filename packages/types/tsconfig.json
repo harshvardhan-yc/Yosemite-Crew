@@ -16,8 +16,5 @@
     "rootDir": "../"
   },
   "exclude": ["node_modules"],
-  "include": ["./src/**/*"],
-  "references": [
-    { "path": "../fhirtypes" }
-  ]
+  "include": ["./src/**/*"]
 }

@@ -1,41 +1,39 @@
-import type { PractitionerRole } from "@yosemite-crew/fhirtypes"
+import type { PractitionerRole } from '@yosemite-crew/fhir';
 
-type StringableId = { toString(): string }
+type StringableId = { toString(): string };
 
 export interface UserOrganization {
-    id?: string
-    _id?: StringableId
-    fhirId?: string
-    practitionerReference: string
-    organizationReference: string
-    roleCode: string
-    roleDisplay?: string
-    active?: boolean
-    extraPermissions?: string[];
-    revokedPermissions?: string[];
-    effectivePermissions?: string[];
+  id?: string;
+  _id?: StringableId;
+  fhirId?: string;
+  practitionerReference: string;
+  organizationReference: string;
+  roleCode: string;
+  roleDisplay?: string;
+  active?: boolean;
+  extraPermissions?: string[];
+  revokedPermissions?: string[];
+  effectivePermissions?: string[];
 }
 
 export type ToFHIRUserOrganizationOptions = {
-    roleSystem?: string
-    roleText?: string
-}
+  roleSystem?: string;
+  roleText?: string;
+};
 
-const EXT_EXTRA_PERMISSIONS =
-  "https://yosemitecrew.com/fhir/StructureDefinition/extra-permissions";
+const EXT_EXTRA_PERMISSIONS = 'https://yosemitecrew.com/fhir/StructureDefinition/extra-permissions';
 
 const EXT_EFFECTIVE_PERMISSIONS =
-  "https://yosemitecrew.com/fhir/StructureDefinition/effective-permissions";
+  'https://yosemitecrew.com/fhir/StructureDefinition/effective-permissions';
 
 const EXT_REVOKED_PERMISSIONS =
-  "https://yosemitecrew.com/fhir/StructureDefinition/revoked-permissions";
+  'https://yosemitecrew.com/fhir/StructureDefinition/revoked-permissions';
 
 export function toFHIRUserOrganization(
   mapping: UserOrganization & { effectivePermissions?: string[] },
   options: ToFHIRUserOrganizationOptions = {}
 ): PractitionerRole {
-  const identifier =
-    mapping.fhirId ?? mapping.id ?? mapping._id?.toString();
+  const identifier = mapping.fhirId ?? mapping.id ?? mapping._id?.toString();
 
   const practitioner = mapping.practitionerReference
     ? { reference: mapping.practitionerReference }
@@ -45,12 +43,10 @@ export function toFHIRUserOrganization(
     ? { reference: mapping.organizationReference }
     : undefined;
 
-  const roleText =
-    mapping.roleDisplay ?? options.roleText ?? mapping.roleCode;
+  const roleText = mapping.roleDisplay ?? options.roleText ?? mapping.roleCode;
 
   const roleSystem =
-    options.roleSystem ??
-    "https://yosemitecrew.com/fhir/CodeSystem/user-organization-role";
+    options.roleSystem ?? 'https://yosemitecrew.com/fhir/CodeSystem/user-organization-role';
 
   const code = mapping.roleCode
     ? [
@@ -74,7 +70,7 @@ export function toFHIRUserOrganization(
     extensions.push({
       url: EXT_EXTRA_PERMISSIONS,
       extension: mapping.extraPermissions.map((perm) => ({
-        url: "permission",
+        url: 'permission',
         valueString: perm,
       })),
     });
@@ -85,7 +81,7 @@ export function toFHIRUserOrganization(
     extensions.push({
       url: EXT_EFFECTIVE_PERMISSIONS,
       extension: mapping.effectivePermissions.map((perm) => ({
-        url: "permission",
+        url: 'permission',
         valueString: perm,
       })),
     });
@@ -96,18 +92,17 @@ export function toFHIRUserOrganization(
     extensions.push({
       url: EXT_REVOKED_PERMISSIONS,
       extension: mapping.revokedPermissions.map((perm) => ({
-        url: "permission",
+        url: 'permission',
         valueString: perm,
       })),
     });
   }
 
   const resource: PractitionerRole = {
-    resourceType: "PractitionerRole",
+    resourceType: 'PractitionerRole',
     practitioner,
     organization,
-    active:
-      typeof mapping.active === "boolean" ? mapping.active : undefined,
+    active: typeof mapping.active === 'boolean' ? mapping.active : undefined,
     code,
     extension: extensions.length ? extensions : undefined,
   };
@@ -120,11 +115,11 @@ export function toFHIRUserOrganization(
 }
 
 export function fromFHIRUserOrganization(dto: PractitionerRole): UserOrganization {
-  const practitionerReference = dto.practitioner?.reference ?? "";
-  const organizationReference = dto.organization?.reference ?? "";
+  const practitionerReference = dto.practitioner?.reference ?? '';
+  const organizationReference = dto.organization?.reference ?? '';
 
   const coding = dto.code?.[0]?.coding?.[0];
-  const text = dto.code?.[0]?.text ?? "";
+  const text = dto.code?.[0]?.text ?? '';
 
   // Parse permissions from extensions
   let extraPermissions: string[] | undefined;
@@ -133,18 +128,15 @@ export function fromFHIRUserOrganization(dto: PractitionerRole): UserOrganizatio
 
   dto.extension?.forEach((ext) => {
     if (ext.url === EXT_EXTRA_PERMISSIONS) {
-      extraPermissions =
-        ext.extension?.map((e) => e.valueString!) ?? [];
+      extraPermissions = ext.extension?.map((e) => e.valueString!) ?? [];
     }
 
     if (ext.url === EXT_EFFECTIVE_PERMISSIONS) {
-      effectivePermissions =
-        ext.extension?.map((e) => e.valueString!) ?? [];
+      effectivePermissions = ext.extension?.map((e) => e.valueString!) ?? [];
     }
 
     if (ext.url === EXT_REVOKED_PERMISSIONS) {
-      revokedPermissions =
-        ext.extension?.map((e) => e.valueString!) ?? [];
+      revokedPermissions = ext.extension?.map((e) => e.valueString!) ?? [];
     }
   });
 

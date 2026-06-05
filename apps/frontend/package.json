@@ -75,7 +75,7 @@
     "@types/react-datepicker": "^7.0.0",
     "@types/react-dom": "^19.1.1",
     "@yosemite-crew/design-tokens": "workspace:^",
-    "@yosemite-crew/fhirtypes": "workspace:^",
+    "@yosemite-crew/fhir": "workspace:^",
     "@yosemite-crew/types": "workspace:^",
     "chromatic": "^16.0.0",
     "eslint": "^9",

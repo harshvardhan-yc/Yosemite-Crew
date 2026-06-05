@@ -1,4 +1,4 @@
-import { Extension, HealthcareService } from "@yosemite-crew/fhirtypes";
+import type { Extension, HealthcareService } from '@yosemite-crew/fhir';
 
 export type Service = {
   id: string;
@@ -6,24 +6,27 @@ export type Service = {
   name: string;
   description?: string | null;
   durationMinutes: number;
-  cost: number;              
+  cost: number;
   maxDiscount?: number | null;
   specialityId?: string | null;
-  serviceType?: "CONSULTATION" | "OBSERVATION_TOOL";
+  serviceType?: 'CONSULTATION' | 'OBSERVATION_TOOL';
   observationToolId?: string | null;
   isActive: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 };
 
-export const EXT_DURATION = "https://yosemitecrew.com/fhir/StructureDefinition/service-duration-minutes";
-export const EXT_COST = "https://yosemitecrew.com/fhir/StructureDefinition/service-cost";
-export const EXT_MAX_DISCOUNT = "https://yosemitecrew.com/fhir/StructureDefinition/service-max-discount";
-export const EXT_SERVICE_TYPE = "https://yosemitecrew.com/fhir/StructureDefinition/service-type";
-export const EXT_OBSERVATION_TOOL_ID = "https://yosemitecrew.com/fhir/StructureDefinition/service-observation-tool-id";
+export const EXT_DURATION =
+  'https://yosemitecrew.com/fhir/StructureDefinition/service-duration-minutes';
+export const EXT_COST = 'https://yosemitecrew.com/fhir/StructureDefinition/service-cost';
+export const EXT_MAX_DISCOUNT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/service-max-discount';
+export const EXT_SERVICE_TYPE = 'https://yosemitecrew.com/fhir/StructureDefinition/service-type';
+export const EXT_OBSERVATION_TOOL_ID =
+  'https://yosemitecrew.com/fhir/StructureDefinition/service-observation-tool-id';
 
-export function toFHIRHealthcareService(service: Service) : HealthcareService {
-  const extensions : Extension[] = [];
+export function toFHIRHealthcareService(service: Service): HealthcareService {
+  const extensions: Extension[] = [];
 
   // Duration
   if (service.durationMinutes != null) {
@@ -63,9 +66,8 @@ export function toFHIRHealthcareService(service: Service) : HealthcareService {
     });
   }
 
-
-  const FHIRService : HealthcareService = {
-    resourceType: "HealthcareService",
+  const FHIRService: HealthcareService = {
+    resourceType: 'HealthcareService',
     id: service.id,
     active: service.isActive,
 
@@ -77,14 +79,14 @@ export function toFHIRHealthcareService(service: Service) : HealthcareService {
     comment: service.description ?? undefined,
 
     extension: extensions,
-  }
+  };
 
   if (service.specialityId) {
     FHIRService.specialty = [
       {
         coding: [
           {
-            system: "https://yosemite.health/fhir/CodeSystem/specialities",
+            system: 'https://yosemite.health/fhir/CodeSystem/specialities',
             code: service.specialityId,
           },
         ],
@@ -95,23 +97,21 @@ export function toFHIRHealthcareService(service: Service) : HealthcareService {
   return FHIRService;
 }
 
-export function fromFHIRHealthCareService(FHIRHealthcareService : HealthcareService) : Service {
-
-  const service : Service = {
+export function fromFHIRHealthCareService(FHIRHealthcareService: HealthcareService): Service {
+  const service: Service = {
     id: FHIRHealthcareService.id!,
-    organisationId: FHIRHealthcareService.providedBy?.reference?.replace("Organization/", "")!,
+    organisationId: FHIRHealthcareService.providedBy?.reference?.replace('Organization/', '')!,
     isActive: FHIRHealthcareService.active ? FHIRHealthcareService.active : true,
 
     name: FHIRHealthcareService.name!,
     description: FHIRHealthcareService.comment,
-    specialityId:
-      FHIRHealthcareService.specialty?.[0]?.coding?.[0]?.code ?? undefined,
+    specialityId: FHIRHealthcareService.specialty?.[0]?.coding?.[0]?.code ?? undefined,
     durationMinutes: 0,
     cost: 0,
     maxDiscount: undefined,
     serviceType: undefined,
     observationToolId: undefined,
-  }
+  };
 
   // Parse extensions
   if (Array.isArray(FHIRHealthcareService.extension)) {
@@ -130,8 +130,7 @@ export function fromFHIRHealthCareService(FHIRHealthcareService : HealthcareServ
           break;
 
         case EXT_SERVICE_TYPE:
-          service.serviceType =
-            (ext.valueString as Service["serviceType"]) ?? undefined;
+          service.serviceType = (ext.valueString as Service['serviceType']) ?? undefined;
           break;
 
         case EXT_OBSERVATION_TOOL_ID:
@@ -142,5 +141,4 @@ export function fromFHIRHealthCareService(FHIRHealthcareService : HealthcareServ
   }
 
   return service;
-
 }

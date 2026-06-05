@@ -1,4 +1,4 @@
-import type { Extension, Organization as FHIROrganization } from "@yosemite-crew/fhirtypes";
+import type { Extension, Organization as FHIROrganization } from '@yosemite-crew/fhir';
 
 export type Speciality = {
   _id?: string;
@@ -14,29 +14,34 @@ export type Speciality = {
   updatedAt?: Date;
 };
 
-const SPECIALITY_IDENTIFIER_SYSTEM = "http://example.org/fhir/NamingSystem/speciality-id";
+const SPECIALITY_IDENTIFIER_SYSTEM = 'http://example.org/fhir/NamingSystem/speciality-id';
 const ORGANISATION_IDENTIFIER_SYSTEM =
-  "http://example.org/fhir/NamingSystem/speciality-organisation-id";
+  'http://example.org/fhir/NamingSystem/speciality-organisation-id';
 const DEPARTMENT_MASTER_IDENTIFIER_SYSTEM =
-  "http://example.org/fhir/NamingSystem/speciality-department-master-id";
+  'http://example.org/fhir/NamingSystem/speciality-department-master-id';
 
-const HEAD_EXTENSION_URL = "https://yosemitecrew.com/fhir/StructureDefinition/speciality-head";
-const SERVICES_EXTENSION_URL = "https://yosemitecrew.com/fhir/StructureDefinition/speciality-services";
-const CREATED_AT_EXTENSION_URL = "https://yosemitecrew.com/fhir/StructureDefinition/speciality-created-at";
-const UPDATED_AT_EXTENSION_URL = "https://yosemitecrew.com/fhir/StructureDefinition/speciality-updated-at";
-const TEAM_EXTENSION_URL = "https://yosemitecrew.com/fhir/StructureDefinition/speciality-team";
-const HEAD_USER_ID_CHILD_URL = "userId";
-const HEAD_NAME_CHILD_URL = "name";
-const HEAD_PROFILE_PICTURE_CHILD_URL = "profilePicture";
-const SERVICE_CHILD_URL = "service";
-const TEAM_MEMBER_CHILD_URL = "member";
+const HEAD_EXTENSION_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/speciality-head';
+const SERVICES_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/speciality-services';
+const CREATED_AT_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/speciality-created-at';
+const UPDATED_AT_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/speciality-updated-at';
+const TEAM_EXTENSION_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/speciality-team';
+const HEAD_USER_ID_CHILD_URL = 'userId';
+const HEAD_NAME_CHILD_URL = 'name';
+const HEAD_PROFILE_PICTURE_CHILD_URL = 'profilePicture';
+const SERVICE_CHILD_URL = 'service';
+const TEAM_MEMBER_CHILD_URL = 'member';
 
 const ensureOrganizationReference = (organisationId: string): string => {
   if (!organisationId) {
-    return "";
+    return '';
   }
 
-  return organisationId.startsWith("Organization/") ? organisationId : `Organization/${organisationId}`;
+  return organisationId.startsWith('Organization/')
+    ? organisationId
+    : `Organization/${organisationId}`;
 };
 
 const formatToFHIRInstant = (value?: Date | string): string | undefined => {
@@ -55,8 +60,8 @@ const formatToFHIRInstant = (value?: Date | string): string | undefined => {
 
 const buildIdentifiers = (
   speciality: Speciality
-): NonNullable<FHIROrganization["identifier"]> | undefined => {
-  const identifiers: NonNullable<FHIROrganization["identifier"]> = [];
+): NonNullable<FHIROrganization['identifier']> | undefined => {
+  const identifiers: NonNullable<FHIROrganization['identifier']> = [];
 
   if (speciality._id) {
     identifiers.push({
@@ -118,12 +123,10 @@ const buildExtensions = (speciality: Speciality): Extension[] | undefined => {
   if (speciality.services?.length) {
     extensions.push({
       url: SERVICES_EXTENSION_URL,
-      extension: speciality.services
-        .filter(Boolean)
-        .map<Extension>((service) => ({
-          url: SERVICE_CHILD_URL,
-          valueString: service,
-        })),
+      extension: speciality.services.filter(Boolean).map<Extension>((service) => ({
+        url: SERVICE_CHILD_URL,
+        valueString: service,
+      })),
     });
   }
 
@@ -131,12 +134,10 @@ const buildExtensions = (speciality: Speciality): Extension[] | undefined => {
   if (speciality.teamMemberIds?.length) {
     extensions.push({
       url: TEAM_EXTENSION_URL,
-      extension: speciality.teamMemberIds
-        .filter(Boolean)
-        .map<Extension>((memberId) => ({
-          url: TEAM_MEMBER_CHILD_URL,
-          valueString: memberId,
-        })),
+      extension: speciality.teamMemberIds.filter(Boolean).map<Extension>((memberId) => ({
+        url: TEAM_MEMBER_CHILD_URL,
+        valueString: memberId,
+      })),
     });
   }
 
@@ -166,13 +167,13 @@ export const toFHIRSpeciality = (speciality: Speciality): FHIROrganization => {
     formatToFHIRInstant(speciality.updatedAt) ?? formatToFHIRInstant(speciality.createdAt);
 
   return {
-    resourceType: "Organization",
+    resourceType: 'Organization',
     id: speciality._id,
     name: speciality.name,
     identifier: buildIdentifiers(speciality),
-    partOf:{
-      reference: ensureOrganizationReference(speciality.organisationId),    
-      type: "Organization",
+    partOf: {
+      reference: ensureOrganizationReference(speciality.organisationId),
+      type: 'Organization',
     },
     extension: buildExtensions(speciality),
     meta: metaLastUpdated
@@ -198,10 +199,9 @@ const toDate = (value?: string): Date | undefined => {
 };
 
 const findIdentifierValue = (
-  identifiers: FHIROrganization["identifier"],
+  identifiers: FHIROrganization['identifier'],
   system: string
-): string | undefined =>
-  identifiers?.find((identifier) => identifier.system === system)?.value;
+): string | undefined => identifiers?.find((identifier) => identifier.system === system)?.value;
 
 const parseReferenceId = (reference?: string): string | undefined => {
   if (!reference) {
@@ -214,7 +214,7 @@ const parseReferenceId = (reference?: string): string | undefined => {
     return undefined;
   }
 
-  const segments = trimmed.split("/");
+  const segments = trimmed.split('/');
   return segments.length ? segments.at(-1) : undefined;
 };
 
@@ -225,18 +225,22 @@ const isHeadExtension = (extension?: Extension): extension is HeadExtension =>
 
 const parseHeadExtension = (
   extensions: Extension[] | undefined
-): Pick<Speciality, "headUserId" | "headName" | "headProfilePicUrl"> => {
+): Pick<Speciality, 'headUserId' | 'headName' | 'headProfilePicUrl'> => {
   const headExtension = extensions?.find(isHeadExtension);
 
   if (!headExtension?.extension?.length) {
     return {};
   }
 
-  const userId = headExtension.extension.find((child) => child.url === HEAD_USER_ID_CHILD_URL)
-    ?.valueString;
-  const name = headExtension.extension.find((child) => child.url === HEAD_NAME_CHILD_URL)?.valueString;
-  const profilePicUrl =
-    headExtension.extension.find((child) => child.url === HEAD_PROFILE_PICTURE_CHILD_URL)?.valueUrl;
+  const userId = headExtension.extension.find(
+    (child) => child.url === HEAD_USER_ID_CHILD_URL
+  )?.valueString;
+  const name = headExtension.extension.find(
+    (child) => child.url === HEAD_NAME_CHILD_URL
+  )?.valueString;
+  const profilePicUrl = headExtension.extension.find(
+    (child) => child.url === HEAD_PROFILE_PICTURE_CHILD_URL
+  )?.valueUrl;
 
   return {
     headUserId: userId,
@@ -245,21 +249,15 @@ const parseHeadExtension = (
   };
 };
 
-const parseTeamExtension = (
-  extensions: Extension[] | undefined,
-): string[] | undefined => {
-  const teamExtension = extensions?.find(
-    (extension) => extension.url === TEAM_EXTENSION_URL,
-  );
+const parseTeamExtension = (extensions: Extension[] | undefined): string[] | undefined => {
+  const teamExtension = extensions?.find((extension) => extension.url === TEAM_EXTENSION_URL);
 
   if (!teamExtension?.extension?.length) {
     return undefined;
   }
 
   const members = teamExtension.extension
-    .map((child) =>
-      child.url === TEAM_MEMBER_CHILD_URL ? child.valueString : undefined,
-    )
+    .map((child) => (child.url === TEAM_MEMBER_CHILD_URL ? child.valueString : undefined))
     .filter((member): member is string => Boolean(member?.trim()))
     .map((member) => member.trim());
 
@@ -267,7 +265,9 @@ const parseTeamExtension = (
 };
 
 const parseServicesExtension = (extensions: Extension[] | undefined): string[] | undefined => {
-  const servicesExtension = extensions?.find((extension) => extension.url === SERVICES_EXTENSION_URL);
+  const servicesExtension = extensions?.find(
+    (extension) => extension.url === SERVICES_EXTENSION_URL
+  );
 
   if (!servicesExtension?.extension?.length) {
     return undefined;
@@ -308,9 +308,12 @@ export const fromFHIRSpeciality = (resource: FHIROrganization): Speciality => {
 
   return {
     _id: resource.id ?? findIdentifierValue(resource.identifier, SPECIALITY_IDENTIFIER_SYSTEM),
-    organisationId: resolveOrganisationId(resource) ?? "",
-    departmentMasterId: findIdentifierValue(resource.identifier, DEPARTMENT_MASTER_IDENTIFIER_SYSTEM),
-    name: resource.name ?? "",
+    organisationId: resolveOrganisationId(resource) ?? '',
+    departmentMasterId: findIdentifierValue(
+      resource.identifier,
+      DEPARTMENT_MASTER_IDENTIFIER_SYSTEM
+    ),
+    name: resource.name ?? '',
     teamMemberIds,
     services,
     createdAt,

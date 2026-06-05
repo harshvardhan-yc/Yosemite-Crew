@@ -8,7 +8,6 @@ import {
   InvoiceStatus,
   toInvoiceResponseDTO,
 } from "@yosemite-crew/types";
-import { Currency } from "@yosemite-crew/fhirtypes";
 import { StripeService } from "./stripe.service";
 import OrganizationModel from "src/models/organization";
 import { ParentModel } from "src/models/parent";
@@ -163,7 +162,7 @@ const toDomain = (doc: InvoiceDocument): Invoice => {
     subtotal: o.subtotal,
     totalAmount: o.totalAmount,
     taxPercent: o.taxPercent,
-    currency: o.currency as Currency,
+    currency: o.currency,
     taxTotal: o.taxTotal,
     discountTotal: o.discountTotal,
     stripePaymentIntentId: o.stripePaymentIntentId ?? undefined,
@@ -248,7 +247,7 @@ const toDomainFromPrisma = (row: {
     subtotal: row.subtotal,
     totalAmount: row.totalAmount,
     taxPercent: row.taxPercent,
-    currency: row.currency as Currency,
+    currency: row.currency,
     taxTotal: row.taxTotal,
     discountTotal: row.discountTotal,
     stripePaymentIntentId: row.stripePaymentIntentId ?? undefined,

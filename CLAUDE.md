@@ -30,7 +30,7 @@ apps/
   dev-docs/      — Internal documentation site
 packages/
   types/         — Shared TypeScript types
-  fhirtypes/     — FHIR type definitions
+  fhir/          — FHIR R4 generated types and compatibility helpers
 ```
 
 Tooling: `pnpm` workspaces + `turbo`. Always use `--filter` to scope commands to the relevant workspace.
@@ -85,7 +85,7 @@ Additional commit rules:
 - Never skip pre-commit hooks (`--no-verify` is forbidden).
 - All pre-commit hooks must pass before the user commits — if lint/type/test checks fail, fix them first.
 - Before suggesting any commit message, validate the scope against `commitlint.config.cjs`.
-- Allowed scopes are exactly: `backend`, `frontend`, `mobile`, `dev-docs`, `types`, `fhirtypes`, `repo`, `ci`, `docs`.
+- Allowed scopes are exactly: `backend`, `frontend`, `mobile`, `dev-docs`, `types`, `fhir`, `repo`, `ci`, `docs`.
 - If changes span multiple workspaces, use `repo`.
 
 Issue + PR draft workflow (only on explicit user request):
@@ -134,7 +134,7 @@ Conventional commits are enforced by `commitlint`:
 <type>(<scope>): <subject>
 
 Types: feat | fix | chore | refactor | test | docs | style | perf | ci
-Scope: backend | frontend | mobile | dev-docs | types | fhirtypes | repo | ci | docs
+Scope: backend | frontend | mobile | dev-docs | types | fhir | repo | ci | docs
 
 Examples:
   feat(frontend): add recurring appointment support

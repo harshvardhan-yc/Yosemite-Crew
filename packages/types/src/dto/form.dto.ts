@@ -1,4 +1,4 @@
-import { Questionnaire, QuestionnaireResponse } from "@yosemite-crew/fhirtypes";
+import type { Questionnaire, QuestionnaireResponse } from '@yosemite-crew/fhir';
 import {
   Form,
   FormField,
@@ -7,7 +7,7 @@ import {
   fromFHIRQuestionnaireResponse,
   toFHIRQuestionnaire,
   toFHIRQuestionnaireResponse,
-} from "../form";
+} from '../form';
 
 export type FormRequestDTO = Questionnaire;
 export type FormResponseDTO = Questionnaire;
@@ -15,8 +15,8 @@ export type FormSubmissionRequestDTO = QuestionnaireResponse;
 export type FormSubmissionResponseDTO = QuestionnaireResponse;
 
 export const fromFormRequestDTO = (dto: FormRequestDTO): Form => {
-  if (dto?.resourceType !== "Questionnaire") {
-    throw new Error("Invalid payload. Expected FHIR Questionnaire resource.");
+  if (dto?.resourceType !== 'Questionnaire') {
+    throw new Error('Invalid payload. Expected FHIR Questionnaire resource.');
   }
 
   return fromFHIRQuestionnaire(dto);

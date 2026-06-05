@@ -4,7 +4,7 @@ import type {
   ContactPoint,
   Extension,
   RelatedPerson,
-} from '@yosemite-crew/fhirtypes';
+} from '@yosemite-crew/fhir';
 import {toFHIRRelatedPerson} from '@yosemite-crew/types';
 import {isAxiosError} from 'axios';
 

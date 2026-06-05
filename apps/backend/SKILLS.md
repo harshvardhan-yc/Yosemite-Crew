@@ -39,7 +39,7 @@ Do not move business logic into routers or controllers.
 - Use Winston, not `console.log`.
 - Queue async/background work with BullMQ instead of processing it inline in request handlers.
 - Keep workers idempotent because retries can happen.
-- Use FHIR types from `@yosemite-crew/fhirtypes` for healthcare data.
+- Use FHIR types from `@yosemite-crew/fhir` for healthcare data.
 - Extend external vendor behavior inside `src/integrations/`.
 - Treat Firebase Admin as a singleton.
 - Verify Stripe webhook signatures before processing them.
