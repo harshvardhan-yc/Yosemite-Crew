@@ -6,7 +6,7 @@ interface ClusterMapPinProps {
 }
 
 const ClusterMapPin: React.FC<ClusterMapPinProps> = ({count}) => (
-  <View style={styles.outer}>
+  <View collapsable={false} style={styles.outer}>
     <View style={styles.inner}>
       <Text style={styles.label}>{count}</Text>
     </View>

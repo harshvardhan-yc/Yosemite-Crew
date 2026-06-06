@@ -14,7 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Under Jest worker processes some imports can run before test setup mocks are applied
 // and redux-persist expects a storage with Promise-returning methods. To make tests
 // robust, use a tiny in-memory Promise-based storage when running under Jest.
-const isJest = typeof process !== 'undefined' && process.env?.JEST_WORKER_ID !== undefined;
+const isJest =
+  typeof process !== 'undefined' && process.env?.JEST_WORKER_ID !== undefined;
 const storageForPersist = isJest
   ? ((): any => {
       const store: Record<string, string> = {};
@@ -29,7 +30,8 @@ const storageForPersist = isJest
           return null;
         },
         getAllKeys: async () => Object.keys(store),
-        multiGet: async (keys: string[]) => keys.map(k => [k, store[k] ?? null]),
+        multiGet: async (keys: string[]) =>
+          keys.map(k => [k, store[k] ?? null]),
         multiSet: async (entries: [string, string][]) => {
           for (const [k, v] of entries) store[k] = v;
           return null;
@@ -57,18 +59,38 @@ import formsReducer from '@/features/forms/formsSlice';
 
 const persistConfig = {
   key: 'root',
-  version: 5,
+  version: 6,
   storage: storageForPersist,
-  whitelist: ['auth', 'theme', 'documents', 'companion', 'expenses', 'tasks', 'appointments', 'businesses', 'coParent', 'linkedBusinesses', 'notifications', 'forms'],
+  whitelist: [
+    'auth',
+    'theme',
+    'documents',
+    'companion',
+    'expenses',
+    'tasks',
+    'appointments',
+    'businesses',
+    'coParent',
+    'linkedBusinesses',
+    'notifications',
+    'forms',
+  ],
   migrate: (state: any) => {
-    console.log('[Redux Persist] Migrating state from version', state?._persist?.version);
+    console.log(
+      '[Redux Persist] Migrating state from version',
+      state?._persist?.version,
+    );
     // Handle migration from version 1 to 2
     if (state?._persist?.version === 1) {
-      console.log('[Redux Persist] Migrating from v1 to v2 - adding companion state');
+      console.log(
+        '[Redux Persist] Migrating from v1 to v2 - adding companion state',
+      );
     }
     // Handle migration from version 2 to 3
     if (state?._persist?.version === 2) {
-      console.log('[Redux Persist] Migrating from v2 to v3 - refreshing businesses data with descriptions');
+      console.log(
+        '[Redux Persist] Migrating from v2 to v3 - refreshing businesses data with descriptions',
+      );
       // Clear old businesses data to force fresh fetch with descriptions
       if (state.businesses) {
         state.businesses = {
@@ -82,7 +104,9 @@ const persistConfig = {
     }
     // Handle migration from version 3 to 4
     if (state?._persist?.version === 3) {
-      console.log('[Redux Persist] Migrating from v3 to v4 - adding notifications state');
+      console.log(
+        '[Redux Persist] Migrating from v3 to v4 - adding notifications state',
+      );
       // Initialize notifications state if not present
       if (!state.notifications) {
         state.notifications = {
@@ -98,9 +122,20 @@ const persistConfig = {
     }
     // Handle migration from version 4 to 5
     if (state?._persist?.version === 4) {
-      console.log('[Redux Persist] Migrating from v4 to v5 - initializing service catalog');
+      console.log(
+        '[Redux Persist] Migrating from v4 to v5 - initializing service catalog',
+      );
       if (state.businesses) {
         state.businesses.services = state.businesses.services ?? [];
+      }
+    }
+    // Handle migration from version 5 to 6
+    if (state?._persist?.version === 5) {
+      console.log(
+        '[Redux Persist] Migrating from v5 to v6 - ensuring companion.companions is an array',
+      );
+      if (state.companion && !Array.isArray(state.companion.companions)) {
+        state.companion.companions = [];
       }
     }
     return Promise.resolve(state);

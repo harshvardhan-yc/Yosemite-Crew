@@ -1,5 +1,5 @@
-import React, {useCallback, useMemo, useRef} from 'react';
-import {StyleSheet, Switch, Text, View} from 'react-native';
+import React, {useCallback, useEffect, useMemo, useRef} from 'react';
+import {Pressable, StyleSheet, Switch, Text, View} from 'react-native';
 import {
   createAnimatedComponent,
   useSharedValue,
@@ -27,6 +27,7 @@ import ClusterMapPin from './ClusterMapPin';
 import ClinicBottomSheet, {
   type ClinicBottomSheetRef,
 } from './ClinicBottomSheet';
+import BusinessCard from '../BusinessCard/BusinessCard';
 
 const AnimatedView = createAnimatedComponent(
   View,
@@ -48,13 +49,14 @@ export interface MapDiscoveryViewProps {
   distanceUnit: 'km' | 'mi';
   navigation: NativeStackNavigationProp<AppointmentStackParamList>;
   onRegionChange: (region: Region) => void;
-  onSelectClinic: (id: string) => void;
+  onSelectClinic: (id: string | null) => void;
   onSearchChange: (text: string) => void;
   onSearchSubmit: () => void;
   onCategoryChange: (c: BusinessCategory | undefined) => void;
   onOpenNowChange: (v: boolean) => void;
   onBack: () => void;
   searchResultsOverlay?: React.ReactNode;
+  onSearchBarLayout?: (height: number) => void;
 }
 
 const DEFAULT_CENTER = {latitude: 37.7749, longitude: -122.4194};
@@ -89,6 +91,7 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
   onOpenNowChange,
   onBack,
   searchResultsOverlay,
+  onSearchBarLayout,
 }) => {
   const {t} = useTranslation();
   const {theme} = useTheme();
@@ -121,13 +124,46 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
 
   const initialRegion = useMemo(
     () => buildInitialRegion(userLocation),
-    [userLocation],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  useEffect(() => {
+    if (!userLocation) return;
+    mapRef.current?.animateToRegion(
+      {
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: INITIAL_LAT_DELTA,
+        longitudeDelta: INITIAL_LNG_DELTA,
+      },
+      500,
+    );
+  }, [userLocation]);
+
+  const selectedClinic = useMemo(
+    () => clinics.find(c => c.id === selectedClinicId) ?? null,
+    [clinics, selectedClinicId],
+  );
+
+  const resolveDistanceText = useCallback(
+    (clinic: (typeof clinics)[0]): string | undefined => {
+      const mi =
+        clinic.distanceMi ??
+        (clinic.distanceMeters != null
+          ? clinic.distanceMeters / 1609.344
+          : null);
+      if (mi == null) return undefined;
+      if (distanceUnit === 'km') return `${(mi * 1.60934).toFixed(1)} km`;
+      return `${mi.toFixed(1)} mi`;
+    },
+    [distanceUnit],
   );
 
   const handlePinPress = useCallback(
     (clinicId: string) => {
       onSelectClinic(clinicId);
-      bottomSheetRef.current?.scrollToClinic(clinicId);
+      bottomSheetRef.current?.hide();
 
       const clinic = clinics.find(c => c.id === clinicId);
       if (clinic?.lat == null || clinic?.lng == null) return;
@@ -143,6 +179,11 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
     },
     [clinics, onSelectClinic],
   );
+
+  const handleDeselectClinic = useCallback(() => {
+    onSelectClinic(null);
+    bottomSheetRef.current?.show();
+  }, [onSelectClinic]);
 
   const mapItems = useMemo(
     () => clusterClinics(clinics, mapRegion?.latitudeDelta ?? 0),
@@ -177,7 +218,8 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
         showsMyLocationButton={false}
         showsCompass={false}
         showsScale={false}
-        onRegionChangeComplete={onRegionChange}>
+        onRegionChangeComplete={onRegionChange}
+        onPress={selectedClinic ? handleDeselectClinic : undefined}>
         {mapItems.map(item => {
           if (item.type === 'cluster') {
             return (
@@ -205,7 +247,14 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
           );
         })}
       </MapView>
-      <View style={styles.topBar} pointerEvents="box-none">
+      <View
+        style={styles.topBar}
+        pointerEvents="box-none"
+        onLayout={
+          onSearchBarLayout
+            ? e => onSearchBarLayout(e.nativeEvent.layout.height)
+            : undefined
+        }>
         <View style={styles.headerShadowWrapper} pointerEvents="auto">
           <LiquidGlassCard
             glassEffect="clear"
@@ -232,21 +281,58 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
           </LiquidGlassCard>
         </View>
       </View>
-      <AnimatedView style={[styles.openNowMapToggle, toggleAnimatedStyle]}>
-        <View style={styles.openNowToggleCard} pointerEvents="auto">
-          <Text style={styles.openNowToggleLabel}>Open</Text>
-          <Switch
-            value={openNow}
-            onValueChange={onOpenNowChange}
-            trackColor={{
-              false: theme.colors.borderMuted,
-              true: theme.colors.primary,
-            }}
-            thumbColor={theme.colors.white}
+      {!selectedClinic && (
+        <AnimatedView style={[styles.openNowMapToggle, toggleAnimatedStyle]}>
+          <View style={styles.openNowToggleCard} pointerEvents="auto">
+            <Text style={styles.openNowToggleLabel}>Open</Text>
+            <Switch
+              value={openNow}
+              onValueChange={onOpenNowChange}
+              trackColor={{
+                false: theme.colors.borderMuted,
+                true: theme.colors.primary,
+              }}
+              thumbColor={theme.colors.white}
+            />
+          </View>
+        </AnimatedView>
+      )}
+      {searchResultsOverlay}
+      {selectedClinic && (
+        <View
+          style={[
+            styles.selectedClinicOverlay,
+            {paddingBottom: insets.bottom + 16},
+          ]}
+          pointerEvents="box-none">
+          <Pressable
+            style={styles.selectedClinicDismiss}
+            onPress={handleDeselectClinic}
+            hitSlop={8}>
+            <Text style={styles.selectedClinicDismissText}>✕</Text>
+          </Pressable>
+          <BusinessCard
+            name={selectedClinic.name}
+            openText={selectedClinic.openHours}
+            description={selectedClinic.address}
+            distanceText={resolveDistanceText(selectedClinic)}
+            ratingText={
+              selectedClinic.rating != null
+                ? `${selectedClinic.rating}`
+                : undefined
+            }
+            photo={selectedClinic.photo}
+            fallbackPhoto={fallbacks[selectedClinic.id]?.photo ?? null}
+            glassEffect="none"
+            onBook={() =>
+              navigation.navigate('BusinessDetails', {
+                businessId: selectedClinic.id,
+                distanceMi: selectedClinic.distanceMi,
+              })
+            }
           />
         </View>
-      </AnimatedView>
-      {searchResultsOverlay}
+      )}
       <ClinicBottomSheet
         ref={bottomSheetRef}
         clinics={clinics}
@@ -272,7 +358,7 @@ const createStyles = (theme: any) =>
       top: 0,
       left: 0,
       right: 0,
-      zIndex: 10,
+      zIndex: 110,
       backgroundColor: 'transparent',
     },
     headerShadowWrapper: {
@@ -338,6 +424,33 @@ const createStyles = (theme: any) =>
     openNowToggleLabel: {
       ...theme.typography.pillSubtitleBold15,
       color: theme.colors.text,
+    },
+    selectedClinicOverlay: {
+      position: 'absolute' as const,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      zIndex: 20,
+      paddingHorizontal: theme.spacing['4'],
+      paddingTop: theme.spacing['2'],
+    },
+    selectedClinicDismiss: {
+      position: 'absolute' as const,
+      top: theme.spacing['4'],
+      right: theme.spacing['6'],
+      zIndex: 21,
+      width: theme.spacing['8'],
+      height: theme.spacing['8'],
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: theme.colors.background,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+    },
+    selectedClinicDismissText: {
+      ...theme.typography.titleSmall,
+      color: theme.colors.text,
+      lineHeight: theme.spacing['6'],
     },
   });
 

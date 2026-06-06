@@ -23,6 +23,8 @@ export interface ClinicBottomSheetRef {
   scrollToClinic: (id: string) => void;
   snapToExpanded: () => void;
   snapToCollapsed: () => void;
+  hide: () => void;
+  show: () => void;
 }
 
 export interface ClinicBottomSheetProps {
@@ -96,6 +98,8 @@ const ClinicBottomSheet = forwardRef<
       },
       snapToExpanded: () => bottomSheetRef.current?.snapToIndex(1),
       snapToCollapsed: () => bottomSheetRef.current?.snapToIndex(0),
+      hide: () => bottomSheetRef.current?.close(),
+      show: () => bottomSheetRef.current?.snapToIndex(0),
     }));
 
     const handleScrollToIndexFailed = useCallback((info: {index: number}) => {
