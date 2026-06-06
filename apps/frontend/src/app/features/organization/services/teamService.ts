@@ -13,7 +13,7 @@ import {
   TeamStatusProps,
 } from '@/app/features/organization/types/team';
 import { deleteData, getData, postData, putData } from '@/app/services/axios';
-import { PractitionerRole } from '@yosemite-crew/fhirtypes';
+import type { PractitionerRole } from '@yosemite-crew/fhir';
 import { toPermissionArray } from '@/app/lib/permissions';
 
 const normalizeTeamStatus = (raw: string | undefined): TeamStatusProps => {

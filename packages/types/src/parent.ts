@@ -1,4 +1,4 @@
-import type { Extension, RelatedPerson } from '@yosemite-crew/fhirtypes';
+import type { Extension, RelatedPerson } from '@yosemite-crew/fhir';
 import { Address, toFHIRAddress } from './address.model';
 import { fromAddressRequestDTO } from './dto/address.dto';
 
@@ -91,7 +91,7 @@ export function toFHIRRelatedPerson(parent: Parent): RelatedPerson {
     photo,
     birthDate,
     extension: extensions.length ? extensions : undefined,
-  };
+  } as RelatedPerson;
 }
 
 export function fromFHIRRelatedPerson(resource: RelatedPerson): Parent {

@@ -1,4 +1,4 @@
-import type {RelatedPerson} from '@yosemite-crew/fhirtypes';
+import type {RelatedPerson} from '@yosemite-crew/fhir';
 
 import apiClient, {withAuthHeaders} from '@/shared/services/apiClient';
 import {

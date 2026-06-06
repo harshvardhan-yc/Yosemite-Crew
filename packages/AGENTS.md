@@ -1,16 +1,15 @@
 # Shared Packages — Agent Rules
 
-Inherits all root `AGENTS.md` rules. This file covers `packages/types`, `packages/fhirtypes`, and `packages/fhir`.
+Inherits all root `AGENTS.md` rules. This file covers `packages/types` and `packages/fhir`.
 
 ---
 
 ## Packages
 
-| Package                    | Purpose                                                            |
-| -------------------------- | ------------------------------------------------------------------ |
-| `@yosemite-crew/types`     | Shared TypeScript types used by frontend, backend, and mobile      |
-| `@yosemite-crew/fhirtypes` | FHIR (Fast Healthcare Interoperability Resources) type definitions |
-| `@yosemite-crew/fhir`      | FHIR utility functions                                             |
+| Package                | Purpose                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| `@yosemite-crew/types` | Shared TypeScript types used by frontend, backend, and mobile |
+| `@yosemite-crew/fhir`  | FHIR R4 generated types and compatibility helpers             |
 
 ---
 

@@ -47,7 +47,7 @@
     "@react-navigation/native-stack": "^7.3.26",
     "@reduxjs/toolkit": "^2.6.1",
     "@stripe/stripe-react-native": "^0.57.0",
-    "@yosemite-crew/fhirtypes": "workspace:*",
+    "@yosemite-crew/fhir": "workspace:*",
     "@yosemite-crew/types": "workspace:*",
     "aws-amplify": "^6.15.6",
     "axios": "^1.15.0",

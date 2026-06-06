@@ -1,9 +1,9 @@
-import {
+import type {
   Invoice as FHIRInvoice,
   InvoiceLineItem,
   Currency,
   Extension,
-} from '@yosemite-crew/fhirtypes';
+} from '@yosemite-crew/fhir';
 import dayjs from 'dayjs';
 
 export type InvoiceStatus =
@@ -240,6 +240,9 @@ const buildTotalPriceComponents = (invoice: Invoice): FHIRInvoice['totalPriceCom
 export function toFHIRInvoice(invoice: Invoice): FHIRInvoice {
   const lineItems: InvoiceLineItem[] = invoice.items.map((item, index) => ({
     sequence: index + 1,
+    chargeItemReference: {
+      reference: `ChargeItem/${item.id ?? index + 1}`,
+    },
     chargeItemCodeableConcept: {
       text: item.description ?? item.name,
       coding: [

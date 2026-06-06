@@ -61,7 +61,7 @@ Make workers idempotent — jobs may be retried.
 
 ## Healthcare Data
 
-- Use FHIR types from `@yosemite-crew/fhirtypes` — never invent custom health data shapes.
+- Use FHIR types from `@yosemite-crew/fhir` — never invent custom health data shapes.
 - IDEXX and Merck integrations: extend `src/integrations/`, never inline in controllers.
 
 ---

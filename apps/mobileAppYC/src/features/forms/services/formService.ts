@@ -1,8 +1,5 @@
 import apiClient, {withAuthHeaders} from '@/shared/services/apiClient';
-import type {
-  Questionnaire,
-  QuestionnaireResponse,
-} from '@yosemite-crew/fhirtypes';
+import type {Questionnaire, QuestionnaireResponse} from '@yosemite-crew/fhir';
 import {
   type Form,
   type FormField,
