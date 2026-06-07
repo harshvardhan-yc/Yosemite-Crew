@@ -30,7 +30,8 @@
     "e2e:headed": "pnpm run test:a11y && playwright test --headed",
     "e2e:ui": "playwright test --ui",
     "check:bundle-budgets": "node ./scripts/check-bundle-budgets.mjs",
-    "report:build-routes": "node ./scripts/export-build-report.mjs"
+    "report:build-routes": "node ./scripts/export-build-report.mjs",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@calcom/embed-react": "^1.5.3",
