@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type { Appointment } from '@yosemite-crew/types';
 import AppointmentWorkspace from '@/app/features/appointments/pages/AppointmentWorkspace';
@@ -22,16 +22,21 @@ jest.mock('@/app/features/appointments/pages/AppointmentWorkspace/steps/SoapStep
     appointmentReason,
     encounter,
     onRecordVitals,
+    onSaveAndNext,
   }: {
     appointmentReason: string;
     encounter: AppointmentEncounter;
     onRecordVitals: () => void;
+    onSaveAndNext: () => void;
   }) => (
     <div>
       SOAP read only: {String(encounter.viewOnly)}
       <span>SOAP reason: {appointmentReason}</span>
       <button type="button" onClick={onRecordVitals}>
         Mock record vitals
+      </button>
+      <button type="button" onClick={onSaveAndNext}>
+        Mock soap save next
       </button>
     </div>
   ),
@@ -48,19 +53,10 @@ jest.mock('@/app/features/appointments/pages/AppointmentWorkspace/steps/Diagnost
 
 jest.mock('@/app/features/appointments/pages/AppointmentWorkspace/steps/TreatmentStep', () => ({
   __esModule: true,
-  default: ({
-    onOpenInvoice,
-    onSkipToSummary,
-  }: {
-    onOpenInvoice: () => void;
-    onSkipToSummary: () => void;
-  }) => (
+  default: ({ onOpenInvoice }: { onOpenInvoice: () => void }) => (
     <div>
       <button type="button" onClick={onOpenInvoice}>
         Mock open invoice
-      </button>
-      <button type="button" onClick={onSkipToSummary}>
-        Mock skip summary
       </button>
     </div>
   ),
@@ -147,7 +143,12 @@ describe('AppointmentWorkspace container', () => {
     expect(useAppointmentWorkspaceStore.getState().activeSideAction).toBe('RECORD');
 
     fireEvent.click(screen.getByRole('button', { name: 'Quick Actions' }));
-    fireEvent.click(screen.getByRole('button', { name: /close quick actions/i }));
+    // Close the Quick actions modal via the Close button inside its panel (the
+    // modal header sits next to the "Quick actions" nav landmark).
+    const quickActionsPanel = screen
+      .getByRole('navigation', { name: 'Quick actions' })
+      .closest('div')!;
+    fireEvent.click(within(quickActionsPanel).getByRole('button', { name: /^close$/i }));
     expect(useAppointmentWorkspaceStore.getState().activeSideAction).toBeNull();
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Diagnostics' })[0]);
@@ -169,8 +170,9 @@ describe('AppointmentWorkspace container', () => {
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /room: ward a/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Ward B' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Unit' }));
-    fireEvent.click(screen.getByRole('button', { name: 'B' }));
+    // Selecting a room auto-selects that room's first unit, so the Unit dropdown
+    // now reflects "B" (unit-b) rather than the placeholder.
+    expect(screen.getByRole('button', { name: 'Unit: B' })).toBeInTheDocument();
 
     const encounter = useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace');
     expect(encounter?.roomId).toBe('room-2');
@@ -206,7 +208,8 @@ describe('AppointmentWorkspace container', () => {
       useAppointmentWorkspaceStore.getState().setActiveStep('TREATMENT');
     });
     rerender(<AppointmentWorkspace appointment={makeAppointment(new Date())} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Mock skip summary' }));
+    // "Skip to Summary" now lives in the meta bar (treatment primary CTA).
+    fireEvent.click(screen.getByRole('button', { name: /skip to summary/i }));
     expect(mockReplace).toHaveBeenCalledWith(
       '/appointments/appt-workspace/workspace?step=SUMMARY',
       {

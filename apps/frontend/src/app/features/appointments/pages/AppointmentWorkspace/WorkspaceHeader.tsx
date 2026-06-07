@@ -1,11 +1,16 @@
 import React from 'react';
 import { IoIosArrowBack } from 'react-icons/io';
-import { IoAdd } from 'react-icons/io5';
-import { LuZap } from 'react-icons/lu';
+import { LuPlus } from 'react-icons/lu';
+import { HiBolt } from 'react-icons/hi2';
+import type { Appointment } from '@yosemite-crew/types';
+import { Secondary } from '@/app/ui/primitives/Buttons';
 import AlertPill from '@/app/features/appointments/pages/AppointmentWorkspace/components/AlertPill';
+import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
+import EmergencyBadge from '@/app/features/appointments/components/EmergencyBadge';
 import type { CompanionAlert } from '@/app/features/appointments/types/workspace';
 
 type WorkspaceHeaderProps = {
+  appointment: Appointment;
   companionName: string;
   alerts: CompanionAlert[];
   onBack: () => void;
@@ -13,8 +18,13 @@ type WorkspaceHeaderProps = {
   onAddAlert?: () => void;
 };
 
-/** Top header: back arrow, "<Companion>'s Appointment", alert pills, Quick Actions. */
+/**
+ * Top header: back arrow, "<Companion>'s Appointment", alert pills, then the
+ * shared status pill (single source of truth — also used in the calendar
+ * popover) and Quick Actions on the right.
+ */
 const WorkspaceHeader = ({
+  appointment,
   companionName,
   alerts,
   onBack,
@@ -34,6 +44,8 @@ const WorkspaceHeader = ({
       <h1 className="font-satoshi text-[24px] font-medium leading-[120%] tracking-[-0.48px] text-neutral-900">
         {companionName.split(' ')[0]}&rsquo;s Appointment
       </h1>
+      <AppointmentStatusPill appointment={appointment} />
+      {appointment.isEmergency && <EmergencyBadge />}
       <div className="flex flex-wrap items-center gap-2">
         {alerts.map((alert) => (
           <AlertPill key={alert.id} label={alert.label} severity={alert.severity} />
@@ -43,23 +55,14 @@ const WorkspaceHeader = ({
             type="button"
             aria-label="Add alert"
             onClick={onAddAlert}
-            className="flex size-5 items-center justify-center rounded-full border border-neutral-300 text-neutral-700 transition-colors duration-150 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
+            className="flex size-6 items-center justify-center rounded-full border border-neutral-500 text-neutral-700 transition-colors duration-150 hover:border-text-brand hover:text-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
           >
-            <IoAdd size={12} aria-hidden="true" />
+            <LuPlus size={14} aria-hidden="true" />
           </button>
         )}
       </div>
     </div>
-    <div className="flex flex-wrap items-center gap-3">
-      <button
-        type="button"
-        onClick={onQuickActions}
-        className="flex items-center gap-2 rounded-2xl border border-neutral-300 bg-neutral-0 px-4 py-2 text-body-4 font-medium text-text-primary transition-colors duration-150 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
-      >
-        <LuZap size={16} aria-hidden="true" />
-        Quick Actions
-      </button>
-    </div>
+    <Secondary text="Quick Actions" onClick={onQuickActions} icon={<HiBolt aria-hidden="true" />} />
   </div>
 );
 

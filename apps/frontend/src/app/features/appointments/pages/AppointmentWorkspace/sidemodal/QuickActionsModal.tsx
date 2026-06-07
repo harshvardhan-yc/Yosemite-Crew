@@ -8,9 +8,9 @@ import {
   LuFileText,
   LuMessageSquare,
   LuActivitySquare,
-  LuX,
 } from 'react-icons/lu';
-import ModalBase from '@/app/ui/overlays/Modal/ModalBase';
+import Modal from '@/app/ui/overlays/Modal';
+import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import type { Appointment } from '@yosemite-crew/types';
 import type { SideAction } from '@/app/features/appointments/types/workspace';
 import RecordPanel from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/panels/RecordPanel';
@@ -81,9 +81,10 @@ const NavButton = ({
 };
 
 /**
- * Quick-actions side modal — a right-docked panel (reuses the shared `Modal`
- * overlay) with a top row of round icon tabs (Record / Tasks / Documents /
- * Chat / Activity / MSD). The active tab routes to its panel below.
+ * Quick-actions side modal — reuses the shared right-docked `Modal` drawer (same
+ * size/styling as the Organization/Tasks side modals) with a top row of round
+ * icon tabs (Record / Tasks / Documents / Chat / Activity / MSD). The active tab
+ * routes to its panel below.
  */
 const QuickActionsModal = ({
   appointment,
@@ -95,35 +96,16 @@ const QuickActionsModal = ({
   const open = activeAction != null;
 
   return (
-    <ModalBase
+    <Modal
       showModal={open}
       setShowModal={(next) => {
         if (!next) onClose();
       }}
       onClose={onClose}
-      aria-labelledby="quick-actions-heading"
-      overlayClassName={`fixed inset-0 z-[1100] backdrop-blur-[2px] transition-opacity duration-200 ease-in-out ${
-        open ? 'opacity-100' : 'pointer-events-none opacity-0'
-      }`}
-      overlayStyle={{ backgroundColor: 'var(--color-overlay-backdrop)' }}
-      containerClassName={`fixed top-0 right-0 z-[1200] flex h-full w-[90%] flex-col bg-white p-4 shadow-xl transition-transform duration-200 ease-out sm:w-[440px] ${
-        open ? 'translate-x-0' : 'pointer-events-none translate-x-full'
-      }`}
     >
-      <div className="flex h-full flex-col">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 id="quick-actions-heading" className="text-body-2 font-bold text-text-primary">
-            Quick actions
-          </h2>
-          <button
-            type="button"
-            aria-label="Close quick actions"
-            onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-full text-neutral-700 hover:bg-neutral-100 focus-visible:outline-none"
-          >
-            <LuX size={20} aria-hidden="true" />
-          </button>
-        </div>
+      <div className="flex h-full flex-col gap-4">
+        <ModalHeader title="Quick actions" onClose={onClose} />
+
         <nav
           aria-label="Quick actions"
           className="flex items-start justify-between gap-2 border-b border-card-border px-2 pb-4"
@@ -170,7 +152,7 @@ const QuickActionsModal = ({
           </button>
         </nav>
 
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-hidden pr-1">
           {activeAction === 'RECORD' && <RecordPanel appointmentId={appointmentId} />}
           {activeAction === 'TASKS' && <TasksPanel appointmentId={appointmentId} />}
           {activeAction === 'DOCUMENTS' && (
@@ -181,7 +163,7 @@ const QuickActionsModal = ({
           {activeAction === 'MSD' && <MsdPanel appointment={appointment} />}
         </div>
       </div>
-    </ModalBase>
+    </Modal>
   );
 };
 

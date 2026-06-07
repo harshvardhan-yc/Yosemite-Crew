@@ -10,8 +10,15 @@ import CompanionContextCard from '@/app/features/appointments/pages/AppointmentW
 import WorkspaceMetaBar from '@/app/features/appointments/pages/AppointmentWorkspace/WorkspaceMetaBar';
 import { buildMockEncounter } from '@/app/features/appointments/services/workspaceMockData';
 import type { StepStatus, WorkspaceStep } from '@/app/features/appointments/types/workspace';
+import type { Appointment } from '@yosemite-crew/types';
 
 expect.extend(toHaveNoViolations);
+
+const headerAppointment = {
+  id: 'appt-1',
+  status: 'COMPLETED',
+  companion: { id: 'c1', name: 'Gigi', species: 'Canine', parent: { id: 'p1', name: 'Rachel' } },
+} as unknown as Appointment;
 
 const stepStatus: Record<WorkspaceStep, StepStatus> = {
   SOAP: 'COMPLETED',
@@ -87,6 +94,7 @@ describe('WorkspaceHeader', () => {
     const onQuickActions = jest.fn();
     render(
       <WorkspaceHeader
+        appointment={headerAppointment}
         companionName="Gigi Hadid"
         alerts={[{ id: '1', label: 'Needs muzzle', severity: 'CAUTION' }]}
         onBack={onBack}
@@ -101,6 +109,59 @@ describe('WorkspaceHeader', () => {
     expect(onBack).toHaveBeenCalled();
     expect(onQuickActions).toHaveBeenCalled();
   });
+
+  it('fires the add-alert action when provided', () => {
+    const onAddAlert = jest.fn();
+    render(
+      <WorkspaceHeader
+        appointment={headerAppointment}
+        companionName="Gigi Hadid"
+        alerts={[]}
+        onBack={jest.fn()}
+        onQuickActions={jest.fn()}
+        onAddAlert={onAddAlert}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /add alert/i }));
+    expect(onAddAlert).toHaveBeenCalled();
+  });
+
+  it('omits the add-alert button when no handler is provided', () => {
+    render(
+      <WorkspaceHeader
+        appointment={headerAppointment}
+        companionName="Gigi"
+        alerts={[]}
+        onBack={jest.fn()}
+        onQuickActions={jest.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /add alert/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the Emergency badge only for emergency appointments', () => {
+    const { rerender } = render(
+      <WorkspaceHeader
+        appointment={headerAppointment}
+        companionName="Gigi"
+        alerts={[]}
+        onBack={jest.fn()}
+        onQuickActions={jest.fn()}
+      />
+    );
+    expect(screen.queryByText('Emergency')).not.toBeInTheDocument();
+
+    rerender(
+      <WorkspaceHeader
+        appointment={{ ...headerAppointment, isEmergency: true } as typeof headerAppointment}
+        companionName="Gigi"
+        alerts={[]}
+        onBack={jest.fn()}
+        onQuickActions={jest.fn()}
+      />
+    );
+    expect(screen.getByText('Emergency')).toBeInTheDocument();
+  });
 });
 
 describe('CompanionContextCard', () => {
@@ -111,14 +172,28 @@ describe('CompanionContextCard', () => {
 
   it('renders details and view-details action', () => {
     const onViewDetails = jest.fn();
-    render(<CompanionContextCard name="Gigi" details={details} onViewDetails={onViewDetails} />);
+    render(
+      <CompanionContextCard
+        name="Gigi"
+        details={details}
+        mode="OUTPATIENT"
+        onViewDetails={onViewDetails}
+      />
+    );
     expect(screen.getByText('PT-48291')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /view details/i }));
     expect(onViewDetails).toHaveBeenCalled();
   });
 
+  it('renders the inpatient mode pill', () => {
+    render(<CompanionContextCard name="Gigi" details={details} mode="INPATIENT" />);
+    expect(screen.getByText('Inpatient')).toBeInTheDocument();
+  });
+
   it('has no axe violations', async () => {
-    const { container } = render(<CompanionContextCard name="Gigi" details={details} />);
+    const { container } = render(
+      <CompanionContextCard name="Gigi" details={details} mode="OUTPATIENT" />
+    );
     expect(await axe(container)).toHaveNoViolations();
   });
 });
@@ -154,12 +229,8 @@ describe('WorkspaceMetaBar', () => {
   const baseProps = (mode: 'OUTPATIENT' | 'INPATIENT') => ({
     encounter: buildMockEncounter('a1', mode),
     activeStep: 'SOAP' as WorkspaceStep,
-    leadOptions: [{ label: 'Dr Tim', value: 'usr-tim' }],
-    nurseOptions: [{ label: 'Sarah', value: 'usr-sarah' }],
     roomOptions: [{ label: 'Room 1', value: 'room-1' }],
     unitOptions: [{ label: '24', value: 'unit-24' }],
-    onSelectLead: jest.fn(),
-    onSelectNurse: jest.fn(),
     onSelectRoom: jest.fn(),
     onSelectUnit: jest.fn(),
     onSelectEncounterMode: jest.fn(),
@@ -192,8 +263,27 @@ describe('WorkspaceMetaBar', () => {
     expect(screen.getByText('Unit')).toBeInTheDocument();
   });
 
+  it('labels the support staff field and keeps the lead field', () => {
+    const props = baseProps('INPATIENT');
+    render(<WorkspaceMetaBar {...props} />);
+    expect(screen.getByText('Assigned Lead')).toBeInTheDocument();
+    expect(screen.getByText('Support Staff')).toBeInTheDocument();
+    expect(screen.queryByText('Assigned Nurse')).not.toBeInTheDocument();
+    // Inpatient still surfaces the Ready toggles and the advance button.
+    expect(screen.getByText('Ready for Billing')).toBeInTheDocument();
+    expect(screen.getByText('Ready for Discharge')).toBeInTheDocument();
+  });
+
   it('shows a custom primary CTA when provided', () => {
     const props = baseProps('OUTPATIENT');
+    const onClick = jest.fn();
+    render(<WorkspaceMetaBar {...props} primaryCta={{ label: 'Skip to Summary', onClick }} />);
+    fireEvent.click(screen.getByText('Skip to Summary'));
+    expect(onClick).toHaveBeenCalled();
+  });
+
+  it('shows a custom primary CTA in the inpatient layout', () => {
+    const props = baseProps('INPATIENT');
     const onClick = jest.fn();
     render(<WorkspaceMetaBar {...props} primaryCta={{ label: 'Skip to Summary', onClick }} />);
     fireEvent.click(screen.getByText('Skip to Summary'));

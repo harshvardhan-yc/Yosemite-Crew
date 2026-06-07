@@ -14,25 +14,28 @@ type WorkspaceStepperProps = {
 };
 
 /**
- * Marker = outer circular ring + a solid centre dot. Completed swaps the dot for
- * a check; active uses the brand colour; idle is neutral.
+ * Marker = 16px outer ring + 8px solid centre dot. Active = brand blue, completed
+ * shows a check, every other step is neutral-700 (matches the figma stepper where
+ * all non-active markers are dark-filled rather than light/idle).
  */
 const StepMarker = ({ isActive, status }: { isActive: boolean; status: StepStatus }) => {
   const isCompleted = status === 'COMPLETED';
-  const ringColor = isCompleted || isActive ? 'border-text-brand' : 'border-neutral-300';
-  const dotColor = isCompleted || isActive ? 'bg-text-brand' : 'bg-neutral-300';
+  const accent = isActive ? 'border-text-brand' : 'border-neutral-700';
+  const fill = isActive ? 'bg-text-brand' : 'bg-neutral-700';
 
   return (
     <span
       aria-hidden="true"
-      className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 bg-neutral-0 transition-colors duration-150 ${ringColor}`}
+      className={`flex size-4 shrink-0 items-center justify-center rounded-full border bg-neutral-0 transition-colors duration-150 ${accent}`}
     >
-      {isCompleted ? (
-        <span className="flex size-3 items-center justify-center rounded-full bg-text-brand text-neutral-0">
-          <FaCheck size={7} />
+      {isCompleted && !isActive ? (
+        <span
+          className={`flex size-2 items-center justify-center rounded-full text-neutral-0 ${fill}`}
+        >
+          <FaCheck size={6} />
         </span>
       ) : (
-        <span className={`size-2 rounded-full transition-colors duration-150 ${dotColor}`} />
+        <span className={`size-2 rounded-full transition-colors duration-150 ${fill}`} />
       )}
     </span>
   );
@@ -46,7 +49,7 @@ const WorkspaceStepper = ({ activeStep, stepStatus, onStepChange }: WorkspaceSte
       const status = stepStatus[step];
       const isLast = index === WORKSPACE_STEPS.length - 1;
       return (
-        <li key={step} className="flex flex-1 items-start last:flex-none">
+        <li key={step} className="flex flex-1 items-center last:flex-none">
           <button
             type="button"
             aria-current={isActive ? 'step' : undefined}
@@ -63,7 +66,11 @@ const WorkspaceStepper = ({ activeStep, stepStatus, onStepChange }: WorkspaceSte
           {!isLast && (
             <span
               aria-hidden="true"
-              className="mt-2.5 h-0 flex-1 border-t-2 border-dashed border-neutral-300"
+              className="mx-2 mb-5.5 h-px flex-1 self-center"
+              style={{
+                backgroundImage:
+                  'repeating-linear-gradient(to right, var(--color-neutral-500) 0 8px, transparent 8px 16px)',
+              }}
             />
           )}
         </li>

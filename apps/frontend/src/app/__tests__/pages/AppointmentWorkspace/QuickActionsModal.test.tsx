@@ -112,7 +112,7 @@ describe('QuickActionsModal shell', () => {
 
   it('closes from the close button', () => {
     const { onClose } = renderModal('RECORD');
-    fireEvent.click(screen.getByRole('button', { name: /close quick actions/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
     expect(onClose).toHaveBeenCalled();
   });
 

@@ -1,5 +1,5 @@
 'use client';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Appointment } from '@yosemite-crew/types';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
@@ -18,10 +18,13 @@ import {
 import { resolveLockHours } from '@/app/lib/appointmentLockWindow';
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
+import { useLoadCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
+import { useCompanionStore } from '@/app/stores/companionStore';
+import { buildCompanionDetails } from '@/app/lib/companionWorkspaceDetails';
+import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
 import WorkspaceHeader from '@/app/features/appointments/pages/AppointmentWorkspace/WorkspaceHeader';
-import CompanionContextCard, {
-  type CompanionDetail,
-} from '@/app/features/appointments/pages/AppointmentWorkspace/CompanionContextCard';
+import AddAlertModal from '@/app/features/appointments/pages/AppointmentWorkspace/components/AddAlertModal';
+import CompanionContextCard from '@/app/features/appointments/pages/AppointmentWorkspace/CompanionContextCard';
 import WorkspaceStepper from '@/app/features/appointments/pages/AppointmentWorkspace/WorkspaceStepper';
 import WorkspaceMetaBar from '@/app/features/appointments/pages/AppointmentWorkspace/WorkspaceMetaBar';
 import SoapStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/SoapStep';
@@ -56,24 +59,6 @@ const getRoomUnits = (room?: WorkspaceRoom): RoomUnit[] => {
   return buildGeneratedUnits(room.unitCount ?? 0);
 };
 
-const buildCompanionDetails = (appointment: Appointment): CompanionDetail[] => {
-  const { companion } = appointment;
-  return [
-    { label: 'Name', value: companion.name },
-    { label: 'Patient ID', value: companion.id },
-    {
-      label: 'Breed/Species',
-      value: [companion.breed, companion.species].filter(Boolean).join(' / '),
-    },
-    { label: 'Age / DOB', value: '-' },
-    { label: 'Sex', value: '-' },
-    { label: 'Weight', value: '-' },
-    { label: 'Blood Group', value: '-' },
-    { label: 'Microchip ID', value: '-' },
-    { label: 'Allergies', value: '-' },
-  ];
-};
-
 const isValidStep = (value: string | null): value is WorkspaceStep =>
   value != null && (WORKSPACE_STEPS as string[]).includes(value);
 
@@ -89,7 +74,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const searchParams = useSearchParams();
   const attributes = useAuthStore((s) => s.attributes);
   useLoadRoomsForPrimaryOrg();
+  useLoadCompanionsForPrimaryOrg();
   const rooms = useRoomsForPrimaryOrg() as WorkspaceRoom[];
+  const companionRecord = useCompanionStore((s) => s.companionsById[appointment.companion.id]);
 
   const appointmentId = appointment.id ?? '';
   const initialMode = useMemo(() => resolveEncounterMode(appointment), [appointment]);
@@ -102,11 +89,11 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const activeSideAction = useAppointmentWorkspaceStore((s) => s.activeSideAction);
   const setActiveSideAction = useAppointmentWorkspaceStore((s) => s.setActiveSideAction);
   const setEncounterMode = useAppointmentWorkspaceStore((s) => s.setEncounterMode);
-  const setLead = useAppointmentWorkspaceStore((s) => s.setLead);
-  const setNurse = useAppointmentWorkspaceStore((s) => s.setNurse);
   const setRoomUnit = useAppointmentWorkspaceStore((s) => s.setRoomUnit);
   const toggleReadyForBilling = useAppointmentWorkspaceStore((s) => s.toggleReadyForBilling);
   const toggleReadyForDischarge = useAppointmentWorkspaceStore((s) => s.toggleReadyForDischarge);
+  const addAlert = useAppointmentWorkspaceStore((s) => s.addAlert);
+  const [isAddAlertOpen, setIsAddAlertOpen] = useState(false);
 
   useEffect(() => {
     if (appointmentId) initEncounter(appointmentId, initialMode);
@@ -140,7 +127,19 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     setActiveStep(isValidStep(stepParam) ? stepParam : resolveLandingStep(landingEncounter));
   }, [encounter, lockedByWindow, stepParam, setActiveStep]);
 
-  const companionDetails = useMemo(() => buildCompanionDetails(appointment), [appointment]);
+  const companionDetails = useMemo(
+    () =>
+      buildCompanionDetails(
+        {
+          id: appointment.companion.id,
+          name: appointment.companion.name,
+          species: appointment.companion.species,
+          breed: appointment.companion.breed,
+        },
+        companionRecord
+      ),
+    [appointment.companion, companionRecord]
+  );
   const effectiveEncounter = useMemo(
     () =>
       encounter
@@ -201,15 +200,26 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     <div className="flex flex-col gap-5 pb-12">
       <div className="-mx-4 -mt-5 flex flex-col gap-5 bg-(--status-in-progress-bg) px-4 pt-5 pb-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <WorkspaceHeader
+          appointment={appointment}
           companionName={appointment.companion.name}
           alerts={effectiveEncounter.alerts}
           onBack={() => router.push('/appointments')}
           onQuickActions={() => setActiveSideAction('RECORD')}
+          onAddAlert={() => setIsAddAlertOpen(true)}
         />
 
-        <div>
-          <CompanionContextCard name={appointment.companion.name} details={companionDetails} />
-        </div>
+        <CompanionContextCard
+          name={appointment.companion.name}
+          photoUrl={companionRecord?.photoUrl}
+          speciesType={companionRecord?.type ?? appointment.companion.species}
+          details={companionDetails}
+          mode={encounterMode}
+          onViewDetails={() =>
+            router.push(
+              buildAppointmentCompanionHistoryHref(appointmentId, appointment.companion.id)
+            )
+          }
+        />
 
         <WorkspaceStepper
           activeStep={activeStep}
@@ -221,20 +231,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       <WorkspaceMetaBar
         encounter={effectiveEncounter}
         activeStep={activeStep}
-        leadOptions={
-          effectiveEncounter.leadId
-            ? [{ label: effectiveEncounter.leadName ?? '', value: effectiveEncounter.leadId }]
-            : []
-        }
-        nurseOptions={
-          effectiveEncounter.nurseId
-            ? [{ label: effectiveEncounter.nurseName ?? '', value: effectiveEncounter.nurseId }]
-            : []
-        }
         roomOptions={roomOptions}
         unitOptions={unitOptions}
-        onSelectLead={(o) => setLead(appointmentId, o.value, o.label)}
-        onSelectNurse={(o) => setNurse(appointmentId, o.value, o.label)}
         onSelectRoom={(o) => {
           const nextRoom = rooms.find((room) => room.id === o.value);
           const nextUnit = getRoomUnits(nextRoom)[0]?.id;
@@ -256,6 +254,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
             appointmentReason={appointmentReason}
             encounter={effectiveEncounter}
             onRecordVitals={() => setActiveSideAction('RECORD')}
+            onSaveAndNext={handleSaveAndNext}
           />
         )}
         {activeStep === 'DIAGNOSTICS' && (
@@ -269,7 +268,6 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
             appointmentId={appointmentId}
             encounter={effectiveEncounter}
             onOpenInvoice={() => handleStepChange('INVOICE')}
-            onSkipToSummary={() => handleStepChange('SUMMARY')}
           />
         )}
         {activeStep === 'INVOICE' && (
@@ -294,6 +292,13 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         activeAction={activeSideAction}
         onChangeAction={setActiveSideAction}
         onClose={() => setActiveSideAction(null)}
+      />
+
+      <AddAlertModal
+        open={isAddAlertOpen}
+        companionName={appointment.companion.name}
+        onClose={() => setIsAddAlertOpen(false)}
+        onAdd={(alert) => addAlert(appointmentId, alert)}
       />
     </div>
   );

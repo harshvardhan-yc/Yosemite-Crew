@@ -261,7 +261,11 @@ const InhouseOrderBuilder = ({ s }: { s: UseLabTestsReturn }) => (
 const OrderBuilderSection = ({ s }: { s: UseLabTestsReturn }) => {
   const isInHouse = s.modality === 'INHOUSE';
   return (
-    <SectionContainer title="Order Builder" className="flex flex-col gap-5">
+    <SectionContainer
+      titleClassName="text-yc-20-b-primary"
+      title="Order Builder"
+      className="flex flex-col gap-5"
+    >
       <div className="flex justify-end">
         <div className="w-full sm:w-72">
           <LabelDropdown
@@ -295,7 +299,11 @@ const OrderBuilderSection = ({ s }: { s: UseLabTestsReturn }) => {
 };
 
 const TestQueueSection = ({ s }: { s: UseLabTestsReturn }) => (
-  <SectionContainer title="Test Queue" className="flex flex-col gap-5">
+  <SectionContainer
+    titleClassName="text-yc-20-b-primary"
+    title="Test Queue"
+    className="flex flex-col gap-5"
+  >
     {s.selectedTests.length === 0 ? (
       <p className="rounded-2xl bg-neutral-100 p-5 text-body-4 text-text-secondary">
         No tests selected yet. Search and add tests from the Order Builder.
@@ -325,7 +333,11 @@ const OrderStatusSection = ({
   s: UseLabTestsReturn;
   orderButtonText: string;
 }) => (
-  <SectionContainer title="Order Status" className="flex flex-col gap-4">
+  <SectionContainer
+    titleClassName="text-yc-20-b-primary"
+    title="Order Status"
+    className="flex flex-col gap-4"
+  >
     {s.appointmentOrders.length === 0 ? (
       <p className="text-body-4 text-text-secondary">
         {s.ordersLoading
@@ -392,7 +404,11 @@ const OrderStatusSection = ({
 );
 
 const ResultsSection = ({ s }: { s: UseLabTestsReturn }) => (
-  <SectionContainer title="Results" className="flex flex-col gap-4">
+  <SectionContainer
+    titleClassName="text-yc-20-b-primary"
+    title="Results"
+    className="flex flex-col gap-4"
+  >
     {s.results.length === 0 ? (
       <p className="text-body-4 text-text-secondary">
         {s.refreshingResults ? 'Refreshing results…' : 'No results available yet.'}
@@ -471,7 +487,11 @@ const OrderIframeOverlay = ({ s }: { s: UseLabTestsReturn }) => {
 };
 
 const RadAnalyzerComingSoon = () => (
-  <SectionContainer title="RadAnalyzer" className="flex flex-col gap-3">
+  <SectionContainer
+    titleClassName="text-yc-20-b-primary"
+    title="RadAnalyzer"
+    className="flex flex-col gap-3"
+  >
     <p className="text-body-4 text-text-secondary">
       RadAnalyzer diagnostics are coming soon for the appointment workspace.
     </p>
@@ -482,7 +502,11 @@ const RadAnalyzerComingSoon = () => (
 );
 
 const IdexxNotEnabled = () => (
-  <SectionContainer title="IDEXX Diagnostics" className="flex flex-col gap-3">
+  <SectionContainer
+    titleClassName="text-yc-20-b-primary"
+    title="IDEXX Diagnostics"
+    className="flex flex-col gap-3"
+  >
     <p className="text-body-3 text-text-primary">
       IDEXX integration is not enabled for this organization.
     </p>
