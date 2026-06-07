@@ -1,15 +1,6 @@
 import React from 'react';
-import {
-  Platform,
-  StyleProp,
-  StyleSheet,
-  View,
-  ViewStyle,
-} from 'react-native';
-import {
-  LiquidGlassView,
-  isLiquidGlassSupported,
-} from '@callstack/liquid-glass';
+import {Platform, StyleProp, StyleSheet, View, ViewStyle} from 'react-native';
+import {LiquidGlassView, isLiquidGlassSupported} from '@callstack/liquid-glass';
 import {useTheme} from '@/hooks';
 import {UI_FEATURE_FLAGS} from '@/config/variables';
 
@@ -76,7 +67,9 @@ export const LiquidGlassCard: React.FC<LiquidGlassCardProps> = ({
         ? ANDROID_DARK_CARD_TINT_REGULAR
         : ANDROID_LIGHT_CARD_TINT_REGULAR;
     }
-    return resolvedColorScheme === 'dark' ? IOS_DARK_CARD_TINT : IOS_LIGHT_CARD_TINT;
+    return resolvedColorScheme === 'dark'
+      ? IOS_DARK_CARD_TINT
+      : IOS_LIGHT_CARD_TINT;
   }, [glassEffect, resolvedColorScheme, tintColor]);
 
   const defaultBackgroundColor = isDark
@@ -110,10 +103,11 @@ export const LiquidGlassCard: React.FC<LiquidGlassCardProps> = ({
     defaultBackgroundColor;
   const overlayBorderColor = FORCE_CARD_BORDER
     ? FORCED_BORDER_COLOR
-    : (mergedStyleOverrides?.borderColor as string | undefined) ?? defaultBorderColor;
+    : ((mergedStyleOverrides?.borderColor as string | undefined) ??
+      defaultBorderColor);
   const overlayBorderWidth = FORCE_CARD_BORDER
     ? FORCED_BORDER_WIDTH
-    : mergedStyleOverrides?.borderWidth ?? defaultBorderWidth;
+    : (mergedStyleOverrides?.borderWidth ?? defaultBorderWidth);
 
   const overlayShapeStyle = React.useMemo(() => {
     const shape: ViewStyle = {};
@@ -155,7 +149,10 @@ export const LiquidGlassCard: React.FC<LiquidGlassCardProps> = ({
   ]);
 
   const useNativeGlass =
-    Platform.OS === 'ios' && isLiquidGlassSupported && !LOCK_IOS_GLASS_APPEARANCE;
+    Platform.OS === 'ios' &&
+    isLiquidGlassSupported &&
+    !LOCK_IOS_GLASS_APPEARANCE &&
+    glassEffect !== 'none';
 
   if (useNativeGlass) {
     const iosGlassStyle = StyleSheet.flatten([

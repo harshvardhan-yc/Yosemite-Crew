@@ -239,6 +239,7 @@ export const BrowseBusinessesScreen: React.FC = () => {
     [enrichWithDistance, userCoords],
   );
   const hasInitialSearched = useRef(false);
+  const hasLocationSearched = useRef(false);
 
   useEffect(() => {
     setSearchQuery(initialQuery);
@@ -249,6 +250,12 @@ export const BrowseBusinessesScreen: React.FC = () => {
     hasInitialSearched.current = true;
     performSearch(initialQuery);
   }, [locationLoading, initialQuery, performSearch]);
+
+  useEffect(() => {
+    if (!userLocation || hasLocationSearched.current) return;
+    hasLocationSearched.current = true;
+    performSearch(initialQuery);
+  }, [userLocation, initialQuery, performSearch]);
 
   const reduxBusinesses = useSelector(
     (state: RootState) => state.businesses?.businesses ?? [],
@@ -279,10 +286,15 @@ export const BrowseBusinessesScreen: React.FC = () => {
     [setMapRegion],
   );
 
+  const [headerHeight, setHeaderHeight] = useState(0);
+
   const showSearchResults =
     searchQuery.length >= 2 && searchResults.length > 0 && !searching;
 
-  const dropdownTop = buildDropdownTop(theme) + theme.spacing['2'];
+  const dropdownTop =
+    headerHeight > 0
+      ? headerHeight + theme.spacing['2']
+      : buildDropdownTop(theme) + theme.spacing['2'];
 
   const searchResultsOverlay = showSearchResults ? (
     <BusinessSearchDropdown
@@ -318,6 +330,7 @@ export const BrowseBusinessesScreen: React.FC = () => {
         onOpenNowChange={setOpenNow}
         onBack={() => navigation.goBack()}
         searchResultsOverlay={searchResultsOverlay}
+        onSearchBarLayout={setHeaderHeight}
       />
     </View>
   );

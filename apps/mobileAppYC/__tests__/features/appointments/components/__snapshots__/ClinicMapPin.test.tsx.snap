@@ -2,6 +2,7 @@
 
 exports[`ClinicMapPin snapshot matches for selected state 1`] = `
 <View
+  collapsable={false}
   style={
     [
       {
@@ -99,6 +100,7 @@ exports[`ClinicMapPin snapshot matches for selected state 1`] = `
 
 exports[`ClinicMapPin snapshot matches for unselected state 1`] = `
 <View
+  collapsable={false}
   style={
     [
       {
