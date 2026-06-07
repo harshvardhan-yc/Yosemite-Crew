@@ -113,6 +113,9 @@ importers:
       '@yosemite-crew/auth':
         specifier: workspace:^
         version: link:../../packages/auth
+      '@yosemite-crew/database':
+        specifier: workspace:^
+        version: link:../../packages/database
       aws-sdk:
         specifier: 2.1692.0
         version: 2.1692.0
@@ -895,6 +898,22 @@ importers:
       '@types/node':
         specifier: ^22.19.8
         version: 22.19.8
+      typescript:
+        specifier: 5.0.4
+        version: 5.0.4
+
+  packages/database:
+    dependencies:
+      '@prisma/client':
+        specifier: ^5.22.0
+        version: 5.22.0(prisma@5.22.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.21
+        version: 22.19.8
+      prisma:
+        specifier: ^5.22.0
+        version: 5.22.0
       typescript:
         specifier: 5.0.4
         version: 5.0.4
