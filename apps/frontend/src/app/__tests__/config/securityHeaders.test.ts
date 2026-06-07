@@ -69,6 +69,8 @@ describe('security headers', () => {
     expect(directives.get('script-src')).toContain("'self'");
     expect(directives.get('script-src')).toContain("'nonce-test-nonce'");
     expect(directives.get('script-src')).toContain('https://js.stripe.com');
+    expect(directives.get('script-src')).toContain('https://connect-js.stripe.com');
+    expect(directives.get('script-src')).toContain('https://*.js.stripe.com');
     expect(directives.get('script-src')).toContain("'unsafe-eval'");
     expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
     expect(directives.get('style-src')).toContain('https://fonts.googleapis.com');
@@ -78,6 +80,7 @@ describe('security headers', () => {
     expect(directives.get('font-src')).toContain('https://fonts.gstatic.com');
     expect(directives.get('connect-src')).toContain('blob:');
     expect(directives.get('connect-src')).toContain('https://api.stripe.com');
+    expect(directives.get('connect-src')).toContain('https://connect-js.stripe.com');
     expect(directives.get('connect-src')).toContain('https://places.googleapis.com');
     expect(directives.get('connect-src')).toContain('https://raw.githubusercontent.com');
     expect(directives.get('connect-src')).toContain('http:');
@@ -85,6 +88,9 @@ describe('security headers', () => {
     expect(directives.get('img-src')).toContain('https://upload.wikimedia.org');
     expect(directives.get('frame-src')).toContain('blob:');
     expect(directives.get('frame-src')).toContain('https://js.stripe.com');
+    expect(directives.get('frame-src')).toContain('https://*.js.stripe.com');
+    expect(directives.get('frame-src')).toContain('https://connect-js.stripe.com');
+    expect(directives.get('img-src')).toContain('https://*.stripe.com');
     expect(directives.get('frame-src')).toContain('https://*.merckvetmanual.com');
     expect(directives.get('frame-src')).toContain('https://*.idexx.com');
     expect(directives.get('frame-src')).toContain('https://*.vetconnectplus.com');
