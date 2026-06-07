@@ -92,22 +92,26 @@ const SoapStep = ({
 
   const pastNotes: SoapNoteListItem[] = useMemo(
     () =>
-      encounter.soap
-        .filter((entry) => entry.status === 'COMPLETED')
-        .map((entry) => ({
-          id: entry.id,
-          signedByName: entry.signedByName ?? 'Unknown',
-          signedOffline: entry.signedOffline,
-          date: entry.signedAt ? formatStampDate(entry.signedAt) : undefined,
-          time: entry.signedAt ? formatStampTime(entry.signedAt) : undefined,
-          fields: [
-            { label: 'Chief complaint', text: appointmentReason },
-            { label: 'Subjective (History)', html: entry.subjective },
-            { label: 'Objective (Examination)', html: entry.objective },
-            { label: 'Assessment (Differential)', html: entry.assessment },
-            { label: 'Plan', html: entry.plan },
-          ],
-        })),
+      encounter.soap.flatMap((entry) =>
+        entry.status === 'COMPLETED'
+          ? [
+              {
+                id: entry.id,
+                signedByName: entry.signedByName ?? 'Unknown',
+                signedOffline: entry.signedOffline,
+                date: entry.signedAt ? formatStampDate(entry.signedAt) : undefined,
+                time: entry.signedAt ? formatStampTime(entry.signedAt) : undefined,
+                fields: [
+                  { label: 'Chief complaint', text: appointmentReason },
+                  { label: 'Subjective (History)', html: entry.subjective },
+                  { label: 'Objective (Examination)', html: entry.objective },
+                  { label: 'Assessment (Differential)', html: entry.assessment },
+                  { label: 'Plan', html: entry.plan },
+                ],
+              },
+            ]
+          : []
+      ),
     [appointmentReason, encounter.soap]
   );
 

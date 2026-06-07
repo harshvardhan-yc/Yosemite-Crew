@@ -220,10 +220,8 @@ const InhouseOrderBuilder = ({ s }: { s: UseLabTestsReturn }) => (
         In-house IDEXX workflow requires selecting an IVLS device, then adding the patient to census
         here. Complete ordering on the IDEXX machine after census is confirmed.
       </p>
-      <div
-        role="status"
-        aria-live="polite"
-        className={`rounded-2xl border p-4 text-body-4 ${
+      <output
+        className={`block rounded-2xl border p-4 text-body-4 ${
           s.companionInCensus
             ? 'border-pill-success-border bg-pill-success-bg text-pill-success-text'
             : 'border-card-border text-text-secondary'
@@ -242,7 +240,7 @@ const InhouseOrderBuilder = ({ s }: { s: UseLabTestsReturn }) => (
               : 'Pending for selected device'
             : 'Select an IVLS device to check confirmation state'}
         </p>
-      </div>
+      </output>
     </div>
     <div className="flex flex-col gap-3">
       <LabelDropdown

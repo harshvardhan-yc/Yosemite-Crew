@@ -3,7 +3,7 @@ import { LuCopy, LuEye, LuEyeOff, LuPlus, LuTrash2 } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
-import { TitleAddIcon } from '@/app/features/appointments/pages/AppointmentWorkspace/components/PrescriptionBadges';
+import { TitleAddIcon } from '@/app/features/appointments/pages/AppointmentWorkspace/components/TitleAddIcon';
 import type { LineItem, LineItemBreakdown } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
 

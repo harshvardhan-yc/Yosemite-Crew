@@ -13,6 +13,10 @@ type TreatmentStepProps = {
   onOpenInvoice: () => void;
 };
 
+const handlePrint = () => {
+  globalThis.window.print();
+};
+
 /**
  * Treatment step: services/packages, prescription, and inpatient schedule.
  * Mock-backed mutations mirror the backend contracts already represented in
@@ -35,10 +39,6 @@ const TreatmentStep = ({ appointmentId, encounter, onOpenInvoice }: TreatmentSte
   const handleSaveTreatment = () => {
     setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
     onOpenInvoice();
-  };
-
-  const handlePrint = () => {
-    globalThis.window.print();
   };
 
   return (

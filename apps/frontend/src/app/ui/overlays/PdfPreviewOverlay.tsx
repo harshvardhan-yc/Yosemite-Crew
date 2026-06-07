@@ -45,14 +45,13 @@ const PdfPreviewOverlay = ({
         </div>
         <div className="relative flex-1 min-h-0">
           {!loaded && (
-            <div
+            <output
               className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white"
               aria-label="Loading PDF"
-              role="status"
             >
               <div className="size-8 rounded-full border-2 border-card-border border-t-text-brand animate-spin" />
               <span className="text-body-4 text-text-secondary">Loading PDF…</span>
-            </div>
+            </output>
           )}
           <iframe
             key={safePdfUrl}

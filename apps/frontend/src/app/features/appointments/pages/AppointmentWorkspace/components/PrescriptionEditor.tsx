@@ -4,11 +4,9 @@ import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContai
 import Search from '@/app/ui/inputs/Search';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
-import {
-  RxBadge,
-  StockHealthPill,
-  TitleAddIcon,
-} from '@/app/features/appointments/pages/AppointmentWorkspace/components/PrescriptionBadges';
+import { RxBadge } from '@/app/features/appointments/pages/AppointmentWorkspace/components/RxBadge';
+import { StockHealthPill } from '@/app/features/appointments/pages/AppointmentWorkspace/components/StockHealthPill';
+import { TitleAddIcon } from '@/app/features/appointments/pages/AppointmentWorkspace/components/TitleAddIcon';
 import { formatMoney } from '@/app/lib/money';
 import type {
   PrescriptionFulfillment,

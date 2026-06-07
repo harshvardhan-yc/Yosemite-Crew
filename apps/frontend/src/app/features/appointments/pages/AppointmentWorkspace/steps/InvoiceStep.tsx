@@ -52,14 +52,15 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 
 const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
 
-const formatInvoiceDate = (iso: string): string =>
-  new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(iso));
+const invoiceDateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: '2-digit',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+const formatInvoiceDate = (iso: string): string => invoiceDateFormatter.format(new Date(iso));
 
 const StatusPill = ({ status }: { status: InvoiceStatus }) => (
   <span
