@@ -3,8 +3,7 @@ import { LuCopy, LuEye, LuEyeOff, LuPlus, LuTrash2 } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
-import PackageBreakdownTable from '@/app/features/organization/pages/Specialities/PackageBreakdownTable';
-import type { PackageBreakdownItem } from '@/app/features/organization/types/revamp';
+import { TitleAddIcon } from '@/app/features/appointments/pages/AppointmentWorkspace/components/PrescriptionBadges';
 import type { LineItem, LineItemBreakdown } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
 
@@ -12,9 +11,11 @@ type ServicesPackagesEditorProps = {
   items: LineItem[];
   readOnly: boolean;
   onAddItem: (item: Omit<LineItem, 'id'>) => void;
+  onUpdateItem: (id: string, patch: Partial<LineItem>) => void;
   onRemoveItem: (id: string) => void;
 };
 
+/** Searchable catalog — results only surface as the user types (no chips up front). */
 const CATALOG_ITEMS: Omit<LineItem, 'id'>[] = [
   {
     refId: 'svc-physical-exam',
@@ -43,15 +44,6 @@ const CATALOG_ITEMS: Omit<LineItem, 'id'>[] = [
 
 const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
 
-const toPackageBreakdownItem = (item: LineItemBreakdown): PackageBreakdownItem => ({
-  id: item.id,
-  type: 'PROCEDURE',
-  name: item.name,
-  unitPrice: item.amountCents / 100,
-  quantity: item.qty,
-  discount: 0,
-});
-
 const copyValue = (value?: string) => {
   if (!value || !globalThis.navigator?.clipboard) return;
   globalThis.navigator.clipboard.writeText(value).catch(() => undefined);
@@ -63,10 +55,74 @@ const ItemTag = ({ kind }: { kind: LineItem['kind'] }) => (
   </span>
 );
 
+/** Shared column template + header row so parent items and breakdowns line up. */
+const ROW_GRID = 'grid gap-3 sm:grid-cols-[1.6fr_100px_1.4fr_110px_120px] sm:items-center';
+
+const ColumnHeadings = () => (
+  <div
+    className={`${ROW_GRID} px-1 text-caption-2 font-medium tracking-wide text-text-secondary uppercase`}
+  >
+    <span>Name</span>
+    <span>Qty.</span>
+    <span className="hidden sm:block">Instructions</span>
+    <span className="hidden sm:block">Amount</span>
+    <span aria-hidden="true" className="hidden sm:block" />
+  </div>
+);
+
+/**
+ * Inline, nested package breakdown. Rows reuse the parent column template so they
+ * line up under the same headings — the breakdown itself has no repeated headers.
+ */
+const PackageBreakdown = ({ rows }: { rows: LineItemBreakdown[] }) => (
+  <div className="mt-3">
+    <SectionContainer title="Breakdown" nested className="bg-neutral-0">
+      <ul className="flex flex-col">
+        {rows.map((row) => (
+          <li
+            key={row.id}
+            className={`${ROW_GRID} py-2.5 text-body-4 text-text-primary first:border-t-0`}
+          >
+            <span>{row.name}</span>
+            <span className="text-text-secondary">x{row.qty}</span>
+            <span className="hidden text-text-secondary sm:block">{row.instructions ?? '-'}</span>
+            <span className="pl-6 font-medium">{formatCents(row.amountCents)}</span>
+            <span aria-hidden="true" className="hidden sm:block" />
+          </li>
+        ))}
+      </ul>
+    </SectionContainer>
+  </div>
+);
+
+/** Editable quantity box (finance-style); re-derives amount from unit price. The
+ * "Qty." label comes from the shared column heading, so the input itself is
+ * label-free (aria-label kept for accessibility). */
+const QtyInput = ({
+  item,
+  onUpdateItem,
+}: {
+  item: LineItem;
+  onUpdateItem: (id: string, patch: Partial<LineItem>) => void;
+}) => (
+  <input
+    type="number"
+    min={1}
+    value={item.qty}
+    aria-label={`Quantity for ${item.name}`}
+    onChange={(e) => {
+      const qty = Math.max(1, Number.parseInt(e.target.value, 10) || 1);
+      onUpdateItem(item.id, { qty, amountCents: item.unitPriceCents * qty });
+    }}
+    className="h-9 w-20 rounded-xl border border-input-border-default bg-transparent px-3 text-body-4 text-text-primary focus-visible:border-input-border-active focus-visible:outline-none"
+  />
+);
+
 const ServicesPackagesEditor = ({
   items,
   readOnly,
   onAddItem,
+  onUpdateItem,
   onRemoveItem,
 }: ServicesPackagesEditorProps) => {
   const [search, setSearch] = useState('');
@@ -74,7 +130,7 @@ const ServicesPackagesEditor = ({
 
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return CATALOG_ITEMS;
+    if (!query) return [];
     return CATALOG_ITEMS.filter((item) => item.name.toLowerCase().includes(query));
   }, [search]);
 
@@ -83,135 +139,125 @@ const ServicesPackagesEditor = ({
   };
 
   return (
-    <SectionContainer title="Services & Packages" className="flex flex-col gap-5">
-      <Search
-        value={search}
-        setSearch={setSearch}
-        placeholder="Search for services, packages..."
-        label="Search for services and packages"
-        className="w-full! xl:w-full!"
-      />
-
-      {!readOnly && (
-        <div className="rounded-2xl border border-dashed border-input-border-default p-3">
-          <p className="mb-3 text-body-4 text-text-secondary">+ Click to search and add service</p>
-          <div className="flex flex-wrap gap-2">
-            {matches.map((item) => (
-              <button
-                type="button"
-                key={item.refId}
-                className="flex items-center gap-2 rounded-2xl border border-card-border px-3 py-2 text-body-4 text-text-primary hover:border-input-border-active"
-                onClick={() => onAddItem(item)}
-              >
-                <LuPlus aria-hidden="true" />
-                <span>{item.name}</span>
-                <ItemTag kind={item.kind} />
-              </button>
-            ))}
-          </div>
+    <div className="flex flex-col gap-3">
+      {/* Search row sits above the floating container (matches the other steps);
+          results surface as a dropdown on type. */}
+      <div className="relative flex justify-end">
+        <div className="relative w-full sm:max-w-90">
+          <Search
+            value={search}
+            setSearch={setSearch}
+            placeholder="Search for services, packages..."
+            label="Search for services and packages"
+            className="w-full!"
+          />
+          {matches.length > 0 && (
+            <ul className="absolute right-0 z-20 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+              {matches.map((item) => (
+                <li key={item.refId}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onAddItem(item);
+                      setSearch('');
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
+                  >
+                    <LuPlus aria-hidden="true" />
+                    <span className="flex-1">{item.name}</span>
+                    <ItemTag kind={item.kind} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
+      </div>
 
-      {items.length > 0 && (
-        <SectionContainer title="Breakdown" nested className="bg-neutral-0">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-body-4 text-text-primary border-separate border-spacing-0">
-              <thead className="text-caption-1 text-text-secondary">
-                <tr>
-                  <th className="p-3 text-left">Name</th>
-                  <th className="p-3 text-left">Qnt.</th>
-                  <th className="p-3 text-left">Instructions</th>
-                  <th className="p-3 text-right">Amount</th>
-                  <th className="p-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => {
-                  const expanded = expandedPackageId === item.id;
-                  const breakdown = item.breakdown?.map(toPackageBreakdownItem) ?? [];
-                  return (
-                    <React.Fragment key={item.id}>
-                      <tr className="border-t border-card-border">
-                        <td className="p-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-medium">{item.name}</span>
-                            <ItemTag kind={item.kind} />
-                            <CircleIconButton
-                              icon={<LuCopy aria-hidden="true" />}
-                              label={`Copy ${item.name}`}
-                              onClick={() => copyValue(item.name)}
-                            />
-                          </div>
-                        </td>
-                        <td className="p-3">x{item.qty}</td>
-                        <td className="p-3">
-                          <span className="mr-2">{item.instructions ?? '-'}</span>
-                          <CircleIconButton
-                            icon={<LuCopy aria-hidden="true" />}
-                            label={`Copy instructions for ${item.name}`}
-                            onClick={() => copyValue(item.instructions)}
-                          />
-                        </td>
-                        <td className="p-3 text-right">{formatCents(item.amountCents)}</td>
-                        <td className="p-3">
-                          <div className="flex justify-end gap-2">
-                            {item.kind === 'PACKAGE' && (
-                              <CircleIconButton
-                                icon={
-                                  expanded ? (
-                                    <LuEyeOff aria-hidden="true" />
-                                  ) : (
-                                    <LuEye aria-hidden="true" />
-                                  )
-                                }
-                                label={
-                                  expanded
-                                    ? `Hide ${item.name} breakdown`
-                                    : `View ${item.name} breakdown`
-                                }
-                                variant="dark"
-                                onClick={() => handleTogglePackage(item.id)}
-                              />
-                            )}
-                            <CircleIconButton
-                              icon={<LuTrash2 aria-hidden="true" />}
-                              label={`Remove ${item.name}`}
-                              variant="danger"
-                              disabled={readOnly}
-                              onClick={() => onRemoveItem(item.id)}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                      {expanded && breakdown.length > 0 && (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className="border-t border-card-border bg-primary-100/30 p-4"
-                          >
-                            <PackageBreakdownTable
-                              items={breakdown}
-                              additionalDiscount={0}
-                              editable={false}
-                            />
-                          </td>
-                        </tr>
+      <SectionContainer
+        titleClassName="text-yc-20-b-primary"
+        title="Services & Packages"
+        titleIcon={<TitleAddIcon />}
+        className="flex flex-col gap-5"
+      >
+        {items.length === 0 ? (
+          <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
+            No services or packages added yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="hidden px-5 sm:block">
+              <ColumnHeadings />
+            </div>
+            <ul className="flex flex-col gap-3">
+              {items.map((item, index) => {
+                const expanded = expandedPackageId === item.id;
+                const breakdown = item.breakdown ?? [];
+                return (
+                  <li key={item.id} className="rounded-2xl border border-card-border p-4">
+                    <div className={`${ROW_GRID} text-body-4 text-text-primary`}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">
+                          {index + 1}. {item.name}
+                        </span>
+                        <ItemTag kind={item.kind} />
+                        <CircleIconButton
+                          icon={<LuCopy aria-hidden="true" />}
+                          label={`Copy ${item.name}`}
+                          onClick={() => copyValue(item.name)}
+                        />
+                      </div>
+                      {readOnly ? (
+                        <span className="text-text-secondary">x{item.qty}</span>
+                      ) : (
+                        <QtyInput item={item} onUpdateItem={onUpdateItem} />
                       )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+                      <span className="flex items-center gap-2 text-text-secondary">
+                        <span className="truncate">{item.instructions ?? '-'}</span>
+                        <CircleIconButton
+                          icon={<LuCopy aria-hidden="true" />}
+                          label={`Copy instructions for ${item.name}`}
+                          onClick={() => copyValue(item.instructions)}
+                        />
+                      </span>
+                      <span className="font-medium">{formatCents(item.amountCents)}</span>
+                      <div className="flex justify-end gap-2">
+                        {item.kind === 'PACKAGE' && (
+                          <CircleIconButton
+                            icon={
+                              expanded ? (
+                                <LuEyeOff aria-hidden="true" />
+                              ) : (
+                                <LuEye aria-hidden="true" />
+                              )
+                            }
+                            label={
+                              expanded
+                                ? `Hide ${item.name} breakdown`
+                                : `View ${item.name} breakdown`
+                            }
+                            variant="dark"
+                            onClick={() => handleTogglePackage(item.id)}
+                          />
+                        )}
+                        <CircleIconButton
+                          icon={<LuTrash2 aria-hidden="true" />}
+                          label={`Remove ${item.name}`}
+                          variant="danger"
+                          disabled={readOnly}
+                          onClick={() => onRemoveItem(item.id)}
+                        />
+                      </div>
+                    </div>
+                    {expanded && breakdown.length > 0 && <PackageBreakdown rows={breakdown} />}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
-        </SectionContainer>
-      )}
-
-      {items.length === 0 && (
-        <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
-          No services or packages added yet.
-        </p>
-      )}
-    </SectionContainer>
+        )}
+      </SectionContainer>
+    </div>
   );
 };
 

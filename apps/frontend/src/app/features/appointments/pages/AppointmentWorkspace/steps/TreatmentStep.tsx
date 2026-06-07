@@ -1,5 +1,5 @@
 import React from 'react';
-import { LuArrowRight, LuPrinter, LuSave } from 'react-icons/lu';
+import { LuPrinter, LuSave } from 'react-icons/lu';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import ServicesPackagesEditor from '@/app/features/appointments/pages/AppointmentWorkspace/components/ServicesPackagesEditor';
 import PrescriptionEditor from '@/app/features/appointments/pages/AppointmentWorkspace/components/PrescriptionEditor';
@@ -11,22 +11,17 @@ type TreatmentStepProps = {
   appointmentId: string;
   encounter: AppointmentEncounter;
   onOpenInvoice: () => void;
-  onSkipToSummary: () => void;
 };
 
 /**
  * Treatment step: services/packages, prescription, and inpatient schedule.
  * Mock-backed mutations mirror the backend contracts already represented in
  * the workspace store; real service/inventory APIs can replace the add sources
- * without changing the screen structure.
+ * without changing the screen structure. "Skip to Summary" lives in the meta bar.
  */
-const TreatmentStep = ({
-  appointmentId,
-  encounter,
-  onOpenInvoice,
-  onSkipToSummary,
-}: TreatmentStepProps) => {
+const TreatmentStep = ({ appointmentId, encounter, onOpenInvoice }: TreatmentStepProps) => {
   const addLineItem = useAppointmentWorkspaceStore((s) => s.addLineItem);
+  const updateLineItem = useAppointmentWorkspaceStore((s) => s.updateLineItem);
   const removeLineItem = useAppointmentWorkspaceStore((s) => s.removeLineItem);
   const addPrescription = useAppointmentWorkspaceStore((s) => s.addPrescription);
   const updatePrescription = useAppointmentWorkspaceStore((s) => s.updatePrescription);
@@ -48,18 +43,6 @@ const TreatmentStep = ({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex justify-end">
-        <Secondary
-          text="Skip to Summary"
-          icon={<LuArrowRight aria-hidden="true" />}
-          iconPosition="right"
-          onClick={() => {
-            setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
-            onSkipToSummary();
-          }}
-        />
-      </div>
-
       {isInpatient && (
         <InpatientSchedule
           tasks={encounter.schedule}
@@ -73,6 +56,7 @@ const TreatmentStep = ({
         items={encounter.services}
         readOnly={readOnly}
         onAddItem={(item) => addLineItem(appointmentId, item)}
+        onUpdateItem={(id, patch) => updateLineItem(appointmentId, id, patch)}
         onRemoveItem={(id) => removeLineItem(appointmentId, id)}
       />
 
