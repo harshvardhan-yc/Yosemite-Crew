@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   AppointmentEncounter,
+  CompanionAlert,
   DiagnosticOrder,
   EncounterMode,
   LineItem,
@@ -14,6 +15,8 @@ import type {
   Vitals,
   WorkspaceStep,
   InvoiceLineItem,
+  PastInvoice,
+  PaymentMethod,
   WorkspaceDocument,
 } from '@/app/features/appointments/types/workspace';
 import { buildMockEncounter } from '@/app/features/appointments/services/workspaceMockData';
@@ -25,6 +28,34 @@ const nextId = (prefix: string): string => {
 };
 
 const nowIso = (): string => new Date().toISOString();
+
+/**
+ * Re-derive a line item's gross/amount after qty or discount changes so the
+ * bill always stays internally consistent. Per-line discount is preserved as a
+ * flat cent value (clamped to the gross).
+ */
+const recalcInvoiceLine = (item: InvoiceLineItem): InvoiceLineItem => {
+  const grossCents = item.unitPriceCents * item.qty;
+  const discountCents = Math.min(Math.max(0, item.discountCents), grossCents);
+  return { ...item, grossCents, discountCents, amountCents: grossCents - discountCents };
+};
+
+/** Bill totals shared by the Total Bill view and the payment-recording action. */
+const computeInvoiceTotals = (
+  enc: Pick<AppointmentEncounter, 'invoiceLineItems' | 'taxPercent' | 'overallDiscountPercent'>
+) => {
+  const subtotalCents = enc.invoiceLineItems.reduce((sum, item) => sum + item.grossCents, 0);
+  const lineDiscountCents = enc.invoiceLineItems.reduce((sum, item) => sum + item.discountCents, 0);
+  const overallDiscountCents = Math.round((subtotalCents * enc.overallDiscountPercent) / 100);
+  const discountedCents = Math.max(0, subtotalCents - lineDiscountCents - overallDiscountCents);
+  const taxCents = Math.round((discountedCents * enc.taxPercent) / 100);
+  return {
+    subtotalCents,
+    overallDiscountCents,
+    taxCents,
+    estimatedTotalCents: discountedCents + taxCents,
+  };
+};
 
 type ReadyActor = { id?: string; name?: string };
 
@@ -75,11 +106,24 @@ type AppointmentWorkspaceState = {
   setFollowUp: (appointmentId: string, at: string | undefined) => void;
   addDocument: (appointmentId: string, document: Omit<WorkspaceDocument, 'id'>) => void;
   setWithdrawDeposit: (appointmentId: string, value: boolean) => void;
+  setOverallDiscountPercent: (appointmentId: string, percent: number) => void;
   addInvoiceLineItem: (appointmentId: string, item: Omit<InvoiceLineItem, 'id'>) => void;
+  updateInvoiceLineItem: (
+    appointmentId: string,
+    id: string,
+    patch: Partial<InvoiceLineItem>
+  ) => void;
   removeInvoiceLineItem: (appointmentId: string, id: string) => void;
+  recordInvoicePayment: (
+    appointmentId: string,
+    payment: { method: PaymentMethod; byName?: string }
+  ) => void;
 
   toggleReadyForBilling: (appointmentId: string, actor: ReadyActor) => void;
   toggleReadyForDischarge: (appointmentId: string, actor: ReadyActor) => void;
+
+  addAlert: (appointmentId: string, alert: Omit<CompanionAlert, 'id'>) => void;
+  removeAlert: (appointmentId: string, id: string) => void;
 };
 
 /** Update a single encounter immutably; no-op if it does not exist. */
@@ -177,10 +221,14 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
   upsertSoap: (appointmentId, patch) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => {
-        const existing = enc.soap[0];
-        if (existing) {
-          const updated = { ...existing, ...patch };
-          return { ...enc, soap: [updated, ...enc.soap.slice(1)] };
+        // Edit the active draft (the first not-yet-signed note); never touch a
+        // signed note so a new SOAP can be started after Save & Next.
+        const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
+        if (draftIndex >= 0) {
+          const updated = { ...enc.soap[draftIndex], ...patch };
+          const soap = [...enc.soap];
+          soap[draftIndex] = updated;
+          return { ...enc, soap };
         }
         const created: SoapNoteEntry = {
           id: nextId('soap'),
@@ -193,15 +241,20 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
           createdAt: nowIso(),
           ...patch,
         };
-        return { ...enc, soap: [created] };
+        return { ...enc, soap: [created, ...enc.soap] };
       })
     ),
 
   applySoapTemplate: (appointmentId, template) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => {
-        const existing = enc.soap[0];
-        const base: SoapNoteEntry = existing ?? {
+        const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
+        if (draftIndex >= 0) {
+          const soap = [...enc.soap];
+          soap[draftIndex] = { ...soap[draftIndex], templateId: template.id };
+          return { ...enc, soap };
+        }
+        const created: SoapNoteEntry = {
           id: nextId('soap'),
           chiefComplaint: '',
           subjective: '',
@@ -210,27 +263,31 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
           plan: '',
           status: 'IN_PROGRESS',
           createdAt: nowIso(),
+          templateId: template.id,
         };
-        const withTemplate = { ...base, templateId: template.id };
-        return { ...enc, soap: [withTemplate, ...enc.soap.slice(existing ? 1 : 0)] };
+        return { ...enc, soap: [created, ...enc.soap] };
       })
     ),
 
   signSoap: (appointmentId, signedByName, offline) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => {
-        const existing = enc.soap[0];
-        if (!existing) return enc;
+        // Sign the active draft and keep it in history; the next upsert starts a
+        // fresh draft, so the SOAP form clears and is editable again.
+        const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
+        if (draftIndex < 0) return enc;
         const signed: SoapNoteEntry = {
-          ...existing,
+          ...enc.soap[draftIndex],
           signedByName,
           signedOffline: offline,
           signedAt: nowIso(),
           status: 'COMPLETED',
         };
+        const soap = [...enc.soap];
+        soap[draftIndex] = signed;
         return {
           ...enc,
-          soap: [signed, ...enc.soap.slice(1)],
+          soap,
           stepStatus: { ...enc.stepStatus, SOAP: 'COMPLETED' },
         };
       })
@@ -409,11 +466,29 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       patchEncounter(state, appointmentId, (enc) => ({ ...enc, withdrawDeposit: value }))
     ),
 
+  setOverallDiscountPercent: (appointmentId, percent) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => ({
+        ...enc,
+        overallDiscountPercent: Math.min(100, Math.max(0, percent)),
+      }))
+    ),
+
   addInvoiceLineItem: (appointmentId, item) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => ({
         ...enc,
         invoiceLineItems: [...enc.invoiceLineItems, { ...item, id: nextId('inv') }],
+      }))
+    ),
+
+  updateInvoiceLineItem: (appointmentId, id, patch) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => ({
+        ...enc,
+        invoiceLineItems: enc.invoiceLineItems.map((item) =>
+          item.id === id ? recalcInvoiceLine({ ...item, ...patch }) : item
+        ),
       }))
     ),
 
@@ -423,6 +498,36 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
         ...enc,
         invoiceLineItems: enc.invoiceLineItems.filter((item) => item.id !== id),
       }))
+    ),
+
+  recordInvoicePayment: (appointmentId, payment) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => {
+        if (enc.invoiceLineItems.length === 0) return enc;
+        const totals = computeInvoiceTotals(enc);
+        const paidFromDeposit = payment.method === 'DEPOSIT' || enc.withdrawDeposit;
+        const invoice: PastInvoice = {
+          id: nextId('inv-paid'),
+          createdAt: nowIso(),
+          totalCents: totals.estimatedTotalCents,
+          outstandingCents: 0,
+          status: 'PAID_FULL',
+          byName: payment.byName,
+          paidByName: payment.byName,
+          paidAt: nowIso(),
+          paymentMethod: payment.method,
+          paidFromDeposit,
+          items: enc.invoiceLineItems.map((item) => ({ ...item })),
+        };
+        return {
+          ...enc,
+          pastInvoices: [invoice, ...enc.pastInvoices],
+          invoiceLineItems: [],
+          depositCents: paidFromDeposit
+            ? Math.max(0, enc.depositCents - totals.estimatedTotalCents)
+            : enc.depositCents,
+        };
+      })
     ),
 
   toggleReadyForBilling: (appointmentId, actor) =>
@@ -449,5 +554,21 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
             : { value: false },
         };
       })
+    ),
+
+  addAlert: (appointmentId, alert) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => ({
+        ...enc,
+        alerts: [...enc.alerts, { ...alert, id: nextId('al') }],
+      }))
+    ),
+
+  removeAlert: (appointmentId, id) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => ({
+        ...enc,
+        alerts: enc.alerts.filter((alert) => alert.id !== id),
+      }))
     ),
 }));

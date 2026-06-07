@@ -1,10 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { LuPlus } from 'react-icons/lu';
+import { LuPlus, LuTrash2 } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
-import PackageBreakdownTable from '@/app/features/organization/pages/Specialities/PackageBreakdownTable';
-import type { PackageBreakdownItem } from '@/app/features/organization/types/revamp';
 import type { InvoiceLineItem } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
 
@@ -14,12 +12,14 @@ type TotalBillContainerProps = {
   withdrawDeposit: boolean;
   taxPercent: number;
   overallDiscountPercent: number;
-  readOnly: boolean;
   onToggleWithdrawDeposit: (value: boolean) => void;
+  onChangeOverallDiscount: (percent: number) => void;
   onAddItem: (item: Omit<InvoiceLineItem, 'id'>) => void;
+  onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
   onRemoveItem: (id: string) => void;
 };
 
+/** Searchable catalog — results only surface as the user types (no chips up front). */
 const BILLABLE_ITEMS: Omit<InvoiceLineItem, 'id'>[] = [
   {
     name: 'Bandage change',
@@ -59,7 +59,6 @@ const buildTotals = (
     : depositCents;
   return {
     subtotalCents,
-    lineDiscountCents,
     overallDiscountCents,
     taxCents,
     estimatedTotalCents,
@@ -67,14 +66,182 @@ const buildTotals = (
   };
 };
 
-const toPackageBreakdownItem = (item: InvoiceLineItem): PackageBreakdownItem => ({
-  id: item.id,
-  type: 'PROCEDURE',
-  name: item.name,
-  unitPrice: item.unitPriceCents / 100,
-  quantity: item.qty,
-  discount: item.grossCents === 0 ? 0 : Math.round((item.discountCents / item.grossCents) * 100),
-});
+/**
+ * Shared column template for the heading row and every line row. The headings
+ * and the rows live in separate grids, so the template must resolve to identical
+ * track widths in both — that means NO content-driven `auto` track (the delete
+ * column is a fixed 36px, the width of the circle button) and the flexible first
+ * column is the only fr track. Every other column is a fixed px width.
+ */
+const ROW_GRID =
+  'grid gap-3 sm:grid-cols-[minmax(0,1.7fr)_110px_72px_110px_110px_120px_36px] sm:items-center';
+
+/**
+ * Each heading's text starts exactly where its value-box text starts: the value
+ * boxes have an inner px-3, so the headings carry the same px-3 inset. The label
+ * therefore sits at the start of its column, directly above the value below it.
+ */
+const ColumnHeadings = () => (
+  <div
+    className={`${ROW_GRID} text-caption-2 font-medium tracking-wide text-text-secondary uppercase [&>span]:px-3`}
+  >
+    <span>Item Name</span>
+    <span>Unit Price</span>
+    <span>Qnt.</span>
+    <span>Gross Amt.</span>
+    <span>Discount</span>
+    <span>Amount</span>
+    <span aria-hidden="true" className="px-0!" />
+  </div>
+);
+
+/** Plain (non-editable) text cell for line values that the user cannot change. */
+const TextCell = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+  <span className={`flex h-10 items-center px-3 text-body-4 text-text-primary ${className ?? ''}`}>
+    {children}
+  </span>
+);
+
+/** Shared editable box style for the qty + discount inputs. */
+const EDITABLE_BOX =
+  'h-10 w-full rounded-xl border border-input-border-default bg-transparent px-3 text-body-4 text-text-primary focus-visible:border-input-border-active focus-visible:outline-none';
+
+/** Editable quantity box; re-derives gross/amount via the store on change. */
+const QtyInput = ({
+  item,
+  onUpdateItem,
+}: {
+  item: InvoiceLineItem;
+  onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
+}) => (
+  <input
+    type="number"
+    min={1}
+    value={item.qty}
+    aria-label={`Quantity for ${item.name}`}
+    onChange={(e) => {
+      const qty = Math.max(1, Number.parseInt(e.target.value, 10) || 1);
+      onUpdateItem(item.id, { qty });
+    }}
+    className={EDITABLE_BOX}
+  />
+);
+
+/** Editable per-line discount box (entered in dollars); re-derives the amount. */
+const DiscountInput = ({
+  item,
+  onUpdateItem,
+}: {
+  item: InvoiceLineItem;
+  onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
+}) => (
+  <input
+    type="number"
+    min={0}
+    step={0.01}
+    value={item.discountCents / 100}
+    aria-label={`Discount for ${item.name}`}
+    onChange={(e) => {
+      const dollars = Math.max(0, Number.parseFloat(e.target.value) || 0);
+      onUpdateItem(item.id, { discountCents: Math.round(dollars * 100) });
+    }}
+    className={`${EDITABLE_BOX} text-pill-success-text`}
+  />
+);
+
+const BillRow = ({
+  item,
+  onUpdateItem,
+  onRemoveItem,
+}: {
+  item: InvoiceLineItem;
+  onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
+  onRemoveItem: (id: string) => void;
+}) => (
+  <li className={`${ROW_GRID} text-body-4 text-text-primary`}>
+    <TextCell className="min-w-0">
+      <span className="truncate">{item.name}</span>
+    </TextCell>
+    <TextCell>{formatCents(item.unitPriceCents)}</TextCell>
+    <QtyInput item={item} onUpdateItem={onUpdateItem} />
+    <TextCell>{formatCents(item.grossCents)}</TextCell>
+    <DiscountInput item={item} onUpdateItem={onUpdateItem} />
+    <TextCell className="font-medium">{formatCents(item.amountCents)}</TextCell>
+    <CircleIconButton
+      icon={<LuTrash2 aria-hidden="true" />}
+      label={`Remove ${item.name}`}
+      variant="danger"
+      onClick={() => onRemoveItem(item.id)}
+    />
+  </li>
+);
+
+const TotalsFooter = ({
+  totals,
+  depositCents,
+  taxPercent,
+  overallDiscountPercent,
+  withdrawDeposit,
+  onToggleWithdrawDeposit,
+  onChangeOverallDiscount,
+}: {
+  totals: ReturnType<typeof buildTotals>;
+  depositCents: number;
+  taxPercent: number;
+  overallDiscountPercent: number;
+  withdrawDeposit: boolean;
+  onToggleWithdrawDeposit: (value: boolean) => void;
+  onChangeOverallDiscount: (percent: number) => void;
+}) => (
+  <div className="grid gap-5 rounded-2xl bg-neutral-100 p-5 text-body-4 text-text-primary lg:grid-cols-3">
+    <div className="flex flex-col gap-2">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={withdrawDeposit}
+          onChange={(e) => onToggleWithdrawDeposit(e.target.checked)}
+          className="size-4 accent-pill-success-text"
+        />
+        <span>Withdraw from deposit</span>
+      </label>
+      <span>Total Deposit: {formatCents(depositCents)}</span>
+      <span className="text-text-brand">
+        Invoice Amount: {formatCents(totals.estimatedTotalCents)}
+      </span>
+      <span>Remaining Deposit: {formatCents(totals.remainingDepositCents)}</span>
+    </div>
+    <div className="flex items-center justify-center">
+      <div className="text-center">
+        <p className="text-caption-1 text-text-secondary">Total Amount</p>
+        <p className="text-heading-2 text-text-brand">{formatCents(totals.estimatedTotalCents)}</p>
+      </div>
+    </div>
+    <div className="flex flex-col gap-2 text-right">
+      <span>Subtotal: {formatCents(totals.subtotalCents)}</span>
+      <span className="flex items-center justify-end gap-2 text-pill-success-text">
+        Overall Discount: {formatCents(totals.overallDiscountCents)}
+        <span className="flex items-center gap-1">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={overallDiscountPercent}
+            aria-label="Overall discount percent"
+            onChange={(e) =>
+              onChangeOverallDiscount(Math.max(0, Number.parseFloat(e.target.value) || 0))
+            }
+            className="h-9 w-16 rounded-xl border border-input-border-default bg-transparent px-2 text-right text-body-4 text-text-primary focus-visible:border-input-border-active focus-visible:outline-none"
+          />
+          <span className="text-text-secondary">%</span>
+        </span>
+      </span>
+      <span>
+        Tax ({taxPercent}%): {formatCents(totals.taxCents)}
+      </span>
+      <span className="font-bold">Estimated Total: {formatCents(totals.estimatedTotalCents)}</span>
+    </div>
+  </div>
+);
 
 const TotalBillContainer = ({
   items,
@@ -82,16 +249,17 @@ const TotalBillContainer = ({
   withdrawDeposit,
   taxPercent,
   overallDiscountPercent,
-  readOnly,
   onToggleWithdrawDeposit,
+  onChangeOverallDiscount,
   onAddItem,
+  onUpdateItem,
   onRemoveItem,
 }: TotalBillContainerProps) => {
   const [search, setSearch] = useState('');
 
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return BILLABLE_ITEMS;
+    if (!query) return [];
     return BILLABLE_ITEMS.filter((item) => item.name.toLowerCase().includes(query));
   }, [search]);
 
@@ -104,99 +272,87 @@ const TotalBillContainer = ({
   );
 
   return (
-    <SectionContainer title="Total Bill" className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-col gap-3">
+      {/* Search row sits above the floating container, right-aligned and sized to
+          match the other steps' search bars (SOAP / Services / Prescription). */}
+      <div className="relative flex items-center justify-end gap-3">
         <CircleIconButton
           icon={<LuPlus aria-hidden="true" />}
           label="Add invoice item"
           variant="dark"
-          disabled={readOnly}
           onClick={() => {
             if (matches[0]) onAddItem(matches[0]);
           }}
         />
-        <Search
-          value={search}
-          setSearch={setSearch}
-          placeholder="Search for Services, medicines..."
-          label="Search invoice items"
-          className="flex-1! w-full! xl:w-full!"
-        />
-      </div>
-
-      {!readOnly && search.trim() && (
-        <div className="flex flex-wrap gap-2">
-          {matches.map((item) => (
-            <button
-              key={item.name}
-              type="button"
-              className="rounded-2xl border border-card-border px-3 py-2 text-body-4 text-text-primary hover:border-input-border-active"
-              onClick={() => onAddItem(item)}
-            >
-              {item.name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {items.length > 0 && (
-        <SectionContainer title="Breakdown" nested className="bg-neutral-0">
-          <PackageBreakdownTable
-            items={items.map(toPackageBreakdownItem)}
-            additionalDiscount={0}
-            editable={!readOnly}
-            onRemoveItem={onRemoveItem}
+        <div className="relative w-full sm:max-w-90">
+          <Search
+            value={search}
+            setSearch={setSearch}
+            placeholder="Search for Services, medicines..."
+            label="Search invoice items"
+            className="w-full!"
           />
-        </SectionContainer>
-      )}
-
-      {items.length === 0 && (
-        <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
-          No invoice line items added yet.
-        </p>
-      )}
-
-      <div className="grid gap-5 rounded-2xl bg-neutral-100 p-5 text-body-4 text-text-primary lg:grid-cols-3">
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={withdrawDeposit}
-              disabled={readOnly}
-              onChange={(e) => onToggleWithdrawDeposit(e.target.checked)}
-              className="size-4 accent-pill-success-text"
-            />
-            <span>Withdraw deposit</span>
-          </label>
-          <span>Total Deposit: {formatCents(depositCents)}</span>
-          <span className="text-text-brand">
-            Invoice Amount: {formatCents(totals.estimatedTotalCents)}
-          </span>
-          <span>Remaining: {formatCents(totals.remainingDepositCents)}</span>
-        </div>
-        <div className="flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-caption-1 text-text-secondary">Total Amount</p>
-            <p className="text-heading-2 text-text-brand">
-              {formatCents(totals.estimatedTotalCents)}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 text-right">
-          <span>Subtotal: {formatCents(totals.subtotalCents)}</span>
-          <span className="text-pill-success-text">
-            Overall Discount: {formatCents(totals.overallDiscountCents)} [-{overallDiscountPercent}
-            %]
-          </span>
-          <span>
-            Tax ({taxPercent}%): {formatCents(totals.taxCents)}
-          </span>
-          <span className="font-bold">
-            Estimated Total: {formatCents(totals.estimatedTotalCents)}
-          </span>
+          {matches.length > 0 && (
+            <ul className="absolute right-0 z-20 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+              {matches.map((item) => (
+                <li key={item.name}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onAddItem(item);
+                      setSearch('');
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
+                  >
+                    <LuPlus aria-hidden="true" />
+                    <span className="flex-1">{item.name}</span>
+                    <span className="text-text-secondary">{formatCents(item.amountCents)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
-    </SectionContainer>
+
+      <SectionContainer
+        titleClassName="text-yc-20-b-primary"
+        title="Total Bill"
+        className="flex flex-col gap-5"
+      >
+        {items.length === 0 ? (
+          <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
+            No invoice line items added yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="hidden sm:block">
+              <ColumnHeadings />
+            </div>
+            <ul className="flex flex-col gap-3">
+              {items.map((item) => (
+                <BillRow
+                  key={item.id}
+                  item={item}
+                  onUpdateItem={onUpdateItem}
+                  onRemoveItem={onRemoveItem}
+                />
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <TotalsFooter
+          totals={totals}
+          depositCents={depositCents}
+          taxPercent={taxPercent}
+          overallDiscountPercent={overallDiscountPercent}
+          withdrawDeposit={withdrawDeposit}
+          onToggleWithdrawDeposit={onToggleWithdrawDeposit}
+          onChangeOverallDiscount={onChangeOverallDiscount}
+        />
+      </SectionContainer>
+    </div>
   );
 };
 

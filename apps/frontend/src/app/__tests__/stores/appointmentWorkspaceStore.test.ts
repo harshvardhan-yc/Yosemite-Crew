@@ -98,6 +98,38 @@ describe('appointmentWorkspaceStore', () => {
     expect(getStore().getEncounter(APPT)?.soap[0].templateId).toBe(tpl.id);
   });
 
+  it('starts a fresh draft after a note is signed', () => {
+    seed();
+    getStore().upsertSoap(APPT, { subjective: '<p>first</p>' });
+    getStore().signSoap(APPT, 'Dr Tim', false);
+    // Editing again after signing must not mutate the signed note — a new draft
+    // is created so the SOAP form clears for the next entry.
+    getStore().upsertSoap(APPT, { subjective: '<p>second</p>' });
+    const soap = getStore().getEncounter(APPT)!.soap;
+    expect(soap.filter((n) => n.status === 'COMPLETED')).toHaveLength(1);
+    const draft = soap.find((n) => n.status !== 'COMPLETED');
+    expect(draft?.subjective).toBe('<p>second</p>');
+  });
+
+  it('applies a template to a fresh draft when only signed notes exist', () => {
+    seed();
+    getStore().upsertSoap(APPT, { subjective: '<p>first</p>' });
+    getStore().signSoap(APPT, 'Dr Tim', false);
+    const tpl = getStore().getEncounter(APPT)!.soapTemplates[0];
+    getStore().applySoapTemplate(APPT, tpl);
+    const soap = getStore().getEncounter(APPT)!.soap;
+    const draft = soap.find((n) => n.status !== 'COMPLETED');
+    expect(draft?.templateId).toBe(tpl.id);
+    expect(soap.filter((n) => n.status === 'COMPLETED')).toHaveLength(1);
+  });
+
+  it('no-ops signing when there is no active draft', () => {
+    seed();
+    // Nothing typed yet — signing must not create an empty completed note.
+    getStore().signSoap(APPT, 'Dr Tim', false);
+    expect(getStore().getEncounter(APPT)?.soap).toHaveLength(0);
+  });
+
   it('adds vitals and observations with generated codes', () => {
     seed();
     getStore().addVitals(APPT, { weightLbs: 55, recordedByName: 'Sarah', recordedAt: 'now' });
@@ -225,6 +257,18 @@ describe('appointmentWorkspaceStore', () => {
     expect(enc?.withdrawDeposit).toBe(true);
   });
 
+  it('sets the overall discount percent, clamped to 0–100', () => {
+    seed();
+    getStore().setOverallDiscountPercent(APPT, 15);
+    expect(getStore().getEncounter(APPT)?.overallDiscountPercent).toBe(15);
+
+    getStore().setOverallDiscountPercent(APPT, 150);
+    expect(getStore().getEncounter(APPT)?.overallDiscountPercent).toBe(100);
+
+    getStore().setOverallDiscountPercent(APPT, -5);
+    expect(getStore().getEncounter(APPT)?.overallDiscountPercent).toBe(0);
+  });
+
   it('adds workspace documents', () => {
     seed();
     const before = getStore().getEncounter(APPT)!.documents.length;
@@ -261,6 +305,67 @@ describe('appointmentWorkspaceStore', () => {
     ).toBeUndefined();
   });
 
+  it('updates an invoice line item, re-deriving gross/amount and clamping discount', () => {
+    seed();
+    const item = getStore().getEncounter(APPT)!.invoiceLineItems[0];
+
+    getStore().updateInvoiceLineItem(APPT, item.id, { qty: 4 });
+    const updated = getStore()
+      .getEncounter(APPT)!
+      .invoiceLineItems.find((i) => i.id === item.id)!;
+    expect(updated.qty).toBe(4);
+    expect(updated.grossCents).toBe(item.unitPriceCents * 4);
+    expect(updated.amountCents).toBe(updated.grossCents - updated.discountCents);
+
+    // A discount larger than gross is clamped to the gross.
+    getStore().updateInvoiceLineItem(APPT, item.id, { discountCents: 9_999_999 });
+    const clamped = getStore()
+      .getEncounter(APPT)!
+      .invoiceLineItems.find((i) => i.id === item.id)!;
+    expect(clamped.discountCents).toBe(clamped.grossCents);
+    expect(clamped.amountCents).toBe(0);
+  });
+
+  it('records an invoice payment, clearing the bill and prepending a paid invoice', () => {
+    seed();
+    const before = getStore().getEncounter(APPT)!;
+    const pastCount = before.pastInvoices.length;
+
+    getStore().recordInvoicePayment(APPT, { method: 'CASH', byName: 'Front desk' });
+
+    const after = getStore().getEncounter(APPT)!;
+    expect(after.invoiceLineItems).toHaveLength(0);
+    expect(after.pastInvoices).toHaveLength(pastCount + 1);
+    const newest = after.pastInvoices[0];
+    expect(newest.status).toBe('PAID_FULL');
+    expect(newest.paymentMethod).toBe('CASH');
+    expect(newest.paidByName).toBe('Front desk');
+    expect(newest.outstandingCents).toBe(0);
+  });
+
+  it('reduces the deposit when payment is from the deposit', () => {
+    seed();
+    const start = getStore().getEncounter(APPT)!.depositCents;
+
+    getStore().recordInvoicePayment(APPT, { method: 'DEPOSIT' });
+
+    const after = getStore().getEncounter(APPT)!;
+    expect(after.pastInvoices[0].paidFromDeposit).toBe(true);
+    expect(after.depositCents).toBeLessThan(start);
+  });
+
+  it('no-ops recording a payment when there are no line items', () => {
+    seed();
+    const enc = getStore().getEncounter(APPT)!;
+    // Clear the bill first, then attempt to record a payment.
+    enc.invoiceLineItems.forEach((item) => getStore().removeInvoiceLineItem(APPT, item.id));
+    const pastCount = getStore().getEncounter(APPT)!.pastInvoices.length;
+
+    getStore().recordInvoicePayment(APPT, { method: 'CASH' });
+
+    expect(getStore().getEncounter(APPT)!.pastInvoices).toHaveLength(pastCount);
+  });
+
   it('toggles ready-for-billing with a stamp and clears it', () => {
     seed();
     getStore().toggleReadyForBilling(APPT, { id: 'u1', name: 'Dr Tim' });
@@ -284,6 +389,19 @@ describe('appointmentWorkspaceStore', () => {
     seed();
     getStore().setStepStatus(APPT, 'DIAGNOSTICS', 'COMPLETED');
     expect(getStore().getEncounter(APPT)?.stepStatus.DIAGNOSTICS).toBe('COMPLETED');
+  });
+
+  it('adds and removes companion alerts', () => {
+    seed();
+    const before = getStore().getEncounter(APPT)!.alerts.length;
+    getStore().addAlert(APPT, { label: 'Diabetic', severity: 'MEDICAL' });
+    const added = getStore().getEncounter(APPT)!.alerts;
+    expect(added).toHaveLength(before + 1);
+    const newAlert = added[added.length - 1];
+    expect(newAlert.label).toBe('Diabetic');
+    expect(newAlert.severity).toBe('MEDICAL');
+    getStore().removeAlert(APPT, newAlert.id);
+    expect(getStore().getEncounter(APPT)!.alerts).toHaveLength(before);
   });
 
   it('ignores mutations for unknown appointments', () => {

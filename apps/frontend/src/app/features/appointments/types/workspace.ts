@@ -156,8 +156,18 @@ export type PrescriptionItem = {
   route?: string;
   frequency?: string;
   durationDays?: string;
+  /** Number of refills allowed for this medication. */
+  refill?: string;
   instructions?: string;
   fulfillment: PrescriptionFulfillment;
+  /** Line price in cents, shown at the right end of the row. */
+  priceCents?: number;
+  /** On-hand inventory count; drives the In stock / Low stock health pill. */
+  stockQty?: number;
+  /** True when the on-hand count is at/below the reorder threshold. */
+  lowStock?: boolean;
+  /** Flags a DEA/controlled drug; drives the controlled-substance pill. */
+  controlledSubstance?: boolean;
 };
 
 /** Full employee + schedule task category set. */
@@ -227,6 +237,13 @@ export type PastInvoice = {
   outstandingCents: number;
   status: InvoiceStatus;
   byName?: string;
+  /** Who recorded the payment and when (shown as the finalized stamp). */
+  paidByName?: string;
+  paidAt?: string;
+  /** Method used to settle the invoice; drives the "Paid via …" stamp. */
+  paymentMethod?: PaymentMethod;
+  /** True when the balance was cleared from the patient deposit. */
+  paidFromDeposit?: boolean;
   items: InvoiceLineItem[];
 };
 

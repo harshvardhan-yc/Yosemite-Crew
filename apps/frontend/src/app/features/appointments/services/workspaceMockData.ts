@@ -131,13 +131,16 @@ const MOCK_SERVICES: LineItem[] = [
 const MOCK_PRESCRIPTION: PrescriptionItem[] = [
   {
     id: 'rx-1',
-    medicineName: 'Amoxicillin',
-    dosage: '100mg',
+    medicineName: 'Amoxicillin - 625',
+    dosage: '1 tab',
     route: 'Oral',
     frequency: 'BID',
-    durationDays: '7 days',
-    instructions: 'Finish the entire course',
+    durationDays: '5 days',
+    refill: 'x 2',
+    instructions: 'Do not skip dosage',
     fulfillment: 'IN_HOUSE',
+    priceCents: 16500,
+    stockQty: 14,
   },
   {
     id: 'rx-2',
@@ -146,8 +149,13 @@ const MOCK_PRESCRIPTION: PrescriptionItem[] = [
     route: 'Oral',
     frequency: 'QD',
     durationDays: '5 days',
+    refill: 'x 1',
     instructions: 'Morning with food',
     fulfillment: 'IN_HOUSE',
+    priceCents: 9000,
+    stockQty: 3,
+    lowStock: true,
+    controlledSubstance: true,
   },
   {
     id: 'rx-3',
@@ -156,8 +164,10 @@ const MOCK_PRESCRIPTION: PrescriptionItem[] = [
     route: 'Oral',
     frequency: 'TID',
     durationDays: '10 days',
+    refill: 'x 0',
     instructions: '-',
-    fulfillment: 'IN_HOUSE',
+    fulfillment: 'PRESCRIPTION_ONLY',
+    priceCents: 12000,
   },
 ];
 
@@ -276,6 +286,10 @@ const MOCK_PAST_INVOICES: PastInvoice[] = [
     outstandingCents: 0,
     status: 'PAID_FULL',
     byName: 'Rachel Sanders',
+    paidByName: 'Rachel Sanders',
+    paidAt: '2026-04-20T13:15:00Z',
+    paymentMethod: 'CASH',
+    paidFromDeposit: true,
     items: [
       {
         id: 'pi-1',
