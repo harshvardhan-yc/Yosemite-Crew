@@ -25,6 +25,22 @@ describe('RichTextEditor', () => {
     expect(screen.getByText('Type here')).toBeInTheDocument();
   });
 
+  it('renders the inset toolbar with the pill surface and a padded placeholder', () => {
+    render(
+      <RichTextEditor
+        value=""
+        onChange={jest.fn()}
+        ariaLabel="Subjective"
+        placeholder="Type here"
+        toolbarPlacement="inset"
+      />
+    );
+    // Placeholder reserves right-hand room so it never runs under the toolbar.
+    expect(screen.getByText('Type here')).toHaveClass('pr-52');
+    // The inset toolbar keeps the design's pill surface (neutral-100 background).
+    expect(screen.getByRole('toolbar', { name: /text formatting/i })).toHaveClass('bg-neutral-100');
+  });
+
   it('applies formatting via the toolbar and emits sanitized HTML', () => {
     const onChange = jest.fn();
     render(<RichTextEditor value="<p>abc</p>" onChange={onChange} ariaLabel="Subjective" />);
@@ -43,6 +59,22 @@ describe('RichTextEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Indent' }));
 
     expect(onChange).toHaveBeenCalledWith(expect.stringContaining('&nbsp;'));
+  });
+
+  it('indents without deleting the selected text', () => {
+    const onChange = jest.fn();
+    render(<RichTextEditor value="<p>hello</p>" onChange={onChange} ariaLabel="Subjective" />);
+
+    // Select the whole paragraph, then indent — the text must be preserved and
+    // pushed right (it used to be overwritten by the inserted spaces).
+    const textbox = screen.getByRole('textbox', { name: 'Subjective' });
+    fireEvent.focus(textbox);
+    document.execCommand?.('selectAll');
+    fireEvent.click(screen.getByRole('button', { name: 'Indent' }));
+
+    const lastHtml = onChange.mock.calls.at(-1)?.[0] ?? '';
+    expect(lastHtml).toContain('hello');
+    expect(lastHtml).toContain('&nbsp;');
   });
 
   it('sinks a list item when indenting inside a list', () => {

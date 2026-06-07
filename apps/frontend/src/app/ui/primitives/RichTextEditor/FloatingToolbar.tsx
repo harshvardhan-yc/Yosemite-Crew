@@ -55,11 +55,24 @@ const FloatingToolbar = ({ editor }: FloatingToolbarProps) => {
       icon: <FaIndent aria-hidden="true" size={14} />,
       isActive: () => false,
       run: () => {
-        const canSinkListItem = editor.isActive('listItem');
-        if (canSinkListItem && editor.chain().focus().sinkListItem('listItem').run()) {
+        // Inside a list, indenting sinks the list item.
+        if (editor.isActive('listItem') && editor.chain().focus().sinkListItem('listItem').run()) {
           return;
         }
-        editor.chain().focus().insertContent('\u00a0\u00a0\u00a0\u00a0').run();
+        // Otherwise prepend indentation at the start of the current block so the
+        // selected text is pushed right rather than replaced (insertContent would
+        // overwrite the selection). Insert at the block start of the selection
+        // anchor, then re-place the selection shifted right by the inserted
+        // spaces so the user's selection/cursor is preserved.
+        const indent = '\u00a0\u00a0\u00a0\u00a0';
+        const { from, to, $from } = editor.state.selection;
+        const blockStart = $from.start();
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(blockStart, indent)
+          .setTextSelection({ from: from + indent.length, to: to + indent.length })
+          .run();
       },
     },
   ];

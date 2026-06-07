@@ -9,16 +9,34 @@ import type { AppointmentEncounter } from '@/app/features/appointments/types/wor
 
 expect.extend(toHaveNoViolations);
 
-const APPT = 'appt-summary';
+// Lightweight Datepicker mock exposing set/clear so the follow-up wiring can be
+// exercised without driving the real react-datepicker calendar in jsdom.
+jest.mock('@/app/ui/inputs/Datepicker', () => ({
+  __esModule: true,
+  default: ({
+    placeholder,
+    currentDate,
+    setCurrentDate,
+  }: {
+    placeholder: string;
+    currentDate: Date | null;
+    setCurrentDate: (next: Date | null) => void;
+  }) => (
+    <div>
+      <button type="button" aria-label={`${placeholder}: ${currentDate?.toISOString() ?? 'none'}`}>
+        {placeholder}
+      </button>
+      <button type="button" onClick={() => setCurrentDate(new Date('2026-05-10T00:00:00Z'))}>
+        mock pick date
+      </button>
+      <button type="button" onClick={() => setCurrentDate(null)}>
+        mock clear date
+      </button>
+    </div>
+  ),
+}));
 
-jest.mock(
-  '@/app/features/appointments/pages/Appointments/Sections/AddAppointmentCentralModal',
-  () => ({
-    __esModule: true,
-    default: ({ showModal }: { showModal: boolean }) =>
-      showModal ? <div data-testid="follow-up-modal">Follow-up modal</div> : null,
-  })
-);
+const APPT = 'appt-summary';
 
 const reset = () => {
   useAppointmentWorkspaceStore.setState({
@@ -46,15 +64,25 @@ const renderSummary = (encounter: AppointmentEncounter) => {
 describe('SummaryStep', () => {
   beforeEach(reset);
 
-  it('renders discharge summary, follow-up control and all documents', () => {
+  it('renders discharge summary, follow-up date field and all documents', () => {
     const enc = seedAndGet();
     renderSummary(enc);
 
     expect(screen.getByText('Discharge Summary')).toBeInTheDocument();
     expect(screen.getByLabelText('Discharge summary')).toBeInTheDocument();
-    expect(screen.getByLabelText('Follow-up date')).toBeInTheDocument();
+    // Follow-up is now a date-picker field labelled "Follow up date".
+    expect(screen.getByRole('button', { name: /follow up date/i })).toBeInTheDocument();
     expect(screen.getByText('All Documents')).toBeInTheDocument();
     expect(screen.getByText('Signed SOAP note')).toBeInTheDocument();
+  });
+
+  it('places the follow-up date field after the discharge editor', () => {
+    const enc = seedAndGet();
+    renderSummary(enc);
+    const editor = screen.getByLabelText('Discharge summary');
+    const followUp = screen.getByRole('button', { name: /follow up date/i });
+    // The follow-up field sits below the editor (the Record Vitals slot).
+    expect(editor.compareDocumentPosition(followUp)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('applies a discharge template from search', () => {
@@ -71,20 +99,33 @@ describe('SummaryStep', () => {
     );
   });
 
-  it('sets follow-up date and shows booking requested status', () => {
+  it('passes an existing follow-up date into the picker field', () => {
+    const enc = { ...seedAndGet(), followUpAt: '2026-05-10T12:00:00Z' };
+    renderSummary(enc);
+    expect(
+      screen.getByRole('button', { name: /follow up date: 2026-05-10t12:00:00/i })
+    ).toBeInTheDocument();
+  });
+
+  it('treats an invalid stored follow-up date as empty', () => {
+    const enc = { ...seedAndGet(), followUpAt: 'not-a-date' };
+    renderSummary(enc);
+    // Invalid timestamp resolves to no date and no follow-up stamp.
+    expect(screen.getByRole('button', { name: /follow up date: none/i })).toBeInTheDocument();
+    expect(screen.queryByText('Follow-up:')).not.toBeInTheDocument();
+  });
+
+  it('records and clears the follow-up date through the picker', () => {
     const enc = seedAndGet();
     renderSummary(enc);
 
-    fireEvent.change(screen.getByLabelText('Follow-up date'), {
-      target: { value: '2026-05-10' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /book follow up/i }));
-
+    fireEvent.click(screen.getByRole('button', { name: 'mock pick date' }));
     expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.followUpAt).toBe(
-      '2026-05-10T12:00:00Z'
+      '2026-05-10T00:00:00.000Z'
     );
-    expect(screen.getByText('Follow-up booking requested.')).toBeInTheDocument();
-    expect(screen.getByTestId('follow-up-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'mock clear date' }));
+    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.followUpAt).toBeUndefined();
   });
 
   it('signs summary, adds a document and opens the signing overlay', () => {
@@ -121,8 +162,9 @@ describe('SummaryStep', () => {
     renderSummary(enc);
 
     expect(screen.getByText('No documents recorded yet.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Follow-up date')).toBeDisabled();
-    expect(screen.getByRole('button', { name: /book follow up/i })).toBeDisabled();
+    // The follow-up picker is wrapped in a non-interactive (aria-disabled) shell.
+    const followUpButton = screen.getByRole('button', { name: /follow up date/i });
+    expect(followUpButton.closest('[aria-disabled="true"]')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign & save/i })).toBeDisabled();
   });
 

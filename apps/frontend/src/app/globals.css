@@ -93,6 +93,14 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* The rich-text editor's contenteditable is the focus surface; its wrapping
+   SectionContainer turns its border blue on focus-within instead, so suppress
+   the global focus ring here to avoid an inner box on top of that border. */
+.yc-rte-content:focus,
+.yc-rte-content:focus-visible {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -584,6 +592,16 @@ input[type='number'] {
     @apply font-satoshi text-[0.75rem] font-medium leading-[1.125rem] tracking-[-0.24px];
   }
 
+  .text-yc-12-r-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
   .text-yc-12-b-neutral {
     color: var(--color-neutral-900);
     font-family: var(--font-satoshi);
@@ -618,6 +636,16 @@ input[type='number'] {
     color: var(--color-primary-600);
     font-family: var(--font-satoshi);
     font-size: 16px;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-20-b-primary {
+    color: var(--color-primary-600);
+    font-family: var(--font-satoshi);
+    font-size: 20px;
     font-style: normal;
     font-weight: 700;
     letter-spacing: 0;

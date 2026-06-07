@@ -1,25 +1,26 @@
 import React, { useMemo, useState } from 'react';
-import { LuClipboardList } from 'react-icons/lu';
+import { IoArrowForward } from 'react-icons/io5';
+import { LuClipboardList, LuPrinter } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import RichTextEditor from '@/app/ui/primitives/RichTextEditor/RichTextEditor';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
-import PastItemsList, {
-  type PastItem,
-} from '@/app/features/appointments/pages/AppointmentWorkspace/components/PastItemsList';
+import SoapNotesList, {
+  type SoapNoteListItem,
+} from '@/app/features/appointments/pages/AppointmentWorkspace/components/SoapNotesList';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type {
   AppointmentEncounter,
   SoapNoteEntry,
 } from '@/app/features/appointments/types/workspace';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
-import { sanitizeRichText } from '@/app/lib/richText';
 
 type SoapStepProps = {
   appointmentId: string;
   appointmentReason: string;
   encounter: AppointmentEncounter;
   onRecordVitals: () => void;
+  onSaveAndNext: () => void;
 };
 
 const EMPTY_SOAP: SoapNoteEntry = {
@@ -34,46 +35,31 @@ const EMPTY_SOAP: SoapNoteEntry = {
 };
 
 const SoapSignActions = ({
-  signed,
-  signedByName,
-  signedAt,
-  signedOffline,
   disabled,
-  onSign,
   onPrintToSign,
-  onUploadSigned,
+  onSaveAndNext,
 }: {
-  signed: boolean;
-  signedByName?: string;
-  signedAt?: string;
-  signedOffline?: boolean;
   disabled: boolean;
-  onSign: () => void;
   onPrintToSign: () => void;
-  onUploadSigned: () => void;
-}) => {
-  if (signed) {
-    return (
-      <div className="flex flex-col items-end leading-[120%]">
-        <span className="text-[12px] font-bold text-neutral-900">
-          {signedOffline ? 'Signed Offline' : `Signed by ${signedByName ?? ''}`}
-        </span>
-        {signedAt && (
-          <span className="text-[12px] font-medium text-text-brand">
-            {formatStampDate(signedAt)}, {formatStampTime(signedAt)}
-          </span>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Secondary text="Print to Sign" onClick={onPrintToSign} isDisabled={disabled} />
-      <Secondary text="Signed SOAP" onClick={onUploadSigned} isDisabled={disabled} />
-      <Primary text="Sign & Save" onClick={onSign} isDisabled={disabled} />
-    </div>
-  );
-};
+  onSaveAndNext: () => void;
+}) => (
+  <div className="flex flex-wrap items-center justify-end gap-3">
+    <Secondary
+      text="Print to Sign"
+      onClick={onPrintToSign}
+      isDisabled={disabled}
+      icon={<LuPrinter aria-hidden="true" />}
+      iconPosition="right"
+    />
+    <Primary
+      text="Save & Next"
+      onClick={onSaveAndNext}
+      isDisabled={disabled}
+      icon={<IoArrowForward aria-hidden="true" />}
+      iconPosition="right"
+    />
+  </div>
+);
 
 /**
  * SOAP step: appointment reason, template search, and four rich-text sections
@@ -86,15 +72,17 @@ const SoapStep = ({
   appointmentReason,
   encounter,
   onRecordVitals,
+  onSaveAndNext,
 }: SoapStepProps) => {
   const upsertSoap = useAppointmentWorkspaceStore((s) => s.upsertSoap);
   const applySoapTemplate = useAppointmentWorkspaceStore((s) => s.applySoapTemplate);
   const signSoap = useAppointmentWorkspaceStore((s) => s.signSoap);
   const [templateQuery, setTemplateQuery] = useState('');
 
-  const note = encounter.soap[0] ?? EMPTY_SOAP;
+  // Work on the active draft (first not-yet-signed note); once a note is signed
+  // it moves to "All SOAP notes" history and the form clears for a new entry.
+  const note = encounter.soap.find((entry) => entry.status !== 'COMPLETED') ?? EMPTY_SOAP;
   const readOnly = encounter.viewOnly;
-  const signed = note.status === 'COMPLETED';
 
   const templateMatches = useMemo(() => {
     const q = templateQuery.trim().toLowerCase();
@@ -102,43 +90,36 @@ const SoapStep = ({
     return encounter.soapTemplates.filter((t) => t.name.toLowerCase().includes(q));
   }, [templateQuery, encounter.soapTemplates]);
 
-  const pastNotes: PastItem[] = useMemo(
+  const pastNotes: SoapNoteListItem[] = useMemo(
     () =>
       encounter.soap
         .filter((entry) => entry.status === 'COMPLETED')
         .map((entry) => ({
           id: entry.id,
-          title: `By ${entry.signedByName ?? 'Unknown'}`,
+          signedByName: entry.signedByName ?? 'Unknown',
+          signedOffline: entry.signedOffline,
           date: entry.signedAt ? formatStampDate(entry.signedAt) : undefined,
           time: entry.signedAt ? formatStampTime(entry.signedAt) : undefined,
-          detail: (
-            <div className="flex flex-col gap-2">
-              <SoapReadTextField label="Chief complaint" text={appointmentReason} />
-              <SoapReadField label="Subjective (History)" html={entry.subjective} />
-              <SoapReadField label="Objective (Examination)" html={entry.objective} />
-              <SoapReadField label="Assessment (Differential)" html={entry.assessment} />
-              <SoapReadField label="Plan" html={entry.plan} />
-            </div>
-          ),
+          fields: [
+            { label: 'Chief complaint', text: appointmentReason },
+            { label: 'Subjective (History)', html: entry.subjective },
+            { label: 'Objective (Examination)', html: entry.objective },
+            { label: 'Assessment (Differential)', html: entry.assessment },
+            { label: 'Plan', html: entry.plan },
+          ],
         })),
     [appointmentReason, encounter.soap]
   );
 
   return (
-    <div className="flex flex-col gap-5">
-      <SectionContainer title="Chief Complaint" disableFocusBorder>
-        <div className="rounded-2xl border border-card-border bg-neutral-0 px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-          <span className="text-[11px] font-bold uppercase tracking-normal text-text-secondary">
-            Appointment reason
-          </span>
-          <p className="mt-1 text-body-4 font-medium leading-[140%] text-text-primary">
-            {appointmentReason}
-          </p>
-        </div>
-      </SectionContainer>
+    <div className="flex flex-col gap-7">
+      <div className="flex items-center justify-between gap-4 rounded-2xl border border-input-border-default px-5 py-4">
+        <span className="shrink-0 text-yc-16-r-neutral font-bold">Chief Complaint</span>
+        <span className="text-right text-yc-16-r-neutral">{appointmentReason}</span>
+      </div>
 
       <div className="relative flex justify-end">
-        <div className="w-full sm:w-[30%]">
+        <div className="relative w-full sm:max-w-90">
           <Search
             value={templateQuery}
             setSearch={setTemplateQuery}
@@ -147,7 +128,7 @@ const SoapStep = ({
             className="w-full!"
           />
           {templateMatches.length > 0 && (
-            <ul className="absolute right-0 z-10 mt-1 w-full sm:w-[30%] overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+            <ul className="absolute right-0 z-10 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
               {templateMatches.map((tpl) => (
                 <li key={tpl.id}>
                   <button
@@ -167,53 +148,66 @@ const SoapStep = ({
         </div>
       </div>
 
-      <SectionContainer title="Subjective (History)" disableFocusBorder>
+      <SectionContainer
+        titleClassName="text-yc-20-b-primary"
+        title="Subjective (History)"
+        compactTop
+      >
         <RichTextEditor
           ariaLabel="Subjective history"
           value={note.subjective}
-          readOnly={readOnly || signed}
+          readOnly={readOnly}
+          toolbarPlacement="inset"
           onChange={(html) => upsertSoap(appointmentId, { subjective: html })}
           placeholder="Patient history and owner-reported information"
         />
       </SectionContainer>
 
-      <SectionContainer title="Objective (Examination)" disableFocusBorder>
+      <SectionContainer
+        titleClassName="text-yc-20-b-primary"
+        title="Objective (Examination)"
+        compactTop
+      >
         <RichTextEditor
           ariaLabel="Objective examination"
           value={note.objective}
-          readOnly={readOnly || signed}
+          readOnly={readOnly}
+          toolbarPlacement="inset"
           onChange={(html) => upsertSoap(appointmentId, { objective: html })}
           placeholder="Examination findings and recorded vitals"
         />
-        {!readOnly && !signed && (
+        {!readOnly && (
           <div className="mt-3 flex justify-end">
-            <button
-              type="button"
+            <Secondary
+              text="Record Vitals"
               onClick={onRecordVitals}
-              className="flex items-center gap-2 rounded-2xl border border-neutral-300 bg-neutral-0 px-4 py-2 text-body-4 font-medium text-text-primary transition-colors duration-150 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
-            >
-              <LuClipboardList size={16} aria-hidden="true" />
-              Record Vitals
-            </button>
+              icon={<LuClipboardList aria-hidden="true" />}
+            />
           </div>
         )}
       </SectionContainer>
 
-      <SectionContainer title="Assessment (Differential)" disableFocusBorder>
+      <SectionContainer
+        titleClassName="text-yc-20-b-primary"
+        title="Assessment (Differential)"
+        compactTop
+      >
         <RichTextEditor
           ariaLabel="Assessment differential"
           value={note.assessment}
-          readOnly={readOnly || signed}
+          readOnly={readOnly}
+          toolbarPlacement="inset"
           onChange={(html) => upsertSoap(appointmentId, { assessment: html })}
           placeholder="Diagnosis and differentials"
         />
       </SectionContainer>
 
-      <SectionContainer title="Plan" disableFocusBorder>
+      <SectionContainer titleClassName="text-yc-20-b-primary" title="Plan" compactTop>
         <RichTextEditor
           ariaLabel="Plan"
           value={note.plan}
-          readOnly={readOnly || signed}
+          readOnly={readOnly}
+          toolbarPlacement="inset"
           onChange={(html) => upsertSoap(appointmentId, { plan: html })}
           placeholder="Treatment plan and next steps"
         />
@@ -221,38 +215,21 @@ const SoapStep = ({
 
       <div className="flex justify-end">
         <SoapSignActions
-          signed={signed}
-          signedByName={note.signedByName}
-          signedAt={note.signedAt}
-          signedOffline={note.signedOffline}
           disabled={readOnly}
-          onSign={() => signSoap(appointmentId, encounter.leadName ?? 'Clinician', false)}
           onPrintToSign={() => window.print()}
-          onUploadSigned={() => signSoap(appointmentId, encounter.leadName ?? 'Clinician', true)}
+          onSaveAndNext={() => {
+            // Record the active draft (so it lands in "All SOAP notes") and clear
+            // the form for a new note before advancing. signSoap no-ops when the
+            // draft is empty. The button is disabled in read-only mode.
+            signSoap(appointmentId, encounter.leadName ?? 'Clinician', false);
+            onSaveAndNext();
+          }}
         />
       </div>
 
-      {pastNotes.length > 0 && <PastItemsList title="All SOAP notes" items={pastNotes} />}
+      <SoapNotesList items={pastNotes} onPrint={() => window.print()} />
     </div>
   );
 };
-
-const SoapReadField = ({ label, html }: { label: string; html: string }) => (
-  <div className="flex flex-col gap-0.5">
-    <span className="text-[12px] font-bold text-text-brand">{label}</span>
-    <div
-      className="text-body-4 leading-[150%] text-text-primary"
-      // Re-sanitized at render as defence-in-depth (also sanitized on write).
-      dangerouslySetInnerHTML={{ __html: sanitizeRichText(html) || '-' }}
-    />
-  </div>
-);
-
-const SoapReadTextField = ({ label, text }: { label: string; text: string }) => (
-  <div className="flex flex-col gap-0.5">
-    <span className="text-[12px] font-bold text-text-brand">{label}</span>
-    <p className="text-body-4 leading-[150%] text-text-primary">{text}</p>
-  </div>
-);
 
 export default SoapStep;
