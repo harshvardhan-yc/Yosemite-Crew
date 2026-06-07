@@ -371,10 +371,34 @@ describe('EditTaskScreen', () => {
     expect(mockGoBack).toHaveBeenCalled();
   });
 
-  it('handles delete button press via hook', () => {
+  it('directly deletes when delete pressed on a once task', async () => {
     const {getByTestId} = render(<EditTaskScreen />);
     fireEvent.press(getByTestId('header-delete-btn'));
-    expect(mockHookData.handleDelete).toHaveBeenCalled();
+
+    const {deleteTask} = require('@/features/tasks');
+    await waitFor(() => {
+      expect(deleteTask).toHaveBeenCalledWith({
+        taskId: 't1',
+        companionId: 'c1',
+      });
+    });
+  });
+
+  it('opens delete sheet when delete pressed on a recurring task', () => {
+    const mockOpen = jest.fn();
+    Object.assign(mockHookData, {
+      task: {
+        id: 't1',
+        title: 'Existing Task',
+        companionId: 'c1',
+        frequency: 'daily',
+      },
+      taskDeleteSheetRef: {current: {open: mockOpen, close: jest.fn()}},
+    });
+
+    const {getByTestId} = render(<EditTaskScreen />);
+    fireEvent.press(getByTestId('header-delete-btn'));
+    expect(mockOpen).toHaveBeenCalled();
   });
 
   it('handles delete confirmation success', async () => {

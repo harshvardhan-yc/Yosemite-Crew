@@ -60,7 +60,6 @@ export const EditTaskScreen: React.FC = () => {
     isMedicationForm,
     isObservationalToolForm,
     isSimpleForm,
-    handleDelete,
     taskDeleteSheetRef,
     taskSaveSheetRef,
     sheetHandlers,
@@ -170,6 +169,15 @@ export const EditTaskScreen: React.FC = () => {
     }
   };
 
+  const handleDeletePress = () => {
+    if (!task) return;
+    if (task.frequency !== 'once') {
+      taskDeleteSheetRef.current?.open();
+    } else {
+      confirmDeleteTask();
+    }
+  };
+
   const confirmSaveForDay = async () => {
     try {
       await performSave();
@@ -252,7 +260,7 @@ export const EditTaskScreen: React.FC = () => {
             showBackButton
             onBack={handleSmartBack}
             rightIcon={Images.deleteIconRed}
-            onRightPress={handleDelete}
+            onRightPress={handleDeletePress}
             glass={false}
           />
         }
