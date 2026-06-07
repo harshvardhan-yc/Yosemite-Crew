@@ -1,5 +1,7 @@
-// Prisma schema for the backend service.
-// Start with core relational models; extend for RAG/pgvector later.
+// Prisma schema for tenant-scoped operational data.
+// Run these migrations against a schema-scoped DATABASE_URL such as
+// postgresql://.../db?schema=tenant_acme_clinic for each tenant schema.
+// Shared control-plane tables are provisioned separately in public.
 
 generator client {
   provider = "prisma-client-js"
