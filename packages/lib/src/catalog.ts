@@ -45,6 +45,7 @@ export type ResolvedCatalogItem = {
 export type ResolvedCatalogSelection = {
   productItemId: string;
   productKind: ProductKind;
+  legacyServiceId?: string | null;
   isBookable: boolean;
   appointmentKinds: AppointmentKind[];
   billingItems: ResolvedCatalogItem[];

@@ -42,6 +42,7 @@ import labOrderRouter from "./lab-order.router";
 import labResultRouter from "./lab-result.router";
 import companionHistoryRouter from "./companion-history.router";
 import authRouter from "./auth.router";
+import catalogRouter from "./catalog.router";
 
 export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/organization`, organizationRounter);
@@ -87,4 +88,5 @@ export function registerRoutes(app: Express) {
   app.use(`/v1/labs`, labOrderRouter);
   app.use(`/v1/labs`, labResultRouter);
   app.use(`/v1/auth`, authRouter);
+  app.use(`/v1/catalog`, catalogRouter);
 }

@@ -100,8 +100,59 @@ export type ResolvedCatalogItem = {
 export type ResolvedCatalogSelection = {
   productItemId: string;
   productKind: ProductKind;
+  legacyServiceId?: string | null;
   isBookable: boolean;
   appointmentKinds: AppointmentKind[];
   billingItems: ResolvedCatalogItem[];
   includedItems: ResolvedCatalogItem[];
+};
+
+export type CatalogTab = 'services' | 'packages' | 'all';
+
+export type CatalogListRow = {
+  id: string;
+  code: string | null;
+  name: string;
+  description: string | null;
+  kind: ProductKind;
+  isBookable: boolean;
+  isActive: boolean;
+  durationMinutes: number | null;
+  unitPrice: number | null;
+  defaultDiscountPercent: number | null;
+  maxDiscountPercent: number | null;
+  totalAmount: number;
+};
+
+export type CatalogPackageBreakdownRow = {
+  id: string;
+  type: ProductKind;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  grossAmount: number;
+  discountPercent: number | null;
+  finalAmount: number;
+};
+
+export type CatalogPackageDetail = {
+  id: string;
+  code: string | null;
+  name: string;
+  description: string | null;
+  isBookable: boolean;
+  isActive: boolean;
+  durationMinutes: number | null;
+  maxDiscountPercent: number | null;
+  totalAmount: number;
+  items: CatalogPackageBreakdownRow[];
+};
+
+export type SpecialityCatalogView = {
+  specialityId: string;
+  organisationId: string;
+  activeTab: CatalogTab;
+  search: string | null;
+  services: CatalogListRow[];
+  packages: CatalogListRow[];
 };

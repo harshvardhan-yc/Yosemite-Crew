@@ -7,8 +7,32 @@ import { prisma } from "../../src/config/prisma";
 
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
+    $transaction: jest.fn(),
     productItem: {
+      create: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
       findFirst: jest.fn(),
+    },
+    productPrice: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+      create: jest.fn(),
+      delete: jest.fn(),
+    },
+    productBookable: {
+      upsert: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    productPackage: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+      delete: jest.fn(),
+    },
+    productPackageItem: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
     },
   },
 }));
@@ -16,6 +40,9 @@ jest.mock("../../src/config/prisma", () => ({
 describe("CatalogService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma),
+    );
   });
 
   it("resolves a direct bookable product into one billing item", () => {
@@ -23,7 +50,11 @@ describe("CatalogService", () => {
       id: "prod_consult",
       organisationId: "org_1",
       name: "General Consultation",
+      description: null,
+      code: null,
       kind: "CONSULTATION",
+      specialityId: null,
+      legacyServiceId: "svc_consult",
       isActive: true,
       prices: [
         {
@@ -35,6 +66,7 @@ describe("CatalogService", () => {
         },
       ],
       bookable: {
+        durationMinutes: 30,
         supportsOutpatient: true,
         supportsInpatient: false,
       },
@@ -44,6 +76,7 @@ describe("CatalogService", () => {
     expect(resolved).toEqual({
       productItemId: "prod_consult",
       productKind: "CONSULTATION",
+      legacyServiceId: "svc_consult",
       isBookable: true,
       appointmentKinds: ["OUTPATIENT"],
       billingItems: [
@@ -69,7 +102,11 @@ describe("CatalogService", () => {
       id: "pkg_dental",
       organisationId: "org_1",
       name: "Dental Bundle",
+      description: null,
+      code: null,
       kind: "PACKAGE",
+      specialityId: null,
+      legacyServiceId: null,
       isActive: true,
       prices: [
         {
@@ -81,16 +118,20 @@ describe("CatalogService", () => {
         },
       ],
       bookable: {
+        durationMinutes: 45,
         supportsOutpatient: true,
         supportsInpatient: true,
       },
       package: {
         items: [
           {
+            id: "pkg_item_exam",
             childProductItemId: "prod_exam",
             quantity: 1,
             pricingMode: "INCLUDED",
             overridePrice: null,
+            sortOrder: 0,
+            isOptional: false,
             childProductItem: {
               id: "prod_exam",
               name: "Dental Exam",
@@ -108,10 +149,13 @@ describe("CatalogService", () => {
             },
           },
           {
+            id: "pkg_item_xray",
             childProductItemId: "prod_xray",
             quantity: 2,
             pricingMode: "OVERRIDE_PRICE",
             overridePrice: 40,
+            sortOrder: 1,
+            isOptional: false,
             childProductItem: {
               id: "prod_xray",
               name: "Dental X-Ray",
@@ -181,17 +225,24 @@ describe("CatalogService", () => {
         id: "pkg_invalid",
         organisationId: "org_1",
         name: "Invalid Bundle",
+        description: null,
+        code: null,
         kind: "PACKAGE",
+        specialityId: null,
+        legacyServiceId: null,
         isActive: true,
         prices: [],
         bookable: null,
         package: {
           items: [
             {
+              id: "pkg_item_lab",
               childProductItemId: "prod_lab",
               quantity: 1,
               pricingMode: "OVERRIDE_PRICE",
               overridePrice: null,
+              sortOrder: 0,
+              isOptional: false,
               childProductItem: {
                 id: "prod_lab",
                 name: "CBC",
@@ -216,7 +267,11 @@ describe("CatalogService", () => {
       id: "prod_consult",
       organisationId: "org_1",
       name: "General Consultation",
+      description: null,
+      code: null,
       kind: "CONSULTATION",
+      specialityId: null,
+      legacyServiceId: "svc_consult",
       isActive: true,
       prices: [
         {
@@ -228,6 +283,7 @@ describe("CatalogService", () => {
         },
       ],
       bookable: {
+        durationMinutes: 30,
         supportsOutpatient: true,
         supportsInpatient: false,
       },
@@ -242,11 +298,391 @@ describe("CatalogService", () => {
     expect(prisma.productItem.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          id: "prod_consult",
+          OR: [{ id: "prod_consult" }, { legacyServiceId: "prod_consult" }],
           organisationId: "org_1",
         },
       }),
     );
     expect(resolved.productItemId).toBe("prod_consult");
+  });
+
+  it("creates a package product with nested price, bookable settings, and package items", async () => {
+    (prisma.productItem.create as jest.Mock).mockResolvedValue({
+      id: "prod_pkg",
+      organisationId: "org_1",
+      name: "Dental Bundle",
+      description: "desc",
+      code: "DENTAL",
+      kind: "PACKAGE",
+      specialityId: "spec_1",
+      legacyServiceId: null,
+      isActive: true,
+      prices: [
+        {
+          unitPrice: 250,
+          currency: "USD",
+          defaultDiscountPercent: 5,
+          maxDiscountPercent: 10,
+          isDefault: true,
+        },
+      ],
+      bookable: {
+        durationMinutes: 45,
+        supportsOutpatient: true,
+        supportsInpatient: false,
+      },
+      package: {
+        items: [
+          {
+            id: "pkg_item_1",
+            childProductItemId: "prod_exam",
+            quantity: 1,
+            pricingMode: "INCLUDED",
+            overridePrice: null,
+            sortOrder: 0,
+            isOptional: false,
+            childProductItem: {
+              id: "prod_exam",
+              name: "Exam",
+              kind: "CONSULTATION",
+              isActive: true,
+              prices: [],
+            },
+          },
+        ],
+      },
+    });
+
+    const created = await CatalogService.createProduct({
+      organisationId: "org_1",
+      name: "Dental Bundle",
+      description: "desc",
+      code: "DENTAL",
+      kind: "PACKAGE",
+      specialityId: "spec_1",
+      price: {
+        unitPrice: 250,
+        currency: "USD",
+        defaultDiscountPercent: 5,
+        maxDiscountPercent: 10,
+      },
+      bookable: {
+        durationMinutes: 45,
+      },
+      packageItems: [
+        {
+          childProductItemId: "prod_exam",
+          quantity: 1,
+          pricingMode: "INCLUDED",
+        },
+      ],
+    });
+
+    expect(prisma.productItem.create).toHaveBeenCalled();
+    expect(created.defaultPrice?.unitPrice).toBe(250);
+    expect(created.packageItems).toHaveLength(1);
+  });
+
+  it("lists active products for an organisation", async () => {
+    (prisma.productItem.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "prod_1",
+        organisationId: "org_1",
+        name: "Consult",
+        description: null,
+        code: null,
+        kind: "CONSULTATION",
+        specialityId: "spec_1",
+        legacyServiceId: null,
+        isActive: true,
+        prices: [],
+        bookable: null,
+        package: null,
+      },
+    ]);
+
+    const results = await CatalogService.listProducts({
+      organisationId: "org_1",
+    });
+
+    expect(prisma.productItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organisationId: "org_1",
+          isActive: true,
+        }),
+      }),
+    );
+    expect(results).toHaveLength(1);
+  });
+
+  it("updates nested pricing and bookable settings", async () => {
+    (prisma.productItem.findUnique as jest.Mock).mockResolvedValue({
+      id: "prod_1",
+      kind: "CONSULTATION",
+      prices: [{ id: "price_1", isDefault: true }],
+      bookable: { id: "book_1" },
+      package: null,
+    });
+    (prisma.productPrice.findFirst as jest.Mock).mockResolvedValue({
+      id: "price_1",
+    });
+    (prisma.productItem.update as jest.Mock).mockResolvedValue({});
+    (prisma.productBookable.upsert as jest.Mock).mockResolvedValue({});
+    (prisma.productItem.findUnique as jest.Mock)
+      .mockResolvedValueOnce({
+        id: "prod_1",
+        kind: "CONSULTATION",
+        prices: [{ id: "price_1", isDefault: true }],
+        bookable: { id: "book_1" },
+        package: null,
+      })
+      .mockResolvedValueOnce({
+        id: "prod_1",
+        organisationId: "org_1",
+        name: "Updated Consult",
+        description: null,
+        code: null,
+        kind: "CONSULTATION",
+        specialityId: null,
+        legacyServiceId: null,
+        isActive: true,
+        prices: [
+          {
+            unitPrice: 99,
+            currency: "USD",
+            defaultDiscountPercent: 0,
+            maxDiscountPercent: 10,
+            isDefault: true,
+          },
+        ],
+        bookable: {
+          durationMinutes: 30,
+          supportsOutpatient: true,
+          supportsInpatient: false,
+        },
+        package: null,
+      });
+
+    const updated = await CatalogService.updateProduct("prod_1", {
+      name: "Updated Consult",
+      price: {
+        unitPrice: 99,
+        currency: "USD",
+        defaultDiscountPercent: 0,
+        maxDiscountPercent: 10,
+      },
+      bookable: {
+        durationMinutes: 30,
+      },
+    });
+
+    expect(prisma.productPrice.update).toHaveBeenCalled();
+    expect(prisma.productBookable.upsert).toHaveBeenCalled();
+    expect(updated.name).toBe("Updated Consult");
+  });
+
+  it("builds a speciality catalog view grouped into services and packages", async () => {
+    (prisma.productItem.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "prod_consult",
+        organisationId: "org_1",
+        name: "General Consultation",
+        description: "Consult",
+        code: "CS-1",
+        kind: "CONSULTATION",
+        specialityId: "spec_1",
+        legacyServiceId: null,
+        isActive: true,
+        prices: [
+          {
+            unitPrice: 100,
+            currency: "USD",
+            defaultDiscountPercent: 10,
+            maxDiscountPercent: 15,
+            isDefault: true,
+          },
+        ],
+        bookable: {
+          durationMinutes: 30,
+          supportsOutpatient: true,
+          supportsInpatient: false,
+        },
+        package: null,
+      },
+      {
+        id: "pkg_bundle",
+        organisationId: "org_1",
+        name: "Cardio Bundle",
+        description: "Bundle",
+        code: "PK-1",
+        kind: "PACKAGE",
+        specialityId: "spec_1",
+        legacyServiceId: null,
+        isActive: true,
+        prices: [],
+        bookable: {
+          durationMinutes: 30,
+          supportsOutpatient: true,
+          supportsInpatient: false,
+        },
+        package: {
+          items: [
+            {
+              id: "pkgi_1",
+              childProductItemId: "prod_consult",
+              quantity: 1,
+              pricingMode: "INHERITED_PRICE",
+              overridePrice: null,
+              sortOrder: 0,
+              isOptional: false,
+              childProductItem: {
+                id: "prod_consult",
+                name: "General Consultation",
+                kind: "CONSULTATION",
+                isActive: true,
+                prices: [
+                  {
+                    unitPrice: 100,
+                    currency: "USD",
+                    defaultDiscountPercent: 10,
+                    maxDiscountPercent: 15,
+                    isDefault: true,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = await CatalogService.getSpecialityCatalog({
+      organisationId: "org_1",
+      specialityId: "spec_1",
+      tab: "all",
+      search: "cardio",
+    });
+
+    expect(result).toEqual({
+      specialityId: "spec_1",
+      organisationId: "org_1",
+      activeTab: "all",
+      search: "cardio",
+      services: [
+        {
+          id: "prod_consult",
+          code: "CS-1",
+          name: "General Consultation",
+          description: "Consult",
+          kind: "CONSULTATION",
+          isBookable: true,
+          isActive: true,
+          durationMinutes: 30,
+          unitPrice: 100,
+          defaultDiscountPercent: 10,
+          maxDiscountPercent: 15,
+          totalAmount: 90,
+        },
+      ],
+      packages: [
+        {
+          id: "pkg_bundle",
+          code: "PK-1",
+          name: "Cardio Bundle",
+          description: "Bundle",
+          kind: "PACKAGE",
+          isBookable: true,
+          isActive: true,
+          durationMinutes: 30,
+          unitPrice: null,
+          defaultDiscountPercent: null,
+          maxDiscountPercent: null,
+          totalAmount: 90,
+        },
+      ],
+    });
+  });
+
+  it("returns package detail with breakdown rows", async () => {
+    (prisma.productItem.findFirst as jest.Mock).mockResolvedValue({
+      id: "pkg_bundle",
+      organisationId: "org_1",
+      name: "Cardio Bundle",
+      description: "Bundle",
+      code: "PK-1",
+      kind: "PACKAGE",
+      specialityId: "spec_1",
+      legacyServiceId: null,
+      isActive: true,
+      prices: [
+        {
+          unitPrice: 250,
+          currency: "USD",
+          defaultDiscountPercent: null,
+          maxDiscountPercent: 10,
+          isDefault: true,
+        },
+      ],
+      bookable: {
+        durationMinutes: 30,
+        supportsOutpatient: true,
+        supportsInpatient: false,
+      },
+      package: {
+        items: [
+          {
+            id: "pkgi_1",
+            childProductItemId: "prod_consult",
+            quantity: 2,
+            pricingMode: "INHERITED_PRICE",
+            overridePrice: null,
+            sortOrder: 0,
+            isOptional: false,
+            childProductItem: {
+              id: "prod_consult",
+              name: "General Consultation",
+              kind: "CONSULTATION",
+              isActive: true,
+              prices: [
+                {
+                  unitPrice: 100,
+                  currency: "USD",
+                  defaultDiscountPercent: 10,
+                  maxDiscountPercent: 15,
+                  isDefault: true,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const result = await CatalogService.getPackageDetail("pkg_bundle", "org_1");
+
+    expect(result).toEqual({
+      id: "pkg_bundle",
+      code: "PK-1",
+      name: "Cardio Bundle",
+      description: "Bundle",
+      isBookable: true,
+      isActive: true,
+      durationMinutes: 30,
+      maxDiscountPercent: 10,
+      totalAmount: 180,
+      items: [
+        {
+          id: "pkgi_1",
+          type: "CONSULTATION",
+          name: "General Consultation",
+          quantity: 2,
+          unitPrice: 100,
+          grossAmount: 200,
+          discountPercent: 10,
+          finalAmount: 180,
+        },
+      ],
+    });
   });
 });

@@ -126,6 +126,10 @@ export type {
 export type { OrganisationInvite, InviteStatus } from './organisationInvite';
 export type { Service } from './service';
 export type {
+  CatalogListRow,
+  CatalogPackageBreakdownRow,
+  CatalogPackageDetail,
+  CatalogTab,
   AppointmentKind,
   CatalogPricePolicy,
   PackageItemPricingMode,
@@ -137,6 +141,7 @@ export type {
   ProductPrice,
   ResolvedCatalogItem,
   ResolvedCatalogSelection,
+  SpecialityCatalogView,
 } from './catalog';
 export {
   type ServiceRequestDTO,
