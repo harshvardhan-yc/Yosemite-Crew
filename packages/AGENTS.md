@@ -11,6 +11,7 @@ Inherits all root `AGENTS.md` rules. This file covers shared workspace packages 
 | `@yosemite-crew/types`    | Shared TypeScript types used by frontend, backend, and mobile |
 | `@yosemite-crew/fhir`     | FHIR R4 generated types and compatibility helpers             |
 | `@yosemite-crew/database` | Prisma schema, migrations, and database client ownership      |
+| `@yosemite-crew/lib`      | Shared errors, types, and reusable utilities                  |
 
 ---
 
