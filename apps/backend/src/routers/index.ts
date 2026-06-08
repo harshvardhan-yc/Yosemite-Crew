@@ -43,6 +43,7 @@ import labResultRouter from "./lab-result.router";
 import companionHistoryRouter from "./companion-history.router";
 import authRouter from "./auth.router";
 import catalogRouter from "./catalog.router";
+import healthcareServiceRouter from "./healthcare-service.router";
 
 export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/organization`, organizationRounter);
@@ -61,6 +62,7 @@ export function registerRoutes(app: Express) {
   app.use(`/v1/companion-organisation`, companionOrganisationRouter);
   app.use(`/v1/document`, docuemntRouter);
   app.use(`/fhir/v1/service`, serviceRouter);
+  app.use(`/fhir/v1/healthcare-service`, healthcareServiceRouter);
   app.use(`/fhir/v1/appointment`, appointmentRouter);
   app.use(`/v1/stripe`, stripeRouter);
   app.use(`/v1/documenso`, documensoRouter);

@@ -4,8 +4,13 @@ import logger from "src/utils/logger";
 import {
   CatalogService,
   CatalogServiceError,
-  type CatalogProductUpsertInput,
 } from "src/services/catalog.service";
+import {
+  fromCatalogRequestDTO,
+  type CatalogRequestDTO,
+  toCatalogBundleResponseDTO,
+  toCatalogResponseDTO,
+} from "@yosemite-crew/types";
 
 const productKindSchema = z.enum([
   "CONSULTATION",
@@ -17,49 +22,11 @@ const productKindSchema = z.enum([
   "PACKAGE",
 ]);
 
-const packagePricingModeSchema = z.enum([
-  "INCLUDED",
-  "INHERITED_PRICE",
-  "OVERRIDE_PRICE",
-]);
-
-const priceSchema = z.object({
-  unitPrice: z.number().min(0),
-  currency: z.string().trim().min(1).optional().nullable(),
-  defaultDiscountPercent: z.number().min(0).max(100).optional().nullable(),
-  maxDiscountPercent: z.number().min(0).max(100).optional().nullable(),
-});
-
-const bookableSchema = z.object({
-  durationMinutes: z.number().int().positive(),
-  supportsOutpatient: z.boolean().optional(),
-  supportsInpatient: z.boolean().optional(),
-});
-
-const packageItemSchema = z.object({
-  childProductItemId: z.string().trim().min(1),
-  quantity: z.number().int().positive(),
-  pricingMode: packagePricingModeSchema,
-  overridePrice: z.number().min(0).optional().nullable(),
-  sortOrder: z.number().int().optional(),
-  isOptional: z.boolean().optional(),
-});
-
-const createProductSchema = z.object({
-  organisationId: z.string().trim().min(1),
-  name: z.string().trim().min(1),
-  description: z.string().trim().optional().nullable(),
-  code: z.string().trim().optional().nullable(),
-  kind: productKindSchema,
-  specialityId: z.string().trim().optional().nullable(),
-  legacyServiceId: z.string().trim().optional().nullable(),
-  isActive: z.boolean().optional(),
-  price: priceSchema.optional().nullable(),
-  bookable: bookableSchema.optional().nullable(),
-  packageItems: z.array(packageItemSchema).optional().nullable(),
-});
-
-const updateProductSchema = createProductSchema.partial();
+const healthcareServiceSchema = z
+  .object({
+    resourceType: z.literal("HealthcareService"),
+  })
+  .passthrough();
 
 const resolveSchema = z.object({
   productItemId: z.string().trim().min(1),
@@ -71,6 +38,12 @@ const listQuerySchema = z.object({
   kinds: z.string().trim().optional(),
   search: z.string().trim().optional(),
   includeInactive: z.union([z.literal("true"), z.literal("false")]).optional(),
+  organization: z.string().trim().min(1).optional(),
+  "provided-by": z.string().trim().min(1).optional(),
+  specialty: z.string().trim().min(1).optional(),
+  active: z.union([z.literal("true"), z.literal("false")]).optional(),
+  name: z.string().trim().optional(),
+  kind: z.string().trim().optional(),
 });
 
 const specialityCatalogQuerySchema = z.object({
@@ -103,43 +76,45 @@ const parseKinds = (value?: string) => {
 
 export const CatalogController = {
   createProduct: async (
-    req: Request<unknown, unknown, CatalogProductUpsertInput>,
+    req: Request<unknown, unknown, CatalogRequestDTO>,
     res: Response,
   ) => {
     try {
-      const parsed = createProductSchema.safeParse(req.body);
+      const parsed = healthcareServiceSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({
-          message: "Invalid product payload.",
+          message: "Invalid payload. Expected FHIR HealthcareService resource.",
           errors: parsed.error.flatten(),
         });
       }
 
-      const created = await CatalogService.createProduct(parsed.data);
-      return res.status(201).json(created);
+      const created = await CatalogService.createProduct(
+        fromCatalogRequestDTO(parsed.data),
+      );
+      return res.status(201).json(toCatalogResponseDTO(created));
     } catch (error) {
       return handleError(res, error, "Unable to create catalog product.");
     }
   },
 
   updateProduct: async (
-    req: Request<{ id: string }, unknown, Partial<CatalogProductUpsertInput>>,
+    req: Request<{ id: string }, unknown, CatalogRequestDTO>,
     res: Response,
   ) => {
     try {
-      const parsed = updateProductSchema.safeParse(req.body);
+      const parsed = healthcareServiceSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({
-          message: "Invalid product update payload.",
+          message: "Invalid payload. Expected FHIR HealthcareService resource.",
           errors: parsed.error.flatten(),
         });
       }
 
       const updated = await CatalogService.updateProduct(
         req.params.id,
-        parsed.data,
+        fromCatalogRequestDTO(parsed.data),
       );
-      return res.status(200).json(updated);
+      return res.status(200).json(toCatalogResponseDTO(updated));
     } catch (error) {
       return handleError(res, error, "Unable to update catalog product.");
     }
@@ -155,7 +130,7 @@ export const CatalogController = {
         req.params.id,
         organisationId,
       );
-      return res.status(200).json(product);
+      return res.status(200).json(toCatalogResponseDTO(product));
     } catch (error) {
       return handleError(res, error, "Unable to fetch catalog product.");
     }
@@ -191,13 +166,24 @@ export const CatalogController = {
       }
 
       const products = await CatalogService.listProducts({
-        organisationId: req.params.organisationId,
-        specialityId: queryResult.data.specialityId,
-        kinds: parseKinds(queryResult.data.kinds),
-        includeInactive: queryResult.data.includeInactive === "true",
+        organisationId:
+          queryResult.data.organization ??
+          queryResult.data["provided-by"] ??
+          req.params.organisationId,
+        specialityId:
+          queryResult.data.specialty ?? queryResult.data.specialityId,
+        kinds: parseKinds(queryResult.data.kind ?? queryResult.data.kinds),
+        includeInactive:
+          queryResult.data.includeInactive === "true" ||
+          queryResult.data.active === "false",
       });
 
-      return res.status(200).json(products);
+      return res.status(200).json(
+        toCatalogBundleResponseDTO(products, {
+          baseUrl: `${req.baseUrl}`,
+          searchMode: "match",
+        }),
+      );
     } catch (error) {
       return handleError(res, error, "Unable to list catalog products.");
     }
