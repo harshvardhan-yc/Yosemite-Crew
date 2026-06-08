@@ -125,6 +125,19 @@ export type {
 
 export type { OrganisationInvite, InviteStatus } from './organisationInvite';
 export type { Service } from './service';
+export type {
+  AppointmentKind,
+  CatalogPricePolicy,
+  PackageItemPricingMode,
+  ProductBookable,
+  ProductItem,
+  ProductKind,
+  ProductPackage,
+  ProductPackageItem,
+  ProductPrice,
+  ResolvedCatalogItem,
+  ResolvedCatalogSelection,
+} from './catalog';
 export {
   type ServiceRequestDTO,
   type ServiceResponseDTO,

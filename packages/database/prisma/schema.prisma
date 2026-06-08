@@ -99,6 +99,11 @@ enum AppointmentStatus {
   NO_SHOW
 }
 
+enum AppointmentKind {
+  OUTPATIENT
+  INPATIENT
+}
+
 enum ChatSessionStatus {
   PENDING
   ACTIVE
@@ -499,6 +504,11 @@ model Appointment {
   supportStaff      Json?
   room              Json?
   appointmentType   Json?
+  caseId            String?
+  encounterId       String?
+  productItemId     String?
+  appointmentKind   AppointmentKind   @default(OUTPATIENT)
+  idempotencyKey    String?
   organisationId    String
   appointmentDate   DateTime
   startTime         DateTime
@@ -516,8 +526,12 @@ model Appointment {
 
   @@index([organisationId, appointmentDate])
   @@index([organisationId])
+  @@index([organisationId, productItemId])
+  @@index([caseId])
+  @@index([encounterId])
   @@index([status])
   @@index([expiresAt])
+  @@unique([organisationId, idempotencyKey])
 }
 
 model ChatSession {
@@ -962,6 +976,22 @@ enum ServiceType {
   OBSERVATION_TOOL
 }
 
+enum ProductKind {
+  CONSULTATION
+  PROCEDURE
+  DIAGNOSTIC
+  MEDICATION
+  INVENTORY_ITEM
+  LAB_TEST
+  PACKAGE
+}
+
+enum PackageItemPricingMode {
+  INCLUDED
+  INHERITED_PRICE
+  OVERRIDE_PRICE
+}
+
 enum TaskStatus {
   PENDING
   IN_PROGRESS
@@ -1251,6 +1281,84 @@ model Service {
 
   @@index([organisationId])
   @@index([organisationId, specialityId])
+}
+
+model ProductItem {
+  id              String               @id @default(uuid())
+  organisationId  String
+  name            String
+  description     String?
+  code            String?
+  kind            ProductKind          @default(CONSULTATION)
+  specialityId    String?
+  legacyServiceId String?              @unique
+  isActive        Boolean              @default(true)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  prices          ProductPrice[]
+  bookable        ProductBookable?
+  package         ProductPackage?
+  packageItems    ProductPackageItem[] @relation("ProductPackageComponent")
+
+  @@index([organisationId])
+  @@index([organisationId, kind, isActive])
+  @@index([organisationId, specialityId])
+}
+
+model ProductPrice {
+  id                     String      @id @default(uuid())
+  productItemId          String
+  unitPrice              Float
+  currency               String?
+  defaultDiscountPercent Float?
+  maxDiscountPercent     Float?
+  isDefault              Boolean     @default(true)
+  effectiveFrom          DateTime?
+  effectiveTo            DateTime?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  productItem            ProductItem @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+
+  @@index([productItemId, isDefault])
+  @@index([effectiveFrom, effectiveTo])
+}
+
+model ProductBookable {
+  id                 String      @id @default(uuid())
+  productItemId      String      @unique
+  durationMinutes    Int
+  supportsOutpatient Boolean     @default(true)
+  supportsInpatient  Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  productItem        ProductItem @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+}
+
+model ProductPackage {
+  id            String               @id @default(uuid())
+  productItemId String               @unique
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  productItem   ProductItem          @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+  items         ProductPackageItem[]
+}
+
+model ProductPackageItem {
+  id                 String                 @id @default(uuid())
+  packageId          String
+  childProductItemId String
+  quantity           Int                    @default(1)
+  pricingMode        PackageItemPricingMode @default(INCLUDED)
+  overridePrice      Float?
+  sortOrder          Int                    @default(0)
+  isOptional         Boolean                @default(false)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  package            ProductPackage         @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  childProductItem   ProductItem            @relation("ProductPackageComponent", fields: [childProductItemId], references: [id], onDelete: Restrict)
+
+  @@index([packageId, sortOrder])
+  @@index([childProductItemId])
 }
 
 model Task {
