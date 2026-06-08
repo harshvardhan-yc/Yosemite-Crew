@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Close from '@/app/ui/primitives/Icons/Close';
+import { YosemiteLoader } from '@/app/ui/overlays/Loader';
 import { getSafeIdexxIframeUrl } from '@/app/lib/urls';
 
 type PdfPreviewOverlayProps = {
@@ -45,13 +46,9 @@ const PdfPreviewOverlay = ({
         </div>
         <div className="relative flex-1 min-h-0">
           {!loaded && (
-            <output
-              className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white"
-              aria-label="Loading PDF"
-            >
-              <div className="size-8 rounded-full border-2 border-card-border border-t-text-brand animate-spin" />
-              <span className="text-body-4 text-text-secondary">Loading PDF…</span>
-            </output>
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
+              <YosemiteLoader label="Loading PDF" size={120} testId="pdf-preview-loader" />
+            </div>
           )}
           <iframe
             key={safePdfUrl}

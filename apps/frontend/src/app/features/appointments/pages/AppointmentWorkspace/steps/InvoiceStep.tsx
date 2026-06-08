@@ -74,7 +74,7 @@ const StatusPill = ({ status }: { status: InvoiceStatus }) => (
 const SettledBadge = ({ invoice }: { invoice: PastInvoice }) => {
   const label = invoice.paidFromDeposit ? 'Withdrawn from Deposit' : 'Invoice Paid';
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-2xl bg-pill-success-text px-3 py-1 text-caption-1 font-medium text-neutral-0">
+    <span className="inline-flex items-center gap-1.5 rounded-3xl bg-[#15803D] px-3 py-1 text-caption-1 font-medium text-neutral-0">
       {label}
       <LuCheck aria-hidden="true" />
     </span>
@@ -205,7 +205,7 @@ const InvoiceRow = ({
           )}
         </span>
         {invoice.paymentMethod && (
-          <span className="inline-flex items-center gap-2 rounded-2xl bg-pill-success-text px-4 py-2 text-body-4 font-medium text-neutral-0">
+          <span className="inline-flex items-center gap-2 rounded-3xl bg-[#15803D] px-4 py-2 text-body-4 font-medium text-neutral-0">
             {PAYMENT_LABELS[invoice.paymentMethod]}
             <LuCheck aria-hidden="true" />
           </span>

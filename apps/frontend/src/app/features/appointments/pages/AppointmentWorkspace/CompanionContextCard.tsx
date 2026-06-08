@@ -1,6 +1,6 @@
 import React from 'react';
 import Image from 'next/image';
-import { LuChevronRight } from 'react-icons/lu';
+import { LuChevronRight, LuFootprints } from 'react-icons/lu';
 import { TbBed } from 'react-icons/tb';
 import { getSafeImageUrl, type ImageType } from '@/app/lib/urls';
 import type { EncounterMode } from '@/app/features/appointments/types/workspace';
@@ -62,6 +62,7 @@ const ModePill = ({ mode }: { mode: EncounterMode }) =>
     </span>
   ) : (
     <span className="flex h-7 items-center gap-1.5 rounded-2xl bg-neutral-100 px-3 text-yc-12-b-neutral text-neutral-700">
+      <LuFootprints size={14} aria-hidden="true" />
       Outpatient
     </span>
   );

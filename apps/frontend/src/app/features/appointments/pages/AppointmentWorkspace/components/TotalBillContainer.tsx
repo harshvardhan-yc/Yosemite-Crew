@@ -102,11 +102,11 @@ const TextCell = ({ children, className }: { children: React.ReactNode; classNam
   </span>
 );
 
-/** Shared editable box style for the qty + discount inputs. */
+/** Shared editable box style for the qty + discount inputs (with a leading prefix). */
 const EDITABLE_BOX =
-  'h-10 w-full rounded-xl border border-input-border-default bg-transparent px-3 text-body-4 text-text-primary focus-visible:border-input-border-active focus-visible:outline-none';
+  'h-10 w-full rounded-xl border border-input-border-default bg-transparent pl-7 pr-3 text-body-4 text-text-primary focus-visible:border-input-border-active focus-visible:outline-none';
 
-/** Editable quantity box; re-derives gross/amount via the store on change. */
+/** Editable quantity box with a permanent leading "×"; re-derives gross/amount. */
 const QtyInput = ({
   item,
   onUpdateItem,
@@ -114,20 +114,28 @@ const QtyInput = ({
   item: InvoiceLineItem;
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
 }) => (
-  <input
-    type="number"
-    min={1}
-    value={item.qty}
-    aria-label={`Quantity for ${item.name}`}
-    onChange={(e) => {
-      const qty = Math.max(1, Number.parseInt(e.target.value, 10) || 1);
-      onUpdateItem(item.id, { qty });
-    }}
-    className={EDITABLE_BOX}
-  />
+  <div className="relative">
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-body-4 text-text-secondary"
+    >
+      ×
+    </span>
+    <input
+      type="number"
+      min={1}
+      value={item.qty}
+      aria-label={`Quantity for ${item.name}`}
+      onChange={(e) => {
+        const qty = Math.max(1, Number.parseInt(e.target.value, 10) || 1);
+        onUpdateItem(item.id, { qty });
+      }}
+      className={EDITABLE_BOX}
+    />
+  </div>
 );
 
-/** Editable per-line discount box (entered in dollars); re-derives the amount. */
+/** Editable per-line discount box (dollars) with leading "− $"; re-derives amount. */
 const DiscountInput = ({
   item,
   onUpdateItem,
@@ -135,18 +143,26 @@ const DiscountInput = ({
   item: InvoiceLineItem;
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
 }) => (
-  <input
-    type="number"
-    min={0}
-    step={0.01}
-    value={item.discountCents / 100}
-    aria-label={`Discount for ${item.name}`}
-    onChange={(e) => {
-      const dollars = Math.max(0, Number.parseFloat(e.target.value) || 0);
-      onUpdateItem(item.id, { discountCents: Math.round(dollars * 100) });
-    }}
-    className={`${EDITABLE_BOX} text-pill-success-text`}
-  />
+  <div className="relative">
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-body-4 text-pill-success-text"
+    >
+      − $
+    </span>
+    <input
+      type="number"
+      min={0}
+      step={0.01}
+      value={item.discountCents / 100}
+      aria-label={`Discount for ${item.name}`}
+      onChange={(e) => {
+        const dollars = Math.max(0, Number.parseFloat(e.target.value) || 0);
+        onUpdateItem(item.id, { discountCents: Math.round(dollars * 100) });
+      }}
+      className={`${EDITABLE_BOX} pl-12 text-pill-success-text`}
+    />
+  </div>
 );
 
 const BillRow = ({
@@ -176,6 +192,97 @@ const BillRow = ({
   </li>
 );
 
+const FOOTER_AMOUNT_ROW = 'grid min-h-8 grid-cols-[minmax(0,1fr)_max-content] items-center gap-4';
+const FOOTER_BREAKDOWN_ROW =
+  'grid min-h-8 grid-cols-[5.5rem_minmax(0,1fr)_7rem] items-center gap-3';
+const FOOTER_FONT = '"Satoshi Variable", var(--font-satoshi), sans-serif';
+const NEUTRAL_TEXT = 'var(--color-neutral-900, #302F2E)';
+const PRIMARY_TEXT = 'var(--color-primary-600, #006AE0)';
+const DISCOUNT_TEXT = 'var(--color-semantics-success-700, #15803D)';
+
+const FOOTER_HELPER_TEXT_STYLE: React.CSSProperties = {
+  color: NEUTRAL_TEXT,
+  fontFamily: FOOTER_FONT,
+  fontSize: 14,
+  fontStyle: 'normal',
+  fontWeight: 500,
+  lineHeight: '120%',
+};
+
+const FOOTER_LABEL_STYLE: React.CSSProperties = {
+  color: NEUTRAL_TEXT,
+  fontFamily: FOOTER_FONT,
+  fontSize: 16,
+  fontStyle: 'normal',
+  fontWeight: 400,
+  lineHeight: '120%',
+};
+
+const FOOTER_VALUE_STYLE: React.CSSProperties = {
+  color: NEUTRAL_TEXT,
+  fontFamily: FOOTER_FONT,
+  fontSize: 16,
+  fontStyle: 'normal',
+  fontWeight: 700,
+  lineHeight: '120%',
+};
+
+const FOOTER_TOTAL_VALUE_STYLE: React.CSSProperties = {
+  color: PRIMARY_TEXT,
+  fontFamily: FOOTER_FONT,
+  fontSize: 40,
+  fontStyle: 'normal',
+  fontWeight: 700,
+  lineHeight: '120%',
+  textAlign: 'right',
+};
+
+const FOOTER_DISCOUNT_VALUE_STYLE: React.CSSProperties = {
+  ...FOOTER_VALUE_STYLE,
+  color: DISCOUNT_TEXT,
+};
+
+const FooterAmountRow = ({
+  label,
+  value,
+  valueStyle,
+}: {
+  label: string;
+  value: string;
+  valueStyle?: React.CSSProperties;
+}) => (
+  <div className={FOOTER_AMOUNT_ROW}>
+    <span className="min-w-0" style={FOOTER_LABEL_STYLE}>
+      {label}
+    </span>
+    <span className="text-right" style={{ ...FOOTER_VALUE_STYLE, ...(valueStyle ?? {}) }}>
+      {value}
+    </span>
+  </div>
+);
+
+const FooterBreakdownRow = ({
+  label,
+  value,
+  valueStyle,
+  leftSlot,
+}: {
+  label: string;
+  value: string;
+  valueStyle?: React.CSSProperties;
+  leftSlot?: React.ReactNode;
+}) => (
+  <div className={FOOTER_BREAKDOWN_ROW}>
+    <span className="flex items-center">{leftSlot}</span>
+    <span className="min-w-0" style={FOOTER_LABEL_STYLE}>
+      {label}
+    </span>
+    <span className="text-right" style={{ ...FOOTER_VALUE_STYLE, ...(valueStyle ?? {}) }}>
+      {value}
+    </span>
+  </div>
+);
+
 const TotalsFooter = ({
   totals,
   depositCents,
@@ -193,52 +300,72 @@ const TotalsFooter = ({
   onToggleWithdrawDeposit: (value: boolean) => void;
   onChangeOverallDiscount: (percent: number) => void;
 }) => (
-  <div className="grid gap-5 rounded-2xl bg-neutral-100 p-5 text-body-4 text-text-primary lg:grid-cols-3">
-    <div className="flex flex-col gap-2">
-      <label className="flex items-center gap-2">
+  <div className="-mx-5 -mb-5 grid gap-5 rounded-b-2xl border-t border-neutral-300 bg-pill-success-bg px-5 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(13rem,0.8fr)_minmax(0,1fr)] lg:items-stretch">
+    <div className="flex h-full flex-col justify-center gap-2">
+      <label className="flex min-h-8 items-center gap-2">
         <input
           type="checkbox"
           checked={withdrawDeposit}
           onChange={(e) => onToggleWithdrawDeposit(e.target.checked)}
           className="size-4 accent-pill-success-text"
         />
-        <span>Withdraw from deposit</span>
+        <span style={FOOTER_HELPER_TEXT_STYLE}>Withdraw from deposit</span>
       </label>
-      <span>Total Deposit: {formatCents(depositCents)}</span>
-      <span className="text-text-brand">
-        Invoice Amount: {formatCents(totals.estimatedTotalCents)}
-      </span>
-      <span>Remaining Deposit: {formatCents(totals.remainingDepositCents)}</span>
+      <FooterAmountRow label="Total Deposit" value={formatCents(depositCents)} />
+      <FooterAmountRow
+        label="Invoice Amount"
+        value={formatCents(totals.estimatedTotalCents)}
+        valueStyle={{ color: PRIMARY_TEXT }}
+      />
+      <FooterAmountRow
+        label="Remaining Deposit"
+        value={formatCents(totals.remainingDepositCents)}
+      />
     </div>
-    <div className="flex items-center justify-center">
+
+    <div className="flex h-full items-center justify-center py-1 lg:py-0">
       <div className="text-center">
-        <p className="text-caption-1 text-text-secondary">Total Amount</p>
-        <p className="text-heading-2 text-text-brand">{formatCents(totals.estimatedTotalCents)}</p>
+        <p style={FOOTER_LABEL_STYLE}>Total Amount</p>
+        <p className="text-right" style={FOOTER_TOTAL_VALUE_STYLE}>
+          {formatCents(totals.estimatedTotalCents)}
+        </p>
       </div>
     </div>
-    <div className="flex flex-col gap-2 text-right">
-      <span>Subtotal: {formatCents(totals.subtotalCents)}</span>
-      <span className="flex items-center justify-end gap-2 text-pill-success-text">
-        Overall Discount: {formatCents(totals.overallDiscountCents)}
-        <span className="flex items-center gap-1">
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={overallDiscountPercent}
-            aria-label="Overall discount percent"
-            onChange={(e) =>
-              onChangeOverallDiscount(Math.max(0, Number.parseFloat(e.target.value) || 0))
-            }
-            className="h-9 w-16 rounded-xl border border-input-border-default bg-transparent px-2 text-right text-body-4 text-text-primary focus-visible:border-input-border-active focus-visible:outline-none"
-          />
-          <span className="text-text-secondary">%</span>
-        </span>
-      </span>
-      <span>
-        Tax ({taxPercent}%): {formatCents(totals.taxCents)}
-      </span>
-      <span className="font-bold">Estimated Total: {formatCents(totals.estimatedTotalCents)}</span>
+
+    <div className="flex h-full flex-col justify-center gap-2">
+      <FooterBreakdownRow label="Subtotal:" value={formatCents(totals.subtotalCents)} />
+      <FooterBreakdownRow
+        label="Overall Discount:"
+        value={`− ${formatCents(totals.overallDiscountCents)}`}
+        valueStyle={FOOTER_DISCOUNT_VALUE_STYLE}
+        leftSlot={
+          <span className="relative inline-flex h-8 w-20 items-center">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={overallDiscountPercent}
+              aria-label="Overall discount percent"
+              onChange={(e) =>
+                onChangeOverallDiscount(Math.max(0, Number.parseFloat(e.target.value) || 0))
+              }
+              className="h-full w-full rounded-xl border bg-transparent pr-6 pl-2 text-right focus-visible:outline-none"
+              style={{ ...FOOTER_DISCOUNT_VALUE_STYLE, borderColor: DISCOUNT_TEXT }}
+            />
+            <span
+              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2"
+              style={FOOTER_DISCOUNT_VALUE_STYLE}
+            >
+              %
+            </span>
+          </span>
+        }
+      />
+      <FooterBreakdownRow label={`Tax (${taxPercent}%):`} value={formatCents(totals.taxCents)} />
+      <FooterBreakdownRow
+        label="Estimated Total:"
+        value={formatCents(totals.estimatedTotalCents)}
+      />
     </div>
   </div>
 );

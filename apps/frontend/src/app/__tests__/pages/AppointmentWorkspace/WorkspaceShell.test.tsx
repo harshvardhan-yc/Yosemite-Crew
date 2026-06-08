@@ -233,7 +233,6 @@ describe('WorkspaceMetaBar', () => {
     unitOptions: [{ label: '24', value: 'unit-24' }],
     onSelectRoom: jest.fn(),
     onSelectUnit: jest.fn(),
-    onSelectEncounterMode: jest.fn(),
     onSaveAndNext: jest.fn(),
     onToggleReadyForBilling: jest.fn(),
     onToggleReadyForDischarge: jest.fn(),
@@ -248,12 +247,13 @@ describe('WorkspaceMetaBar', () => {
     expect(props.onSaveAndNext).toHaveBeenCalled();
   });
 
-  it('fires the temporary appointment type switch from the consultation dropdown', () => {
+  it('shows the consultation type as a read-only field (changed via hospitalization flow)', () => {
     const props = baseProps('OUTPATIENT');
     render(<WorkspaceMetaBar {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: /consultation type: outpatient/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'Inpatient' }));
-    expect(props.onSelectEncounterMode).toHaveBeenCalledWith('INPATIENT');
+    expect(screen.getByText('Consultation type')).toBeInTheDocument();
+    expect(screen.getByText('Outpatient')).toBeInTheDocument();
+    // No editable mode control — the value is set through the hospitalization modal.
+    expect(screen.queryByRole('button', { name: /consultation type/i })).not.toBeInTheDocument();
   });
 
   it('renders room and unit dropdowns for inpatient', () => {

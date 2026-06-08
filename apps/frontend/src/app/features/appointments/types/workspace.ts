@@ -299,6 +299,9 @@ export type AppointmentEncounter = {
   overallDiscountPercent: number;
   dischargeSummary: RichTextValue;
   followUpAt?: string;
+  /** Set when the discharge summary is saved — drives the read-only saved view. */
+  dischargeSavedAt?: string;
+  dischargeSavedByName?: string;
   documents: WorkspaceDocument[];
   readyForBilling: ReadyState;
   readyForDischarge: ReadyState;

@@ -622,12 +622,32 @@ input[type='number'] {
     line-height: 120%;
   }
 
+  .text-yc-14-m-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
   .text-yc-16-r-neutral {
     color: var(--color-neutral-900);
     font-family: var(--font-satoshi);
     font-size: 16px;
     font-style: normal;
     font-weight: 400;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-16-b-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 16px;
+    font-style: normal;
+    font-weight: 700;
     letter-spacing: 0;
     line-height: 120%;
   }

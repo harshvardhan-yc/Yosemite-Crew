@@ -176,7 +176,7 @@ describe('DiagnosticsStep (workspace, real IDEXX backend)', () => {
     expect(screen.getByText('Order Status')).toBeInTheDocument();
     expect(screen.getByText('Results')).toBeInTheDocument();
     expect(screen.getByText('Canine Senior Screen')).toBeInTheDocument();
-    expect(screen.getByText(/Order 100358709/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Order 100358709/).length).toBeGreaterThan(0);
   });
 
   it('switches to RadAnalyzer coming-soon and hides the IDEXX order builder', () => {
@@ -297,14 +297,25 @@ describe('DiagnosticsStep (workspace, real IDEXX backend)', () => {
     expect(hook.openResultPdfForOrder).toHaveBeenCalled();
   });
 
-  it('renders results and opens a result PDF preview', () => {
+  it('opens a result PDF preview from the download action', () => {
     const { hook } = renderStep();
 
-    expect(screen.getByTestId('category-r1')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /view results pdf for result r1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /download results pdf for result r1/i }));
 
     expect(hook.openResultPdfPreview).toHaveBeenCalledWith('r1');
+  });
+
+  it('toggles the result breakdown with the view action', () => {
+    renderStep();
+
+    // First result is expanded by default, so its breakdown is visible.
+    expect(screen.getByTestId('category-r1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /hide results for result r1/i }));
+    expect(screen.queryByTestId('category-r1')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /show results for result r1/i }));
+    expect(screen.getByTestId('category-r1')).toBeInTheDocument();
   });
 
   it('shows the empty results message when there are none', () => {

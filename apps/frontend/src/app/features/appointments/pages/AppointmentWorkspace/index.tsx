@@ -33,6 +33,7 @@ import TreatmentStep from '@/app/features/appointments/pages/AppointmentWorkspac
 import InvoiceStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/InvoiceStep';
 import SummaryStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/SummaryStep';
 import QuickActionsModal from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/QuickActionsModal';
+import HospitalizationModal from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/HospitalizationModal';
 import { getNextStep } from '@/app/lib/appointmentWorkspace';
 
 type AppointmentWorkspaceProps = {
@@ -61,6 +62,14 @@ const getRoomUnits = (room?: WorkspaceRoom): RoomUnit[] => {
 
 const isValidStep = (value: string | null): value is WorkspaceStep =>
   value != null && (WORKSPACE_STEPS as string[]).includes(value);
+
+/** Selectable add-on packages for the hospitalization flow (mock-backed, mirrors
+ *  the service/package catalogue the backend will supply). */
+const HOSPITALIZATION_SERVICE_PACKAGES = [
+  { id: 'pkg-cardio', name: 'Cardio assessment package', cost: 150, maxDiscount: 25 },
+  { id: 'pkg-ortho', name: 'Orthopedic care package', cost: 220, maxDiscount: 30 },
+  { id: 'pkg-observation', name: '24h observation package', cost: 90, maxDiscount: 10 },
+];
 
 const resolveAppointmentReason = (appointment: Appointment): string =>
   appointment.concern?.trim() || 'No appointment reason recorded.';
@@ -94,10 +103,21 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const toggleReadyForDischarge = useAppointmentWorkspaceStore((s) => s.toggleReadyForDischarge);
   const addAlert = useAppointmentWorkspaceStore((s) => s.addAlert);
   const [isAddAlertOpen, setIsAddAlertOpen] = useState(false);
+  const [isHospitalizeOpen, setIsHospitalizeOpen] = useState(false);
 
   useEffect(() => {
-    if (appointmentId) initEncounter(appointmentId, initialMode);
-  }, [appointmentId, initialMode, initEncounter]);
+    if (!appointmentId) return;
+    const leadName = (appointment.lead?.name ?? '').trim();
+    const supportMember = (appointment.supportStaff ?? []).find(
+      (staff) => (staff.name ?? '').trim() && staff.name?.trim() !== leadName
+    );
+    initEncounter(appointmentId, initialMode, {
+      leadId: appointment.lead?.id,
+      leadName,
+      nurseId: supportMember?.id,
+      nurseName: supportMember?.name?.trim(),
+    });
+  }, [appointmentId, initialMode, initEncounter, appointment.lead, appointment.supportStaff]);
 
   const encounterMode = encounter?.mode ?? initialMode;
   const lockWindow = useAppointmentLockWindow();
@@ -172,6 +192,19 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     if (units.length) return units.map((unit) => ({ label: unit.name, value: unit.id }));
     return effectiveEncounter?.unitId ? [{ label: '24', value: effectiveEncounter.unitId }] : [];
   }, [effectiveEncounter?.unitId, selectedRoom]);
+  const supportOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: { label: string; value: string }[] = [];
+    const add = (name?: string) => {
+      const trimmed = (name ?? '').trim();
+      if (!trimmed || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      options.push({ label: trimmed, value: trimmed });
+    };
+    add(appointment.lead?.name);
+    (appointment.supportStaff ?? []).forEach((staff) => add(staff.name));
+    return options;
+  }, [appointment.lead?.name, appointment.supportStaff]);
 
   const handleStepChange = useCallback(
     (step: WorkspaceStep) => {
@@ -205,6 +238,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           alerts={effectiveEncounter.alerts}
           onBack={() => router.push('/appointments')}
           onQuickActions={() => setActiveSideAction('RECORD')}
+          onHospitalize={() => setIsHospitalizeOpen(true)}
+          canHospitalize={encounterMode !== 'INPATIENT'}
           onAddAlert={() => setIsAddAlertOpen(true)}
         />
 
@@ -239,7 +274,6 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           setRoomUnit(appointmentId, o.value, nextUnit);
         }}
         onSelectUnit={(o) => setRoomUnit(appointmentId, effectiveEncounter.roomId, o.value)}
-        onSelectEncounterMode={(nextMode) => setEncounterMode(appointmentId, nextMode)}
         onSaveAndNext={handleSaveAndNext}
         onToggleReadyForBilling={() => toggleReadyForBilling(appointmentId, actor)}
         onToggleReadyForDischarge={() => toggleReadyForDischarge(appointmentId, actor)}
@@ -299,6 +333,25 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         companionName={appointment.companion.name}
         onClose={() => setIsAddAlertOpen(false)}
         onAdd={(alert) => addAlert(appointmentId, alert)}
+      />
+
+      <HospitalizationModal
+        showModal={isHospitalizeOpen}
+        setShowModal={setIsHospitalizeOpen}
+        leadName={effectiveEncounter.leadName}
+        supportName={effectiveEncounter.nurseName}
+        supportOptions={supportOptions}
+        roomOptions={roomOptions}
+        unitOptions={unitOptions}
+        servicePackages={HOSPITALIZATION_SERVICE_PACKAGES}
+        defaultRoomId={effectiveEncounter.roomId}
+        defaultUnitId={effectiveEncounter.unitId}
+        onConvert={(payload) => {
+          setEncounterMode(appointmentId, 'INPATIENT');
+          if (payload.roomId) {
+            setRoomUnit(appointmentId, payload.roomId, payload.unitId);
+          }
+        }}
       />
     </div>
   );

@@ -1,5 +1,6 @@
 import React from 'react';
 import { IoArrowForward } from 'react-icons/io5';
+import { LuBedSingle, LuFootprints } from 'react-icons/lu';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import ReadyToggle from '@/app/features/appointments/pages/AppointmentWorkspace/components/ReadyToggle';
@@ -15,10 +16,33 @@ import type { DropdownOption } from '@/app/hooks/useDropdown';
 
 type DropdownItem = { label: string; value: string };
 
-const ENCOUNTER_MODE_OPTIONS: { label: string; value: EncounterMode }[] = [
-  { label: 'Outpatient', value: 'OUTPATIENT' },
-  { label: 'Inpatient', value: 'INPATIENT' },
-];
+/**
+ * Read-only consultation-type field. Mirrors the StaffField floating-label box
+ * but shows a mode-specific icon (bed = inpatient, footprints = outpatient)
+ * instead of an avatar — the value is changed via the hospitalization flow.
+ */
+const ConsultationTypeField = ({ mode }: { mode: EncounterMode }) => {
+  const isInpatient = mode === 'INPATIENT';
+  const label = isInpatient ? 'Inpatient' : 'Outpatient';
+  return (
+    <div className="relative w-full">
+      <div className="relative flex min-h-12 w-full items-center justify-between gap-2 rounded-2xl border border-input-border-default bg-(--whitebg) py-2 pr-2 pl-5">
+        <span className="min-w-0 flex-1 truncate text-left text-body-4 text-text-primary">
+          {label}
+        </span>
+        <span
+          aria-hidden="true"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-100 text-text-brand"
+        >
+          {isInpatient ? <LuBedSingle size={16} /> : <LuFootprints size={16} />}
+        </span>
+      </div>
+      <span className="pointer-events-none absolute -top-2 left-5 z-10 bg-(--whitebg) px-1 text-caption-2 text-text-secondary">
+        Consultation type
+      </span>
+    </div>
+  );
+};
 
 type WorkspaceMetaBarProps = {
   encounter: AppointmentEncounter;
@@ -27,7 +51,6 @@ type WorkspaceMetaBarProps = {
   unitOptions: DropdownItem[];
   onSelectRoom: (option: DropdownOption) => void;
   onSelectUnit: (option: DropdownOption) => void;
-  onSelectEncounterMode: (mode: EncounterMode) => void;
   onSaveAndNext: () => void;
   onToggleReadyForBilling: () => void;
   onToggleReadyForDischarge: () => void;
@@ -48,7 +71,6 @@ const WorkspaceMetaBar = ({
   unitOptions,
   onSelectRoom,
   onSelectUnit,
-  onSelectEncounterMode,
   onSaveAndNext,
   onToggleReadyForBilling,
   onToggleReadyForDischarge,
@@ -72,14 +94,7 @@ const WorkspaceMetaBar = ({
         <StaffField label="Support Staff" name={encounter.nurseName} />
       </div>
       <div className="w-52">
-        <LabelDropdown
-          key={encounter.mode}
-          placeholder="Consultation type"
-          options={ENCOUNTER_MODE_OPTIONS}
-          defaultOption={encounter.mode}
-          searchable={false}
-          onSelect={(option) => onSelectEncounterMode(option.value as EncounterMode)}
-        />
+        <ConsultationTypeField mode={encounter.mode} />
       </div>
       {/* Room shows whenever the encounter has one (outpatient or inpatient);
           Unit is inpatient-only. */}

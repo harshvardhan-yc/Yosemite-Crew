@@ -9,6 +9,7 @@ import SearchDropdown from '@/app/ui/inputs/SearchDropdown';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import Close from '@/app/ui/primitives/Icons/Close';
 import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
+import { YosemiteLoader } from '@/app/ui/overlays/Loader';
 import LabResultValue from '@/app/ui/widgets/LabResultValue';
 import { Appointment } from '@yosemite-crew/types';
 import { useOrgStore } from '@/app/stores/orgStore';
@@ -501,10 +502,14 @@ export const useLabTests = (activeAppointment: Appointment | null) => {
   }, []);
 
   useEffect(() => {
-    const leadName = activeAppointment?.lead?.name ?? '';
-    const firstSupportName = activeAppointment?.supportStaff?.[0]?.name ?? '';
+    const leadName = (activeAppointment?.lead?.name ?? '').trim();
+    // Technician defaults to the first support staff member who isn't the lead,
+    // so the Veterinarian (lead) and Technician fields don't echo the same person.
+    const supportTechnicianName = (activeAppointment?.supportStaff ?? [])
+      .map((staff) => (staff.name ?? '').trim())
+      .find((name) => name && name !== leadName);
     setVeterinarian(leadName);
-    setTechnician(firstSupportName || leadName);
+    setTechnician(supportTechnicianName ?? '');
   }, [activeAppointment?.id, activeAppointment?.lead?.name, activeAppointment?.supportStaff]);
 
   useEffect(() => {
@@ -884,6 +889,7 @@ export const useLabTests = (activeAppointment: Appointment | null) => {
       setSelectedTests([]);
       setSelectedTestLabel('');
       setQuery('');
+      setNotes('');
       openOrderIframe('order', created.status, created);
       await refreshAppointmentOrders();
       await refreshResults();
@@ -1454,6 +1460,56 @@ const LabResultsList = ({ s }: { s: UseLabTestsReturn }) => (
 
 // ---------- Main component ----------
 
+type IdexxOrderIframeOverlayProps = {
+  url: string;
+  title: string;
+  onClose: () => void;
+};
+
+const IdexxOrderIframeOverlay = ({ url, title, onClose }: IdexxOrderIframeOverlayProps) => {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <div
+      className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      data-signing-overlay="true"
+      style={{ pointerEvents: 'auto' }}
+    >
+      <div className="relative bg-white rounded-2xl shadow-2xl size-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
+          <div className="text-body-2 text-text-primary">{title}</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer"
+            aria-label="Close IDEXX order frame"
+            style={{ pointerEvents: 'auto' }}
+          >
+            <Close iconOnly />
+          </button>
+        </div>
+        <div className="relative flex-1">
+          {!loaded ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
+              <YosemiteLoader label="Loading IDEXX" size={120} testId="idexx-order-loader" />
+            </div>
+          ) : null}
+          <iframe
+            key={url}
+            src={url}
+            title="IDEXX order UI"
+            className="size-full border-0"
+            loading="lazy"
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            style={{ pointerEvents: 'auto' }}
+            onLoad={() => setLoaded(true)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 type LabTestsProps = {
   activeAppointment: Appointment | null;
 };
@@ -1495,35 +1551,11 @@ const LabTests = ({ activeAppointment }: LabTestsProps) => {
     <>
       {s.showOrderIframe && orderIframeUrl && typeof document !== 'undefined'
         ? createPortal(
-            <div
-              className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-              data-signing-overlay="true"
-              style={{ pointerEvents: 'auto' }}
-            >
-              <div className="relative bg-white rounded-2xl shadow-2xl size-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
-                  <div className="text-body-2 text-text-primary">{iframeTitle}</div>
-                  <button
-                    type="button"
-                    onClick={s.closeOrderIframeManually}
-                    className="p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer"
-                    aria-label="Close IDEXX order frame"
-                    style={{ pointerEvents: 'auto' }}
-                  >
-                    <Close iconOnly />
-                  </button>
-                </div>
-                <iframe
-                  src={orderIframeUrl}
-                  title="IDEXX order UI"
-                  className="flex-1 w-full border-0"
-                  loading="lazy"
-                  allowFullScreen
-                  referrerPolicy="strict-origin-when-cross-origin"
-                  style={{ pointerEvents: 'auto' }}
-                />
-              </div>
-            </div>,
+            <IdexxOrderIframeOverlay
+              url={orderIframeUrl}
+              title={iframeTitle}
+              onClose={s.closeOrderIframeManually}
+            />,
             document.body
           )
         : null}

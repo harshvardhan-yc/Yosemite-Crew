@@ -64,7 +64,11 @@ type AppointmentWorkspaceState = {
   activeStep: WorkspaceStep;
   activeSideAction: SideAction | null;
 
-  initEncounter: (appointmentId: string, mode: EncounterMode) => void;
+  initEncounter: (
+    appointmentId: string,
+    mode: EncounterMode,
+    staff?: { leadId?: string; leadName?: string; nurseId?: string; nurseName?: string }
+  ) => void;
   getEncounter: (appointmentId: string) => AppointmentEncounter | undefined;
   setEncounterMode: (appointmentId: string, mode: EncounterMode) => void;
 
@@ -103,6 +107,8 @@ type AppointmentWorkspaceState = {
   setScheduleTaskStatus: (appointmentId: string, id: string, status: ScheduleTaskStatus) => void;
 
   setDischargeSummary: (appointmentId: string, html: string) => void;
+  saveDischargeSummary: (appointmentId: string, byName: string) => void;
+  reopenDischargeSummary: (appointmentId: string) => void;
   setFollowUp: (appointmentId: string, at: string | undefined) => void;
   addDocument: (appointmentId: string, document: Omit<WorkspaceDocument, 'id'>) => void;
   setWithdrawDeposit: (appointmentId: string, value: boolean) => void;
@@ -144,13 +150,20 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
   activeStep: 'SOAP',
   activeSideAction: null,
 
-  initEncounter: (appointmentId, mode) =>
+  initEncounter: (appointmentId, mode, staff) =>
     set((state) => {
       if (state.encountersById[appointmentId]) return {};
+      const base = buildMockEncounter(appointmentId, mode);
       return {
         encountersById: {
           ...state.encountersById,
-          [appointmentId]: buildMockEncounter(appointmentId, mode),
+          [appointmentId]: {
+            ...base,
+            leadId: staff?.leadId ?? base.leadId,
+            leadName: staff?.leadName || base.leadName,
+            nurseId: staff?.nurseId ?? base.nurseId,
+            nurseName: staff?.nurseName || base.nurseName,
+          },
         },
       };
     }),
@@ -448,6 +461,24 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
   setDischargeSummary: (appointmentId, html) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => ({ ...enc, dischargeSummary: html }))
+    ),
+
+  saveDischargeSummary: (appointmentId, byName) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => ({
+        ...enc,
+        dischargeSavedAt: new Date().toISOString(),
+        dischargeSavedByName: byName,
+      }))
+    ),
+
+  reopenDischargeSummary: (appointmentId) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => ({
+        ...enc,
+        dischargeSavedAt: undefined,
+        dischargeSavedByName: undefined,
+      }))
     ),
 
   setFollowUp: (appointmentId, at) =>

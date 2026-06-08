@@ -108,7 +108,7 @@ const ObservationToolForm = ({ appointmentId, observations }: ObservationToolFor
         <div className="flex flex-col gap-3">
           <h3 className="text-body-2 font-bold text-text-primary">{activeTool.name}</h3>
           <p className="text-body-4 leading-[150%] text-text-secondary">{activeTool.intro}</p>
-          <div>
+          <div className="flex justify-center">
             <Primary
               text="Start"
               icon={<LuArrowRight aria-hidden="true" />}

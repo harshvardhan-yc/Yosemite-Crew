@@ -133,7 +133,7 @@ describe('SummaryStep', () => {
     const before = enc.documents.length;
     renderSummary(enc);
 
-    fireEvent.click(screen.getByRole('button', { name: /sign & save/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^sign$/i }));
 
     const updated = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
     expect(updated.documents).toHaveLength(before + 1);
@@ -147,7 +147,7 @@ describe('SummaryStep', () => {
     const printSpy = jest.spyOn(window, 'print').mockImplementation(() => undefined);
     renderSummary(seedAndGet());
 
-    fireEvent.click(screen.getByRole('button', { name: /print all/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^print$/i }));
 
     expect(printSpy).toHaveBeenCalled();
     printSpy.mockRestore();
@@ -165,7 +165,7 @@ describe('SummaryStep', () => {
     // The follow-up picker is wrapped in a non-interactive (aria-disabled) shell.
     const followUpButton = screen.getByRole('button', { name: /follow up date/i });
     expect(followUpButton.closest('[aria-disabled="true"]')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign & save/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^sign$/i })).toBeDisabled();
   });
 
   it('has no axe accessibility violations', async () => {

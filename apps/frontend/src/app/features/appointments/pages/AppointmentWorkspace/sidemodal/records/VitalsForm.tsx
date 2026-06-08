@@ -184,7 +184,7 @@ const VitalsForm = ({ appointmentId, vitals }: VitalsFormProps) => {
             ))}
           </ul>
         )}
-        <div>
+        <div className="flex justify-center">
           <Primary
             text="New Vital"
             icon={<span aria-hidden="true">+</span>}
@@ -227,7 +227,7 @@ const VitalsForm = ({ appointmentId, vitals }: VitalsFormProps) => {
           onSelect={(option) => setRecorder({ label: option.label, value: option.value })}
         />
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-center gap-3">
         <Primary text="Save vitals" icon={<LuCheck aria-hidden="true" />} onClick={handleSave} />
         <Secondary text="Discard" onClick={handleDiscard} />
       </div>

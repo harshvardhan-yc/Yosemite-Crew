@@ -1,6 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import type { Appointment } from '@yosemite-crew/types';
-import { LuDownload, LuEye, LuFileSignature, LuPencil, LuPrinter, LuSearch } from 'react-icons/lu';
+import {
+  LuDownload,
+  LuEye,
+  LuFileSignature,
+  LuPencil,
+  LuPrinter,
+  LuSave,
+  LuSearch,
+} from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import Datepicker from '@/app/ui/inputs/Datepicker';
@@ -10,6 +18,7 @@ import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorks
 import SigningOverlay from '@/app/ui/overlays/SigningOverlay';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
+import { sanitizeRichText } from '@/app/lib/richText';
 import type {
   AppointmentEncounter,
   WorkspaceDocument,
@@ -49,18 +58,18 @@ const toFollowUpDate = (iso?: string): Date | null => {
 };
 
 const DocumentCategoryPill = ({ category }: { category: WorkspaceDocument['category'] }) => (
-  <span className="inline-flex rounded-2xl border border-card-border bg-neutral-0 px-3 py-1 text-caption-1 text-text-primary">
+  <span className="inline-flex rounded-2xl border border-[#D6D1CD] bg-[#FAF8F6] px-3 py-1 text-caption-1 text-text-primary">
     {category}
   </span>
 );
 
-const AllDocumentsTable = ({
-  documents,
-  readOnly,
-}: {
-  documents: WorkspaceDocument[];
-  readOnly: boolean;
-}) => (
+/** Shared column template (mirrors the Invoice table) so the heading and row
+ *  grids resolve to identical track widths. The Actions track is fixed. */
+const DOCUMENT_COLS =
+  'sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_92px]';
+const DOCUMENT_ROW_GRID = `grid gap-3 ${DOCUMENT_COLS} sm:items-center`;
+
+const AllDocumentsTable = ({ documents }: { documents: WorkspaceDocument[] }) => (
   <SectionContainer
     titleClassName="text-yc-20-b-primary"
     title="All Documents"
@@ -71,53 +80,52 @@ const AllDocumentsTable = ({
         No documents recorded yet.
       </p>
     ) : (
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-separate border-spacing-0 text-body-4 text-text-primary">
-          <thead className="text-caption-1 text-text-secondary">
-            <tr>
-              <th className="p-3 text-left">Created</th>
-              <th className="p-3 text-left">Category</th>
-              <th className="p-3 text-left">Description</th>
-              <th className="p-3 text-left">Signed by</th>
-              <th className="p-3 text-left">Last modified</th>
-              <th className="p-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {documents.map((document) => (
-              <tr key={document.id} className="border-t border-card-border">
-                <td className="p-3 whitespace-nowrap">{formatDateTime(document.createdAt)}</td>
-                <td className="p-3">
-                  <DocumentCategoryPill category={document.category} />
-                </td>
-                <td className="p-3">{document.description}</td>
-                <td className="p-3">{document.signedByName ?? '-'}</td>
-                <td className="p-3 whitespace-nowrap">{formatDateTime(document.lastModifiedAt)}</td>
-                <td className="p-3">
-                  <div className="flex justify-end gap-2">
-                    <CircleIconButton
-                      icon={<LuEye aria-hidden="true" />}
-                      label={`View ${document.description}`}
-                      variant="dark"
-                      onClick={() => undefined}
-                    />
-                    <CircleIconButton
-                      icon={<LuDownload aria-hidden="true" />}
-                      label={`Download ${document.description}`}
-                      onClick={() => undefined}
-                    />
-                    <CircleIconButton
-                      icon={<LuPencil aria-hidden="true" />}
-                      label={`Edit ${document.description}`}
-                      disabled={readOnly}
-                      onClick={() => undefined}
-                    />
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex flex-col gap-3">
+        <div
+          className={`${DOCUMENT_ROW_GRID} hidden border border-transparent px-4 text-caption-2 font-medium tracking-wide text-text-secondary uppercase [&>span]:truncate sm:grid`}
+        >
+          <span>Created</span>
+          <span>Category</span>
+          <span>Description</span>
+          <span>Signed by</span>
+          <span>Last modified</span>
+          <span className="text-right">Actions</span>
+        </div>
+        <ul className="flex flex-col gap-3">
+          {documents.map((document) => (
+            <li
+              key={document.id}
+              className={`${DOCUMENT_ROW_GRID} rounded-2xl border border-card-border p-4`}
+            >
+              <span className="truncate text-body-4 text-text-secondary">
+                {formatDateTime(document.createdAt)}
+              </span>
+              <span>
+                <DocumentCategoryPill category={document.category} />
+              </span>
+              <span className="truncate font-medium text-text-primary">{document.description}</span>
+              <span className="truncate text-body-4 text-text-primary">
+                {document.signedByName ?? '-'}
+              </span>
+              <span className="truncate text-body-4 text-text-secondary">
+                {formatDateTime(document.lastModifiedAt)}
+              </span>
+              <div className="flex justify-end gap-2">
+                <CircleIconButton
+                  icon={<LuEye aria-hidden="true" />}
+                  label={`View ${document.description}`}
+                  variant="dark"
+                  onClick={() => undefined}
+                />
+                <CircleIconButton
+                  icon={<LuDownload aria-hidden="true" />}
+                  label={`Download ${document.description}`}
+                  onClick={() => undefined}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
       </div>
     )}
   </SectionContainer>
@@ -125,12 +133,17 @@ const AllDocumentsTable = ({
 
 const SummaryStep = ({ appointmentId, encounter }: SummaryStepProps) => {
   const setDischargeSummary = useAppointmentWorkspaceStore((s) => s.setDischargeSummary);
+  const saveDischargeSummary = useAppointmentWorkspaceStore((s) => s.saveDischargeSummary);
+  const reopenDischargeSummary = useAppointmentWorkspaceStore((s) => s.reopenDischargeSummary);
   const setFollowUp = useAppointmentWorkspaceStore((s) => s.setFollowUp);
   const addDocument = useAppointmentWorkspaceStore((s) => s.addDocument);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
   const openSigningOverlay = useSigningOverlayStore((s) => s.openOverlay);
   const [templateQuery, setTemplateQuery] = useState('');
-  const readOnly = encounter.viewOnly;
+  // The discharge summary becomes read-only once saved (or when the encounter
+  // itself is view-only).
+  const dischargeSaved = Boolean(encounter.dischargeSavedAt);
+  const readOnly = encounter.viewOnly || dischargeSaved;
 
   const templateMatches = useMemo(() => {
     const q = templateQuery.trim().toLowerCase();
@@ -155,6 +168,10 @@ const SummaryStep = ({ appointmentId, encounter }: SummaryStepProps) => {
     });
     setStepStatus(appointmentId, 'SUMMARY', 'COMPLETED');
     openSigningOverlay(`workspace-summary-${appointmentId}`);
+  };
+
+  const handleSave = () => {
+    saveDischargeSummary(appointmentId, encounter.leadName ?? 'Clinician');
   };
 
   const handleFollowUpChange = (next: Date | null) => {
@@ -198,48 +215,107 @@ const SummaryStep = ({ appointmentId, encounter }: SummaryStepProps) => {
       </div>
 
       {/* Mirrors the SOAP step sections: title + inset rich-text editor only.
-          The follow-up date sits at the bottom-right (the Record Vitals slot). */}
+          Once saved, the editor is replaced by a read-only render of the summary
+          with a fixed follow-up date and a "Saved on … by …" stamp. */}
       <SectionContainer titleClassName="text-yc-20-b-primary" title="Discharge Summary" compactTop>
-        <RichTextEditor
-          ariaLabel="Discharge summary"
-          value={encounter.dischargeSummary}
-          readOnly={readOnly}
-          toolbarPlacement="inset"
-          onChange={(html) => setDischargeSummary(appointmentId, html)}
-          placeholder="Discharge instructions and follow-up care"
-        />
-        <div className="mt-3 flex justify-end">
-          <div
-            className={`w-full sm:max-w-72 ${readOnly ? 'pointer-events-none opacity-60' : ''}`}
-            aria-disabled={readOnly}
-          >
-            <Datepicker
-              type="input"
-              currentDate={followUpDate}
-              setCurrentDate={
-                handleFollowUpChange as React.Dispatch<React.SetStateAction<Date | null>>
-              }
-              placeholder="Follow up date"
+        {dischargeSaved ? (
+          <div className="relative">
+            {/* Editable until the encounter is locked (window closed / completed /
+                discharged). Absolutely positioned so it overlays the top-right
+                without pushing the summary down a row. */}
+            {!encounter.viewOnly && (
+              <div className="absolute top-0 right-0 z-10">
+                <CircleIconButton
+                  icon={<LuPencil aria-hidden="true" />}
+                  label="Edit discharge summary"
+                  variant="dark"
+                  onClick={() => reopenDischargeSummary(appointmentId)}
+                />
+              </div>
+            )}
+            <div
+              className="text-body-4 leading-[150%] text-text-primary [&_li]:my-0 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 sm:pr-12"
+              dangerouslySetInnerHTML={{
+                __html: sanitizeRichText(encounter.dischargeSummary ?? '') || '-',
+              }}
             />
+            <div className="mt-6 flex flex-wrap items-end justify-between gap-3">
+              {/* Same Datepicker container as edit mode, rendered non-interactive. */}
+              <div
+                className="pointer-events-none w-full select-none sm:max-w-72"
+                aria-disabled="true"
+              >
+                <Datepicker
+                  type="input"
+                  currentDate={followUpDate}
+                  setCurrentDate={
+                    (() => undefined) as React.Dispatch<React.SetStateAction<Date | null>>
+                  }
+                  placeholder="Follow up date"
+                />
+              </div>
+              <div className="flex flex-col items-end leading-[120%]">
+                <span className="text-[12px] font-bold text-neutral-900">
+                  Saved by {encounter.dischargeSavedByName}
+                </span>
+                <span className="text-[12px] font-medium text-text-brand">
+                  {formatDateTime(encounter.dischargeSavedAt ?? '')}
+                </span>
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            <RichTextEditor
+              ariaLabel="Discharge summary"
+              value={encounter.dischargeSummary}
+              readOnly={readOnly}
+              toolbarPlacement="inset"
+              onChange={(html) => setDischargeSummary(appointmentId, html)}
+              placeholder="Discharge instructions and follow-up care"
+            />
+            <div className="mt-3 flex justify-end">
+              <div
+                className={`w-full sm:max-w-72 ${readOnly ? 'pointer-events-none opacity-60' : ''}`}
+                aria-disabled={readOnly}
+              >
+                <Datepicker
+                  type="input"
+                  currentDate={followUpDate}
+                  setCurrentDate={
+                    handleFollowUpChange as React.Dispatch<React.SetStateAction<Date | null>>
+                  }
+                  placeholder="Follow up date"
+                />
+              </div>
+            </div>
+          </>
+        )}
       </SectionContainer>
 
       <div className="flex flex-wrap items-center justify-end gap-3">
         <Secondary
-          text="Print All"
+          text="Print"
           icon={<LuPrinter aria-hidden="true" />}
           onClick={() => globalThis.window.print()}
         />
+        {!dischargeSaved && (
+          <Secondary
+            text="Save"
+            icon={<LuSave aria-hidden="true" />}
+            onClick={handleSave}
+            isDisabled={encounter.viewOnly}
+          />
+        )}
         <Primary
-          text="Sign & Save"
+          text="Sign"
           icon={<LuFileSignature aria-hidden="true" />}
           onClick={handleSign}
-          isDisabled={readOnly}
+          isDisabled={encounter.viewOnly}
         />
       </div>
 
-      <AllDocumentsTable documents={encounter.documents} readOnly={readOnly} />
+      <AllDocumentsTable documents={encounter.documents} />
     </div>
   );
 };

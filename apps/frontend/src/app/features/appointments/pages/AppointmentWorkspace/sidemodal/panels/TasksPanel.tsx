@@ -435,7 +435,7 @@ const TasksPanel = ({ appointmentId }: TasksPanelProps) => {
           ))}
         </ul>
       )}
-      <div>
+      <div className="flex justify-center">
         <Primary text="New Task" icon={<LuPlus aria-hidden="true" />} onClick={openNew} />
       </div>
     </div>
