@@ -58,7 +58,10 @@ export const createRoom = async (room: OrganisationRoom) => {
     };
     const fhirRoom = toOrganisationRoomResponseDTO(payload);
     const res = await postData<OrganisationRoomResponseDTO>('/fhir/v1/organisation-room', fhirRoom);
-    const normalRoom = fromOrganisationRoomRequestDTO(res.data);
+    const normalRoom = {
+      ...payload,
+      ...fromOrganisationRoomRequestDTO(res.data),
+    };
     upsertRoom(normalRoom);
   } catch (err) {
     console.error('Failed to create room:', err);
@@ -79,7 +82,10 @@ export const updateRoom = async (payload: OrganisationRoom) => {
       '/fhir/v1/organisation-room/' + payload.id,
       fhirRoom
     );
-    const normalRoom = fromOrganisationRoomRequestDTO(res.data);
+    const normalRoom = {
+      ...payload,
+      ...fromOrganisationRoomRequestDTO(res.data),
+    };
     upsertRoom(normalRoom);
   } catch (err) {
     console.error('Failed to update room:', err);

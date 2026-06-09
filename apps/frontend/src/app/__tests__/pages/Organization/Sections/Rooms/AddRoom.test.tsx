@@ -5,17 +5,18 @@ import AddRoom from '@/app/features/organization/pages/Organization/Sections/Roo
 
 jest.mock('@/app/ui/overlays/Modal', () => ({
   __esModule: true,
-  default: ({ children }: any) => <div data-testid="modal">{children}</div>,
+  default: ({ showModal, children }: any) =>
+    showModal ? <div data-testid="modal">{children}</div> : null,
 }));
 
-jest.mock('@/app/ui/primitives/Accordion/Accordion', () => ({
+jest.mock('@/app/ui/overlays/Modal/CenterModal', () => ({
   __esModule: true,
-  default: ({ title, children }: any) => (
-    <div>
-      <div>{title}</div>
-      <div>{children}</div>
-    </div>
-  ),
+  default: ({ showModal, children }: any) => (showModal ? <div>{children}</div> : null),
+}));
+
+jest.mock('@/app/ui/overlays/Modal/ModalHeader', () => ({
+  __esModule: true,
+  default: ({ title }: any) => <div>{title}</div>,
 }));
 
 jest.mock('@/app/ui/inputs/FormInput/FormInput', () => ({
@@ -31,8 +32,8 @@ jest.mock('@/app/ui/inputs/FormInput/FormInput', () => ({
 
 jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
   __esModule: true,
-  default: ({ placeholder, onSelect }: any) => (
-    <button type="button" onClick={() => onSelect({ value: 'CONSULTATION' })}>
+  default: ({ placeholder, onSelect, defaultOption }: any) => (
+    <button type="button" onClick={() => onSelect({ value: defaultOption || 'CONSULTATION' })}>
       {placeholder}
     </button>
   ),
@@ -40,11 +41,26 @@ jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
 
 jest.mock('@/app/ui/inputs/MultiSelectDropdown', () => ({
   __esModule: true,
-  default: () => <div>MultiSelect</div>,
+  default: ({ placeholder }: any) => <div>{placeholder}</div>,
+}));
+
+jest.mock('@/app/ui/inputs/Timepicker', () => ({
+  __esModule: true,
+  default: ({ label, value, onChange }: any) => (
+    <label>
+      {label}
+      <input aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} />
+    </label>
+  ),
 }));
 
 jest.mock('@/app/ui/primitives/Buttons', () => ({
   Primary: ({ text, onClick }: any) => (
+    <button type="button" onClick={onClick}>
+      {text}
+    </button>
+  ),
+  Secondary: ({ text, onClick }: any) => (
     <button type="button" onClick={onClick}>
       {text}
     </button>
@@ -72,6 +88,10 @@ jest.mock('@/app/features/organization/services/roomService', () => ({
   createRoom: jest.fn(),
 }));
 
+jest.mock('@/app/hooks/useNotify', () => ({
+  useNotify: () => ({ notify: jest.fn() }),
+}));
+
 const roomService = jest.requireMock('@/app/features/organization/services/roomService');
 
 describe('AddRoom', () => {
@@ -82,7 +102,7 @@ describe('AddRoom', () => {
   it('shows validation errors', () => {
     render(<AddRoom showModal setShowModal={jest.fn()} />);
 
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Add room'));
 
     expect(screen.getByText('Name is required')).toBeInTheDocument();
   });
@@ -96,7 +116,7 @@ describe('AddRoom', () => {
     fireEvent.change(screen.getByLabelText('Name'), {
       target: { value: 'Room A' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Add room'));
 
     await waitFor(() => {
       expect(roomService.createRoom).toHaveBeenCalled();
@@ -106,12 +126,36 @@ describe('AddRoom', () => {
         name: 'Room A',
         unitCount: 0,
         units: [],
+        equipment: ['Oxygen Tank', 'Dental Unit', 'Isolation unit'],
       })
     );
     expect(setShowModal).toHaveBeenCalledWith(false);
   });
 
-  it('creates room units from the unit count', async () => {
+  it('adds custom equipment to the created room payload', async () => {
+    roomService.createRoom.mockResolvedValue({});
+
+    render(<AddRoom showModal setShowModal={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Imaging Room' },
+    });
+    fireEvent.change(screen.getByLabelText('Add equipment name'), {
+      target: { value: 'MRI Scanner' },
+    });
+    fireEvent.click(screen.getByLabelText('Add custom equipment'));
+    fireEvent.click(screen.getByText('Add room'));
+
+    await waitFor(() => {
+      expect(roomService.createRoom).toHaveBeenCalledWith(
+        expect.objectContaining({
+          equipment: expect.arrayContaining(['MRI Scanner']),
+        })
+      );
+    });
+  });
+
+  it('creates room units from configured unit types', async () => {
     roomService.createRoom.mockResolvedValue({});
 
     render(<AddRoom showModal setShowModal={jest.fn()} />);
@@ -119,19 +163,17 @@ describe('AddRoom', () => {
     fireEvent.change(screen.getByLabelText('Name'), {
       target: { value: 'Ward A' },
     });
-    fireEvent.change(screen.getByLabelText('Unit / pod count'), {
+    fireEvent.click(screen.getByLabelText('Add unit type'));
+    fireEvent.change(screen.getByLabelText('Units'), {
       target: { value: '2' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Add room'));
 
     await waitFor(() => {
       expect(roomService.createRoom).toHaveBeenCalledWith(
         expect.objectContaining({
           unitCount: 2,
-          units: [
-            { id: 'unit-1', name: '1', occupied: false },
-            { id: 'unit-2', name: '2', occupied: false },
-          ],
+          units: [expect.objectContaining({ id: 'unit-1', count: 2, size: 'Medium' })],
         })
       );
     });

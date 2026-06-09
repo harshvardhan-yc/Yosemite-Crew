@@ -98,15 +98,10 @@ describe('RoomTable Component', () => {
   // --- 2. Desktop View (Integration) ---
 
   it('renders table with correct data and name mappings (Desktop View)', () => {
-    const { container } = render(
-      <RoomTable filteredList={mockRooms} setActive={mockSetActive} setView={mockSetView} />
-    );
-
-    const desktopView = container.querySelector(String.raw`.hidden.xl\:flex`);
-    expect(desktopView).toBeInTheDocument();
+    render(<RoomTable filteredList={mockRooms} setActive={mockSetActive} setView={mockSetView} />);
 
     // Query rows (Header + 2 Data rows)
-    const rows = within(desktopView as HTMLElement).getAllByRole('row');
+    const rows = within(screen.getByRole('table')).getAllByRole('row');
     expect(rows).toHaveLength(3);
 
     // -- Row 1 (Index 1) --
@@ -122,21 +117,20 @@ describe('RoomTable Component', () => {
     const row2 = rows[2];
     expect(within(row2).getByText('Surgery A')).toBeInTheDocument();
     // Empty specialities -> "-"
-    expect(within(row2).getByText('-')).toBeInTheDocument();
+    expect(within(row2).getAllByText('-').length).toBeGreaterThan(0);
     // Staff "staff-99" missing -> "Dr. Smith"
     expect(within(row2).getByText('Dr. Smith')).toBeInTheDocument();
   });
 
   it("handles 'View' action button click in Desktop View", () => {
-    const { container } = render(
+    render(
       <RoomTable filteredList={[mockRooms[0]]} setActive={mockSetActive} setView={mockSetView} />
     );
 
-    const desktopView = container.querySelector(String.raw`.hidden.xl\:flex`);
-    const rows = within(desktopView as HTMLElement).getAllByRole('row');
+    const rows = within(screen.getByRole('table')).getAllByRole('row');
     const dataRow = rows[1];
 
-    const viewButton = within(dataRow).getByRole('button');
+    const viewButton = within(dataRow).getByRole('button', { name: /view exam room 1/i });
     fireEvent.click(viewButton);
 
     expect(mockSetActive).toHaveBeenCalledWith(mockRooms[0]);
@@ -186,17 +180,16 @@ describe('RoomTable Component', () => {
     mockUseTeam.mockReturnValue([]);
     mockUseSpecialities.mockReturnValue([]);
 
-    const { container } = render(
+    render(
       <RoomTable filteredList={[mockRooms[0]]} setActive={mockSetActive} setView={mockSetView} />
     );
 
-    const desktopView = container.querySelector(String.raw`.hidden.xl\:flex`);
-    const rows = within(desktopView as HTMLElement).getAllByRole('row');
+    const rows = within(screen.getByRole('table')).getAllByRole('row');
     const dataRow = rows[1];
 
     // Since maps are empty, joinNames returns "-"
     const dashes = within(dataRow).getAllByText('-');
-    // Expect 2 dashes (one for Specialities, one for Staff)
-    expect(dashes.length).toBe(2);
+    // Additional room columns can also render "-" when optional metadata is missing.
+    expect(dashes.length).toBeGreaterThanOrEqual(2);
   });
 });
