@@ -40,7 +40,12 @@ export type {
   SpecialityResponseDTO,
   SpecialityDTOAttributes,
 } from './dto/speciality.dto';
-export { fromSpecialityRequestDTO, toSpecialityResponseDTO } from './dto/speciality.dto';
+export {
+  fromSpecialityRequestDTO,
+  toSpecialityResponseDTO,
+  toSpecialityBundleResponseDTO,
+} from './dto/speciality.dto';
+export type { SpecialityBundleResponseDTO } from './dto/speciality.dto';
 export type {
   OrganisationRoomRequestDTO,
   OrganisationRoomResponseDTO,
@@ -80,7 +85,7 @@ export {
 } from './organisationRoom';
 export type { UserOrganization, ToFHIRUserOrganizationOptions } from './userOrganization';
 export type { Speciality } from './speciality';
-export { toFHIRSpeciality, fromFHIRSpeciality } from './speciality';
+export { toFHIRSpeciality, fromFHIRSpeciality, toFHIRSpecialityBundle } from './speciality';
 
 export type { AdminDepartmentItem, AdminFHIRHealthcareService } from './models/admin-department';
 export type {

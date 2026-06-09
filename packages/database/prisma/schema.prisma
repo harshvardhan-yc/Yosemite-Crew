@@ -1712,10 +1712,12 @@ model Speciality {
   headProfilePicUrl  String?
   services           String[]
   memberUserIds      String[]
+  isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@index([organisationId])
+  @@index([organisationId, isActive])
 }
 model DeviceToken {
   id          String         @id @default(uuid())

@@ -47,6 +47,8 @@ export type CatalogProductListFilters = {
   specialityId?: string;
   kinds?: ProductKind[];
   includeInactive?: boolean;
+  active?: boolean;
+  search?: string;
 };
 
 export type CatalogProductView = {
@@ -84,6 +86,81 @@ export type SpecialityCatalogFilters = {
   tab?: CatalogTab;
   search?: string;
   includeInactive?: boolean;
+};
+
+export type CatalogSummaryItem = {
+  id: string;
+  organisationId: string;
+  name: string;
+  status: "ACTIVE" | "ARCHIVED";
+  headUserId: string | null;
+  headName: string | null;
+  headProfilePicUrl: string | null;
+  teamMemberIds: string[];
+  activeServiceCount: number;
+  activePackageCount: number;
+  archivedServiceCount: number;
+  archivedPackageCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CatalogSpecialityInput = {
+  organisationId: string;
+  name: string;
+  headUserId?: string | null;
+  headName?: string | null;
+  headProfilePicUrl?: string | null;
+  teamMemberIds?: string[];
+  isActive?: boolean;
+};
+
+export type CatalogSummaryView = {
+  organisationId: string;
+  items: CatalogSummaryItem[];
+};
+
+export type SpecialityCatalogListView = {
+  organisationId: string;
+  page: number;
+  pageSize: number;
+  total: number;
+  items: CatalogSummaryItem[];
+};
+
+export type CatalogSearchItem = {
+  id: string;
+  organisationId: string;
+  specialityId: string | null;
+  code: string | null;
+  name: string;
+  description: string | null;
+  kind: ProductKind | "INVENTORY_ITEM";
+  source: "CATALOG" | "INVENTORY";
+  status: "ACTIVE" | "ARCHIVED";
+  isBookable: boolean;
+  durationMinutes: number | null;
+  unitPrice: number;
+  currency: string | null;
+  defaultDiscountPercent: number;
+  maxDiscountPercent: number;
+  totalAmount: number;
+  canBeAddedToPackage: boolean;
+  blockReason: string | null;
+  nestedBreakdown: CatalogPackageBreakdownRow[] | null;
+};
+
+export type CatalogSearchResult = {
+  query: string | null;
+  page: number;
+  pageSize: number;
+  total: number;
+  items: CatalogSearchItem[];
+};
+
+export type ArchiveCatalogView = {
+  services: CatalogListRow[];
+  packages: CatalogListRow[];
 };
 
 type ProductPriceRecord = {
@@ -134,6 +211,8 @@ export class CatalogServiceError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number,
+    public readonly code?: string,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "CatalogServiceError";
@@ -284,6 +363,526 @@ const sanitizePackageItems = (
       isOptional: item.isOptional ?? false,
     };
   });
+};
+
+const PRODUCT_CODE_PREFIXES: Record<ProductKind, string> = {
+  CONSULTATION: "CS",
+  PROCEDURE: "PR",
+  DIAGNOSTIC: "DX",
+  MEDICATION: "MD",
+  INVENTORY_ITEM: "IV",
+  LAB_TEST: "LB",
+  PACKAGE: "PK",
+};
+
+const MAX_PACKAGE_NESTING_DEPTH = 3;
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const ensureSpecialityExists = async (
+  organisationId: string,
+  specialityId: string | null,
+) => {
+  if (!specialityId) return;
+
+  const speciality = await prisma.speciality.findFirst({
+    where: {
+      id: specialityId,
+      organisationId,
+    },
+    select: { id: true },
+  });
+
+  if (!speciality) {
+    throw new CatalogServiceError(
+      "Speciality not found for the organisation.",
+      404,
+      "NOT_FOUND",
+    );
+  }
+};
+
+const ensureCodeUniqueness = async (params: {
+  organisationId: string;
+  code: string;
+  excludeProductId?: string;
+}) => {
+  const existing = await prisma.productItem.findFirst({
+    where: {
+      organisationId: params.organisationId,
+      code: params.code,
+      ...(params.excludeProductId
+        ? { NOT: { id: params.excludeProductId } }
+        : {}),
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    throw new CatalogServiceError(
+      "Catalog code already exists in this organisation.",
+      409,
+      "DUPLICATE_CATALOG_CODE",
+      { code: params.code },
+    );
+  }
+};
+
+const generateProductCode = async (
+  organisationId: string,
+  kind: ProductKind,
+): Promise<string> => {
+  const prefix = PRODUCT_CODE_PREFIXES[kind];
+  const codes = await prisma.productItem.findMany({
+    where: {
+      organisationId,
+      code: {
+        startsWith: `${prefix}-`,
+      },
+    },
+    select: { code: true },
+  });
+
+  const matcher = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)$`);
+  const maxValue = codes.reduce((max, row) => {
+    const match = row.code ? matcher.exec(row.code) : null;
+    if (!match) return max;
+    const parsed = Number.parseInt(match[1] ?? "0", 10);
+    return Number.isFinite(parsed) && parsed > max ? parsed : max;
+  }, 0);
+
+  return `${prefix}-${String(maxValue + 1).padStart(4, "0")}`;
+};
+
+const buildPackageGraph = async (organisationId: string) => {
+  const products = await prisma.productItem.findMany({
+    where: {
+      organisationId,
+      kind: "PACKAGE",
+    },
+    include: {
+      package: {
+        include: {
+          items: {
+            select: {
+              childProductItemId: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const graph = new Map<string, string[]>();
+  for (const product of products) {
+    graph.set(
+      product.id,
+      product.package?.items.map((item) => item.childProductItemId) ?? [],
+    );
+  }
+
+  return graph;
+};
+
+const getPackageDepth = (
+  graph: Map<string, string[]>,
+  productId: string,
+  visited = new Set<string>(),
+): number => {
+  if (visited.has(productId)) return MAX_PACKAGE_NESTING_DEPTH + 1;
+  visited.add(productId);
+
+  const children = graph.get(productId) ?? [];
+  let maxDepth = 1;
+  for (const childId of children) {
+    if (!graph.has(childId)) continue;
+    maxDepth = Math.max(
+      maxDepth,
+      1 + getPackageDepth(graph, childId, new Set(visited)),
+    );
+  }
+
+  return maxDepth;
+};
+
+const packageContainsTarget = (
+  graph: Map<string, string[]>,
+  packageId: string,
+  targetId: string,
+  visited = new Set<string>(),
+): boolean => {
+  if (visited.has(packageId)) return false;
+  visited.add(packageId);
+
+  const children = graph.get(packageId) ?? [];
+  for (const childId of children) {
+    if (childId === targetId) return true;
+    if (
+      graph.has(childId) &&
+      packageContainsTarget(graph, childId, targetId, visited)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const ensureProductDeletionAllowed = async (
+  productId: string,
+  organisationId?: string,
+) => {
+  const [packageDependency, appointments, invoices] = await Promise.all([
+    prisma.productPackageItem.findFirst({
+      where: {
+        childProductItemId: productId,
+        ...(organisationId
+          ? {
+              package: {
+                productItem: {
+                  organisationId,
+                },
+              },
+            }
+          : {}),
+      },
+      select: { id: true, packageId: true },
+    }),
+    prisma.appointment.count({
+      where: {
+        productItemId: productId,
+        ...(organisationId ? { organisationId } : {}),
+      },
+    }),
+    prisma.invoice.findMany({
+      where: {
+        ...(organisationId ? { organisationId } : {}),
+      },
+      select: {
+        id: true,
+        items: true,
+      },
+    }),
+  ]);
+
+  const invoiceUsageCount = invoices.filter((invoice) => {
+    if (!Array.isArray(invoice.items)) return false;
+    return invoice.items.some((item) => {
+      if (!item || typeof item !== "object") return false;
+      const record = item as Record<string, unknown>;
+      return (
+        record.productItemId === productId ||
+        record.packageProductItemId === productId
+      );
+    });
+  }).length;
+
+  if (packageDependency || appointments > 0 || invoiceUsageCount > 0) {
+    throw new CatalogServiceError(
+      "Catalog item cannot be permanently deleted because it has dependencies.",
+      409,
+      "CATALOG_ITEM_HAS_DEPENDENCIES",
+      {
+        packageDependencies: packageDependency ? 1 : 0,
+        appointments,
+        invoices: invoiceUsageCount,
+      },
+    );
+  }
+};
+
+const mapSpecialitySummaries = (params: {
+  specialities: Array<{
+    id: string;
+    organisationId: string;
+    name: string;
+    headUserId: string | null;
+    headName: string | null;
+    headProfilePicUrl: string | null;
+    memberUserIds: string[];
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+  products: Array<{
+    specialityId: string | null;
+    isActive: boolean;
+    kind: ProductKind;
+    name: string;
+    code: string | null;
+    description: string | null;
+  }>;
+  search?: string | null;
+}) => {
+  const search = params.search?.trim().toLowerCase() ?? null;
+
+  return params.specialities
+    .map<CatalogSummaryItem>((speciality) => {
+      const products = params.products.filter(
+        (product) => product.specialityId === speciality.id,
+      );
+      const activeServices = products.filter(
+        (product) => product.kind !== "PACKAGE" && product.isActive,
+      ).length;
+      const activePackages = products.filter(
+        (product) => product.kind === "PACKAGE" && product.isActive,
+      ).length;
+      const archivedServices = products.filter(
+        (product) => product.kind !== "PACKAGE" && !product.isActive,
+      ).length;
+      const archivedPackages = products.filter(
+        (product) => product.kind === "PACKAGE" && !product.isActive,
+      ).length;
+
+      return {
+        id: speciality.id,
+        organisationId: speciality.organisationId,
+        name: speciality.name,
+        status: speciality.isActive ? "ACTIVE" : "ARCHIVED",
+        headUserId: speciality.headUserId,
+        headName: speciality.headName,
+        headProfilePicUrl: speciality.headProfilePicUrl,
+        teamMemberIds: Array.from(
+          new Set([
+            ...speciality.memberUserIds,
+            ...(speciality.headUserId ? [speciality.headUserId] : []),
+          ]),
+        ),
+        activeServiceCount: activeServices,
+        activePackageCount: activePackages,
+        archivedServiceCount: archivedServices,
+        archivedPackageCount: archivedPackages,
+        createdAt: speciality.createdAt,
+        updatedAt: speciality.updatedAt,
+      };
+    })
+    .filter((item) => {
+      if (!search) return true;
+
+      const productMatches = params.products.some((product) => {
+        if (product.specialityId !== item.id) return false;
+        const haystack = [
+          product.name,
+          product.code ?? "",
+          product.description ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(search);
+      });
+
+      const specialityText = [item.name, item.headName ?? ""]
+        .join(" ")
+        .toLowerCase();
+
+      return specialityText.includes(search) || productMatches;
+    })
+    .filter((item) => item.status === "ACTIVE" || item.status === "ARCHIVED")
+    .sort((left, right) => left.name.localeCompare(right.name));
+};
+
+const sanitizeTeamMemberIds = (value: unknown): string[] => {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new CatalogServiceError("teamMemberIds must be an array.", 400);
+  }
+
+  return value.map((entry, index) =>
+    requireSafeString(entry, `teamMemberIds[${index}]`),
+  );
+};
+
+const ensureSpecialityNameUnique = async (params: {
+  organisationId: string;
+  name: string;
+  excludeId?: string;
+}) => {
+  const existing = await prisma.speciality.findFirst({
+    where: {
+      organisationId: params.organisationId,
+      name: {
+        equals: params.name,
+        mode: "insensitive",
+      },
+      ...(params.excludeId ? { NOT: { id: params.excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    throw new CatalogServiceError(
+      "Speciality name already exists in this organisation.",
+      409,
+      "DUPLICATE_SPECIALITY_NAME",
+      { name: params.name },
+    );
+  }
+};
+
+const ensurePackageItemsValid = async (params: {
+  organisationId: string;
+  packageItems: CatalogPackageItemInput[];
+  currentProductId?: string;
+}) => {
+  const uniqueIds = Array.from(
+    new Set(params.packageItems.map((item) => item.childProductItemId)),
+  );
+
+  if (!uniqueIds.length) {
+    throw new CatalogServiceError(
+      "Package products must include at least one package item.",
+      400,
+      "VALIDATION_ERROR",
+    );
+  }
+
+  const childProducts = await prisma.productItem.findMany({
+    where: {
+      organisationId: params.organisationId,
+      id: { in: uniqueIds },
+    },
+    include: {
+      package: {
+        include: {
+          items: {
+            select: {
+              childProductItemId: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (childProducts.length !== uniqueIds.length) {
+    throw new CatalogServiceError(
+      "One or more package child items are unavailable.",
+      409,
+      "PACKAGE_CHILD_UNAVAILABLE",
+    );
+  }
+
+  const childMap = new Map(
+    childProducts.map((product) => [product.id, product]),
+  );
+  for (const item of params.packageItems) {
+    const child = childMap.get(item.childProductItemId);
+    if (!child || !child.isActive) {
+      throw new CatalogServiceError(
+        "One or more package child items are unavailable.",
+        409,
+        "PACKAGE_CHILD_UNAVAILABLE",
+        { childProductItemId: item.childProductItemId },
+      );
+    }
+    if (
+      params.currentProductId &&
+      item.childProductItemId === params.currentProductId
+    ) {
+      throw new CatalogServiceError(
+        "Package cannot include itself.",
+        409,
+        "PACKAGE_HAS_CYCLE",
+      );
+    }
+  }
+
+  const graph = await buildPackageGraph(params.organisationId);
+  if (params.currentProductId) {
+    graph.set(
+      params.currentProductId,
+      params.packageItems.map((item) => item.childProductItemId),
+    );
+  }
+
+  for (const item of params.packageItems) {
+    if (!graph.has(item.childProductItemId)) continue;
+    if (
+      params.currentProductId &&
+      packageContainsTarget(
+        graph,
+        item.childProductItemId,
+        params.currentProductId,
+      )
+    ) {
+      throw new CatalogServiceError(
+        "Package composition would create a cycle.",
+        409,
+        "PACKAGE_HAS_CYCLE",
+      );
+    }
+  }
+
+  if (params.currentProductId) {
+    const depth = getPackageDepth(graph, params.currentProductId);
+    if (depth > MAX_PACKAGE_NESTING_DEPTH) {
+      throw new CatalogServiceError(
+        `Package nesting depth cannot exceed ${MAX_PACKAGE_NESTING_DEPTH}.`,
+        409,
+        "PACKAGE_HAS_CYCLE",
+        { maxDepth: MAX_PACKAGE_NESTING_DEPTH },
+      );
+    }
+  }
+};
+
+const ensureSpecialityDeletionAllowed = async (
+  specialityId: string,
+  organisationId: string,
+) => {
+  const [products, appointments, invoices] = await Promise.all([
+    prisma.productItem.findMany({
+      where: {
+        organisationId,
+        specialityId,
+      },
+      select: {
+        id: true,
+        isActive: true,
+        kind: true,
+      },
+    }),
+    prisma.appointment.count({
+      where: {
+        organisationId,
+        appointmentType: {
+          path: ["speciality", "id"],
+          equals: specialityId,
+        },
+      },
+    }),
+    prisma.invoice.findMany({
+      where: { organisationId },
+      select: { id: true, items: true },
+    }),
+  ]);
+
+  const dependencyDetails = {
+    activeServices: products.filter(
+      (item) => item.kind !== "PACKAGE" && item.isActive,
+    ).length,
+    archivedServices: products.filter(
+      (item) => item.kind !== "PACKAGE" && !item.isActive,
+    ).length,
+    activePackages: products.filter(
+      (item) => item.kind === "PACKAGE" && item.isActive,
+    ).length,
+    archivedPackages: products.filter(
+      (item) => item.kind === "PACKAGE" && !item.isActive,
+    ).length,
+    appointments,
+    invoices: invoices.length,
+  };
+
+  if (Object.values(dependencyDetails).some((value) => value > 0)) {
+    throw new CatalogServiceError(
+      "Speciality cannot be permanently deleted because it has catalog items or historical usage.",
+      409,
+      "SPECIALITY_HAS_DEPENDENCIES",
+      dependencyDetails,
+    );
+  }
 };
 
 const mapProductRecordToView = (product: ProductRecord): CatalogProductView => {
@@ -658,13 +1257,27 @@ export const CatalogService = {
     assertPackageItems(input.kind, packageItems);
     assertBookableConfig(input.bookable);
     assertPriceConfig(input.price);
+    await ensureSpecialityExists(organisationId, specialityId);
+    if (input.kind === "PACKAGE" && packageItems) {
+      await ensurePackageItemsValid({
+        organisationId,
+        packageItems,
+      });
+    }
+
+    const resolvedCode =
+      code ?? (await generateProductCode(organisationId, input.kind));
+    await ensureCodeUniqueness({
+      organisationId,
+      code: resolvedCode,
+    });
 
     const created = (await prisma.productItem.create({
       data: {
         organisationId,
         name,
         description: description ?? undefined,
-        code: code ?? undefined,
+        code: resolvedCode,
         kind: input.kind,
         specialityId: specialityId ?? undefined,
         legacyServiceId: legacyServiceId ?? undefined,
@@ -737,14 +1350,39 @@ export const CatalogService = {
     assertBookableConfig(input.bookable);
     assertPriceConfig(input.price);
 
+    const nextOrganisationId =
+      input.organisationId != null
+        ? requireSafeString(input.organisationId, "organisationId")
+        : existing.organisationId;
+    const nextSpecialityId =
+      input.specialityId !== undefined
+        ? optionalSafeString(input.specialityId)
+        : existing.specialityId;
+    await ensureSpecialityExists(nextOrganisationId, nextSpecialityId);
+    if (nextKind === "PACKAGE" && packageItems) {
+      await ensurePackageItemsValid({
+        organisationId: nextOrganisationId,
+        packageItems,
+        currentProductId: productId,
+      });
+    }
+
+    const nextCode =
+      input.code !== undefined ? optionalSafeString(input.code) : existing.code;
+    const resolvedCode =
+      nextCode ?? (await generateProductCode(nextOrganisationId, nextKind));
+    await ensureCodeUniqueness({
+      organisationId: nextOrganisationId,
+      code: resolvedCode,
+      excludeProductId: productId,
+    });
+
     const updated = await prisma.$transaction(async (tx) => {
       await tx.productItem.update({
         where: { id: productId },
         data: {
           organisationId:
-            input.organisationId != null
-              ? requireSafeString(input.organisationId, "organisationId")
-              : undefined,
+            input.organisationId != null ? nextOrganisationId : undefined,
           name:
             input.name != null
               ? requireSafeString(input.name, "name")
@@ -753,15 +1391,10 @@ export const CatalogService = {
             input.description !== undefined
               ? (optionalSafeString(input.description) ?? null)
               : undefined,
-          code:
-            input.code !== undefined
-              ? (optionalSafeString(input.code) ?? null)
-              : undefined,
+          code: resolvedCode,
           kind: input.kind,
           specialityId:
-            input.specialityId !== undefined
-              ? optionalSafeString(input.specialityId)
-              : undefined,
+            input.specialityId !== undefined ? nextSpecialityId : undefined,
           legacyServiceId:
             input.legacyServiceId !== undefined
               ? optionalSafeString(input.legacyServiceId)
@@ -931,7 +1564,35 @@ export const CatalogService = {
         ...(filters.kinds && filters.kinds.length > 0
           ? { kind: { in: filters.kinds } }
           : {}),
-        ...(filters.includeInactive ? {} : { isActive: true }),
+        ...(typeof filters.active === "boolean"
+          ? { isActive: filters.active }
+          : filters.includeInactive
+            ? {}
+            : { isActive: true }),
+        ...(filters.search
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  code: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  description: {
+                    contains: filters.search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            }
+          : {}),
       },
       include: productSelectionInclude,
       orderBy: [{ name: "asc" }],
@@ -1004,5 +1665,577 @@ export const CatalogService = {
     }
 
     return resolveCatalogSelectionFromRecord(product);
+  },
+
+  async getOrganisationSummary(
+    organisationIdInput: string,
+    options?: { search?: string; includeArchived?: boolean },
+  ): Promise<CatalogSummaryView> {
+    const organisationId = requireSafeString(
+      organisationIdInput,
+      "organisationId",
+    );
+
+    const [specialities, products] = await Promise.all([
+      prisma.speciality.findMany({
+        where: {
+          organisationId,
+          ...(options?.includeArchived ? {} : { isActive: true }),
+        },
+        select: {
+          id: true,
+          organisationId: true,
+          name: true,
+          headUserId: true,
+          headName: true,
+          headProfilePicUrl: true,
+          memberUserIds: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.productItem.findMany({
+        where: {
+          organisationId,
+          ...(options?.includeArchived ? {} : { isActive: true }),
+        },
+        select: {
+          specialityId: true,
+          isActive: true,
+          kind: true,
+          name: true,
+          code: true,
+          description: true,
+        },
+      }),
+    ]);
+
+    return {
+      organisationId,
+      items: mapSpecialitySummaries({
+        specialities,
+        products,
+        search: options?.search ?? null,
+      }),
+    };
+  },
+
+  async listSpecialities(
+    organisationIdInput: string,
+    options?: {
+      search?: string;
+      page?: number;
+      pageSize?: number;
+      status?: "ACTIVE" | "ARCHIVED";
+    },
+  ): Promise<SpecialityCatalogListView> {
+    const organisationId = requireSafeString(
+      organisationIdInput,
+      "organisationId",
+    );
+    const page = options?.page && options.page > 0 ? options.page : 1;
+    const pageSize =
+      options?.pageSize && options.pageSize > 0 ? options.pageSize : 50;
+
+    const summary = await this.getOrganisationSummary(organisationId, {
+      search: options?.search,
+      includeArchived: options?.status === "ARCHIVED",
+    });
+
+    const start = (page - 1) * pageSize;
+    const items =
+      options?.status && options.status !== "ACTIVE"
+        ? summary.items
+            .filter((item) => item.status === options.status)
+            .slice(start, start + pageSize)
+        : summary.items.slice(start, start + pageSize);
+
+    return {
+      organisationId,
+      page,
+      pageSize,
+      total:
+        options?.status && options.status !== "ACTIVE"
+          ? summary.items.filter((item) => item.status === options.status)
+              .length
+          : summary.items.length,
+      items,
+    };
+  },
+
+  async getSpecialityById(
+    specialityIdInput: string,
+    organisationIdInput?: string,
+  ) {
+    const specialityId = requireSafeString(specialityIdInput, "specialityId");
+    const speciality = await prisma.speciality.findFirst({
+      where: {
+        id: specialityId,
+        ...(organisationIdInput
+          ? {
+              organisationId: requireSafeString(
+                organisationIdInput,
+                "organisationId",
+              ),
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        organisationId: true,
+        name: true,
+        headUserId: true,
+        headName: true,
+        headProfilePicUrl: true,
+        memberUserIds: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!speciality) {
+      throw new CatalogServiceError("Speciality not found.", 404, "NOT_FOUND");
+    }
+
+    const summary = await this.getOrganisationSummary(
+      speciality.organisationId,
+      {
+        includeArchived: true,
+      },
+    );
+    const match = summary.items.find((item) => item.id === specialityId);
+
+    if (!match) {
+      throw new CatalogServiceError("Speciality not found.", 404, "NOT_FOUND");
+    }
+
+    return match;
+  },
+
+  async getArchiveCatalog(
+    organisationIdInput: string,
+    specialityIdInput: string,
+    search?: string,
+  ): Promise<ArchiveCatalogView> {
+    const organisationId = requireSafeString(
+      organisationIdInput,
+      "organisationId",
+    );
+    const specialityId = requireSafeString(specialityIdInput, "specialityId");
+
+    const products = (await prisma.productItem.findMany({
+      where: {
+        organisationId,
+        specialityId,
+        isActive: false,
+        ...(search
+          ? {
+              OR: [
+                { name: { contains: search, mode: "insensitive" } },
+                { code: { contains: search, mode: "insensitive" } },
+                { description: { contains: search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+      include: productSelectionInclude,
+      orderBy: [{ name: "asc" }],
+    })) as ProductRecord[];
+
+    return {
+      services: products
+        .filter((product) => product.kind !== "PACKAGE")
+        .map(mapProductRecordToCatalogListRow),
+      packages: products
+        .filter((product) => product.kind === "PACKAGE")
+        .map(mapProductRecordToCatalogListRow),
+    };
+  },
+
+  async searchItems(params: {
+    organisationId: string;
+    q?: string;
+    specialityId?: string;
+    kinds?: Array<
+      | "CONSULTATION"
+      | "PROCEDURE"
+      | "LAB"
+      | "MEDICATION"
+      | "INVENTORY"
+      | "PACKAGE"
+    >;
+    includeArchived?: boolean;
+    excludePackageId?: string;
+    includeNestedBreakdown?: boolean;
+    page?: number;
+    pageSize?: number;
+  }): Promise<CatalogSearchResult> {
+    const organisationId = requireSafeString(
+      params.organisationId,
+      "organisationId",
+    );
+    const page = params.page && params.page > 0 ? params.page : 1;
+    const pageSize =
+      params.pageSize && params.pageSize > 0 ? params.pageSize : 20;
+    const query = optionalSafeString(params.q);
+    const specialityId = optionalSafeString(params.specialityId);
+    const wantsInventory = !params.kinds || params.kinds.includes("INVENTORY");
+    const productKinds =
+      params.kinds && params.kinds.length > 0
+        ? params.kinds.flatMap((kind) => {
+            switch (kind) {
+              case "LAB":
+                return ["LAB_TEST", "DIAGNOSTIC"] as ProductKind[];
+              case "INVENTORY":
+                return ["INVENTORY_ITEM"] as ProductKind[];
+              default:
+                return [kind] as ProductKind[];
+            }
+          })
+        : undefined;
+
+    const [products, inventoryItems, packageGraph] = await Promise.all([
+      prisma.productItem.findMany({
+        where: {
+          organisationId,
+          ...(specialityId ? { specialityId } : {}),
+          ...(productKinds && productKinds.length > 0
+            ? { kind: { in: productKinds } }
+            : {}),
+          ...(params.includeArchived ? {} : { isActive: true }),
+          ...(query
+            ? {
+                OR: [
+                  { name: { contains: query, mode: "insensitive" } },
+                  { code: { contains: query, mode: "insensitive" } },
+                  { description: { contains: query, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        include: productSelectionInclude,
+        orderBy: [{ name: "asc" }],
+      }),
+      wantsInventory
+        ? prisma.inventoryItem.findMany({
+            where: {
+              organisationId,
+              ...(params.includeArchived
+                ? { status: { not: "DELETED" } }
+                : { status: "ACTIVE" }),
+              ...(query
+                ? {
+                    OR: [
+                      { name: { contains: query, mode: "insensitive" } },
+                      { sku: { contains: query, mode: "insensitive" } },
+                      { description: { contains: query, mode: "insensitive" } },
+                    ],
+                  }
+                : {}),
+            },
+            orderBy: [{ name: "asc" }],
+          })
+        : Promise.resolve([]),
+      params.excludePackageId
+        ? buildPackageGraph(organisationId)
+        : Promise.resolve(null),
+    ]);
+
+    const mappedProducts = (products as ProductRecord[]).map<CatalogSearchItem>(
+      (product) => {
+        const row = mapProductRecordToCatalogListRow(product);
+        const blockReason =
+          params.excludePackageId && product.kind === "PACKAGE"
+            ? product.id === params.excludePackageId
+              ? "Current package cannot include itself."
+              : packageGraph &&
+                  packageContainsTarget(
+                    packageGraph,
+                    product.id,
+                    params.excludePackageId,
+                  )
+                ? "Adding this package would create a cycle."
+                : null
+            : null;
+
+        return {
+          id: product.id,
+          organisationId: product.organisationId,
+          specialityId: product.specialityId,
+          code: product.code,
+          name: product.name,
+          description: product.description,
+          kind: product.kind,
+          source: "CATALOG",
+          status: product.isActive ? "ACTIVE" : "ARCHIVED",
+          isBookable: row.isBookable,
+          durationMinutes: row.durationMinutes,
+          unitPrice: row.unitPrice ?? row.totalAmount,
+          currency: product.prices[0]?.currency ?? null,
+          defaultDiscountPercent: row.defaultDiscountPercent ?? 0,
+          maxDiscountPercent: row.maxDiscountPercent ?? 0,
+          totalAmount: row.totalAmount,
+          canBeAddedToPackage: !blockReason,
+          blockReason,
+          nestedBreakdown:
+            params.includeNestedBreakdown && product.kind === "PACKAGE"
+              ? mapPackageRecordToDetail(product).items
+              : null,
+        };
+      },
+    );
+
+    const mappedInventory = inventoryItems.map<CatalogSearchItem>((item) => ({
+      id: item.id,
+      organisationId: item.organisationId,
+      specialityId: null,
+      code: item.sku ?? null,
+      name: item.name,
+      description: item.description ?? null,
+      kind: "INVENTORY_ITEM",
+      source: "INVENTORY",
+      status: item.status === "ACTIVE" ? "ACTIVE" : "ARCHIVED",
+      isBookable: false,
+      durationMinutes: null,
+      unitPrice: item.sellingPrice ?? 0,
+      currency: item.currency ?? null,
+      defaultDiscountPercent: 0,
+      maxDiscountPercent: 0,
+      totalAmount: item.sellingPrice ?? 0,
+      canBeAddedToPackage: item.status === "ACTIVE",
+      blockReason:
+        item.status === "ACTIVE" ? null : "Inventory item is archived.",
+      nestedBreakdown: null,
+    }));
+
+    const combined = [...mappedProducts, ...mappedInventory];
+    const start = (page - 1) * pageSize;
+
+    return {
+      query,
+      page,
+      pageSize,
+      total: combined.length,
+      items: combined.slice(start, start + pageSize),
+    };
+  },
+
+  async archiveProduct(id: string, organisationId?: string) {
+    return this.updateProduct(id, {
+      ...(organisationId ? { organisationId } : {}),
+      isActive: false,
+    });
+  },
+
+  async restoreProduct(id: string, organisationId?: string) {
+    const product = await this.getProductById(id, organisationId);
+    if (product.kind === "PACKAGE") {
+      await ensurePackageItemsValid({
+        organisationId: product.organisationId,
+        packageItems: product.packageItems.map((item) => ({
+          childProductItemId: item.childProductItemId,
+          quantity: item.quantity,
+          pricingMode: item.pricingMode,
+          overridePrice: item.overridePrice,
+          sortOrder: item.sortOrder,
+          isOptional: item.isOptional,
+        })),
+        currentProductId: id,
+      });
+    }
+
+    return this.updateProduct(id, {
+      ...(organisationId ? { organisationId } : {}),
+      isActive: true,
+    });
+  },
+
+  async deleteProduct(id: string, organisationId?: string) {
+    const productId = requireSafeString(id, "productId");
+    await ensureProductDeletionAllowed(productId, organisationId);
+
+    const existing = await prisma.productItem.findFirst({
+      where: {
+        id: productId,
+        ...(organisationId ? { organisationId } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new CatalogServiceError("Product not found.", 404, "NOT_FOUND");
+    }
+
+    await prisma.productItem.delete({
+      where: { id: productId },
+    });
+  },
+
+  async createSpeciality(input: CatalogSpecialityInput) {
+    const organisationId = requireSafeString(
+      input.organisationId,
+      "organisationId",
+    );
+    const name = requireSafeString(input.name, "name");
+    const headUserId = optionalSafeString(input.headUserId) ?? null;
+    const teamMemberIds = Array.from(
+      new Set([
+        ...sanitizeTeamMemberIds(input.teamMemberIds),
+        ...(headUserId ? [headUserId] : []),
+      ]),
+    );
+
+    await ensureSpecialityNameUnique({ organisationId, name });
+
+    return prisma.speciality.create({
+      data: {
+        organisationId,
+        name,
+        headUserId,
+        headName: optionalSafeString(input.headName) ?? undefined,
+        headProfilePicUrl:
+          optionalSafeString(input.headProfilePicUrl) ?? undefined,
+        memberUserIds: teamMemberIds,
+        isActive: input.isActive ?? true,
+      },
+    });
+  },
+
+  async updateSpeciality(
+    specialityIdInput: string,
+    input: Partial<CatalogSpecialityInput>,
+  ) {
+    const specialityId = requireSafeString(specialityIdInput, "specialityId");
+    const existing = await prisma.speciality.findFirst({
+      where: { id: specialityId },
+    });
+
+    if (!existing) {
+      throw new CatalogServiceError("Speciality not found.", 404, "NOT_FOUND");
+    }
+
+    const organisationId = input.organisationId
+      ? requireSafeString(input.organisationId, "organisationId")
+      : existing.organisationId;
+    const name = input.name
+      ? requireSafeString(input.name, "name")
+      : existing.name;
+    const headUserId =
+      input.headUserId !== undefined
+        ? (optionalSafeString(input.headUserId) ?? null)
+        : existing.headUserId;
+    const teamMemberIds =
+      input.teamMemberIds !== undefined
+        ? Array.from(
+            new Set([
+              ...sanitizeTeamMemberIds(input.teamMemberIds),
+              ...(headUserId ? [headUserId] : []),
+            ]),
+          )
+        : Array.from(
+            new Set([
+              ...(existing.memberUserIds ?? []),
+              ...(headUserId ? [headUserId] : []),
+            ]),
+          );
+
+    await ensureSpecialityNameUnique({
+      organisationId,
+      name,
+      excludeId: specialityId,
+    });
+
+    return prisma.speciality.update({
+      where: { id: specialityId },
+      data: {
+        organisationId,
+        name,
+        headUserId,
+        headName:
+          input.headName !== undefined
+            ? optionalSafeString(input.headName)
+            : existing.headName,
+        headProfilePicUrl:
+          input.headProfilePicUrl !== undefined
+            ? optionalSafeString(input.headProfilePicUrl)
+            : existing.headProfilePicUrl,
+        memberUserIds: teamMemberIds,
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      },
+    });
+  },
+
+  async archiveSpeciality(
+    specialityIdInput: string,
+    organisationIdInput: string,
+  ) {
+    const specialityId = requireSafeString(specialityIdInput, "specialityId");
+    const organisationId = requireSafeString(
+      organisationIdInput,
+      "organisationId",
+    );
+
+    const speciality = await prisma.speciality.findFirst({
+      where: { id: specialityId, organisationId },
+    });
+    if (!speciality) {
+      throw new CatalogServiceError("Speciality not found.", 404, "NOT_FOUND");
+    }
+
+    await prisma.productItem.updateMany({
+      where: { organisationId, specialityId },
+      data: { isActive: false },
+    });
+
+    return prisma.speciality.update({
+      where: { id: specialityId },
+      data: { isActive: false },
+    });
+  },
+
+  async restoreSpeciality(
+    specialityIdInput: string,
+    organisationIdInput: string,
+  ) {
+    const specialityId = requireSafeString(specialityIdInput, "specialityId");
+    const organisationId = requireSafeString(
+      organisationIdInput,
+      "organisationId",
+    );
+
+    const speciality = await prisma.speciality.findFirst({
+      where: { id: specialityId, organisationId },
+    });
+    if (!speciality) {
+      throw new CatalogServiceError("Speciality not found.", 404, "NOT_FOUND");
+    }
+
+    return prisma.speciality.update({
+      where: { id: specialityId },
+      data: { isActive: true },
+    });
+  },
+
+  async deleteSpeciality(
+    specialityIdInput: string,
+    organisationIdInput: string,
+  ) {
+    const specialityId = requireSafeString(specialityIdInput, "specialityId");
+    const organisationId = requireSafeString(
+      organisationIdInput,
+      "organisationId",
+    );
+
+    const speciality = await prisma.speciality.findFirst({
+      where: { id: specialityId, organisationId },
+    });
+    if (!speciality) {
+      throw new CatalogServiceError("Speciality not found.", 404, "NOT_FOUND");
+    }
+
+    await ensureSpecialityDeletionAllowed(specialityId, organisationId);
+    await prisma.speciality.delete({ where: { id: specialityId } });
   },
 };

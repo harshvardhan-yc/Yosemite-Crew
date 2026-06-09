@@ -58,4 +58,22 @@ router.get(
   CatalogController.listProducts,
 );
 
+router.post(
+  "/$resolve-selection",
+  authorizeCognito,
+  attachOrganisationIdFromQuery,
+  withOrgPermissions(),
+  requirePermission("specialities:view:any"),
+  CatalogController.resolveProductOperation,
+);
+
+router.post(
+  "/$search-components",
+  authorizeCognito,
+  attachOrganisationIdFromQuery,
+  withOrgPermissions(),
+  requirePermission("specialities:view:any"),
+  CatalogController.searchCatalogOperation,
+);
+
 export default router;
