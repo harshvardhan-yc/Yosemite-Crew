@@ -126,6 +126,25 @@ describe('WorkspaceHeader', () => {
     expect(onAddAlert).toHaveBeenCalled();
   });
 
+  it('shows the patient alert tooltip on hover', async () => {
+    render(
+      <WorkspaceHeader
+        appointment={headerAppointment}
+        companionName="Gigi Hadid"
+        alerts={[]}
+        onBack={jest.fn()}
+        onQuickActions={jest.fn()}
+        onAddAlert={jest.fn()}
+      />
+    );
+
+    const trigger = screen.getByRole('button', { name: /add alert/i }).closest('.glass-tooltip');
+    expect(trigger).not.toBeNull();
+    fireEvent.mouseEnter(trigger as Element);
+
+    expect(await screen.findByText('Add alerts for patient')).toBeInTheDocument();
+  });
+
   it('omits the add-alert button when no handler is provided', () => {
     render(
       <WorkspaceHeader

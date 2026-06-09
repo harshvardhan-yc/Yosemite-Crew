@@ -4,6 +4,7 @@ import { LuPlus } from 'react-icons/lu';
 import { HiBolt } from 'react-icons/hi2';
 import type { Appointment } from '@yosemite-crew/types';
 import { Secondary } from '@/app/ui/primitives/Buttons';
+import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import AlertPill from '@/app/features/appointments/pages/AppointmentWorkspace/components/AlertPill';
 import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
 import EmergencyBadge from '@/app/features/appointments/components/EmergencyBadge';
@@ -76,14 +77,16 @@ const WorkspaceHeader = ({
           <AlertPill key={alert.id} label={alert.label} severity={alert.severity} />
         ))}
         {onAddAlert && (
-          <button
-            type="button"
-            aria-label="Add alert"
-            onClick={onAddAlert}
-            className="flex size-6 items-center justify-center rounded-full border border-neutral-500 text-neutral-700 transition-colors duration-150 hover:border-text-brand hover:text-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
-          >
-            <LuPlus size={14} aria-hidden="true" />
-          </button>
+          <GlassTooltip content="Add alerts for patient" side="bottom">
+            <button
+              type="button"
+              aria-label="Add alert"
+              onClick={onAddAlert}
+              className="flex size-6 items-center justify-center rounded-full border border-neutral-500 text-neutral-700 transition-colors duration-150 hover:border-text-brand hover:text-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
+            >
+              <LuPlus size={14} aria-hidden="true" />
+            </button>
+          </GlassTooltip>
         )}
       </div>
     </div>
