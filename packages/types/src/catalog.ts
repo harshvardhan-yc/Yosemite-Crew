@@ -72,6 +72,7 @@ export type ProductPackageItem = {
   quantity: number;
   pricingMode: PackageItemPricingMode;
   overridePrice?: number | null;
+  discountPercent?: number | null;
   sortOrder: number;
   isOptional: boolean;
   createdAt?: Date;
@@ -88,13 +89,19 @@ export type ProductPackage = {
 
 export type ResolvedCatalogItem = {
   productItemId: string;
+  code: string | null;
   name: string;
   kind: ProductKind;
   quantity: number;
+  currency: string | null;
   unitPrice: number;
   referenceUnitPrice?: number | null;
   defaultDiscountPercent?: number | null;
   maxDiscountPercent?: number | null;
+  discountPercent: number;
+  grossAmount: number;
+  discountAmount: number;
+  finalAmount: number;
   isPackageComponent: boolean;
   packageProductItemId?: string | null;
 };
@@ -102,9 +109,20 @@ export type ResolvedCatalogItem = {
 export type ResolvedCatalogSelection = {
   productItemId: string;
   productKind: ProductKind;
+  name: string;
+  code: string | null;
+  currency: string | null;
   legacyServiceId?: string | null;
   isBookable: boolean;
   appointmentKinds: AppointmentKind[];
+  leadCount?: number | null;
+  supportCount?: number | null;
+  additionalDiscountPercent?: number | null;
+  grossAmount: number;
+  itemDiscountAmount: number;
+  additionalDiscountAmount: number;
+  finalAmount: number;
+  breakdownItemCount?: number | null;
   billingItems: ResolvedCatalogItem[];
   includedItems: ResolvedCatalogItem[];
 };
@@ -113,6 +131,7 @@ export type CatalogTab = 'services' | 'packages' | 'all';
 
 export type CatalogListRow = {
   id: string;
+  version: number;
   code: string | null;
   name: string;
   description: string | null;
@@ -124,28 +143,55 @@ export type CatalogListRow = {
   defaultDiscountPercent: number | null;
   maxDiscountPercent: number | null;
   totalAmount: number;
+  leadCount?: number | null;
+  supportCount?: number | null;
+  additionalDiscountPercent?: number | null;
+  grossAmount?: number | null;
+  itemDiscountAmount?: number | null;
+  additionalDiscountAmount?: number | null;
+  breakdownItemCount?: number | null;
+  currency?: string | null;
 };
 
 export type CatalogPackageBreakdownRow = {
   id: string;
   type: ProductKind;
+  childItemId: string;
+  childItemKind: ProductKind;
+  childItemCode: string | null;
   name: string;
+  childItemName: string;
   quantity: number;
   unitPrice: number;
+  currency: string | null;
   grossAmount: number;
   discountPercent: number | null;
+  discountAmount: number;
   finalAmount: number;
+  pricingMode: PackageItemPricingMode;
+  overridePrice: number | null;
+  isOptional: boolean;
+  sortOrder: number;
 };
 
 export type CatalogPackageDetail = {
   id: string;
+  version: number;
   code: string | null;
   name: string;
   description: string | null;
   isBookable: boolean;
   isActive: boolean;
   durationMinutes: number | null;
+  leadCount: number;
+  supportCount: number;
+  additionalDiscountPercent: number;
+  grossAmount: number;
+  itemDiscountAmount: number;
+  additionalDiscountAmount: number;
+  breakdownItemCount: number;
   maxDiscountPercent: number | null;
+  currency: string | null;
   totalAmount: number;
   items: CatalogPackageBreakdownRow[];
 };
@@ -157,6 +203,16 @@ export type SpecialityCatalogView = {
   search: string | null;
   services: CatalogListRow[];
   packages: CatalogListRow[];
+};
+
+export type CatalogPackageSummary = {
+  leadCount: number;
+  supportCount: number;
+  additionalDiscountPercent: number;
+  grossAmount: number;
+  itemDiscountAmount: number;
+  additionalDiscountAmount: number;
+  breakdownItemCount: number;
 };
 
 export type CatalogSearchSource = 'CATALOG' | 'INVENTORY';
@@ -212,12 +268,35 @@ export const EXT_CATALOG_BOOKABLE_OUTPATIENT =
   'https://yosemitecrew.com/fhir/StructureDefinition/catalog-supports-outpatient';
 export const EXT_CATALOG_BOOKABLE_INPATIENT =
   'https://yosemitecrew.com/fhir/StructureDefinition/catalog-supports-inpatient';
+export const EXT_CATALOG_LEAD_COUNT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/catalog-lead-count';
+export const EXT_CATALOG_SUPPORT_COUNT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/catalog-support-count';
+export const EXT_CATALOG_ADDITIONAL_DISCOUNT_PERCENT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/catalog-additional-discount-percent';
+export const EXT_CATALOG_PACKAGE_GROSS_AMOUNT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-gross-amount';
+export const EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_AMOUNT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-item-discount-amount';
+export const EXT_CATALOG_PACKAGE_ADDITIONAL_DISCOUNT_AMOUNT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-additional-discount-amount';
+export const EXT_CATALOG_PACKAGE_BREAKDOWN_ITEM_COUNT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-breakdown-item-count';
 export const EXT_CATALOG_PACKAGE_ITEM =
   'https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-item';
+export const EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_PERCENT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-item-discount-percent';
 export const EXT_CATALOG_PACKAGE_ITEM_CHILD_ID = 'childProductItemId';
+export const EXT_CATALOG_PACKAGE_ITEM_CHILD_CODE = 'childProductCode';
+export const EXT_CATALOG_PACKAGE_ITEM_CHILD_NAME = 'childProductName';
+export const EXT_CATALOG_PACKAGE_ITEM_CHILD_KIND = 'childProductKind';
 export const EXT_CATALOG_PACKAGE_ITEM_QUANTITY = 'quantity';
 export const EXT_CATALOG_PACKAGE_ITEM_PRICING_MODE = 'pricingMode';
 export const EXT_CATALOG_PACKAGE_ITEM_OVERRIDE_PRICE = 'overridePrice';
+export const EXT_CATALOG_PACKAGE_ITEM_CURRENCY = 'currency';
+export const EXT_CATALOG_PACKAGE_ITEM_GROSS_AMOUNT = 'grossAmount';
+export const EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_AMOUNT_VALUE = 'discountAmount';
+export const EXT_CATALOG_PACKAGE_ITEM_FINAL_AMOUNT = 'finalAmount';
 export const EXT_CATALOG_PACKAGE_ITEM_SORT_ORDER = 'sortOrder';
 export const EXT_CATALOG_PACKAGE_ITEM_OPTIONAL = 'isOptional';
 
@@ -236,7 +315,27 @@ export type CatalogFHIRInput = {
   isActive?: boolean;
   price?: CatalogPricePolicy | null;
   bookable?: ProductBookable | null;
+  package?: CatalogPackageSummary | null;
   packageItems?: ProductPackageItem[] | null;
+};
+
+type CatalogFHIRPackageItem = {
+  id: string;
+  packageId: string;
+  childProductItemId: string;
+  quantity: number;
+  pricingMode: PackageItemPricingMode;
+  overridePrice: number | null;
+  discountPercent: number | null;
+  sortOrder: number;
+  isOptional: boolean;
+  childProductCode?: string | null;
+  childProductName?: string | null;
+  childProductKind?: ProductKind | null;
+  currency?: string | null;
+  grossAmount?: number | null;
+  discountAmount?: number | null;
+  finalAmount?: number | null;
 };
 
 const toReferenceId = (reference?: string): string | undefined => {
@@ -247,6 +346,12 @@ const toReferenceId = (reference?: string): string | undefined => {
 
 const findExtension = (extensions: Extension[] | undefined, url: string) =>
   extensions?.find((extension) => extension.url === url);
+
+const readIntegerExtension = (extensions: Extension[] | undefined, url: string) =>
+  findExtension(extensions, url)?.valueInteger ?? undefined;
+
+const readDecimalExtension = (extensions: Extension[] | undefined, url: string) =>
+  findExtension(extensions, url)?.valueDecimal ?? undefined;
 
 const parsePackageItemExtensions = (
   extensions: Extension[] | undefined
@@ -274,6 +379,9 @@ const parsePackageItemExtensions = (
       overridePrice:
         nested.find((item) => item.url === EXT_CATALOG_PACKAGE_ITEM_OVERRIDE_PRICE)?.valueDecimal ??
         null,
+      discountPercent:
+        nested.find((item) => item.url === EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_PERCENT)
+          ?.valueDecimal ?? null,
       sortOrder:
         nested.find((item) => item.url === EXT_CATALOG_PACKAGE_ITEM_SORT_ORDER)?.valueInteger ??
         index,
@@ -282,6 +390,52 @@ const parsePackageItemExtensions = (
         false,
     };
   });
+};
+
+const parsePackageSummaryExtensions = (
+  extensions: Extension[] | undefined
+): CatalogPackageSummary | undefined => {
+  const leadCount = readIntegerExtension(extensions, EXT_CATALOG_LEAD_COUNT);
+  const supportCount = readIntegerExtension(extensions, EXT_CATALOG_SUPPORT_COUNT);
+  const additionalDiscountPercent = readDecimalExtension(
+    extensions,
+    EXT_CATALOG_ADDITIONAL_DISCOUNT_PERCENT
+  );
+  const grossAmount = readDecimalExtension(extensions, EXT_CATALOG_PACKAGE_GROSS_AMOUNT);
+  const itemDiscountAmount = readDecimalExtension(
+    extensions,
+    EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_AMOUNT
+  );
+  const additionalDiscountAmount = readDecimalExtension(
+    extensions,
+    EXT_CATALOG_PACKAGE_ADDITIONAL_DISCOUNT_AMOUNT
+  );
+  const breakdownItemCount = readIntegerExtension(
+    extensions,
+    EXT_CATALOG_PACKAGE_BREAKDOWN_ITEM_COUNT
+  );
+
+  if (
+    leadCount == null &&
+    supportCount == null &&
+    additionalDiscountPercent == null &&
+    grossAmount == null &&
+    itemDiscountAmount == null &&
+    additionalDiscountAmount == null &&
+    breakdownItemCount == null
+  ) {
+    return undefined;
+  }
+
+  return {
+    leadCount: leadCount ?? 1,
+    supportCount: supportCount ?? 0,
+    additionalDiscountPercent: additionalDiscountPercent ?? 0,
+    grossAmount: grossAmount ?? 0,
+    itemDiscountAmount: itemDiscountAmount ?? 0,
+    additionalDiscountAmount: additionalDiscountAmount ?? 0,
+    breakdownItemCount: breakdownItemCount ?? 0,
+  };
 };
 
 export const fromFHIRCatalogHealthcareService = (
@@ -329,17 +483,42 @@ export const fromFHIRCatalogHealthcareService = (
             supportsInpatient: supportsInpatient ?? false,
           }
         : null,
+    package: parsePackageSummaryExtensions(extensions) ?? null,
     packageItems: parsePackageItemExtensions(extensions) ?? null,
   };
 };
 
-const buildPackageItemExtension = (item: ProductPackageItem): Extension => ({
+const buildPackageItemExtension = (item: CatalogFHIRPackageItem): Extension => ({
   url: EXT_CATALOG_PACKAGE_ITEM,
   extension: [
     {
       url: EXT_CATALOG_PACKAGE_ITEM_CHILD_ID,
       valueString: item.childProductItemId,
     },
+    ...(item.childProductCode != null
+      ? [
+          {
+            url: EXT_CATALOG_PACKAGE_ITEM_CHILD_CODE,
+            valueString: item.childProductCode,
+          } as Extension,
+        ]
+      : []),
+    ...(item.childProductName != null
+      ? [
+          {
+            url: EXT_CATALOG_PACKAGE_ITEM_CHILD_NAME,
+            valueString: item.childProductName,
+          } as Extension,
+        ]
+      : []),
+    ...(item.childProductKind != null
+      ? [
+          {
+            url: EXT_CATALOG_PACKAGE_ITEM_CHILD_KIND,
+            valueString: item.childProductKind,
+          } as Extension,
+        ]
+      : []),
     {
       url: EXT_CATALOG_PACKAGE_ITEM_QUANTITY,
       valueInteger: item.quantity,
@@ -356,6 +535,46 @@ const buildPackageItemExtension = (item: ProductPackageItem): Extension => ({
           } as Extension,
         ]
       : []),
+    ...(item.discountPercent != null
+      ? [
+          {
+            url: EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_PERCENT,
+            valueDecimal: item.discountPercent,
+          } as Extension,
+        ]
+      : []),
+    ...(item.currency != null
+      ? [
+          {
+            url: EXT_CATALOG_PACKAGE_ITEM_CURRENCY,
+            valueString: item.currency,
+          } as Extension,
+        ]
+      : []),
+    ...(item.grossAmount != null
+      ? [
+          {
+            url: EXT_CATALOG_PACKAGE_ITEM_GROSS_AMOUNT,
+            valueDecimal: item.grossAmount,
+          } as Extension,
+        ]
+      : []),
+    ...(item.discountAmount != null
+      ? [
+          {
+            url: EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_AMOUNT_VALUE,
+            valueDecimal: item.discountAmount,
+          } as Extension,
+        ]
+      : []),
+    ...(item.finalAmount != null
+      ? [
+          {
+            url: EXT_CATALOG_PACKAGE_ITEM_FINAL_AMOUNT,
+            valueDecimal: item.finalAmount,
+          } as Extension,
+        ]
+      : []),
     {
       url: EXT_CATALOG_PACKAGE_ITEM_SORT_ORDER,
       valueInteger: item.sortOrder,
@@ -369,6 +588,7 @@ const buildPackageItemExtension = (item: ProductPackageItem): Extension => ({
 
 type CatalogFHIRShape = {
   id: string;
+  version?: number;
   organisationId: string;
   name: string;
   description: string | null;
@@ -383,16 +603,25 @@ type CatalogFHIRShape = {
     supportsOutpatient: boolean;
     supportsInpatient: boolean;
   } | null;
+  package?: CatalogPackageSummary | null;
   packageItems?:
-    | ProductPackageItem[]
+    | CatalogFHIRPackageItem[]
     | Array<{
         id: string;
         childProductItemId: string;
         quantity: number;
         pricingMode: PackageItemPricingMode;
         overridePrice: number | null;
+        discountPercent?: number | null;
         sortOrder: number;
         isOptional: boolean;
+        childProductCode?: string | null;
+        childProductName?: string | null;
+        childProductKind?: ProductKind | null;
+        currency?: string | null;
+        grossAmount?: number | null;
+        discountAmount?: number | null;
+        finalAmount?: number | null;
       }>;
 };
 
@@ -439,6 +668,37 @@ export const toFHIRCatalogHealthcareService = (product: CatalogFHIRShape): Catal
     });
   }
 
+  if (product.package) {
+    extensions.push({
+      url: EXT_CATALOG_LEAD_COUNT,
+      valueInteger: product.package.leadCount,
+    });
+    extensions.push({
+      url: EXT_CATALOG_SUPPORT_COUNT,
+      valueInteger: product.package.supportCount,
+    });
+    extensions.push({
+      url: EXT_CATALOG_ADDITIONAL_DISCOUNT_PERCENT,
+      valueDecimal: product.package.additionalDiscountPercent,
+    });
+    extensions.push({
+      url: EXT_CATALOG_PACKAGE_GROSS_AMOUNT,
+      valueDecimal: product.package.grossAmount,
+    });
+    extensions.push({
+      url: EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_AMOUNT,
+      valueDecimal: product.package.itemDiscountAmount,
+    });
+    extensions.push({
+      url: EXT_CATALOG_PACKAGE_ADDITIONAL_DISCOUNT_AMOUNT,
+      valueDecimal: product.package.additionalDiscountAmount,
+    });
+    extensions.push({
+      url: EXT_CATALOG_PACKAGE_BREAKDOWN_ITEM_COUNT,
+      valueInteger: product.package.breakdownItemCount,
+    });
+  }
+
   if (product.bookable?.durationMinutes != null) {
     extensions.push({
       url: EXT_CATALOG_DURATION,
@@ -464,8 +724,16 @@ export const toFHIRCatalogHealthcareService = (product: CatalogFHIRShape): Catal
           quantity: item.quantity,
           pricingMode: item.pricingMode,
           overridePrice: item.overridePrice ?? null,
+          discountPercent: item.discountPercent ?? null,
           sortOrder: item.sortOrder,
           isOptional: item.isOptional,
+          childProductCode: item.childProductCode ?? null,
+          childProductName: item.childProductName ?? null,
+          childProductKind: item.childProductKind ?? null,
+          currency: item.currency ?? null,
+          grossAmount: item.grossAmount ?? null,
+          discountAmount: item.discountAmount ?? null,
+          finalAmount: item.finalAmount ?? null,
         })
       )
     );
@@ -476,6 +744,7 @@ export const toFHIRCatalogHealthcareService = (product: CatalogFHIRShape): Catal
     id: product.id,
     active: product.isActive,
     meta: {
+      ...(product.version != null ? { versionId: String(product.version) } : {}),
       profile: [CATALOG_HEALTHCARE_SERVICE_PROFILE],
     },
     identifier: product.code

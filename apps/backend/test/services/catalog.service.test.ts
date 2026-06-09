@@ -82,6 +82,7 @@ describe("CatalogService", () => {
   it("resolves a direct bookable product into one billing item", () => {
     const resolved = resolveCatalogSelectionFromRecord({
       id: "prod_consult",
+      version: 1,
       organisationId: "org_1",
       name: "General Consultation",
       description: null,
@@ -107,33 +108,49 @@ describe("CatalogService", () => {
       package: null,
     });
 
-    expect(resolved).toEqual({
-      productItemId: "prod_consult",
-      productKind: "CONSULTATION",
-      legacyServiceId: "svc_consult",
-      isBookable: true,
-      appointmentKinds: ["OUTPATIENT"],
-      billingItems: [
-        {
-          productItemId: "prod_consult",
-          name: "General Consultation",
-          kind: "CONSULTATION",
-          quantity: 1,
-          unitPrice: 80,
-          referenceUnitPrice: null,
-          defaultDiscountPercent: 5,
-          maxDiscountPercent: 10,
-          isPackageComponent: false,
-          packageProductItemId: null,
-        },
-      ],
-      includedItems: [],
-    });
+    expect(resolved).toEqual(
+      expect.objectContaining({
+        productItemId: "prod_consult",
+        productKind: "CONSULTATION",
+        name: "General Consultation",
+        code: null,
+        currency: "USD",
+        legacyServiceId: "svc_consult",
+        isBookable: true,
+        appointmentKinds: ["OUTPATIENT"],
+        grossAmount: 80,
+        itemDiscountAmount: 4,
+        additionalDiscountAmount: 0,
+        finalAmount: 76,
+        breakdownItemCount: 1,
+      }),
+    );
+    expect(resolved.billingItems).toEqual([
+      expect.objectContaining({
+        productItemId: "prod_consult",
+        code: null,
+        name: "General Consultation",
+        kind: "CONSULTATION",
+        quantity: 1,
+        currency: "USD",
+        unitPrice: 80,
+        referenceUnitPrice: null,
+        defaultDiscountPercent: 5,
+        maxDiscountPercent: 10,
+        discountPercent: 5,
+        grossAmount: 80,
+        discountAmount: 4,
+        finalAmount: 76,
+        isPackageComponent: false,
+        packageProductItemId: null,
+      }),
+    ]);
   });
 
   it("expands a package into parent, included items, and priced child items", () => {
     const resolved = resolveCatalogSelectionFromRecord({
       id: "pkg_dental",
+      version: 1,
       organisationId: "org_1",
       name: "Dental Bundle",
       description: null,
@@ -157,6 +174,9 @@ describe("CatalogService", () => {
         supportsInpatient: true,
       },
       package: {
+        leadCount: 2,
+        supportCount: 1,
+        additionalDiscountPercent: 10,
         items: [
           {
             id: "pkg_item_exam",
@@ -164,11 +184,13 @@ describe("CatalogService", () => {
             quantity: 1,
             pricingMode: "INCLUDED",
             overridePrice: null,
+            discountPercent: null,
             sortOrder: 0,
             isOptional: false,
             childProductItem: {
               id: "prod_exam",
               name: "Dental Exam",
+              code: "CS-EXAM",
               kind: "CONSULTATION",
               isActive: true,
               prices: [
@@ -188,11 +210,13 @@ describe("CatalogService", () => {
             quantity: 2,
             pricingMode: "OVERRIDE_PRICE",
             overridePrice: 40,
+            discountPercent: 0,
             sortOrder: 1,
             isOptional: false,
             childProductItem: {
               id: "prod_xray",
               name: "Dental X-Ray",
+              code: "DX-XRAY",
               kind: "DIAGNOSTIC",
               isActive: true,
               prices: [
@@ -211,45 +235,76 @@ describe("CatalogService", () => {
     });
 
     expect(resolved.appointmentKinds).toEqual(["OUTPATIENT", "INPATIENT"]);
+    expect(resolved).toEqual(
+      expect.objectContaining({
+        name: "Dental Bundle",
+        currency: "USD",
+        leadCount: 2,
+        supportCount: 1,
+        additionalDiscountPercent: 10,
+        grossAmount: 330,
+        itemDiscountAmount: 0,
+        additionalDiscountAmount: 33,
+        finalAmount: 297,
+      }),
+    );
     expect(resolved.billingItems).toEqual([
-      {
+      expect.objectContaining({
         productItemId: "pkg_dental",
+        code: null,
         name: "Dental Bundle",
         kind: "PACKAGE",
         quantity: 1,
+        currency: "USD",
         unitPrice: 250,
+        grossAmount: 250,
+        discountAmount: 0,
+        finalAmount: 250,
         referenceUnitPrice: null,
         defaultDiscountPercent: null,
         maxDiscountPercent: 15,
+        discountPercent: 0,
         isPackageComponent: false,
         packageProductItemId: null,
-      },
-      {
+      }),
+      expect.objectContaining({
         productItemId: "prod_xray",
+        code: "DX-XRAY",
         name: "Dental X-Ray",
         kind: "DIAGNOSTIC",
         quantity: 2,
+        currency: "USD",
         unitPrice: 40,
         referenceUnitPrice: 55,
         defaultDiscountPercent: null,
         maxDiscountPercent: 10,
+        discountPercent: 0,
+        grossAmount: 80,
+        discountAmount: 0,
+        finalAmount: 80,
         isPackageComponent: true,
         packageProductItemId: "pkg_dental",
-      },
+      }),
     ]);
     expect(resolved.includedItems).toEqual([
-      {
+      expect.objectContaining({
         productItemId: "prod_exam",
+        code: "CS-EXAM",
         name: "Dental Exam",
         kind: "CONSULTATION",
         quantity: 1,
+        currency: "USD",
         unitPrice: 0,
         referenceUnitPrice: 90,
         defaultDiscountPercent: null,
         maxDiscountPercent: 10,
+        discountPercent: 0,
+        grossAmount: 0,
+        discountAmount: 0,
+        finalAmount: 0,
         isPackageComponent: true,
         packageProductItemId: "pkg_dental",
-      },
+      }),
     ]);
   });
 
@@ -351,6 +406,7 @@ describe("CatalogService", () => {
   it("rejects package updates that would create a cycle", async () => {
     (prisma.productItem.findUnique as jest.Mock).mockResolvedValue({
       id: "pkg_parent",
+      version: 1,
       organisationId: "org_1",
       kind: "PACKAGE",
       code: "PK-0001",
@@ -363,6 +419,7 @@ describe("CatalogService", () => {
       .mockResolvedValueOnce([
         {
           id: "pkg_child",
+          version: 1,
           organisationId: "org_1",
           name: "Child Package",
           description: null,
@@ -377,10 +434,12 @@ describe("CatalogService", () => {
       .mockResolvedValueOnce([
         {
           id: "pkg_parent",
+          version: 1,
           package: { items: [] },
         },
         {
           id: "pkg_child",
+          version: 1,
           package: { items: [{ childProductItemId: "pkg_parent" }] },
         },
       ]);
@@ -406,6 +465,7 @@ describe("CatalogService", () => {
     expect(() =>
       resolveCatalogSelectionFromRecord({
         id: "pkg_invalid",
+        version: 1,
         organisationId: "org_1",
         name: "Invalid Bundle",
         description: null,
@@ -417,6 +477,9 @@ describe("CatalogService", () => {
         prices: [],
         bookable: null,
         package: {
+          leadCount: 1,
+          supportCount: 0,
+          additionalDiscountPercent: 0,
           items: [
             {
               id: "pkg_item_lab",
@@ -424,11 +487,13 @@ describe("CatalogService", () => {
               quantity: 1,
               pricingMode: "OVERRIDE_PRICE",
               overridePrice: null,
+              discountPercent: null,
               sortOrder: 0,
               isOptional: false,
               childProductItem: {
                 id: "prod_lab",
                 name: "CBC",
+                code: null,
                 kind: "LAB_TEST",
                 isActive: true,
                 prices: [],
@@ -448,6 +513,7 @@ describe("CatalogService", () => {
   it("loads a product from prisma when resolving by id", async () => {
     (prisma.productItem.findFirst as jest.Mock).mockResolvedValue({
       id: "prod_consult",
+      version: 1,
       organisationId: "org_1",
       name: "General Consultation",
       description: null,
@@ -494,6 +560,7 @@ describe("CatalogService", () => {
       .mockResolvedValueOnce([
         {
           id: "prod_exam",
+          version: 1,
           organisationId: "org_1",
           name: "Exam",
           description: null,
@@ -508,6 +575,7 @@ describe("CatalogService", () => {
       .mockResolvedValueOnce([]);
     (prisma.productItem.create as jest.Mock).mockResolvedValue({
       id: "prod_pkg",
+      version: 1,
       organisationId: "org_1",
       name: "Dental Bundle",
       description: "desc",
@@ -542,6 +610,7 @@ describe("CatalogService", () => {
             isOptional: false,
             childProductItem: {
               id: "prod_exam",
+              version: 1,
               name: "Exam",
               kind: "CONSULTATION",
               isActive: true,
@@ -618,6 +687,7 @@ describe("CatalogService", () => {
   it("updates nested pricing and bookable settings", async () => {
     (prisma.productItem.findUnique as jest.Mock).mockResolvedValue({
       id: "prod_1",
+      version: 2,
       kind: "CONSULTATION",
       prices: [{ id: "price_1", isDefault: true }],
       bookable: { id: "book_1" },
@@ -681,10 +751,37 @@ describe("CatalogService", () => {
     expect(updated.name).toBe("Updated Consult");
   });
 
+  it("rejects stale updates when the expected version is outdated", async () => {
+    (prisma.productItem.findUnique as jest.Mock).mockResolvedValue({
+      id: "prod_1",
+      version: 4,
+      organisationId: "org_1",
+      kind: "CONSULTATION",
+      prices: [],
+      bookable: null,
+      package: null,
+    });
+
+    await expect(
+      CatalogService.updateProduct("prod_1", {
+        expectedVersion: 3,
+        name: "Updated Consult",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "VERSION_CONFLICT",
+      details: {
+        expectedVersion: 3,
+        currentVersion: 4,
+      },
+    });
+  });
+
   it("builds a speciality catalog view grouped into services and packages", async () => {
     (prisma.productItem.findMany as jest.Mock).mockResolvedValue([
       {
         id: "prod_consult",
+        version: 1,
         organisationId: "org_1",
         name: "General Consultation",
         description: "Consult",
@@ -711,6 +808,7 @@ describe("CatalogService", () => {
       },
       {
         id: "pkg_bundle",
+        version: 1,
         organisationId: "org_1",
         name: "Cardio Bundle",
         description: "Bundle",
@@ -737,6 +835,7 @@ describe("CatalogService", () => {
               isOptional: false,
               childProductItem: {
                 id: "prod_consult",
+                version: 1,
                 name: "General Consultation",
                 kind: "CONSULTATION",
                 isActive: true,
@@ -769,7 +868,7 @@ describe("CatalogService", () => {
       activeTab: "all",
       search: "cardio",
       services: [
-        {
+        expect.objectContaining({
           id: "prod_consult",
           code: "CS-1",
           name: "General Consultation",
@@ -782,10 +881,18 @@ describe("CatalogService", () => {
           defaultDiscountPercent: 10,
           maxDiscountPercent: 15,
           totalAmount: 90,
-        },
+          leadCount: null,
+          supportCount: null,
+          additionalDiscountPercent: null,
+          grossAmount: null,
+          itemDiscountAmount: null,
+          additionalDiscountAmount: null,
+          breakdownItemCount: null,
+          currency: "USD",
+        }),
       ],
       packages: [
-        {
+        expect.objectContaining({
           id: "pkg_bundle",
           code: "PK-1",
           name: "Cardio Bundle",
@@ -798,7 +905,15 @@ describe("CatalogService", () => {
           defaultDiscountPercent: null,
           maxDiscountPercent: null,
           totalAmount: 90,
-        },
+          leadCount: 1,
+          supportCount: 0,
+          additionalDiscountPercent: 0,
+          grossAmount: 100,
+          itemDiscountAmount: 10,
+          additionalDiscountAmount: 0,
+          breakdownItemCount: 1,
+          currency: "USD",
+        }),
       ],
     });
   });
@@ -806,6 +921,7 @@ describe("CatalogService", () => {
   it("returns package detail with breakdown rows", async () => {
     (prisma.productItem.findFirst as jest.Mock).mockResolvedValue({
       id: "pkg_bundle",
+      version: 1,
       organisationId: "org_1",
       name: "Cardio Bundle",
       description: "Bundle",
@@ -829,6 +945,9 @@ describe("CatalogService", () => {
         supportsInpatient: false,
       },
       package: {
+        leadCount: 1,
+        supportCount: 0,
+        additionalDiscountPercent: 0,
         items: [
           {
             id: "pkgi_1",
@@ -836,11 +955,14 @@ describe("CatalogService", () => {
             quantity: 2,
             pricingMode: "INHERITED_PRICE",
             overridePrice: null,
+            discountPercent: 10,
             sortOrder: 0,
             isOptional: false,
             childProductItem: {
               id: "prod_consult",
+              version: 1,
               name: "General Consultation",
+              code: "CS-1",
               kind: "CONSULTATION",
               isActive: true,
               prices: [
@@ -860,28 +982,96 @@ describe("CatalogService", () => {
 
     const result = await CatalogService.getPackageDetail("pkg_bundle", "org_1");
 
-    expect(result).toEqual({
-      id: "pkg_bundle",
-      code: "PK-1",
-      name: "Cardio Bundle",
-      description: "Bundle",
-      isBookable: true,
-      isActive: true,
-      durationMinutes: 30,
-      maxDiscountPercent: 10,
-      totalAmount: 180,
-      items: [
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: "pkg_bundle",
+        code: "PK-1",
+        name: "Cardio Bundle",
+        description: "Bundle",
+        isBookable: true,
+        isActive: true,
+        durationMinutes: 30,
+        maxDiscountPercent: 10,
+        leadCount: 1,
+        supportCount: 0,
+        additionalDiscountPercent: 0,
+        grossAmount: 200,
+        itemDiscountAmount: 20,
+        additionalDiscountAmount: 0,
+        breakdownItemCount: 1,
+        currency: "USD",
+        totalAmount: 180,
+      }),
+    );
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        id: "pkgi_1",
+        type: "CONSULTATION",
+        childItemId: "prod_consult",
+        childItemKind: "CONSULTATION",
+        childItemCode: "CS-1",
+        name: "General Consultation",
+        childItemName: "General Consultation",
+        quantity: 2,
+        unitPrice: 100,
+        currency: "USD",
+        grossAmount: 200,
+        discountPercent: 10,
+        discountAmount: 20,
+        finalAmount: 180,
+        pricingMode: "INHERITED_PRICE",
+        overridePrice: null,
+        isOptional: false,
+        sortOrder: 0,
+      }),
+    ]);
+  });
+
+  it("rejects package items whose discount exceeds the child max discount", async () => {
+    (prisma.productItem.findMany as jest.Mock)
+      .mockResolvedValueOnce([
         {
-          id: "pkgi_1",
-          type: "CONSULTATION",
-          name: "General Consultation",
-          quantity: 2,
-          unitPrice: 100,
-          grossAmount: 200,
-          discountPercent: 10,
-          finalAmount: 180,
+          id: "prod_exam",
+          version: 1,
+          organisationId: "org_1",
+          name: "Exam",
+          description: null,
+          code: "CS-1",
+          kind: "CONSULTATION",
+          specialityId: "spec_1",
+          legacyServiceId: null,
+          isActive: true,
+          prices: [
+            {
+              unitPrice: 100,
+              currency: "USD",
+              defaultDiscountPercent: 0,
+              maxDiscountPercent: 5,
+              isDefault: true,
+            },
+          ],
+          package: null,
         },
-      ],
+      ])
+      .mockResolvedValueOnce([]);
+
+    await expect(
+      CatalogService.createProduct({
+        organisationId: "org_1",
+        name: "Bundle",
+        kind: "PACKAGE",
+        packageItems: [
+          {
+            childProductItemId: "prod_exam",
+            quantity: 1,
+            pricingMode: "INHERITED_PRICE",
+            discountPercent: 10,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "PACKAGE_ITEM_DISCOUNT_TOO_HIGH",
     });
   });
 });

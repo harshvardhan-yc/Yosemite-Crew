@@ -49,6 +49,7 @@ const createResponse = () => {
   const res = {
     status: jest.fn().mockReturnThis(),
     json: jest.fn(),
+    setHeader: jest.fn(),
   };
 
   return res;
@@ -90,6 +91,7 @@ describe("CatalogController", () => {
   it("returns package detail by id", async () => {
     (CatalogService.getPackageDetail as jest.Mock).mockResolvedValue({
       id: "pkg_1",
+      version: 3,
       items: [],
     });
 
@@ -105,6 +107,39 @@ describe("CatalogController", () => {
       "pkg_1",
       "org_1",
     );
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.setHeader).toHaveBeenCalledWith("ETag", 'W/"3"');
+  });
+
+  it("passes If-Match through for service updates and returns the next version", async () => {
+    (CatalogService.updateProduct as jest.Mock).mockResolvedValue({
+      id: "prod_1",
+      version: 8,
+      name: "Updated Consult",
+    });
+
+    const req = {
+      params: { organisationId: "org_1", id: "prod_1" },
+      body: { name: "Updated Consult" },
+      header: jest.fn().mockReturnValue('W/"7"'),
+    };
+    const res = createResponse();
+
+    await CatalogController.updateService(req as never, res as never);
+
+    expect(CatalogService.updateProduct).toHaveBeenCalledWith("prod_1", {
+      organisationId: "org_1",
+      specialityId: undefined,
+      name: "Updated Consult",
+      description: null,
+      code: null,
+      kind: "CONSULTATION",
+      isActive: undefined,
+      price: undefined,
+      bookable: undefined,
+      expectedVersion: 7,
+    });
+    expect(res.setHeader).toHaveBeenCalledWith("ETag", 'W/"8"');
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -212,18 +247,35 @@ describe("CatalogController", () => {
     (CatalogService.resolveSelection as jest.Mock).mockResolvedValue({
       productItemId: "pkg_1",
       productKind: "PACKAGE",
+      name: "Cardio Package",
+      code: "PK-1",
+      currency: "USD",
       isBookable: true,
       appointmentKinds: ["OUTPATIENT"],
+      leadCount: 1,
+      supportCount: 0,
+      additionalDiscountPercent: 0,
+      grossAmount: 100,
+      itemDiscountAmount: 0,
+      additionalDiscountAmount: 0,
+      finalAmount: 100,
+      breakdownItemCount: 1,
       billingItems: [
         {
           productItemId: "pkg_1",
+          code: "PK-1",
           name: "Cardio Package",
           kind: "PACKAGE",
           quantity: 1,
+          currency: "USD",
           unitPrice: 100,
           referenceUnitPrice: null,
           defaultDiscountPercent: null,
           maxDiscountPercent: null,
+          discountPercent: 0,
+          grossAmount: 100,
+          discountAmount: 0,
+          finalAmount: 100,
           isPackageComponent: false,
           packageProductItemId: null,
         },

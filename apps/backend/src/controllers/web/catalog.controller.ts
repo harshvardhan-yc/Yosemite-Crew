@@ -52,6 +52,25 @@ const parametersOperationSchema = z.object({
     .optional(),
 });
 
+const parseIfMatchVersion = (req: Request): number | undefined => {
+  const header =
+    req.header?.("if-match") ?? req.header?.("If-Match") ?? undefined;
+  if (!header) return undefined;
+
+  const match = header.match(/(\d+)/);
+  if (!match) {
+    throw new CatalogServiceError("Invalid If-Match header.", 400);
+  }
+
+  return Number.parseInt(match[1] ?? "", 10);
+};
+
+const setVersionHeader = (res: Response, version?: number) => {
+  if (version != null) {
+    res.setHeader("ETag", `W/"${version}"`);
+  }
+};
+
 const appointmentModesSchema = z
   .array(z.enum(["OUTPATIENT", "INPATIENT"]))
   .min(1)
@@ -79,6 +98,7 @@ const packageBreakdownSchema = z.object({
   quantity: z.number().int().positive(),
   pricingMode: z.enum(["INCLUDED", "INHERITED_PRICE", "OVERRIDE_PRICE"]),
   overridePrice: z.number().min(0).nullable().optional(),
+  discountPercent: z.number().min(0).max(100).nullable().optional(),
   isOptional: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
 });
@@ -93,6 +113,9 @@ const packageMutationSchema = z.object({
   currency: z.string().trim().min(1).nullable().optional(),
   defaultDiscountPercent: z.number().min(0).max(100).nullable().optional(),
   maxDiscountPercent: z.number().min(0).max(100).nullable().optional(),
+  leadCount: z.number().int().min(0).optional(),
+  supportCount: z.number().int().min(0).optional(),
+  additionalDiscountPercent: z.number().min(0).max(100).optional(),
   code: z.string().trim().min(1).nullable().optional(),
   isActive: z.boolean().optional(),
   breakdown: z.array(packageBreakdownSchema).optional(),
@@ -282,9 +305,25 @@ const toPackageUpsertInput = (params: {
       quantity: item.quantity,
       pricingMode: item.pricingMode,
       overridePrice: item.overridePrice ?? null,
+      discountPercent: item.discountPercent ?? null,
       sortOrder: item.sortOrder,
       isOptional: item.isOptional,
     })) ?? [],
+  package:
+    params.payload.leadCount != null ||
+    params.payload.supportCount != null ||
+    params.payload.additionalDiscountPercent != null
+      ? {
+          leadCount: params.payload.leadCount ?? 1,
+          supportCount: params.payload.supportCount ?? 0,
+          additionalDiscountPercent:
+            params.payload.additionalDiscountPercent ?? 0,
+          grossAmount: 0,
+          itemDiscountAmount: 0,
+          additionalDiscountAmount: 0,
+          breakdownItemCount: params.payload.breakdown?.length ?? 0,
+        }
+      : undefined,
 });
 
 export const CatalogController = {
@@ -304,6 +343,7 @@ export const CatalogController = {
       const created = await CatalogService.createProduct(
         fromCatalogRequestDTO(parsed.data),
       );
+      setVersionHeader(res, created.version);
       return res.status(201).json(toCatalogResponseDTO(created));
     } catch (error) {
       return handleError(res, error, "Unable to create catalog product.");
@@ -323,10 +363,11 @@ export const CatalogController = {
         });
       }
 
-      const updated = await CatalogService.updateProduct(
-        req.params.id,
-        fromCatalogRequestDTO(parsed.data),
-      );
+      const updated = await CatalogService.updateProduct(req.params.id, {
+        ...fromCatalogRequestDTO(parsed.data),
+        expectedVersion: parseIfMatchVersion(req),
+      });
+      setVersionHeader(res, updated.version);
       return res.status(200).json(toCatalogResponseDTO(updated));
     } catch (error) {
       return handleError(res, error, "Unable to update catalog product.");
@@ -343,6 +384,7 @@ export const CatalogController = {
         req.params.id,
         organisationId,
       );
+      setVersionHeader(res, product.version);
       return res.status(200).json(toCatalogResponseDTO(product));
     } catch (error) {
       return handleError(res, error, "Unable to fetch catalog product.");
@@ -359,6 +401,7 @@ export const CatalogController = {
         req.params.id,
         organisationId,
       );
+      setVersionHeader(res, pkg.version);
       return res.status(200).json(pkg);
     } catch (error) {
       return handleError(res, error, "Unable to fetch catalog package.");
@@ -782,13 +825,15 @@ export const CatalogController = {
         });
       }
 
-      const updated = await CatalogService.updateProduct(
-        req.params.id,
-        toServiceUpsertInput({
+      const expectedVersion = parseIfMatchVersion(req);
+      const updated = await CatalogService.updateProduct(req.params.id, {
+        ...toServiceUpsertInput({
           organisationId: req.params.organisationId,
           payload: parsed.data,
         }),
-      );
+        expectedVersion,
+      });
+      setVersionHeader(res, updated.version);
       return res.status(200).json(updated);
     } catch (error) {
       return handleError(res, error, "Unable to update service.");
@@ -803,7 +848,9 @@ export const CatalogController = {
       const updated = await CatalogService.archiveProduct(
         req.params.id,
         req.params.organisationId,
+        parseIfMatchVersion(req),
       );
+      setVersionHeader(res, updated.version);
       return res.status(200).json(updated);
     } catch (error) {
       return handleError(res, error, "Unable to archive service.");
@@ -818,7 +865,9 @@ export const CatalogController = {
       const updated = await CatalogService.restoreProduct(
         req.params.id,
         req.params.organisationId,
+        parseIfMatchVersion(req),
       );
+      setVersionHeader(res, updated.version);
       return res.status(200).json(updated);
     } catch (error) {
       return handleError(res, error, "Unable to restore service.");
@@ -833,6 +882,7 @@ export const CatalogController = {
       await CatalogService.deleteProduct(
         req.params.id,
         req.params.organisationId,
+        parseIfMatchVersion(req),
       );
       return res.status(204).json({});
     } catch (error) {
@@ -896,6 +946,7 @@ export const CatalogController = {
           payload: parsed.data,
         }),
       );
+      setVersionHeader(res, created.version);
       return res.status(201).json(created);
     } catch (error) {
       return handleError(res, error, "Unable to create package.");
@@ -915,13 +966,15 @@ export const CatalogController = {
         });
       }
 
-      const updated = await CatalogService.updateProduct(
-        req.params.id,
-        toPackageUpsertInput({
+      const expectedVersion = parseIfMatchVersion(req);
+      const updated = await CatalogService.updateProduct(req.params.id, {
+        ...toPackageUpsertInput({
           organisationId: req.params.organisationId,
           payload: parsed.data,
         }),
-      );
+        expectedVersion,
+      });
+      setVersionHeader(res, updated.version);
       return res.status(200).json(updated);
     } catch (error) {
       return handleError(res, error, "Unable to update package.");
@@ -936,7 +989,9 @@ export const CatalogController = {
       const updated = await CatalogService.archiveProduct(
         req.params.id,
         req.params.organisationId,
+        parseIfMatchVersion(req),
       );
+      setVersionHeader(res, updated.version);
       return res.status(200).json(updated);
     } catch (error) {
       return handleError(res, error, "Unable to archive package.");
@@ -951,7 +1006,9 @@ export const CatalogController = {
       const updated = await CatalogService.restoreProduct(
         req.params.id,
         req.params.organisationId,
+        parseIfMatchVersion(req),
       );
+      setVersionHeader(res, updated.version);
       return res.status(200).json(updated);
     } catch (error) {
       return handleError(res, error, "Unable to restore package.");
@@ -966,6 +1023,7 @@ export const CatalogController = {
       await CatalogService.deleteProduct(
         req.params.id,
         req.params.organisationId,
+        parseIfMatchVersion(req),
       );
       return res.status(204).json({});
     } catch (error) {

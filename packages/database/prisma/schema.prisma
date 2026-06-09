@@ -475,7 +475,8 @@ model CompanionOrganisation {
 
   @@index([companionId])
   @@index([organisationId])
-  @@unique([companionId, organisationId, organisationType], map: "companion_org_unique_active")
+  // Partial unique index for ACTIVE rows is maintained via SQL migration because
+  // Prisma schema cannot express `WHERE status = 'ACTIVE'`.
 }
 
 model ParentCompanion {
@@ -1293,6 +1294,7 @@ model ProductItem {
   specialityId    String?
   legacyServiceId String?              @unique
   isActive        Boolean              @default(true)
+  version         Int                  @default(1)
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   prices          ProductPrice[]
@@ -1335,12 +1337,15 @@ model ProductBookable {
 }
 
 model ProductPackage {
-  id            String               @id @default(uuid())
-  productItemId String               @unique
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  productItem   ProductItem          @relation(fields: [productItemId], references: [id], onDelete: Cascade)
-  items         ProductPackageItem[]
+  id                        String               @id @default(uuid())
+  productItemId             String               @unique
+  leadCount                 Int                  @default(1)
+  supportCount              Int                  @default(0)
+  additionalDiscountPercent Float                @default(0)
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  productItem               ProductItem          @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+  items                     ProductPackageItem[]
 }
 
 model ProductPackageItem {
@@ -1350,6 +1355,7 @@ model ProductPackageItem {
   quantity           Int                    @default(1)
   pricingMode        PackageItemPricingMode @default(INCLUDED)
   overridePrice      Float?
+  discountPercent    Float?
   sortOrder          Int                    @default(0)
   isOptional         Boolean                @default(false)
   createdAt          DateTime               @default(now())

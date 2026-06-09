@@ -106,8 +106,30 @@ export const toCatalogResolveOperationResponseDTO = (
   resourceType: 'Parameters',
   parameter: [
     { name: 'productItemId', valueString: result.productItemId },
+    { name: 'name', valueString: result.name },
     { name: 'productKind', valueString: result.productKind },
+    ...(result.code ? [{ name: 'code', valueString: result.code }] : []),
+    ...(result.currency ? [{ name: 'currency', valueString: result.currency }] : []),
     { name: 'isBookable', valueBoolean: result.isBookable },
+    ...(result.leadCount != null ? [{ name: 'leadCount', valueInteger: result.leadCount }] : []),
+    ...(result.supportCount != null
+      ? [{ name: 'supportCount', valueInteger: result.supportCount }]
+      : []),
+    ...(result.additionalDiscountPercent != null
+      ? [
+          {
+            name: 'additionalDiscountPercent',
+            valueDecimal: result.additionalDiscountPercent,
+          },
+        ]
+      : []),
+    { name: 'grossAmount', valueDecimal: result.grossAmount },
+    { name: 'itemDiscountAmount', valueDecimal: result.itemDiscountAmount },
+    { name: 'additionalDiscountAmount', valueDecimal: result.additionalDiscountAmount },
+    { name: 'finalAmount', valueDecimal: result.finalAmount },
+    ...(result.breakdownItemCount != null
+      ? [{ name: 'breakdownItemCount', valueInteger: result.breakdownItemCount }]
+      : []),
     ...result.appointmentKinds.map((kind) => ({
       name: 'appointmentKind',
       valueString: kind,
@@ -118,10 +140,19 @@ export const toCatalogResolveOperationResponseDTO = (
         name: 'item',
         part: [
           { name: 'productItemId', valueString: item.productItemId },
+          ...(item.code ? [{ name: 'code', valueString: item.code }] : []),
           { name: 'name', valueString: item.name },
           { name: 'kind', valueString: item.kind },
           { name: 'quantity', valueInteger: item.quantity },
+          ...(item.currency ? [{ name: 'currency', valueString: item.currency }] : []),
           { name: 'unitPrice', valueDecimal: item.unitPrice },
+          { name: 'grossAmount', valueDecimal: item.grossAmount },
+          { name: 'discountPercent', valueDecimal: item.discountPercent },
+          { name: 'discountAmount', valueDecimal: item.discountAmount },
+          { name: 'finalAmount', valueDecimal: item.finalAmount },
+          ...(item.referenceUnitPrice != null
+            ? [{ name: 'referenceUnitPrice', valueDecimal: item.referenceUnitPrice }]
+            : []),
           ...(item.packageProductItemId
             ? [
                 {
@@ -139,10 +170,19 @@ export const toCatalogResolveOperationResponseDTO = (
         name: 'item',
         part: [
           { name: 'productItemId', valueString: item.productItemId },
+          ...(item.code ? [{ name: 'code', valueString: item.code }] : []),
           { name: 'name', valueString: item.name },
           { name: 'kind', valueString: item.kind },
           { name: 'quantity', valueInteger: item.quantity },
+          ...(item.currency ? [{ name: 'currency', valueString: item.currency }] : []),
           { name: 'unitPrice', valueDecimal: item.unitPrice },
+          { name: 'grossAmount', valueDecimal: item.grossAmount },
+          { name: 'discountPercent', valueDecimal: item.discountPercent },
+          { name: 'discountAmount', valueDecimal: item.discountAmount },
+          { name: 'finalAmount', valueDecimal: item.finalAmount },
+          ...(item.referenceUnitPrice != null
+            ? [{ name: 'referenceUnitPrice', valueDecimal: item.referenceUnitPrice }]
+            : []),
         ],
       })),
     },
@@ -216,8 +256,17 @@ export const toCatalogSearchOperationResponseDTO = (
                     part: [
                       { name: 'id', valueString: nestedItem.id },
                       { name: 'kind', valueString: nestedItem.type },
+                      { name: 'childItemId', valueString: nestedItem.childItemId },
+                      { name: 'childItemKind', valueString: nestedItem.childItemKind },
+                      ...(nestedItem.childItemCode
+                        ? [{ name: 'childItemCode', valueString: nestedItem.childItemCode }]
+                        : []),
                       { name: 'name', valueString: nestedItem.name },
+                      { name: 'childItemName', valueString: nestedItem.childItemName },
                       { name: 'quantity', valueInteger: nestedItem.quantity },
+                      ...(nestedItem.currency
+                        ? [{ name: 'currency', valueString: nestedItem.currency }]
+                        : []),
                       { name: 'unitPrice', valueDecimal: nestedItem.unitPrice },
                       { name: 'grossAmount', valueDecimal: nestedItem.grossAmount },
                       ...(nestedItem.discountPercent != null
@@ -228,7 +277,14 @@ export const toCatalogSearchOperationResponseDTO = (
                             },
                           ]
                         : []),
+                      { name: 'discountAmount', valueDecimal: nestedItem.discountAmount },
                       { name: 'finalAmount', valueDecimal: nestedItem.finalAmount },
+                      { name: 'pricingMode', valueString: nestedItem.pricingMode },
+                      ...(nestedItem.overridePrice != null
+                        ? [{ name: 'overridePrice', valueDecimal: nestedItem.overridePrice }]
+                        : []),
+                      { name: 'isOptional', valueBoolean: nestedItem.isOptional },
+                      { name: 'sortOrder', valueInteger: nestedItem.sortOrder },
                     ],
                   })),
                 },

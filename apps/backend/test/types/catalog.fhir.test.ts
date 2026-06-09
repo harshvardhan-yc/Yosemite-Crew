@@ -64,6 +64,67 @@ describe("Catalog FHIR DTOs", () => {
           url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-supports-inpatient",
           valueBoolean: false,
         },
+        {
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-lead-count",
+          valueInteger: 2,
+        },
+        {
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-support-count",
+          valueInteger: 1,
+        },
+        {
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-additional-discount-percent",
+          valueDecimal: 10,
+        },
+        {
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-gross-amount",
+          valueDecimal: 100,
+        },
+        {
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-item-discount-amount",
+          valueDecimal: 10,
+        },
+        {
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-additional-discount-amount",
+          valueDecimal: 9,
+        },
+        {
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-breakdown-item-count",
+          valueInteger: 1,
+        },
+        {
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-item",
+          extension: [
+            {
+              url: "childProductItemId",
+              valueString: "prod_exam",
+            },
+            {
+              url: "quantity",
+              valueInteger: 1,
+            },
+            {
+              url: "pricingMode",
+              valueString: "INHERITED_PRICE",
+            },
+            {
+              url: "overridePrice",
+              valueDecimal: 75,
+            },
+            {
+              url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-item-discount-percent",
+              valueDecimal: 10,
+            },
+            {
+              url: "sortOrder",
+              valueInteger: 0,
+            },
+            {
+              url: "isOptional",
+              valueBoolean: false,
+            },
+          ],
+        },
       ],
     });
 
@@ -81,6 +142,15 @@ describe("Catalog FHIR DTOs", () => {
         defaultDiscountPercent: 10,
         maxDiscountPercent: 15,
       },
+      package: {
+        leadCount: 2,
+        supportCount: 1,
+        additionalDiscountPercent: 10,
+        grossAmount: 100,
+        itemDiscountAmount: 10,
+        additionalDiscountAmount: 9,
+        breakdownItemCount: 1,
+      },
       bookable: {
         id: "",
         productItemId: "prod_consult",
@@ -88,13 +158,26 @@ describe("Catalog FHIR DTOs", () => {
         supportsOutpatient: true,
         supportsInpatient: false,
       },
-      packageItems: null,
+      packageItems: [
+        {
+          id: "package-item-1",
+          packageId: "",
+          childProductItemId: "prod_exam",
+          quantity: 1,
+          pricingMode: "INHERITED_PRICE",
+          overridePrice: 75,
+          discountPercent: 10,
+          sortOrder: 0,
+          isOptional: false,
+        },
+      ],
     });
   });
 
   it("serializes catalog products into HealthcareService and Bundle", () => {
     const resource = toCatalogResponseDTO({
       id: "prod_consult",
+      version: 7,
       organisationId: "org_1",
       name: "General Consultation",
       description: "Consult desc",
@@ -113,7 +196,35 @@ describe("Catalog FHIR DTOs", () => {
         supportsOutpatient: true,
         supportsInpatient: false,
       },
-      packageItems: [],
+      package: {
+        leadCount: 2,
+        supportCount: 1,
+        additionalDiscountPercent: 10,
+        grossAmount: 100,
+        itemDiscountAmount: 10,
+        additionalDiscountAmount: 9,
+        breakdownItemCount: 1,
+      },
+      packageItems: [
+        {
+          id: "pkgi_1",
+          packageId: "",
+          childProductItemId: "prod_exam",
+          quantity: 1,
+          pricingMode: "INHERITED_PRICE",
+          overridePrice: 75,
+          discountPercent: 10,
+          sortOrder: 0,
+          isOptional: false,
+          childProductCode: "CS-EXAM",
+          childProductName: "Dental Exam",
+          childProductKind: "CONSULTATION",
+          currency: "USD",
+          grossAmount: 100,
+          discountAmount: 10,
+          finalAmount: 90,
+        },
+      ],
     });
 
     expect(resource.resourceType).toBe("HealthcareService");
@@ -122,12 +233,24 @@ describe("Catalog FHIR DTOs", () => {
     expect(resource.meta?.profile).toEqual([
       CATALOG_HEALTHCARE_SERVICE_PROFILE,
     ]);
+    expect(resource.meta?.versionId).toBe("7");
     expect(resource.identifier).toEqual([
       {
         system: CATALOG_CODE_SYSTEM,
         value: "CS-001",
       },
     ]);
+    expect(resource.extension).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-lead-count",
+          valueInteger: 2,
+        }),
+        expect.objectContaining({
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/catalog-package-item",
+        }),
+      ]),
+    );
 
     const bundle = toCatalogBundleResponseDTO(
       [
@@ -181,19 +304,36 @@ describe("Catalog FHIR DTOs", () => {
     const response = toCatalogResolveOperationResponseDTO({
       productItemId: "pkg_1",
       productKind: "PACKAGE",
+      name: "Cardio Package",
+      code: "PK-1",
+      currency: "USD",
       legacyServiceId: null,
       isBookable: true,
       appointmentKinds: ["OUTPATIENT"],
+      leadCount: 1,
+      supportCount: 0,
+      additionalDiscountPercent: 0,
+      grossAmount: 1200,
+      itemDiscountAmount: 0,
+      additionalDiscountAmount: 0,
+      finalAmount: 1200,
+      breakdownItemCount: 1,
       billingItems: [
         {
           productItemId: "pkg_1",
+          code: "PK-1",
           name: "Cardio Package",
           kind: "PACKAGE",
           quantity: 1,
+          currency: "USD",
           unitPrice: 1200,
           referenceUnitPrice: null,
           defaultDiscountPercent: null,
           maxDiscountPercent: null,
+          discountPercent: 0,
+          grossAmount: 1200,
+          discountAmount: 0,
+          finalAmount: 1200,
           isPackageComponent: false,
           packageProductItemId: null,
         },
@@ -206,6 +346,10 @@ describe("Catalog FHIR DTOs", () => {
       response.parameter?.find((item) => item.name === "productKind")
         ?.valueString,
     ).toBe("PACKAGE");
+    expect(
+      response.parameter?.find((item) => item.name === "grossAmount")
+        ?.valueDecimal,
+    ).toBe(1200);
   });
 
   it("parses and serializes search-components Parameters contracts", () => {
@@ -270,5 +414,9 @@ describe("Catalog FHIR DTOs", () => {
       itemsPart?.part?.[0]?.part?.find((item) => item.name === "specialty")
         ?.valueString,
     ).toBe("spec_1");
+    expect(
+      itemsPart?.part?.[0]?.part?.find((item) => item.name === "totalAmount")
+        ?.valueDecimal,
+    ).toBe(784);
   });
 });

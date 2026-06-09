@@ -4,6 +4,7 @@ import type {
   CatalogPackageDetail,
   CatalogPackageBreakdownRow,
   CatalogPricePolicy,
+  CatalogPackageSummary,
   CatalogTab,
   PackageItemPricingMode,
   ProductKind,
@@ -11,6 +12,7 @@ import type {
   ResolvedCatalogSelection,
   SpecialityCatalogView,
 } from "@yosemite-crew/types";
+import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 
 export type CatalogPackageItemInput = {
@@ -18,6 +20,7 @@ export type CatalogPackageItemInput = {
   quantity: number;
   pricingMode: PackageItemPricingMode;
   overridePrice?: number | null;
+  discountPercent?: number | null;
   sortOrder?: number;
   isOptional?: boolean;
 };
@@ -39,6 +42,7 @@ export type CatalogProductUpsertInput = {
   isActive?: boolean;
   price?: CatalogPricePolicy | null;
   bookable?: CatalogBookableInput | null;
+  package?: CatalogPackageSummary | null;
   packageItems?: CatalogPackageItemInput[] | null;
 };
 
@@ -53,6 +57,7 @@ export type CatalogProductListFilters = {
 
 export type CatalogProductView = {
   id: string;
+  version: number;
   organisationId: string;
   name: string;
   description: string | null;
@@ -67,6 +72,7 @@ export type CatalogProductView = {
     supportsOutpatient: boolean;
     supportsInpatient: boolean;
   } | null;
+  package: CatalogPackageSummary | null;
   packageItems: Array<{
     id: string;
     childProductItemId: string;
@@ -75,8 +81,14 @@ export type CatalogProductView = {
     quantity: number;
     pricingMode: PackageItemPricingMode;
     overridePrice: number | null;
+    discountPercent: number | null;
     sortOrder: number;
     isOptional: boolean;
+    childProductCode: string | null;
+    currency: string | null;
+    grossAmount: number;
+    discountAmount: number;
+    finalAmount: number;
   }>;
 };
 
@@ -181,6 +193,7 @@ type ProductRecord = {
   specialityId: string | null;
   legacyServiceId: string | null;
   isActive: boolean;
+  version: number;
   prices: ProductPriceRecord[];
   bookable: {
     durationMinutes: number;
@@ -188,17 +201,22 @@ type ProductRecord = {
     supportsInpatient: boolean;
   } | null;
   package: {
+    leadCount: number;
+    supportCount: number;
+    additionalDiscountPercent: number;
     items: Array<{
       id: string;
       childProductItemId: string;
       quantity: number;
       pricingMode: PackageItemPricingMode;
       overridePrice: number | null;
+      discountPercent: number | null;
       sortOrder: number;
       isOptional: boolean;
       childProductItem: {
         id: string;
         name: string;
+        code: string | null;
         kind: ProductKind;
         isActive: boolean;
         prices: ProductPriceRecord[];
@@ -354,11 +372,22 @@ const sanitizePackageItems = (
       );
     }
 
+    if (
+      item.discountPercent != null &&
+      (item.discountPercent < 0 || item.discountPercent > 100)
+    ) {
+      throw new CatalogServiceError(
+        `packageItems[${index}].discountPercent must be between 0 and 100.`,
+        400,
+      );
+    }
+
     return {
       childProductItemId,
       quantity: item.quantity,
       pricingMode: item.pricingMode,
       overridePrice: item.overridePrice ?? null,
+      discountPercent: item.discountPercent ?? null,
       sortOrder: item.sortOrder ?? index,
       isOptional: item.isOptional ?? false,
     };
@@ -425,6 +454,27 @@ const ensureCodeUniqueness = async (params: {
       409,
       "DUPLICATE_CATALOG_CODE",
       { code: params.code },
+    );
+  }
+};
+
+const assertCatalogVersion = (params: {
+  currentVersion: number;
+  expectedVersion?: number;
+  resourceName: string;
+}) => {
+  if (
+    params.expectedVersion != null &&
+    params.expectedVersion !== params.currentVersion
+  ) {
+    throw new CatalogServiceError(
+      `${params.resourceName} has changed since it was last loaded.`,
+      409,
+      "VERSION_CONFLICT",
+      {
+        expectedVersion: params.expectedVersion,
+        currentVersion: params.currentVersion,
+      },
     );
   }
 };
@@ -743,6 +793,7 @@ const ensurePackageItemsValid = async (params: {
       id: { in: uniqueIds },
     },
     include: {
+      prices: true,
       package: {
         include: {
           items: {
@@ -785,6 +836,22 @@ const ensurePackageItemsValid = async (params: {
         409,
         "PACKAGE_HAS_CYCLE",
       );
+    }
+
+    if (item.discountPercent != null) {
+      const childPrice = getDefaultPrice(child.prices);
+      const maxDiscountPercent = childPrice?.maxDiscountPercent ?? 0;
+      if (item.discountPercent > maxDiscountPercent) {
+        throw new CatalogServiceError(
+          "Package item discountPercent cannot exceed the child item's max discount.",
+          409,
+          "PACKAGE_ITEM_DISCOUNT_TOO_HIGH",
+          {
+            childProductItemId: item.childProductItemId,
+            maxDiscountPercent,
+          },
+        );
+      }
     }
   }
 
@@ -887,9 +954,21 @@ const ensureSpecialityDeletionAllowed = async (
 
 const mapProductRecordToView = (product: ProductRecord): CatalogProductView => {
   const defaultPrice = getDefaultPrice(product.prices);
+  const packageBreakdown =
+    product.kind === "PACKAGE" && product.package?.items.length
+      ? product.package.items.map(buildPackageBreakdownRow)
+      : [];
+  const packageSummary =
+    product.kind === "PACKAGE" && product.package
+      ? computePackageFinancials({
+          product,
+          items: packageBreakdown,
+        })
+      : null;
 
   return {
     id: product.id,
+    version: product.version,
     organisationId: product.organisationId,
     name: product.name,
     description: product.description,
@@ -914,35 +993,30 @@ const mapProductRecordToView = (product: ProductRecord): CatalogProductView => {
           supportsInpatient: product.bookable.supportsInpatient,
         }
       : null,
-    packageItems:
-      product.package?.items.map((item) => ({
-        id: item.id,
-        childProductItemId: item.childProductItemId,
-        childProductName: item.childProductItem.name,
-        childProductKind: item.childProductItem.kind,
-        quantity: item.quantity,
-        pricingMode: item.pricingMode,
-        overridePrice: item.overridePrice,
-        sortOrder: item.sortOrder,
-        isOptional: item.isOptional,
-      })) ?? [],
+    package: packageSummary,
+    packageItems: packageBreakdown.map((item) => ({
+      id: item.id,
+      childProductItemId: item.childItemId,
+      childProductName: item.childItemName,
+      childProductKind: item.childItemKind,
+      childProductCode: item.childItemCode ?? null,
+      quantity: item.quantity,
+      pricingMode: item.pricingMode,
+      overridePrice: item.overridePrice,
+      discountPercent: item.discountPercent,
+      sortOrder: item.sortOrder,
+      isOptional: item.isOptional,
+      currency: item.currency,
+      grossAmount: item.grossAmount,
+      discountAmount: item.discountAmount,
+      finalAmount: item.finalAmount,
+    })),
   };
 };
 
-const computeLineAmount = (params: {
-  unitPrice: number;
-  quantity: number;
-  discountPercent?: number | null;
-}) => {
-  const grossAmount = params.unitPrice * params.quantity;
-  const discountPercent = params.discountPercent ?? 0;
-  const finalAmount = grossAmount - grossAmount * (discountPercent / 100);
-
-  return {
-    grossAmount,
-    finalAmount,
-  };
-};
+type ProductPackageItemRecord = NonNullable<
+  ProductRecord["package"]
+>["items"][number];
 
 const mapProductRecordToCatalogListRow = (
   product: ProductRecord,
@@ -953,35 +1027,32 @@ const mapProductRecordToCatalogListRow = (
   const defaultDiscountPercent = defaultPrice?.defaultDiscountPercent ?? null;
   const maxDiscountPercent = defaultPrice?.maxDiscountPercent ?? null;
 
-  let totalAmount = 0;
+  const packageBreakdown =
+    product.kind === "PACKAGE" && product.package?.items.length
+      ? product.package.items.map(buildPackageBreakdownRow)
+      : [];
+  const packageSummary =
+    product.kind === "PACKAGE" && product.package
+      ? computePackageFinancials({
+          product,
+          items: packageBreakdown,
+        })
+      : null;
 
-  if (product.kind === "PACKAGE" && product.package?.items.length) {
-    totalAmount = product.package.items.reduce((sum, item) => {
-      const childPrice = getDefaultPrice(item.childProductItem.prices);
-      const referenceUnitPrice =
-        item.pricingMode === "OVERRIDE_PRICE"
-          ? (item.overridePrice ?? 0)
-          : (childPrice?.unitPrice ?? 0);
-      const discountPercent =
-        childPrice?.defaultDiscountPercent ?? defaultDiscountPercent ?? 0;
-      const line = computeLineAmount({
-        unitPrice: item.pricingMode === "INCLUDED" ? 0 : referenceUnitPrice,
-        quantity: item.quantity,
-        discountPercent: item.pricingMode === "INCLUDED" ? 0 : discountPercent,
-      });
-
-      return sum + line.finalAmount;
-    }, 0);
-  } else if (unitPrice != null) {
-    totalAmount = computeLineAmount({
-      unitPrice,
-      quantity: 1,
-      discountPercent: defaultDiscountPercent ?? 0,
-    }).finalAmount;
-  }
+  const totalAmount =
+    product.kind === "PACKAGE"
+      ? (packageSummary?.finalAmount ?? 0)
+      : unitPrice != null
+        ? computeLineAmounts({
+            unitPrice,
+            quantity: 1,
+            discountPercent: defaultDiscountPercent ?? 0,
+          }).finalAmount
+        : 0;
 
   return {
     id: product.id,
+    version: product.version,
     code: product.code,
     name: product.name,
     description: product.description,
@@ -993,6 +1064,15 @@ const mapProductRecordToCatalogListRow = (
     defaultDiscountPercent,
     maxDiscountPercent,
     totalAmount,
+    leadCount: packageSummary?.leadCount ?? null,
+    supportCount: packageSummary?.supportCount ?? null,
+    additionalDiscountPercent:
+      packageSummary?.additionalDiscountPercent ?? null,
+    grossAmount: packageSummary?.grossAmount ?? null,
+    itemDiscountAmount: packageSummary?.itemDiscountAmount ?? null,
+    additionalDiscountAmount: packageSummary?.additionalDiscountAmount ?? null,
+    breakdownItemCount: packageSummary?.breakdownItemCount ?? null,
+    currency: defaultPrice?.currency ?? packageBreakdown[0]?.currency ?? null,
   };
 };
 
@@ -1005,36 +1085,15 @@ const mapPackageRecordToDetail = (
 
   const defaultPrice = getDefaultPrice(product.prices);
   const items: CatalogPackageBreakdownRow[] =
-    product.package?.items.map((item) => {
-      const childPrice = getDefaultPrice(item.childProductItem.prices);
-      const unitPrice =
-        item.pricingMode === "OVERRIDE_PRICE"
-          ? (item.overridePrice ?? 0)
-          : (childPrice?.unitPrice ?? 0);
-      const discountPercent =
-        item.pricingMode === "INCLUDED"
-          ? 0
-          : (childPrice?.defaultDiscountPercent ?? 0);
-      const { grossAmount, finalAmount } = computeLineAmount({
-        unitPrice: item.pricingMode === "INCLUDED" ? 0 : unitPrice,
-        quantity: item.quantity,
-        discountPercent,
-      });
-
-      return {
-        id: item.id,
-        type: item.childProductItem.kind,
-        name: item.childProductItem.name,
-        quantity: item.quantity,
-        unitPrice,
-        grossAmount,
-        discountPercent: item.pricingMode === "INCLUDED" ? 0 : discountPercent,
-        finalAmount,
-      };
-    }) ?? [];
+    product.package?.items.map(buildPackageBreakdownRow) ?? [];
+  const packageSummary = computePackageFinancials({
+    product,
+    items,
+  });
 
   return {
     id: product.id,
+    version: product.version,
     code: product.code,
     name: product.name,
     description: product.description,
@@ -1042,7 +1101,15 @@ const mapPackageRecordToDetail = (
     isActive: product.isActive,
     durationMinutes: product.bookable?.durationMinutes ?? null,
     maxDiscountPercent: defaultPrice?.maxDiscountPercent ?? null,
-    totalAmount: items.reduce((sum, item) => sum + item.finalAmount, 0),
+    leadCount: packageSummary.leadCount,
+    supportCount: packageSummary.supportCount,
+    additionalDiscountPercent: packageSummary.additionalDiscountPercent,
+    grossAmount: packageSummary.grossAmount,
+    itemDiscountAmount: packageSummary.itemDiscountAmount,
+    additionalDiscountAmount: packageSummary.additionalDiscountAmount,
+    breakdownItemCount: packageSummary.breakdownItemCount,
+    currency: defaultPrice?.currency ?? items[0]?.currency ?? null,
+    totalAmount: packageSummary.finalAmount,
     items,
   };
 };
@@ -1061,26 +1128,125 @@ const toAppointmentKinds = (
 const getDefaultPrice = (prices: ProductPriceRecord[]) =>
   prices.find((price) => price.isDefault) ?? prices[0] ?? null;
 
+const computeLineAmounts = (params: {
+  unitPrice: number;
+  quantity: number;
+  discountPercent?: number | null;
+}) => {
+  const grossAmount = params.unitPrice * params.quantity;
+  const discountPercent = params.discountPercent ?? 0;
+  const discountAmount = grossAmount * (discountPercent / 100);
+  const finalAmount = grossAmount - discountAmount;
+
+  return {
+    grossAmount,
+    discountPercent,
+    discountAmount,
+    finalAmount,
+  };
+};
+
+const computePackageFinancials = (params: {
+  product: ProductRecord;
+  items: CatalogPackageBreakdownRow[];
+}) => {
+  const grossAmount = params.items.reduce(
+    (sum, item) => sum + item.grossAmount,
+    0,
+  );
+  const itemDiscountAmount = params.items.reduce(
+    (sum, item) => sum + item.discountAmount,
+    0,
+  );
+  const additionalDiscountPercent =
+    params.product.package?.additionalDiscountPercent ?? 0;
+  const additionalDiscountAmount =
+    (grossAmount - itemDiscountAmount) * (additionalDiscountPercent / 100);
+  const finalAmount =
+    grossAmount - itemDiscountAmount - additionalDiscountAmount;
+
+  return {
+    leadCount: params.product.package?.leadCount ?? 1,
+    supportCount: params.product.package?.supportCount ?? 0,
+    additionalDiscountPercent,
+    grossAmount,
+    itemDiscountAmount,
+    additionalDiscountAmount,
+    breakdownItemCount: params.items.length,
+    finalAmount,
+  };
+};
+
+const buildPackageBreakdownRow = (item: ProductPackageItemRecord) => {
+  const childPrice = getDefaultPrice(item.childProductItem.prices);
+  const baseUnitPrice =
+    item.pricingMode === "OVERRIDE_PRICE"
+      ? (item.overridePrice ?? 0)
+      : (childPrice?.unitPrice ?? 0);
+  const effectiveDiscountPercent =
+    item.pricingMode === "INCLUDED"
+      ? 0
+      : (item.discountPercent ?? childPrice?.defaultDiscountPercent ?? 0);
+  const amounts = computeLineAmounts({
+    unitPrice: item.pricingMode === "INCLUDED" ? 0 : baseUnitPrice,
+    quantity: item.quantity,
+    discountPercent: effectiveDiscountPercent,
+  });
+
+  return {
+    id: item.id,
+    type: item.childProductItem.kind,
+    childItemId: item.childProductItem.id,
+    childItemKind: item.childProductItem.kind,
+    childItemCode: item.childProductItem.code ?? null,
+    name: item.childProductItem.name,
+    childItemName: item.childProductItem.name,
+    quantity: item.quantity,
+    unitPrice: item.pricingMode === "INCLUDED" ? 0 : baseUnitPrice,
+    currency: childPrice?.currency ?? null,
+    grossAmount: amounts.grossAmount,
+    discountPercent: effectiveDiscountPercent,
+    discountAmount: amounts.discountAmount,
+    finalAmount: amounts.finalAmount,
+    pricingMode: item.pricingMode,
+    overridePrice: item.overridePrice,
+    isOptional: item.isOptional,
+    sortOrder: item.sortOrder,
+  } satisfies CatalogPackageBreakdownRow;
+};
+
 const buildResolvedItem = (params: {
   productItemId: string;
+  code?: string | null;
   name: string;
   kind: ProductKind;
   quantity: number;
   unitPrice: number;
+  currency?: string | null;
   referenceUnitPrice?: number | null;
   defaultDiscountPercent?: number | null;
   maxDiscountPercent?: number | null;
+  discountPercent?: number | null;
   isPackageComponent: boolean;
   packageProductItemId?: string | null;
 }): ResolvedCatalogItem => ({
   productItemId: params.productItemId,
+  code: params.code ?? null,
   name: params.name,
   kind: params.kind,
   quantity: params.quantity,
+  currency: params.currency ?? null,
   unitPrice: params.unitPrice,
   referenceUnitPrice: params.referenceUnitPrice ?? null,
   defaultDiscountPercent: params.defaultDiscountPercent ?? null,
   maxDiscountPercent: params.maxDiscountPercent ?? null,
+  discountPercent: params.discountPercent ?? 0,
+  grossAmount: params.unitPrice * params.quantity,
+  discountAmount:
+    params.unitPrice * params.quantity * ((params.discountPercent ?? 0) / 100),
+  finalAmount:
+    params.unitPrice * params.quantity -
+    params.unitPrice * params.quantity * ((params.discountPercent ?? 0) / 100),
   isPackageComponent: params.isPackageComponent,
   packageProductItemId: params.packageProductItemId ?? null,
 });
@@ -1097,21 +1263,41 @@ export const resolveCatalogSelectionFromRecord = (
   const isBookable = appointmentKinds.length > 0;
 
   if (product.kind !== "PACKAGE") {
+    const parentAmounts = computeLineAmounts({
+      unitPrice: parentPrice?.unitPrice ?? 0,
+      quantity: 1,
+      discountPercent: parentPrice?.defaultDiscountPercent ?? 0,
+    });
+
     return {
       productItemId: product.id,
       productKind: product.kind,
+      name: product.name,
+      code: product.code,
+      currency: parentPrice?.currency ?? null,
       legacyServiceId: product.legacyServiceId,
       isBookable,
       appointmentKinds,
+      leadCount: null,
+      supportCount: null,
+      additionalDiscountPercent: null,
+      grossAmount: parentAmounts.grossAmount,
+      itemDiscountAmount: parentAmounts.discountAmount,
+      additionalDiscountAmount: 0,
+      finalAmount: parentAmounts.finalAmount,
+      breakdownItemCount: 1,
       billingItems: [
         buildResolvedItem({
           productItemId: product.id,
+          code: product.code,
           name: product.name,
           kind: product.kind,
           quantity: 1,
           unitPrice: parentPrice?.unitPrice ?? 0,
+          currency: parentPrice?.currency ?? null,
           defaultDiscountPercent: parentPrice?.defaultDiscountPercent ?? null,
           maxDiscountPercent: parentPrice?.maxDiscountPercent ?? null,
+          discountPercent: parentPrice?.defaultDiscountPercent ?? 0,
           isPackageComponent: false,
         }),
       ],
@@ -1129,12 +1315,15 @@ export const resolveCatalogSelectionFromRecord = (
   const billingItems: ResolvedCatalogItem[] = [
     buildResolvedItem({
       productItemId: product.id,
+      code: product.code,
       name: product.name,
       kind: product.kind,
       quantity: 1,
       unitPrice: parentPrice?.unitPrice ?? 0,
+      currency: parentPrice?.currency ?? null,
       defaultDiscountPercent: parentPrice?.defaultDiscountPercent ?? null,
       maxDiscountPercent: parentPrice?.maxDiscountPercent ?? null,
+      discountPercent: parentPrice?.defaultDiscountPercent ?? 0,
       isPackageComponent: false,
     }),
   ];
@@ -1154,13 +1343,16 @@ export const resolveCatalogSelectionFromRecord = (
       includedItems.push(
         buildResolvedItem({
           productItemId: item.childProductItem.id,
+          code: item.childProductItem.code,
           name: item.childProductItem.name,
           kind: item.childProductItem.kind,
           quantity: item.quantity,
           unitPrice: 0,
+          currency: childPrice?.currency ?? null,
           referenceUnitPrice: childPrice?.unitPrice ?? null,
           defaultDiscountPercent: childPrice?.defaultDiscountPercent ?? null,
           maxDiscountPercent: childPrice?.maxDiscountPercent ?? null,
+          discountPercent: 0,
           isPackageComponent: true,
           packageProductItemId: product.id,
         }),
@@ -1185,6 +1377,7 @@ export const resolveCatalogSelectionFromRecord = (
     billingItems.push(
       buildResolvedItem({
         productItemId: item.childProductItem.id,
+        code: item.childProductItem.code,
         name: item.childProductItem.name,
         kind: item.childProductItem.kind,
         quantity: item.quantity,
@@ -1192,21 +1385,54 @@ export const resolveCatalogSelectionFromRecord = (
           item.pricingMode === "OVERRIDE_PRICE"
             ? (item.overridePrice as number)
             : (childPrice?.unitPrice ?? 0),
+        currency: childPrice?.currency ?? null,
         referenceUnitPrice: childPrice?.unitPrice ?? null,
         defaultDiscountPercent: childPrice?.defaultDiscountPercent ?? null,
         maxDiscountPercent: childPrice?.maxDiscountPercent ?? null,
+        discountPercent:
+          item.discountPercent ?? childPrice?.defaultDiscountPercent ?? 0,
         isPackageComponent: true,
         packageProductItemId: product.id,
       }),
     );
   }
 
+  const grossAmount = billingItems.reduce(
+    (sum, item) => sum + item.grossAmount,
+    0,
+  );
+  const itemDiscountAmount = billingItems.reduce(
+    (sum, item) => sum + item.discountAmount,
+    0,
+  );
+  const packageDiscountPercent =
+    product.package?.additionalDiscountPercent ?? 0;
+  const additionalDiscountAmount =
+    (grossAmount - itemDiscountAmount) * (packageDiscountPercent / 100);
+  const finalAmount =
+    grossAmount - itemDiscountAmount - additionalDiscountAmount;
+  const currency =
+    parentPrice?.currency ??
+    billingItems.find((item) => item.currency != null)?.currency ??
+    null;
+
   return {
     productItemId: product.id,
     productKind: product.kind,
+    name: product.name,
+    code: product.code,
+    currency,
     legacyServiceId: product.legacyServiceId,
     isBookable,
     appointmentKinds,
+    leadCount: product.package?.leadCount ?? 1,
+    supportCount: product.package?.supportCount ?? 0,
+    additionalDiscountPercent: packageDiscountPercent,
+    grossAmount,
+    itemDiscountAmount,
+    additionalDiscountAmount,
+    finalAmount,
+    breakdownItemCount: billingItems.length + includedItems.length,
     billingItems,
     includedItems,
   };
@@ -1253,6 +1479,7 @@ export const CatalogService = {
     const specialityId = optionalSafeString(input.specialityId);
     const legacyServiceId = optionalSafeString(input.legacyServiceId);
     const packageItems = sanitizePackageItems(input.packageItems);
+    const packageSummary = input.package ?? null;
 
     assertPackageItems(input.kind, packageItems);
     assertBookableConfig(input.bookable);
@@ -1307,13 +1534,17 @@ export const CatalogService = {
           input.kind === "PACKAGE"
             ? {
                 create: {
+                  leadCount: packageSummary?.leadCount ?? 1,
+                  supportCount: packageSummary?.supportCount ?? 0,
+                  additionalDiscountPercent:
+                    packageSummary?.additionalDiscountPercent ?? 0,
                   items:
                     packageItems && packageItems.length > 0
                       ? {
                           create: packageItems,
                         }
                       : undefined,
-                },
+                } satisfies Prisma.ProductPackageCreateWithoutProductItemInput,
               }
             : undefined,
       },
@@ -1323,7 +1554,10 @@ export const CatalogService = {
     return mapProductRecordToView(created);
   },
 
-  async updateProduct(id: string, input: Partial<CatalogProductUpsertInput>) {
+  async updateProduct(
+    id: string,
+    input: Partial<CatalogProductUpsertInput> & { expectedVersion?: number },
+  ) {
     const productId = requireSafeString(id, "productId");
     const existing = await prisma.productItem.findUnique({
       where: { id: productId },
@@ -1337,12 +1571,19 @@ export const CatalogService = {
     if (!existing) {
       throw new CatalogServiceError("Product not found.", 404);
     }
+    assertCatalogVersion({
+      currentVersion: existing.version,
+      expectedVersion: input.expectedVersion,
+      resourceName: "Catalog item",
+    });
 
     const nextKind = input.kind ?? (existing.kind as ProductKind);
     const packageItems =
       input.packageItems === undefined
         ? undefined
         : sanitizePackageItems(input.packageItems);
+    const packageSummary =
+      input.package === undefined ? undefined : (input.package ?? null);
     assertPackageItems(
       nextKind,
       packageItems ?? existing.package?.items ?? null,
@@ -1400,6 +1641,9 @@ export const CatalogService = {
               ? optionalSafeString(input.legacyServiceId)
               : undefined,
           isActive: input.isActive,
+          version: {
+            increment: 1,
+          },
         },
       });
 
@@ -1463,8 +1707,24 @@ export const CatalogService = {
       if (nextKind === "PACKAGE") {
         const pkg = await tx.productPackage.upsert({
           where: { productItemId: productId },
-          update: {},
-          create: { productItemId: productId },
+          update:
+            packageSummary === undefined
+              ? {}
+              : ({
+                  leadCount: packageSummary?.leadCount ?? 1,
+                  supportCount: packageSummary?.supportCount ?? 0,
+                  additionalDiscountPercent:
+                    packageSummary?.additionalDiscountPercent ?? 0,
+                } satisfies Prisma.ProductPackageUpdateWithoutProductItemInput),
+          create: {
+            productItem: {
+              connect: { id: productId },
+            },
+            leadCount: packageSummary?.leadCount ?? 1,
+            supportCount: packageSummary?.supportCount ?? 0,
+            additionalDiscountPercent:
+              packageSummary?.additionalDiscountPercent ?? 0,
+          } satisfies Prisma.ProductPackageCreateInput,
         });
 
         if (packageItems !== undefined) {
@@ -1481,6 +1741,7 @@ export const CatalogService = {
                 quantity: item.quantity,
                 pricingMode: item.pricingMode,
                 overridePrice: item.overridePrice,
+                discountPercent: item.discountPercent,
                 sortOrder: item.sortOrder,
                 isOptional: item.isOptional,
               })),
@@ -1973,7 +2234,7 @@ export const CatalogService = {
           isBookable: row.isBookable,
           durationMinutes: row.durationMinutes,
           unitPrice: row.unitPrice ?? row.totalAmount,
-          currency: product.prices[0]?.currency ?? null,
+          currency: row.currency ?? null,
           defaultDiscountPercent: row.defaultDiscountPercent ?? 0,
           maxDiscountPercent: row.maxDiscountPercent ?? 0,
           totalAmount: row.totalAmount,
@@ -2022,15 +2283,29 @@ export const CatalogService = {
     };
   },
 
-  async archiveProduct(id: string, organisationId?: string) {
+  async archiveProduct(
+    id: string,
+    organisationId?: string,
+    expectedVersion?: number,
+  ) {
     return this.updateProduct(id, {
       ...(organisationId ? { organisationId } : {}),
       isActive: false,
+      expectedVersion,
     });
   },
 
-  async restoreProduct(id: string, organisationId?: string) {
+  async restoreProduct(
+    id: string,
+    organisationId?: string,
+    expectedVersion?: number,
+  ) {
     const product = await this.getProductById(id, organisationId);
+    assertCatalogVersion({
+      currentVersion: product.version,
+      expectedVersion,
+      resourceName: "Catalog item",
+    });
     if (product.kind === "PACKAGE") {
       await ensurePackageItemsValid({
         organisationId: product.organisationId,
@@ -2039,6 +2314,7 @@ export const CatalogService = {
           quantity: item.quantity,
           pricingMode: item.pricingMode,
           overridePrice: item.overridePrice,
+          discountPercent: item.discountPercent,
           sortOrder: item.sortOrder,
           isOptional: item.isOptional,
         })),
@@ -2049,24 +2325,32 @@ export const CatalogService = {
     return this.updateProduct(id, {
       ...(organisationId ? { organisationId } : {}),
       isActive: true,
+      expectedVersion: expectedVersion ?? product.version,
     });
   },
 
-  async deleteProduct(id: string, organisationId?: string) {
+  async deleteProduct(
+    id: string,
+    organisationId?: string,
+    expectedVersion?: number,
+  ) {
     const productId = requireSafeString(id, "productId");
-    await ensureProductDeletionAllowed(productId, organisationId);
-
     const existing = await prisma.productItem.findFirst({
       where: {
         id: productId,
         ...(organisationId ? { organisationId } : {}),
       },
-      select: { id: true },
+      select: { id: true, version: true },
     });
-
     if (!existing) {
       throw new CatalogServiceError("Product not found.", 404, "NOT_FOUND");
     }
+    assertCatalogVersion({
+      currentVersion: existing.version,
+      expectedVersion,
+      resourceName: "Catalog item",
+    });
+    await ensureProductDeletionAllowed(productId, organisationId);
 
     await prisma.productItem.delete({
       where: { id: productId },
