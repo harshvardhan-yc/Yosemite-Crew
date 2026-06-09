@@ -20,6 +20,14 @@ jest.mock('@/app/ui/primitives/GlassTooltip/GlassTooltip', () => ({
   ),
 }));
 
+jest.mock('@/app/hooks/useBilling', () => ({
+  useCurrencyForPrimaryOrg: () => 'USD',
+}));
+
+jest.mock('@/app/lib/money', () => ({
+  formatMoney: (amount: number) => `$ ${amount.toFixed(2)}`,
+}));
+
 const baseItem: PackageBreakdownItem = {
   id: 'item-1',
   type: 'CONSULTATION',

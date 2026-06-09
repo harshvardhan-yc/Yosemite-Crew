@@ -11,6 +11,8 @@ import { CatalogItemType, ServiceRevamp } from '@/app/features/organization/type
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { computeServiceTotal } from '@/app/features/organization/services/revampMockData';
 import { useNotify } from '@/app/hooks/useNotify';
+import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
+import { formatMoney } from '@/app/lib/money';
 
 const TYPE_OPTIONS = [
   { value: 'CONSULTATION', label: 'Consultation' },
@@ -48,6 +50,8 @@ const ServiceFormDraft = ({
   const archiveService = useRevampCatalogStore((s) => s.archiveService);
   const generateCode = useRevampCatalogStore((s) => s.generateItemCode);
   const { notify } = useNotify();
+  const orgCurrency = useCurrencyForPrimaryOrg();
+  const currency = editService?.currency ?? orgCurrency;
 
   const [name, setName] = useState(editService?.name ?? '');
   const [description, setDescription] = useState(editService?.description ?? '');
@@ -80,17 +84,32 @@ const ServiceFormDraft = ({
 
   const validate = useCallback((): boolean => {
     const errs: FormErrors = {};
+    const defaultDiscountValue = Number(defaultDiscount);
+    const maxDiscountValue = Number(maxDiscount);
     if (!name.trim()) errs.name = 'Name is required.';
     if (!grossAmount || Number.isNaN(Number(grossAmount)) || Number(grossAmount) < 0)
       errs.grossAmount = 'Enter a valid gross amount.';
     if (
+      defaultDiscount &&
+      (Number.isNaN(defaultDiscountValue) || defaultDiscountValue < 0 || defaultDiscountValue > 100)
+    )
+      errs.defaultDiscount = 'Default discount must be 0–100.';
+    if (
       maxDiscount &&
-      (Number.isNaN(Number(maxDiscount)) || Number(maxDiscount) < 0 || Number(maxDiscount) > 100)
+      (Number.isNaN(maxDiscountValue) || maxDiscountValue < 0 || maxDiscountValue > 100)
     )
       errs.maxDiscount = 'Max discount must be 0–100.';
+    if (
+      !errs.defaultDiscount &&
+      !errs.maxDiscount &&
+      defaultDiscount &&
+      maxDiscount &&
+      defaultDiscountValue > maxDiscountValue
+    )
+      errs.defaultDiscount = 'Default discount cannot exceed max discount.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [name, grossAmount, maxDiscount]);
+  }, [defaultDiscount, grossAmount, maxDiscount, name]);
 
   const handleSave = () => {
     if (!validate()) return;
@@ -101,6 +120,7 @@ const ServiceFormDraft = ({
         type,
         durationMinutes: Number.parseInt(duration, 10),
         grossAmount: Number.parseFloat(grossAmount),
+        currency,
         defaultDiscount: Number.parseFloat(defaultDiscount) || 0,
         maxDiscount: Number.parseFloat(maxDiscount) || 0,
         isBookable,
@@ -116,6 +136,7 @@ const ServiceFormDraft = ({
         organisationId,
         durationMinutes: Number.parseInt(duration, 10),
         grossAmount: Number.parseFloat(grossAmount),
+        currency,
         defaultDiscount: Number.parseFloat(defaultDiscount) || 0,
         maxDiscount: Number.parseFloat(maxDiscount) || 0,
         isBookable,
@@ -245,7 +266,11 @@ const ServiceFormDraft = ({
           intype="number"
           inlabel="Default Discount (%)"
           value={defaultDiscount}
-          onChange={(e) => setDefaultDiscount(e.target.value)}
+          onChange={(e) => {
+            setDefaultDiscount(e.target.value);
+            setErrors((p) => ({ ...p, defaultDiscount: undefined }));
+          }}
+          error={errors.defaultDiscount}
         />
         <FormInput
           intype="number"
@@ -260,7 +285,7 @@ const ServiceFormDraft = ({
         <FormInput
           intype="text"
           inlabel="Total Amount"
-          value={total > 0 ? `$ ${total.toFixed(2)}` : ''}
+          value={total > 0 ? formatMoney(total, currency) : ''}
           readonly
         />
       </div>

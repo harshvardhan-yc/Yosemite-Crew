@@ -17,6 +17,8 @@ import { useNotify } from '@/app/hooks/useNotify';
 import { computePackageTotals } from '@/app/features/organization/services/revampMockData';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
+import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
+import { formatMoney } from '@/app/lib/money';
 
 export type PackagesTabHandle = { openAdd: () => void };
 
@@ -41,6 +43,8 @@ const PackageCard = ({
 }) => {
   const [showBreakdown, setShowBreakdown] = useState(index === 0);
   const { totalCost } = computePackageTotals(pkg);
+  const orgCurrency = useCurrencyForPrimaryOrg();
+  const currency = pkg.currency ?? orgCurrency;
 
   return (
     <div className="flex items-start gap-3">
@@ -103,7 +107,7 @@ const PackageCard = ({
               </div>
               <div>
                 <span className="text-caption-2 font-bold text-text-tertiary block">
-                  Max discount
+                  Package discount
                 </span>
                 <span className="text-body-4 text-text-primary">{pkg.additionalDiscount}%</span>
               </div>
@@ -112,7 +116,7 @@ const PackageCard = ({
                   Total Amount
                 </span>
                 <span className="text-body-4-emphasis text-text-primary">
-                  $ {totalCost.toFixed(2)}
+                  {formatMoney(totalCost, currency)}
                 </span>
               </div>
             </div>
@@ -142,7 +146,7 @@ const PackageCard = ({
               </div>
               <div>
                 <span className="text-caption-2 font-bold text-text-tertiary block">
-                  Max discount
+                  Package discount
                 </span>
                 <span className="text-body-4 text-text-primary whitespace-nowrap">
                   {pkg.additionalDiscount}%
@@ -153,7 +157,7 @@ const PackageCard = ({
                   Total Amount
                 </span>
                 <span className="text-body-4-emphasis text-text-primary whitespace-nowrap">
-                  $ {totalCost.toFixed(2)}
+                  {formatMoney(totalCost, currency)}
                 </span>
               </div>
             </div>

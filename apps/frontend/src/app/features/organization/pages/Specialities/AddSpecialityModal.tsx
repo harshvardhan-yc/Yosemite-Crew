@@ -21,6 +21,7 @@ const AddSpecialityModal = ({
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const addSpeciality = useRevampCatalogStore((s) => s.addSpeciality);
+  const specialities = useRevampCatalogStore((s) => s.specialities);
   const { notify } = useNotify();
 
   const handleClose = () => {
@@ -33,6 +34,14 @@ const AddSpecialityModal = ({
     const trimmed = name.trim();
     if (!trimmed) {
       setError('Speciality name is required.');
+      return;
+    }
+    const exists = specialities.some(
+      (s) =>
+        s.organisationId === organisationId && s.name.trim().toLowerCase() === trimmed.toLowerCase()
+    );
+    if (exists) {
+      setError('A speciality with this name already exists.');
       return;
     }
     addSpeciality(trimmed, organisationId);

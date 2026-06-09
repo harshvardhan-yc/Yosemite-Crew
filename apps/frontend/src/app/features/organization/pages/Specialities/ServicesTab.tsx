@@ -15,6 +15,8 @@ import { computeServiceTotal } from '@/app/features/organization/services/revamp
 import Badge from '@/app/ui/Badge';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
+import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
+import { formatMoney } from '@/app/lib/money';
 
 export type ServicesTabHandle = { openAdd: () => void };
 
@@ -46,6 +48,8 @@ const ServiceRow = ({
   onDelete: () => void;
 }) => {
   const { total } = computeServiceTotal(service);
+  const orgCurrency = useCurrencyForPrimaryOrg();
+  const currency = service.currency ?? orgCurrency;
   return (
     <div className="flex items-start gap-3">
       <span className="text-body-4 font-semibold text-text-secondary shrink-0 w-6 text-right leading-none -mt-1.5">
@@ -104,7 +108,7 @@ const ServiceRow = ({
                   Gross amt.
                 </span>
                 <span className="text-body-4 text-text-primary">
-                  $ {service.grossAmount.toFixed(2)}
+                  {formatMoney(service.grossAmount, currency)}
                 </span>
               </div>
               <div>
@@ -119,7 +123,9 @@ const ServiceRow = ({
               </div>
               <div>
                 <span className="text-caption-2 font-bold text-text-tertiary block">Total</span>
-                <span className="text-body-4-emphasis text-text-primary">$ {total.toFixed(2)}</span>
+                <span className="text-body-4-emphasis text-text-primary">
+                  {formatMoney(total, currency)}
+                </span>
               </div>
             </div>
 
@@ -159,7 +165,7 @@ const ServiceRow = ({
                   Gross amt.
                 </span>
                 <span className="text-body-4 text-text-primary whitespace-nowrap">
-                  $ {service.grossAmount.toFixed(2)}
+                  {formatMoney(service.grossAmount, currency)}
                 </span>
               </div>
               <div>
@@ -179,7 +185,7 @@ const ServiceRow = ({
               <div>
                 <span className="text-caption-2 font-bold text-text-tertiary block">Total</span>
                 <span className="text-body-4-emphasis text-text-primary whitespace-nowrap">
-                  $ {total.toFixed(2)}
+                  {formatMoney(total, currency)}
                 </span>
               </div>
             </div>

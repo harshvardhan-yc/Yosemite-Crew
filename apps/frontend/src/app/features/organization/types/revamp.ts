@@ -19,6 +19,7 @@ export type ServiceRevamp = {
   specialityId: string;
   organisationId: string;
   grossAmount: number;
+  currency?: string;
   defaultDiscount: number;
   maxDiscount: number;
   durationMinutes: number;
@@ -30,9 +31,12 @@ export type ServiceRevamp = {
 
 export type PackageBreakdownItem = {
   id: string;
+  childItemId?: string;
+  code?: string;
   type: CatalogItemType;
   name: string;
   unitPrice: number;
+  currency?: string;
   quantity: number;
   discount: number;
   maxDiscount?: number;
@@ -48,6 +52,7 @@ export type PackageRevamp = {
   organisationId: string;
   durationMinutes: number;
   isBookable: boolean;
+  currency?: string;
   leadCount: number;
   supportCount: number;
   additionalDiscount: number;

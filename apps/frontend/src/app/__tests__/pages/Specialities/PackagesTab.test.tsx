@@ -14,6 +14,14 @@ jest.mock('@/app/hooks/useNotify', () => ({
   useNotify: jest.fn(),
 }));
 
+jest.mock('@/app/hooks/useBilling', () => ({
+  useCurrencyForPrimaryOrg: () => 'USD',
+}));
+
+jest.mock('@/app/lib/money', () => ({
+  formatMoney: (amount: number) => `$ ${amount.toFixed(2)}`,
+}));
+
 jest.mock('zustand/react/shallow', () => ({
   useShallow: (fn: any) => fn,
 }));

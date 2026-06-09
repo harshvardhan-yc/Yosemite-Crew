@@ -104,6 +104,7 @@ describe('SpecialityAccordionRevamp', () => {
       if (typeof selector === 'function') {
         return selector({
           renameSpeciality: mockRenameSpeciality,
+          specialities: [mockSpeciality],
           services: [
             {
               id: 'svc-1',

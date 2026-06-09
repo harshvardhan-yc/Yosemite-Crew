@@ -184,10 +184,10 @@ const SpecialityInfo = ({
             )}
           </div>
 
-          {/* Manage Services CTA */}
+          {/* Manage catalog CTA */}
           <Primary
             href="#"
-            text="Manage Services"
+            text="Manage Services & Packages"
             icon={<RiSettings3Line size={18} aria-hidden="true" />}
             size="large"
             onClick={(e) => {

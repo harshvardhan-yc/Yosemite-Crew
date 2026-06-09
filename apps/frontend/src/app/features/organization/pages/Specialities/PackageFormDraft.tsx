@@ -18,6 +18,8 @@ import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useNotify } from '@/app/hooks/useNotify';
 import { computePackageTotals } from '@/app/features/organization/services/revampMockData';
+import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
+import { formatMoney } from '@/app/lib/money';
 
 const DURATION_OPTIONS = [
   { value: '15', label: '15 mins' },
@@ -115,9 +117,11 @@ type FormErrors = Partial<Record<string, string>>;
 
 type CatalogEntry = {
   id: string;
+  code?: string;
   name: string;
   type: CatalogItemType;
   unitPrice: number;
+  currency?: string;
   defaultDiscount: number;
   maxDiscount: number;
   nestedBreakdown?: PackageBreakdownItem[];
@@ -142,6 +146,7 @@ const PackageFormDraft = ({
   const addPackage = useRevampCatalogStore((s) => s.addPackage);
   const updatePackage = useRevampCatalogStore((s) => s.updatePackage);
   const archivePackage = useRevampCatalogStore((s) => s.archivePackage);
+  const orgCurrency = useCurrencyForPrimaryOrg();
 
   // Pull all active packages from store for cross-package inclusion
   const allActivePackages = useRevampCatalogStore(
@@ -174,9 +179,11 @@ const PackageFormDraft = ({
       const { totalCost } = computePackageTotals(pkg);
       return {
         id: pkg.id,
+        code: pkg.code,
         name: pkg.name,
         type: 'PACKAGE',
         unitPrice: totalCost,
+        currency: pkg.currency ?? orgCurrency,
         defaultDiscount: 0,
         maxDiscount: 100,
         nestedBreakdown: pkg.breakdown,
@@ -185,12 +192,17 @@ const PackageFormDraft = ({
   ];
 
   const filteredSearch = searchQuery.trim()
-    ? combinedCatalog.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? combinedCatalog.filter((item) => {
+        const q = searchQuery.toLowerCase();
+        return item.name.toLowerCase().includes(q) || item.code?.toLowerCase().includes(q);
+      })
     : [];
 
   const addBreakdownItem = useCallback(
     (catalog: CatalogEntry) => {
-      const existing = breakdown.find((b) => b.name === catalog.name);
+      const existing = breakdown.find(
+        (b) => b.childItemId === catalog.id || b.name.toLowerCase() === catalog.name.toLowerCase()
+      );
       if (existing) {
         setBreakdown((prev) =>
           prev.map((b) => (b.id === existing.id ? { ...b, quantity: b.quantity + 1 } : b))
@@ -200,9 +212,12 @@ const PackageFormDraft = ({
           ...prev,
           {
             id: crypto.randomUUID(),
+            childItemId: catalog.id,
+            code: catalog.code,
             type: catalog.type,
             name: catalog.name,
             unitPrice: catalog.unitPrice,
+            currency: catalog.currency ?? orgCurrency,
             quantity: 1,
             discount: catalog.defaultDiscount,
             maxDiscount: catalog.maxDiscount,
@@ -212,7 +227,7 @@ const PackageFormDraft = ({
       }
       setSearchQuery('');
     },
-    [breakdown]
+    [breakdown, orgCurrency]
   );
 
   const removeBreakdownItem = useCallback((id: string) => {
@@ -229,10 +244,19 @@ const PackageFormDraft = ({
 
   const validate = useCallback((): boolean => {
     const errs: FormErrors = {};
+    const additionalDiscountValue = Number(additionalDiscount);
     if (!name.trim()) errs.name = 'Package name is required.';
+    if (breakdown.length === 0) errs.breakdown = 'Add at least one item to this package.';
+    if (
+      additionalDiscount &&
+      (Number.isNaN(additionalDiscountValue) ||
+        additionalDiscountValue < 0 ||
+        additionalDiscountValue > 100)
+    )
+      errs.additionalDiscount = 'Additional discount must be 0–100.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [name]);
+  }, [additionalDiscount, breakdown.length, name]);
 
   const handleSave = () => {
     if (!validate()) return;
@@ -242,6 +266,7 @@ const PackageFormDraft = ({
       specialityId,
       organisationId,
       durationMinutes: Number.parseInt(duration, 10),
+      currency: editPackage?.currency ?? orgCurrency,
       leadCount: Number.parseInt(leadCount, 10),
       supportCount: Number.parseInt(supportCount, 10),
       isBookable,
@@ -384,7 +409,8 @@ const PackageFormDraft = ({
                   >
                     <span>{item.name}</span>
                     <span className="text-caption-1 text-text-secondary">
-                      {TYPE_LABELS[item.type] ?? item.type} · $ {item.unitPrice.toFixed(2)}
+                      {TYPE_LABELS[item.type] ?? item.type} ·{' '}
+                      {formatMoney(item.unitPrice, item.currency ?? orgCurrency)}
                     </span>
                   </button>
                 ))}
@@ -411,6 +437,9 @@ const PackageFormDraft = ({
               Search above to add items to the package breakdown.
             </p>
           )}
+          {errors.breakdown && (
+            <p className="text-caption-1 text-text-error text-center">{errors.breakdown}</p>
+          )}
 
           <div className="flex items-center justify-end gap-3">
             <span className="text-caption-1 text-text-secondary">Additional Discount (%)</span>
@@ -419,7 +448,11 @@ const PackageFormDraft = ({
                 intype="number"
                 inlabel="Discount %"
                 value={additionalDiscount}
-                onChange={(e) => setAdditionalDiscount(e.target.value)}
+                onChange={(e) => {
+                  setAdditionalDiscount(e.target.value);
+                  setErrors((p) => ({ ...p, additionalDiscount: undefined }));
+                }}
+                error={errors.additionalDiscount}
               />
             </div>
           </div>

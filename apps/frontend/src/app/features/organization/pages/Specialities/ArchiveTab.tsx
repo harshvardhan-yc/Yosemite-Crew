@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { MdDeleteForever, MdOutlineUnarchive } from 'react-icons/md';
 import { AiOutlineInfoCircle } from 'react-icons/ai';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useNotify } from '@/app/hooks/useNotify';
 import { computeServiceTotal } from '@/app/features/organization/services/revampMockData';
+import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
+import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
+import Secondary from '@/app/ui/primitives/Buttons/Secondary';
+import Delete from '@/app/ui/primitives/Buttons/Delete';
+import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
+import { formatMoney } from '@/app/lib/money';
+import { PackageRevamp, ServiceRevamp } from '@/app/features/organization/types/revamp';
 
 const TYPE_LABELS: Record<string, string> = {
   CONSULTATION: 'Consultation',
@@ -19,7 +26,14 @@ type ArchiveTabProps = {
   specialityId: string;
 };
 
+type DeleteTarget =
+  | { kind: 'service'; item: ServiceRevamp }
+  | { kind: 'package'; item: PackageRevamp }
+  | null;
+
 const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
+  const orgCurrency = useCurrencyForPrimaryOrg();
   const services = useRevampCatalogStore(
     useShallow((s) =>
       s.services.filter((svc) => svc.specialityId === specialityId && svc.status === 'ARCHIVED')
@@ -37,6 +51,24 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
   const { notify } = useNotify();
 
   const isEmpty = services.length === 0 && packages.length === 0;
+
+  const handleDeleteConfirm = () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.kind === 'service') {
+      deleteService(deleteTarget.item.id);
+      notify('success', {
+        title: 'Service deleted',
+        text: `"${deleteTarget.item.name}" has been permanently removed.`,
+      });
+    } else {
+      deletePackage(deleteTarget.item.id);
+      notify('success', {
+        title: 'Package deleted',
+        text: `"${deleteTarget.item.name}" has been permanently removed.`,
+      });
+    }
+    setDeleteTarget(null);
+  };
 
   return (
     <div className="flex flex-col gap-4 py-4">
@@ -68,7 +100,7 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
                     <div className="flex gap-4 text-caption-1 text-text-secondary flex-wrap">
                       <span>{svc.code}</span>
                       <span>{TYPE_LABELS[svc.type] ?? svc.type}</span>
-                      <span>$ {total.toFixed(2)}</span>
+                      <span>{formatMoney(total, svc.currency ?? orgCurrency)}</span>
                     </div>
                   </div>
                 </div>
@@ -95,11 +127,7 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
                     type="button"
                     aria-label={`Delete ${svc.name} permanently`}
                     onClick={() => {
-                      deleteService(svc.id);
-                      notify('success', {
-                        title: 'Service deleted',
-                        text: `"${svc.name}" has been permanently removed.`,
-                      });
+                      setDeleteTarget({ kind: 'service', item: svc });
                     }}
                     className="flex items-center justify-center size-9 rounded-full border border-card-border hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
                   >
@@ -158,11 +186,7 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
                   type="button"
                   aria-label={`Delete ${pkg.name} permanently`}
                   onClick={() => {
-                    deletePackage(pkg.id);
-                    notify('success', {
-                      title: 'Package deleted',
-                      text: `"${pkg.name}" has been permanently removed.`,
-                    });
+                    setDeleteTarget({ kind: 'package', item: pkg });
                   }}
                   className="flex items-center justify-center size-9 rounded-full border border-card-border hover:border-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-600 transition-colors"
                 >
@@ -172,6 +196,22 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
             </div>
           ))}
         </div>
+      )}
+      {deleteTarget && (
+        <CenterModal showModal setShowModal={() => setDeleteTarget(null)}>
+          <ModalHeader
+            title={`Delete ${deleteTarget.kind}`}
+            onClose={() => setDeleteTarget(null)}
+          />
+          <p className="text-body-4 text-text-primary">
+            Are you sure you want to permanently delete <strong>{deleteTarget.item.name}</strong>?
+            This action cannot be undone.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <Secondary href="#" text="Cancel" onClick={() => setDeleteTarget(null)} />
+            <Delete href="#" text="Delete" onClick={handleDeleteConfirm} />
+          </div>
+        </CenterModal>
       )}
     </div>
   );

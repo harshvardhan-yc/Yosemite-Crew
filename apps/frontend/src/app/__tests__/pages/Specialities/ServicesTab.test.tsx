@@ -27,6 +27,14 @@ jest.mock('@/app/hooks/useNotify', () => ({
   useNotify: () => ({ notify: mockNotify }),
 }));
 
+jest.mock('@/app/hooks/useBilling', () => ({
+  useCurrencyForPrimaryOrg: () => 'USD',
+}));
+
+jest.mock('@/app/lib/money', () => ({
+  formatMoney: (amount: number) => `$ ${amount.toFixed(2)}`,
+}));
+
 jest.mock('@/app/features/organization/services/revampMockData', () => ({
   computeServiceTotal: jest.fn(() => ({ total: 90 })),
 }));

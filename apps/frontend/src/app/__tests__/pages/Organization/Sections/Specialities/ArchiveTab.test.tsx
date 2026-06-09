@@ -39,6 +39,49 @@ jest.mock('@/app/hooks/useNotify', () => ({
   useNotify: () => ({ notify: mockNotify }),
 }));
 
+jest.mock('@/app/hooks/useBilling', () => ({
+  useCurrencyForPrimaryOrg: () => 'USD',
+}));
+
+jest.mock('@/app/lib/money', () => ({
+  formatMoney: (amount: number) => `$ ${amount.toFixed(2)}`,
+}));
+
+jest.mock('@/app/ui/overlays/Modal/CenterModal', () => ({
+  __esModule: true,
+  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
+jest.mock('@/app/ui/overlays/Modal/ModalHeader', () => ({
+  __esModule: true,
+  default: ({ title, onClose }: { title: string; onClose?: () => void }) => (
+    <div>
+      <h2>{title}</h2>
+      <button type="button" onClick={onClose}>
+        Close
+      </button>
+    </div>
+  ),
+}));
+
+jest.mock('@/app/ui/primitives/Buttons/Secondary', () => ({
+  __esModule: true,
+  default: ({ text, onClick }: { text: string; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {text}
+    </button>
+  ),
+}));
+
+jest.mock('@/app/ui/primitives/Buttons/Delete', () => ({
+  __esModule: true,
+  default: ({ text, onClick }: { text: string; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {text}
+    </button>
+  ),
+}));
+
 jest.mock('@/app/features/organization/services/revampMockData', () => ({
   computeServiceTotal: () => ({ total: 50 }),
 }));
@@ -162,6 +205,9 @@ describe('ArchiveTab', () => {
     ];
     render(<ArchiveTab specialityId={SPEC_ID} />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Ultrasound permanently' }));
+    expect(mockDeleteService).not.toHaveBeenCalled();
+    expect(screen.getByText('Delete service')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(mockDeleteService).toHaveBeenCalledWith('s1');
     expect(mockNotify).toHaveBeenCalledWith(
       'success',
@@ -220,6 +266,9 @@ describe('ArchiveTab', () => {
     ];
     render(<ArchiveTab specialityId={SPEC_ID} />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Wellness Plan permanently' }));
+    expect(mockDeletePackage).not.toHaveBeenCalled();
+    expect(screen.getByText('Delete package')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(mockDeletePackage).toHaveBeenCalledWith('p1');
     expect(mockNotify).toHaveBeenCalledWith(
       'success',

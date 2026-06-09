@@ -132,6 +132,10 @@ jest.mock('@/app/hooks/useNotify', () => ({
   useNotify: () => ({ notify: mockNotify }),
 }));
 
+jest.mock('@/app/hooks/useBilling', () => ({
+  useCurrencyForPrimaryOrg: () => 'USD',
+}));
+
 jest.mock('@/app/features/organization/services/revampMockData', () => ({
   computeServiceTotal: jest.fn(({ grossAmount, defaultDiscount }) => {
     const amt = grossAmount - (grossAmount * defaultDiscount) / 100;
@@ -241,6 +245,29 @@ describe('ServiceFormDraft', () => {
       fireEvent.change(screen.getByLabelText('Max. Discount (%)'), { target: { value: '150' } });
       fireEvent.click(screen.getByRole('button', { name: 'Save Service' }));
       expect(screen.getByText('Max discount must be 0–100.')).toBeInTheDocument();
+    });
+
+    it('shows default discount error when value is above 100', () => {
+      render(<ServiceFormDraft {...defaultProps} />);
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Service A' } });
+      fireEvent.change(screen.getByLabelText('Gross amt.'), { target: { value: '200' } });
+      fireEvent.change(screen.getByLabelText('Default Discount (%)'), {
+        target: { value: '150' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save Service' }));
+      expect(screen.getByText('Default discount must be 0–100.')).toBeInTheDocument();
+    });
+
+    it('shows default discount error when it exceeds max discount', () => {
+      render(<ServiceFormDraft {...defaultProps} />);
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Service A' } });
+      fireEvent.change(screen.getByLabelText('Gross amt.'), { target: { value: '200' } });
+      fireEvent.change(screen.getByLabelText('Default Discount (%)'), {
+        target: { value: '20' },
+      });
+      fireEvent.change(screen.getByLabelText('Max. Discount (%)'), { target: { value: '10' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save Service' }));
+      expect(screen.getByText('Default discount cannot exceed max discount.')).toBeInTheDocument();
     });
 
     it('calls addService and onClose when form is valid', () => {

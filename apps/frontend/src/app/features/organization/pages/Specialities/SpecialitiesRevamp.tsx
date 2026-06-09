@@ -12,8 +12,6 @@ import { useOrgStore } from '@/app/stores/orgStore';
 import { useSearchStore } from '@/app/stores/searchStore';
 import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
-const MOCK_ORG_ID = 'mock-org-001';
-
 const SpecialitiesRevamp = () => {
   const specialities = useRevampCatalogStore((s) => s.specialities);
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
@@ -22,13 +20,25 @@ const SpecialitiesRevamp = () => {
   const searchParams = useSearchParams();
   const openId = searchParams.get('open');
 
-  const orgId = primaryOrgId ?? MOCK_ORG_ID;
-
   const filteredSpecialities = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return specialities;
-    return specialities.filter((s) => s.name.toLowerCase().includes(q));
-  }, [specialities, searchQuery]);
+    const orgSpecialities = primaryOrgId
+      ? specialities.filter((s) => s.organisationId === primaryOrgId)
+      : [];
+    if (!q) return orgSpecialities;
+    return orgSpecialities.filter((s) => s.name.toLowerCase().includes(q));
+  }, [primaryOrgId, specialities, searchQuery]);
+
+  if (!primaryOrgId) {
+    return (
+      <div className="flex flex-col w-full gap-3 px-4 md:px-8 py-6 max-w-350 mx-auto">
+        <h1 className="text-heading-2 text-text-primary">Specialities</h1>
+        <p className="text-body-4 text-text-secondary">
+          Select an organisation before managing specialities.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col w-full gap-6 px-4 md:px-8 py-6 max-w-350 mx-auto">
@@ -90,7 +100,7 @@ const SpecialitiesRevamp = () => {
       <AddSpecialityModal
         showModal={addModalOpen}
         setShowModal={setAddModalOpen}
-        organisationId={orgId}
+        organisationId={primaryOrgId}
       />
     </div>
   );

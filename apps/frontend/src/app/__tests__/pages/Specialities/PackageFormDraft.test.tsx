@@ -166,6 +166,10 @@ jest.mock('@/app/hooks/useNotify', () => ({
   useNotify: () => ({ notify: mockNotify }),
 }));
 
+jest.mock('@/app/hooks/useBilling', () => ({
+  useCurrencyForPrimaryOrg: () => 'USD',
+}));
+
 jest.mock('@/app/features/organization/services/revampMockData', () => ({
   computePackageTotals: jest.fn((pkg: any) => ({
     totalCost: 200,
@@ -198,6 +202,12 @@ const defaultProps = {
   specialityId: 'spec-1',
   organisationId: 'org-1',
   onClose: jest.fn(),
+};
+
+const addSyringeToBreakdown = () => {
+  const searchInput = screen.getByLabelText('Search catalog items');
+  fireEvent.change(searchInput, { target: { value: 'syringe' } });
+  fireEvent.click(screen.getByText('Syringe'));
 };
 
 const mockEditPackage: PackageRevamp = {
@@ -304,6 +314,7 @@ describe('PackageFormDraft', () => {
     it('calls addPackage and onClose when form is valid', () => {
       render(<PackageFormDraft {...defaultProps} />);
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New Package' } });
+      addSyringeToBreakdown();
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
       expect(mockAddPackage).toHaveBeenCalledTimes(1);
       expect(mockNotify).toHaveBeenCalledWith(
@@ -348,6 +359,7 @@ describe('PackageFormDraft', () => {
       fireEvent.change(durationDropdown, { target: { value: '60' } });
       // name needed to save
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My Package' } });
+      addSyringeToBreakdown();
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
       expect(mockAddPackage).toHaveBeenCalledWith(expect.objectContaining({ durationMinutes: 60 }));
     });
@@ -357,6 +369,7 @@ describe('PackageFormDraft', () => {
       const leadDropdown = screen.getByLabelText('Lead');
       fireEvent.change(leadDropdown, { target: { value: '0' } });
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My Package' } });
+      addSyringeToBreakdown();
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
       expect(mockAddPackage).toHaveBeenCalledWith(expect.objectContaining({ leadCount: 0 }));
     });
@@ -366,6 +379,7 @@ describe('PackageFormDraft', () => {
       const supportDropdown = screen.getByLabelText('Support');
       fireEvent.change(supportDropdown, { target: { value: '3' } });
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My Package' } });
+      addSyringeToBreakdown();
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
       expect(mockAddPackage).toHaveBeenCalledWith(expect.objectContaining({ supportCount: 3 }));
     });
@@ -374,10 +388,29 @@ describe('PackageFormDraft', () => {
       render(<PackageFormDraft {...defaultProps} />);
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My Package' } });
       fireEvent.change(screen.getByLabelText('Discount %'), { target: { value: '10' } });
+      addSyringeToBreakdown();
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
       expect(mockAddPackage).toHaveBeenCalledWith(
         expect.objectContaining({ additionalDiscount: 10 })
       );
+    });
+
+    it('requires at least one breakdown item before saving', () => {
+      render(<PackageFormDraft {...defaultProps} />);
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My Package' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
+      expect(screen.getByText('Add at least one item to this package.')).toBeInTheDocument();
+      expect(mockAddPackage).not.toHaveBeenCalled();
+    });
+
+    it('validates additional discount bounds', () => {
+      render(<PackageFormDraft {...defaultProps} />);
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My Package' } });
+      addSyringeToBreakdown();
+      fireEvent.change(screen.getByLabelText('Discount %'), { target: { value: '150' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
+      expect(screen.getByText('Additional discount must be 0–100.')).toBeInTheDocument();
+      expect(mockAddPackage).not.toHaveBeenCalled();
     });
   });
 

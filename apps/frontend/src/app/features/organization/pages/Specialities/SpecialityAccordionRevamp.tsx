@@ -45,6 +45,7 @@ const SpecialityAccordionRevamp = ({
   const [activeTab, setActiveTab] = useState<ActiveTab>('services');
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(speciality.name);
+  const [nameError, setNameError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -53,6 +54,7 @@ const SpecialityAccordionRevamp = ({
   const searchRef = useRef<HTMLDivElement>(null);
 
   const renameSpeciality = useRevampCatalogStore((s) => s.renameSpeciality);
+  const specialities = useRevampCatalogStore((s) => s.specialities);
   const serviceCount = useRevampCatalogStore(
     (s) =>
       s.services.filter((svc) => svc.specialityId === speciality.id && svc.status === 'ACTIVE')
@@ -133,15 +135,30 @@ const SpecialityAccordionRevamp = ({
   const handleSaveName = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation();
     const trimmed = nameValue.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setNameError('Speciality name is required.');
+      return;
+    }
+    const duplicate = specialities.some(
+      (s) =>
+        s.id !== speciality.id &&
+        s.organisationId === speciality.organisationId &&
+        s.name.trim().toLowerCase() === trimmed.toLowerCase()
+    );
+    if (duplicate) {
+      setNameError('A speciality with this name already exists.');
+      return;
+    }
     renameSpeciality(speciality.id, trimmed);
     notify('success', { title: 'Speciality renamed', text: `Renamed to "${trimmed}".` });
+    setNameError('');
     setEditingName(false);
   };
 
   const handleCancelName = (e: React.MouseEvent) => {
     e.stopPropagation();
     setNameValue(speciality.name);
+    setNameError('');
     setEditingName(false);
   };
 
@@ -192,10 +209,14 @@ const SpecialityAccordionRevamp = ({
                   id={nameInputId}
                   type="text"
                   value={nameValue}
-                  onChange={(e) => setNameValue(e.target.value)}
+                  onChange={(e) => {
+                    setNameValue(e.target.value);
+                    if (nameError) setNameError('');
+                  }}
                   onKeyDown={handleNameKeyDown}
                   className="flex-1 min-w-0 text-heading-3 text-text-primary bg-transparent border-b-2 border-input-border-active focus-visible:outline-none px-1"
                   aria-label="Edit speciality name"
+                  aria-invalid={Boolean(nameError)}
                 />
                 <button
                   type="button"
@@ -238,6 +259,9 @@ const SpecialityAccordionRevamp = ({
             )}
           </div>
         </div>
+        {editingName && nameError && (
+          <p className="text-caption-1 text-text-error sm:basis-full sm:pl-12">{nameError}</p>
+        )}
 
         {/* Row 2 on mobile / inline on sm+: primary button (left) + search (right) */}
         {!editingName && (
