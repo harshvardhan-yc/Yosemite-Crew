@@ -632,6 +632,16 @@ input[type='number'] {
     line-height: 120%;
   }
 
+  .text-yc-14-b-primary {
+    color: var(--color-primary-600);
+    font-family: var(--font-satoshi);
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
   .text-yc-16-r-neutral {
     color: var(--color-neutral-900);
     font-family: var(--font-satoshi);

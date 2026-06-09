@@ -73,6 +73,15 @@ jest.mock('@/app/features/companionHistory/components/CompanionHistoryTimeline',
   ),
 }));
 
+jest.mock(
+  '@/app/features/appointments/pages/Appointments/Sections/AddAppointmentCentralModal',
+  () => ({
+    __esModule: true,
+    default: ({ showModal, initialCompanionId }: any) =>
+      showModal ? <div data-testid="add-appointment-modal">{initialCompanionId}</div> : null,
+  })
+);
+
 jest.mock('@/app/hooks/useCompanion', () => ({
   useLoadCompanionsForPrimaryOrg: jest.fn(),
   useCompanionsParentsForPrimaryOrg: () => useCompanionsParentsForPrimaryOrgMock(),
@@ -126,7 +135,7 @@ describe('CompanionHistoryPage', () => {
     ).toBeInTheDocument();
     expect(screen.queryByTestId('timeline')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
     expect(startRouteLoaderMock).toHaveBeenCalledTimes(1);
     expect(pushMock).toHaveBeenCalledWith('/companions');
   });
@@ -158,7 +167,22 @@ describe('CompanionHistoryPage', () => {
           name: 'Buddy',
           photoUrl: '/buddy.jpg',
           breed: 'Labrador',
-          type: 'DOG',
+          type: 'dog',
+          gender: 'male',
+          isneutered: true,
+          isInsured: false,
+          dateOfBirth: new Date('2021-01-01'),
+          parentId: 'p-1',
+          organisationId: 'org-1',
+        },
+        parent: {
+          id: 'p-1',
+          firstName: 'Sam',
+          lastName: 'Owner',
+          email: 'sam@example.com',
+          phoneNumber: '+15555555555',
+          address: {},
+          createdFrom: 'pms',
         },
       },
     ]);
@@ -166,12 +190,63 @@ describe('CompanionHistoryPage', () => {
     render(<CompanionHistoryPage />);
 
     expect(screen.getByTestId('timeline')).toHaveTextContent('c-1-true');
-    expect(screen.getByText('Buddy')).toBeInTheDocument();
-    expect(screen.getByText('Labrador / DOG')).toBeInTheDocument();
+    expect(screen.getByText("Buddy's Overview")).toBeInTheDocument();
+    expect(screen.getByText('Labrador / Canine')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
     expect(startRouteLoaderMock).toHaveBeenCalledTimes(1);
     expect(pushMock).toHaveBeenCalledWith('/appointments');
+  });
+
+  it('shows patient and client alert tooltips on hover', async () => {
+    searchGetMock.mockImplementation((key: string) => {
+      if (key === 'companionId') return 'c-1';
+      if (key === 'source') return 'appointments';
+      if (key === 'backTo') return null;
+      return null;
+    });
+    useCompanionsParentsForPrimaryOrgMock.mockReturnValue([
+      {
+        companion: {
+          id: 'c-1',
+          name: 'Buddy',
+          photoUrl: '/buddy.jpg',
+          breed: 'Labrador',
+          type: 'dog',
+          gender: 'male',
+          isneutered: true,
+          isInsured: false,
+          dateOfBirth: new Date('2021-01-01'),
+          parentId: 'p-1',
+          organisationId: 'org-1',
+        },
+        parent: {
+          id: 'p-1',
+          firstName: 'Sam',
+          lastName: 'Owner',
+          email: 'sam@example.com',
+          phoneNumber: '+15555555555',
+          address: {},
+          createdFrom: 'pms',
+        },
+      },
+    ]);
+
+    render(<CompanionHistoryPage />);
+
+    const patientTrigger = screen
+      .getByRole('button', { name: /add companion alert/i })
+      .closest('.glass-tooltip');
+    expect(patientTrigger).not.toBeNull();
+    fireEvent.mouseEnter(patientTrigger as Element);
+    expect(await screen.findByText('Add alerts for patient')).toBeInTheDocument();
+
+    const clientTrigger = screen
+      .getByRole('button', { name: /add client alert/i })
+      .closest('.glass-tooltip');
+    expect(clientTrigger).not.toBeNull();
+    fireEvent.mouseEnter(clientTrigger as Element);
+    expect(await screen.findByText('Add alert for client')).toBeInTheDocument();
   });
 
   it('has no axe violations on initial render', async () => {
@@ -191,7 +266,7 @@ describe('CompanionHistoryPage', () => {
 
     const { rerender } = render(<CompanionHistoryPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
     expect(startRouteLoaderMock).toHaveBeenCalledTimes(1);
     expect(pushMock).toHaveBeenCalledWith('/appointments/details');
 
@@ -206,7 +281,7 @@ describe('CompanionHistoryPage', () => {
 
     rerender(<CompanionHistoryPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
     expect(startRouteLoaderMock).toHaveBeenCalledTimes(1);
     expect(pushMock).toHaveBeenCalledWith('/appointments');
   });
