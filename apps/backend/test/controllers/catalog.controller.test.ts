@@ -430,4 +430,511 @@ describe("CatalogController", () => {
       message: "Unsupported catalog search kind: LAB_TEST",
     });
   });
+
+  it("rejects invalid healthcare service payloads on create", async () => {
+    const req = {
+      body: { resourceType: "Patient" },
+    };
+    const res = createResponse();
+
+    await CatalogController.createProduct(req as never, res as never);
+
+    expect(CatalogService.createProduct).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Invalid payload. Expected FHIR HealthcareService resource.",
+      }),
+    );
+  });
+
+  it("creates a product from a FHIR HealthcareService payload", async () => {
+    (CatalogService.createProduct as jest.Mock).mockResolvedValue({
+      id: "prod_1",
+      version: 4,
+      organisationId: "org_1",
+    });
+
+    const req = {
+      body: {
+        resourceType: "HealthcareService",
+        id: "prod_1",
+        providedBy: { reference: "Organization/org_1" },
+        name: "Consultation",
+        active: true,
+        type: [{ coding: [{ code: "CONSULTATION" }] }],
+      },
+    };
+    const res = createResponse();
+
+    await CatalogController.createProduct(req as never, res as never);
+
+    expect(CatalogService.createProduct).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId: "org_1",
+        name: "Consultation",
+        kind: "CONSULTATION",
+      }),
+    );
+    expect(res.setHeader).toHaveBeenCalledWith("ETag", 'W/"4"');
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it("fetches a product by id with an optional organisation filter", async () => {
+    (CatalogService.getProductById as jest.Mock).mockResolvedValue({
+      id: "prod_1",
+      version: 6,
+      organisationId: "org_1",
+    });
+
+    const req = {
+      params: { id: "prod_1" },
+      query: { organisationId: "org_1" },
+    };
+    const res = createResponse();
+
+    await CatalogController.getProductById(req as never, res as never);
+
+    expect(CatalogService.getProductById).toHaveBeenCalledWith(
+      "prod_1",
+      "org_1",
+    );
+    expect(res.setHeader).toHaveBeenCalledWith("ETag", 'W/"6"');
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("lists products from FHIR query aliases", async () => {
+    (CatalogService.listProducts as jest.Mock).mockResolvedValue([]);
+
+    const req = {
+      params: { organisationId: "unused" },
+      query: {
+        organization: "org_1",
+        specialty: "spec_1",
+        kind: "CONSULTATION,PACKAGE",
+        active: "false",
+      },
+      baseUrl: "/fhir/R4/HealthcareService",
+    };
+    const res = createResponse();
+
+    await CatalogController.listProducts(req as never, res as never);
+
+    expect(CatalogService.listProducts).toHaveBeenCalledWith({
+      organisationId: "org_1",
+      specialityId: "spec_1",
+      kinds: ["CONSULTATION", "PACKAGE"],
+      active: false,
+      includeInactive: false,
+      search: undefined,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("rejects invalid product list queries", async () => {
+    const req = {
+      params: { organisationId: "org_1" },
+      query: { active: "sometimes" },
+      baseUrl: "/web/catalog",
+    };
+    const res = createResponse();
+
+    await CatalogController.listProducts(req as never, res as never);
+
+    expect(CatalogService.listProducts).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it("resolves a direct product selection payload", async () => {
+    (CatalogService.resolveSelection as jest.Mock).mockResolvedValue({
+      productItemId: "prod_1",
+    });
+
+    const req = {
+      body: {
+        productItemId: "prod_1",
+        organisationId: "org_1",
+      },
+    };
+    const res = createResponse();
+
+    await CatalogController.resolveProduct(req as never, res as never);
+
+    expect(CatalogService.resolveSelection).toHaveBeenCalledWith(
+      "prod_1",
+      "org_1",
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("rejects invalid direct resolve payloads", async () => {
+    const req = {
+      body: {
+        organisationId: "org_1",
+      },
+    };
+    const res = createResponse();
+
+    await CatalogController.resolveProduct(req as never, res as never);
+
+    expect(CatalogService.resolveSelection).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it("maps operation parameter parsing failures to 400 for resolve", async () => {
+    const req = {
+      body: {
+        resourceType: "Parameters",
+        parameter: [
+          { name: "organization", valueString: "Organization/org_1" },
+        ],
+      },
+    };
+    const res = createResponse();
+
+    await CatalogController.resolveProductOperation(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: "Parameters.productItemId is required.",
+    });
+  });
+
+  it("lists specialities with parsed paging filters", async () => {
+    (CatalogService.listSpecialities as jest.Mock).mockResolvedValue({
+      organisationId: "org_1",
+      page: 2,
+      pageSize: 10,
+      total: 1,
+      items: [],
+    });
+
+    const req = {
+      params: { organisationId: "org_1" },
+      query: { page: "2", pageSize: "10", status: "ARCHIVED" },
+    };
+    const res = createResponse();
+
+    await CatalogController.listSpecialities(req as never, res as never);
+
+    expect(CatalogService.listSpecialities).toHaveBeenCalledWith("org_1", {
+      page: 2,
+      pageSize: 10,
+      status: "ARCHIVED",
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("updates a speciality", async () => {
+    (CatalogService.updateSpeciality as jest.Mock).mockResolvedValue({
+      id: "spec_1",
+      name: "Updated",
+    });
+
+    const req = {
+      params: { organisationId: "org_1", specialityId: "spec_1" },
+      body: {
+        name: "Updated",
+        headProfilePicUrl: "https://example.com/avatar.png",
+      },
+    };
+    const res = createResponse();
+
+    await CatalogController.updateSpeciality(req as never, res as never);
+
+    expect(CatalogService.updateSpeciality).toHaveBeenCalledWith("spec_1", {
+      organisationId: "org_1",
+      name: "Updated",
+      headUserId: undefined,
+      headName: undefined,
+      headProfilePicUrl: "https://example.com/avatar.png",
+      teamMemberIds: undefined,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("archives, restores, and deletes specialities", async () => {
+    (CatalogService.archiveSpeciality as jest.Mock).mockResolvedValue({
+      id: "spec_1",
+    });
+    (CatalogService.restoreSpeciality as jest.Mock).mockResolvedValue({
+      id: "spec_1",
+    });
+    (CatalogService.deleteSpeciality as jest.Mock).mockResolvedValue(undefined);
+
+    const req = {
+      params: { organisationId: "org_1", specialityId: "spec_1" },
+    };
+
+    await CatalogController.archiveSpeciality(
+      req as never,
+      createResponse() as never,
+    );
+    await CatalogController.restoreSpeciality(
+      req as never,
+      createResponse() as never,
+    );
+
+    const deleteRes = createResponse();
+    await CatalogController.deleteSpeciality(req as never, deleteRes as never);
+
+    expect(CatalogService.archiveSpeciality).toHaveBeenCalledWith(
+      "spec_1",
+      "org_1",
+    );
+    expect(CatalogService.restoreSpeciality).toHaveBeenCalledWith(
+      "spec_1",
+      "org_1",
+    );
+    expect(CatalogService.deleteSpeciality).toHaveBeenCalledWith(
+      "spec_1",
+      "org_1",
+    );
+    expect(deleteRes.status).toHaveBeenCalledWith(204);
+  });
+
+  it("lists speciality services and filters archived non-bookable items", async () => {
+    (CatalogService.listProducts as jest.Mock).mockResolvedValue([
+      { id: "svc_1", kind: "CONSULTATION", isActive: false, bookable: null },
+      { id: "pkg_1", kind: "PACKAGE", isActive: false, bookable: null },
+    ]);
+
+    const req = {
+      params: { organisationId: "org_1", specialityId: "spec_1" },
+      query: { status: "ARCHIVED", isBookable: "false" },
+    };
+    const res = createResponse();
+
+    await CatalogController.listServicesBySpeciality(
+      req as never,
+      res as never,
+    );
+
+    expect(CatalogService.listProducts).toHaveBeenCalledWith({
+      organisationId: "org_1",
+      specialityId: "spec_1",
+      kinds: undefined,
+      includeInactive: true,
+      search: undefined,
+    });
+    expect(res.json).toHaveBeenCalledWith({
+      items: [
+        { id: "svc_1", kind: "CONSULTATION", isActive: false, bookable: null },
+      ],
+    });
+  });
+
+  it("creates and archives services", async () => {
+    (CatalogService.createProduct as jest.Mock).mockResolvedValue({
+      id: "svc_1",
+      version: 2,
+    });
+    (CatalogService.archiveProduct as jest.Mock).mockResolvedValue({
+      id: "svc_1",
+      version: 3,
+    });
+
+    const createReq = {
+      params: { organisationId: "org_1", specialityId: "spec_1" },
+      body: { name: "X-Ray", kind: "DIAGNOSTIC", unitPrice: 50 },
+    };
+    const archiveReq = {
+      params: { organisationId: "org_1", id: "svc_1" },
+      header: jest.fn().mockReturnValue('W/"2"'),
+    };
+
+    await CatalogController.createService(
+      createReq as never,
+      createResponse() as never,
+    );
+    const archiveRes = createResponse();
+    await CatalogController.archiveService(
+      archiveReq as never,
+      archiveRes as never,
+    );
+
+    expect(CatalogService.createProduct).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId: "org_1",
+        specialityId: "spec_1",
+        kind: "DIAGNOSTIC",
+      }),
+    );
+    expect(CatalogService.archiveProduct).toHaveBeenCalledWith(
+      "svc_1",
+      "org_1",
+      2,
+    );
+    expect(archiveRes.setHeader).toHaveBeenCalledWith("ETag", 'W/"3"');
+  });
+
+  it("rejects invalid service payloads", async () => {
+    const req = {
+      params: { organisationId: "org_1", specialityId: "spec_1" },
+      body: { name: "" },
+    };
+    const res = createResponse();
+
+    await CatalogController.createService(req as never, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(CatalogService.createProduct).not.toHaveBeenCalled();
+  });
+
+  it("lists packages for a speciality", async () => {
+    (CatalogService.listProducts as jest.Mock).mockResolvedValue([
+      { id: "pkg_1", kind: "PACKAGE", isActive: true },
+      { id: "pkg_2", kind: "PACKAGE", isActive: false },
+    ]);
+
+    const req = {
+      params: { organisationId: "org_1", specialityId: "spec_1" },
+      query: { status: "ACTIVE" },
+    };
+    const res = createResponse();
+
+    await CatalogController.listPackagesBySpeciality(
+      req as never,
+      res as never,
+    );
+
+    expect(res.json).toHaveBeenCalledWith({
+      items: [{ id: "pkg_1", kind: "PACKAGE", isActive: true }],
+    });
+  });
+
+  it("creates, updates, restores, and deletes packages", async () => {
+    (CatalogService.createProduct as jest.Mock).mockResolvedValue({
+      id: "pkg_1",
+      version: 1,
+    });
+    (CatalogService.updateProduct as jest.Mock).mockResolvedValue({
+      id: "pkg_1",
+      version: 2,
+    });
+    (CatalogService.restoreProduct as jest.Mock).mockResolvedValue({
+      id: "pkg_1",
+      version: 3,
+    });
+    (CatalogService.deleteProduct as jest.Mock).mockResolvedValue(undefined);
+
+    const createReq = {
+      params: { organisationId: "org_1", specialityId: "spec_1" },
+      body: { name: "Wellness", leadCount: 1 },
+    };
+    const updateReq = {
+      params: { organisationId: "org_1", id: "pkg_1" },
+      body: { name: "Wellness+" },
+      header: jest.fn().mockReturnValue('W/"1"'),
+    };
+    const restoreReq = {
+      params: { organisationId: "org_1", id: "pkg_1" },
+      header: jest.fn().mockReturnValue('W/"2"'),
+    };
+    const deleteReq = {
+      params: { organisationId: "org_1", id: "pkg_1" },
+      header: jest.fn().mockReturnValue('W/"3"'),
+    };
+
+    await CatalogController.createPackage(
+      createReq as never,
+      createResponse() as never,
+    );
+    await CatalogController.updatePackage(
+      updateReq as never,
+      createResponse() as never,
+    );
+    await CatalogController.restorePackage(
+      restoreReq as never,
+      createResponse() as never,
+    );
+    const deleteRes = createResponse();
+    await CatalogController.deletePackage(
+      deleteReq as never,
+      deleteRes as never,
+    );
+
+    expect(CatalogService.createProduct).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId: "org_1",
+        specialityId: "spec_1",
+        kind: "PACKAGE",
+      }),
+    );
+    expect(CatalogService.updateProduct).toHaveBeenCalledWith(
+      "pkg_1",
+      expect.objectContaining({ expectedVersion: 1 }),
+    );
+    expect(CatalogService.restoreProduct).toHaveBeenCalledWith(
+      "pkg_1",
+      "org_1",
+      2,
+    );
+    expect(CatalogService.deleteProduct).toHaveBeenCalledWith(
+      "pkg_1",
+      "org_1",
+      3,
+    );
+    expect(deleteRes.status).toHaveBeenCalledWith(204);
+  });
+
+  it("searches catalog items from query parameters", async () => {
+    (CatalogService.searchItems as jest.Mock).mockResolvedValue({
+      query: "kit",
+      page: 2,
+      pageSize: 5,
+      total: 0,
+      items: [],
+    });
+
+    const req = {
+      params: { organisationId: "org_1" },
+      query: {
+        q: "kit",
+        kinds: "INVENTORY,PACKAGE",
+        includeArchived: "true",
+        includeNestedBreakdown: "true",
+        page: "2",
+        pageSize: "5",
+      },
+    };
+    const res = createResponse();
+
+    await CatalogController.searchItems(req as never, res as never);
+
+    expect(CatalogService.searchItems).toHaveBeenCalledWith({
+      organisationId: "org_1",
+      q: "kit",
+      specialityId: undefined,
+      kinds: ["INVENTORY", "PACKAGE"],
+      includeArchived: true,
+      excludePackageId: undefined,
+      includeNestedBreakdown: true,
+      page: 2,
+      pageSize: 5,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("returns the archived catalog for a speciality", async () => {
+    (CatalogService.getArchiveCatalog as jest.Mock).mockResolvedValue({
+      services: [],
+      packages: [],
+    });
+
+    const req = {
+      params: { organisationId: "org_1", specialityId: "spec_1" },
+      query: { search: "archived" },
+    };
+    const res = createResponse();
+
+    await CatalogController.getArchiveCatalog(req as never, res as never);
+
+    expect(CatalogService.getArchiveCatalog).toHaveBeenCalledWith(
+      "org_1",
+      "spec_1",
+      "archived",
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
 });

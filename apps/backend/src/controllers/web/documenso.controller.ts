@@ -66,7 +66,7 @@ export const DocumensoWebhookController = {
       const documentId = payload?.id;
 
       if (!eventType || documentId === undefined || documentId === null) {
-        console.error("[DocumensoWebhook] Invalid payload", body);
+        logger.error("[DocumensoWebhook] Invalid payload");
         return res.status(400).json({ message: "Invalid payload" });
       }
 
@@ -81,10 +81,7 @@ export const DocumensoWebhookController = {
         });
 
         if (!submission) {
-          console.warn(
-            "[DocumensoWebhook] No submission found for document",
-            documentId,
-          );
+          logger.warn("[DocumensoWebhook] No submission found for document");
           return res.status(200).json({ received: true });
         }
 
@@ -103,10 +100,7 @@ export const DocumensoWebhookController = {
         });
 
         if (!submission) {
-          console.warn(
-            "[DocumensoWebhook] No submission found for document",
-            documentId,
-          );
+          logger.warn("[DocumensoWebhook] No submission found for document");
           return res.status(200).json({ received: true });
         }
 
@@ -138,7 +132,7 @@ export const DocumensoWebhookController = {
 
       return res.status(200).json({ received: true });
     } catch (err) {
-      console.error("[DocumensoWebhook] Error", err);
+      logger.error("[DocumensoWebhook] Error", err);
       return res.status(500).json({ message: "Webhook failed" });
     }
   },
