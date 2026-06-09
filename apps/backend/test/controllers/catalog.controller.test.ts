@@ -321,4 +321,61 @@ describe("CatalogController", () => {
       }),
     );
   });
+
+  it("accepts canonical specialty in component search operation", async () => {
+    (CatalogService.searchItems as jest.Mock).mockResolvedValue({
+      query: null,
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      items: [],
+    });
+
+    const req = {
+      body: {
+        resourceType: "Parameters",
+        parameter: [
+          { name: "organization", valueString: "Organization/org_1" },
+          { name: "specialty", valueString: "spec_1" },
+        ],
+      },
+    };
+    const res = createResponse();
+
+    await CatalogController.searchCatalogOperation(req as never, res as never);
+
+    expect(CatalogService.searchItems).toHaveBeenCalledWith({
+      organisationId: "org_1",
+      q: undefined,
+      specialityId: "spec_1",
+      kinds: undefined,
+      includeArchived: false,
+      excludePackageId: undefined,
+      includeNestedBreakdown: false,
+      page: undefined,
+      pageSize: undefined,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("rejects unsupported FHIR component search kinds", async () => {
+    const req = {
+      body: {
+        resourceType: "Parameters",
+        parameter: [
+          { name: "organization", valueString: "Organization/org_1" },
+          { name: "kinds", valueString: "LAB_TEST" },
+        ],
+      },
+    };
+    const res = createResponse();
+
+    await CatalogController.searchCatalogOperation(req as never, res as never);
+
+    expect(CatalogService.searchItems).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: "Unsupported catalog search kind: LAB_TEST",
+    });
+  });
 });

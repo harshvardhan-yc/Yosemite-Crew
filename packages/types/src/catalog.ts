@@ -159,6 +159,39 @@ export type SpecialityCatalogView = {
   packages: CatalogListRow[];
 };
 
+export type CatalogSearchSource = 'CATALOG' | 'INVENTORY';
+export type CatalogSearchStatus = 'ACTIVE' | 'ARCHIVED';
+
+export type CatalogSearchItem = {
+  id: string;
+  organisationId: string;
+  specialityId: string | null;
+  code: string | null;
+  name: string;
+  description: string | null;
+  kind: ProductKind | 'INVENTORY_ITEM';
+  source: CatalogSearchSource;
+  status: CatalogSearchStatus;
+  isBookable: boolean;
+  durationMinutes: number | null;
+  unitPrice: number;
+  currency: string | null;
+  defaultDiscountPercent: number;
+  maxDiscountPercent: number;
+  totalAmount: number;
+  canBeAddedToPackage: boolean;
+  blockReason: string | null;
+  nestedBreakdown: CatalogPackageBreakdownRow[] | null;
+};
+
+export type CatalogSearchResult = {
+  query: string | null;
+  page: number;
+  pageSize: number;
+  total: number;
+  items: CatalogSearchItem[];
+};
+
 export const EXT_CATALOG_KIND =
   'https://yosemitecrew.com/fhir/StructureDefinition/catalog-product-kind';
 export const CATALOG_HEALTHCARE_SERVICE_PROFILE =

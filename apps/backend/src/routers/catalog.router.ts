@@ -5,6 +5,9 @@ import { CatalogController } from "src/controllers/web/catalog.controller";
 
 const router = Router();
 
+// Compatibility-only JSON routes. New catalog clients should prefer
+// /fhir/v1/healthcare-service and its custom FHIR operations.
+
 router.post(
   "/products",
   authorizeCognito,

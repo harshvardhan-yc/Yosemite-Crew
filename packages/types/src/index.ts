@@ -140,6 +140,10 @@ export type {
   CatalogTab,
   AppointmentKind,
   CatalogPricePolicy,
+  CatalogSearchItem,
+  CatalogSearchResult,
+  CatalogSearchSource,
+  CatalogSearchStatus,
   PackageItemPricingMode,
   ProductBookable,
   ProductItem,
@@ -182,6 +186,22 @@ export {
   toCatalogBundleResponseDTO,
   toCatalogResponseDTO,
 } from './dto/catalog.dto';
+export {
+  type CatalogResolveOperationInput,
+  type CatalogResolveOperationRequestDTO,
+  type CatalogResolveOperationResponseDTO,
+  type CatalogSearchOperationInput,
+  type CatalogSearchOperationKind,
+  type CatalogSearchOperationRequestDTO,
+  type CatalogSearchOperationResponseDTO,
+  CATALOG_RESOLVE_SELECTION_OPERATION,
+  CATALOG_SEARCH_COMPONENTS_OPERATION,
+  CATALOG_SEARCH_OPERATION_KINDS,
+  fromCatalogResolveOperationRequestDTO,
+  fromCatalogSearchOperationRequestDTO,
+  toCatalogResolveOperationResponseDTO,
+  toCatalogSearchOperationResponseDTO,
+} from './dto/catalog-operations.dto';
 export {
   type ServiceRequestDTO,
   type ServiceResponseDTO,

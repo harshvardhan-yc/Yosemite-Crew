@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import type { Parameters } from "@yosemite-crew/fhir";
 import logger from "src/utils/logger";
 import {
   CatalogService,
@@ -9,9 +8,13 @@ import {
 } from "src/services/catalog.service";
 import {
   fromCatalogRequestDTO,
+  fromCatalogResolveOperationRequestDTO,
+  fromCatalogSearchOperationRequestDTO,
   type CatalogRequestDTO,
   toCatalogBundleResponseDTO,
+  toCatalogResolveOperationResponseDTO,
   toCatalogResponseDTO,
+  toCatalogSearchOperationResponseDTO,
 } from "@yosemite-crew/types";
 
 const productKindSchema = z.enum([
@@ -35,26 +38,18 @@ const resolveSchema = z.object({
   organisationId: z.string().trim().min(1).optional(),
 });
 
-const resolveOperationSchema = z.object({
+const parametersOperationSchema = z.object({
   resourceType: z.literal("Parameters"),
-  parameter: z.array(
-    z.object({
-      name: z.string(),
-      valueString: z.string().optional(),
-    }),
-  ),
-});
-
-const searchOperationSchema = z.object({
-  resourceType: z.literal("Parameters"),
-  parameter: z.array(
-    z.object({
-      name: z.string(),
-      valueString: z.string().optional(),
-      valueBoolean: z.boolean().optional(),
-      valueInteger: z.number().int().optional(),
-    }),
-  ),
+  parameter: z
+    .array(
+      z.object({
+        name: z.string(),
+        valueString: z.string().optional(),
+        valueBoolean: z.boolean().optional(),
+        valueInteger: z.number().int().optional(),
+      }),
+    )
+    .optional(),
 });
 
 const appointmentModesSchema = z
@@ -201,106 +196,6 @@ const parseKinds = (value?: string) => {
 
   return z.array(productKindSchema).parse(rawKinds);
 };
-
-const toResolveParameters = (
-  result: Awaited<ReturnType<typeof CatalogService.resolveSelection>>,
-): Parameters => ({
-  resourceType: "Parameters",
-  parameter: [
-    { name: "productItemId", valueString: result.productItemId },
-    { name: "productKind", valueString: result.productKind },
-    { name: "isBookable", valueBoolean: result.isBookable },
-    ...result.appointmentKinds.map((kind) => ({
-      name: "appointmentKind",
-      valueString: kind,
-    })),
-    {
-      name: "billingItems",
-      part: result.billingItems.map((item) => ({
-        name: "item",
-        part: [
-          { name: "productItemId", valueString: item.productItemId },
-          { name: "name", valueString: item.name },
-          { name: "kind", valueString: item.kind },
-          { name: "quantity", valueInteger: item.quantity },
-          { name: "unitPrice", valueDecimal: item.unitPrice },
-          ...(item.packageProductItemId
-            ? [
-                {
-                  name: "packageProductItemId",
-                  valueString: item.packageProductItemId,
-                },
-              ]
-            : []),
-        ],
-      })),
-    },
-    {
-      name: "includedItems",
-      part: result.includedItems.map((item) => ({
-        name: "item",
-        part: [
-          { name: "productItemId", valueString: item.productItemId },
-          { name: "name", valueString: item.name },
-          { name: "kind", valueString: item.kind },
-          { name: "quantity", valueInteger: item.quantity },
-          { name: "unitPrice", valueDecimal: item.unitPrice },
-          ...(item.packageProductItemId
-            ? [
-                {
-                  name: "packageProductItemId",
-                  valueString: item.packageProductItemId,
-                },
-              ]
-            : []),
-        ],
-      })),
-    },
-  ],
-});
-
-const toSearchParameters = (
-  result: Awaited<ReturnType<typeof CatalogService.searchItems>>,
-): Parameters => ({
-  resourceType: "Parameters",
-  parameter: [
-    { name: "total", valueInteger: result.total },
-    { name: "page", valueInteger: result.page },
-    { name: "pageSize", valueInteger: result.pageSize },
-    ...(result.query ? [{ name: "query", valueString: result.query }] : []),
-    ...result.items.map((item) => ({
-      name: "item",
-      part: [
-        { name: "id", valueString: item.id },
-        { name: "source", valueString: item.source },
-        { name: "kind", valueString: item.kind },
-        { name: "name", valueString: item.name },
-        ...(item.code ? [{ name: "code", valueString: item.code }] : []),
-        ...(item.description
-          ? [{ name: "description", valueString: item.description }]
-          : []),
-        { name: "status", valueString: item.status },
-        { name: "canBeAddedToPackage", valueBoolean: item.canBeAddedToPackage },
-        { name: "unitPrice", valueString: String(item.unitPrice) },
-        ...(item.currency
-          ? [{ name: "currency", valueString: item.currency }]
-          : []),
-        {
-          name: "defaultDiscountPercent",
-          valueString: String(item.defaultDiscountPercent),
-        },
-        {
-          name: "maxDiscountPercent",
-          valueString: String(item.maxDiscountPercent),
-        },
-        { name: "totalAmount", valueString: String(item.totalAmount) },
-        ...(item.blockReason
-          ? [{ name: "blockReason", valueString: item.blockReason }]
-          : []),
-      ],
-    })),
-  ],
-});
 
 const mapAppointmentModesToBookable = (params: {
   isBookable?: boolean;
@@ -568,7 +463,7 @@ export const CatalogController = {
 
   resolveProductOperation: async (req: Request, res: Response) => {
     try {
-      const parsed = resolveOperationSchema.safeParse(req.body);
+      const parsed = parametersOperationSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({
           message: "Invalid FHIR Parameters payload.",
@@ -576,26 +471,21 @@ export const CatalogController = {
         });
       }
 
-      const productItemId = parsed.data.parameter.find(
-        (parameter) => parameter.name === "productItemId",
-      )?.valueString;
-      const organisationId = parsed.data.parameter.find(
-        (parameter) => parameter.name === "organization",
-      )?.valueString;
+      const operationInput = fromCatalogResolveOperationRequestDTO(parsed.data);
 
-      if (!productItemId) {
+      const result = await CatalogService.resolveSelection(
+        operationInput.productItemId,
+        operationInput.organisationId,
+      );
+
+      return res.status(200).json(toCatalogResolveOperationResponseDTO(result));
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Parameters.")) {
         return res.status(400).json({
-          message: "Parameters.productItemId is required.",
+          message: error.message,
         });
       }
 
-      const result = await CatalogService.resolveSelection(
-        productItemId,
-        organisationId?.replace(/^Organization\//, ""),
-      );
-
-      return res.status(200).json(toResolveParameters(result));
-    } catch (error) {
       return handleError(
         res,
         error,
@@ -606,7 +496,7 @@ export const CatalogController = {
 
   searchCatalogOperation: async (req: Request, res: Response) => {
     try {
-      const parsed = searchOperationSchema.safeParse(req.body);
+      const parsed = parametersOperationSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({
           message: "Invalid FHIR Parameters payload.",
@@ -614,55 +504,33 @@ export const CatalogController = {
         });
       }
 
-      const getString = (name: string) =>
-        parsed.data.parameter.find((parameter) => parameter.name === name)
-          ?.valueString;
-      const getBoolean = (name: string) =>
-        parsed.data.parameter.find((parameter) => parameter.name === name)
-          ?.valueBoolean;
-      const getInteger = (name: string) =>
-        parsed.data.parameter.find((parameter) => parameter.name === name)
-          ?.valueInteger;
-
-      const organisationId = getString("organization")?.replace(
-        /^Organization\//,
-        "",
-      );
-
-      if (!organisationId) {
-        return res.status(400).json({
-          message: "Parameters.organization is required.",
-        });
-      }
-
-      const kinds = getString("kinds")
-        ?.split(",")
-        .map((value) => value.trim())
-        .filter(Boolean) as
-        | Array<
-            | "CONSULTATION"
-            | "PROCEDURE"
-            | "LAB"
-            | "MEDICATION"
-            | "INVENTORY"
-            | "PACKAGE"
-          >
-        | undefined;
+      const operationInput = fromCatalogSearchOperationRequestDTO(parsed.data);
 
       const result = await CatalogService.searchItems({
-        organisationId,
-        q: getString("q") ?? undefined,
-        specialityId: getString("speciality") ?? undefined,
-        kinds,
-        includeArchived: getBoolean("includeArchived") ?? false,
-        excludePackageId: getString("excludePackageId") ?? undefined,
-        includeNestedBreakdown: getBoolean("includeNestedBreakdown") ?? false,
-        page: getInteger("page") ?? undefined,
-        pageSize: getInteger("pageSize") ?? undefined,
+        organisationId: operationInput.organisationId,
+        q: operationInput.q,
+        specialityId: operationInput.specialityId,
+        kinds: operationInput.kinds,
+        includeArchived: operationInput.includeArchived,
+        excludePackageId: operationInput.excludePackageId,
+        includeNestedBreakdown: operationInput.includeNestedBreakdown,
+        page: operationInput.page,
+        pageSize: operationInput.pageSize,
       });
 
-      return res.status(200).json(toSearchParameters(result));
+      return res.status(200).json(toCatalogSearchOperationResponseDTO(result));
     } catch (error) {
+      if (error instanceof Error) {
+        if (
+          error.message === "Parameters.organization is required." ||
+          error.message.startsWith("Unsupported catalog search kind:")
+        ) {
+          return res.status(400).json({
+            message: error.message,
+          });
+        }
+      }
+
       return handleError(
         res,
         error,
