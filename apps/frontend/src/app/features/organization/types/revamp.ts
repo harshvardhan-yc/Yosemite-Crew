@@ -40,6 +40,8 @@ export type PackageBreakdownItem = {
   quantity: number;
   discount: number;
   maxDiscount?: number;
+  isBookable?: boolean;
+  isInpatientPreferred?: boolean;
   nestedBreakdown?: PackageBreakdownItem[];
 };
 
@@ -50,8 +52,9 @@ export type PackageRevamp = {
   description: string;
   specialityId: string;
   organisationId: string;
-  durationMinutes: number;
+  durationText: string;
   isBookable: boolean;
+  isInpatientPreferred: boolean;
   currency?: string;
   leadCount: number;
   supportCount: number;

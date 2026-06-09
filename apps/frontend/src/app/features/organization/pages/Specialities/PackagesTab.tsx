@@ -54,7 +54,12 @@ const PackageCard = ({
       <SectionContainer
         title={pkg.name}
         titleColor="var(--color-neutral-900)"
-        titleSlot={pkg.isBookable ? <Badge tone="brand">✓ Bookable</Badge> : undefined}
+        titleSlot={
+          <div className="flex items-center gap-2">
+            {pkg.isBookable && <Badge tone="brand">✓ Bookable</Badge>}
+            {pkg.isInpatientPreferred && <Badge tone="brand">In-patient</Badge>}
+          </div>
+        }
         className="flex-1 min-w-0"
       >
         {/* Action buttons on mobile */}
@@ -97,7 +102,7 @@ const PackageCard = ({
               </div>
               <div>
                 <span className="text-caption-2 font-bold text-text-tertiary block">Duration</span>
-                <span className="text-body-4 text-text-primary">{pkg.durationMinutes} mins</span>
+                <span className="text-body-4 text-text-primary">{pkg.durationText}</span>
               </div>
               <div className="col-span-2">
                 <span className="text-caption-2 font-bold text-text-tertiary block">
@@ -141,7 +146,7 @@ const PackageCard = ({
               <div>
                 <span className="text-caption-2 font-bold text-text-tertiary block">Duration</span>
                 <span className="text-body-4 text-text-primary whitespace-nowrap">
-                  {pkg.durationMinutes} mins
+                  {pkg.durationText}
                 </span>
               </div>
               <div>

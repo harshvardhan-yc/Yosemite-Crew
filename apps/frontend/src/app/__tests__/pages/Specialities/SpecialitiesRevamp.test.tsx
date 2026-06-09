@@ -198,9 +198,7 @@ describe('SpecialitiesRevamp', () => {
     );
     render(<SpecialitiesRevamp />);
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
-    expect(
-      screen.getByText('Select an organisation before managing specialities.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('No specialities yet.')).toBeInTheDocument();
   });
 
   // --- Section 5: openId from searchParams ---

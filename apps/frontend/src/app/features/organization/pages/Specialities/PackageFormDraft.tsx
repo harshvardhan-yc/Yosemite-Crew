@@ -1,4 +1,4 @@
-import React, { useCallback, useId, useState } from 'react';
+import React, { useCallback, useId, useMemo, useState } from 'react';
 import { MdOutlineArchive } from 'react-icons/md';
 import { FiCheck } from 'react-icons/fi';
 import { IoIosSearch } from 'react-icons/io';
@@ -20,15 +20,6 @@ import { useNotify } from '@/app/hooks/useNotify';
 import { computePackageTotals } from '@/app/features/organization/services/revampMockData';
 import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
 import { formatMoney } from '@/app/lib/money';
-
-const DURATION_OPTIONS = [
-  { value: '15', label: '15 mins' },
-  { value: '30', label: '30 mins' },
-  { value: '45', label: '45 mins' },
-  { value: '60', label: '60 mins' },
-  { value: '90', label: '90 mins' },
-  { value: '120', label: '120 mins' },
-];
 
 const LEAD_OPTIONS = [
   { value: '1', label: 'Yes' },
@@ -124,6 +115,8 @@ type CatalogEntry = {
   currency?: string;
   defaultDiscount: number;
   maxDiscount: number;
+  isBookable: boolean;
+  isInpatientPreferred: boolean;
   nestedBreakdown?: PackageBreakdownItem[];
 };
 
@@ -135,6 +128,14 @@ const TYPE_LABELS: Record<string, string> = {
   MEDICATION: 'Medication',
   PACKAGE: 'Package',
 };
+
+const hasBookableBreakdownItem = (items: PackageBreakdownItem[]): boolean =>
+  items.some((item) => item.isBookable || hasBookableBreakdownItem(item.nestedBreakdown ?? []));
+
+const hasInpatientBreakdownItem = (items: PackageBreakdownItem[]): boolean =>
+  items.some(
+    (item) => item.isInpatientPreferred || hasInpatientBreakdownItem(item.nestedBreakdown ?? [])
+  );
 
 const PackageFormDraft = ({
   specialityId,
@@ -152,15 +153,21 @@ const PackageFormDraft = ({
   const allActivePackages = useRevampCatalogStore(
     useShallow((s) => s.packages.filter((p) => p.status === 'ACTIVE' && p.id !== editPackage?.id))
   );
+  const activeServices = useRevampCatalogStore(
+    useShallow((s) => s.services.filter((svc) => svc.status === 'ACTIVE'))
+  );
 
   const { notify } = useNotify();
 
   const [name, setName] = useState(editPackage?.name ?? '');
   const [description, setDescription] = useState(editPackage?.description ?? '');
-  const [duration, setDuration] = useState(String(editPackage?.durationMinutes ?? 30));
+  const [durationText, setDurationText] = useState(editPackage?.durationText ?? 'Approx. 30 mins');
   const [leadCount, setLeadCount] = useState((editPackage?.leadCount ?? 1) >= 1 ? '1' : '0');
   const [supportCount, setSupportCount] = useState(String(editPackage?.supportCount ?? 0));
   const [isBookable, setIsBookable] = useState(editPackage?.isBookable ?? false);
+  const [isInpatientPreferred, setIsInpatientPreferred] = useState(
+    editPackage?.isInpatientPreferred ?? false
+  );
   const [additionalDiscount, setAdditionalDiscount] = useState(
     String(editPackage?.additionalDiscount ?? 0)
   );
@@ -168,13 +175,33 @@ const PackageFormDraft = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
 
-  // Build combined catalog: static items + active packages from store
+  const serviceCatalog = activeServices.map(
+    (service): CatalogEntry => ({
+      id: service.id,
+      code: service.code,
+      name: service.name,
+      type: service.type,
+      unitPrice: service.grossAmount,
+      currency: service.currency ?? orgCurrency,
+      defaultDiscount: service.defaultDiscount,
+      maxDiscount: service.maxDiscount,
+      isBookable: service.isBookable,
+      isInpatientPreferred: service.isInpatientPreferred,
+    })
+  );
+
+  // Build combined catalog: active services + inventory/medication placeholders + active packages.
   const combinedCatalog: CatalogEntry[] = [
-    ...STATIC_CATALOG.map((s) => ({
-      ...s,
-      defaultDiscount: s.defaultDiscount ?? 0,
-      maxDiscount: s.maxDiscount ?? 100,
-    })),
+    ...serviceCatalog,
+    ...STATIC_CATALOG.filter((item) => item.type === 'INVENTORY' || item.type === 'MEDICATION').map(
+      (s) => ({
+        ...s,
+        defaultDiscount: s.defaultDiscount ?? 0,
+        maxDiscount: s.maxDiscount ?? 100,
+        isBookable: false,
+        isInpatientPreferred: false,
+      })
+    ),
     ...allActivePackages.map((pkg): CatalogEntry => {
       const { totalCost } = computePackageTotals(pkg);
       return {
@@ -186,10 +213,17 @@ const PackageFormDraft = ({
         currency: pkg.currency ?? orgCurrency,
         defaultDiscount: 0,
         maxDiscount: 100,
+        isBookable: pkg.isBookable || hasBookableBreakdownItem(pkg.breakdown),
+        isInpatientPreferred: pkg.isInpatientPreferred || hasInpatientBreakdownItem(pkg.breakdown),
         nestedBreakdown: pkg.breakdown,
       };
     }),
   ];
+
+  const requiredBookable = useMemo(() => hasBookableBreakdownItem(breakdown), [breakdown]);
+  const requiredInpatient = useMemo(() => hasInpatientBreakdownItem(breakdown), [breakdown]);
+  const effectiveBookable = isBookable || requiredBookable;
+  const effectiveInpatientPreferred = isInpatientPreferred || requiredInpatient;
 
   const filteredSearch = searchQuery.trim()
     ? combinedCatalog.filter((item) => {
@@ -221,6 +255,8 @@ const PackageFormDraft = ({
             quantity: 1,
             discount: catalog.defaultDiscount,
             maxDiscount: catalog.maxDiscount,
+            isBookable: catalog.isBookable,
+            isInpatientPreferred: catalog.isInpatientPreferred,
             nestedBreakdown: catalog.nestedBreakdown,
           },
         ]);
@@ -246,6 +282,7 @@ const PackageFormDraft = ({
     const errs: FormErrors = {};
     const additionalDiscountValue = Number(additionalDiscount);
     if (!name.trim()) errs.name = 'Package name is required.';
+    if (!durationText.trim()) errs.durationText = 'Approx. duration is required.';
     if (breakdown.length === 0) errs.breakdown = 'Add at least one item to this package.';
     if (
       additionalDiscount &&
@@ -256,7 +293,7 @@ const PackageFormDraft = ({
       errs.additionalDiscount = 'Additional discount must be 0–100.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [additionalDiscount, breakdown.length, name]);
+  }, [additionalDiscount, breakdown.length, durationText, name]);
 
   const handleSave = () => {
     if (!validate()) return;
@@ -265,11 +302,12 @@ const PackageFormDraft = ({
       description: description.trim(),
       specialityId,
       organisationId,
-      durationMinutes: Number.parseInt(duration, 10),
+      durationText: durationText.trim(),
       currency: editPackage?.currency ?? orgCurrency,
       leadCount: Number.parseInt(leadCount, 10),
       supportCount: Number.parseInt(supportCount, 10),
-      isBookable,
+      isBookable: effectiveBookable,
+      isInpatientPreferred: effectiveInpatientPreferred,
       additionalDiscount: Number.parseFloat(additionalDiscount) || 0,
       breakdown,
       status: 'ACTIVE' as const,
@@ -303,7 +341,8 @@ const PackageFormDraft = ({
           {editPackage.code}
         </span>
       )}
-      {isBookable && <Badge tone="brand">✓ Bookable</Badge>}
+      {effectiveBookable && <Badge tone="brand">✓ Bookable</Badge>}
+      {effectiveInpatientPreferred && <Badge tone="brand">In-patient</Badge>}
     </>
   );
 
@@ -341,14 +380,17 @@ const PackageFormDraft = ({
           </div>
         </div>
 
-        {/* Right col: Duration / Lead+Support row / Bookable checkbox */}
+        {/* Right col: Duration / Lead+Support row / scheduling checkboxes */}
         <div className="flex flex-col gap-4">
-          <LabelDropdown
-            placeholder="Duration"
-            options={DURATION_OPTIONS}
-            defaultOption={duration}
-            onSelect={(o) => setDuration(o.value)}
-            portal
+          <FormInput
+            intype="text"
+            inlabel="Approx. duration"
+            value={durationText}
+            onChange={(e) => {
+              setDurationText(e.target.value);
+              setErrors((p) => ({ ...p, durationText: undefined }));
+            }}
+            error={errors.durationText}
           />
           <div className="grid grid-cols-2 gap-4">
             <LabelDropdown
@@ -366,16 +408,30 @@ const PackageFormDraft = ({
               portal
             />
           </div>
-          <label className="flex items-center justify-end gap-2 cursor-pointer select-none text-body-4 text-text-secondary whitespace-nowrap">
-            <input
-              type="checkbox"
-              aria-label="Package bookable"
-              checked={isBookable}
-              onChange={(e) => setIsBookable(e.target.checked)}
-              className="size-4 shrink-0 accent-(--color-input-border-active)"
-            />
-            {'Is this Package Bookable?'}
-          </label>
+          <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-body-4 text-text-secondary whitespace-nowrap">
+              <input
+                type="checkbox"
+                aria-label="Package bookable"
+                checked={effectiveBookable}
+                disabled={requiredBookable}
+                onChange={(e) => setIsBookable(e.target.checked)}
+                className="size-4 shrink-0 accent-(--color-input-border-active) disabled:cursor-not-allowed"
+              />
+              {'Is this Package Bookable?'}
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none text-body-4 text-text-secondary whitespace-nowrap">
+              <input
+                type="checkbox"
+                aria-label="Package in-patient"
+                checked={effectiveInpatientPreferred}
+                disabled={requiredInpatient}
+                onChange={(e) => setIsInpatientPreferred(e.target.checked)}
+                className="size-4 shrink-0 accent-(--color-input-border-active) disabled:cursor-not-allowed"
+              />
+              {'In-patient preferred'}
+            </label>
+          </div>
         </div>
       </div>
 

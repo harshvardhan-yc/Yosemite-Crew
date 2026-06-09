@@ -221,7 +221,7 @@ describe('ArchiveTab', () => {
         id: 'p1',
         name: 'Wellness Plan',
         code: 'WP1',
-        durationMinutes: 60,
+        durationText: 'Approx. 60 mins',
         specialityId: SPEC_ID,
         status: 'ARCHIVED',
       },
@@ -229,7 +229,7 @@ describe('ArchiveTab', () => {
     render(<ArchiveTab specialityId={SPEC_ID} />);
     expect(screen.getByText('Wellness Plan')).toBeInTheDocument();
     expect(screen.getByText('WP1')).toBeInTheDocument();
-    expect(screen.getByText('60 mins')).toBeInTheDocument();
+    expect(screen.getByText('Approx. 60 mins')).toBeInTheDocument();
     expect(screen.getByText('Package')).toBeInTheDocument();
   });
 
@@ -239,7 +239,7 @@ describe('ArchiveTab', () => {
         id: 'p1',
         name: 'Wellness Plan',
         code: 'WP1',
-        durationMinutes: 60,
+        durationText: 'Approx. 60 mins',
         specialityId: SPEC_ID,
         status: 'ARCHIVED',
       },
@@ -259,7 +259,7 @@ describe('ArchiveTab', () => {
         id: 'p1',
         name: 'Wellness Plan',
         code: 'WP1',
-        durationMinutes: 60,
+        durationText: 'Approx. 60 mins',
         specialityId: SPEC_ID,
         status: 'ARCHIVED',
       },
@@ -292,7 +292,7 @@ describe('ArchiveTab', () => {
         id: 'p1',
         name: 'Senior Care',
         code: 'SC1',
-        durationMinutes: 90,
+        durationText: 'Approx. 90 mins',
         specialityId: SPEC_ID,
         status: 'ARCHIVED',
       },

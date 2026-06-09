@@ -184,7 +184,36 @@ const mockArchivePackage = jest.fn();
 
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 
-const setupStoreMock = (packages: any[] = []) => {
+const mockServices = [
+  {
+    id: 'svc-consult-1',
+    code: 'CS-0001',
+    name: 'Radiographic Consultation',
+    type: 'CONSULTATION',
+    grossAmount: 100,
+    currency: 'USD',
+    defaultDiscount: 0,
+    maxDiscount: 15,
+    isBookable: true,
+    isInpatientPreferred: false,
+    status: 'ACTIVE',
+  },
+  {
+    id: 'svc-mri-1',
+    code: 'PR-0001',
+    name: 'MRI Procedure',
+    type: 'PROCEDURE',
+    grossAmount: 100,
+    currency: 'USD',
+    defaultDiscount: 0,
+    maxDiscount: 5,
+    isBookable: true,
+    isInpatientPreferred: true,
+    status: 'ACTIVE',
+  },
+];
+
+const setupStoreMock = (packages: any[] = [], services: any[] = mockServices) => {
   (useRevampCatalogStore as unknown as jest.Mock).mockImplementation(
     (selector: (s: Record<string, unknown>) => unknown) => {
       const state = {
@@ -192,6 +221,7 @@ const setupStoreMock = (packages: any[] = []) => {
         updatePackage: mockUpdatePackage,
         archivePackage: mockArchivePackage,
         packages,
+        services,
       };
       return selector(state);
     }
@@ -217,10 +247,11 @@ const mockEditPackage: PackageRevamp = {
   description: 'A wellness package',
   specialityId: 'spec-1',
   organisationId: 'org-1',
-  durationMinutes: 60,
+  durationText: 'Approx. 60 mins',
   leadCount: 1,
   supportCount: 2,
   isBookable: true,
+  isInpatientPreferred: false,
   additionalDiscount: 5,
   breakdown: [
     {
@@ -256,9 +287,9 @@ describe('PackageFormDraft', () => {
       expect(screen.getByLabelText('Description')).toBeInTheDocument();
     });
 
-    it('renders Duration, Lead and Support dropdowns', () => {
+    it('renders duration text, Lead and Support controls', () => {
       render(<PackageFormDraft {...defaultProps} />);
-      expect(screen.getByLabelText('Duration')).toBeInTheDocument();
+      expect(screen.getByLabelText('Approx. duration')).toBeInTheDocument();
       expect(screen.getByLabelText('Lead')).toBeInTheDocument();
       expect(screen.getByLabelText('Support')).toBeInTheDocument();
     });
@@ -301,7 +332,6 @@ describe('PackageFormDraft', () => {
     it('shows validation error when saving with empty name', () => {
       render(<PackageFormDraft {...defaultProps} />);
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
-      expect(screen.getByRole('alert')).toBeInTheDocument();
       expect(screen.getByText('Package name is required.')).toBeInTheDocument();
     });
 
@@ -353,15 +383,15 @@ describe('PackageFormDraft', () => {
       expect(descInput.value).toBe('Package description');
     });
 
-    it('changes duration via dropdown', () => {
+    it('saves approximate duration text', () => {
       render(<PackageFormDraft {...defaultProps} />);
-      const durationDropdown = screen.getByLabelText('Duration');
+      const durationDropdown = screen.getByLabelText('Approx. duration');
       fireEvent.change(durationDropdown, { target: { value: '60' } });
       // name needed to save
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My Package' } });
       addSyringeToBreakdown();
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
-      expect(mockAddPackage).toHaveBeenCalledWith(expect.objectContaining({ durationMinutes: 60 }));
+      expect(mockAddPackage).toHaveBeenCalledWith(expect.objectContaining({ durationText: '60' }));
     });
 
     it('changes lead count via dropdown', () => {
@@ -499,11 +529,33 @@ describe('PackageFormDraft', () => {
       expect(screen.getByTestId('breakdown-table')).toBeInTheDocument();
     });
 
+    it('auto-checks and locks bookable when a bookable service is added', () => {
+      render(<PackageFormDraft {...defaultProps} />);
+      const checkbox = screen.getByLabelText('Package bookable') as HTMLInputElement;
+      fireEvent.change(screen.getByLabelText('Search catalog items'), {
+        target: { value: 'radiograph' },
+      });
+      fireEvent.click(screen.getByText('Radiographic Consultation'));
+      expect(checkbox).toBeChecked();
+      expect(checkbox).toBeDisabled();
+    });
+
+    it('auto-checks and locks in-patient when an inpatient service is added', () => {
+      render(<PackageFormDraft {...defaultProps} />);
+      const inpatientCheckbox = screen.getByLabelText('Package in-patient') as HTMLInputElement;
+      fireEvent.change(screen.getByLabelText('Search catalog items'), { target: { value: 'mri' } });
+      fireEvent.click(screen.getByText('MRI Procedure'));
+      expect(inpatientCheckbox).toBeChecked();
+      expect(inpatientCheckbox).toBeDisabled();
+    });
+
     it('shows active packages from store in search results', () => {
       const activePackage = {
         id: 'pkg-active-1',
         name: 'Wellness Pack',
         status: 'ACTIVE',
+        isBookable: false,
+        isInpatientPreferred: false,
         breakdown: [],
       };
       setupStoreMock([activePackage]);

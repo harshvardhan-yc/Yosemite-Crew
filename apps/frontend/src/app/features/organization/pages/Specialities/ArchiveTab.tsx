@@ -159,7 +159,7 @@ const ArchiveTab = ({ specialityId }: ArchiveTabProps) => {
                   <div className="flex gap-4 text-caption-1 text-text-secondary flex-wrap">
                     <span>{pkg.code}</span>
                     <span>Package</span>
-                    <span>{pkg.durationMinutes} mins</span>
+                    <span>{pkg.durationText}</span>
                   </div>
                 </div>
               </div>

@@ -125,7 +125,7 @@ const mockPackage = {
   status: 'ACTIVE' as const,
   isBookable: true,
   description: 'Annual wellness check',
-  durationMinutes: 60,
+  durationText: 'Approx. 60 mins',
   additionalDiscount: 10,
   breakdown: [],
 };

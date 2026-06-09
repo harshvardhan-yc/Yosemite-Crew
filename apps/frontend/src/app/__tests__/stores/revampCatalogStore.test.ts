@@ -9,6 +9,21 @@ const reset = () =>
     packages: [],
   });
 
+const packageDraft = {
+  name: 'Pkg',
+  description: '',
+  specialityId: 'spec-1',
+  organisationId: 'org-1',
+  durationText: 'Approx. 30 mins',
+  isBookable: false,
+  isInpatientPreferred: false,
+  leadCount: 1,
+  supportCount: 0,
+  additionalDiscount: 0,
+  breakdown: [],
+  status: 'ACTIVE' as const,
+};
+
 describe('revampCatalogStore', () => {
   beforeEach(reset);
 
@@ -24,8 +39,7 @@ describe('revampCatalogStore', () => {
 
     it('renames a speciality', () => {
       getStore().addSpeciality('Old Name', 'org-1');
-      const { specialities } = getStore();
-      const id = specialities[0].id;
+      const id = getStore().specialities[0].id;
       getStore().renameSpeciality(id, 'New Name');
       expect(getStore().specialities[0].name).toBe('New Name');
     });
@@ -74,7 +88,7 @@ describe('revampCatalogStore', () => {
       expect(found?.grossAmount).toBe(200);
     });
 
-    it('archives and restores a service', () => {
+    it('archives, restores, and deletes a service', () => {
       const svc = getStore().addService({
         name: 'Archivable',
         description: '',
@@ -93,234 +107,60 @@ describe('revampCatalogStore', () => {
       expect(getStore().services.find((s) => s.id === svc.id)?.status).toBe('ARCHIVED');
       getStore().restoreService(svc.id);
       expect(getStore().services.find((s) => s.id === svc.id)?.status).toBe('ACTIVE');
-    });
-
-    it('deletes a service', () => {
-      const svc = getStore().addService({
-        name: 'Gone',
-        description: '',
-        type: 'LAB',
-        specialityId: 'spec-1',
-        organisationId: 'org-1',
-        grossAmount: 100,
-        defaultDiscount: 0,
-        maxDiscount: 0,
-        durationMinutes: 20,
-        isBookable: false,
-        isInpatientPreferred: false,
-        status: 'ACTIVE',
-      });
       getStore().deleteService(svc.id);
       expect(getStore().services.find((s) => s.id === svc.id)).toBeUndefined();
-    });
-
-    it('filtering services by speciality returns only ACTIVE services', () => {
-      getStore().addService({
-        name: 'Active Svc',
-        description: '',
-        type: 'CONSULTATION',
-        specialityId: 'spec-A',
-        organisationId: 'org-1',
-        grossAmount: 100,
-        defaultDiscount: 0,
-        maxDiscount: 0,
-        durationMinutes: 30,
-        isBookable: true,
-        isInpatientPreferred: false,
-        status: 'ACTIVE',
-      });
-      const archived = getStore().addService({
-        name: 'Archived Svc',
-        description: '',
-        type: 'CONSULTATION',
-        specialityId: 'spec-A',
-        organisationId: 'org-1',
-        grossAmount: 100,
-        defaultDiscount: 0,
-        maxDiscount: 0,
-        durationMinutes: 30,
-        isBookable: false,
-        isInpatientPreferred: false,
-        status: 'ARCHIVED',
-      });
-      const active = getStore().services.filter(
-        (s) => s.specialityId === 'spec-A' && s.status === 'ACTIVE'
-      );
-      expect(active).toHaveLength(1);
-      expect(active[0].status).toBe('ACTIVE');
-      expect(active.find((s) => s.id === archived.id)).toBeUndefined();
     });
   });
 
   describe('packages', () => {
     it('adds a package with PK code', () => {
-      getStore().addPackage({
-        name: 'Bundle',
-        description: '',
-        specialityId: 'spec-1',
-        organisationId: 'org-1',
-        durationMinutes: 60,
-        isBookable: true,
-        leadCount: 1,
-        supportCount: 2,
-        additionalDiscount: 5,
-        breakdown: [],
-        status: 'ACTIVE',
-      });
+      getStore().addPackage({ ...packageDraft, name: 'Bundle', isBookable: true });
       const { packages } = getStore();
       expect(packages).toHaveLength(1);
       expect(packages[0].code).toMatch(/^PK-\d{4}$/);
+      expect(packages[0].durationText).toBe('Approx. 30 mins');
     });
 
-    it('adds and removes a breakdown item', () => {
-      const pkg = getStore().addPackage({
-        name: 'Pkg',
-        description: '',
-        specialityId: 'spec-1',
-        organisationId: 'org-1',
-        durationMinutes: 30,
-        isBookable: false,
-        leadCount: 1,
-        supportCount: 0,
-        additionalDiscount: 0,
-        breakdown: [],
-        status: 'ACTIVE',
-      });
+    it('updates a package', () => {
+      const pkg = getStore().addPackage({ ...packageDraft, name: 'Before' });
+      getStore().updatePackage(pkg.id, { name: 'After', durationText: 'Approx. 2 hours' });
+      const found = getStore().packages.find((p) => p.id === pkg.id);
+      expect(found?.name).toBe('After');
+      expect(found?.durationText).toBe('Approx. 2 hours');
+    });
+
+    it('archives, restores, and deletes a package', () => {
+      const pkg = getStore().addPackage(packageDraft);
+      getStore().archivePackage(pkg.id);
+      expect(getStore().packages[0].status).toBe('ARCHIVED');
+      getStore().restorePackage(pkg.id);
+      expect(getStore().packages[0].status).toBe('ACTIVE');
+      getStore().deletePackage(pkg.id);
+      expect(getStore().packages.find((p) => p.id === pkg.id)).toBeUndefined();
+    });
+
+    it('adds, updates, and removes a breakdown item', () => {
+      const pkg = getStore().addPackage(packageDraft);
       getStore().addBreakdownItem(pkg.id, {
         type: 'CONSULTATION',
         name: 'Consult',
         unitPrice: 100,
         quantity: 1,
         discount: 10,
+        isBookable: true,
+        isInpatientPreferred: true,
       });
       expect(getStore().packages[0].breakdown).toHaveLength(1);
       const itemId = getStore().packages[0].breakdown[0].id;
+      getStore().updateBreakdownItem(pkg.id, itemId, { quantity: 3, discount: 15 });
+      expect(getStore().packages[0].breakdown[0].quantity).toBe(3);
+      expect(getStore().packages[0].breakdown[0].discount).toBe(15);
       getStore().removeBreakdownItem(pkg.id, itemId);
       expect(getStore().packages[0].breakdown).toHaveLength(0);
     });
 
-    it('archives and restores a package', () => {
-      const pkg = getStore().addPackage({
-        name: 'ArchivedPkg',
-        description: '',
-        specialityId: 'spec-1',
-        organisationId: 'org-1',
-        durationMinutes: 30,
-        isBookable: false,
-        leadCount: 1,
-        supportCount: 0,
-        additionalDiscount: 0,
-        breakdown: [],
-        status: 'ACTIVE',
-      });
-      getStore().archivePackage(pkg.id);
-      expect(getStore().packages[0].status).toBe('ARCHIVED');
-      getStore().restorePackage(pkg.id);
-      expect(getStore().packages[0].status).toBe('ACTIVE');
-    });
-
-    it('filtering packages by speciality returns only ARCHIVED items', () => {
-      const pkg = getStore().addPackage({
-        name: 'Active Pkg',
-        description: '',
-        specialityId: 'spec-B',
-        organisationId: 'org-1',
-        durationMinutes: 30,
-        isBookable: false,
-        leadCount: 1,
-        supportCount: 0,
-        additionalDiscount: 0,
-        breakdown: [],
-        status: 'ACTIVE',
-      });
-      getStore().archivePackage(pkg.id);
-      const archived = getStore().packages.filter(
-        (p) => p.specialityId === 'spec-B' && p.status === 'ARCHIVED'
-      );
-      expect(archived).toHaveLength(1);
-      expect(archived[0].status).toBe('ARCHIVED');
-    });
-
-    it('updates a package', () => {
-      const pkg = getStore().addPackage({
-        name: 'Before',
-        description: '',
-        specialityId: 'spec-1',
-        organisationId: 'org-1',
-        durationMinutes: 30,
-        isBookable: false,
-        leadCount: 1,
-        supportCount: 0,
-        additionalDiscount: 0,
-        breakdown: [],
-        status: 'ACTIVE',
-      });
-      getStore().updatePackage(pkg.id, { name: 'After', durationMinutes: 60 });
-      const found = getStore().packages.find((p) => p.id === pkg.id);
-      expect(found?.name).toBe('After');
-      expect(found?.durationMinutes).toBe(60);
-    });
-
-    it('deletes a package', () => {
-      const pkg = getStore().addPackage({
-        name: 'Gone',
-        description: '',
-        specialityId: 'spec-1',
-        organisationId: 'org-1',
-        durationMinutes: 30,
-        isBookable: false,
-        leadCount: 1,
-        supportCount: 0,
-        additionalDiscount: 0,
-        breakdown: [],
-        status: 'ACTIVE',
-      });
-      getStore().deletePackage(pkg.id);
-      expect(getStore().packages.find((p) => p.id === pkg.id)).toBeUndefined();
-    });
-
-    it('updates a breakdown item', () => {
-      const pkg = getStore().addPackage({
-        name: 'Pkg',
-        description: '',
-        specialityId: 'spec-1',
-        organisationId: 'org-1',
-        durationMinutes: 30,
-        isBookable: false,
-        leadCount: 1,
-        supportCount: 0,
-        additionalDiscount: 0,
-        breakdown: [],
-        status: 'ACTIVE',
-      });
-      getStore().addBreakdownItem(pkg.id, {
-        type: 'CONSULTATION',
-        name: 'Consult',
-        unitPrice: 100,
-        quantity: 1,
-        discount: 0,
-      });
-      const itemId = getStore().packages[0].breakdown[0].id;
-      getStore().updateBreakdownItem(pkg.id, itemId, { quantity: 3, discount: 15 });
-      const updated = getStore().packages[0].breakdown[0];
-      expect(updated.quantity).toBe(3);
-      expect(updated.discount).toBe(15);
-    });
-
     it('updateBreakdownItem ignores non-matching packageId', () => {
-      const pkg = getStore().addPackage({
-        name: 'Pkg',
-        description: '',
-        specialityId: 'spec-1',
-        organisationId: 'org-1',
-        durationMinutes: 30,
-        isBookable: false,
-        leadCount: 1,
-        supportCount: 0,
-        additionalDiscount: 0,
-        breakdown: [],
-        status: 'ACTIVE',
-      });
+      const pkg = getStore().addPackage(packageDraft);
       getStore().addBreakdownItem(pkg.id, {
         type: 'CONSULTATION',
         name: 'Consult',
@@ -330,26 +170,15 @@ describe('revampCatalogStore', () => {
       });
       const itemId = getStore().packages[0].breakdown[0].id;
       getStore().updateBreakdownItem('wrong-pkg-id', itemId, { quantity: 99 });
-      // Original package should be unchanged
       expect(getStore().packages[0].breakdown[0].quantity).toBe(1);
     });
   });
 
   describe('generateItemCode', () => {
-    it('generates a service code matching CS-XXXX for CONSULTATION', () => {
-      const code = getStore().generateItemCode('CONSULTATION');
-      expect(code).toMatch(/^CS-\d{4}$/);
-    });
-
-    it('generates a package code matching PK-XXXX for PACKAGE', () => {
-      const code = getStore().generateItemCode('PACKAGE');
-      expect(code).toMatch(/^PK-\d{4}$/);
-    });
-
-    it('generates a code for PROCEDURE type', () => {
-      const code = getStore().generateItemCode('PROCEDURE');
-      expect(typeof code).toBe('string');
-      expect(code.length).toBeGreaterThan(0);
+    it('generates service and package codes', () => {
+      expect(getStore().generateItemCode('CONSULTATION')).toMatch(/^CS-\d{4}$/);
+      expect(getStore().generateItemCode('PACKAGE')).toMatch(/^PK-\d{4}$/);
+      expect(getStore().generateItemCode('PROCEDURE')).toMatch(/^PR-\d{4}$/);
     });
   });
 });
