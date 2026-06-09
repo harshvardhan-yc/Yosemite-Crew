@@ -1089,7 +1089,7 @@ const AuditTimeline = ({
           key={entry.id ?? `${entry.eventType}-${entry.occurredAt}-${index}`}
           className="flex gap-3"
         >
-          <span className="w-32 shrink-0 pt-2.5 text-right text-caption-1 font-medium text-pill-success-text">
+          <span className="w-40 shrink-0 whitespace-nowrap pt-2.5 text-right text-caption-1 font-medium text-pill-success-text">
             {formatDateTimeLocal(entry.occurredAt, '-')}
           </span>
           <div className="relative flex shrink-0 flex-col items-center">
@@ -1484,7 +1484,7 @@ const CompanionHistoryTimeline = ({
     <PermissionGate allOf={[PERMISSIONS.COMPANIONS_VIEW_ANY]} fallback={<Fallback />}>
       <div className="flex w-full flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
             <div className="w-44">
               <LabelDropdown
                 placeholder="Status"
@@ -1516,7 +1516,7 @@ const CompanionHistoryTimeline = ({
             setSearch={setQuery}
             placeholder="Search by service, appointment, invoice, or records"
             label="Search overview records"
-            className="w-full md:w-[56%] xl:w-[52%]"
+            className="ml-auto w-full! md:w-120! xl:w-128!"
           />
         </div>
 
