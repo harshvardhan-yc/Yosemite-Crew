@@ -19,6 +19,7 @@ import { OrgBilling } from "src/models/organization.billing";
 import { OrgUsageCounters } from "src/models/organisation.usage.counter";
 import { sendEmailTemplate } from "src/utils/email";
 import { AuditTrailService } from "../../src/services/audit-trail.service";
+import { CatalogService } from "../../src/services/catalog.service";
 import { FormModel } from "src/models/form";
 import { prisma } from "src/config/prisma";
 import logger from "src/utils/logger";
@@ -80,6 +81,21 @@ jest.mock("../../src/services/form.service", () => {
 jest.mock("../../src/services/audit-trail.service", () => ({
   AuditTrailService: {
     recordSafely: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/catalog.service", () => ({
+  CatalogServiceError: class CatalogServiceError extends Error {
+    constructor(
+      message: string,
+      public readonly statusCode: number,
+    ) {
+      super(message);
+      this.name = "CatalogServiceError";
+    }
+  },
+  CatalogService: {
+    resolveSelection: jest.fn(),
   },
 }));
 
@@ -284,6 +300,7 @@ describe("AppointmentService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.READ_FROM_POSTGRES = "false";
+    (CatalogService.resolveSelection as jest.Mock).mockResolvedValue(null);
     (prisma.$transaction as jest.Mock).mockImplementation(
       async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma),
     );
@@ -1109,6 +1126,120 @@ describe("AppointmentService", () => {
       const result = await AppointmentService.createRequestedFromMobile(dto);
 
       expect((result.appointment as any).formIds).toEqual([]);
+    });
+
+    it("should use catalog billing items and persist productItemId when catalog selection exists", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { prisma } = require("src/config/prisma");
+      const startTime = new Date();
+      const endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
+
+      (CatalogService.resolveSelection as jest.Mock).mockResolvedValue({
+        productItemId: "prod_bundle",
+        productKind: "PACKAGE",
+        legacyServiceId: null,
+        isBookable: true,
+        appointmentKinds: ["OUTPATIENT"],
+        billingItems: [
+          {
+            productItemId: "prod_bundle",
+            name: "Dental Bundle",
+            kind: "PACKAGE",
+            quantity: 1,
+            unitPrice: 250,
+            defaultDiscountPercent: 5,
+          },
+          {
+            productItemId: "prod_xray",
+            name: "Dental X-Ray",
+            kind: "DIAGNOSTIC",
+            quantity: 2,
+            unitPrice: 40,
+            defaultDiscountPercent: null,
+          },
+        ],
+        includedItems: [],
+      });
+
+      prisma.organizationBilling.findUnique.mockResolvedValue({ plan: "free" });
+      prisma.organizationUsageCounter.findUnique.mockResolvedValue({
+        orgId: "org_1",
+        appointmentsUsed: 0,
+        freeAppointmentsLimit: 5,
+        toolsUsed: 0,
+        freeToolsLimit: 5,
+      });
+      prisma.organizationUsageCounter.update.mockResolvedValue({
+        orgId: "org_1",
+        appointmentsUsed: 1,
+        freeAppointmentsLimit: 5,
+        toolsUsed: 0,
+        freeToolsLimit: 5,
+        freeLimitReachedAt: null,
+        usersActiveCount: 0,
+        usersBillableCount: 0,
+        freeUsersLimit: 10,
+        updatedAt: new Date(),
+      });
+      prisma.organizationUsageCounter.updateMany.mockResolvedValue({
+        count: 0,
+      });
+      prisma.appointment.create.mockResolvedValue(
+        createPrismaAppointment({
+          id: "appt_1",
+          organisationId: "org_1",
+          startTime,
+          endTime,
+          appointmentDate: startTime,
+        }),
+      );
+      (
+        InvoiceService.getOrCreateDraftForAppointment as jest.Mock
+      ).mockResolvedValue({ id: "inv_cat" });
+      prisma.invoice.findMany.mockResolvedValue([]);
+      (
+        StripeService.createPaymentIntentForInvoice as jest.Mock
+      ).mockResolvedValue({ id: "pi_cat" });
+
+      await AppointmentService.createRequestedFromMobile({
+        organisationId: "org_1",
+        companion: { id: "comp_1", parent: { id: "parent_1" }, name: "Pet" },
+        appointmentType: { id: "prod_bundle", name: "Dental Bundle" },
+        startTime,
+        endTime,
+        durationMinutes: 30,
+        concern: "check",
+        isEmergency: false,
+        formIds: [],
+      } as any);
+
+      expect(prisma.appointment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            productItemId: "prod_bundle",
+          }),
+        }),
+      );
+      expect(
+        InvoiceService.getOrCreateDraftForAppointment,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [
+            {
+              description: "Dental Bundle",
+              quantity: 1,
+              unitPrice: 250,
+              discountPercent: 5,
+            },
+            {
+              description: "Dental X-Ray",
+              quantity: 2,
+              unitPrice: 40,
+              discountPercent: undefined,
+            },
+          ],
+        }),
+      );
     });
 
     it("should ignore form when version is missing", async () => {

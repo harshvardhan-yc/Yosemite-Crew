@@ -113,6 +113,12 @@ importers:
       '@yosemite-crew/auth':
         specifier: workspace:^
         version: link:../../packages/auth
+      '@yosemite-crew/database':
+        specifier: workspace:^
+        version: link:../../packages/database
+      '@yosemite-crew/lib':
+        specifier: workspace:^
+        version: link:../../packages/lib
       aws-sdk:
         specifier: 2.1692.0
         version: 2.1692.0
@@ -899,6 +905,22 @@ importers:
         specifier: 5.0.4
         version: 5.0.4
 
+  packages/database:
+    dependencies:
+      '@prisma/client':
+        specifier: ^5.22.0
+        version: 5.22.0(prisma@5.22.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.21
+        version: 22.19.8
+      prisma:
+        specifier: ^5.22.0
+        version: 5.22.0
+      typescript:
+        specifier: 5.0.4
+        version: 5.0.4
+
   packages/design-tokens:
     devDependencies:
       typescript:
@@ -928,6 +950,25 @@ importers:
 
   packages/fhirtypes:
     devDependencies:
+      typescript:
+        specifier: 5.0.4
+        version: 5.0.4
+
+  packages/lib:
+    dependencies:
+      axios:
+        specifier: 1.15.2
+        version: 1.15.2(debug@4.4.3)
+      validator:
+        specifier: 13.15.22
+        version: 13.15.22
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.21
+        version: 22.19.8
+      '@types/validator':
+        specifier: ^13.15.2
+        version: 13.15.10
       typescript:
         specifier: 5.0.4
         version: 5.0.4

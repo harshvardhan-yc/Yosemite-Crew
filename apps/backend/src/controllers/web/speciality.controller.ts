@@ -1,6 +1,17 @@
 import { Request, Response } from "express";
 import logger from "../../utils/logger";
 import {
+  fromSpecialityRequestDTO,
+  toSpecialityBundleResponseDTO,
+  toSpecialityResponseDTO,
+  type Speciality,
+  type SpecialityRequestDTO,
+} from "@yosemite-crew/types";
+import {
+  CatalogService,
+  CatalogServiceError,
+} from "../../services/catalog.service";
+import {
   SpecialityService,
   SpecialityServiceError,
   type SpecialityFHIRPayload,
@@ -34,6 +45,20 @@ const handleSpecialityError = (
   logMessage: string,
   responseMessage: string,
 ) => {
+  if (error instanceof CatalogServiceError) {
+    if (error.code || error.details) {
+      res.status(error.statusCode).json({
+        error: {
+          code: error.code ?? "CONFLICT",
+          message: error.message,
+          ...(error.details ? { details: error.details } : {}),
+        },
+      });
+      return;
+    }
+    res.status(error.statusCode).json({ message: error.message });
+    return;
+  }
   if (error instanceof SpecialityServiceError) {
     res.status(error.statusCode).json({ message: error.message });
     return;
@@ -42,14 +67,29 @@ const handleSpecialityError = (
   res.status(500).json({ message: responseMessage });
 };
 
-const respondNotFound = (res: Response) => {
-  res.status(404).json({ message: "Speciality not found." });
-};
+const toFhirSpecialityResource = (
+  summary: Awaited<ReturnType<typeof CatalogService.getSpecialityById>>,
+): Speciality => ({
+  _id: summary.id,
+  organisationId: summary.organisationId,
+  name: summary.name,
+  headUserId: summary.headUserId ?? undefined,
+  headName: summary.headName ?? undefined,
+  headProfilePicUrl: summary.headProfilePicUrl ?? undefined,
+  teamMemberIds: summary.teamMemberIds,
+  isActive: summary.status === "ACTIVE",
+  activeServiceCount: summary.activeServiceCount,
+  activePackageCount: summary.activePackageCount,
+  archivedServiceCount: summary.archivedServiceCount,
+  archivedPackageCount: summary.archivedPackageCount,
+  createdAt: summary.createdAt,
+  updatedAt: summary.updatedAt,
+});
 
 export const SpecialityController = {
   create: async (req: Request, res: Response) => {
     try {
-      const payload = req.body as SpecialityFHIRPayload | undefined;
+      const payload = req.body as SpecialityRequestDTO | undefined;
 
       if (!isFHIRSpecialityPayload(payload)) {
         res.status(400).json({
@@ -58,8 +98,24 @@ export const SpecialityController = {
         return;
       }
 
-      const { response, created } = await SpecialityService.createOne(payload);
-      res.status(created ? 201 : 200).json(response);
+      const speciality = fromSpecialityRequestDTO(payload);
+      const created = await CatalogService.createSpeciality({
+        organisationId: speciality.organisationId,
+        name: speciality.name,
+        headUserId: speciality.headUserId,
+        headName: speciality.headName,
+        headProfilePicUrl: speciality.headProfilePicUrl,
+        teamMemberIds: speciality.teamMemberIds,
+        isActive: speciality.isActive,
+      });
+
+      const response = await CatalogService.getSpecialityById(
+        created.id,
+        created.organisationId,
+      );
+      res
+        .status(201)
+        .json(toSpecialityResponseDTO(toFhirSpecialityResource(response)));
     } catch (error) {
       handleSpecialityError(
         res,
@@ -100,7 +156,7 @@ export const SpecialityController = {
   update: async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const payload = req.body as SpecialityFHIRPayload | undefined;
+      const payload = req.body as SpecialityRequestDTO | undefined;
 
       if (!requireParam(res, id, "Speciality identifier is required.")) {
         return;
@@ -113,14 +169,25 @@ export const SpecialityController = {
         return;
       }
 
-      const resource = await SpecialityService.update(id, payload);
+      const speciality = fromSpecialityRequestDTO(payload);
+      const updated = await CatalogService.updateSpeciality(id, {
+        organisationId: speciality.organisationId,
+        name: speciality.name,
+        headUserId: speciality.headUserId,
+        headName: speciality.headName,
+        headProfilePicUrl: speciality.headProfilePicUrl,
+        teamMemberIds: speciality.teamMemberIds,
+        isActive: speciality.isActive,
+      });
 
-      if (!resource) {
-        respondNotFound(res);
-        return;
-      }
+      const resource = await CatalogService.getSpecialityById(
+        updated.id,
+        updated.organisationId,
+      );
 
-      res.status(200).json(resource);
+      res
+        .status(200)
+        .json(toSpecialityResponseDTO(toFhirSpecialityResource(resource)));
     } catch (error) {
       handleSpecialityError(
         res,
@@ -139,14 +206,20 @@ export const SpecialityController = {
         return;
       }
 
-      const resource = await SpecialityService.getById(id);
+      const organisationId =
+        typeof req.query.organization === "string"
+          ? req.query.organization.replace(/^Organization\//, "")
+          : typeof req.query.organisationId === "string"
+            ? req.query.organisationId
+            : undefined;
+      const resource = await CatalogService.getSpecialityById(
+        id,
+        organisationId,
+      );
 
-      if (!resource) {
-        respondNotFound(res);
-        return;
-      }
-
-      res.status(200).json(resource);
+      res
+        .status(200)
+        .json(toSpecialityResponseDTO(toFhirSpecialityResource(resource)));
     } catch (error) {
       handleSpecialityError(
         res,
@@ -159,7 +232,12 @@ export const SpecialityController = {
 
   getAllByOrganizationId: async (req: Request, res: Response) => {
     try {
-      const { organisationId } = req.params;
+      const organisationId =
+        typeof req.query.organization === "string"
+          ? req.query.organization.replace(/^Organization\//, "")
+          : typeof req.params.organisationId === "string"
+            ? req.params.organisationId
+            : undefined;
 
       if (
         !requireParam(
@@ -171,10 +249,38 @@ export const SpecialityController = {
         return;
       }
 
-      const resources =
-        await SpecialityService.getAllByOrganizationId(organisationId);
+      const active =
+        typeof req.query.active === "string" ? req.query.active : undefined;
+      const search =
+        typeof req.query.name === "string" ? req.query.name : undefined;
+      const summary = await CatalogService.listSpecialities(organisationId, {
+        search,
+        status:
+          active === "false"
+            ? "ARCHIVED"
+            : active === "true"
+              ? "ACTIVE"
+              : undefined,
+        page:
+          typeof req.query.page === "string"
+            ? Number.parseInt(req.query.page, 10)
+            : undefined,
+        pageSize:
+          typeof req.query.pageSize === "string"
+            ? Number.parseInt(req.query.pageSize, 10)
+            : undefined,
+      });
 
-      res.status(200).json(resources);
+      const resources = summary.items.map((item) =>
+        toFhirSpecialityResource(item),
+      );
+
+      res.status(200).json(
+        toSpecialityBundleResponseDTO(resources, {
+          baseUrl: `${req.baseUrl}`,
+          searchMode: "match",
+        }),
+      );
     } catch (error) {
       handleSpecialityError(
         res,
@@ -197,12 +303,9 @@ export const SpecialityController = {
         return;
       }
 
-      const resources = await SpecialityService.deleteSpeciality(
-        specialityId,
-        organisationId,
-      );
+      await CatalogService.deleteSpeciality(specialityId, organisationId);
 
-      res.status(200).json(resources);
+      res.status(204).send();
     } catch (error) {
       handleSpecialityError(
         res,
