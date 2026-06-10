@@ -27,7 +27,7 @@ Small improvements can go directly as PRs, but major feature work should start w
 - `apps/frontend` - web app
 - `apps/mobileAppYC` - React Native mobile app
 - `apps/dev-docs` - Docusaurus docs app
-- `packages/types` and `packages/fhirtypes` - shared packages
+- `packages/types` and `packages/fhir` - shared packages
 
 ## Development Setup
 
@@ -92,7 +92,7 @@ Allowed `scope` values:
 - `mobile`
 - `dev-docs`
 - `types`
-- `fhirtypes`
+- `fhir`
 - `repo`
 - `ci`
 - `docs`

@@ -10,7 +10,10 @@ module.exports = {
   coverageProvider: "v8",
   setupFilesAfterEnv: ["<rootDir>/test/jest.setup.ts"],
   moduleNameMapper: {
+    "^@yosemite-crew/database$": "<rootDir>/../../packages/database/src/client.ts",
+    "^@yosemite-crew/lib$": "<rootDir>/../../packages/lib/src/index.ts",
     "^@yosemite-crew/(.*)$": "<rootDir>/../../packages/$1/src",
+    "^(\\.{1,2}/.*)\\.js$": "$1",
     "^src/(.*)$": "<rootDir>/src/$1",
   },
   transform: {

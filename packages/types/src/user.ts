@@ -1,6 +1,6 @@
-import type { Address as FHIRAddress, Practitioner } from "@yosemite-crew/fhirtypes";
-import type { UserProfile } from "./userProfile";
-import { toFHIRAddress } from "./address.model";
+import type { Address as FHIRAddress, Practitioner } from '@yosemite-crew/fhir';
+import type { UserProfile } from './userProfile';
+import { toFHIRAddress } from './address.model';
 
 export type User = {
   id: string;
@@ -10,12 +10,12 @@ export type User = {
   isActive?: boolean;
 };
 
-type PractitionerGender = Practitioner["gender"];
+type PractitionerGender = Practitioner['gender'];
 
 const GENDER_MAP: Record<string, PractitionerGender> = {
-  MALE: "male",
-  FEMALE: "female",
-  OTHER: "other",
+  MALE: 'male',
+  FEMALE: 'female',
+  OTHER: 'other',
 };
 
 const toFHIRGender = (gender?: string): PractitionerGender => {
@@ -24,7 +24,7 @@ const toFHIRGender = (gender?: string): PractitionerGender => {
   }
 
   const normalized = gender.trim().toUpperCase();
-  return GENDER_MAP[normalized] ?? "unknown";
+  return GENDER_MAP[normalized] ?? 'unknown';
 };
 
 const toFHIRBirthDate = (date?: unknown): string | undefined => {
@@ -33,7 +33,7 @@ const toFHIRBirthDate = (date?: unknown): string | undefined => {
   }
 
   if (date instanceof Date && !Number.isNaN(date.getTime())) {
-    return date.toISOString().split("T")[0] ?? undefined;
+    return date.toISOString().split('T')[0] ?? undefined;
   }
 
   const parsed = new Date(date as string);
@@ -42,21 +42,20 @@ const toFHIRBirthDate = (date?: unknown): string | undefined => {
     return undefined;
   }
 
-  return parsed.toISOString().split("T")[0] ?? undefined;
+  return parsed.toISOString().split('T')[0] ?? undefined;
 };
 
-const sanitizeTelecom = <T>(items: T[]): T[] | undefined =>
-  items.length ? items : undefined;
+const sanitizeTelecom = <T>(items: T[]): T[] | undefined => (items.length ? items : undefined);
 
 const hasAddressValue = (address?: FHIRAddress): boolean =>
   Boolean(
     address &&
-      ((address.line && address.line.length) ||
-        address.city ||
-        address.district ||
-        address.state ||
-        address.postalCode ||
-        address.country)
+    (address.line?.length ||
+      address.city ||
+      address.district ||
+      address.state ||
+      address.postalCode ||
+      address.country)
   );
 
 const buildQualificationCoding = (specialization?: string) => {
@@ -64,31 +63,24 @@ const buildQualificationCoding = (specialization?: string) => {
     return undefined;
   }
 
-  const code = specialization.trim().toLowerCase().replace(/\s+/g, "-");
+  const code = specialization.trim().toLowerCase().replace(/\s+/g, '-');
 
   return [
     {
-      system:
-        "http://example.org/fhir/CodeSystem/practitioner-specialization",
+      system: 'http://example.org/fhir/CodeSystem/practitioner-specialization',
       code,
       display: specialization,
     },
   ];
 };
 
-export function toFHIRPractitioner(
-  user: User,
-  profile?: UserProfile
-): Practitioner {
-  const nameText = [user.firstName, user.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+export function toFHIRPractitioner(user: User, profile?: UserProfile): Practitioner {
+  const nameText = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
 
   const name = nameText
     ? [
         {
-          use: "official" as const,
+          use: 'official' as const,
           text: nameText,
           given: user.firstName ? [user.firstName] : undefined,
           family: user.lastName || undefined,
@@ -96,11 +88,11 @@ export function toFHIRPractitioner(
       ]
     : undefined;
 
-  const telecom: Practitioner["telecom"] = [];
+  const telecom: Practitioner['telecom'] = [];
 
   if (user.email) {
     telecom.push({
-      system: "email",
+      system: 'email',
       value: user.email,
     });
   }
@@ -109,28 +101,26 @@ export function toFHIRPractitioner(
 
   if (personalDetails?.phoneNumber) {
     telecom.push({
-      system: "phone",
+      system: 'phone',
       value: personalDetails.phoneNumber,
     });
   }
 
   if (profile?.professionalDetails?.linkedin) {
     telecom.push({
-      system: "url",
+      system: 'url',
       value: profile.professionalDetails.linkedin,
     });
   }
 
-  const homeAddress = personalDetails?.address
-    ? toFHIRAddress(personalDetails.address)
-    : undefined;
+  const homeAddress = personalDetails?.address ? toFHIRAddress(personalDetails.address) : undefined;
 
   const address = hasAddressValue(homeAddress)
     ? [
         {
           ...homeAddress,
-          type: "both" as const,
-          use: "home" as const,
+          type: 'both' as const,
+          use: 'home' as const,
         },
       ]
     : undefined;
@@ -143,9 +133,9 @@ export function toFHIRPractitioner(
       ]
     : undefined;
 
-  const identifiers: Practitioner["identifier"] = [
+  const identifiers: Practitioner['identifier'] = [
     {
-      system: "http://example.org/fhir/NamingSystem/user-id",
+      system: 'http://example.org/fhir/NamingSystem/user-id',
       value: user.id,
     },
   ];
@@ -154,12 +144,12 @@ export function toFHIRPractitioner(
 
   if (professionalDetails?.medicalLicenseNumber) {
     identifiers.push({
-      system: "http://example.org/fhir/NamingSystem/medical-license-number",
+      system: 'http://example.org/fhir/NamingSystem/medical-license-number',
       value: professionalDetails.medicalLicenseNumber,
       type: {
-        text: "Medical License Number",
+        text: 'Medical License Number',
       },
-      use: "official",
+      use: 'official',
     });
   }
 
@@ -171,9 +161,7 @@ export function toFHIRPractitioner(
         {
           code: {
             text: qualificationCodeText,
-            coding: buildQualificationCoding(
-              professionalDetails?.specialization
-            ),
+            coding: buildQualificationCoding(professionalDetails?.specialization),
           },
           issuer: professionalDetails?.qualification
             ? {
@@ -185,7 +173,7 @@ export function toFHIRPractitioner(
     : undefined;
 
   const resource: Practitioner = {
-    resourceType: "Practitioner",
+    resourceType: 'Practitioner',
     id: user.id,
     active: user.isActive,
     name,

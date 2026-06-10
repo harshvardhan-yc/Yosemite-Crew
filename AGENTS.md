@@ -10,7 +10,7 @@ Auto-loaded by OpenAI Codex, Claude Code, and compatible AI agents. This is the 
 | `apps/frontend/AGENTS.md`    | Frontend: design system, Sonar, testing |
 | `apps/backend/AGENTS.md`     | Backend: Express, validation, services  |
 | `apps/mobileAppYC/AGENTS.md` | Mobile: React Native, Redux, navigation |
-| `packages/AGENTS.md`         | Shared packages: types, fhirtypes       |
+| `packages/AGENTS.md`         | Shared packages: types, fhir            |
 
 Claude Code users: same rules also structured as skills in `.claude/skills/`.
 
@@ -19,7 +19,7 @@ Claude Code users: same rules also structured as skills in `.claude/skills/`.
 ## Repository
 
 - Tooling: `pnpm` workspaces + `turbo`. Package manager: `pnpm@8.15.6` — never use `npm` or `yarn`.
-- Workspaces: `apps/frontend`, `apps/backend`, `apps/mobileAppYC`, `apps/dev-docs`, `packages/types`, `packages/fhirtypes`, `packages/fhir`.
+- Workspaces: `apps/frontend`, `apps/backend`, `apps/mobileAppYC`, `apps/dev-docs`, `packages/types`, `packages/fhir`.
 - Architecture baseline (scale, domain model, platform directions): `.claude/skills/monorepo-ops/project-baseline.md`.
 
 ---
@@ -48,7 +48,7 @@ Conventional commits enforced by `commitlint`:
 ```
 <type>(<scope>): <subject>
 Types: feat | fix | chore | refactor | test | docs | style | perf | ci
-Scopes: backend | frontend | mobile | dev-docs | types | fhirtypes | repo | ci | docs
+Scopes: backend | frontend | mobile | dev-docs | types | fhir | repo | ci | docs
 ```
 
 For cross-workspace changes use `repo`. PR title must match the same pattern.

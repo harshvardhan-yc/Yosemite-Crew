@@ -2,24 +2,25 @@ import type {
   Extension,
   Questionnaire,
   QuestionnaireItem,
+  QuestionnaireItemAnswerOption,
   QuestionnaireItemType,
   QuestionnaireStatus,
   QuestionnaireResponse,
   QuestionnaireResponseItem,
   QuestionnaireResponseItemAnswer,
-} from "@yosemite-crew/fhirtypes";
+} from '@yosemite-crew/fhir';
 
 export type FieldType =
-  | "input"
-  | "textarea"
-  | "number"
-  | "dropdown"
-  | "radio"
-  | "checkbox"
-  | "boolean"
-  | "date"
-  | "signature"
-  | "group";
+  | 'input'
+  | 'textarea'
+  | 'number'
+  | 'dropdown'
+  | 'radio'
+  | 'checkbox'
+  | 'boolean'
+  | 'date'
+  | 'signature'
+  | 'group';
 
 export interface FieldOption {
   label: string;
@@ -27,40 +28,40 @@ export interface FieldOption {
 }
 
 export interface BaseField {
-  id: string;            // FE-generated stable ID
+  id: string; // FE-generated stable ID
   type: FieldType;
   label: string;
   placeholder?: string;
   required?: boolean;
   order?: number;
-  group?: string;        // "companion_details", "parent_details"
+  group?: string; // "companion_details", "parent_details"
   meta?: Record<string, any>;
 }
 
 export interface InputField extends BaseField {
-  type: "input" | "textarea" | "number";
+  type: 'input' | 'textarea' | 'number';
 }
 
 export interface ChoiceField extends BaseField {
-  type: "dropdown" | "radio" | "checkbox";
+  type: 'dropdown' | 'radio' | 'checkbox';
   options: FieldOption[];
-  multiple?: boolean;   // for checkbox groups
+  multiple?: boolean; // for checkbox groups
 }
 
 export interface BooleanField extends BaseField {
-  type: "boolean";
+  type: 'boolean';
 }
 
 export interface DateField extends BaseField {
-  type: "date";
+  type: 'date';
 }
 
 export interface SignatureField extends BaseField {
-  type: "signature";
+  type: 'signature';
 }
 
 export interface GroupField extends BaseField {
-  type: "group";
+  type: 'group';
   fields: FormField[];
 }
 
@@ -80,19 +81,19 @@ export interface Form {
   _id: string;
   orgId: string;
 
-  businessType?: "HOSPITAL" | "BREEDER" | "BOARDER" | "GROOMER";
+  businessType?: 'HOSPITAL' | 'BREEDER' | 'BOARDER' | 'GROOMER';
 
   name: string;
   category: string;
   description?: string;
-  visibilityType: "Internal" | "External";
+  visibilityType: 'Internal' | 'External';
   serviceId?: string | string[];
   speciesFilter?: string[];
-  requiredSigner?: "CLIENT" | "VET";
+  requiredSigner?: 'CLIENT' | 'VET';
 
-  status: "draft" | "published" | "archived";
+  status: 'draft' | 'published' | 'archived';
 
-  schema: FormField[];       // entire FE schema for easy editing
+  schema: FormField[]; // entire FE schema for easy editing
 
   createdBy: string;
   updatedBy: string;
@@ -112,9 +113,9 @@ export interface FormVersion {
 export interface SigningInfo {
   required: boolean;
 
-  status: "NOT_STARTED" | "IN_PROGRESS" | "SIGNED";
+  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'SIGNED';
 
-  provider: "DOCUMENSO";
+  provider: 'DOCUMENSO';
 
   documentId?: string;
 
@@ -123,7 +124,7 @@ export interface SigningInfo {
   signer?: {
     userId?: string;
     email?: string;
-    role: "CLIENT" | "VET";
+    role: 'CLIENT' | 'VET';
   };
 
   pdf?: {
@@ -145,92 +146,83 @@ export interface FormSubmission {
   signing?: SigningInfo;
 }
 
-const FORM_CATEGORY_SYSTEM_URL =
-  "https://yosemitecrew.com/fhir/CodeSystem/form-category";
+const FORM_CATEGORY_SYSTEM_URL = 'https://yosemitecrew.com/fhir/CodeSystem/form-category';
 const FORM_ORG_IDENTIFIER_SYSTEM_URL =
-  "https://yosemitecrew.com/fhir/NamingSystem/form-organisation";
-const FORM_VISIBILITY_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-visibility";
-const FORM_SERVICE_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-service";
+  'https://yosemitecrew.com/fhir/NamingSystem/form-organisation';
+const FORM_VISIBILITY_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/form-visibility';
+const FORM_SERVICE_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/form-service';
 const FORM_CATEGORY_EXTENSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-category";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-category';
 const FORM_SPECIES_FILTER_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-species-filter";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-species-filter';
 const FORM_BUSINESS_TYPE_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-business-type";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-business-type';
 const FORM_REQUIRED_SIGNER_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-required-signer";
-const FORM_CREATED_BY_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-created-by";
-const FORM_UPDATED_BY_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-updated-by";
-const FORM_CREATED_AT_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-created-at";
-const FORM_UPDATED_AT_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-updated-at";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-required-signer';
+const FORM_CREATED_BY_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/form-created-by';
+const FORM_UPDATED_BY_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/form-updated-by';
+const FORM_CREATED_AT_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/form-created-at';
+const FORM_UPDATED_AT_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/form-updated-at';
 
 const FIELD_TYPE_EXTENSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-field-type";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-field-type';
 const FIELD_PLACEHOLDER_EXTENSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-field-placeholder";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-field-placeholder';
 const FIELD_ORDER_EXTENSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-field-order";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-field-order';
 const FIELD_GROUP_EXTENSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-field-group";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-field-group';
 const FIELD_META_EXTENSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-field-meta";
-const FIELD_OPTION_SYSTEM_URL =
-  "https://yosemitecrew.com/fhir/CodeSystem/form-field-option";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-field-meta';
+const FIELD_OPTION_SYSTEM_URL = 'https://yosemitecrew.com/fhir/CodeSystem/form-field-option';
 
 const FORM_RESPONSE_FORM_VERSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-version";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-version';
 const FORM_RESPONSE_APPOINTMENT_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-appointment";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-appointment';
 const FORM_RESPONSE_COMPANION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-companion";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-companion';
 const FORM_RESPONSE_PARENT_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-parent";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-parent';
 const FORM_RESPONSE_SUBMITTED_BY_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-submitted-by";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-submitted-by';
 const FORM_RESPONSE_SUBMITTED_AT_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-submitted-at";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-submitted-at';
 const FORM_RESPONSE_SIGNING_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing';
 const FORM_RESPONSE_SIGNING_STATUS_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-status";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-status';
 const FORM_RESPONSE_SIGNING_PROVIDER_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-provider";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-provider';
 const FORM_RESPONSE_SIGNING_DOCUMENT_ID_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-document-id";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-document-id';
 const FORM_RESPONSE_SIGNING_SIGNED_AT_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-signed-at";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-signed-at';
 const FORM_RESPONSE_SIGNING_SIGNER_ROLE_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-signer-role";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-signer-role';
 const FORM_RESPONSE_SIGNING_SIGNER_EMAIL_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-signer-email";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-signer-email';
 const FORM_RESPONSE_SIGNING_PDF_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-pdf-url";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-pdf-url';
 const FORM_RESPONSE_SIGNING_PDF_HASH_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-pdf-hash";
+  'https://yosemitecrew.com/fhir/StructureDefinition/form-response-signing-pdf-hash';
 
-
-const FORM_TO_FHIR_STATUS: Record<Form["status"], QuestionnaireStatus> = {
-  draft: "draft",
-  published: "active",
-  archived: "retired",
+const FORM_TO_FHIR_STATUS: Record<Form['status'], QuestionnaireStatus> = {
+  draft: 'draft',
+  published: 'active',
+  archived: 'retired',
 };
 
-const FHIR_TO_FORM_STATUS: Record<QuestionnaireStatus, Form["status"]> = {
-  draft: "draft",
-  active: "published",
-  retired: "archived",
-  unknown: "draft",
+const FHIR_TO_FORM_STATUS: Record<QuestionnaireStatus, Form['status']> = {
+  draft: 'draft',
+  active: 'published',
+  retired: 'archived',
+  unknown: 'draft',
 };
 
 const stripBase64Prefix = (data?: string): string | undefined => {
   if (!data) return undefined;
-  return data.includes(",") ? data.split(",")[1] : data;
+  return data.includes(',') ? data.split(',')[1] : data;
 };
 
 const toIsoDate = (value?: Date): string | undefined => {
@@ -248,23 +240,19 @@ const parseDate = (value?: string): Date | undefined => {
 const toFHIRDateOnly = (val: unknown): string | undefined => {
   if (!val) return undefined;
   const d = val instanceof Date ? val : new Date(val as string);
-  return Number.isNaN(d.getTime()) ? undefined : d.toISOString().split("T")[0];
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString().split('T')[0];
 };
 
-
 const buildFieldExtensions = (field: BaseField): Extension[] | undefined => {
-  const ex: Extension[] = [
-    { url: FIELD_TYPE_EXTENSION_URL, valueString: field.type },
-  ];
+  const ex: Extension[] = [{ url: FIELD_TYPE_EXTENSION_URL, valueString: field.type }];
 
   if (field.placeholder)
     ex.push({ url: FIELD_PLACEHOLDER_EXTENSION_URL, valueString: field.placeholder });
 
-  if (typeof field.order === "number")
+  if (typeof field.order === 'number')
     ex.push({ url: FIELD_ORDER_EXTENSION_URL, valueInteger: field.order });
 
-  if (field.group)
-    ex.push({ url: FIELD_GROUP_EXTENSION_URL, valueString: field.group });
+  if (field.group) ex.push({ url: FIELD_GROUP_EXTENSION_URL, valueString: field.group });
 
   if (field.meta && Object.keys(field.meta).length)
     ex.push({
@@ -277,28 +265,40 @@ const buildFieldExtensions = (field: BaseField): Extension[] | undefined => {
 
 const toQuestionnaireItemType = (field: FormField): QuestionnaireItemType => {
   switch (field.type) {
-    case "input": return "string";
-    case "textarea": return "text";
-    case "number": return "decimal";     // FIX APPLIED
-    case "dropdown":
-    case "radio":
-    case "checkbox": return "choice";
-    case "boolean": return "boolean";
-    case "date": return "date";
-    case "signature": return "attachment";
-    case "group": return "group";
-    default: return "string";
+    case 'input':
+      return 'string';
+    case 'textarea':
+      return 'text';
+    case 'number':
+      return 'decimal'; // FIX APPLIED
+    case 'dropdown':
+    case 'radio':
+    case 'checkbox':
+      return 'choice';
+    case 'boolean':
+      return 'boolean';
+    case 'date':
+      return 'date';
+    case 'signature':
+      return 'attachment';
+    case 'group':
+      return 'group';
+    default:
+      return 'string';
   }
 };
 
-const toAnswerOptions = (field: ChoiceField): QuestionnaireItem["answerOption"] =>
-  field.options.map((o) => ({
-    valueCoding: {
-      system: FIELD_OPTION_SYSTEM_URL,
-      code: o.value,
-      display: o.label,
-    },
-  }));
+const toAnswerOptions = (field: ChoiceField): QuestionnaireItem['answerOption'] =>
+  field.options.map(
+    (o) =>
+      ({
+        valueCoding: {
+          system: FIELD_OPTION_SYSTEM_URL,
+          code: o.value,
+          display: o.label,
+        },
+      }) as unknown as QuestionnaireItemAnswerOption
+  );
 
 const formFieldToQuestionnaireItem = (field: FormField): QuestionnaireItem => {
   const item: QuestionnaireItem = {
@@ -309,18 +309,18 @@ const formFieldToQuestionnaireItem = (field: FormField): QuestionnaireItem => {
     extension: buildFieldExtensions(field),
   };
 
-  if (field.type === "group") {
+  if (field.type === 'group') {
     item.item = field.fields.map(formFieldToQuestionnaireItem);
     return item;
   }
 
-  if (field.type === "dropdown" || field.type === "radio" || field.type === "checkbox") {
+  if (field.type === 'dropdown' || field.type === 'radio' || field.type === 'checkbox') {
     item.answerOption = toAnswerOptions(field);
-    item.repeats = field.type === "checkbox" || Boolean((field).multiple);
+    item.repeats = field.type === 'checkbox' || Boolean(field.multiple);
   }
 
-  if (field.type === "radio") {
-    item.repeats = false;   // FIX APPLIED
+  if (field.type === 'radio') {
+    item.repeats = false; // FIX APPLIED
   }
 
   return item;
@@ -329,23 +329,17 @@ const formFieldToQuestionnaireItem = (field: FormField): QuestionnaireItem => {
 const buildFormExtensions = (form: Form): Extension[] | undefined => {
   const ex: Extension[] = [];
 
-  if (form.visibilityType)
-    ex.push({ url: FORM_VISIBILITY_URL, valueString: form.visibilityType });
+  if (form.visibilityType) ex.push({ url: FORM_VISIBILITY_URL, valueString: form.visibilityType });
 
   if (form.serviceId) {
     const ids = Array.isArray(form.serviceId) ? form.serviceId : [form.serviceId];
-    ids.forEach((sid) =>
-      ex.push({ url: FORM_SERVICE_URL, valueString: sid })
-    );
+    ids.forEach((sid) => ex.push({ url: FORM_SERVICE_URL, valueString: sid }));
   }
 
-  if (form.category)
-    ex.push({ url: FORM_CATEGORY_EXTENSION_URL, valueString: form.category });
+  if (form.category) ex.push({ url: FORM_CATEGORY_EXTENSION_URL, valueString: form.category });
 
   if (form.speciesFilter)
-    form.speciesFilter.forEach((sf) =>
-      ex.push({ url: FORM_SPECIES_FILTER_URL, valueString: sf })
-    );
+    form.speciesFilter.forEach((sf) => ex.push({ url: FORM_SPECIES_FILTER_URL, valueString: sf }));
 
   if (form.businessType) {
     ex.push({ url: FORM_BUSINESS_TYPE_URL, valueString: form.businessType });
@@ -355,19 +349,15 @@ const buildFormExtensions = (form: Form): Extension[] | undefined => {
     ex.push({ url: FORM_REQUIRED_SIGNER_URL, valueString: form.requiredSigner });
   }
 
-  if (form.createdBy)
-    ex.push({ url: FORM_CREATED_BY_URL, valueString: form.createdBy });
+  if (form.createdBy) ex.push({ url: FORM_CREATED_BY_URL, valueString: form.createdBy });
 
-  if (form.updatedBy)
-    ex.push({ url: FORM_UPDATED_BY_URL, valueString: form.updatedBy });
+  if (form.updatedBy) ex.push({ url: FORM_UPDATED_BY_URL, valueString: form.updatedBy });
 
   const createdAt = toIsoDate(form.createdAt);
-  if (createdAt)
-    ex.push({ url: FORM_CREATED_AT_URL, valueDateTime: createdAt });
+  if (createdAt) ex.push({ url: FORM_CREATED_AT_URL, valueDateTime: createdAt });
 
   const updatedAt = toIsoDate(form.updatedAt);
-  if (updatedAt)
-    ex.push({ url: FORM_UPDATED_AT_URL, valueDateTime: updatedAt });
+  if (updatedAt) ex.push({ url: FORM_UPDATED_AT_URL, valueDateTime: updatedAt });
 
   return ex.length ? ex : undefined;
 };
@@ -376,14 +366,12 @@ export const toFHIRQuestionnaire = (form: Form): Questionnaire => {
   const lastUpdated = toIsoDate(form.updatedAt);
 
   return {
-    resourceType: "Questionnaire",
+    resourceType: 'Questionnaire',
     id: form._id,
-    status: FORM_TO_FHIR_STATUS[form.status] ?? "draft",
+    status: FORM_TO_FHIR_STATUS[form.status] ?? 'draft',
     title: form.name,
     description: form.description,
-    identifier: [
-      { system: FORM_ORG_IDENTIFIER_SYSTEM_URL, value: form.orgId },
-    ],
+    identifier: [{ system: FORM_ORG_IDENTIFIER_SYSTEM_URL, value: form.orgId }],
     code: form.category
       ? [
           {
@@ -399,50 +387,50 @@ export const toFHIRQuestionnaire = (form: Form): Questionnaire => {
   };
 };
 
-const getFieldExtension = (
-  ex: Extension[] | undefined,
-  url: string
-) => ex?.find((e) => e.url === url);
+const getFieldExtension = (ex: Extension[] | undefined, url: string) =>
+  ex?.find((e) => e.url === url);
 
-const getFormExtensionValue = (
-  ex: Extension[] | undefined,
-  url: string
-): string | undefined => ex?.find((e) => e.url === url)?.valueString;
+const getFormExtensionValue = (ex: Extension[] | undefined, url: string): string | undefined =>
+  ex?.find((e) => e.url === url)?.valueString;
 
-const getFormExtensionValues = (
-  ex: Extension[] | undefined,
-  url: string
-): string[] =>
-  ex?.filter((e) => e.url === url)
+const getFormExtensionValues = (ex: Extension[] | undefined, url: string): string[] =>
+  ex
+    ?.filter((e) => e.url === url)
     .map((e) => e.valueString)
     .filter((x): x is string => Boolean(x)) ?? [];
 
-const getFormDateExtensionValue = (
-  ex: Extension[] | undefined,
-  url: string
-): string | undefined => ex?.find((e) => e.url === url)?.valueDateTime;
+const getFormDateExtensionValue = (ex: Extension[] | undefined, url: string): string | undefined =>
+  ex?.find((e) => e.url === url)?.valueDateTime;
 
 /* ============================================================================
  * Parse Field Type (FHIR → Internal)
  * ============================================================================ */
 
 const parseFieldType = (item: QuestionnaireItem): FieldType => {
-  const ext = getFieldExtension(item.extension, FIELD_TYPE_EXTENSION_URL)
-    ?.valueString as FieldType | undefined;
+  const ext = getFieldExtension(item.extension, FIELD_TYPE_EXTENSION_URL)?.valueString as
+    | FieldType
+    | undefined;
 
   if (ext) return ext;
 
   switch (item.type) {
-    case "text": return "textarea";
-    case "decimal":
-    case "integer": return "number";
-    case "choice":
-      return item.repeats ? "checkbox" : "dropdown";
-    case "boolean": return "boolean";
-    case "date": return "date";
-    case "attachment": return "signature";
-    case "group": return "group";
-    default: return "input";
+    case 'text':
+      return 'textarea';
+    case 'decimal':
+    case 'integer':
+      return 'number';
+    case 'choice':
+      return item.repeats ? 'checkbox' : 'dropdown';
+    case 'boolean':
+      return 'boolean';
+    case 'date':
+      return 'date';
+    case 'attachment':
+      return 'signature';
+    case 'group':
+      return 'group';
+    default:
+      return 'input';
   }
 };
 
@@ -450,25 +438,26 @@ const parseFieldMeta = (raw?: string): Record<string, any> | undefined => {
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw);
-    return typeof parsed === "object" ? parsed : undefined;
+    return typeof parsed === 'object' ? parsed : undefined;
   } catch {
     return undefined;
   }
 };
 
 const answerOptionsToFieldOptions = (
-  answerOption: QuestionnaireItem["answerOption"]
+  answerOption: QuestionnaireItem['answerOption']
 ): FieldOption[] =>
-  answerOption?.map((o) => {
-    if (o.valueCoding)
-      return {
-        label: o.valueCoding.display ?? o.valueCoding.code ?? "",
-        value: o.valueCoding.code ?? o.valueCoding.display ?? "",
-      };
-    if (o.valueString)
-      return { label: o.valueString, value: o.valueString };
-    return undefined;
-  }).filter((x): x is FieldOption => Boolean(x)) ?? [];
+  answerOption
+    ?.map((o) => {
+      if (o.valueCoding)
+        return {
+          label: o.valueCoding.display ?? o.valueCoding.code ?? '',
+          value: o.valueCoding.code ?? o.valueCoding.display ?? '',
+        };
+      if (o.valueString) return { label: o.valueString, value: o.valueString };
+      return undefined;
+    })
+    .filter((x): x is FieldOption => Boolean(x)) ?? [];
 
 const questionnaireItemToFormField = (item: QuestionnaireItem): FormField => {
   const type = parseFieldType(item);
@@ -481,20 +470,18 @@ const questionnaireItemToFormField = (item: QuestionnaireItem): FormField => {
     placeholder: getFieldExtension(item.extension, FIELD_PLACEHOLDER_EXTENSION_URL)?.valueString,
     order: getFieldExtension(item.extension, FIELD_ORDER_EXTENSION_URL)?.valueInteger,
     group: getFieldExtension(item.extension, FIELD_GROUP_EXTENSION_URL)?.valueString,
-    meta: parseFieldMeta(
-      getFieldExtension(item.extension, FIELD_META_EXTENSION_URL)?.valueString
-    ),
+    meta: parseFieldMeta(getFieldExtension(item.extension, FIELD_META_EXTENSION_URL)?.valueString),
   };
 
-  if (type === "group") {
+  if (type === 'group') {
     return {
       ...base,
-      type: "group",
+      type: 'group',
       fields: (item.item ?? []).map(questionnaireItemToFormField),
     };
   }
 
-  if (type === "dropdown" || type === "radio" || type === "checkbox") {
+  if (type === 'dropdown' || type === 'radio' || type === 'checkbox') {
     return {
       ...base,
       type,
@@ -513,45 +500,33 @@ export const fromFHIRQuestionnaire = (q: Questionnaire): Form => {
   const speciesFilter = getFormExtensionValues(ex, FORM_SPECIES_FILTER_URL);
 
   return {
-    _id: q.id ?? "",
-    orgId:
-      q.identifier?.find((i) => i.system === FORM_ORG_IDENTIFIER_SYSTEM_URL)?.value ||
-      "",
-    name: q.title || q.name || "",
-    category:
-      getFormExtensionValue(ex, FORM_CATEGORY_EXTENSION_URL) ||
-      q.code?.[0]?.code ||
-      "",
+    _id: q.id ?? '',
+    orgId: q.identifier?.find((i) => i.system === FORM_ORG_IDENTIFIER_SYSTEM_URL)?.value || '',
+    name: q.title || q.name || '',
+    category: getFormExtensionValue(ex, FORM_CATEGORY_EXTENSION_URL) || q.code?.[0]?.code || '',
     businessType: getFormExtensionValue(ex, FORM_BUSINESS_TYPE_URL) as
-      | Form["businessType"]
+      | Form['businessType']
       | undefined,
     requiredSigner: getFormExtensionValue(ex, FORM_REQUIRED_SIGNER_URL) as
-      | Form["requiredSigner"]
+      | Form['requiredSigner']
       | undefined,
     description: q.description,
     visibilityType:
-      (getFormExtensionValue(ex, FORM_VISIBILITY_URL) as Form["visibilityType"]) ||
-      "Internal",
+      (getFormExtensionValue(ex, FORM_VISIBILITY_URL) as Form['visibilityType']) || 'Internal',
     serviceId: serviceIds.length > 1 ? serviceIds : serviceIds[0],
     speciesFilter: speciesFilter.length ? speciesFilter : undefined,
-    status: FHIR_TO_FORM_STATUS[q.status] || "draft",
+    status: FHIR_TO_FORM_STATUS[(q.status as QuestionnaireStatus) ?? 'unknown'] || 'draft',
     schema: (q.item ?? []).map(questionnaireItemToFormField),
-    createdBy: getFormExtensionValue(ex, FORM_CREATED_BY_URL) || "",
-    updatedBy: getFormExtensionValue(ex, FORM_UPDATED_BY_URL) || "",
-    createdAt:
-      parseDate(getFormDateExtensionValue(ex, FORM_CREATED_AT_URL)) || new Date(),
+    createdBy: getFormExtensionValue(ex, FORM_CREATED_BY_URL) || '',
+    updatedBy: getFormExtensionValue(ex, FORM_UPDATED_BY_URL) || '',
+    createdAt: parseDate(getFormDateExtensionValue(ex, FORM_CREATED_AT_URL)) || new Date(),
     updatedAt:
-      parseDate(
-        getFormDateExtensionValue(ex, FORM_UPDATED_AT_URL) ||
-          q.meta?.lastUpdated
-      ) || new Date(),
+      parseDate(getFormDateExtensionValue(ex, FORM_UPDATED_AT_URL) || q.meta?.lastUpdated) ||
+      new Date(),
   };
 };
 
-const findOptionLabel = (
-  field: ChoiceField | undefined,
-  value: string
-): string | undefined =>
+const findOptionLabel = (field: ChoiceField | undefined, value: string): string | undefined =>
   field?.options.find((o) => o.value === value)?.label;
 
 const buildAttachmentAnswer = (value: any): QuestionnaireResponseItemAnswer => ({
@@ -559,7 +534,7 @@ const buildAttachmentAnswer = (value: any): QuestionnaireResponseItemAnswer => (
     url: value?.url,
     title: value?.title,
     contentType: value?.contentType,
-    data: stripBase64Prefix(value?.data),   // FIX APPLIED
+    data: stripBase64Prefix(value?.data), // FIX APPLIED
   },
 });
 
@@ -574,23 +549,23 @@ const buildAnswers = (
 
   vals.forEach((v) => {
     switch (field?.type) {
-      case "boolean":
+      case 'boolean':
         answers.push({ valueBoolean: Boolean(v) });
         break;
-      case "date": {
+      case 'date': {
         const dateVal = toFHIRDateOnly(v);
         if (dateVal) answers.push({ valueDate: dateVal });
         break;
       }
-      case "number": {
+      case 'number': {
         const num = Number(v);
         if (!Number.isNaN(num)) answers.push({ valueDecimal: num });
         else answers.push({ valueString: String(v) });
         break;
       }
-      case "dropdown":
-      case "radio":
-      case "checkbox": {
+      case 'dropdown':
+      case 'radio':
+      case 'checkbox': {
         const code = String(v);
         const display = findOptionLabel(field as ChoiceField, code);
         answers.push({
@@ -602,12 +577,12 @@ const buildAnswers = (
         });
         break;
       }
-      case "signature":
+      case 'signature':
         answers.push(buildAttachmentAnswer(v));
         break;
       default:
         answers.push({
-          valueString: typeof v === "string" ? v : JSON.stringify(v),
+          valueString: typeof v === 'string' ? v : JSON.stringify(v),
         });
     }
   });
@@ -620,7 +595,7 @@ const formFieldsToResponseItems = (
   answers: Record<string, any>
 ): QuestionnaireResponseItem[] =>
   fields.map((f) => {
-    if (f.type === "group") {
+    if (f.type === 'group') {
       const nested = formFieldsToResponseItems(f.fields, answers);
       return {
         linkId: f.id,
@@ -638,9 +613,7 @@ const formFieldsToResponseItems = (
     };
   });
 
-const formAnswerRecordToItems = (
-  answers: Record<string, any>
-): QuestionnaireResponseItem[] =>
+const formAnswerRecordToItems = (answers: Record<string, any>): QuestionnaireResponseItem[] =>
   Object.entries(answers).map(([linkId, value]) => ({
     linkId,
     answer: buildAnswers(undefined, value),
@@ -689,9 +662,7 @@ export const toFHIRQuestionnaireResponse = (
       valueDateTime: submittedAt,
     });
 
-  const questionnaireRef = submission.formId
-    ? `Questionnaire/${submission.formId}`
-    : undefined;
+  const questionnaireRef = submission.formId ? `Questionnaire/${submission.formId}` : undefined;
 
   const items = schema
     ? formFieldsToResponseItems(schema, submission.answers)
@@ -750,10 +721,10 @@ export const toFHIRQuestionnaireResponse = (
   }
 
   return {
-    resourceType: "QuestionnaireResponse",
+    resourceType: 'QuestionnaireResponse',
     id: submission._id,
     questionnaire: questionnaireRef,
-    status: "completed",
+    status: 'completed',
     authored: submittedAt,
     extension: extensions.length ? extensions : undefined,
     item: items,
@@ -761,38 +732,31 @@ export const toFHIRQuestionnaireResponse = (
 };
 
 const parseQuestionnaireId = (ref?: string): string => {
-  if (!ref) return "";
-  return ref.split("|")[0].split("/").pop() ?? "";
+  if (!ref) return '';
+  return ref.split('|')[0].split('/').pop() ?? '';
 };
 
 const parseQuestionnaireVersion = (ref?: string): number | undefined => {
   if (!ref) return undefined;
-  const v = ref.split("|")[1];
+  const v = ref.split('|')[1];
   if (!v) return undefined;
   const n = Number(v);
   return Number.isNaN(n) ? undefined : n;
 };
 
-const parseSigningInfo = (
-  extensions?: Extension[]
-): SigningInfo | undefined => {
-  const signingExt = extensions?.find(
-    (e) => e.url === FORM_RESPONSE_SIGNING_URL
-  );
+const parseSigningInfo = (extensions?: Extension[]): SigningInfo | undefined => {
+  const signingExt = extensions?.find((e) => e.url === FORM_RESPONSE_SIGNING_URL);
 
   if (!signingExt?.extension) return undefined;
 
-  const get = (url: string) =>
-    signingExt.extension?.find((e) => e.url === url);
+  const get = (url: string) => signingExt.extension?.find((e) => e.url === url);
 
   return {
     required: true,
     status: get(FORM_RESPONSE_SIGNING_STATUS_URL)?.valueString as any,
     provider: get(FORM_RESPONSE_SIGNING_PROVIDER_URL)?.valueString as any,
     documentId: get(FORM_RESPONSE_SIGNING_DOCUMENT_ID_URL)?.valueString,
-    signedAt: parseDate(
-      get(FORM_RESPONSE_SIGNING_SIGNED_AT_URL)?.valueDateTime
-    ),
+    signedAt: parseDate(get(FORM_RESPONSE_SIGNING_SIGNED_AT_URL)?.valueDateTime),
     signer: {
       role: get(FORM_RESPONSE_SIGNING_SIGNER_ROLE_URL)?.valueString as any,
       email: get(FORM_RESPONSE_SIGNING_SIGNER_EMAIL_URL)?.valueString,
@@ -804,10 +768,7 @@ const parseSigningInfo = (
   };
 };
 
-const answerToValue = (
-  answers: QuestionnaireResponseItemAnswer[],
-  field?: FormField
-): any => {
+const answerToValue = (answers: QuestionnaireResponseItemAnswer[], field?: FormField): any => {
   const values = answers
     .map((ans) => {
       if (ans.valueBoolean !== undefined) return ans.valueBoolean;
@@ -825,8 +786,7 @@ const answerToValue = (
         };
       }
 
-      if (ans.valueCoding !== undefined)
-        return ans.valueCoding.code ?? ans.valueCoding.display;
+      if (ans.valueCoding !== undefined) return ans.valueCoding.code ?? ans.valueCoding.display;
 
       if (ans.valueString !== undefined) return ans.valueString;
 
@@ -837,8 +797,8 @@ const answerToValue = (
   if (!values.length) return undefined;
 
   const isMultiple =
-    (field && field.type === "checkbox") ||
-    (field && "multiple" in field && Boolean((field as ChoiceField).multiple)) ||
+    (field && field.type === 'checkbox') ||
+    (field && 'multiple' in field && Boolean((field as ChoiceField).multiple)) ||
     values.length > 1;
 
   return isMultiple ? values : values[0];
@@ -850,7 +810,7 @@ const buildFieldLookup = (fields?: FormField[]): Record<string, FormField> => {
   const walk = (items?: FormField[]) => {
     items?.forEach((f) => {
       map[f.id] = f;
-      if (f.type === "group") walk(f.fields);
+      if (f.type === 'group') walk(f.fields);
     });
   };
 
@@ -877,8 +837,8 @@ export const fromFHIRQuestionnaireResponse = (
   response: QuestionnaireResponse,
   schema?: FormField[]
 ): FormSubmission => {
-  if (!response || response.resourceType !== "QuestionnaireResponse") {
-    throw new Error("Invalid payload. Expected FHIR QuestionnaireResponse.");
+  if (!response || response.resourceType !== 'QuestionnaireResponse') {
+    throw new Error('Invalid payload. Expected FHIR QuestionnaireResponse.');
   }
 
   const lookup = buildFieldLookup(schema);
@@ -892,30 +852,23 @@ export const fromFHIRQuestionnaireResponse = (
   const versionFromRef = parseQuestionnaireVersion(response.questionnaire);
 
   const submittedBy =
-    response.extension?.find(
-      (ext) => ext.url === FORM_RESPONSE_SUBMITTED_BY_URL
-    )?.valueString || "";
+    response.extension?.find((ext) => ext.url === FORM_RESPONSE_SUBMITTED_BY_URL)?.valueString ||
+    '';
 
   const authored =
     response.authored ||
-    response.extension?.find(
-      (ext) => ext.url === FORM_RESPONSE_SUBMITTED_AT_URL
-    )?.valueDateTime;
-  
+    response.extension?.find((ext) => ext.url === FORM_RESPONSE_SUBMITTED_AT_URL)?.valueDateTime;
+
   const signing = parseSigningInfo(response.extension);
   return {
-    _id: response.id ?? "",
+    _id: response.id ?? '',
     formId: parseQuestionnaireId(response.questionnaire),
     formVersion: versionExtension ?? versionFromRef ?? 1,
-    appointmentId:
-      response.extension?.find((ext) => ext.url === FORM_RESPONSE_APPOINTMENT_URL)
-        ?.valueString,
-    companionId:
-      response.extension?.find((ext) => ext.url === FORM_RESPONSE_COMPANION_URL)
-        ?.valueString,
-    parentId:
-      response.extension?.find((ext) => ext.url === FORM_RESPONSE_PARENT_URL)
-        ?.valueString,
+    appointmentId: response.extension?.find((ext) => ext.url === FORM_RESPONSE_APPOINTMENT_URL)
+      ?.valueString,
+    companionId: response.extension?.find((ext) => ext.url === FORM_RESPONSE_COMPANION_URL)
+      ?.valueString,
+    parentId: response.extension?.find((ext) => ext.url === FORM_RESPONSE_PARENT_URL)?.valueString,
     submittedBy,
     answers,
     submittedAt: parseDate(authored) || new Date(),

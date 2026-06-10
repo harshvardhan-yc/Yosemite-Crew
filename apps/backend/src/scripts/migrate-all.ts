@@ -425,7 +425,10 @@ const main = async () => {
   await loadModels();
   await mongoose.connect(mongoUri);
 
-  const schemaPath = path.join(process.cwd(), "prisma/schema.prisma");
+  const schemaPath = path.resolve(
+    process.cwd(),
+    "../../packages/database/prisma/schema.prisma",
+  );
   const schemaText = await fs.readFile(schemaPath, "utf8");
   const { modelFields, modelHasId } = parseSchema(schemaText);
 

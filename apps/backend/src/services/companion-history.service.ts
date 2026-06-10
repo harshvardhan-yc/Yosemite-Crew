@@ -403,7 +403,7 @@ export const CompanionHistoryService = {
           const { lead, room, support } =
             resolveAppointmentParticipants(appointment);
           const appointmentType = appointment.serviceType?.[0]?.coding?.[0];
-          const speciality = appointment.speciality?.[0]?.coding?.[0];
+          const speciality = appointment.specialty?.[0]?.coding?.[0];
           const paymentStatus = resolveAppointmentPaymentStatus(appointment);
 
           const appointmentId = appointment.id ?? "";

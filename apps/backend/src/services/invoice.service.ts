@@ -8,7 +8,6 @@ import {
   InvoiceStatus,
   toInvoiceResponseDTO,
 } from "@yosemite-crew/types";
-import { Currency } from "@yosemite-crew/fhirtypes";
 import { StripeService } from "./stripe.service";
 import OrganizationModel from "src/models/organization";
 import { ParentModel } from "src/models/parent";
@@ -19,6 +18,7 @@ import { sendEmailTemplate } from "src/utils/email";
 import logger from "src/utils/logger";
 import type { AuditEventType } from "src/models/audit-trail";
 import { prisma } from "src/config/prisma";
+import { CatalogService, CatalogServiceError } from "./catalog.service";
 import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
 import { isReadFromPostgres } from "src/config/read-switch";
 import { getOrgBillingCurrency } from "src/utils/billing";
@@ -163,7 +163,7 @@ const toDomain = (doc: InvoiceDocument): Invoice => {
     subtotal: o.subtotal,
     totalAmount: o.totalAmount,
     taxPercent: o.taxPercent,
-    currency: o.currency as Currency,
+    currency: o.currency,
     taxTotal: o.taxTotal,
     discountTotal: o.discountTotal,
     stripePaymentIntentId: o.stripePaymentIntentId ?? undefined,
@@ -248,7 +248,7 @@ const toDomainFromPrisma = (row: {
     subtotal: row.subtotal,
     totalAmount: row.totalAmount,
     taxPercent: row.taxPercent,
-    currency: row.currency as Currency,
+    currency: row.currency,
     taxTotal: row.taxTotal,
     discountTotal: row.discountTotal,
     stripePaymentIntentId: row.stripePaymentIntentId ?? undefined,
@@ -515,6 +515,42 @@ const coerceAppointmentTypeName = (
   return typeof appointmentTypeObj.name === "string"
     ? appointmentTypeObj.name
     : undefined;
+};
+
+type DraftInvoiceItemInput = {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discountPercent?: number;
+};
+
+const mapCatalogSelectionToDraftItems = (selection: {
+  billingItems: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    defaultDiscountPercent?: number | null;
+  }>;
+}): DraftInvoiceItemInput[] =>
+  selection.billingItems.map((item) => ({
+    description: item.name,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    discountPercent: item.defaultDiscountPercent ?? undefined,
+  }));
+
+const resolveCatalogSelectionSafe = async (
+  selectionId: string,
+  organisationId: string,
+) => {
+  try {
+    return await CatalogService.resolveSelection(selectionId, organisationId);
+  } catch (error) {
+    if (error instanceof CatalogServiceError && error.statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
 };
 
 const resolveAuditTargetsForInvoiceRow = async (row: {
@@ -1372,6 +1408,7 @@ export const InvoiceService = {
           organisationId: true,
           companion: true,
           appointmentType: true,
+          productItemId: true,
           concern: true,
         },
       });
@@ -1402,15 +1439,11 @@ export const InvoiceService = {
       }
 
       const serviceId = coerceAppointmentTypeId(appointment.appointmentType);
-      if (!serviceId) {
-        throw new InvoiceServiceError("Service not found", 404);
-      }
-
-      const service = await prisma.service.findUnique({
-        where: { id: serviceId },
-      });
-      if (!service) {
-        throw new InvoiceServiceError("Service not found", 404);
+      const productItemId =
+        appointment.productItemId ??
+        coerceAppointmentTypeId(appointment.appointmentType);
+      if (!serviceId && !productItemId) {
+        throw new InvoiceServiceError("Service or product not found", 404);
       }
 
       const parentId = coerceAppointmentParentId(appointment);
@@ -1422,24 +1455,46 @@ export const InvoiceService = {
         );
       }
 
-      const description =
-        coerceAppointmentTypeName(appointment.appointmentType) ??
-        service.name ??
-        "Consultation";
+      const catalogSelection = productItemId
+        ? await resolveCatalogSelectionSafe(
+            productItemId,
+            appointment.organisationId,
+          )
+        : null;
 
-      return this.createDraftForAppointment({
-        appointmentId,
-        parentId,
-        companionId,
-        organisationId: appointment.organisationId,
-        items: [
+      let items: DraftInvoiceItemInput[];
+      if (catalogSelection) {
+        items = mapCatalogSelectionToDraftItems(catalogSelection);
+      } else {
+        const service = serviceId
+          ? await prisma.service.findUnique({
+              where: { id: serviceId },
+            })
+          : null;
+        if (!service) {
+          throw new InvoiceServiceError("Service not found", 404);
+        }
+
+        const description =
+          coerceAppointmentTypeName(appointment.appointmentType) ??
+          service.name ??
+          "Consultation";
+        items = [
           {
             description,
             quantity: 1,
             unitPrice: service.cost,
             discountPercent: service.maxDiscount ?? undefined,
           },
-        ],
+        ];
+      }
+
+      return this.createDraftForAppointment({
+        appointmentId,
+        parentId,
+        companionId,
+        organisationId: appointment.organisationId,
+        items,
         notes: appointment.concern ?? undefined,
         paymentCollectionMethod: "PAYMENT_LINK",
       });
@@ -1464,30 +1519,41 @@ export const InvoiceService = {
 
     const serviceId = appointment.appointmentType?.id;
     if (!serviceId) {
-      throw new InvoiceServiceError("Service not found", 404);
+      throw new InvoiceServiceError("Service or product not found", 404);
     }
 
-    const service = await ServiceModel.findById(serviceId);
-    if (!service) {
-      throw new InvoiceServiceError("Service not found", 404);
-    }
+    const catalogSelection = await resolveCatalogSelectionSafe(
+      serviceId,
+      appointment.organisationId,
+    );
 
-    const description =
-      appointment.appointmentType?.name ?? service.name ?? "Consultation";
+    let items: DraftInvoiceItemInput[];
+    if (catalogSelection) {
+      items = mapCatalogSelectionToDraftItems(catalogSelection);
+    } else {
+      const service = await ServiceModel.findById(serviceId);
+      if (!service) {
+        throw new InvoiceServiceError("Service not found", 404);
+      }
 
-    return this.createDraftForAppointment({
-      appointmentId,
-      parentId: appointment.companion.parent.id,
-      companionId: appointment.companion.id,
-      organisationId: appointment.organisationId,
-      items: [
+      const description =
+        appointment.appointmentType?.name ?? service.name ?? "Consultation";
+      items = [
         {
           description,
           quantity: 1,
           unitPrice: service.cost,
           discountPercent: service.maxDiscount ?? undefined,
         },
-      ],
+      ];
+    }
+
+    return this.createDraftForAppointment({
+      appointmentId,
+      parentId: appointment.companion.parent.id,
+      companionId: appointment.companion.id,
+      organisationId: appointment.organisationId,
+      items,
       notes: appointment.concern ?? undefined,
       paymentCollectionMethod: "PAYMENT_LINK",
     });

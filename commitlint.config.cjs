@@ -15,7 +15,7 @@ module.exports = {
         'mobile',
         'dev-docs',
         'types',
-        'fhirtypes',
+        'fhir',
         'repo',
         'ci',
         'docs'

@@ -40,7 +40,12 @@ export type {
   SpecialityResponseDTO,
   SpecialityDTOAttributes,
 } from './dto/speciality.dto';
-export { fromSpecialityRequestDTO, toSpecialityResponseDTO } from './dto/speciality.dto';
+export {
+  fromSpecialityRequestDTO,
+  toSpecialityResponseDTO,
+  toSpecialityBundleResponseDTO,
+} from './dto/speciality.dto';
+export type { SpecialityBundleResponseDTO } from './dto/speciality.dto';
 export type {
   OrganisationRoomRequestDTO,
   OrganisationRoomResponseDTO,
@@ -80,7 +85,7 @@ export {
 } from './organisationRoom';
 export type { UserOrganization, ToFHIRUserOrganizationOptions } from './userOrganization';
 export type { Speciality } from './speciality';
-export { toFHIRSpeciality, fromFHIRSpeciality } from './speciality';
+export { toFHIRSpeciality, fromFHIRSpeciality, toFHIRSpecialityBundle } from './speciality';
 
 export type { AdminDepartmentItem, AdminFHIRHealthcareService } from './models/admin-department';
 export type {
@@ -125,6 +130,94 @@ export type {
 
 export type { OrganisationInvite, InviteStatus } from './organisationInvite';
 export type { Service } from './service';
+export type {
+  CatalogListRow,
+  CatalogPackageBreakdownRow,
+  CatalogPackageDetail,
+  CatalogPackageSummary,
+  CatalogFHIRBundle,
+  CatalogFHIRInput,
+  CatalogFHIRResource,
+  CatalogTab,
+  AppointmentKind,
+  CatalogPricePolicy,
+  CatalogSearchItem,
+  CatalogSearchResult,
+  CatalogSearchSource,
+  CatalogSearchStatus,
+  PackageItemPricingMode,
+  ProductBookable,
+  ProductItem,
+  ProductKind,
+  ProductPackage,
+  ProductPackageItem,
+  ProductPrice,
+  ResolvedCatalogItem,
+  ResolvedCatalogSelection,
+  SpecialityCatalogView,
+} from './catalog';
+export {
+  CATALOG_CODE_SYSTEM,
+  CATALOG_HEALTHCARE_SERVICE_PROFILE,
+  EXT_CATALOG_BOOKABLE_INPATIENT,
+  EXT_CATALOG_BOOKABLE_OUTPATIENT,
+  EXT_CATALOG_CODE,
+  EXT_CATALOG_DEFAULT_DISCOUNT,
+  EXT_CATALOG_DURATION,
+  EXT_CATALOG_KIND,
+  EXT_CATALOG_LEGACY_SERVICE_ID,
+  EXT_CATALOG_MAX_DISCOUNT,
+  EXT_CATALOG_LEAD_COUNT,
+  EXT_CATALOG_SUPPORT_COUNT,
+  EXT_CATALOG_ADDITIONAL_DISCOUNT_PERCENT,
+  EXT_CATALOG_PACKAGE_GROSS_AMOUNT,
+  EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_AMOUNT,
+  EXT_CATALOG_PACKAGE_ADDITIONAL_DISCOUNT_AMOUNT,
+  EXT_CATALOG_PACKAGE_BREAKDOWN_ITEM_COUNT,
+  EXT_CATALOG_PACKAGE_ITEM,
+  EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_PERCENT,
+  EXT_CATALOG_PACKAGE_ITEM_CHILD_ID,
+  EXT_CATALOG_PACKAGE_ITEM_CHILD_CODE,
+  EXT_CATALOG_PACKAGE_ITEM_CHILD_NAME,
+  EXT_CATALOG_PACKAGE_ITEM_CHILD_KIND,
+  EXT_CATALOG_PACKAGE_ITEM_OPTIONAL,
+  EXT_CATALOG_PACKAGE_ITEM_OVERRIDE_PRICE,
+  EXT_CATALOG_PACKAGE_ITEM_CURRENCY,
+  EXT_CATALOG_PACKAGE_ITEM_GROSS_AMOUNT,
+  EXT_CATALOG_PACKAGE_ITEM_DISCOUNT_AMOUNT_VALUE,
+  EXT_CATALOG_PACKAGE_ITEM_FINAL_AMOUNT,
+  EXT_CATALOG_PACKAGE_ITEM_PRICING_MODE,
+  EXT_CATALOG_PACKAGE_ITEM_QUANTITY,
+  EXT_CATALOG_PACKAGE_ITEM_SORT_ORDER,
+  EXT_CATALOG_PRICE,
+  fromFHIRCatalogHealthcareService,
+  toFHIRCatalogBundle,
+  toFHIRCatalogHealthcareService,
+} from './catalog';
+export {
+  type CatalogBundleResponseDTO,
+  type CatalogRequestDTO,
+  type CatalogResponseDTO,
+  fromCatalogRequestDTO,
+  toCatalogBundleResponseDTO,
+  toCatalogResponseDTO,
+} from './dto/catalog.dto';
+export {
+  type CatalogResolveOperationInput,
+  type CatalogResolveOperationRequestDTO,
+  type CatalogResolveOperationResponseDTO,
+  type CatalogSearchOperationInput,
+  type CatalogSearchOperationKind,
+  type CatalogSearchOperationRequestDTO,
+  type CatalogSearchOperationResponseDTO,
+  CATALOG_RESOLVE_SELECTION_OPERATION,
+  CATALOG_SEARCH_COMPONENTS_OPERATION,
+  CATALOG_SEARCH_OPERATION_KINDS,
+  fromCatalogResolveOperationRequestDTO,
+  fromCatalogSearchOperationRequestDTO,
+  toCatalogResolveOperationResponseDTO,
+  toCatalogSearchOperationResponseDTO,
+} from './dto/catalog-operations.dto';
 export {
   type ServiceRequestDTO,
   type ServiceResponseDTO,

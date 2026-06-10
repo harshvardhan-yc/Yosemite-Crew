@@ -71,7 +71,12 @@ jest.mock('@/assets/images', () => ({
 // 4. Feature Hooks & Utils
 // Important: Mock the custom hook that drives this screen
 const mockHookData = {
-  task: {id: 't1', title: 'Existing Task', companionId: 'c1'},
+  task: {
+    id: 't1',
+    title: 'Existing Task',
+    companionId: 'c1',
+    frequency: 'once' as string,
+  },
   loading: false,
   companions: [{id: 'c1', name: 'Buddy', category: 'dog'}],
   companionType: 'dog',
@@ -89,6 +94,8 @@ const mockHookData = {
   handleRemoveFile: jest.fn(),
   openSheet: jest.fn(),
   deleteSheetRef: {current: null},
+  taskDeleteSheetRef: {current: null},
+  taskSaveSheetRef: {current: null},
 };
 
 jest.mock('../../../../../src/features/tasks/hooks/useEditTaskScreen', () => ({
@@ -211,16 +218,43 @@ jest.mock(
   () => ({
     DeleteDocumentBottomSheet: ({onDelete, title}: any) => {
       const {TouchableOpacity, Text, View} = require('react-native');
-      // Render a button to simulate the delete confirmation
       return (
         <View>
           <Text>{title}</Text>
-          <TouchableOpacity testID="confirm-delete-btn" onPress={onDelete}>
+          <TouchableOpacity onPress={onDelete}>
             <Text>Confirm Delete</Text>
           </TouchableOpacity>
         </View>
       );
     },
+  }),
+);
+
+jest.mock(
+  '@/features/tasks/components/TaskDeleteBottomSheet/TaskDeleteBottomSheet',
+  () => ({
+    TaskDeleteBottomSheet: require('react').forwardRef(
+      ({onDeleteAll, taskTitle}: any, _ref: any) => {
+        const {TouchableOpacity, Text, View} = require('react-native');
+        return (
+          <View>
+            <Text>{taskTitle}</Text>
+            <TouchableOpacity testID="confirm-delete-btn" onPress={onDeleteAll}>
+              <Text>Confirm Delete</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      },
+    ),
+  }),
+);
+
+jest.mock(
+  '@/features/tasks/components/TaskSaveOptionsBottomSheet/TaskSaveOptionsBottomSheet',
+  () => ({
+    TaskSaveOptionsBottomSheet: require('react').forwardRef(
+      (_props: any, _ref: any) => null,
+    ),
   }),
 );
 
@@ -258,7 +292,12 @@ describe('EditTaskScreen', () => {
 
     // Reset hook data to defaults
     Object.assign(mockHookData, {
-      task: {id: 't1', title: 'Existing Task', companionId: 'c1'},
+      task: {
+        id: 't1',
+        title: 'Existing Task',
+        companionId: 'c1',
+        frequency: 'once',
+      },
       loading: false,
       companions: [{id: 'c1', name: 'Buddy', category: 'dog'}],
       companionType: 'dog',
@@ -271,6 +310,8 @@ describe('EditTaskScreen', () => {
       validateForm: jest.fn(() => true),
       handleDelete: jest.fn(),
       showErrorAlert: jest.fn(),
+      taskDeleteSheetRef: {current: null},
+      taskSaveSheetRef: {current: null},
     });
 
     // Reset route params
@@ -330,10 +371,34 @@ describe('EditTaskScreen', () => {
     expect(mockGoBack).toHaveBeenCalled();
   });
 
-  it('handles delete button press via hook', () => {
+  it('directly deletes when delete pressed on a once task', async () => {
     const {getByTestId} = render(<EditTaskScreen />);
     fireEvent.press(getByTestId('header-delete-btn'));
-    expect(mockHookData.handleDelete).toHaveBeenCalled();
+
+    const {deleteTask} = require('@/features/tasks');
+    await waitFor(() => {
+      expect(deleteTask).toHaveBeenCalledWith({
+        taskId: 't1',
+        companionId: 'c1',
+      });
+    });
+  });
+
+  it('opens delete sheet when delete pressed on a recurring task', () => {
+    const mockOpen = jest.fn();
+    Object.assign(mockHookData, {
+      task: {
+        id: 't1',
+        title: 'Existing Task',
+        companionId: 'c1',
+        frequency: 'daily',
+      },
+      taskDeleteSheetRef: {current: {open: mockOpen, close: jest.fn()}},
+    });
+
+    const {getByTestId} = render(<EditTaskScreen />);
+    fireEvent.press(getByTestId('header-delete-btn'));
+    expect(mockOpen).toHaveBeenCalled();
   });
 
   it('handles delete confirmation success', async () => {
@@ -359,9 +424,13 @@ describe('EditTaskScreen', () => {
 
     fireEvent.press(getByTestId('save-btn'));
 
-    expect(mockHookData.validateForm).toHaveBeenCalledWith(mockHookData.formData);
+    expect(mockHookData.validateForm).toHaveBeenCalledWith(
+      mockHookData.formData,
+    );
     const {updateTask} = require('@/features/tasks');
-    const {buildTaskDraftFromForm} = require('@/features/tasks/services/taskService');
+    const {
+      buildTaskDraftFromForm,
+    } = require('@/features/tasks/services/taskService');
 
     // Wait for async action to complete and navigation to be triggered
     await waitFor(() => {

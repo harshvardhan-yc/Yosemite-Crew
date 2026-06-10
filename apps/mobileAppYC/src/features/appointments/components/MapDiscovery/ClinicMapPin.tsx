@@ -44,7 +44,9 @@ const ClinicMapPin: React.FC<ClinicMapPinProps> = ({business, isSelected}) => {
   );
 
   return (
-    <View style={[styles.container, isSelected && styles.containerSelected]}>
+    <View
+      collapsable={false}
+      style={[styles.container, isSelected && styles.containerSelected]}>
       <View
         style={[
           styles.bubble,

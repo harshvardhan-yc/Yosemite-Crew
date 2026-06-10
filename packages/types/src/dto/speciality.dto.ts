@@ -1,45 +1,53 @@
-import type { Organization as FHIROrganization } from "@yosemite-crew/fhirtypes"
+import type { Bundle, Organization as FHIROrganization } from '@yosemite-crew/fhir';
 import {
-    fromFHIRSpeciality,
-    toFHIRSpeciality,
-    type Speciality,
-} from "../speciality"
+  fromFHIRSpeciality,
+  toFHIRSpeciality,
+  toFHIRSpecialityBundle,
+  type Speciality,
+} from '../speciality';
 
-const normalizeId = (id?: string | Speciality["_id"]): string | undefined => {
-    if (!id) {
-        return undefined
-    }
+const normalizeId = (id?: string | Speciality['_id']): string | undefined => {
+  if (!id) {
+    return undefined;
+  }
 
-    if (typeof id === "string") {
-        return id || undefined
-    }
+  if (typeof id === 'string') {
+    return id || undefined;
+  }
 
-    try {
-        const value = typeof (id as { toString?: () => string }).toString === "function"
-            ? (id as { toString: () => string }).toString()
-            : String(id)
-        return value || undefined
-    } catch {
-        return undefined
-    }
-}
+  try {
+    const value =
+      typeof (id as { toString?: () => string }).toString === 'function'
+        ? (id as { toString: () => string }).toString()
+        : String(id);
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+};
 
-export type SpecialityRequestDTO = FHIROrganization
+export type SpecialityRequestDTO = FHIROrganization;
 
-export type SpecialityResponseDTO = FHIROrganization
+export type SpecialityResponseDTO = FHIROrganization;
+export type SpecialityBundleResponseDTO = Bundle;
 
 export type SpecialityDTOAttributes = Speciality & {
-    id?: string
-}
+  id?: string;
+};
 
 export const fromSpecialityRequestDTO = (dto: SpecialityRequestDTO): SpecialityDTOAttributes => {
-    const speciality = fromFHIRSpeciality(dto)
+  const speciality = fromFHIRSpeciality(dto);
 
-    return {
-        id: dto.id ?? normalizeId(speciality._id),
-        ...speciality,
-    }
-}
+  return {
+    id: dto.id ?? normalizeId(speciality._id),
+    ...speciality,
+  };
+};
 
 export const toSpecialityResponseDTO = (speciality: Speciality): SpecialityResponseDTO =>
-    toFHIRSpeciality(speciality)
+  toFHIRSpeciality(speciality);
+
+export const toSpecialityBundleResponseDTO = (
+  specialities: Speciality[],
+  options?: Parameters<typeof toFHIRSpecialityBundle>[1]
+): SpecialityBundleResponseDTO => toFHIRSpecialityBundle(specialities, options);

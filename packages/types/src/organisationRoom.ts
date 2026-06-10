@@ -1,50 +1,47 @@
-import type { Extension, Location as FHIRLocation } from "@yosemite-crew/fhirtypes";
+import type { Extension, Location as FHIRLocation } from '@yosemite-crew/fhir';
 
 export type OrganisationRoom = {
   id: string;
   name: string;
   organisationId: string;
-  type: "CONSULTATION" | "WAITING_AREA" | "SURGERY" | "ICU";
+  type: 'CONSULTATION' | 'WAITING_AREA' | 'SURGERY' | 'ICU';
   assignedSpecialiteis?: string[];
   assignedStaffs?: string[];
 };
 
-const ROOM_IDENTIFIER_SYSTEM = "http://example.org/fhir/NamingSystem/organisation-room-id";
+const ROOM_IDENTIFIER_SYSTEM = 'http://example.org/fhir/NamingSystem/organisation-room-id';
 const ORGANISATION_IDENTIFIER_SYSTEM =
-  "http://example.org/fhir/NamingSystem/organisation-room-organisation-id";
-const ROOM_TYPE_SYSTEM = "http://example.org/fhir/CodeSystem/organisation-room-type";
-const PHYSICAL_TYPE_SYSTEM = "http://terminology.hl7.org/CodeSystem/location-physical-type";
-const PHYSICAL_TYPE_ROOM_CODE = "ro";
+  'http://example.org/fhir/NamingSystem/organisation-room-organisation-id';
+const ROOM_TYPE_SYSTEM = 'http://example.org/fhir/CodeSystem/organisation-room-type';
+const PHYSICAL_TYPE_SYSTEM = 'http://terminology.hl7.org/CodeSystem/location-physical-type';
+const PHYSICAL_TYPE_ROOM_CODE = 'ro';
 const SPECIALITIES_EXTENSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-specialities";
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-specialities';
 const STAFFS_EXTENSION_URL =
-  "https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-staffs";
-const SPECIALITY_CHILD_URL = "specialityId";
-const STAFF_CHILD_URL = "staffId";
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-staffs';
+const SPECIALITY_CHILD_URL = 'specialityId';
+const STAFF_CHILD_URL = 'staffId';
 
-const ROOM_TYPE_CODING_MAP: Record<
-  OrganisationRoom["type"],
-  { code: string; display: string }
-> = {
-  CONSULTATION: { code: "consultation", display: "Consultation Room" },
-  WAITING_AREA: { code: "waiting-area", display: "Waiting Area" },
-  SURGERY: { code: "surgery", display: "Surgery Room" },
-  ICU: { code: "icu", display: "ICU" },
+const ROOM_TYPE_CODING_MAP: Record<OrganisationRoom['type'], { code: string; display: string }> = {
+  CONSULTATION: { code: 'consultation', display: 'Consultation Room' },
+  WAITING_AREA: { code: 'waiting-area', display: 'Waiting Area' },
+  SURGERY: { code: 'surgery', display: 'Surgery Room' },
+  ICU: { code: 'icu', display: 'ICU' },
 };
 
 const REVERSE_ROOM_TYPE_CODING_MAP = Object.entries(ROOM_TYPE_CODING_MAP).reduce<
-  Record<string, OrganisationRoom["type"]>
+  Record<string, OrganisationRoom['type']>
 >((acc, [type, coding]) => {
-  acc[coding.code] = type as OrganisationRoom["type"];
+  acc[coding.code] = type as OrganisationRoom['type'];
   return acc;
 }, {});
 
 const ensureOrganisationReference = (organisationId: string): string => {
   if (!organisationId) {
-    return "";
+    return '';
   }
 
-  return organisationId.startsWith("Organization/")
+  return organisationId.startsWith('Organization/')
     ? organisationId
     : `Organization/${organisationId}`;
 };
@@ -60,16 +57,16 @@ const parseReferenceId = (reference?: string): string | undefined => {
     return undefined;
   }
 
-  const segments = trimmed.split("/");
-  return segments.length ? segments.at(-1) ?? undefined : undefined;
+  const segments = trimmed.split('/');
+  return segments.length ? (segments.at(-1) ?? undefined) : undefined;
 };
 
-type FHIRIdentifier = NonNullable<FHIRLocation["identifier"]>[number];
+type FHIRIdentifier = NonNullable<FHIRLocation['identifier']>[number];
 
 const buildIdentifiers = (
   room: OrganisationRoom
-): NonNullable<FHIRLocation["identifier"]> | undefined => {
-  const identifiers: NonNullable<FHIRLocation["identifier"]> = [];
+): NonNullable<FHIRLocation['identifier']> | undefined => {
+  const identifiers: NonNullable<FHIRLocation['identifier']> = [];
 
   if (room.id) {
     identifiers.push({
@@ -88,7 +85,7 @@ const buildIdentifiers = (
   return identifiers.length ? identifiers : undefined;
 };
 
-const buildType = (room: OrganisationRoom): FHIRLocation["type"] => {
+const buildType = (room: OrganisationRoom): FHIRLocation['type'] => {
   const coding = ROOM_TYPE_CODING_MAP[room.type];
 
   if (!coding) {
@@ -115,24 +112,20 @@ const buildExtensions = (room: OrganisationRoom): Extension[] | undefined => {
   if (room.assignedSpecialiteis?.length) {
     extensions.push({
       url: SPECIALITIES_EXTENSION_URL,
-      extension: room.assignedSpecialiteis
-        .filter(Boolean)
-        .map<Extension>((specialityId) => ({
-          url: SPECIALITY_CHILD_URL,
-          valueString: specialityId,
-        })),
+      extension: room.assignedSpecialiteis.filter(Boolean).map<Extension>((specialityId) => ({
+        url: SPECIALITY_CHILD_URL,
+        valueString: specialityId,
+      })),
     });
   }
 
   if (room.assignedStaffs?.length) {
     extensions.push({
       url: STAFFS_EXTENSION_URL,
-      extension: room.assignedStaffs
-        .filter(Boolean)
-        .map<Extension>((staffId) => ({
-          url: STAFF_CHILD_URL,
-          valueString: staffId,
-        })),
+      extension: room.assignedStaffs.filter(Boolean).map<Extension>((staffId) => ({
+        url: STAFF_CHILD_URL,
+        valueString: staffId,
+      })),
     });
   }
 
@@ -140,7 +133,7 @@ const buildExtensions = (room: OrganisationRoom): Extension[] | undefined => {
 };
 
 const findIdentifierValue = (
-  identifiers: FHIRLocation["identifier"],
+  identifiers: FHIRLocation['identifier'],
   system: string
 ): string | undefined =>
   identifiers?.find((identifier: FHIRIdentifier) => identifier.system === system)?.value;
@@ -173,7 +166,7 @@ const resolveOrganisationId = (resource: FHIRLocation): string | undefined => {
   return findIdentifierValue(resource.identifier, ORGANISATION_IDENTIFIER_SYSTEM);
 };
 
-const parseRoomType = (resource: FHIRLocation): OrganisationRoom["type"] => {
+const parseRoomType = (resource: FHIRLocation): OrganisationRoom['type'] => {
   const coding = resource.type?.[0]?.coding?.[0];
 
   if (coding?.code) {
@@ -183,17 +176,17 @@ const parseRoomType = (resource: FHIRLocation): OrganisationRoom["type"] => {
     }
   }
 
-  return "CONSULTATION";
+  return 'CONSULTATION';
 };
 
 export const toFHIROrganisationRoom = (room: OrganisationRoom): FHIRLocation => ({
-  resourceType: "Location",
+  resourceType: 'Location',
   id: room.id,
   name: room.name,
   identifier: buildIdentifiers(room),
   managingOrganization: {
     reference: ensureOrganisationReference(room.organisationId),
-    type: "Organization",
+    type: 'Organization',
   },
   type: buildType(room),
   physicalType: {
@@ -201,10 +194,10 @@ export const toFHIROrganisationRoom = (room: OrganisationRoom): FHIRLocation => 
       {
         system: PHYSICAL_TYPE_SYSTEM,
         code: PHYSICAL_TYPE_ROOM_CODE,
-        display: "Room",
+        display: 'Room',
       },
     ],
-    text: "Room",
+    text: 'Room',
   },
   extension: buildExtensions(room),
 });
@@ -213,9 +206,9 @@ export const fromFHIROrganisationRoom = (resource: FHIRLocation): OrganisationRo
   const extensions = resource.extension;
 
   return {
-    id: resource.id ?? findIdentifierValue(resource.identifier, ROOM_IDENTIFIER_SYSTEM) ?? "",
-    name: resource.name ?? "",
-    organisationId: resolveOrganisationId(resource) ?? "",
+    id: resource.id ?? findIdentifierValue(resource.identifier, ROOM_IDENTIFIER_SYSTEM) ?? '',
+    name: resource.name ?? '',
+    organisationId: resolveOrganisationId(resource) ?? '',
     type: parseRoomType(resource),
     assignedSpecialiteis: parseArrayExtension(
       extensions,

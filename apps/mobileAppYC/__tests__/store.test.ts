@@ -6,8 +6,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   removeItem: jest.fn(),
 }));
 
-
-const capturedConfig: { persistConfig: any } = { persistConfig: null };
+const capturedConfig: {persistConfig: any} = {persistConfig: null};
 
 jest.mock('redux-persist', () => {
   const actual = jest.requireActual('redux-persist');
@@ -18,23 +17,23 @@ jest.mock('redux-persist', () => {
       return actual.persistReducer(config, reducer);
     }),
     persistStore: jest.fn(() => ({
-        purge: jest.fn(),
-        flush: jest.fn(),
-        dispatch: jest.fn(),
-        getState: jest.fn(),
-        subscribe: jest.fn(),
+      purge: jest.fn(),
+      flush: jest.fn(),
+      dispatch: jest.fn(),
+      getState: jest.fn(),
+      subscribe: jest.fn(),
     })),
   };
 });
 
 // Mock Redux Toolkit to capture the middleware configuration function
-const capturedToolkit: { middlewareBuilder: any } = { middlewareBuilder: null };
+const capturedToolkit: {middlewareBuilder: any} = {middlewareBuilder: null};
 
 jest.mock('@reduxjs/toolkit', () => {
   const actual = jest.requireActual('@reduxjs/toolkit');
   return {
     ...actual,
-    configureStore: jest.fn((options) => {
+    configureStore: jest.fn(options => {
       capturedToolkit.middlewareBuilder = options.middleware; // CAPTURE MIDDLEWARE SETUP
       return actual.configureStore(options);
     }),
@@ -46,7 +45,6 @@ jest.mock('@reduxjs/toolkit', () => {
 import {store, persistor} from '../src/app/store';
 
 describe('Redux Store', () => {
-
   afterEach(() => {
     consoleSpy.mockClear();
   });
@@ -75,7 +73,7 @@ describe('Redux Store', () => {
     const config = capturedConfig.persistConfig;
     expect(config).toBeDefined();
     expect(config.key).toBe('root');
-    expect(config.version).toBe(5);
+    expect(config.version).toBe(6);
     expect(config.whitelist).toContain('auth');
     expect(config.whitelist).toContain('notifications');
   });
@@ -119,7 +117,10 @@ describe('Redux Store', () => {
     });
 
     it('implements multiSet and multiGet', async () => {
-      await mockStorage.multiSet([['mk1', 'mv1'], ['mk2', 'mv2']]);
+      await mockStorage.multiSet([
+        ['mk1', 'mv1'],
+        ['mk2', 'mv2'],
+      ]);
       const values = await mockStorage.multiGet(['mk1', 'mk2', 'missing']);
       expect(values).toEqual([
         ['mk1', 'mv1'],
@@ -143,8 +144,8 @@ describe('Redux Store', () => {
     const runMigrate = async (version: number | undefined, state: any) => {
       const migrate = capturedConfig.persistConfig.migrate;
       const persistedState = {
-        _persist: { version },
-        ...state
+        _persist: {version},
+        ...state,
       };
       return await migrate(persistedState);
     };
@@ -152,20 +153,24 @@ describe('Redux Store', () => {
     it('handles v1 -> v2 migration', async () => {
       await runMigrate(1, {});
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Migrating from v1 to v2')
+        expect.stringContaining('Migrating from v1 to v2'),
       );
     });
 
     it('handles v2 -> v3 migration (resets businesses)', async () => {
-      const oldState = { businesses: { someOldData: true } };
+      const oldState = {businesses: {someOldData: true}};
       const newState = await runMigrate(2, oldState);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Migrating from v2 to v3'));
-      expect(newState.businesses).toEqual(expect.objectContaining({
-        businesses: [],
-        employees: [],
-        loading: false
-      }));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Migrating from v2 to v3'),
+      );
+      expect(newState.businesses).toEqual(
+        expect.objectContaining({
+          businesses: [],
+          employees: [],
+          loading: false,
+        }),
+      );
     });
 
     it('handles v2 -> v3 migration (no businesses slice)', async () => {
@@ -176,39 +181,45 @@ describe('Redux Store', () => {
     it('handles v3 -> v4 migration (inits notifications)', async () => {
       const newState = await runMigrate(3, {});
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Migrating from v3 to v4'));
-      expect(newState.notifications).toEqual(expect.objectContaining({
-        items: [],
-        unreadCount: 0,
-        filter: 'all'
-      }));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Migrating from v3 to v4'),
+      );
+      expect(newState.notifications).toEqual(
+        expect.objectContaining({
+          items: [],
+          unreadCount: 0,
+          filter: 'all',
+        }),
+      );
     });
 
     it('handles v3 -> v4 migration (skips if notifications exist)', async () => {
-      const oldState = { notifications: { existing: true } };
+      const oldState = {notifications: {existing: true}};
       const newState = await runMigrate(3, oldState);
-      expect(newState.notifications).toEqual({ existing: true });
+      expect(newState.notifications).toEqual({existing: true});
     });
 
     it('handles v4 -> v5 migration (inits services)', async () => {
-      const oldState = { businesses: { businesses: [] } };
+      const oldState = {businesses: {businesses: []}};
       const newState = await runMigrate(4, oldState);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Migrating from v4 to v5'));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Migrating from v4 to v5'),
+      );
       expect(newState.businesses.services).toEqual([]);
     });
 
     it('handles v4 -> v5 migration (skips if services exist)', async () => {
-      const oldState = { businesses: { services: ['exists'] } };
+      const oldState = {businesses: {services: ['exists']}};
       const newState = await runMigrate(4, oldState);
       expect(newState.businesses.services).toEqual(['exists']);
     });
 
     it('handles non-matching versions gracefully', async () => {
-        // Just ensures it returns the state promise
-        const state = { foo: 'bar' };
-        const result = await runMigrate(99, state);
-        expect(result).toEqual(expect.objectContaining({ foo: 'bar' }));
+      // Just ensures it returns the state promise
+      const state = {foo: 'bar'};
+      const result = await runMigrate(99, state);
+      expect(result).toEqual(expect.objectContaining({foo: 'bar'}));
     });
   });
 });

@@ -11,7 +11,7 @@ import {
 import type {
   Appointment as FHIRAppointment,
   Invoice as FHIRInvoice,
-} from '@yosemite-crew/fhirtypes';
+} from '@yosemite-crew/fhir';
 import type {
   Appointment,
   AppointmentStatus,

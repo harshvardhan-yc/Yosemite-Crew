@@ -12,6 +12,7 @@ const SpecialitySchema = new Schema(
     headProfilePicUrl: { type: String },
     services: { type: [String], default: undefined },
     memberUserIds: { type: [String], default: undefined },
+    isActive: { type: Boolean, default: true },
   },
   {
     timestamps: true,
@@ -29,6 +30,7 @@ export interface SpecialityMongo {
   headProfilePicUrl?: string;
   services?: string[];
   memberUserIds?: string[];
+  isActive?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }

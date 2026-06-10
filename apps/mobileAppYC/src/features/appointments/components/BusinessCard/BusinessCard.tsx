@@ -1,5 +1,12 @@
 import React, {useMemo} from 'react';
-import {View, Text, Image, StyleSheet, ViewStyle, ImageSourcePropType} from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  ViewStyle,
+  ImageSourcePropType,
+} from 'react-native';
 import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
 import {LiquidGlassButton} from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
 import {useTheme} from '@/hooks';
@@ -18,6 +25,7 @@ export interface BusinessCardProps {
   style?: ViewStyle;
   onBook?: () => void;
   compact?: boolean;
+  glassEffect?: 'clear' | 'regular' | 'none';
 }
 
 export const BusinessCard: React.FC<BusinessCardProps> = ({
@@ -31,19 +39,27 @@ export const BusinessCard: React.FC<BusinessCardProps> = ({
   style,
   onBook,
   compact = false,
+  glassEffect = 'clear',
 }) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const descriptionText = description && description.trim().length > 0 ? description.trim() : null;
+  const descriptionText =
+    description && description.trim().length > 0 ? description.trim() : null;
 
   const [loadFailed, setLoadFailed] = React.useState(false);
-  const [sourceOverride, setSourceOverride] = React.useState<ImageSourcePropType | number | undefined>(photo ?? undefined);
+  const [sourceOverride, setSourceOverride] = React.useState<
+    ImageSourcePropType | number | undefined
+  >(photo ?? undefined);
   const resolvedSource = useMemo(
-    () => resolveImageSource(sourceOverride ?? photo ?? (fallbackPhoto ?? undefined)),
+    () =>
+      resolveImageSource(sourceOverride ?? photo ?? fallbackPhoto ?? undefined),
     [sourceOverride, photo, fallbackPhoto],
   );
 
-  const isDummyPhoto = React.useCallback((src?: any) => isDummyPhotoUrl(src), []);
+  const isDummyPhoto = React.useCallback(
+    (src?: any) => isDummyPhotoUrl(src),
+    [],
+  );
 
   const handleError = React.useCallback(() => {
     setLoadFailed(true);
@@ -73,7 +89,12 @@ export const BusinessCard: React.FC<BusinessCardProps> = ({
 
   React.useEffect(() => {
     // When a real photo arrives asynchronously, switch to it without waiting for a remount
-    if (photo && !loadFailed && sourceOverride !== photo && !(fallbackPhoto && isDummyPhoto(photo))) {
+    if (
+      photo &&
+      !loadFailed &&
+      sourceOverride !== photo &&
+      !(fallbackPhoto && isDummyPhoto(photo))
+    ) {
       setSourceOverride(photo as any);
     }
   }, [fallbackPhoto, isDummyPhoto, loadFailed, photo, sourceOverride]);
@@ -83,7 +104,7 @@ export const BusinessCard: React.FC<BusinessCardProps> = ({
       style={[styles.card, compact && styles.compact, style]}
       padding="0"
       shadow="none"
-      glassEffect="clear"
+      glassEffect={glassEffect}
       fallbackStyle={styles.cardFallback}>
       <Image
         source={resolvedSource}
@@ -93,14 +114,23 @@ export const BusinessCard: React.FC<BusinessCardProps> = ({
         onError={handleError}
       />
       <View style={styles.body}>
-        <Text numberOfLines={1} style={styles.title}>{name}</Text>
+        <Text numberOfLines={1} style={styles.title}>
+          {name}
+        </Text>
         {!!openText && <Text style={styles.openText}>{openText}</Text>}
         {descriptionText && (
-          <Text numberOfLines={2} ellipsizeMode="tail" style={styles.description}>
+          <Text
+            numberOfLines={2}
+            ellipsizeMode="tail"
+            style={styles.description}>
             {descriptionText}
           </Text>
         )}
-        <View style={[styles.metaRow, !(distanceText && ratingText) && styles.metaRowSingle]}>
+        <View
+          style={[
+            styles.metaRow,
+            !(distanceText && ratingText) && styles.metaRowSingle,
+          ]}>
           {!!distanceText && (
             <View style={styles.metaItem}>
               <Image source={Images.distanceIcon} style={styles.metaIcon} />

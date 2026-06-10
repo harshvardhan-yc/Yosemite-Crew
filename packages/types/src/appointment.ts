@@ -1,9 +1,9 @@
-import {
+import type {
   Appointment as FHIRAppointment,
   AppointmentParticipant,
   CodeableConcept,
   Extension,
-} from '@yosemite-crew/fhirtypes';
+} from '@yosemite-crew/fhir';
 import dayjs from 'dayjs';
 import { SPECIES_SYSTEM_URL } from './companion';
 
@@ -95,17 +95,20 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
         reference: `Patient/${appointment.companion.id}`,
         display: appointment.companion.name,
       },
+      status: 'accepted',
     },
     {
       actor: {
         reference: `RelatedPerson/${appointment.companion.parent.id}`,
         display: appointment.companion.parent.name,
       },
+      status: 'accepted',
     },
     {
       actor: {
         reference: `Organization/${appointment.organisationId}`,
       },
+      status: 'accepted',
     }
   );
 
@@ -115,7 +118,7 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
         reference: `Practitioner/${normalizedLeadId}`,
         display: appointment.lead?.name,
       },
-      status: appointment.status,
+      status: 'accepted',
       type: [
         {
           coding: [
@@ -196,7 +199,7 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
     : [];
 
   // Appointment speciality links to Speciality
-  const speciality: CodeableConcept[] = appointment.appointmentType?.speciality
+  const specialty: CodeableConcept[] = appointment.appointmentType?.speciality
     ? [
         {
           coding: [
@@ -270,7 +273,7 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
     status: fhirStatus,
     participant: participants,
     serviceType,
-    speciality,
+    specialty,
     start: dayjs(appointment.startTime).toISOString(),
     end: dayjs(appointment.endTime).toISOString(),
     minutesDuration: appointment.durationMinutes,
@@ -308,7 +311,11 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
 
   const appointmentTypeCoding = FHIRappointment.serviceType?.[0]?.coding?.[0] || undefined;
 
-  const specialityCoding = FHIRappointment.speciality?.[0]?.coding?.[0] || undefined;
+  const specialityCoding =
+    (FHIRappointment.specialty?.[0]?.coding?.[0] ||
+      (FHIRappointment as FHIRAppointment & { speciality?: CodeableConcept[] }).speciality?.[0]
+        ?.coding?.[0]) ??
+    undefined;
 
   const speciesExtesnion = FHIRappointment.extension?.find((p) => p.id?.includes('species'));
   const breedExtension = FHIRappointment.extension?.find((p) => p.id?.includes('breed'));
