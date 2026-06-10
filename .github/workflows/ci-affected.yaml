@@ -149,6 +149,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma Client
+        if: matrix.workspace == 'backend' || matrix.workspace == '@yosemite-crew/database'
+        run: pnpm --filter @yosemite-crew/database run prisma:generate
+      
       - name: Validate workspace exists
         run: |
           if ! pnpm --filter "${{ matrix.workspace }}" exec true 2>/dev/null; then
