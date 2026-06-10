@@ -5,7 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import { isAppointmentRevampEnabled } from '@/app/lib/featureFlags';
-import { buildWorkspaceHref } from '@/app/lib/appointmentWorkspace';
+import {
+  buildWorkspaceHref,
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+} from '@/app/lib/appointmentWorkspace';
+import { startRouteLoader } from '@/app/lib/routeLoader';
 const AddAppointment = React.lazy(
   () => import('@/app/features/appointments/pages/Appointments/Sections/AddAppointment')
 );
@@ -346,7 +351,12 @@ const Appointments = () => {
     setActiveAppointment(target);
     setViewIntent(initialIntent);
     if (revampEnabled) {
-      router.push(buildWorkspaceHref(appointmentId));
+      if (canEnterAppointmentWorkspace(target.status)) {
+        startRouteLoader();
+        router.push(buildWorkspaceHrefForIntent(appointmentId, initialIntent));
+      } else {
+        setViewPopup(true);
+      }
     } else {
       setViewPopup(true);
     }
@@ -400,6 +410,18 @@ const Appointments = () => {
     setAddPopup(true);
   };
 
+  const openWorkspace = (appointment: Appointment, intent?: AppointmentViewIntent) => {
+    if (!appointment.id) return;
+    if (!canEnterAppointmentWorkspace(appointment.status)) {
+      setActiveAppointment(appointment);
+      setViewIntent(intent ?? null);
+      setViewPopup(true);
+      return;
+    }
+    startRouteLoader();
+    router.push(buildWorkspaceHrefForIntent(appointment.id, intent));
+  };
+
   let plannerContent: React.ReactNode;
   if (activeView === 'calendar') {
     plannerContent = (
@@ -413,6 +435,7 @@ const Appointments = () => {
         setChangeStatusPopup={setChangeStatusPopup}
         setChangeStatusPreferredStatus={setChangeStatusPreferredStatus}
         setChangeRoomPopup={setChangeRoomPopup}
+        onOpenWorkspace={openWorkspace}
         activeCalendar={activeCalendar}
         setActiveCalendar={handleActiveCalendarChange}
         currentDate={currentDate}
@@ -534,11 +557,15 @@ const Appointments = () => {
                 showModal={viewPopup}
                 setShowModal={setViewPopup}
                 activeAppointment={activeAppointment}
+                canEditAppointments={canEditActiveAppointment}
                 onOpenDetails={(appointment, intent) => {
                   setActiveAppointment(appointment);
                   setViewIntent(intent ?? null);
                   setViewPopup(false);
-                  if (appointment.id) router.push(buildWorkspaceHref(appointment.id));
+                  if (appointment.id) {
+                    startRouteLoader();
+                    router.push(buildWorkspaceHref(appointment.id));
+                  }
                 }}
               />
             )}

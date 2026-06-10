@@ -255,7 +255,8 @@ describe('WorkspaceMetaBar', () => {
     onSaveAndNext: jest.fn(),
     onToggleReadyForBilling: jest.fn(),
     onToggleReadyForDischarge: jest.fn(),
-    togglesLocked: false,
+    billingTogglesLocked: false,
+    dischargeTogglesLocked: false,
   });
 
   it('renders consultation type for outpatient and fires Save & Next', () => {
@@ -327,16 +328,32 @@ describe('WorkspaceMetaBar', () => {
       viewOnly: true,
       readyForDischarge: { value: true, byName: 'A', at: '2026-06-02T12:00:00Z' },
     };
-    render(<WorkspaceMetaBar {...props} encounter={encounter} togglesLocked={false} />);
+    render(
+      <WorkspaceMetaBar
+        {...props}
+        encounter={encounter}
+        billingTogglesLocked={false}
+        dischargeTogglesLocked={false}
+      />
+    );
     const discharge = screen.getByRole('button', { name: /ready for discharge/i });
     expect(discharge).not.toBeDisabled();
     fireEvent.click(discharge);
     expect(props.onToggleReadyForDischarge).toHaveBeenCalled();
   });
 
-  it('locks the ready toggles when togglesLocked is set', () => {
+  it('locks the discharge toggle under the clinical time window but keeps billing editable', () => {
+    // The time-based lock window is clinical: it freezes the discharge toggle but
+    // NOT the billing toggle, which follows its own (operational) state.
     const props = baseProps('OUTPATIENT');
-    render(<WorkspaceMetaBar {...props} togglesLocked />);
+    render(<WorkspaceMetaBar {...props} billingTogglesLocked={false} dischargeTogglesLocked />);
     expect(screen.getByRole('button', { name: /ready for discharge/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /ready for billing/i })).not.toBeDisabled();
+  });
+
+  it('locks the billing toggle only when the encounter is persisted view-only', () => {
+    const props = baseProps('OUTPATIENT');
+    render(<WorkspaceMetaBar {...props} billingTogglesLocked dischargeTogglesLocked />);
+    expect(screen.getByRole('button', { name: /ready for billing/i })).toBeDisabled();
   });
 });

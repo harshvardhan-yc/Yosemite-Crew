@@ -1,7 +1,11 @@
 import {
   buildWorkspaceHref,
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+  getWorkspaceBlockedMessage,
   getNextStep,
   isPastLockWindow,
+  resolveWorkspaceStepForIntent,
   resolveEncounterMode,
   resolveLandingStep,
   richTextIsEmpty,
@@ -15,6 +19,45 @@ describe('appointmentWorkspace lib', () => {
   it('builds workspace hrefs with and without a step', () => {
     expect(buildWorkspaceHref('a 1')).toBe('/appointments/a%201/workspace');
     expect(buildWorkspaceHref('a1', 'INVOICE')).toBe('/appointments/a1/workspace?step=INVOICE');
+  });
+
+  it('maps appointment view intents to workspace steps', () => {
+    expect(resolveWorkspaceStepForIntent({ label: 'prescription', subLabel: 'subjective' })).toBe(
+      'SOAP'
+    );
+    expect(resolveWorkspaceStepForIntent({ label: 'care', subLabel: 'forms' })).toBe('SOAP');
+    expect(resolveWorkspaceStepForIntent({ label: 'labs', subLabel: 'idexx-labs' })).toBe(
+      'DIAGNOSTICS'
+    );
+    expect(resolveWorkspaceStepForIntent({ label: 'finance', subLabel: 'summary' })).toBe(
+      'INVOICE'
+    );
+    expect(resolveWorkspaceStepForIntent({ label: 'tasks', subLabel: 'task' })).toBe('TREATMENT');
+    expect(resolveWorkspaceStepForIntent({ label: 'info', subLabel: 'appointment' })).toBe(
+      'SUMMARY'
+    );
+    expect(resolveWorkspaceStepForIntent(null)).toBeUndefined();
+  });
+
+  it('builds workspace hrefs from appointment view intents', () => {
+    expect(buildWorkspaceHrefForIntent('a1', { label: 'labs', subLabel: 'idexx-labs' })).toBe(
+      '/appointments/a1/workspace?step=DIAGNOSTICS'
+    );
+    expect(buildWorkspaceHrefForIntent('a1')).toBe('/appointments/a1/workspace');
+  });
+
+  it('gates workspace entry by appointment status', () => {
+    expect(canEnterAppointmentWorkspace('UPCOMING')).toBe(true);
+    expect(canEnterAppointmentWorkspace('CHECKED_IN')).toBe(true);
+    expect(canEnterAppointmentWorkspace('IN_PROGRESS')).toBe(true);
+    expect(canEnterAppointmentWorkspace('COMPLETED')).toBe(true);
+    expect(canEnterAppointmentWorkspace('REQUESTED')).toBe(false);
+    expect(canEnterAppointmentWorkspace('NO_PAYMENT')).toBe(false);
+    expect(canEnterAppointmentWorkspace('CANCELLED')).toBe(false);
+    expect(canEnterAppointmentWorkspace('NO_SHOW')).toBe(false);
+    expect(getWorkspaceBlockedMessage('NO_SHOW')).toBe(
+      'No show appointments cannot be opened in the clinical workspace.'
+    );
   });
 
   it('resolves encounter mode from room presence', () => {

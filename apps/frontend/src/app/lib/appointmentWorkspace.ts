@@ -5,7 +5,9 @@ import type {
   StepStatus,
   WorkspaceStep,
 } from '@/app/features/appointments/types/workspace';
+import type { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 import { WORKSPACE_STEPS } from '@/app/features/appointments/types/workspace';
+import { normalizeAppointmentStatus, toStatusLabel } from '@/app/lib/appointments';
 
 /** Default lock/edit window (hours) used until the org preference is wired. */
 export const DEFAULT_OUTPATIENT_LOCK_HOURS = 24;
@@ -15,6 +17,36 @@ export const DEFAULT_INPATIENT_LOCK_HOURS = 24;
 export const buildWorkspaceHref = (appointmentId: string, step?: WorkspaceStep): string => {
   const base = `/appointments/${encodeURIComponent(appointmentId)}/workspace`;
   return step ? `${base}?step=${step}` : base;
+};
+
+export const resolveWorkspaceStepForIntent = (
+  intent?: AppointmentViewIntent | null
+): WorkspaceStep | undefined => {
+  if (!intent) return undefined;
+  if (intent.label === 'labs') return 'DIAGNOSTICS';
+  if (intent.label === 'finance') return 'INVOICE';
+  if (intent.label === 'prescription' || intent.label === 'care') return 'SOAP';
+  if (intent.label === 'tasks') return 'TREATMENT';
+  if (intent.label === 'info') return 'SUMMARY';
+  return undefined;
+};
+
+export const buildWorkspaceHrefForIntent = (
+  appointmentId: string,
+  intent?: AppointmentViewIntent | null
+): string => buildWorkspaceHref(appointmentId, resolveWorkspaceStepForIntent(intent));
+
+/** Requested, cancelled, and no-show appointments never enter the clinical workspace. */
+export const canEnterAppointmentWorkspace = (status?: string | null): boolean => {
+  const normalized = normalizeAppointmentStatus(status);
+  if (!normalized) return false;
+  return normalized !== 'REQUESTED' && normalized !== 'CANCELLED' && normalized !== 'NO_SHOW';
+};
+
+export const getWorkspaceBlockedMessage = (status?: string | null): string => {
+  const label = toStatusLabel(status).toLowerCase();
+  if (label === 'unknown') return 'This appointment cannot be opened in the workspace.';
+  return `${toStatusLabel(status)} appointments cannot be opened in the clinical workspace.`;
 };
 
 /**

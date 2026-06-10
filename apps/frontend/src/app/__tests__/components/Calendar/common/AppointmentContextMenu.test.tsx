@@ -28,6 +28,9 @@ jest.mock('@/app/lib/appointments', () => ({
   ),
   getClinicalNotesIntent: jest.fn(() => ({ label: 'prescription', subLabel: 'subjective' })),
   getClinicalNotesLabel: jest.fn(() => 'Clinical notes'),
+  normalizeAppointmentStatus: jest.fn((status: string) =>
+    status === 'NO_PAYMENT' ? 'REQUESTED' : status
+  ),
   toStatusLabel: jest.fn((status: string) => status),
 }));
 

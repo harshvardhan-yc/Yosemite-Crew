@@ -115,6 +115,8 @@ describe('Appointments table', () => {
     const appointment: any = {
       id: 'a2',
       status: 'COMPLETED',
+      organisationId: 'org-1',
+      appointmentType: { id: 'svc-1', speciality: { id: 'spec-1' } },
       companion: {
         id: 'c2',
         name: 'Buddy',
@@ -123,7 +125,7 @@ describe('Appointments table', () => {
       },
     };
     const setActiveAppointment = jest.fn();
-    const setViewPopup = jest.fn();
+    const setDetailPopup = jest.fn();
     const setViewIntent = jest.fn();
     const setReschedulePopup = jest.fn();
 
@@ -131,7 +133,7 @@ describe('Appointments table', () => {
       <Appointments
         filteredList={[appointment]}
         setActiveAppointment={setActiveAppointment}
-        setViewPopup={setViewPopup}
+        setDetailPopup={setDetailPopup}
         setViewIntent={setViewIntent}
         setReschedulePopup={setReschedulePopup}
         canEditAppointments
@@ -146,8 +148,33 @@ describe('Appointments table', () => {
       '/companions/history?companionId=c2&source=appointments&appointmentId=a2&backTo=%2Fappointments'
     );
     expect(setActiveAppointment).toHaveBeenCalledWith(appointment);
-    expect(setViewPopup).toHaveBeenCalledWith(true);
+    expect(setDetailPopup).toHaveBeenCalledWith(true);
     expect(setReschedulePopup).toHaveBeenCalledWith(true);
+  });
+
+  it('routes table quick actions to workspace steps', () => {
+    const appointment: any = {
+      id: 'a4',
+      status: 'COMPLETED',
+      organisationId: 'org-1',
+      appointmentType: { id: 'svc-1', speciality: { id: 'spec-1' } },
+      companion: {
+        id: 'c4',
+        name: 'Milo',
+        species: 'dog',
+        parent: { name: 'Jamie' },
+      },
+    };
+
+    render(<Appointments filteredList={[appointment]} canEditAppointments />);
+
+    fireEvent.click(screen.getByText('soap-icon').closest('button')!);
+    fireEvent.click(screen.getByText('finance-icon').closest('button')!);
+    fireEvent.click(screen.getByText('labs-icon').closest('button')!);
+
+    expect(pushMock).toHaveBeenCalledWith('/appointments/a4/workspace?step=SOAP');
+    expect(pushMock).toHaveBeenCalledWith('/appointments/a4/workspace?step=INVOICE');
+    expect(pushMock).toHaveBeenCalledWith('/appointments/a4/workspace?step=DIAGNOSTICS');
   });
 
   it('shows empty state for mobile list', () => {

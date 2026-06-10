@@ -42,6 +42,7 @@ import {
   useCalendarWeekNavigation,
   useSlotOffsetMinutes,
 } from '@/app/features/appointments/components/Calendar/useCalendarSlots';
+import type { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 
 const HOUR_ROW_TOP_OFFSET_PX = 0;
 
@@ -58,6 +59,7 @@ type WeekCalendarProps = {
   zoomMode?: CalendarZoomMode;
   handleViewAppointment: any;
   handleDetailAppointment?: any;
+  handleOpenWorkspace?: (appointment: Appointment, intent?: AppointmentViewIntent) => void;
   weekStart: Date;
   setWeekStart: React.Dispatch<React.SetStateAction<Date>>;
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
@@ -92,6 +94,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
   zoomMode = 'in',
   handleViewAppointment,
   handleDetailAppointment,
+  handleOpenWorkspace,
   weekStart,
   setWeekStart,
   setCurrentDate,
@@ -432,6 +435,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                             dayIndex={dayIndex}
                             handleViewAppointment={handleViewAppointment}
                             handleDetailAppointment={handleDetailAppointment}
+                            handleOpenWorkspace={handleOpenWorkspace}
                             handleRescheduleAppointment={handleRescheduleAppointment}
                             handleChangeRoomAppointment={handleChangeRoomAppointment}
                             canEditAppointments={canEditAppointments}

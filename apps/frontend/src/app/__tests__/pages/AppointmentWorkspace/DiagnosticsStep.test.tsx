@@ -154,10 +154,20 @@ const baseHook = (overrides: Partial<UseLabTestsReturn> = {}): UseLabTestsReturn
     ...overrides,
   }) as unknown as UseLabTestsReturn;
 
-const renderStep = (overrides: Partial<UseLabTestsReturn> = {}, onOpenTreatment = jest.fn()) => {
+const renderStep = (
+  overrides: Partial<UseLabTestsReturn> = {},
+  onOpenTreatment = jest.fn(),
+  readOnly = false
+) => {
   const hook = baseHook(overrides);
   mockUseLabTests.mockReturnValue(hook);
-  render(<DiagnosticsStep appointment={APPOINTMENT} onOpenTreatment={onOpenTreatment} />);
+  render(
+    <DiagnosticsStep
+      appointment={APPOINTMENT}
+      readOnly={readOnly}
+      onOpenTreatment={onOpenTreatment}
+    />
+  );
   return { hook, onOpenTreatment };
 };
 
@@ -186,6 +196,16 @@ describe('DiagnosticsStep (workspace, real IDEXX backend)', () => {
 
     expect(screen.getByText(/RadAnalyzer diagnostics are coming soon/i)).toBeInTheDocument();
     expect(screen.queryByText('Order Builder')).not.toBeInTheDocument();
+  });
+
+  it('keeps diagnostic history visible but hides new-order controls when read-only', () => {
+    renderStep({}, jest.fn(), true);
+
+    expect(screen.queryByText('Order Builder')).not.toBeInTheDocument();
+    expect(screen.getByText('Order Status')).toBeInTheDocument();
+    expect(screen.getByText('Results')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /create lab order/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/remove canine senior screen/i)).not.toBeInTheDocument();
   });
 
   it('shows the not-enabled state when the integration is disabled', () => {

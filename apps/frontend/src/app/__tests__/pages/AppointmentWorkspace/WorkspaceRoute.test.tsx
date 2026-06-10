@@ -92,6 +92,17 @@ describe('WorkspaceRoute', () => {
     expect(useLoadAppointmentsForPrimaryOrg).toHaveBeenCalled();
   });
 
+  it('blocks workspace entry for cancelled appointments', () => {
+    mockAppointments([{ ...makeAppointment(), status: 'CANCELLED' }]);
+
+    render(<WorkspaceRoute appointmentId="appt-1" />);
+
+    expect(screen.queryByTestId('workspace')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Cancelled appointments cannot be opened in the clinical workspace.')
+    ).toBeInTheDocument();
+  });
+
   it('shows the loader while appointments are still loading', () => {
     useAppointmentStore.setState({ status: 'loading' });
 

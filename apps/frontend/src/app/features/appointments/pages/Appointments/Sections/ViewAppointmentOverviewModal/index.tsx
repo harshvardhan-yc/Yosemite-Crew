@@ -6,6 +6,10 @@ import { useInvoicesForPrimaryOrg } from '@/app/hooks/useInvoices';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useServiceStore } from '@/app/stores/serviceStore';
 import { canAssignAppointmentRoom, getClinicalNotesIntent } from '@/app/lib/appointments';
+import {
+  canEnterAppointmentWorkspace,
+  getWorkspaceBlockedMessage,
+} from '@/app/lib/appointmentWorkspace';
 import { formatDateInPreferredTimeZone } from '@/app/lib/timezone';
 import { formatTimeLabel } from '@/app/lib/forms';
 import { createInvoiceByAppointmentId } from '@/app/lib/paymentStatus';
@@ -17,12 +21,15 @@ import { useNotify } from '@/app/hooks/useNotify';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import AppointmentCentralModalShell from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentCentralModalShell';
 import AppointmentAvatar from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentAvatar';
+import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
+import { Primary } from '@/app/ui/primitives/Buttons';
 import { IoArrowForward } from 'react-icons/io5';
 
 type ViewAppointmentOverviewModalProps = {
   showModal: boolean;
   setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
   activeAppointment: Appointment;
+  canEditAppointments?: boolean;
   onOpenDetails: (appointment: Appointment, intent?: AppointmentViewIntent) => void;
 };
 
@@ -65,6 +72,7 @@ const ViewAppointmentOverviewModal = ({
   showModal,
   setShowModal,
   activeAppointment,
+  canEditAppointments = false,
   onOpenDetails,
 }: ViewAppointmentOverviewModalProps) => {
   const { notify } = useNotify();
@@ -81,6 +89,7 @@ const ViewAppointmentOverviewModal = ({
 
   const clinicalNotesIntent = getClinicalNotesIntent(orgType);
   const isUpcoming = activeAppointment.status === 'UPCOMING';
+  const canOpenWorkspace = canEnterAppointmentWorkspace(activeAppointment.status);
   const canEditRoom = canAssignAppointmentRoom(activeAppointment.status);
 
   const invoicesByAppointmentId = useMemo(() => createInvoiceByAppointmentId(invoices), [invoices]);
@@ -150,6 +159,7 @@ const ViewAppointmentOverviewModal = ({
   );
 
   const handlePrimaryAction = () => {
+    if (!canOpenWorkspace) return;
     onOpenDetails(activeAppointment, isUpcoming ? clinicalNotesIntent : undefined);
   };
 
@@ -228,6 +238,13 @@ const ViewAppointmentOverviewModal = ({
         <div className="flex flex-col gap-4">
           {/* Appointment detail rows */}
           <div className="rounded-2xl border border-card-border px-4 py-2">
+            <div className="flex items-center justify-between py-2 border-b border-card-border">
+              <span className="font-satoshi text-sm font-medium text-text-secondary">Status</span>
+              <AppointmentStatusPill
+                appointment={activeAppointment}
+                canEdit={canEditAppointments}
+              />
+            </div>
             <OverviewRow
               label="Speciality"
               value={activeAppointment.appointmentType?.speciality?.name}
@@ -261,64 +278,70 @@ const ViewAppointmentOverviewModal = ({
           </div>
 
           {/* Estimate panel */}
-          <div className="rounded-2xl border border-card-border p-4 flex flex-col gap-2">
-            {serviceInfo && (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="font-satoshi text-sm font-medium text-text-secondary">
-                    Cost:
-                  </span>
-                  <span className="font-satoshi text-sm font-bold text-text-primary">
-                    {serviceInfo.cost ? `$ ${Number(serviceInfo.cost).toFixed(2)}` : '-'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="font-satoshi text-sm font-medium text-text-secondary">
-                    Max discount:
-                  </span>
-                  <span className="font-satoshi text-sm font-bold text-text-primary">
-                    {serviceInfo.maxDiscount
-                      ? `$${Number(serviceInfo.maxDiscount).toFixed(2)}`
-                      : '-'}
-                  </span>
-                </div>
-              </>
-            )}
-            <div className="flex items-center justify-between mt-1">
-              <span
-                className="font-satoshi text-sm font-medium"
-                style={{ color: 'var(--color-neutral-900)', letterSpacing: '-0.28px' }}
-              >
-                Estimate
-              </span>
-              <span
-                className="font-satoshi text-2xl font-bold"
-                style={{
-                  color:
-                    estimateDisplay === '-'
-                      ? 'var(--color-neutral-500)'
-                      : 'var(--color-primary-600)',
-                  letterSpacing: '-0.48px',
-                }}
-              >
-                {estimateDisplay}
-              </span>
+          {activeAppointment.status !== 'COMPLETED' && (
+            <div className="rounded-2xl border border-card-border p-4 flex flex-col gap-2">
+              {serviceInfo && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="font-satoshi text-sm font-medium text-text-secondary">
+                      Cost:
+                    </span>
+                    <span className="font-satoshi text-sm font-bold text-text-primary">
+                      {serviceInfo.cost ? `$ ${Number(serviceInfo.cost).toFixed(2)}` : '-'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-satoshi text-sm font-medium text-text-secondary">
+                      Max discount:
+                    </span>
+                    <span className="font-satoshi text-sm font-bold text-text-primary">
+                      {serviceInfo.maxDiscount
+                        ? `$${Number(serviceInfo.maxDiscount).toFixed(2)}`
+                        : '-'}
+                    </span>
+                  </div>
+                </>
+              )}
+              <div className="flex items-center justify-between mt-1">
+                <span
+                  className="font-satoshi text-sm font-medium"
+                  style={{ color: 'var(--color-neutral-900)', letterSpacing: '-0.28px' }}
+                >
+                  Estimate
+                </span>
+                <span
+                  className="font-satoshi text-2xl font-bold"
+                  style={{
+                    color:
+                      estimateDisplay === '-'
+                        ? 'var(--color-neutral-500)'
+                        : 'var(--color-primary-600)',
+                    letterSpacing: '-0.48px',
+                  }}
+                >
+                  {estimateDisplay}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
+      {!canOpenWorkspace && (
+        <p className="mt-5 rounded-2xl border border-card-border bg-neutral-100 p-4 text-body-4 text-text-secondary">
+          {getWorkspaceBlockedMessage(activeAppointment.status)}
+        </p>
+      )}
+
       {/* Footer */}
       <div className="flex justify-end mt-6 pt-4 border-t border-card-border">
-        <button
-          type="button"
+        <Primary
+          text={isUpcoming ? 'Start Appointment' : 'View Details'}
+          icon={<IoArrowForward aria-hidden="true" />}
+          iconPosition="right"
           onClick={handlePrimaryAction}
-          className="flex items-center gap-2 rounded-2xl px-6 py-3 font-satoshi font-medium text-white whitespace-nowrap"
-          style={{ background: 'var(--color-neutral-900)', fontSize: 16, lineHeight: '120%' }}
-        >
-          <span>{isUpcoming ? 'Start Appointment' : 'View Details'}</span>
-          <IoArrowForward size={18} className="shrink-0" aria-hidden="true" />
-        </button>
+          isDisabled={!canOpenWorkspace}
+        />
       </div>
     </AppointmentCentralModalShell>
   );

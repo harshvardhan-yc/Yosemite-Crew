@@ -45,6 +45,7 @@ const useLoadCompanionsForPrimaryOrgMock = jest.fn();
 const usePermissionsMock = jest.fn();
 const useSearchStoreMock = jest.fn();
 const useSearchParamsMock = jest.fn();
+const routerPushMock = jest.fn();
 const usePrimaryOrgProfileMock = jest.fn();
 const useAppointmentStoreMock = jest.fn();
 const useTeamForPrimaryOrgMock = jest.fn();
@@ -86,6 +87,9 @@ jest.mock('@/app/stores/searchStore', () => ({
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => useSearchParamsMock(),
+  useRouter: () => ({
+    push: routerPushMock,
+  }),
 }));
 
 jest.mock('@/app/hooks/useProfiles', () => ({

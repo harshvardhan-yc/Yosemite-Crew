@@ -126,6 +126,19 @@ const MOCK_SERVICES: LineItem[] = [
     unitPriceCents: 13500,
     amountCents: 13500,
   },
+  {
+    id: 'li-3',
+    refId: 'svc-consultation',
+    kind: 'SERVICE',
+    name: 'Consultation',
+    qty: 1,
+    instructions: 'Initial assessment',
+    unitPriceCents: 8500,
+    amountCents: 8500,
+    billed: true,
+    billedAt: 'Jun 2, 2026',
+    billedByName: 'Dr. Tim Apple',
+  },
 ];
 
 const MOCK_PRESCRIPTION: PrescriptionItem[] = [
@@ -141,6 +154,9 @@ const MOCK_PRESCRIPTION: PrescriptionItem[] = [
     fulfillment: 'IN_HOUSE',
     priceCents: 16500,
     stockQty: 14,
+    billed: true,
+    billedAt: 'Jun 2, 2026',
+    billedByName: 'Dr. Tim Apple',
   },
   {
     id: 'rx-2',

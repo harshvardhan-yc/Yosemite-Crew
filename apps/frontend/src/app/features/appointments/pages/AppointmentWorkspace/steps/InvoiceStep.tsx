@@ -28,6 +28,7 @@ import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace
 type InvoiceStepProps = {
   appointmentId: string;
   encounter: AppointmentEncounter;
+  hideBillBuilder?: boolean;
   onOpenSummary: () => void;
 };
 
@@ -305,7 +306,12 @@ const PaymentActions = ({
   </div>
 );
 
-const InvoiceStep = ({ appointmentId, encounter, onOpenSummary }: InvoiceStepProps) => {
+const InvoiceStep = ({
+  appointmentId,
+  encounter,
+  hideBillBuilder = false,
+  onOpenSummary,
+}: InvoiceStepProps) => {
   const setWithdrawDeposit = useAppointmentWorkspaceStore((s) => s.setWithdrawDeposit);
   const setOverallDiscountPercent = useAppointmentWorkspaceStore(
     (s) => s.setOverallDiscountPercent
@@ -319,6 +325,7 @@ const InvoiceStep = ({ appointmentId, encounter, onOpenSummary }: InvoiceStepPro
   const readOnly = encounter.viewOnly;
   const isInpatient = encounter.mode === 'INPATIENT';
   const hasItems = encounter.invoiceLineItems.length > 0;
+  const canBuildBill = !readOnly && !hideBillBuilder;
 
   const handleCollect = (method: PaymentMethod) => {
     if (!hasItems) return;
@@ -346,7 +353,7 @@ const InvoiceStep = ({ appointmentId, encounter, onOpenSummary }: InvoiceStepPro
     <div className="flex flex-col gap-5">
       {/* The bill builder + payment controls only show while the encounter is
           editable. A completed appointment shows finalized invoices only. */}
-      {!readOnly && (
+      {canBuildBill && (
         <>
           <TotalBillContainer
             items={encounter.invoiceLineItems}

@@ -122,114 +122,113 @@ const SoapStep = ({
         <span className="text-right text-yc-16-r-neutral">{appointmentReason}</span>
       </div>
 
-      <div className="relative flex justify-end">
-        <div className="relative w-full sm:max-w-90">
-          <Search
-            value={templateQuery}
-            setSearch={setTemplateQuery}
-            placeholder="Search for SOAP Template"
-            label="Search for SOAP template"
-            className="w-full!"
-          />
-          {templateMatches.length > 0 && (
-            <ul className="absolute right-0 z-10 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
-              {templateMatches.map((tpl) => (
-                <li key={tpl.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      applySoapTemplate(appointmentId, tpl);
-                      setTemplateQuery('');
-                    }}
-                    className="flex w-full items-center px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                  >
-                    {tpl.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
+      {!readOnly && (
+        <>
+          <div className="relative flex justify-end">
+            <div className="relative w-full sm:max-w-90">
+              <Search
+                value={templateQuery}
+                setSearch={setTemplateQuery}
+                placeholder="Search for SOAP Template"
+                label="Search for SOAP template"
+                className="w-full!"
+              />
+              {templateMatches.length > 0 && (
+                <ul className="absolute right-0 z-10 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+                  {templateMatches.map((tpl) => (
+                    <li key={tpl.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          applySoapTemplate(appointmentId, tpl);
+                          setTemplateQuery('');
+                        }}
+                        className="flex w-full items-center px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
+                      >
+                        {tpl.name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
 
-      <SectionContainer
-        titleClassName="text-yc-20-b-primary"
-        title="Subjective (History)"
-        compactTop
-      >
-        <RichTextEditor
-          ariaLabel="Subjective history"
-          value={note.subjective}
-          readOnly={readOnly}
-          toolbarPlacement="inset"
-          onChange={(html) => upsertSoap(appointmentId, { subjective: html })}
-          placeholder="Patient history and owner-reported information"
-        />
-      </SectionContainer>
+          <SectionContainer
+            titleClassName="text-yc-20-b-primary"
+            title="Subjective (History)"
+            compactTop
+          >
+            <RichTextEditor
+              ariaLabel="Subjective history"
+              value={note.subjective}
+              readOnly={false}
+              toolbarPlacement="inset"
+              onChange={(html) => upsertSoap(appointmentId, { subjective: html })}
+              placeholder="Patient history and owner-reported information"
+            />
+          </SectionContainer>
 
-      <SectionContainer
-        titleClassName="text-yc-20-b-primary"
-        title="Objective (Examination)"
-        compactTop
-      >
-        <RichTextEditor
-          ariaLabel="Objective examination"
-          value={note.objective}
-          readOnly={readOnly}
-          toolbarPlacement="inset"
-          onChange={(html) => upsertSoap(appointmentId, { objective: html })}
-          placeholder="Examination findings and recorded vitals"
-        />
-        {!readOnly && (
-          <div className="mt-3 flex justify-end">
-            <Secondary
-              text="Record Vitals"
-              onClick={onRecordVitals}
-              icon={<LuClipboardList aria-hidden="true" />}
+          <SectionContainer
+            titleClassName="text-yc-20-b-primary"
+            title="Objective (Examination)"
+            compactTop
+          >
+            <RichTextEditor
+              ariaLabel="Objective examination"
+              value={note.objective}
+              readOnly={false}
+              toolbarPlacement="inset"
+              onChange={(html) => upsertSoap(appointmentId, { objective: html })}
+              placeholder="Examination findings and recorded vitals"
+            />
+            <div className="mt-3 flex justify-end">
+              <Secondary
+                text="Record Vitals"
+                onClick={onRecordVitals}
+                icon={<LuClipboardList aria-hidden="true" />}
+              />
+            </div>
+          </SectionContainer>
+
+          <SectionContainer
+            titleClassName="text-yc-20-b-primary"
+            title="Assessment (Differential)"
+            compactTop
+          >
+            <RichTextEditor
+              ariaLabel="Assessment differential"
+              value={note.assessment}
+              readOnly={false}
+              toolbarPlacement="inset"
+              onChange={(html) => upsertSoap(appointmentId, { assessment: html })}
+              placeholder="Diagnosis and differentials"
+            />
+          </SectionContainer>
+
+          <SectionContainer titleClassName="text-yc-20-b-primary" title="Plan" compactTop>
+            <RichTextEditor
+              ariaLabel="Plan"
+              value={note.plan}
+              readOnly={false}
+              toolbarPlacement="inset"
+              onChange={(html) => upsertSoap(appointmentId, { plan: html })}
+              placeholder="Treatment plan and next steps"
+            />
+          </SectionContainer>
+
+          <div className="flex justify-end">
+            <SoapSignActions
+              disabled={false}
+              onPrintToSign={() => window.print()}
+              onSaveAndNext={() => {
+                signSoap(appointmentId, encounter.leadName ?? 'Clinician', false);
+                onSaveAndNext();
+              }}
             />
           </div>
-        )}
-      </SectionContainer>
-
-      <SectionContainer
-        titleClassName="text-yc-20-b-primary"
-        title="Assessment (Differential)"
-        compactTop
-      >
-        <RichTextEditor
-          ariaLabel="Assessment differential"
-          value={note.assessment}
-          readOnly={readOnly}
-          toolbarPlacement="inset"
-          onChange={(html) => upsertSoap(appointmentId, { assessment: html })}
-          placeholder="Diagnosis and differentials"
-        />
-      </SectionContainer>
-
-      <SectionContainer titleClassName="text-yc-20-b-primary" title="Plan" compactTop>
-        <RichTextEditor
-          ariaLabel="Plan"
-          value={note.plan}
-          readOnly={readOnly}
-          toolbarPlacement="inset"
-          onChange={(html) => upsertSoap(appointmentId, { plan: html })}
-          placeholder="Treatment plan and next steps"
-        />
-      </SectionContainer>
-
-      <div className="flex justify-end">
-        <SoapSignActions
-          disabled={readOnly}
-          onPrintToSign={() => window.print()}
-          onSaveAndNext={() => {
-            // Record the active draft (so it lands in "All SOAP notes") and clear
-            // the form for a new note before advancing. signSoap no-ops when the
-            // draft is empty. The button is disabled in read-only mode.
-            signSoap(appointmentId, encounter.leadName ?? 'Clinician', false);
-            onSaveAndNext();
-          }}
-        />
-      </div>
+        </>
+      )}
 
       <SoapNotesList items={pastNotes} onPrint={() => window.print()} />
     </div>

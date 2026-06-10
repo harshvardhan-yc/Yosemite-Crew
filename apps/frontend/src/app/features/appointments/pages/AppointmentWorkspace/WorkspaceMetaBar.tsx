@@ -55,11 +55,16 @@ type WorkspaceMetaBarProps = {
   onToggleReadyForBilling: () => void;
   onToggleReadyForDischarge: () => void;
   /**
-   * Hard lock for the Ready toggles (time-window/persisted view-only). The
-   * Ready-for-Discharge checkbox itself must stay interactive even though it
+   * Lock for the billing readiness toggle. Billing is operational, so it is NOT
+   * frozen by the clinical time-window — only by a persisted view-only encounter.
+   */
+  billingTogglesLocked: boolean;
+  /**
+   * Lock for the discharge readiness toggle. Discharge is clinical, so the
+   * time-window applies. The checkbox itself stays interactive even though it
    * makes the step content read-only, so a mistaken check can be undone.
    */
-  togglesLocked: boolean;
+  dischargeTogglesLocked: boolean;
   /** Treatment step shows a "Skip to Summary" CTA instead of Save & Next. */
   primaryCta?: { label: string; onClick: () => void };
 };
@@ -74,7 +79,8 @@ const WorkspaceMetaBar = ({
   onSaveAndNext,
   onToggleReadyForBilling,
   onToggleReadyForDischarge,
-  togglesLocked,
+  billingTogglesLocked,
+  dischargeTogglesLocked,
   primaryCta,
 }: WorkspaceMetaBarProps) => {
   const isInpatient = encounter.mode === 'INPATIENT';
@@ -126,13 +132,13 @@ const WorkspaceMetaBar = ({
       <ReadyToggle
         label="Ready for Billing"
         state={encounter.readyForBilling}
-        disabled={togglesLocked}
+        disabled={billingTogglesLocked}
         onToggle={onToggleReadyForBilling}
       />
       <ReadyToggle
         label="Ready for Discharge"
         state={encounter.readyForDischarge}
-        disabled={togglesLocked}
+        disabled={dischargeTogglesLocked}
         onToggle={onToggleReadyForDischarge}
       />
     </>

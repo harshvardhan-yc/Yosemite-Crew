@@ -60,6 +60,7 @@ jest.mock('@/app/hooks/useNotify', () => ({
 
 jest.mock('@/app/features/appointments/services/appointmentService', () => ({
   updateAppointment: jest.fn(() => Promise.resolve()),
+  changeAppointmentStatus: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
@@ -208,6 +209,21 @@ describe('ViewAppointmentOverviewModal', () => {
       />
     );
     expect(screen.queryByTestId('room-dropdown')).not.toBeInTheDocument();
+  });
+
+  it('renders an interactive status pill that lists allowed transitions when editable', () => {
+    render(<ViewAppointmentOverviewModal {...defaultProps} canEditAppointments />);
+    // UPCOMING allows transitions, so the pill is a dropdown trigger (aria-haspopup=menu).
+    const trigger = screen.getByRole('button', { name: 'Upcoming' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('menuitem', { name: /checked in/i })).toBeInTheDocument();
+  });
+
+  it('renders a static status pill when the user cannot edit appointments', () => {
+    render(<ViewAppointmentOverviewModal {...defaultProps} canEditAppointments={false} />);
+    expect(screen.queryByRole('button', { name: 'Upcoming' })).not.toBeInTheDocument();
+    expect(screen.getByText('Upcoming')).toBeInTheDocument();
   });
 
   it('does not render modal content when showModal is false', () => {

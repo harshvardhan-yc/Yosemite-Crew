@@ -24,8 +24,19 @@ const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
 
 const getEnc = () => useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
 
-const renderInvoice = (encounter: AppointmentEncounter, onOpenSummary = jest.fn()) => {
-  render(<InvoiceStep appointmentId={APPT} encounter={encounter} onOpenSummary={onOpenSummary} />);
+const renderInvoice = (
+  encounter: AppointmentEncounter,
+  onOpenSummary = jest.fn(),
+  hideBillBuilder = false
+) => {
+  render(
+    <InvoiceStep
+      appointmentId={APPT}
+      encounter={encounter}
+      hideBillBuilder={hideBillBuilder}
+      onOpenSummary={onOpenSummary}
+    />
+  );
   return { onOpenSummary };
 };
 
@@ -269,6 +280,16 @@ describe('InvoiceStep', () => {
     const enc = { ...seedAndGet(), invoiceLineItems: [] };
     renderInvoice(enc);
     expect(screen.getByText('No invoice line items added yet.')).toBeInTheDocument();
+  });
+
+  it('hides the bill builder while keeping past invoices visible for completed appointments', () => {
+    const enc = seedAndGet();
+    renderInvoice(enc, jest.fn(), true);
+
+    expect(screen.queryByText('Total Bill')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /pay online/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Invoices')).toBeInTheDocument();
+    expect(screen.getByText(/ID - 20560DTH/i)).toBeInTheDocument();
   });
 
   it('completes the invoice and opens the summary', () => {

@@ -48,6 +48,7 @@ type DiagnosticProvider = 'IDEXX' | 'RAD_ANALYZER';
 
 type DiagnosticsStepProps = {
   appointment: Appointment;
+  readOnly?: boolean;
   onOpenTreatment: () => void;
 };
 
@@ -155,16 +156,26 @@ const TableHeadings = ({ rowGrid, columns }: { rowGrid: string; columns: string[
   </div>
 );
 
-const TestQueueCard = ({ test, onRemove }: { test: IdexxTest; onRemove: () => void }) => (
+const TestQueueCard = ({
+  test,
+  readOnly,
+  onRemove,
+}: {
+  test: IdexxTest;
+  readOnly: boolean;
+  onRemove: () => void;
+}) => (
   <article className="flex min-h-52 flex-col gap-4 rounded-2xl border border-card-border bg-neutral-0 p-5 shadow-sm">
     <div className="flex items-start justify-between gap-4">
       <h4 className="text-body-3-emphasis text-text-primary">{test.display}</h4>
-      <CircleIconButton
-        icon={<LuTrash2 size={16} aria-hidden="true" />}
-        label={`Remove ${test.display}`}
-        variant="danger"
-        onClick={onRemove}
-      />
+      {!readOnly && (
+        <CircleIconButton
+          icon={<LuTrash2 size={16} aria-hidden="true" />}
+          label={`Remove ${test.display}`}
+          variant="danger"
+          onClick={onRemove}
+        />
+      )}
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <span className="rounded-sm bg-primary-100 px-2 py-1 text-heading-4 text-text-brand">
@@ -325,7 +336,7 @@ const InhouseOrderBuilder = ({ s }: { s: UseLabTestsReturn }) => (
   </div>
 );
 
-const OrderBuilderSection = ({ s }: { s: UseLabTestsReturn }) => {
+const OrderBuilderSection = ({ s, readOnly }: { s: UseLabTestsReturn; readOnly: boolean }) => {
   const isInHouse = s.modality === 'INHOUSE';
   return (
     <SectionContainer
@@ -334,7 +345,7 @@ const OrderBuilderSection = ({ s }: { s: UseLabTestsReturn }) => {
       className="flex flex-col gap-5"
     >
       {isInHouse ? <InhouseOrderBuilder s={s} /> : <ReferenceOrderBuilder s={s} />}
-      {isInHouse && (
+      {isInHouse && !readOnly && (
         <div className="flex flex-wrap justify-end gap-3">
           <Secondary
             text={s.companionInCensus ? 'Added to Census' : 'Add to Census'}
@@ -354,7 +365,7 @@ const OrderBuilderSection = ({ s }: { s: UseLabTestsReturn }) => {
   );
 };
 
-const TestQueueSection = ({ s }: { s: UseLabTestsReturn }) => (
+const TestQueueSection = ({ s, readOnly }: { s: UseLabTestsReturn; readOnly: boolean }) => (
   <SectionContainer
     titleClassName="text-yc-20-b-primary"
     title="Test Queue"
@@ -362,23 +373,34 @@ const TestQueueSection = ({ s }: { s: UseLabTestsReturn }) => (
   >
     {s.selectedTests.length === 0 ? (
       <p className="rounded-2xl bg-neutral-100 p-5 text-body-4 text-text-secondary">
-        No tests selected yet. Search and add tests from the Order Builder.
+        {readOnly
+          ? 'No draft lab tests were selected before this appointment was locked.'
+          : 'No tests selected yet. Search and add tests from the Order Builder.'}
       </p>
     ) : (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {s.selectedTests.map((test) => (
-          <TestQueueCard key={test.code} test={test} onRemove={() => s.removeTest(test.code)} />
+          <TestQueueCard
+            key={test.code}
+            test={test}
+            readOnly={readOnly}
+            onRemove={() => s.removeTest(test.code)}
+          />
         ))}
       </div>
     )}
-    <div className="flex justify-end">
-      <Primary
-        text={s.creatingOrder ? 'Creating Lab Order…' : 'Create Lab Order'}
-        icon={<LuFlaskConical aria-hidden="true" />}
-        onClick={s.handleCreateOrder}
-        isDisabled={s.creatingOrder || s.loading || s.selectedTests.length === 0 || !s.companionId}
-      />
-    </div>
+    {!readOnly && (
+      <div className="flex justify-end">
+        <Primary
+          text={s.creatingOrder ? 'Creating Lab Order…' : 'Create Lab Order'}
+          icon={<LuFlaskConical aria-hidden="true" />}
+          onClick={s.handleCreateOrder}
+          isDisabled={
+            s.creatingOrder || s.loading || s.selectedTests.length === 0 || !s.companionId
+          }
+        />
+      </div>
+    )}
   </SectionContainer>
 );
 
@@ -631,7 +653,11 @@ const IdexxNotEnabled = () => (
  * Order Status, Results) rendered directly on the live IDEXX backend via the
  * shared `useLabTests` hook (no logic duplication; same API as the legacy drawer).
  */
-const DiagnosticsStep = ({ appointment, onOpenTreatment }: DiagnosticsStepProps) => {
+const DiagnosticsStep = ({
+  appointment,
+  readOnly = false,
+  onOpenTreatment,
+}: DiagnosticsStepProps) => {
   const s = useLabTests(appointment);
   const [selectedProvider, setSelectedProvider] = useState<DiagnosticProvider>('IDEXX');
 
@@ -647,8 +673,8 @@ const DiagnosticsStep = ({ appointment, onOpenTreatment }: DiagnosticsStepProps)
     return (
       <>
         {s.error ? <p className="text-body-4 text-text-error">{s.error}</p> : null}
-        <OrderBuilderSection s={s} />
-        <TestQueueSection s={s} />
+        {!readOnly && <OrderBuilderSection s={s} readOnly={readOnly} />}
+        <TestQueueSection s={s} readOnly={readOnly} />
         <OrderStatusSection s={s} orderButtonText={orderButtonText} />
         <ResultsSection s={s} />
         <div className="flex flex-wrap items-center justify-between gap-3">

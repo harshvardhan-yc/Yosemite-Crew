@@ -24,6 +24,7 @@ type SlotProps = {
   height: number;
   handleViewAppointment: (appt: Appointment, intent?: AppointmentViewIntent) => void;
   handleDetailAppointment?: (appt: Appointment, intent?: AppointmentViewIntent) => void;
+  handleOpenWorkspace?: (appt: Appointment, intent?: AppointmentViewIntent) => void;
   handleRescheduleAppointment: (appt: Appointment) => void;
   handleChangeRoomAppointment?: (appt: Appointment) => void;
   dayIndex: number;
@@ -90,6 +91,7 @@ const SlotComponent: React.FC<SlotProps> = ({
   height,
   handleViewAppointment,
   handleDetailAppointment,
+  handleOpenWorkspace,
   handleRescheduleAppointment,
   handleChangeRoomAppointment,
   dayIndex,
@@ -341,7 +343,8 @@ const SlotComponent: React.FC<SlotProps> = ({
     clearPendingMarkerClick();
     setContextMenu(null);
     setActivePopoverKey(null);
-    (handleDetailAppointment ?? handleViewAppointment)(appointment);
+    if (handleOpenWorkspace) handleOpenWorkspace(appointment);
+    else (handleDetailAppointment ?? handleViewAppointment)(appointment);
   };
 
   const handleMarkerContextMenu = (
@@ -748,8 +751,6 @@ const SlotComponent: React.FC<SlotProps> = ({
             popoverId={appointmentPopoverId}
             popoverDialogRef={popoverDialogRef}
             popoverStyle={popoverStyle}
-            handleViewAppointment={handleViewAppointment}
-            handleDetailAppointment={handleDetailAppointment ?? handleViewAppointment}
             handleRescheduleAppointment={handleRescheduleAppointment}
             handleChangeRoomAppointment={handleChangeRoomAppointment}
             onClose={() => setActivePopoverKey(null)}

@@ -16,6 +16,7 @@ import {
   type WorkspaceStep,
 } from '@/app/features/appointments/types/workspace';
 import { resolveLockHours } from '@/app/lib/appointmentLockWindow';
+import { normalizeAppointmentStatus } from '@/app/lib/appointments';
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
 import { useLoadCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
@@ -160,6 +161,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       ),
     [appointment.companion, companionRecord]
   );
+  // Clinical encounter — the time-based "Appointment lock window" freezes the
+  // legal record (SOAP + Discharge/Summary). This is what the lock exists for.
   const effectiveEncounter = useMemo(
     () =>
       encounter
@@ -170,6 +173,21 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         : undefined,
     [encounter, lockedByWindow]
   );
+  // Operational encounter — billing (Invoice, Services & Packages) and lab
+  // orders (Diagnostics) are NOT frozen by the clinical time window. Industry
+  // standard gates these on their own state (invoice finalized/paid,
+  // readyForBilling, order/result status), not on a wall-clock timer.
+  const operationalEncounter = useMemo(
+    () =>
+      encounter
+        ? {
+            ...encounter,
+            viewOnly: encounter.viewOnly || encounter.readyForDischarge.value,
+          }
+        : undefined,
+    [encounter]
+  );
+  const isCompletedAppointment = normalizeAppointmentStatus(appointment.status) === 'COMPLETED';
 
   const actor = useMemo(() => {
     const first = attributes?.given_name ?? '';
@@ -219,6 +237,15 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     if (next) handleStepChange(next);
   }, [activeStep, handleStepChange]);
 
+  useEffect(() => {
+    // Reset to the very top of the page on appointment/step change. The colored
+    // header band uses a negative top margin, so scrollIntoView on the wrapper
+    // lands a little below the true start — scroll the actual containers to 0.
+    const mainContent = document.getElementById('main-content');
+    mainContent?.scrollTo({ top: 0, behavior: 'auto' });
+    globalThis.window?.scrollTo({ top: 0, behavior: 'auto' });
+  }, [appointmentId, activeStep]);
+
   const treatmentPrimaryCta = useMemo(
     () =>
       activeStep === 'TREATMENT'
@@ -227,7 +254,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     [activeStep, handleStepChange]
   );
 
-  if (!effectiveEncounter) return null;
+  if (!effectiveEncounter || !operationalEncounter) return null;
 
   return (
     <div className="flex flex-col gap-5 pb-12">
@@ -277,7 +304,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         onSaveAndNext={handleSaveAndNext}
         onToggleReadyForBilling={() => toggleReadyForBilling(appointmentId, actor)}
         onToggleReadyForDischarge={() => toggleReadyForDischarge(appointmentId, actor)}
-        togglesLocked={(encounter?.viewOnly ?? false) || lockedByWindow}
+        billingTogglesLocked={encounter?.viewOnly ?? false}
+        dischargeTogglesLocked={(encounter?.viewOnly ?? false) || lockedByWindow}
         primaryCta={treatmentPrimaryCta}
       />
 
@@ -294,20 +322,22 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         {activeStep === 'DIAGNOSTICS' && (
           <DiagnosticsStep
             appointment={appointment}
+            readOnly={operationalEncounter.viewOnly}
             onOpenTreatment={() => handleStepChange('TREATMENT')}
           />
         )}
         {activeStep === 'TREATMENT' && (
           <TreatmentStep
             appointmentId={appointmentId}
-            encounter={effectiveEncounter}
+            encounter={operationalEncounter}
             onOpenInvoice={() => handleStepChange('INVOICE')}
           />
         )}
         {activeStep === 'INVOICE' && (
           <InvoiceStep
             appointmentId={appointmentId}
-            encounter={effectiveEncounter}
+            encounter={operationalEncounter}
+            hideBillBuilder={isCompletedAppointment}
             onOpenSummary={() => handleStepChange('SUMMARY')}
           />
         )}

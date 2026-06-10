@@ -7,6 +7,7 @@ import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorks
 import { RxBadge } from '@/app/features/appointments/pages/AppointmentWorkspace/components/RxBadge';
 import { StockHealthPill } from '@/app/features/appointments/pages/AppointmentWorkspace/components/StockHealthPill';
 import { TitleAddIcon } from '@/app/features/appointments/pages/AppointmentWorkspace/components/TitleAddIcon';
+import BilledBadge from '@/app/features/appointments/pages/AppointmentWorkspace/components/BilledBadge';
 import { formatMoney } from '@/app/lib/money';
 import type {
   PrescriptionFulfillment,
@@ -16,6 +17,7 @@ import type {
 type PrescriptionEditorProps = {
   items: PrescriptionItem[];
   readOnly: boolean;
+  deleteLocked?: boolean;
   onAddItem: (item: Omit<PrescriptionItem, 'id'>) => void;
   onUpdateItem: (id: string, patch: Partial<PrescriptionItem>) => void;
   onRemoveItem: (id: string) => void;
@@ -193,72 +195,83 @@ const PrescriptionRow = ({
   item,
   index,
   readOnly,
+  deleteLocked,
   onUpdateItem,
   onRemoveItem,
 }: {
   item: PrescriptionItem;
   index: number;
   readOnly: boolean;
+  deleteLocked: boolean;
   onUpdateItem: (id: string, patch: Partial<PrescriptionItem>) => void;
   onRemoveItem: (id: string) => void;
-}) => (
-  <li className="flex flex-col gap-4 rounded-2xl border border-card-border p-4">
-    {/* Header: number + name + Rx badge on the left; stock health, fulfillment
+}) => {
+  // Billed/paid items are locked: fields render read-only and there is no delete.
+  const isBilled = Boolean(item.billed);
+  const rowReadOnly = readOnly || isBilled;
+  return (
+    <li className="flex flex-col gap-4 rounded-2xl border border-card-border p-4">
+      {/* Header: number + name + Rx badge on the left; stock health, fulfillment
         dropdown and the remove button on the right. */}
-    <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
-      <div className="flex items-center gap-2">
-        <span className="font-medium text-text-primary">
-          {index + 1}. {item.medicineName}
-        </span>
-        <RxBadge />
+      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-text-primary">
+            {index + 1}. {item.medicineName}
+          </span>
+          <RxBadge />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {item.stockQty != null && (
+            <StockHealthPill qty={item.stockQty} low={item.lowStock ?? false} />
+          )}
+          {isBilled && <BilledBadge />}
+          <FulfillmentDropdown
+            value={item.fulfillment}
+            disabled={rowReadOnly}
+            onChange={(fulfillment) => onUpdateItem(item.id, { fulfillment })}
+          />
+          {!isBilled && (
+            <CircleIconButton
+              icon={<LuTrash2 aria-hidden="true" />}
+              label={`Remove ${item.medicineName}`}
+              variant="danger"
+              disabled={deleteLocked}
+              onClick={() => onRemoveItem(item.id)}
+            />
+          )}
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        {item.stockQty != null && (
-          <StockHealthPill qty={item.stockQty} low={item.lowStock ?? false} />
-        )}
-        <FulfillmentDropdown
-          value={item.fulfillment}
-          disabled={readOnly}
-          onChange={(fulfillment) => onUpdateItem(item.id, { fulfillment })}
-        />
-        <CircleIconButton
-          icon={<LuTrash2 aria-hidden="true" />}
-          label={`Remove ${item.medicineName}`}
-          variant="danger"
-          disabled={readOnly}
-          onClick={() => onRemoveItem(item.id)}
-        />
-      </div>
-    </div>
 
-    {/* Fields row: compact floating inputs, the instructions field, then the
+      {/* Fields row: compact floating inputs, the instructions field, then the
         line price pinned to the right end. */}
-    <div className="flex flex-wrap items-center gap-3">
-      {EDITABLE_FIELDS.map((field) => (
-        <EditableCell
-          key={field.key}
-          label={field.label}
-          width={field.width}
-          value={String(item[field.key] ?? '')}
-          readOnly={readOnly}
-          onChange={(value) => onUpdateItem(item.id, { [field.key]: value })}
+      <div className="flex flex-wrap items-center gap-3">
+        {EDITABLE_FIELDS.map((field) => (
+          <EditableCell
+            key={field.key}
+            label={field.label}
+            width={field.width}
+            value={String(item[field.key] ?? '')}
+            readOnly={rowReadOnly}
+            onChange={(value) => onUpdateItem(item.id, { [field.key]: value })}
+          />
+        ))}
+        <InstructionsField
+          value={item.instructions ?? ''}
+          readOnly={rowReadOnly}
+          onChange={(value) => onUpdateItem(item.id, { instructions: value })}
         />
-      ))}
-      <InstructionsField
-        value={item.instructions ?? ''}
-        readOnly={readOnly}
-        onChange={(value) => onUpdateItem(item.id, { instructions: value })}
-      />
-      <span className="ml-auto shrink-0 text-body-3-emphasis font-bold text-text-primary">
-        {item.priceCents != null ? formatCents(item.priceCents) : '-'}
-      </span>
-    </div>
-  </li>
-);
+        <span className="ml-auto shrink-0 text-body-3-emphasis font-bold text-text-primary">
+          {item.priceCents != null ? formatCents(item.priceCents) : '-'}
+        </span>
+      </div>
+    </li>
+  );
+};
 
 const PrescriptionEditor = ({
   items,
   readOnly,
+  deleteLocked = readOnly,
   onAddItem,
   onUpdateItem,
   onRemoveItem,
@@ -333,6 +346,7 @@ const PrescriptionEditor = ({
                 item={item}
                 index={index}
                 readOnly={readOnly}
+                deleteLocked={deleteLocked}
                 onUpdateItem={onUpdateItem}
                 onRemoveItem={onRemoveItem}
               />

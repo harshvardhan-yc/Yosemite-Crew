@@ -138,12 +138,17 @@ describe('SoapStep', () => {
     expect(screen.getByText('Signed offline')).toBeInTheDocument();
   });
 
-  it('disables Save & Next when the step is view-only', () => {
+  it('shows only complaint context and past notes when the step is view-only', () => {
     seedAndGet();
     useAppointmentWorkspaceStore.getState().upsertSoap(APPT, { subjective: '<p>history</p>' });
+    useAppointmentWorkspaceStore.getState().signSoap(APPT, 'Dr Tim', false);
     const enc = { ...useAppointmentWorkspaceStore.getState().getEncounter(APPT)!, viewOnly: true };
     renderSoapStep(enc);
-    expect(screen.getByRole('button', { name: 'Save & Next' })).toBeDisabled();
+    expect(screen.queryByLabelText(/search for soap template/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Subjective (History)')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save & Next' })).not.toBeInTheDocument();
+    expect(screen.getByText('All SOAP notes')).toBeInTheDocument();
+    expect(screen.getByText(/By Dr Tim/)).toBeInTheDocument();
   });
 
   it('hides editing affordances in view-only mode', () => {

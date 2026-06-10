@@ -40,6 +40,7 @@ import {
   getVisibleHours,
   useSlotOffsetMinutes,
 } from '@/app/features/appointments/components/Calendar/useCalendarSlots';
+import type { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 
 type UserCalendarProps = {
   events: Appointment[];
@@ -47,6 +48,7 @@ type UserCalendarProps = {
   zoomMode?: CalendarZoomMode;
   handleViewAppointment: any;
   handleDetailAppointment?: any;
+  handleOpenWorkspace?: (appointment: Appointment, intent?: AppointmentViewIntent) => void;
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
   handleRescheduleAppointment: any;
   handleChangeStatusAppointment?: any;
@@ -81,6 +83,7 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
   zoomMode = 'in',
   handleViewAppointment,
   handleDetailAppointment,
+  handleOpenWorkspace,
   handleRescheduleAppointment,
   handleChangeStatusAppointment: _handleChangeStatusAppointment,
   handleChangeRoomAppointment,
@@ -300,6 +303,7 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
                             dayIndex={index}
                             handleViewAppointment={handleViewAppointment}
                             handleDetailAppointment={handleDetailAppointment}
+                            handleOpenWorkspace={handleOpenWorkspace}
                             handleRescheduleAppointment={handleRescheduleAppointment}
                             handleChangeRoomAppointment={handleChangeRoomAppointment}
                             length={team.length - 1}

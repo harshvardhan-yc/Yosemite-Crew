@@ -145,6 +145,12 @@ export type LineItem = {
   unitPriceCents: number;
   amountCents: number;
   breakdown?: LineItemBreakdown[];
+  /** True once the item is on a finalized/paid invoice — moves it to read-only "Past items". */
+  billed?: boolean;
+  /** When the item was billed (display only). */
+  billedAt?: string;
+  /** Who finalized/charged the item (display only). */
+  billedByName?: string;
 };
 
 export type PrescriptionFulfillment = 'IN_HOUSE' | 'PRESCRIPTION_ONLY';
@@ -168,6 +174,12 @@ export type PrescriptionItem = {
   lowStock?: boolean;
   /** Flags a DEA/controlled drug; drives the controlled-substance pill. */
   controlledSubstance?: boolean;
+  /** True once the item is on a finalized/paid invoice — moves it to read-only "Past items". */
+  billed?: boolean;
+  /** When the item was billed (display only). */
+  billedAt?: string;
+  /** Who finalized/charged the item (display only). */
+  billedByName?: string;
 };
 
 /** Full employee + schedule task category set. */

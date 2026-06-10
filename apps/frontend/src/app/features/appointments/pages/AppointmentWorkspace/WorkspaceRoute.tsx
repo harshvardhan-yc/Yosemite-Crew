@@ -9,6 +9,10 @@ import { useAppointmentStore } from '@/app/stores/appointmentStore';
 import { isAppointmentRevampEnabled } from '@/app/lib/featureFlags';
 import AppointmentWorkspace from '@/app/features/appointments/pages/AppointmentWorkspace';
 import { YosemiteLoader } from '@/app/ui/overlays/Loader';
+import {
+  canEnterAppointmentWorkspace,
+  getWorkspaceBlockedMessage,
+} from '@/app/lib/appointmentWorkspace';
 
 type WorkspaceRouteProps = {
   appointmentId: string;
@@ -38,7 +42,26 @@ const WorkspaceRoute = ({ appointmentId }: WorkspaceRouteProps) => {
 
   if (!revampEnabled) return null;
 
-  if (appointment) return <AppointmentWorkspace appointment={appointment} />;
+  if (appointment) {
+    if (canEnterAppointmentWorkspace(appointment.status)) {
+      return <AppointmentWorkspace appointment={appointment} />;
+    }
+
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-4 text-center">
+        <p className="text-body-2 text-text-primary">
+          {getWorkspaceBlockedMessage(appointment.status)}
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push('/appointments')}
+          className="rounded-2xl border border-neutral-300 px-4 py-2 text-body-4 font-medium text-text-primary hover:bg-neutral-100"
+        >
+          Back to appointments
+        </button>
+      </div>
+    );
+  }
 
   if (status === 'loading' || status === 'idle') {
     return (

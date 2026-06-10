@@ -171,7 +171,7 @@ describe('AppointmentBoard', () => {
     );
   });
 
-  it('opens the appointment side modal on click when the card is not draggable', () => {
+  it('opens the central view modal on click when the card is not draggable', () => {
     render(
       <AppointmentBoard
         appointments={[{ ...baseAppointment, id: 'appt-completed', status: 'COMPLETED' } as any]}
@@ -191,6 +191,24 @@ describe('AppointmentBoard', () => {
     expect(setActiveAppointment).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'appt-completed' })
     );
+    expect(setViewPopup).toHaveBeenCalledWith(true);
+    expect(setDetailPopup).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the side modal when no central view setter is provided', () => {
+    render(
+      <AppointmentBoard
+        appointments={[{ ...baseAppointment, id: 'appt-completed', status: 'COMPLETED' } as any]}
+        currentDate={new Date('2026-03-16T00:00:00.000Z')}
+        setCurrentDate={setCurrentDate}
+        canEditAppointments
+        setActiveAppointment={setActiveAppointment}
+        setDetailPopup={setDetailPopup}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText('Open appointment Buddy'));
+
     expect(setDetailPopup).toHaveBeenCalledWith(true);
   });
 

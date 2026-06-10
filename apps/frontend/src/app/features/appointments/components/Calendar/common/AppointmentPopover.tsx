@@ -30,6 +30,10 @@ import { useOrgStore } from '@/app/stores/orgStore';
 import { useCompanionStore } from '@/app/stores/companionStore';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
 import {
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+} from '@/app/lib/appointmentWorkspace';
+import {
   IoCalendarOutline,
   IoDocumentTextOutline,
   IoCardOutline,
@@ -50,8 +54,6 @@ type AppointmentPopoverProps = {
   popoverId: string;
   popoverDialogRef: React.RefObject<HTMLDialogElement | null>;
   popoverStyle: React.CSSProperties;
-  handleViewAppointment: (appt: Appointment, intent?: AppointmentViewIntent) => void;
-  handleDetailAppointment: (appt: Appointment, intent?: AppointmentViewIntent) => void;
   handleRescheduleAppointment: (appt: Appointment) => void;
   handleChangeRoomAppointment?: (appt: Appointment) => void;
   onClose: () => void;
@@ -154,8 +156,6 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
   popoverId,
   popoverDialogRef,
   popoverStyle,
-  handleViewAppointment,
-  handleDetailAppointment,
   handleRescheduleAppointment,
   handleChangeRoomAppointment,
   onClose,
@@ -188,8 +188,18 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
   const paymentTitle = getPaymentTitle(payment?.state);
   const paymentValue = getPaymentValue(payment?.label, appointmentInvoice);
   const supportStaffValue = appointment.supportStaff?.map((staff) => staff.name).join(', ') || '-';
+  const canOpenWorkspace = canEnterAppointmentWorkspace(appointment.status);
   const primaryActionLabel =
     appointment.status === 'UPCOMING' ? 'Start Appointment' : 'View Appointment';
+  const openWorkspace = (intent?: AppointmentViewIntent) => {
+    if (!appointment.id) return;
+    if (!canOpenWorkspace) {
+      onClose();
+      return;
+    }
+    router.push(buildWorkspaceHrefForIntent(appointment.id, intent));
+    onClose();
+  };
 
   return (
     <dialog
@@ -336,7 +346,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
             </GlassTooltip>
           </>
         )}
-        {!isRequestedLikeStatus(appointment.status) && (
+        {!isRequestedLikeStatus(appointment.status) && canOpenWorkspace && (
           <div
             className="scrollbar-hidden flex w-48 shrink-0 items-center gap-2 overflow-x-auto pr-1"
             onWheel={onActionBarWheel}
@@ -368,8 +378,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 aria-label="Finance summary"
                 className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                 onClick={() => {
-                  handleDetailAppointment(appointment, { label: 'finance', subLabel: 'summary' });
-                  onClose();
+                  openWorkspace({ label: 'finance', subLabel: 'summary' });
                 }}
               >
                 <IoCardOutline size={20} aria-hidden="true" />
@@ -382,8 +391,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 aria-label="Lab tests"
                 className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                 onClick={() => {
-                  handleDetailAppointment(appointment, { label: 'labs', subLabel: 'idexx-labs' });
-                  onClose();
+                  openWorkspace({ label: 'labs', subLabel: 'idexx-labs' });
                 }}
               >
                 <IoFlaskOutline size={20} aria-hidden="true" />
@@ -428,8 +436,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 aria-label={clinicalNotesLabel}
                 className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 text-neutral-900 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-card-bg"
                 onClick={() => {
-                  handleDetailAppointment(appointment, clinicalNotesIntent);
-                  onClose();
+                  openWorkspace(clinicalNotesIntent);
                 }}
               >
                 <IoDocumentTextOutline size={20} aria-hidden="true" />
@@ -440,15 +447,12 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
         <button
           type="button"
           title={primaryActionLabel}
+          disabled={!canOpenWorkspace}
           className="yc-primary-button text-yc-16-m-white flex h-12 w-50 shrink-0 items-center justify-end gap-2 rounded-2xl! px-4"
           onPointerDown={updatePrimaryActionGlowPosition}
           onPointerMove={updatePrimaryActionGlowPosition}
           onClick={() => {
-            handleViewAppointment(
-              appointment,
-              appointment.status === 'UPCOMING' ? clinicalNotesIntent : undefined
-            );
-            onClose();
+            openWorkspace(appointment.status === 'UPCOMING' ? clinicalNotesIntent : undefined);
           }}
         >
           <span className="whitespace-nowrap">{primaryActionLabel}</span>

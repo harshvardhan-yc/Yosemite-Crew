@@ -34,6 +34,10 @@ const TreatmentStep = ({ appointmentId, encounter, onOpenInvoice }: TreatmentSte
   const updateScheduleTask = useAppointmentWorkspaceStore((s) => s.updateScheduleTask);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
   const readOnly = encounter.viewOnly;
+  // Once the encounter is ready for billing, destructive removal of un-billed
+  // items is locked. Already-billed items lock per-row inside each editor (read
+  // -only + "Billed" badge + no delete); adding new items always stays allowed.
+  const billedTreatmentLocked = readOnly || encounter.readyForBilling.value;
   const isInpatient = encounter.mode === 'INPATIENT';
 
   const handleSaveTreatment = () => {
@@ -55,6 +59,7 @@ const TreatmentStep = ({ appointmentId, encounter, onOpenInvoice }: TreatmentSte
       <ServicesPackagesEditor
         items={encounter.services}
         readOnly={readOnly}
+        deleteLocked={billedTreatmentLocked}
         onAddItem={(item) => addLineItem(appointmentId, item)}
         onUpdateItem={(id, patch) => updateLineItem(appointmentId, id, patch)}
         onRemoveItem={(id) => removeLineItem(appointmentId, id)}
@@ -63,6 +68,7 @@ const TreatmentStep = ({ appointmentId, encounter, onOpenInvoice }: TreatmentSte
       <PrescriptionEditor
         items={encounter.prescription}
         readOnly={readOnly}
+        deleteLocked={billedTreatmentLocked}
         onAddItem={(item) => addPrescription(appointmentId, item)}
         onUpdateItem={(id, patch) => updatePrescription(appointmentId, id, patch)}
         onRemoveItem={(id) => removePrescription(appointmentId, id)}

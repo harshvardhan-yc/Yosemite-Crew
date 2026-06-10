@@ -4,12 +4,14 @@ import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContai
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { TitleAddIcon } from '@/app/features/appointments/pages/AppointmentWorkspace/components/TitleAddIcon';
+import BilledBadge from '@/app/features/appointments/pages/AppointmentWorkspace/components/BilledBadge';
 import type { LineItem, LineItemBreakdown } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
 
 type ServicesPackagesEditorProps = {
   items: LineItem[];
   readOnly: boolean;
+  deleteLocked?: boolean;
   onAddItem: (item: Omit<LineItem, 'id'>) => void;
   onUpdateItem: (id: string, patch: Partial<LineItem>) => void;
   onRemoveItem: (id: string) => void;
@@ -121,6 +123,7 @@ const QtyInput = ({
 const ServicesPackagesEditor = ({
   items,
   readOnly,
+  deleteLocked = readOnly,
   onAddItem,
   onUpdateItem,
   onRemoveItem,
@@ -141,7 +144,8 @@ const ServicesPackagesEditor = ({
   return (
     <div className="flex flex-col gap-3">
       {/* Search row sits above the floating container (matches the other steps);
-          results surface as a dropdown on type. */}
+          results surface as a dropdown on type. Locking is now per-item (billed),
+          so adding new items always stays available. */}
       <div className="relative flex justify-end">
         <div className="relative w-full sm:max-w-90">
           <Search
@@ -193,6 +197,9 @@ const ServicesPackagesEditor = ({
               {items.map((item, index) => {
                 const expanded = expandedPackageId === item.id;
                 const breakdown = item.breakdown ?? [];
+                // Billed/paid items are locked: no qty edits, no delete.
+                const isBilled = Boolean(item.billed);
+                const rowReadOnly = readOnly || isBilled;
                 return (
                   <li key={item.id} className="rounded-2xl border border-card-border p-4">
                     <div className={`${ROW_GRID} text-body-4 text-text-primary`}>
@@ -201,13 +208,9 @@ const ServicesPackagesEditor = ({
                           {index + 1}. {item.name}
                         </span>
                         <ItemTag kind={item.kind} />
-                        <CircleIconButton
-                          icon={<LuCopy aria-hidden="true" />}
-                          label={`Copy ${item.name}`}
-                          onClick={() => copyValue(item.name)}
-                        />
+                        {isBilled && <BilledBadge />}
                       </div>
-                      {readOnly ? (
+                      {rowReadOnly ? (
                         <span className="text-text-secondary">x{item.qty}</span>
                       ) : (
                         <QtyInput item={item} onUpdateItem={onUpdateItem} />
@@ -240,13 +243,15 @@ const ServicesPackagesEditor = ({
                             onClick={() => handleTogglePackage(item.id)}
                           />
                         )}
-                        <CircleIconButton
-                          icon={<LuTrash2 aria-hidden="true" />}
-                          label={`Remove ${item.name}`}
-                          variant="danger"
-                          disabled={readOnly}
-                          onClick={() => onRemoveItem(item.id)}
-                        />
+                        {!isBilled && (
+                          <CircleIconButton
+                            icon={<LuTrash2 aria-hidden="true" />}
+                            label={`Remove ${item.name}`}
+                            variant="danger"
+                            disabled={deleteLocked}
+                            onClick={() => onRemoveItem(item.id)}
+                          />
+                        )}
                       </div>
                     </div>
                     {expanded && breakdown.length > 0 && <PackageBreakdown rows={breakdown} />}

@@ -146,20 +146,24 @@ describe('TreatmentStep', () => {
     const enc = seedAndGet();
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /copy acupuncture/i }));
+    // The service name copy icon was removed; only the instructions remain copyable.
     fireEvent.click(screen.getByRole('button', { name: /copy instructions for acupuncture/i }));
     // The medication instructions field has its own inline copy button ("Copy
     // instructions", with no "for <name>" suffix).
     fireEvent.click(screen.getAllByRole('button', { name: /^copy instructions$/i })[0]);
 
-    // Service name + instructions are copy-able; the medication instructions copy
-    // icon copies the first prescription's instruction text.
-    expect(writeText).toHaveBeenCalledWith('Acupuncture');
+    // Service + medication instructions are copy-able; the medication instructions
+    // copy icon copies the first prescription's instruction text.
     expect(writeText).toHaveBeenCalledWith('Do not skip dosage');
   });
 
   it('adds prescriptions, updates fulfillment and removes medication', () => {
-    const enc = seedAndGet();
+    const seeded = seedAndGet();
+    // Work with only the un-billed (editable) prescriptions for this flow.
+    const enc = { ...seeded, prescription: seeded.prescription.filter((p) => !p.billed) };
+    useAppointmentWorkspaceStore.setState((s) => ({
+      encountersById: { ...s.encountersById, [APPT]: enc },
+    }));
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
 
     // Adding is search-driven: type to surface the medication, then click it.
@@ -401,6 +405,93 @@ describe('TreatmentStep', () => {
     // Schedule Add control and the breakdown Record button are disabled.
     expect(screen.getByRole('button', { name: /add schedule task/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^Record$/i })).toBeDisabled();
+  });
+
+  it('locks destructive treatment removal once ready for billing', () => {
+    const enc = { ...seedAndGet(), readyForBilling: { value: true } };
+    render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
+
+    // Un-billed items keep their delete control but it is disabled once ready for
+    // billing (billed items have no delete control at all).
+    expect(screen.getByLabelText(/remove acupuncture/i)).toBeDisabled();
+    expect(screen.getByLabelText(/remove prednisone/i)).toBeDisabled();
+    expect(screen.getByLabelText(/search for services and packages/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/search medicines/i)).toBeInTheDocument();
+  });
+
+  it('locks a billed line item (badge + read-only + no delete) while keeping others editable', () => {
+    const enc = {
+      ...seedAndGet(),
+      prescription: [],
+      services: [
+        {
+          id: 'li-billed',
+          refId: 'svc-x',
+          kind: 'SERVICE' as const,
+          name: 'Consultation',
+          qty: 1,
+          instructions: 'Initial',
+          unitPriceCents: 8500,
+          amountCents: 8500,
+          billed: true,
+        },
+        {
+          id: 'li-live',
+          refId: 'svc-y',
+          kind: 'SERVICE' as const,
+          name: 'Acupuncture',
+          qty: 1,
+          instructions: '-',
+          unitPriceCents: 13500,
+          amountCents: 13500,
+        },
+      ],
+    };
+    render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
+
+    // The billed item shows a "Billed" badge, has no delete and no editable qty.
+    expect(screen.getByText('Billed')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/remove consultation/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/quantity for consultation/i)).not.toBeInTheDocument();
+
+    // The un-billed item stays fully editable (delete + qty input present).
+    expect(screen.getByLabelText(/remove acupuncture/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/quantity for acupuncture/i)).toBeInTheDocument();
+  });
+
+  it('always shows the search/add boxes so new items can be added alongside billed ones', () => {
+    const enc = {
+      ...seedAndGet(),
+      services: [
+        {
+          id: 'li-billed',
+          refId: 'svc-x',
+          kind: 'SERVICE' as const,
+          name: 'Consultation',
+          qty: 1,
+          unitPriceCents: 8500,
+          amountCents: 8500,
+          billed: true,
+        },
+      ],
+      prescription: [
+        {
+          id: 'rx-billed',
+          medicineName: 'Amoxicillin - 625',
+          fulfillment: 'IN_HOUSE' as const,
+          billed: true,
+        },
+      ],
+    };
+    render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
+
+    // Adding stays available even though every existing item is billed/locked.
+    expect(screen.getByLabelText(/search for services and packages/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/search medicines/i)).toBeInTheDocument();
+    // Both the billed service and billed prescription show the badge and are
+    // read-only (no delete control).
+    expect(screen.getAllByText('Billed')).toHaveLength(2);
+    expect(screen.queryByLabelText(/remove amoxicillin/i)).not.toBeInTheDocument();
   });
 
   it('does not render an in-step Skip to Summary button (it lives in the meta bar)', () => {

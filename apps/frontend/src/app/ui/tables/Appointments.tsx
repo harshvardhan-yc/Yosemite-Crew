@@ -39,6 +39,11 @@ import {
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { formatCompanionNameWithOwnerLastName, getOwnerFirstName } from '@/app/lib/companionName';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
+import {
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+} from '@/app/lib/appointmentWorkspace';
+import { startRouteLoader } from '@/app/lib/routeLoader';
 
 import './DataTable.css';
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
@@ -138,16 +143,25 @@ const AppointmentsComponent = ({
   const handleViewAppointment = (appointment: Appointment, intent?: AppointmentViewIntent) => {
     setActiveAppointment?.(appointment);
     setViewIntent?.(intent ?? null);
-    setViewPopup?.(true);
-  };
-
-  const handleDetailAppointment = (appointment: Appointment, intent?: AppointmentViewIntent) => {
-    setActiveAppointment?.(appointment);
-    setViewIntent?.(intent ?? null);
+    if (setViewPopup) {
+      setViewPopup(true);
+      return;
+    }
     setDetailPopup?.(true);
   };
 
+  const handleWorkspaceAppointment = (appointment: Appointment, intent?: AppointmentViewIntent) => {
+    if (!appointment.id) return;
+    if (!canEnterAppointmentWorkspace(appointment.status)) {
+      handleViewAppointment(appointment, intent);
+      return;
+    }
+    startRouteLoader();
+    router.push(buildWorkspaceHrefForIntent(appointment.id, intent));
+  };
+
   const handleViewAppointmentHistory = (appointment: Appointment) => {
+    startRouteLoader();
     router.push(
       buildAppointmentCompanionHistoryHref(
         appointment.id,
@@ -438,7 +452,7 @@ const AppointmentsComponent = ({
               >
                 <button
                   type="button"
-                  onClick={() => handleDetailAppointment(item, getSoapViewIntent(item))}
+                  onClick={() => handleWorkspaceAppointment(item, getSoapViewIntent(item))}
                   className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title={clinicalNotesLabel}
                 >
@@ -453,7 +467,7 @@ const AppointmentsComponent = ({
                 <button
                   type="button"
                   onClick={() =>
-                    handleDetailAppointment(item, {
+                    handleWorkspaceAppointment(item, {
                       label: 'finance',
                       subLabel: 'summary',
                     })
@@ -467,7 +481,7 @@ const AppointmentsComponent = ({
                 <button
                   type="button"
                   onClick={() =>
-                    handleDetailAppointment(item, {
+                    handleWorkspaceAppointment(item, {
                       label: 'labs',
                       subLabel: 'idexx-labs',
                     })
@@ -510,7 +524,7 @@ const AppointmentsComponent = ({
               key={item.id}
               appointment={item}
               handleViewAppointment={handleViewAppointment}
-              handleDetailAppointment={handleDetailAppointment}
+              handleWorkspaceAppointment={handleWorkspaceAppointment}
               getSoapViewIntent={getSoapViewIntent}
               handleRescheduleAppointment={handleRescheduleAppointment}
               handleChangeStatusAppointment={handleChangeStatusAppointment}
