@@ -1,0 +1,236 @@
+import { beforeEach, describe, expect, jest, it } from "@jest/globals";
+import { AppointmentPrismaService } from "../../src/services/appointment.prisma.service";
+import { prisma } from "../../src/config/prisma";
+
+jest.mock("@yosemite-crew/types", () => ({
+  ...(jest.requireActual("@yosemite-crew/types") as unknown as Record<
+    string,
+    unknown
+  >),
+  fromAppointmentRequestDTO: jest.fn(),
+  toAppointmentResponseDTO: jest.fn((appointment) => appointment),
+}));
+
+jest.mock("../../src/config/prisma", () => ({
+  prisma: {
+    appointment: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+    },
+    invoice: {
+      findMany: jest.fn(),
+    },
+  },
+}));
+
+const mockedPrisma = jest.mocked(prisma);
+const mockedTypes = jest.requireMock("@yosemite-crew/types") as {
+  fromAppointmentRequestDTO: jest.Mock;
+  toAppointmentResponseDTO: jest.Mock;
+};
+
+const baseDomain = {
+  companion: {
+    id: "comp_1",
+    name: "Buddy",
+    species: "Dog",
+    breed: "Labrador",
+    parent: {
+      id: "parent_1",
+      name: "Parent One",
+    },
+  },
+  lead: {
+    id: "lead_1",
+    name: "Dr Vet",
+  },
+  supportStaff: [{ id: "staff_1", name: "Assistant" }],
+  room: { id: "room_1", name: "Room A" },
+  appointmentType: {
+    id: "service_1",
+    name: "Consultation",
+    speciality: { id: "spec_1", name: "Cardiology" },
+  },
+  appointmentKind: "INPATIENT",
+  organisationId: "org_1",
+  appointmentDate: new Date("2026-06-10T10:00:00.000Z"),
+  startTime: new Date("2026-06-10T10:00:00.000Z"),
+  endTime: new Date("2026-06-10T10:30:00.000Z"),
+  timeSlot: "10:00",
+  durationMinutes: 30,
+  status: "REQUESTED",
+  isEmergency: false,
+  concern: "Checkup",
+  attachments: [{ key: "file-1", name: "xray.png", contentType: "image/png" }],
+  formIds: ["form_1"],
+  idempotencyKey: null,
+};
+
+const makeRow = (overrides: Record<string, unknown> = {}): any => ({
+  id: "appt_1",
+  companion: baseDomain.companion,
+  lead: baseDomain.lead,
+  supportStaff: baseDomain.supportStaff,
+  room: baseDomain.room,
+  appointmentType: baseDomain.appointmentType,
+  appointmentKind: "INPATIENT",
+  caseId: null,
+  encounterId: null,
+  productItemId: null,
+  organisationId: "org_1",
+  appointmentDate: baseDomain.appointmentDate,
+  startTime: baseDomain.startTime,
+  endTime: baseDomain.endTime,
+  timeSlot: baseDomain.timeSlot,
+  durationMinutes: baseDomain.durationMinutes,
+  status: baseDomain.status,
+  isEmergency: baseDomain.isEmergency,
+  concern: baseDomain.concern,
+  attachments: baseDomain.attachments,
+  formIds: baseDomain.formIds,
+  expiresAt: null,
+  createdAt: new Date("2026-06-10T09:55:00.000Z"),
+  updatedAt: new Date("2026-06-10T09:55:00.000Z"),
+  idempotencyKey: null,
+  ...overrides,
+});
+
+describe("AppointmentPrismaService", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedTypes.fromAppointmentRequestDTO.mockReturnValue(baseDomain as any);
+  });
+
+  it("creates a requested appointment with outpatient fallback", async () => {
+    mockedPrisma.appointment.create.mockResolvedValue(
+      makeRow({ status: "REQUESTED" }),
+    );
+    mockedPrisma.invoice.findMany.mockResolvedValue([]);
+
+    const result = await AppointmentPrismaService.createRequestedFromMobile({
+      resourceType: "Appointment",
+    } as any);
+
+    expect(mockedPrisma.appointment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "REQUESTED",
+          appointmentKind: "INPATIENT",
+          organisationId: "org_1",
+        }),
+      }),
+    );
+    expect((result as any).paymentStatus).toBe("UNPAID");
+    expect(result.id).toBe("appt_1");
+  });
+
+  it("creates a PMS appointment as upcoming", async () => {
+    mockedPrisma.appointment.create.mockResolvedValue(
+      makeRow({ status: "UPCOMING" }),
+    );
+    mockedPrisma.invoice.findMany.mockResolvedValue([]);
+
+    const result = await AppointmentPrismaService.createAppointmentFromPms(
+      { resourceType: "Appointment" } as any,
+      true,
+      "PAYMENT_LINK",
+    );
+
+    expect(mockedPrisma.appointment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "UPCOMING",
+        }),
+      }),
+    );
+    expect(result.status).toBe("UPCOMING");
+  });
+
+  it("returns 404 when appointment is missing", async () => {
+    mockedPrisma.appointment.findUnique.mockResolvedValue(null);
+
+    await expect(
+      AppointmentPrismaService.getById("missing"),
+    ).rejects.toMatchObject({
+      message: "Appointment not found",
+      statusCode: 404,
+    });
+  });
+
+  it("reschedules and resets UPCOMING appointments back to requested", async () => {
+    mockedPrisma.appointment.findUnique.mockResolvedValue(
+      makeRow({ status: "UPCOMING" }),
+    );
+    mockedPrisma.appointment.update.mockResolvedValue(
+      makeRow({
+        status: "REQUESTED",
+        timeSlot: "11:00",
+      }),
+    );
+    mockedPrisma.invoice.findMany.mockResolvedValue([]);
+
+    const result = await AppointmentPrismaService.rescheduleFromParent(
+      "appt_1",
+      "parent_1",
+      {
+        startTime: "2026-06-10T11:00:00.000Z",
+        endTime: "2026-06-10T11:30:00.000Z",
+      },
+    );
+
+    expect(mockedPrisma.appointment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "appt_1" },
+        data: expect.objectContaining({
+          status: "REQUESTED",
+          timeSlot: expect.stringMatching(/^\d{2}:\d{2}$/),
+        }),
+      }),
+    );
+    expect(result.status).toBe("REQUESTED");
+  });
+
+  it("blocks reschedule when parent does not own appointment", async () => {
+    mockedPrisma.appointment.findUnique.mockResolvedValue(
+      makeRow({
+        companion: {
+          ...baseDomain.companion,
+          parent: { id: "other_parent", name: "Other" },
+        },
+      }),
+    );
+
+    await expect(
+      AppointmentPrismaService.rescheduleFromParent("appt_1", "parent_1", {
+        startTime: "2026-06-10T11:00:00.000Z",
+        endTime: "2026-06-10T11:30:00.000Z",
+      }),
+    ).rejects.toMatchObject({
+      message: "You are not allowed to modify this appointment.",
+      statusCode: 403,
+    });
+  });
+
+  it("lists appointments for organisation with filters", async () => {
+    mockedPrisma.appointment.findMany.mockResolvedValue([makeRow()]);
+    mockedPrisma.invoice.findMany.mockResolvedValue([]);
+
+    const result =
+      await AppointmentPrismaService.getAppointmentsForOrganisation("org_1", {
+        status: ["REQUESTED"],
+        startDate: new Date("2026-06-10T00:00:00.000Z"),
+      });
+
+    expect(mockedPrisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organisationId: "org_1",
+          status: { in: ["REQUESTED"] },
+        }),
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+});
