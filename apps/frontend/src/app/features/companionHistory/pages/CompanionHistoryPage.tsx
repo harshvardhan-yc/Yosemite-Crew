@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { IoIosArrowBack } from 'react-icons/io';
-import { HiBolt } from 'react-icons/hi2';
 import { LuCheck, LuPlus } from 'react-icons/lu';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
@@ -351,13 +350,6 @@ const CompanionHistoryPageInner = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  aria-label="Quick actions"
-                  className="flex size-11 items-center justify-center rounded-full border border-neutral-900 bg-neutral-0 text-neutral-900 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
-                >
-                  <HiBolt size={18} aria-hidden="true" />
-                </button>
                 <Primary
                   icon={<LuPlus size={18} aria-hidden="true" />}
                   text="Add appointment"
