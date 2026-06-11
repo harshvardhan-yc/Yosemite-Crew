@@ -46,9 +46,11 @@ jest.mock("../../src/config/prisma", () => ({
     },
     appointment: {
       count: jest.fn(),
+      findMany: jest.fn(),
     },
     invoice: {
       findMany: jest.fn(),
+      count: jest.fn(),
     },
     inventoryItem: {
       findMany: jest.fn(),
@@ -66,7 +68,9 @@ describe("CatalogService", () => {
       id: "spec_1",
     });
     (prisma.appointment.count as jest.Mock).mockResolvedValue(0);
+    (prisma.appointment.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.invoice.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.invoice.count as jest.Mock).mockResolvedValue(0);
     (prisma.productPackageItem.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.productItem.findFirst as jest.Mock).mockImplementation(
       (args?: { where?: { code?: string; id?: string } }) => {
@@ -1441,7 +1445,9 @@ describe("CatalogService", () => {
     });
     (prisma.productItem.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.appointment.count as jest.Mock).mockResolvedValue(0);
+    (prisma.appointment.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.invoice.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.invoice.count as jest.Mock).mockResolvedValue(0);
     (prisma.speciality.update as jest.Mock)
       .mockResolvedValueOnce({ id: "spec_1", isActive: false })
       .mockResolvedValueOnce({ id: "spec_1", isActive: true });
@@ -1455,6 +1461,21 @@ describe("CatalogService", () => {
       where: { organisationId: "org_1", specialityId: "spec_1" },
       data: { isActive: false },
     });
+    expect(prisma.speciality.delete).toHaveBeenCalledWith({
+      where: { id: "spec_1" },
+    });
+  });
+
+  it("allows speciality deletion when invoices are unrelated to the speciality", async () => {
+    (prisma.productItem.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.appointment.count as jest.Mock).mockResolvedValue(0);
+    (prisma.appointment.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.invoice.count as jest.Mock).mockResolvedValue(229);
+    (prisma.speciality.delete as jest.Mock).mockResolvedValue({ id: "spec_1" });
+
+    await CatalogService.deleteSpeciality("spec_1", "org_1");
+
+    expect(prisma.invoice.count).not.toHaveBeenCalled();
     expect(prisma.speciality.delete).toHaveBeenCalledWith({
       where: { id: "spec_1" },
     });
