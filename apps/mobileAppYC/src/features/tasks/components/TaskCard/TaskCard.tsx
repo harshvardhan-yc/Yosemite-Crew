@@ -1,10 +1,5 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {SwipeableActionCard} from '@/shared/components/common/SwipeableActionCard/SwipeableActionCard';
 import {CardActionButton} from '@/shared/components/common/CardActionButton/CardActionButton';
 import {LiquidGlassButton} from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
@@ -17,35 +12,50 @@ import {normalizeImageUri} from '@/shared/utils/imageUri';
 import {resolveObservationalToolLabel} from '@/features/tasks/utils/taskLabels';
 import {observationToolApi} from '@/features/observationalTools/services/observationToolService';
 
-const calculateNearestDosageTime = (dosages: Array<{time: string; dosage: string}>): string | null => {
+const calculateNearestDosageTime = (
+  dosages: Array<{time: string; dosage: string}>,
+): string | null => {
   if (!dosages || dosages.length === 0) return null;
 
   const now = new Date();
   const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
 
-  const dosageTimes = dosages.map((dosage) => {
-    try {
-      const [hours, minutes] = dosage.time.split(':').map(Number);
-      if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
-      return {
-        totalMinutes: hours * 60 + minutes,
-        originalTime: dosage.time,
-      };
-    } catch {
-      return null;
-    }
-  }).filter((dt): dt is {totalMinutes: number; originalTime: string} => dt !== null);
+  const dosageTimes = dosages
+    .map(dosage => {
+      try {
+        const [hours, minutes] = dosage.time.split(':').map(Number);
+        if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+        return {
+          totalMinutes: hours * 60 + minutes,
+          originalTime: dosage.time,
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter(
+      (dt): dt is {totalMinutes: number; originalTime: string} => dt !== null,
+    );
 
   if (dosageTimes.length === 0) return null;
 
-  const upcomingToday = dosageTimes
-    .filter((dt) => dt.totalMinutes > currentTimeInMinutes)
-    .sort((a, b) => a.totalMinutes - b.totalMinutes)[0];
+  const futureItems = dosageTimes.filter(
+    dt => dt.totalMinutes > currentTimeInMinutes,
+  );
+  const upcomingToday =
+    futureItems.length > 0
+      ? futureItems.reduce(
+          (min, dt) => (dt.totalMinutes < min.totalMinutes ? dt : min),
+          futureItems[0],
+        )
+      : undefined;
 
   if (upcomingToday) return upcomingToday.originalTime;
 
-  const sortedDosages = [...dosageTimes].sort((a, b) => a.totalMinutes - b.totalMinutes);
-  const earliestDosage = sortedDosages[0];
+  const earliestDosage = dosageTimes.reduce(
+    (min, dt) => (dt.totalMinutes < min.totalMinutes ? dt : min),
+    dosageTimes[0],
+  );
   return earliestDosage.originalTime;
 };
 
@@ -127,23 +137,30 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   // Calculate nearest dosage time for medication tasks
   // For medication tasks, always use dosage times instead of task time
-  const isMedicationTask = category === 'health' && details?.taskType === 'give-medication';
+  const isMedicationTask =
+    category === 'health' && details?.taskType === 'give-medication';
   const nearestDosageTime = useMemo(() => {
     if (!isMedicationTask || !details?.dosages) return null;
     return calculateNearestDosageTime(details.dosages);
   }, [isMedicationTask, details?.dosages]);
 
   const observationalToolLabel = useMemo(() => {
-    if (category !== 'health' || details?.taskType !== 'take-observational-tool') {
+    if (
+      category !== 'health' ||
+      details?.taskType !== 'take-observational-tool'
+    ) {
       return null;
     }
     const raw = details.toolType;
     const resolved = resolveObservationalToolLabel(raw);
-    const looksLikeId = typeof resolved === 'string' && /^[a-f0-9]{24}$/i.test(resolved);
+    const looksLikeId =
+      typeof resolved === 'string' && /^[a-f0-9]{24}$/i.test(resolved);
     return looksLikeId ? 'Observational tool' : resolved;
   }, [category, details]);
 
-  const [resolvedOtLabel, setResolvedOtLabel] = useState<string | null>(observationalToolLabel);
+  const [resolvedOtLabel, setResolvedOtLabel] = useState<string | null>(
+    observationalToolLabel,
+  );
 
   useEffect(() => {
     let active = true;
@@ -155,7 +172,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       ) {
         return;
       }
-      if (observationalToolLabel && observationalToolLabel !== 'Observational tool') {
+      if (
+        observationalToolLabel &&
+        observationalToolLabel !== 'Observational tool'
+      ) {
         setResolvedOtLabel(observationalToolLabel);
         return;
       }
@@ -221,15 +241,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       );
     }
 
-    if (category === 'health' && details.taskType === 'take-observational-tool') {
+    if (
+      category === 'health' &&
+      details.taskType === 'take-observational-tool'
+    ) {
       return (
         <View style={styles.detailsSection}>
-          <Text style={styles.detailLabel}>📋 Tool: {resolvedOtLabel ?? 'Observational tool'}</Text>
+          <Text style={styles.detailLabel}>
+            📋 Tool: {resolvedOtLabel ?? 'Observational tool'}
+          </Text>
         </View>
       );
     }
 
-    if ((category === 'hygiene' || category === 'dietary') && details.description) {
+    if (
+      (category === 'hygiene' || category === 'dietary') &&
+      details.description
+    ) {
       return (
         <View style={styles.detailsSection}>
           <Text style={styles.detailSmall} numberOfLines={1}>
@@ -267,8 +295,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       onPressView={onPressView}
       onPressEdit={onPressEdit}
       showEditAction={showEditAction && !isCompleted}
-      hideSwipeActions={hideSwipeActions}
-    >
+      hideSwipeActions={hideSwipeActions}>
       <TouchableOpacity
         activeOpacity={onPressView ? 0.85 : 1}
         onPress={onPressView}
@@ -284,15 +311,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           )}
 
           <View style={styles.textContent}>
-            <Text style={styles.title}>
-              {title}
-            </Text>
+            <Text style={styles.title}>{title}</Text>
             <Text style={styles.meta} numberOfLines={1} ellipsizeMode="tail">
               {companionName}
             </Text>
             <Text style={styles.meta} numberOfLines={1} ellipsizeMode="tail">
               {formattedDate}
-              {isMedicationTask && formattedNearestDosage && ` - ${formattedNearestDosage}`}
+              {isMedicationTask &&
+                formattedNearestDosage &&
+                ` - ${formattedNearestDosage}`}
               {!isMedicationTask && formattedTime && ` - ${formattedTime}`}
             </Text>
             {renderTaskDetails()}

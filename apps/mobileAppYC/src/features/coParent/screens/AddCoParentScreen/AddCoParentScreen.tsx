@@ -1,5 +1,14 @@
 import React, {useState, useCallback, useMemo} from 'react';
-import {View, StyleSheet, ScrollView, Image, Text, KeyboardAvoidingView, Platform, Alert} from 'react-native';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  Image,
+  Text,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {useDispatch, useSelector} from 'react-redux';
 import {useForm, Controller} from 'react-hook-form';
@@ -10,12 +19,15 @@ import {Input} from '@/shared/components/common';
 import {Images} from '@/assets/images';
 import {LiquidGlassButton} from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
 import {LiquidGlassHeaderScreen} from '@/shared/components/common/LiquidGlassHeader/LiquidGlassHeaderScreen';
-import {addCoParent} from '../../index';
+import {addCoParent} from '../../thunks';
 import type {CoParentStackParamList} from '@/navigation/types';
 import AddCoParentBottomSheet, {
   type AddCoParentBottomSheetRef,
 } from '../../components/AddCoParentBottomSheet/AddCoParentBottomSheet';
-import {selectCompanions, selectSelectedCompanionId} from '@/features/companion';
+import {
+  selectCompanions,
+  selectSelectedCompanionId,
+} from '@/features/companion';
 
 type Props = NativeStackScreenProps<CoParentStackParamList, 'AddCoParent'>;
 
@@ -60,41 +72,47 @@ export const AddCoParentScreen: React.FC<Props> = ({navigation}) => {
     mode: 'onChange',
   });
 
-  const handleSendInvite = useCallback(async (data: InviteFormData) => {
-    try {
-      if (!selectedCompanion?.id) {
-        Alert.alert('Select companion', 'Please select a companion to invite.');
-        return;
+  const handleSendInvite = useCallback(
+    async (data: InviteFormData) => {
+      try {
+        if (!selectedCompanion?.id) {
+          Alert.alert(
+            'Select companion',
+            'Please select a companion to invite.',
+          );
+          return;
+        }
+
+        await dispatch(
+          addCoParent({
+            inviteRequest: {
+              ...data,
+              companionId: selectedCompanion.id,
+            },
+            companionName: selectedCompanion.name,
+            companionImage: selectedCompanion.profileImage ?? undefined,
+          }),
+        ).unwrap();
+
+        // Store submitted data for bottom sheet display
+        setSubmittedData({
+          candidateName: data.candidateName,
+          email: data.email,
+          phoneNumber: data.phoneNumber,
+        });
+
+        // Show added co-parent bottom sheet
+        addCoParentSheetRef.current?.open();
+
+        // Reset form
+        reset();
+      } catch (error) {
+        console.error('Failed to add co-parent:', error);
+        Alert.alert('Error', 'Failed to send invite');
       }
-
-      await dispatch(
-        addCoParent({
-          inviteRequest: {
-            ...data,
-            companionId: selectedCompanion.id,
-          },
-          companionName: selectedCompanion.name,
-          companionImage: selectedCompanion.profileImage ?? undefined,
-        }),
-      ).unwrap();
-
-      // Store submitted data for bottom sheet display
-      setSubmittedData({
-        candidateName: data.candidateName,
-        email: data.email,
-        phoneNumber: data.phoneNumber,
-      });
-
-      // Show added co-parent bottom sheet
-      addCoParentSheetRef.current?.open();
-
-      // Reset form
-      reset();
-    } catch (error) {
-      console.error('Failed to add co-parent:', error);
-      Alert.alert('Error', 'Failed to send invite');
-    }
-  }, [dispatch, reset, selectedCompanion]);
+    },
+    [dispatch, reset, selectedCompanion],
+  );
 
   const handleBack = useCallback(() => {
     if (navigation.canGoBack()) {
@@ -109,7 +127,14 @@ export const AddCoParentScreen: React.FC<Props> = ({navigation}) => {
 
   return (
     <LiquidGlassHeaderScreen
-      header={<Header title="Add co-parent" showBackButton onBack={handleBack} glass={false} />}
+      header={
+        <Header
+          title="Add co-parent"
+          showBackButton
+          onBack={handleBack}
+          glass={false}
+        />
+      }
       cardGap={theme.spacing['3']}
       contentPadding={theme.spacing['1']}>
       {contentPaddingStyle => (
@@ -120,7 +145,6 @@ export const AddCoParentScreen: React.FC<Props> = ({navigation}) => {
             contentContainerStyle={[styles.scrollContent, contentPaddingStyle]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled">
-
             {/* Hero Image - always show */}
             <Image source={Images.heroImage} style={styles.heroImage} />
 
@@ -259,8 +283,8 @@ const createStyles = (theme: any) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: theme.spacing['2'],
-      marginInline:40,
-        marginVertical: theme.spacing['10'],
+      marginInline: 40,
+      marginVertical: theme.spacing['10'],
     },
     dividerLine: {
       flex: 1,

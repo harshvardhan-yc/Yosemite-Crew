@@ -1,4 +1,11 @@
-import React, {forwardRef, useRef, useMemo, useImperativeHandle, useCallback, useState} from 'react';
+import React, {
+  forwardRef,
+  useRef,
+  useMemo,
+  useImperativeHandle,
+  useCallback,
+  useState,
+} from 'react';
 import {View, Text, StyleSheet, TouchableOpacity, FlatList} from 'react-native';
 import CustomBottomSheet from '@/shared/components/common/BottomSheet/BottomSheet';
 import type {BottomSheetRef} from '@/shared/components/common/BottomSheet/BottomSheet';
@@ -13,79 +20,107 @@ import type {
   SubcategoryWithChildren,
   SubsubcategoryWithChildren,
 } from './types';
-import {flattenTaskOptions, buildCategorySections, buildSelectionFromOption} from './helpers';
+import {
+  flattenTaskOptions,
+  buildCategorySections,
+  buildSelectionFromOption,
+} from './helpers';
 import {taskTypeOptions} from './taskOptions';
 
-export const TaskTypeBottomSheet = forwardRef<TaskTypeBottomSheetRef, TaskTypeBottomSheetProps>(
-  ({onSelect, onSheetChange}, ref) => {
-    const {theme} = useTheme();
-    const styles = useMemo(() => createStyles(theme), [theme]);
-    const bottomSheetRef = useRef<BottomSheetRef>(null);
-    const [isSheetVisible, setIsSheetVisible] = useState(false);
+export const TaskTypeBottomSheet = forwardRef<
+  TaskTypeBottomSheetRef,
+  TaskTypeBottomSheetProps
+>(({onSelect, onSheetChange}, ref) => {
+  const {theme} = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const bottomSheetRef = useRef<BottomSheetRef>(null);
+  const [isSheetVisible, setIsSheetVisible] = useState(false);
 
-    // Expose ref methods
-    useImperativeHandle(ref, () => ({
-      open: () => {
-        setIsSheetVisible(true);
-        bottomSheetRef.current?.expand();
-      },
-      close: () => {
-        setIsSheetVisible(false);
-        bottomSheetRef.current?.close();
-      },
-    }));
+  // Expose ref methods
+  useImperativeHandle(ref, () => ({
+    open: () => {
+      setIsSheetVisible(true);
+      bottomSheetRef.current?.expand();
+    },
+    close: () => {
+      setIsSheetVisible(false);
+      bottomSheetRef.current?.close();
+    },
+  }));
 
-    // Flatten all task options recursively
-    const flattenedOptions = useMemo(() => {
-      const result = [];
-      for (const option of taskTypeOptions) {
-        result.push(...flattenTaskOptions([option]));
-      }
-      return result;
-    }, []);
+  // Flatten all task options recursively
+  const flattenedOptions = useMemo(() => {
+    const result = [];
+    for (const option of taskTypeOptions) {
+      result.push(...flattenTaskOptions([option]));
+    }
+    return result;
+  }, []);
 
-    // Build category sections with proper hierarchy
-    const categorySections = useMemo(() => {
-      return buildCategorySections(flattenedOptions);
-    }, [flattenedOptions]);
+  // Build category sections with proper hierarchy
+  const categorySections = useMemo(() => {
+    return buildCategorySections(flattenedOptions);
+  }, [flattenedOptions]);
 
-    // Handler for selecting a task type
-    const handleTaskSelect = useCallback((option: TaskTypeOption, ancestors: TaskTypeOption[]) => {
+  // Handler for selecting a task type
+  const handleTaskSelect = useCallback(
+    (option: TaskTypeOption, ancestors: TaskTypeOption[]) => {
       const selection = buildSelectionFromOption(option, ancestors);
       onSelect(selection);
       setIsSheetVisible(false);
       bottomSheetRef.current?.close();
-    }, [onSelect]);
+    },
+    [onSelect],
+  );
 
-    // Render a single pill button
-    const renderPillButton = useCallback((child: {option: TaskTypeOption; ancestors: TaskTypeOption[]}) => (
+  // Render a single pill button
+  const renderPillButton = useCallback(
+    (child: {option: TaskTypeOption; ancestors: TaskTypeOption[]}) => (
       <TouchableOpacity
         key={child.option.id}
         style={styles.pillButton}
         onPress={() => handleTaskSelect(child.option, child.ancestors)}>
         <Text style={styles.pillButtonText}>{child.option.label}</Text>
       </TouchableOpacity>
-    ), [handleTaskSelect, styles.pillButton, styles.pillButtonText]);
+    ),
+    [handleTaskSelect, styles.pillButton, styles.pillButtonText],
+  );
 
-    // Render subsubcategory group with pills
-    const renderSubsubcategory = useCallback((subsubcat: SubsubcategoryWithChildren) => (
-      <View key={subsubcat.subsubcategory.id} style={styles.subsubcategoryGroup}>
-        <Text style={styles.subsubcategoryHeader}>{subsubcat.subsubcategory.label}</Text>
+  // Render subsubcategory group with pills
+  const renderSubsubcategory = useCallback(
+    (subsubcat: SubsubcategoryWithChildren) => (
+      <View
+        key={subsubcat.subsubcategory.id}
+        style={styles.subsubcategoryGroup}>
+        <Text style={styles.subsubcategoryHeader}>
+          {subsubcat.subsubcategory.label}
+        </Text>
         <View style={styles.pillsContainer}>
           {subsubcat.children.map(renderPillButton)}
         </View>
       </View>
-    ), [renderPillButton, styles.subsubcategoryGroup, styles.subsubcategoryHeader, styles.pillsContainer]);
+    ),
+    [
+      renderPillButton,
+      styles.subsubcategoryGroup,
+      styles.subsubcategoryHeader,
+      styles.pillsContainer,
+    ],
+  );
 
-    // Render subcategory group (either with subsubcategories or direct children)
-    const renderSubcategory = useCallback((subcat: SubcategoryWithChildren, categoryId: string) => {
-      const hasSubsubcategories = subcat.subsubcategories && subcat.subsubcategories.length > 0;
+  // Render subcategory group (either with subsubcategories or direct children)
+  const renderSubcategory = useCallback(
+    (subcat: SubcategoryWithChildren, categoryId: string) => {
+      const hasSubsubcategories =
+        subcat.subsubcategories && subcat.subsubcategories.length > 0;
       const showSubcategoryHeader = categoryId !== subcat.subcategory.id;
 
       return (
         <View key={subcat.subcategory.id} style={styles.subcategoryGroup}>
           {showSubcategoryHeader && (
-            <Text style={styles.subcategoryHeader}>{subcat.subcategory.label}</Text>
+            <Text style={styles.subcategoryHeader}>
+              {subcat.subcategory.label}
+            </Text>
           )}
 
           {hasSubsubcategories ? (
@@ -97,10 +132,19 @@ export const TaskTypeBottomSheet = forwardRef<TaskTypeBottomSheetRef, TaskTypeBo
           )}
         </View>
       );
-    }, [renderPillButton, renderSubsubcategory, styles.subcategoryGroup, styles.subcategoryHeader, styles.pillsContainer]);
+    },
+    [
+      renderPillButton,
+      renderSubsubcategory,
+      styles.subcategoryGroup,
+      styles.subcategoryHeader,
+      styles.pillsContainer,
+    ],
+  );
 
-    // Render a single category section
-    const renderCategorySection = useCallback((section: CategorySection) => {
+  // Render a single category section
+  const renderCategorySection = useCallback(
+    (section: CategorySection) => {
       // Custom category - single pill at top level without category container/header
       if (section.type === 'single') {
         return (
@@ -108,7 +152,9 @@ export const TaskTypeBottomSheet = forwardRef<TaskTypeBottomSheetRef, TaskTypeBo
             <TouchableOpacity
               style={styles.pillButton}
               onPress={() => handleTaskSelect(section.category, [])}>
-              <Text style={styles.pillButtonText}>{section.category.label}</Text>
+              <Text style={styles.pillButtonText}>
+                {section.category.label}
+              </Text>
             </TouchableOpacity>
           </View>
         );
@@ -118,60 +164,80 @@ export const TaskTypeBottomSheet = forwardRef<TaskTypeBottomSheetRef, TaskTypeBo
       return (
         <View key={section.category.id} style={styles.categorySection}>
           <Text style={styles.categoryHeader}>{section.category.label}</Text>
-          {section.subcategories?.map(subcat => renderSubcategory(subcat, section.category.id))}
+          {section.subcategories?.map(subcat =>
+            renderSubcategory(subcat, section.category.id),
+          )}
         </View>
       );
-    }, [handleTaskSelect, renderSubcategory, styles.customPillWrapper, styles.pillButton, styles.pillButtonText, styles.categorySection, styles.categoryHeader]);
+    },
+    [
+      handleTaskSelect,
+      renderSubcategory,
+      styles.customPillWrapper,
+      styles.pillButton,
+      styles.pillButtonText,
+      styles.categorySection,
+      styles.categoryHeader,
+    ],
+  );
 
-    const handleClose = () => {
-      setIsSheetVisible(false);
-      bottomSheetRef.current?.close();
-    };
+  // Stable renderItem for FlatList — satisfies react-doctor/rn-no-inline-flatlist-renderitem
+  const renderItem = useCallback(
+    ({item}: {item: CategorySection}) => renderCategorySection(item),
+    [renderCategorySection],
+  );
 
-    const handleSheetChange = useCallback((index: number) => {
+  const handleClose = () => {
+    setIsSheetVisible(false);
+    bottomSheetRef.current?.close();
+  };
+
+  const handleSheetChange = useCallback(
+    (index: number) => {
       setIsSheetVisible(index !== -1);
       onSheetChange?.(index);
-    }, [onSheetChange]);
+    },
+    [onSheetChange],
+  );
 
-    return (
-      <CustomBottomSheet
-        ref={bottomSheetRef}
-        snapPoints={['75%', '85%']}
-        initialIndex={-1}
-        enablePanDownToClose
-        enableDynamicSizing={false}
-        enableContentPanningGesture={false}
-        enableHandlePanningGesture
-        enableOverDrag={false}
-        enableBackdrop={isSheetVisible}
-        backdropOpacity={0.5}
-        backdropDisappearsOnIndex={-1}
-        contentType="view"
-        backgroundStyle={styles.bottomSheetBackground}
-        handleIndicatorStyle={styles.bottomSheetHandle}
-        onChange={handleSheetChange}>
-        <View style={styles.container}>
-          <BottomSheetHeader
-            title="Select Task Type"
-            onClose={handleClose}
-            theme={theme}
+  return (
+    <CustomBottomSheet
+      ref={bottomSheetRef}
+      snapPoints={['75%', '85%']}
+      initialIndex={-1}
+      enablePanDownToClose
+      enableDynamicSizing={false}
+      enableContentPanningGesture={false}
+      enableHandlePanningGesture
+      enableOverDrag={false}
+      enableBackdrop={isSheetVisible}
+      backdropOpacity={0.5}
+      backdropDisappearsOnIndex={-1}
+      contentType="view"
+      backgroundStyle={styles.bottomSheetBackground}
+      handleIndicatorStyle={styles.bottomSheetHandle}
+      onChange={handleSheetChange}>
+      <View style={styles.container}>
+        <BottomSheetHeader
+          title="Select Task Type"
+          onClose={handleClose}
+          theme={theme}
+        />
+
+        <View style={styles.listWrapper}>
+          <FlatList
+            data={categorySections}
+            keyExtractor={item => item.category.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled={true}
           />
-
-          <View style={styles.listWrapper}>
-            <FlatList
-              data={categorySections}
-              keyExtractor={(item) => item.category.id}
-              renderItem={({item}) => renderCategorySection(item)}
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={true}
-              nestedScrollEnabled={true}
-            />
-          </View>
         </View>
-      </CustomBottomSheet>
-    );
-  },
-);
+      </View>
+    </CustomBottomSheet>
+  );
+});
 
 TaskTypeBottomSheet.displayName = 'TaskTypeBottomSheet';
 

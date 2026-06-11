@@ -22,7 +22,9 @@ const extractAppointmentId = (invoice: Invoice | null): string | null => {
   }
   const extList = (invoice as any)?.extension;
   if (Array.isArray(extList)) {
-    const appointmentIdExt = extList.find((ext: any) => ext?.url?.includes('appointment-id'));
+    const appointmentIdExt = extList.find((ext: any) =>
+      ext?.url?.includes('appointment-id'),
+    );
     if (appointmentIdExt?.valueString) {
       return appointmentIdExt.valueString;
     }
@@ -39,22 +41,28 @@ export const useExpensePayment = () => {
   const navigation = useNavigation();
   const [processingPayment, setProcessingPayment] = useState(false);
 
-  const validateExpenseForPayment = useCallback((expense: Expense): string | null => {
-    if (expense.source !== 'inApp') {
-      return 'Only in-app expenses can be paid here.';
-    }
-    if (!expense.invoiceId) {
-      return 'Invoice not found for this expense. Please try again later.';
-    }
-    return null;
-  }, []);
+  const validateExpenseForPayment = useCallback(
+    (expense: Expense): string | null => {
+      if (expense.source !== 'inApp') {
+        return 'Only in-app expenses can be paid here.';
+      }
+      if (!expense.invoiceId) {
+        return 'Invoice not found for this expense. Please try again later.';
+      }
+      return null;
+    },
+    [],
+  );
 
   const fetchInvoiceAndIntent = useCallback(
     async (
       expense: Expense,
       invoice: Invoice | null = null,
       preloadedPaymentIntent: PaymentIntentInfo | null = null,
-    ): Promise<{invoice: Invoice | null; paymentIntent: PaymentIntentInfo | null}> => {
+    ): Promise<{
+      invoice: Invoice | null;
+      paymentIntent: PaymentIntentInfo | null;
+    }> => {
       let resolvedInvoice = invoice;
       let resolvedIntent = preloadedPaymentIntent;
 
@@ -95,30 +103,39 @@ export const useExpensePayment = () => {
     [dispatch],
   );
 
-  const findTabNavigation = useCallback((): NavigationProp<TabParamList> | null => {
-    let tabNavigation =
-      navigation.getParent<NavigationProp<TabParamList>>() ??
-      navigation.getParent()?.getParent<NavigationProp<TabParamList>>() ??
-      navigation.getParent()?.getParent()?.getParent<NavigationProp<TabParamList>>();
+  const findTabNavigation =
+    useCallback((): NavigationProp<TabParamList> | null => {
+      let tabNavigation =
+        navigation.getParent<NavigationProp<TabParamList>>() ??
+        navigation.getParent()?.getParent<NavigationProp<TabParamList>>() ??
+        navigation
+          .getParent()
+          ?.getParent()
+          ?.getParent<NavigationProp<TabParamList>>();
 
-    if (tabNavigation || !(navigation as any)?.getParent) {
-      return tabNavigation ?? null;
-    }
-
-    let current: any = navigation;
-    let depth = 0;
-    while (current?.getParent && depth < 6) {
-      current = current.getParent();
-      depth += 1;
-      if (current?.getState?.()?.routeNames?.includes?.('Appointments')) {
-        return current as NavigationProp<TabParamList>;
+      if (tabNavigation || !(navigation as any)?.getParent) {
+        return tabNavigation ?? null;
       }
-    }
-    return tabNavigation ?? null;
-  }, [navigation]);
+
+      let current: any = navigation;
+      let depth = 0;
+      while (current?.getParent && depth < 6) {
+        current = current.getParent();
+        depth += 1;
+        const routeNames = current?.getState?.()?.routeNames;
+        if (routeNames && new Set(routeNames).has('Appointments')) {
+          return current as NavigationProp<TabParamList>;
+        }
+      }
+      return tabNavigation ?? null;
+    }, [navigation]);
 
   const openPaymentScreen = useCallback(
-    async (expense: Expense, preloadedInvoice?: Invoice | null, preloadedPaymentIntent?: PaymentIntentInfo | null) => {
+    async (
+      expense: Expense,
+      preloadedInvoice?: Invoice | null,
+      preloadedPaymentIntent?: PaymentIntentInfo | null,
+    ) => {
       if (processingPayment) {
         return;
       }
@@ -146,7 +163,8 @@ export const useExpensePayment = () => {
         }
 
         // Extract appointmentId from invoice extensions
-        const appointmentId = expense.appointmentId ?? extractAppointmentId(invoice);
+        const appointmentId =
+          expense.appointmentId ?? extractAppointmentId(invoice);
 
         if (!appointmentId) {
           Alert.alert(
@@ -175,13 +193,21 @@ export const useExpensePayment = () => {
       } catch (error) {
         Alert.alert(
           'Payment unavailable',
-          error instanceof Error ? error.message : 'Unable to start payment. Please try again.',
+          error instanceof Error
+            ? error.message
+            : 'Unable to start payment. Please try again.',
         );
       } finally {
         setProcessingPayment(false);
       }
     },
-    [fetchInvoiceAndIntent, findTabNavigation, navigation, processingPayment, validateExpenseForPayment],
+    [
+      fetchInvoiceAndIntent,
+      findTabNavigation,
+      navigation,
+      processingPayment,
+      validateExpenseForPayment,
+    ],
   );
 
   return {openPaymentScreen, processingPayment};

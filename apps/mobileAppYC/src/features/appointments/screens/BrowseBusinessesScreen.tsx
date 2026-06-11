@@ -35,7 +35,7 @@ import {isDummyPhoto} from '@/features/appointments/utils/photoUtils';
 import type {AppointmentStackParamList, TabParamList} from '@/navigation/types';
 import type {VetBusiness} from '../types';
 
-import {MapDiscoveryView} from '../components/MapDiscovery';
+import MapDiscoveryView from '../components/MapDiscovery/MapDiscoveryView';
 import {useLocationPermission} from '../hooks/useLocationPermission';
 import {useClinicMapDiscovery} from '../hooks/useClinicMapDiscovery';
 
@@ -81,8 +81,12 @@ export const BrowseBusinessesScreen: React.FC = () => {
     isLoading: locationLoading,
   } = useLocationPermission();
   const initialQuery = route.params?.serviceName ?? '';
+  const initialBusinessId = route.params?.initialBusinessId;
+  const selectionToken = route.params?.selectionToken;
   const lastSearchRef = useRef<number>(0);
   const lastTermRef = useRef<string>('');
+  const pinAndSelectClinicRef = useRef<(b: VetBusiness) => void>(() => {});
+  const clearResultsRef = useRef<() => void>(() => {});
   const companions = useSelector(selectCompanions);
   const selectedCompanionId = useSelector(selectSelectedCompanionId);
   const targetCompanionId = useMemo(
@@ -139,12 +143,10 @@ export const BrowseBusinessesScreen: React.FC = () => {
     async (selection: ResolvedBusinessSelection) => {
       const payload = mapSelectionToVetBusiness(selection);
       dispatch(upsertBusiness(payload));
-      navigation.navigate('BusinessDetails', {
-        businessId: payload.id,
-        returnTo: {tab: 'Appointments', screen: 'BrowseBusinesses'},
-      });
+      pinAndSelectClinicRef.current(payload);
+      clearResultsRef.current();
     },
-    [dispatch, navigation],
+    [dispatch],
   );
 
   const handleNonPmsSelection = useCallback(
@@ -232,7 +234,11 @@ export const BrowseBusinessesScreen: React.FC = () => {
     setCategory,
     setOpenNow,
     enrichWithDistance,
-  } = useClinicMapDiscovery(searchQuery);
+    pinAndSelectClinic,
+  } = useClinicMapDiscovery(searchQuery, initialBusinessId, selectionToken);
+
+  clearResultsRef.current = clearResults;
+  pinAndSelectClinicRef.current = pinAndSelectClinic;
 
   const enrichedClinics = useMemo(
     () => enrichWithDistance(userCoords),

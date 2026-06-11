@@ -10,7 +10,9 @@ type CurrencyRecord = {
   name: string;
 };
 
-const currencyMap: Record<string, CurrencyRecord> = (currencyList as CurrencyRecord[]).reduce(
+const currencyMap: Record<string, CurrencyRecord> = (
+  currencyList as CurrencyRecord[]
+).reduce(
   (accumulator, entry) => {
     accumulator[entry.code] = entry;
     return accumulator;
@@ -21,21 +23,25 @@ const currencyMap: Record<string, CurrencyRecord> = (currencyList as CurrencyRec
 /**
  * Filter to only supported currencies (EUR, USD)
  */
-const supportedCurrencyMap: Record<string, CurrencyRecord> = SUPPORTED_CURRENCIES.reduce(
-  (acc, code) => {
-    if (currencyMap[code]) {
-      acc[code] = currencyMap[code];
-    }
-    return acc;
-  },
-  {} as Record<string, CurrencyRecord>,
-);
+const supportedCurrencyMap: Record<string, CurrencyRecord> =
+  SUPPORTED_CURRENCIES.reduce(
+    (acc, code) => {
+      if (currencyMap[code]) {
+        acc[code] = currencyMap[code];
+      }
+      return acc;
+    },
+    {} as Record<string, CurrencyRecord>,
+  );
 
 /**
  * Resolve currency symbol from code. Only supports EUR and USD.
  * Falls back to $ if code is missing or not supported.
  */
-export const resolveCurrencySymbol = (code?: string, fallback = '$'): string => {
+export const resolveCurrencySymbol = (
+  code?: string,
+  fallback = '$',
+): string => {
   if (!code) {
     return fallback;
   }
@@ -50,6 +56,39 @@ interface FormatCurrencyOptions {
   minimumFractionDigits?: number;
 }
 
+const CURRENCY_FORMATTERS: Record<string, Intl.NumberFormat> = {
+  'en-US-USD-0': new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+  }),
+  'en-US-USD-1': new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 1,
+  }),
+  'en-US-USD-2': new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+  }),
+  'en-US-EUR-0': new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 0,
+  }),
+  'en-US-EUR-1': new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 1,
+  }),
+  'en-US-EUR-2': new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+  }),
+};
+
 export const formatCurrency = (
   amount: number,
   {
@@ -59,11 +98,12 @@ export const formatCurrency = (
   }: FormatCurrencyOptions = {},
 ): string => {
   try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency: currencyCode,
-      minimumFractionDigits,
-    }).format(amount);
+    const formatter =
+      CURRENCY_FORMATTERS[`${locale}-${currencyCode}-${minimumFractionDigits}`];
+    if (!formatter) {
+      throw new Error('Unsupported currency format');
+    }
+    return formatter.format(amount);
   } catch {
     const symbol = resolveCurrencySymbol(currencyCode, '$');
     return `${symbol}${amount.toFixed(minimumFractionDigits)}`;

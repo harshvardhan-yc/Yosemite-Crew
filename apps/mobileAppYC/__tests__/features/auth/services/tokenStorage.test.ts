@@ -39,7 +39,7 @@ describe('tokenStorage', () => {
         'yosemite-crew',
         JSON.stringify(mockTokens),
         expect.objectContaining({
-          service: 'yosemite-crew-auth-tokens',
+          service: 'yosemite-crew-session',
           accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
           securityLevel: Keychain.SECURITY_LEVEL.SECURE_SOFTWARE,
         }),
@@ -84,7 +84,9 @@ describe('tokenStorage', () => {
     });
 
     it('should handle unknown errors', async () => {
-      (Keychain.setGenericPassword as jest.Mock).mockRejectedValue('Unknown error');
+      (Keychain.setGenericPassword as jest.Mock).mockRejectedValue(
+        'Unknown error',
+      );
 
       await expect(storeTokens(mockTokens)).rejects.toThrow(
         'Unexpected error while storing auth tokens securely',
@@ -214,7 +216,7 @@ describe('tokenStorage', () => {
 
       expect(Keychain.resetGenericPassword).toHaveBeenCalledWith(
         expect.objectContaining({
-          service: 'yosemite-crew-auth-tokens',
+          service: 'yosemite-crew-session',
         }),
       );
     });
@@ -227,7 +229,9 @@ describe('tokenStorage', () => {
     });
 
     it('should handle unknown errors when clearing tokens', async () => {
-      (Keychain.resetGenericPassword as jest.Mock).mockRejectedValue('Unknown error');
+      (Keychain.resetGenericPassword as jest.Mock).mockRejectedValue(
+        'Unknown error',
+      );
 
       await expect(clearStoredTokens()).rejects.toThrow(
         'Unexpected error while clearing secure auth tokens',
@@ -246,15 +250,17 @@ describe('tokenStorage', () => {
         },
       );
 
-      (Keychain.getGenericPassword as jest.Mock).mockImplementation(async () => {
-        if (!storedPassword) return false;
-        return {
-          username: 'yosemite-crew',
-          password: storedPassword,
-          service: 'yosemite-crew-auth-tokens',
-          storage: 'keychain' as const,
-        };
-      });
+      (Keychain.getGenericPassword as jest.Mock).mockImplementation(
+        async () => {
+          if (!storedPassword) return false;
+          return {
+            username: 'yosemite-crew',
+            password: storedPassword,
+            service: 'yosemite-crew-auth-tokens',
+            storage: 'keychain' as const,
+          };
+        },
+      );
 
       await storeTokens(mockTokens);
       const loaded = await loadStoredTokens();
@@ -265,20 +271,24 @@ describe('tokenStorage', () => {
     it('should clear tokens completely', async () => {
       let storedPassword: string | null = JSON.stringify(mockTokens);
 
-      (Keychain.getGenericPassword as jest.Mock).mockImplementation(async () => {
-        if (!storedPassword) return false;
-        return {
-          username: 'yosemite-crew',
-          password: storedPassword,
-          service: 'yosemite-crew-auth-tokens',
-          storage: 'keychain' as const,
-        };
-      });
+      (Keychain.getGenericPassword as jest.Mock).mockImplementation(
+        async () => {
+          if (!storedPassword) return false;
+          return {
+            username: 'yosemite-crew',
+            password: storedPassword,
+            service: 'yosemite-crew-auth-tokens',
+            storage: 'keychain' as const,
+          };
+        },
+      );
 
-      (Keychain.resetGenericPassword as jest.Mock).mockImplementation(async () => {
-        storedPassword = null;
-        return true;
-      });
+      (Keychain.resetGenericPassword as jest.Mock).mockImplementation(
+        async () => {
+          storedPassword = null;
+          return true;
+        },
+      );
 
       const beforeClear = await loadStoredTokens();
       expect(beforeClear).not.toBeNull();

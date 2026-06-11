@@ -1,4 +1,10 @@
-import React, {forwardRef, useImperativeHandle, useMemo, useRef, useState} from 'react';
+import React, {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {Text, View, StyleSheet, TouchableOpacity, Image} from 'react-native';
 import CustomBottomSheet, {
   type BottomSheetRef,
@@ -130,7 +136,6 @@ const createStyles = (theme: any) =>
   StyleSheet.create({
     bottomSheet: {
       zIndex: 1000,
-      elevation: 24,
     },
     bottomSheetBackground: {
       backgroundColor: theme.colors.surface,

@@ -1,11 +1,5 @@
 import React, {useState} from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet, Image} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -52,7 +46,7 @@ export const SubcategoryAccordion: React.FC<SubcategoryAccordionProps> = ({
       animatedHeight.value,
       [0, 1],
       [0, 1000],
-      Extrapolation.CLAMP
+      Extrapolation.CLAMP,
     );
 
     return {
@@ -62,11 +56,7 @@ export const SubcategoryAccordion: React.FC<SubcategoryAccordionProps> = ({
   });
 
   const chevronAnimatedStyle = useAnimatedStyle(() => {
-    const rotate = interpolate(
-      chevronRotation.value,
-      [0, 1],
-      [0, 180]
-    );
+    const rotate = interpolate(chevronRotation.value, [0, 1], [0, 180]);
 
     return {
       transform: [{rotate: `${rotate}deg`}],
@@ -87,13 +77,12 @@ export const SubcategoryAccordion: React.FC<SubcategoryAccordionProps> = ({
           style={styles.header}
           onPress={toggleExpanded}
           activeOpacity={0.7}>
-          {icon && (
-            <Image
-              source={icon}
-              style={styles.icon}
-            />
-          )}
-          <View style={[styles.headerContent, !subtitle && styles.headerContentNoSubtitle]}>
+          {icon && <Image source={icon} style={styles.icon} />}
+          <View
+            style={[
+              styles.headerContent,
+              !subtitle && styles.headerContentNoSubtitle,
+            ]}>
             <Text style={styles.title} numberOfLines={2}>
               {title}
             </Text>
@@ -109,7 +98,7 @@ export const SubcategoryAccordion: React.FC<SubcategoryAccordionProps> = ({
           />
         </TouchableOpacity>
 
-        <Animated.View style={[contentAnimatedStyle]}>
+        <Animated.View style={contentAnimatedStyle}>
           <View style={styles.content}>{children}</View>
         </Animated.View>
       </LiquidGlassCard>

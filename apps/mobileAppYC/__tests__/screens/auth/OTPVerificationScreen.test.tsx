@@ -326,6 +326,54 @@ describe('OTPVerificationScreen', () => {
     });
   });
 
+  it('ignores verification completion after the user backs out', async () => {
+    let resolveSignIn: (value: any) => void;
+    const signInPromise = new Promise(resolve => {
+      resolveSignIn = resolve;
+    });
+    mockedCompleteSignIn.mockReturnValue(signInPromise);
+
+    const {getByTestId} = renderComponent(false);
+
+    act(() => {
+      fireEvent.changeText(getByTestId('mock-otp-input'), '1234');
+    });
+
+    expect(mockedCompleteSignIn).toHaveBeenCalledWith('1234');
+
+    await act(async () => {
+      fireEvent.press(getByTestId('mock-header'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockNavigation.reset).toHaveBeenCalledWith({
+        index: 0,
+        routes: [{name: 'SignIn'}],
+      });
+    });
+    mockNavigation.reset.mockClear();
+
+    await act(async () => {
+      resolveSignIn!({
+        user: {userId: 'user-123', username: 'test@example.com'},
+        attributes: {email: 'test@example.com'},
+        profile: {
+          exists: true,
+          isComplete: true,
+          profileToken: 'token-abc',
+          parent: {id: 'parent-123'} as any,
+        },
+        tokens: {accessToken: 'abc', idToken: 'def'},
+        parentLinked: true,
+      });
+      await Promise.resolve();
+    });
+
+    expect(mockedLogin).not.toHaveBeenCalled();
+    expect(mockNavigation.reset).not.toHaveBeenCalled();
+  });
+
   it('shows "incorrect code" error on specific auth failure', async () => {
     mockedCompleteSignIn.mockRejectedValue(new Error('Some error'));
     mockedFormatError.mockImplementation((error: any) => {

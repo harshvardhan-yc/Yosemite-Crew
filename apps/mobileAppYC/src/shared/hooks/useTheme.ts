@@ -1,4 +1,4 @@
-import {useEffect, useMemo} from 'react';
+import {useEffect} from 'react';
 import {Appearance} from 'react-native';
 
 import {useAppDispatch, useAppSelector} from '@/app/hooks';
@@ -37,10 +37,7 @@ export const useTheme = () => {
   const effectiveThemeMode = DARK_MODE_ENABLED ? storedThemeMode : 'light';
   const effectiveIsDark = DARK_MODE_ENABLED ? storedIsDark : false;
 
-  const currentTheme = useMemo(
-    () => (effectiveIsDark ? darkTheme : lightTheme),
-    [effectiveIsDark],
-  );
+  const currentTheme = effectiveIsDark ? darkTheme : lightTheme;
 
   const safeSetTheme = (mode: 'light' | 'dark' | 'system') => {
     if (!DARK_MODE_ENABLED) {

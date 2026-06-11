@@ -211,6 +211,84 @@ describe('useClinicMapDiscovery', () => {
     });
   });
 
+  describe('initialSelectedId with selectionToken', () => {
+    it('auto-selects a clinic that is already in allClinics', () => {
+      const {result} = renderHook(() =>
+        useClinicMapDiscovery('', 'mock_clinic_01', 1000),
+      );
+      expect(result.current.selectedClinicId).toBe('mock_clinic_01');
+    });
+
+    it('waits and selects when the business arrives in Redux after mount', () => {
+      setReduxBusinesses([]);
+      const {result, rerender} = renderHook(
+        ({id, token}: {id: string | undefined; token: number}) =>
+          useClinicMapDiscovery('', id, token),
+        {initialProps: {id: 'redux_late_biz', token: 1000}},
+      );
+      expect(result.current.selectedClinicId).toBeNull();
+
+      act(() => {
+        setReduxBusinesses([makeReduxBusiness({id: 'redux_late_biz'})]);
+      });
+      rerender({id: 'redux_late_biz', token: 1000});
+
+      expect(result.current.selectedClinicId).toBe('redux_late_biz');
+    });
+
+    it('does not select when initialSelectedId or token is absent', () => {
+      const {result} = renderHook(() =>
+        useClinicMapDiscovery('', undefined, undefined),
+      );
+      expect(result.current.selectedClinicId).toBeNull();
+    });
+
+    it('does not re-select after manual clear when token is unchanged', () => {
+      const {result} = renderHook(() =>
+        useClinicMapDiscovery('', 'mock_clinic_01', 1000),
+      );
+      expect(result.current.selectedClinicId).toBe('mock_clinic_01');
+
+      act(() => result.current.setSelectedClinicId(null));
+      expect(result.current.selectedClinicId).toBeNull();
+    });
+
+    it('re-selects when navigating again with a new selectionToken', () => {
+      const {result, rerender} = renderHook(
+        ({token}: {token: number}) =>
+          useClinicMapDiscovery('', 'mock_clinic_01', token),
+        {initialProps: {token: 1000}},
+      );
+      expect(result.current.selectedClinicId).toBe('mock_clinic_01');
+
+      act(() => result.current.setSelectedClinicId(null));
+      expect(result.current.selectedClinicId).toBeNull();
+
+      rerender({token: 2000});
+      expect(result.current.selectedClinicId).toBe('mock_clinic_01');
+    });
+
+    it('keeps initial business in visibleClinics after Redux array is replaced', () => {
+      setReduxBusinesses([makeReduxBusiness({id: 'pinned_biz'})]);
+      const {result, rerender} = renderHook(
+        ({id, token}: {id: string; token: number}) =>
+          useClinicMapDiscovery('', id, token),
+        {initialProps: {id: 'pinned_biz', token: 1000}},
+      );
+      expect(result.current.selectedClinicId).toBe('pinned_biz');
+
+      act(() => {
+        setReduxBusinesses([makeReduxBusiness({id: 'other_biz'})]);
+      });
+      rerender({id: 'pinned_biz', token: 1000});
+
+      expect(result.current.visibleClinics.map(c => c.id)).toContain(
+        'pinned_biz',
+      );
+      expect(result.current.selectedClinicId).toBe('pinned_biz');
+    });
+  });
+
   describe('search query filtering', () => {
     it('filters visible clinics by name when query ≥ 2 characters', () => {
       const {result} = renderHook(() => useClinicMapDiscovery('Pacific'));

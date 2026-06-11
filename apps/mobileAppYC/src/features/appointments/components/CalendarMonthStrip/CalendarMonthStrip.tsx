@@ -49,16 +49,6 @@ export const CalendarMonthStrip: React.FC<CalendarMonthStripProps> = ({
     }));
   }, [currentMonth, selectedDate]);
 
-  // Keep month in sync when parent changes selectedDate across months
-  useEffect(() => {
-    if (
-      selectedDate.getFullYear() !== currentMonth.getFullYear() ||
-      selectedDate.getMonth() !== currentMonth.getMonth()
-    ) {
-      setCurrentMonth(new Date(selectedDate));
-    }
-  }, [selectedDate, currentMonth]);
-
   useEffect(() => {
     if (!dateListRef.current || weekDates.length === 0) {
       return;

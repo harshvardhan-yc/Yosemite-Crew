@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Switch, Text, View} from 'react-native';
 import {
   createAnimatedComponent,
@@ -122,11 +122,7 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
     pointerEvents: animatedSheetIndex.value > 0.1 ? 'none' : 'box-none',
   }));
 
-  const initialRegion = useMemo(
-    () => buildInitialRegion(userLocation),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  const [initialRegion] = useState(() => buildInitialRegion(userLocation));
 
   useEffect(() => {
     if (!userLocation) return;
@@ -150,9 +146,9 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
     (clinic: (typeof clinics)[0]): string | undefined => {
       const mi =
         clinic.distanceMi ??
-        (clinic.distanceMeters != null
-          ? clinic.distanceMeters / 1609.344
-          : null);
+        (clinic.distanceMeters == null
+          ? null
+          : clinic.distanceMeters / 1609.344);
       if (mi == null) return undefined;
       if (distanceUnit === 'km') return `${(mi * 1.60934).toFixed(1)} km`;
       return `${mi.toFixed(1)} mi`;
@@ -317,9 +313,9 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
             description={selectedClinic.address}
             distanceText={resolveDistanceText(selectedClinic)}
             ratingText={
-              selectedClinic.rating != null
-                ? `${selectedClinic.rating}`
-                : undefined
+              selectedClinic.rating == null
+                ? undefined
+                : `${selectedClinic.rating}`
             }
             photo={selectedClinic.photo}
             fallbackPhoto={fallbacks[selectedClinic.id]?.photo ?? null}
@@ -333,16 +329,18 @@ const MapDiscoveryView: React.FC<MapDiscoveryViewProps> = ({
           />
         </View>
       )}
-      <ClinicBottomSheet
-        ref={bottomSheetRef}
-        clinics={clinics}
-        selectedId={selectedClinicId}
-        navigation={navigation}
-        fallbacks={fallbacks}
-        distanceUnit={distanceUnit}
-        filterHeader={filterHeader}
-        animatedIndex={animatedSheetIndex}
-      />
+      {!selectedClinic && (
+        <ClinicBottomSheet
+          ref={bottomSheetRef}
+          clinics={clinics}
+          selectedId={selectedClinicId}
+          navigation={navigation}
+          fallbacks={fallbacks}
+          distanceUnit={distanceUnit}
+          filterHeader={filterHeader}
+          animatedIndex={animatedSheetIndex}
+        />
+      )}
     </View>
   );
 };
@@ -366,11 +364,7 @@ const createStyles = (theme: any) =>
       borderTopRightRadius: 0,
       borderBottomLeftRadius: theme.borderRadius['2xl'],
       borderBottomRightRadius: theme.borderRadius['2xl'],
-      shadowColor: theme.colors.neutralShadow ?? '#000000',
-      shadowOffset: {width: 0, height: 12},
-      shadowOpacity: 0.14,
-      shadowRadius: 18,
-      elevation: 10,
+      boxShadow: `0px 12px 18px ${theme.colors.neutralShadow ?? '#000000'}`,
       backgroundColor: 'transparent',
     },
     headerCard: {
@@ -415,11 +409,7 @@ const createStyles = (theme: any) =>
       borderRadius: theme.borderRadius.full,
       paddingHorizontal: theme.spacing['4'],
       paddingVertical: theme.spacing['2'],
-      shadowColor: '#000',
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.15,
-      shadowRadius: 4,
-      elevation: 4,
+      boxShadow: '0px 2px 4px rgba(0,0,0,0.15)',
     },
     openNowToggleLabel: {
       ...theme.typography.pillSubtitleBold15,

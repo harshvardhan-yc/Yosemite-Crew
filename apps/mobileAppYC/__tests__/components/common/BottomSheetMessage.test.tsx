@@ -18,7 +18,9 @@ describe('BottomSheetMessage Component', () => {
 
   it('renders children text correctly', () => {
     const {getByText} = render(
-      <BottomSheetMessage>Hello World</BottomSheetMessage>,
+      <BottomSheetMessage>
+        <Text>Hello World</Text>
+      </BottomSheetMessage>,
     );
     expect(getByText('Hello World')).toBeTruthy();
   });
@@ -26,7 +28,9 @@ describe('BottomSheetMessage Component', () => {
   it('renders nested text elements correctly', () => {
     const {getByText} = render(
       <BottomSheetMessage>
-        Part 1 <Text>Part 2</Text>
+        <Text>
+          Part 1 <Text>Part 2</Text>
+        </Text>
       </BottomSheetMessage>,
     );
     // Use Regex to be safe against whitespace layout in RN Text nesting
@@ -39,24 +43,30 @@ describe('BottomSheetMessage Component', () => {
   // ===========================================================================
 
   it('renders Highlight component correctly', () => {
+    const label = 'Important';
     const {getByText} = render(
-      <BottomSheetMessage.Highlight>Important</BottomSheetMessage.Highlight>,
+      <BottomSheetMessage.Highlight>{label}</BottomSheetMessage.Highlight>,
     );
-    const text = getByText('Important');
+    const text = getByText(label);
     expect(text).toBeTruthy();
   });
 
   it('renders Highlight inside parent correctly', () => {
+    const warningText = 'Warning';
     const {getByText} = render(
       <BottomSheetMessage>
-        Please note:{' '}
-        <BottomSheetMessage.Highlight>Warning</BottomSheetMessage.Highlight>
+        <Text>
+          Please note:{' '}
+          <BottomSheetMessage.Highlight>
+            {warningText}
+          </BottomSheetMessage.Highlight>
+        </Text>
       </BottomSheetMessage>,
     );
 
     // Use Regex or partial matching because "Please note: " might include trailing space behavior
     expect(getByText(/Please note:/)).toBeTruthy();
-    expect(getByText('Warning')).toBeTruthy();
+    expect(getByText(warningText)).toBeTruthy();
   });
 
   // ===========================================================================
@@ -67,7 +77,7 @@ describe('BottomSheetMessage Component', () => {
     const customStyle = {marginTop: 20, backgroundColor: 'red'};
     const {getByTestId} = render(
       <BottomSheetMessage testID="container" style={customStyle}>
-        Content
+        <Text>Content</Text>
       </BottomSheetMessage>,
     );
 
@@ -84,13 +94,14 @@ describe('BottomSheetMessage Component', () => {
 
   it('applies default and custom styles to Highlight text', () => {
     const customStyle = {textDecorationLine: 'underline' as const};
+    const label = 'Highlighted';
     const {getByText} = render(
       <BottomSheetMessage.Highlight style={customStyle}>
-        Highlighted
+        {label}
       </BottomSheetMessage.Highlight>,
     );
 
-    const text = getByText('Highlighted');
+    const text = getByText(label);
     const flatStyle = StyleSheet.flatten(text.props.style);
 
     // Default styles from mock theme
@@ -107,7 +118,7 @@ describe('BottomSheetMessage Component', () => {
   it('passes extra props to the main container (ViewProps)', () => {
     const {getByTestId} = render(
       <BottomSheetMessage testID="main-view" accessible={false}>
-        Test
+        <Text>Test</Text>
       </BottomSheetMessage>,
     );
     const view = getByTestId('main-view');
@@ -115,12 +126,13 @@ describe('BottomSheetMessage Component', () => {
   });
 
   it('passes extra props to the Highlight component (TextProps)', () => {
+    const label = 'Long Text';
     const {getByText} = render(
       <BottomSheetMessage.Highlight numberOfLines={2}>
-        Long Text
+        {label}
       </BottomSheetMessage.Highlight>,
     );
-    const text = getByText('Long Text');
+    const text = getByText(label);
     expect(text.props.numberOfLines).toBe(2);
   });
 });

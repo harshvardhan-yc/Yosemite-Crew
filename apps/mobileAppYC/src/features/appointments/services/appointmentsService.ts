@@ -210,8 +210,10 @@ const extractIntegerFromExtensions = (
     return undefined;
   }
 
+  const extensionsByUrl = new Map(extensions.map(ext => [ext?.url, ext]));
+
   for (const url of urls) {
-    const matched = extensions.find(ext => ext?.url === url);
+    const matched = extensionsByUrl.get(url);
     if (!matched) {
       continue;
     }
@@ -1040,11 +1042,10 @@ const mapBusinessFromApi = (
       (typeof distanceMeters === 'number' ? 0 : undefined),
     openHours: org?.openHours,
     photo,
-    specialties: specialities
-      .map(
-        (spec: any) => spec?.name ?? spec?.text ?? spec?.coding?.[0]?.display,
-      )
-      .filter(Boolean),
+    specialties: specialities.flatMap((spec: any) => {
+      const v = spec?.name ?? spec?.text ?? spec?.coding?.[0]?.display;
+      return v ? [v] : [];
+    }),
     website:
       org?.telecom?.find?.((t: any) => t?.system === 'url')?.value ??
       org?.website ??

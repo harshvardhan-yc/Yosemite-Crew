@@ -24,6 +24,7 @@ import {
   selectRecentTasksByCategory,
   selectTaskCountByCategory,
   selectTasksByCompanion,
+  taskOccursOnDate,
 } from '@/features/tasks/selectors';
 import {selectAuthUser} from '@/features/auth/selectors';
 import type {AppDispatch, RootState} from '@/app/store';
@@ -121,14 +122,28 @@ export const TasksMainScreen: React.FC = () => {
     selectTasksByCompanion(selectedCompanionId ?? null),
   );
 
-  // Get dates with tasks for the selected companion
+  // Get dates with tasks for the selected companion (respects recurrence patterns)
   const datesWithTasks = useMemo(() => {
     const dateSet = new Set<string>();
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
     for (const task of allTasks) {
-      dateSet.add(task.date); // date is in YYYY-MM-DD format
+      if (task.frequency === 'once' || !task.frequency) {
+        dateSet.add(task.date);
+      } else {
+        for (let day = 1; day <= daysInMonth; day++) {
+          const d = new Date(year, month, day);
+          const dateStr = formatDateToISODate(d);
+          if (taskOccursOnDate(task, dateStr)) {
+            dateSet.add(dateStr);
+          }
+        }
+      }
     }
     return dateSet;
-  }, [allTasks]);
+  }, [allTasks, currentMonth]);
 
   // Fetch tasks and counts for all categories at component level
   const healthTasks = useSelector(

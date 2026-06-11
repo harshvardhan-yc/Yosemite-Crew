@@ -24,7 +24,15 @@ import {LiquidGlassButton} from '@/shared/components/common/LiquidGlassButton/Li
 import {useTheme} from '@/hooks';
 import type {RootState, AppDispatch} from '@/app/store';
 import type {AppointmentStackParamList} from '@/navigation/types';
-import {selectFormsForAppointment, selectFormsLoading, selectFormSubmitting, selectSigningStatus, submitAppointmentForm, startFormSigning, fetchAppointmentForms} from '@/features/forms';
+import {
+  selectFormsForAppointment,
+  selectFormsLoading,
+  selectFormSubmitting,
+  selectSigningStatus,
+  submitAppointmentForm,
+  startFormSigning,
+  fetchAppointmentForms,
+} from '@/features/forms';
 import type {FormField} from '@yosemite-crew/types';
 import {createFormStyles} from '@/shared/utils/formStyles';
 import {formatDateToISODate} from '@/shared/utils/dateHelpers';
@@ -88,27 +96,43 @@ export const AppointmentFormScreen: React.FC = () => {
     state.appointments.items.find(a => a.id === appointmentId),
   );
   const companion = useSelector((state: RootState) =>
-    appointment?.companionId ? state.companion.companions.find(c => c.id === appointment.companionId) : null,
+    appointment?.companionId
+      ? state.companion.companions.find(c => c.id === appointment.companionId)
+      : null,
   );
   const user = useSelector((state: RootState) => state.auth.user);
-  const forms = useSelector((state: RootState) => selectFormsForAppointment(state, appointmentId));
+  const forms = useSelector((state: RootState) =>
+    selectFormsForAppointment(state, appointmentId),
+  );
   const entry = forms.find(item => item.form._id === formId);
-  const loading = useSelector((state: RootState) => selectFormsLoading(state, appointmentId));
-  const submitting = useSelector((state: RootState) => selectFormSubmitting(state, formId));
+  const loading = useSelector((state: RootState) =>
+    selectFormsLoading(state, appointmentId),
+  );
+  const submitting = useSelector((state: RootState) =>
+    selectFormSubmitting(state, formId),
+  );
   const submissionId = entry?.submission?._id ?? null;
   const signing = useSelector((state: RootState) =>
     submissionId ? selectSigningStatus(state, submissionId) : false,
   );
   const signedPdfUrl = entry?.submission?.signing?.pdf?.url;
 
-  const [values, setValues] = useState<Record<string, any>>(entry?.submission?.answers ?? {});
+  const [values, setValues] = useState<Record<string, any>>(
+    entry?.submission?.answers ?? {},
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const isReadOnly = Boolean(
-    entry?.submission && (mode !== 'fill' || entry.status === 'signed' || entry.status === 'completed'),
+    entry?.submission &&
+    (mode !== 'fill' ||
+      entry.status === 'signed' ||
+      entry.status === 'completed'),
   );
   const canStartSigning =
-    allowSign && entry?.signingRequired && entry.submission && entry.status !== 'signed';
+    allowSign &&
+    entry?.signingRequired &&
+    entry.submission &&
+    entry.status !== 'signed';
   const lockNonCheckboxInputs = Boolean(allowSign);
 
   useEffect(() => {
@@ -120,7 +144,9 @@ export const AppointmentFormScreen: React.FC = () => {
       return;
     }
     const ownerFullName =
-      [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.email || '';
+      [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
+      user?.email ||
+      '';
     const companionName = companion?.name ?? '';
     const today = new Date();
 
@@ -160,13 +186,14 @@ export const AppointmentFormScreen: React.FC = () => {
           updated = true;
           return;
         }
-    if (shouldPrefillCompanion(field) && companionName) {
-      next[field.id] = companionName;
-      updated = true;
-      return;
-    }
+        if (shouldPrefillCompanion(field) && companionName) {
+          next[field.id] = companionName;
+          updated = true;
+          return;
+        }
         if (lockNonCheckboxInputs) {
-          const placeholderVal = (field as any).placeholder ?? (field as any).text ?? '';
+          const placeholderVal =
+            (field as any).placeholder ?? (field as any).text ?? '';
           if (placeholderVal) {
             next[field.id] = cleanPlaceholder(placeholderVal);
             updated = true;
@@ -281,7 +308,10 @@ export const AppointmentFormScreen: React.FC = () => {
             return;
           }
         } catch (error: any) {
-          const message = typeof error === 'string' ? error : error?.message ?? 'Unable to start signing.';
+          const message =
+            typeof error === 'string'
+              ? error
+              : (error?.message ?? 'Unable to start signing.');
           Alert.alert('Signing not started', message);
         }
       }
@@ -291,7 +321,7 @@ export const AppointmentFormScreen: React.FC = () => {
       const message =
         typeof error === 'string'
           ? error
-          : error?.message ?? 'Unable to submit form. Please try again.';
+          : (error?.message ?? 'Unable to submit form. Please try again.');
       Alert.alert('Submit failed', message);
     }
   };
@@ -324,7 +354,7 @@ export const AppointmentFormScreen: React.FC = () => {
       const message =
         typeof error === 'string'
           ? error
-          : error?.message ?? 'Unable to start signing. Please try again.';
+          : (error?.message ?? 'Unable to start signing. Please try again.');
       Alert.alert('Signing failed', message);
     }
   };
@@ -338,14 +368,20 @@ export const AppointmentFormScreen: React.FC = () => {
     });
   }, [signedPdfUrl]);
 
-  const renderChoiceOptions = (field: FormField & {options?: any[]}, multiple: boolean) => {
+  const renderChoiceOptions = (
+    field: FormField & {options?: any[]},
+    multiple: boolean,
+  ) => {
     const disableSelection = lockNonCheckboxInputs && !multiple;
     const selected = values[field.id];
     return (
       <View style={styles.optionList}>
         {(field.options ?? []).map(option => {
-          const value = option.value ?? option.code ?? option.label ?? option.display;
-          const isSelected = multiple ? Array.isArray(selected) && selected.includes(value) : selected === value;
+          const value =
+            option.value ?? option.code ?? option.label ?? option.display;
+          const isSelected = multiple
+            ? Array.isArray(selected) && selected.includes(value)
+            : selected === value;
 
           if (multiple) {
             return (
@@ -368,17 +404,29 @@ export const AppointmentFormScreen: React.FC = () => {
             );
           }
 
-            return (
-              <TouchableOpacity
-                key={`${field.id}-${value}`}
-                style={[styles.optionItem, isSelected && styles.optionItemSelected]}
-                onPress={() => {
-                  if (isReadOnly || disableSelection) return;
-                  handleChange(field.id, value);
-                }}>
-                <View style={[styles.optionIndicator, isSelected && styles.optionIndicatorSelected]} />
-                <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
-                  {option.label ?? option.display ?? value}
+          return (
+            <TouchableOpacity
+              key={`${field.id}-${value}`}
+              style={[
+                styles.optionItem,
+                isSelected && styles.optionItemSelected,
+              ]}
+              onPress={() => {
+                if (isReadOnly || disableSelection) return;
+                handleChange(field.id, value);
+              }}>
+              <View
+                style={[
+                  styles.optionIndicator,
+                  isSelected && styles.optionIndicatorSelected,
+                ]}
+              />
+              <Text
+                style={[
+                  styles.optionLabel,
+                  isSelected && styles.optionLabelSelected,
+                ]}>
+                {option.label ?? option.display ?? value}
               </Text>
             </TouchableOpacity>
           );
@@ -390,7 +438,10 @@ export const AppointmentFormScreen: React.FC = () => {
   const renderReadOnlyCheckbox = (field: FormField, value: any) => {
     const options = (field as any).options ?? [];
     const firstLabel =
-      options[0]?.label ?? options[0]?.display ?? options[0]?.value ?? cleanLabel(field.label);
+      options[0]?.label ??
+      options[0]?.display ??
+      options[0]?.value ??
+      cleanLabel(field.label);
     let resolvedValue;
     if (value !== undefined && value !== null && `${value}` !== '') {
       resolvedValue = value;
@@ -412,7 +463,9 @@ export const AppointmentFormScreen: React.FC = () => {
   const renderReadOnlyField = (field: FormField, value: any) => {
     const displayValue = renderValueForDisplay(field, value);
     const displayWithFallback =
-      displayValue === '—' ? cleanPlaceholder((field as any).placeholder) ?? displayValue : displayValue;
+      displayValue === '—'
+        ? (cleanPlaceholder((field as any).placeholder) ?? displayValue)
+        : displayValue;
     const isCheckboxField = field.type === 'checkbox';
 
     if (isCheckboxField) {
@@ -445,11 +498,17 @@ export const AppointmentFormScreen: React.FC = () => {
             <Input
               label={labelText}
               value={value ?? ''}
-              placeholder={lockNonCheckboxInputs ? undefined : cleanPlaceholder((field as any).placeholder)}
+              placeholder={
+                lockNonCheckboxInputs
+                  ? undefined
+                  : cleanPlaceholder((field as any).placeholder)
+              }
               onChangeText={text => handleChange(field.id, text)}
               multiline={field.type === 'textarea'}
               keyboardType={field.type === 'number' ? 'numeric' : 'default'}
-              inputStyle={field.type === 'textarea' ? styles.textArea : undefined}
+              inputStyle={
+                field.type === 'textarea' ? styles.textArea : undefined
+              }
               error={error}
               editable={!lockNonCheckboxInputs}
             />
@@ -499,7 +558,9 @@ export const AppointmentFormScreen: React.FC = () => {
         return (
           <View key={field.id} style={styles.fieldContainer}>
             <Text style={styles.label}>{labelText}</Text>
-            <Text style={styles.helperText}>Signature will be captured during the signing process</Text>
+            <Text style={styles.helperText}>
+              Signature will be captured during the signing process
+            </Text>
           </View>
         );
       default:
@@ -512,7 +573,9 @@ export const AppointmentFormScreen: React.FC = () => {
     const error = errors[field.id];
 
     if (field.type === 'group') {
-      const groupFields = Array.isArray((field as any).fields) ? (field as any).fields : [];
+      const groupFields = Array.isArray((field as any).fields)
+        ? (field as any).fields
+        : [];
       return (
         <View key={field.id} style={styles.groupContainer}>
           <Text style={styles.groupLabel}>{field.label}</Text>
@@ -526,7 +589,9 @@ export const AppointmentFormScreen: React.FC = () => {
     const hideInSignedView =
       isReadOnly &&
       entry?.status === 'signed' &&
-      (field.type === 'signature' || textIncludes(field.id, ['date']) || textIncludes(field.label, ['date']));
+      (field.type === 'signature' ||
+        textIncludes(field.id, ['date']) ||
+        textIncludes(field.label, ['date']));
     if (hideInSignedView) {
       return null;
     }
@@ -541,7 +606,14 @@ export const AppointmentFormScreen: React.FC = () => {
   if (!entry && loading) {
     return (
       <LiquidGlassHeaderScreen
-        header={<Header title="Form" showBackButton onBack={() => navigation.goBack()} glass={false} />}>
+        header={
+          <Header
+            title="Form"
+            showBackButton
+            onBack={() => navigation.goBack()}
+            glass={false}
+          />
+        }>
         {() => (
           <View style={styles.loadingContainer}>
             <ActivityIndicator />
@@ -554,10 +626,19 @@ export const AppointmentFormScreen: React.FC = () => {
   if (!entry) {
     return (
       <LiquidGlassHeaderScreen
-        header={<Header title="Form" showBackButton onBack={() => navigation.goBack()} glass={false} />}>
+        header={
+          <Header
+            title="Form"
+            showBackButton
+            onBack={() => navigation.goBack()}
+            glass={false}
+          />
+        }>
         {() => (
           <View style={styles.loadingContainer}>
-            <Text style={styles.helperText}>Form is not available right now.</Text>
+            <Text style={styles.helperText}>
+              Form is not available right now.
+            </Text>
           </View>
         )}
       </LiquidGlassHeaderScreen>
@@ -571,7 +652,14 @@ export const AppointmentFormScreen: React.FC = () => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <LiquidGlassHeaderScreen
-          header={<Header title="Form" showBackButton onBack={() => navigation.goBack()} glass={false} />}
+          header={
+            <Header
+              title="Form"
+              showBackButton
+              onBack={() => navigation.goBack()}
+              glass={false}
+            />
+          }
           contentPadding={theme.spacing['3']}>
           {contentPaddingStyle => (
             <ScrollView
@@ -580,7 +668,11 @@ export const AppointmentFormScreen: React.FC = () => {
               showsVerticalScrollIndicator={false}>
               <View style={styles.formSurface}>
                 <Text style={styles.title}>{entry.form.name}</Text>
-                {entry.form.description ? <Text style={styles.description}>{entry.form.description}</Text> : null}
+                {entry.form.description ? (
+                  <Text style={styles.description}>
+                    {entry.form.description}
+                  </Text>
+                ) : null}
 
                 <View style={styles.fieldsContainer}>
                   {entry.form.schema.map(field => renderField(field))}
@@ -588,7 +680,9 @@ export const AppointmentFormScreen: React.FC = () => {
 
                 {isReadOnly ? null : (
                   <LiquidGlassButton
-                    title={entry.signingRequired ? 'Submit & Continue' : 'Submit'}
+                    title={
+                      entry.signingRequired ? 'Submit & Continue' : 'Submit'
+                    }
                     onPress={handleSubmit}
                     height={56}
                     borderRadius={theme.borderRadius.lg}
@@ -658,7 +752,14 @@ const renderValueForDisplay = (field: FormField, value: any): string => {
   if (field.type === 'checkbox' && !value) {
     const options = (field as any).options;
     if (options?.length) {
-      return options.map((o: any) => o.label ?? o.display ?? o.value ?? '').filter(Boolean).join(', ') || '—';
+      return (
+        options
+          .flatMap((o: any) => {
+            const v = o.label ?? o.display ?? o.value;
+            return v ? [v] : [];
+          })
+          .join(', ') || '—'
+      );
     }
   }
   if (typeof value === 'object') {

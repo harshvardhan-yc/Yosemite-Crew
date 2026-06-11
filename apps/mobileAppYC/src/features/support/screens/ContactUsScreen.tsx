@@ -302,9 +302,11 @@ export const ContactUsScreen: React.FC<ContactUsScreenProps> = ({
     [],
   );
 
-  const [dsarForm, setDsarForm] = React.useState(buildInitialDsarFormState());
+  const [dsarForm, setDsarForm] = React.useState(() =>
+    buildInitialDsarFormState(),
+  );
 
-  const [complaintForm, setComplaintForm] = React.useState(
+  const [complaintForm, setComplaintForm] = React.useState(() =>
     buildInitialComplaintFormState(),
   );
   const [complaintAttachments, setComplaintAttachments] = React.useState<
@@ -1313,11 +1315,7 @@ const createStyles = (theme: any) =>
       borderRadius: theme.borderRadius.lg,
       borderWidth: 1,
       borderColor: theme.colors.borderMuted,
-      shadowColor: theme.colors.black,
-      shadowOffset: {width: 0, height: theme.spacing['2']},
-      shadowOpacity: 0.15,
-      shadowRadius: theme.spacing['3'],
-      elevation: 4,
+      boxShadow: `0px ${theme.spacing['2']}px ${theme.spacing['3']}px ${theme.colors.black}`,
     },
     buttonText: {
       color: theme.colors.white,

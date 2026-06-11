@@ -22,7 +22,11 @@ type DetailsCardProps = {
   badges?: DetailBadge[];
 };
 
-export const DetailsCard: React.FC<DetailsCardProps> = ({title, items, badges}) => {
+export const DetailsCard: React.FC<DetailsCardProps> = ({
+  title,
+  items,
+  badges,
+}) => {
   const {theme} = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
 
@@ -42,7 +46,13 @@ export const DetailsCard: React.FC<DetailsCardProps> = ({title, items, badges}) 
             return (
               <View key={item.label} style={styles.detailRow}>
                 <Text style={styles.detailLabel}>{item.label}</Text>
-                <Text style={[styles.detailValue, item.bold && styles.detailValueBold]}>{item.value}</Text>
+                <Text
+                  style={[
+                    styles.detailValue,
+                    item.bold && styles.detailValueBold,
+                  ]}>
+                  {item.value}
+                </Text>
               </View>
             );
           })}
@@ -54,7 +64,9 @@ export const DetailsCard: React.FC<DetailsCardProps> = ({title, items, badges}) 
                 styles.statusBadge,
                 {backgroundColor: badge.backgroundColor},
               ]}>
-              <Text style={[styles.statusText, {color: badge.textColor}]}>{badge.text}</Text>
+              <Text style={[styles.statusText, {color: badge.textColor}]}>
+                {badge.text}
+              </Text>
             </View>
           ))}
         </View>
@@ -68,8 +80,7 @@ const createStyles = (theme: any) =>
     shadowWrapper: {
       borderRadius: theme.borderRadius.lg,
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.lg,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 10px 15px ${theme.colors.neutralShadow}`,
       overflow: 'visible',
     },
     card: {

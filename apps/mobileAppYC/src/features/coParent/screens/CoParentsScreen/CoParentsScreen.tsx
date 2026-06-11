@@ -9,7 +9,8 @@ import {Header} from '@/shared/components/common/Header/Header';
 import {GifLoader} from '@/shared/components/common';
 import {Images} from '@/assets/images';
 import {CoParentCard} from '../../components/CoParentCard/CoParentCard';
-import {selectCoParents, selectCoParentLoading, fetchCoParents} from '../../index';
+import {fetchCoParents} from '../../thunks';
+import {selectCoParents, selectCoParentLoading} from '../../selectors';
 import type {HomeStackParamList} from '@/navigation/types';
 import {LiquidGlassHeaderScreen} from '@/shared/components/common/LiquidGlassHeader/LiquidGlassHeaderScreen';
 import {
@@ -32,7 +33,9 @@ export const CoParentsScreen: React.FC<Props> = ({navigation}) => {
   const companionAccess = useSelector(
     (state: RootState) => state.coParent?.accessByCompanionId ?? {},
   );
-  const defaultAccess = useSelector((state: RootState) => state.coParent?.defaultAccess ?? null);
+  const defaultAccess = useSelector(
+    (state: RootState) => state.coParent?.defaultAccess ?? null,
+  );
   const selectedCompanion = useMemo(
     () =>
       companions.find(c => c.id === selectedCompanionId) ??
@@ -44,7 +47,9 @@ export const CoParentsScreen: React.FC<Props> = ({navigation}) => {
     selectedCompanion?.id && companionAccess[selectedCompanion.id]
       ? companionAccess[selectedCompanion.id]
       : defaultAccess;
-  const canAddCoParent = (currentAccess?.role ?? '').toUpperCase().includes('PRIMARY');
+  const canAddCoParent = (currentAccess?.role ?? '')
+    .toUpperCase()
+    .includes('PRIMARY');
 
   useEffect(() => {
     if (!selectedCompanionId && companions[0]?.id) {
@@ -64,7 +69,12 @@ export const CoParentsScreen: React.FC<Props> = ({navigation}) => {
           companionImage: selectedCompanion.profileImage ?? undefined,
         }),
       );
-    }, [dispatch, selectedCompanion?.id, selectedCompanion?.name, selectedCompanion?.profileImage]),
+    }, [
+      dispatch,
+      selectedCompanion?.id,
+      selectedCompanion?.name,
+      selectedCompanion?.profileImage,
+    ]),
   );
 
   const visibleCoParents = useMemo(() => coParents, [coParents]);
@@ -77,7 +87,10 @@ export const CoParentsScreen: React.FC<Props> = ({navigation}) => {
 
   const handleAdd = () => {
     if (!selectedCompanion?.id) {
-      Alert.alert('Select companion', 'Please select a companion before adding a co-parent.');
+      Alert.alert(
+        'Select companion',
+        'Please select a companion before adding a co-parent.',
+      );
       return;
     }
     navigation.navigate('AddCoParent');
@@ -98,24 +111,28 @@ export const CoParentsScreen: React.FC<Props> = ({navigation}) => {
         header={
           <Header
             title="Co-Parents"
-          showBackButton
-          onBack={handleBack}
-          rightIcon={canAddCoParent ? Images.addIconDark : undefined}
-          onRightPress={canAddCoParent ? handleAdd : undefined}
-          glass={false}
-        />
-      }
-      cardGap={theme.spacing['4']}
-      contentPadding={theme.spacing['4']}>
-      {contentPaddingStyle => (
-        <View style={[styles.container, contentPaddingStyle]}>
-          <View style={styles.emptyContainer}>
-            <Image source={Images.coparentEmpty} style={styles.illustration} />
-            <Text style={styles.emptyTitle}>
+            showBackButton
+            onBack={handleBack}
+            rightIcon={canAddCoParent ? Images.addIconDark : undefined}
+            onRightPress={canAddCoParent ? handleAdd : undefined}
+            glass={false}
+          />
+        }
+        cardGap={theme.spacing['4']}
+        contentPadding={theme.spacing['4']}>
+        {contentPaddingStyle => (
+          <View style={[styles.container, contentPaddingStyle]}>
+            <View style={styles.emptyContainer}>
+              <Image
+                source={Images.coparentEmpty}
+                style={styles.illustration}
+              />
+              <Text style={styles.emptyTitle}>
                 Looks like your friends{'\n'}are busy!
               </Text>
               <Text style={styles.emptySubtitle}>
-                No worries we can still ask them{'\n'}to play with your furry friends
+                No worries we can still ask them{'\n'}to play with your furry
+                friends
               </Text>
             </View>
           </View>
@@ -150,14 +167,24 @@ export const CoParentsScreen: React.FC<Props> = ({navigation}) => {
               contentContainerStyle={[styles.content, contentPaddingStyle]}
               showsVerticalScrollIndicator={false}>
               {visibleCoParents.map((coParent, index) => {
-                const isPrimaryEntry = (coParent.role ?? '').toUpperCase().includes('PRIMARY');
+                const isPrimaryEntry = (coParent.role ?? '')
+                  .toUpperCase()
+                  .includes('PRIMARY');
                 const targetId = coParent.parentId || coParent.id;
                 return (
                   <CoParentCard
                     key={targetId}
                     coParent={coParent}
-                    onPressView={isPrimaryEntry ? undefined : () => handleViewCoParent(targetId)}
-                    onPressEdit={isPrimaryEntry ? undefined : () => handleEditCoParent(targetId)}
+                    onPressView={
+                      isPrimaryEntry
+                        ? undefined
+                        : () => handleViewCoParent(targetId)
+                    }
+                    onPressEdit={
+                      isPrimaryEntry
+                        ? undefined
+                        : () => handleEditCoParent(targetId)
+                    }
                     hideSwipeActions={isPrimaryEntry}
                     showEditAction={!isPrimaryEntry}
                     divider={index < visibleCoParents.length - 1}

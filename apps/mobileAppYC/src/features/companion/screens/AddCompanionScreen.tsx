@@ -420,7 +420,7 @@ export const AddCompanionScreen: React.FC<AddCompanionScreenProps> = ({
 
   const handleGoBack = useCallback(() => {
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+      setCurrentStep(prev => prev - 1);
     } else if (hasUnsavedChanges) {
       discardSheetRef.current?.open();
     } else {
@@ -514,8 +514,6 @@ export const AddCompanionScreen: React.FC<AddCompanionScreenProps> = ({
   }, []);
 
   const handleStep1Next = async () => {
-    const isValid = await trigger(['category']);
-
     if (!category) {
       setError('category', {
         type: 'manual',
@@ -523,6 +521,8 @@ export const AddCompanionScreen: React.FC<AddCompanionScreenProps> = ({
       });
       return;
     }
+
+    const isValid = await trigger(['category']);
 
     if (isValid) {
       clearErrors('category');
@@ -539,7 +539,6 @@ export const AddCompanionScreen: React.FC<AddCompanionScreenProps> = ({
       'neuteredStatus',
       'ageWhenNeutered',
     ] as const;
-    const isValid = await trigger(fieldsToValidate);
 
     if (!breed) {
       setError('breed', {
@@ -564,6 +563,8 @@ export const AddCompanionScreen: React.FC<AddCompanionScreenProps> = ({
       });
       return;
     }
+
+    const isValid = await trigger(fieldsToValidate);
 
     if (isValid) {
       clearErrors([
@@ -701,7 +702,7 @@ export const AddCompanionScreen: React.FC<AddCompanionScreenProps> = ({
               activeOpacity={0.8}>
               <Image
                 source={imageSources[cat.value]}
-                style={[styles.categoryIcon]}
+                style={styles.categoryIcon}
               />
               <Text
                 style={[

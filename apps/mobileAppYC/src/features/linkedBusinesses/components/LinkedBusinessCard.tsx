@@ -26,7 +26,10 @@ interface LinkedBusinessCardProps {
   showBorder?: boolean;
 }
 
-const getImageSource = (googlePhoto: string | null, businessPhoto: string | null) => {
+const getImageSource = (
+  googlePhoto: string | null,
+  businessPhoto: string | null,
+) => {
   if (googlePhoto) return {uri: googlePhoto};
   if (businessPhoto) return {uri: businessPhoto};
   return Images.sampleHospital1;
@@ -43,7 +46,9 @@ export const LinkedBusinessCard: React.FC<LinkedBusinessCardProps> = ({
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const dispatch = useDispatch<AppDispatch>();
-  const [googlePlacesPhoto, setGooglePlacesPhoto] = useState<string | null>(null);
+  const [googlePlacesPhoto, setGooglePlacesPhoto] = useState<string | null>(
+    null,
+  );
 
   // Fetch Google Places image for all linked businesses
   useEffect(() => {
@@ -56,13 +61,20 @@ export const LinkedBusinessCard: React.FC<LinkedBusinessCardProps> = ({
           }
         })
         .catch(error => {
-          console.warn('[LinkedBusinessCard] Failed to fetch Google Places image:', error);
+          console.warn(
+            '[LinkedBusinessCard] Failed to fetch Google Places image:',
+            error,
+          );
         });
     }
   }, [business.placeId, dispatch, googlePlacesPhoto]);
 
   const handleDeletePress = useCallback(() => {
-    console.log('[LinkedBusinessCard] Delete button pressed for:', business.id, business.businessName);
+    console.log(
+      '[LinkedBusinessCard] Delete button pressed for:',
+      business.id,
+      business.businessName,
+    );
     if (onDeletePress) {
       onDeletePress(business);
     }
@@ -101,20 +113,16 @@ export const LinkedBusinessCard: React.FC<LinkedBusinessCardProps> = ({
               {business.address || 'Address not available'}
             </Text>
             <View style={styles.footer}>
-              {business.distance && (
+              {business.distance == null ? null : (
                 <View style={styles.ratingContainer}>
                   <Image source={Images.distanceIcon} style={styles.icon} />
-                  <Text style={styles.ratingText}>
-                    {business.distance}mi
-                  </Text>
+                  <Text style={styles.ratingText}>{business.distance}mi</Text>
                 </View>
               )}
               {business.rating && (
                 <View style={styles.ratingContainer}>
                   <Image source={Images.starIcon} style={styles.icon} />
-                  <Text style={styles.ratingText}>
-                    {business.rating}
-                  </Text>
+                  <Text style={styles.ratingText}>{business.rating}</Text>
                 </View>
               )}
             </View>
@@ -127,19 +135,13 @@ export const LinkedBusinessCard: React.FC<LinkedBusinessCardProps> = ({
             style={styles.actionButton}
             onPress={handleGetDirections}
             hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-            <Image
-              source={Images.getDirection}
-              style={styles.actionIcon}
-            />
+            <Image source={Images.getDirection} style={styles.actionIcon} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionButton}
             onPress={handleDeletePress}
             hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-            <Image
-              source={Images.deleteIconRed}
-              style={styles.actionIcon}
-            />
+            <Image source={Images.deleteIconRed} style={styles.actionIcon} />
           </TouchableOpacity>
         </View>
       )}
@@ -159,8 +161,7 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     containerWithBorder: {
       borderWidth: 2,

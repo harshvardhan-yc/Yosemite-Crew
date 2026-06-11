@@ -1,6 +1,12 @@
 /* istanbul ignore file -- UI screen with complex native navigation flow; covered via E2E */
 // src/screens/Auth/CreateAccountScreen.tsx
-import React, {useState, useCallback, useEffect, useRef} from 'react';
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useReducer,
+} from 'react';
 import {
   View,
   Text,
@@ -165,10 +171,11 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHandlingBack, setIsHandlingBack] = useState(false);
   const [submissionError, setSubmissionError] = useState('');
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  type LocationCoords = {latitude: number; longitude: number} | null;
+  const [location, dispatchLocation] = useReducer(
+    (_: LocationCoords, next: LocationCoords) => next,
+    null as LocationCoords,
+  );
   const [isOtpSuccessVisible, setIsOtpSuccessVisible] =
     useState(showOtpSuccess);
 
@@ -224,6 +231,13 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({
   const [openBottomSheet, setOpenBottomSheet] = useState<
     'countryMobile' | 'success' | 'ageVerificationInfo' | null
   >(null);
+
+  const [prevIsOtpSuccessVisible, setPrevIsOtpSuccessVisible] =
+    useState(isOtpSuccessVisible);
+  if (isOtpSuccessVisible !== prevIsOtpSuccessVisible) {
+    setPrevIsOtpSuccessVisible(isOtpSuccessVisible);
+    setOpenBottomSheet(isOtpSuccessVisible ? 'success' : null);
+  }
 
   const {
     setQuery: setAddressQuery,
@@ -358,7 +372,10 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({
       try {
         const coords = await LocationService.getLocationWithRetry();
         if (coords && isMounted) {
-          setLocation({latitude: coords.latitude, longitude: coords.longitude});
+          dispatchLocation({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          });
         }
       } catch (error) {
         console.warn('Unable to fetch location', error);
@@ -378,12 +395,10 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({
     }
 
     if (isOtpSuccessVisible) {
-      setOpenBottomSheet('success');
       requestAnimationFrame(() => {
         successBottomSheetRef.current?.snapToIndex(0);
       });
     } else {
-      setOpenBottomSheet(null);
       requestAnimationFrame(() => {
         successBottomSheetRef.current?.forceClose();
       });
@@ -570,14 +585,11 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({
       if (details.country) {
         handleStep2FieldChange('country', details.country);
       }
-      if (details.latitude && details.longitude) {
-        setLocation(
-          prev =>
-            prev ?? {
-              latitude: details.latitude as number,
-              longitude: details.longitude as number,
-            },
-        );
+      if (details.latitude && details.longitude && !location) {
+        dispatchLocation({
+          latitude: details.latitude,
+          longitude: details.longitude,
+        });
       }
 
       resetAddressError();
@@ -594,9 +606,9 @@ export const CreateAccountScreen: React.FC<CreateAccountScreenProps> = ({
       clearAddressSuggestions,
       clearErrors,
       handleStep2FieldChange,
+      location,
       resetAddressError,
       selectAddressSuggestion,
-      setLocation,
     ],
   );
 
@@ -1387,13 +1399,11 @@ const createStyles = (theme: any) =>
       right: 0,
       bottom: 0,
       zIndex: 9999,
-      elevation: 9999,
       justifyContent: 'flex-end',
     },
     countryBottomSheetPortal: {
       ...StyleSheet.absoluteFillObject,
       zIndex: 50,
-      elevation: 50,
     },
     bottomSheetBackground: {
       backgroundColor: theme.colors.background,

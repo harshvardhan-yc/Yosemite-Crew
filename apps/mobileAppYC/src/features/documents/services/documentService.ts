@@ -546,17 +546,17 @@ export const documentApi = {
       return {...file, status: 'ready'};
     }
 
-    const uploadMeta = await documentApi.requestUploadUrl({
-      mimeType: file.type ?? 'application/octet-stream',
-      companionId,
-      accessToken,
-    });
-
     if (!file.uri) {
       throw new Error(
         `File path missing for upload: ${file.name || file.key || 'unknown file'}`,
       );
     }
+
+    const uploadMeta = await documentApi.requestUploadUrl({
+      mimeType: file.type ?? 'application/octet-stream',
+      companionId,
+      accessToken,
+    });
 
     // Preserve the original URI (content:// or file://); the upload service will normalize.
     const filePath = file.uri;

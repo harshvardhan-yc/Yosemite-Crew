@@ -1,5 +1,6 @@
-import React, {useState, useMemo} from 'react';
+import React, {useState, useMemo, useCallback} from 'react';
 import {StyleSheet, Text, FlatList} from 'react-native';
+import type {ListRenderItemInfo} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {useTheme} from '@/hooks';
 import {useSelector} from 'react-redux';
@@ -10,6 +11,23 @@ import type {AdverseEventStackParamList} from '@/navigation/types';
 import {useAdverseEventReport} from '@/features/adverseEventReporting/state/AdverseEventReportContext';
 
 type Props = NativeStackScreenProps<AdverseEventStackParamList, 'Step3'>;
+
+type BusinessRowProps = {
+  item: React.ComponentProps<typeof LinkedBusinessCard>['business'];
+  isSelected: boolean;
+  onSelect: (id: string) => void;
+};
+
+const BusinessRow = React.memo(
+  ({item, isSelected, onSelect}: BusinessRowProps) => (
+    <LinkedBusinessCard
+      business={item}
+      onPress={() => onSelect(item.id)}
+      showActionButtons={false}
+      showBorder={isSelected}
+    />
+  ),
+);
 
 export const Step3Screen: React.FC<Props> = ({navigation}) => {
   const {theme} = useTheme();
@@ -33,13 +51,25 @@ export const Step3Screen: React.FC<Props> = ({navigation}) => {
     navigation.navigate('Step4');
   };
 
-  const handleBusinessSelect = (id: string) => {
-    setSelectedBusinessId(id);
-    updateDraft({linkedBusinessId: id});
-    if (error) {
+  const handleBusinessSelect = useCallback(
+    (id: string) => {
+      setSelectedBusinessId(id);
+      updateDraft({linkedBusinessId: id});
       setError('');
-    }
-  };
+    },
+    [updateDraft],
+  );
+
+  const renderBusinessRow = useCallback(
+    ({item}: ListRenderItemInfo<BusinessRowProps['item']>) => (
+      <BusinessRow
+        item={item}
+        isSelected={selectedBusinessId === item.id}
+        onSelect={handleBusinessSelect}
+      />
+    ),
+    [selectedBusinessId, handleBusinessSelect],
+  );
 
   return (
     <AERLayout
@@ -49,22 +79,14 @@ export const Step3Screen: React.FC<Props> = ({navigation}) => {
         title: 'Next',
         onPress: handleNext,
         textStyleOverride: styles.buttonText,
-      }}
-    >
+      }}>
       <Text style={styles.title}>Select Linked Hospital</Text>
 
       <FlatList
         data={linkedBusinesses}
         scrollEnabled={false}
         keyExtractor={item => item.id}
-        renderItem={({item}) => (
-          <LinkedBusinessCard
-            business={item}
-            onPress={() => handleBusinessSelect(item.id)}
-            showActionButtons={false}
-            showBorder={selectedBusinessId === item.id}
-          />
-        )}
+        renderItem={renderBusinessRow}
         contentContainerStyle={styles.listContent}
       />
       {error ? <Text style={styles.errorText}>{error}</Text> : null}

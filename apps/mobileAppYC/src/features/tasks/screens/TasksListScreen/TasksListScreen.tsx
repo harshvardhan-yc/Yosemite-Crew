@@ -35,7 +35,9 @@ export const TasksListScreen: React.FC = () => {
 
   const {category} = route.params;
 
-  const companions = useSelector((state: RootState) => state.companion.companions);
+  const companions = useSelector(
+    (state: RootState) => state.companion.companions,
+  );
   const selectedCompanionId = useSelector(
     (state: RootState) => state.companion.selectedCompanionId,
   );
@@ -43,21 +45,24 @@ export const TasksListScreen: React.FC = () => {
 
   const {selectedDate, currentMonth, handleDateSelect, handleMonthChange} =
     useTaskDateSelection();
-  const {handleViewTask, handleEditTask, handleCompleteTask, handleStartObservationalTool} =
-    useTaskNavigationActions(navigation, dispatch);
+  const {
+    handleViewTask,
+    handleEditTask,
+    handleCompleteTask,
+    handleStartObservationalTool,
+  } = useTaskNavigationActions(navigation, dispatch);
 
   // Get all tasks for the category
-  const allCategoryTasks = useSelector(selectAllTasksByCategory(selectedCompanionId, category));
+  const allCategoryTasks = useSelector(
+    selectAllTasksByCategory(selectedCompanionId, category),
+  );
 
   const selectedDateKey = useMemo(
     () => formatDateToISODate(selectedDate),
     [selectedDate],
   );
 
-  const listKey = useMemo(
-    () => `${selectedCompanionId ?? 'none'}-${selectedDateKey}`,
-    [selectedCompanionId, selectedDateKey],
-  );
+  const listKey = `${selectedCompanionId ?? 'none'}-${selectedDateKey}`;
 
   // Filter tasks by selected date
   const tasks = useMemo(() => {
@@ -102,7 +107,9 @@ export const TasksListScreen: React.FC = () => {
         onPressEdit={() => handleEditTask(item.id)}
         onPressComplete={() => handleCompleteTask(item.id)}
         onPressTakeObservationalTool={
-          isObservationalToolTask ? () => handleStartObservationalTool(item.id) : undefined
+          isObservationalToolTask
+            ? () => handleStartObservationalTool(item.id)
+            : undefined
         }
         showEditAction={!isCompleted}
         showCompleteButton={isPending}

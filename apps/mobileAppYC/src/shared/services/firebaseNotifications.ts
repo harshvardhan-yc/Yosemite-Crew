@@ -21,7 +21,10 @@ import notifee, {
   type Event,
 } from '@notifee/react-native';
 import type {AppDispatch} from '@/app/store';
-import {createNotification, addNotificationToList} from '@/features/notifications';
+import {
+  createNotification,
+  addNotificationToList,
+} from '@/features/notifications';
 import type {
   CreateNotificationPayload,
   NotificationCategory,
@@ -59,7 +62,8 @@ type InitializeOptions = {
 
 let listenersConfigured = false;
 let cachedDispatch: AppDispatch | null = null;
-let navigationHandler: ((intent: NotificationNavigationIntent) => void) | null = null;
+let navigationHandler: ((intent: NotificationNavigationIntent) => void) | null =
+  null;
 type AndroidNotificationConfig = NonNullable<
   Parameters<typeof notifee.displayNotification>[0]['android']
 >;
@@ -68,7 +72,9 @@ type AndroidNotificationConfig = NonNullable<
  * Initializes Firebase Cloud Messaging + Notifee orchestration.
  * Should be called once after Redux store and navigation are ready.
  */
-export async function initializeNotifications(options: InitializeOptions): Promise<void> {
+export async function initializeNotifications(
+  options: InitializeOptions,
+): Promise<void> {
   if (listenersConfigured && cachedDispatch) {
     navigationHandler = options.onNavigate;
     cachedDispatch = options.dispatch;
@@ -78,10 +84,12 @@ export async function initializeNotifications(options: InitializeOptions): Promi
   cachedDispatch = options.dispatch;
   navigationHandler = options.onNavigate;
 
-  await ensurePermissions();
-  await ensureDeviceRegistration();
-  await setMessagingAutoInitEnabled(messagingInstance, true);
-  await ensureAndroidChannel();
+  await Promise.all([
+    ensurePermissions(),
+    ensureDeviceRegistration(),
+    setMessagingAutoInitEnabled(messagingInstance, true),
+    ensureAndroidChannel(),
+  ]);
 
   let initialToken: string | null = null;
   try {
@@ -107,9 +115,12 @@ export async function initializeNotifications(options: InitializeOptions): Promi
     }
   });
 
-  onMessagingMessage(messagingInstance, async (remoteMessage: RemoteMessage) => {
-    await handleRemoteMessage(remoteMessage, {source: 'foreground'});
-  });
+  onMessagingMessage(
+    messagingInstance,
+    async (remoteMessage: RemoteMessage) => {
+      await handleRemoteMessage(remoteMessage, {source: 'foreground'});
+    },
+  );
 
   notifee.onForegroundEvent(async event => {
     await handleNotifeeEvent(event);
@@ -119,11 +130,16 @@ export async function initializeNotifications(options: InitializeOptions): Promi
 
   const initialNotifee = await notifee.getInitialNotification();
   if (initialNotifee?.notification?.data) {
-    processNavigationIntentFromData(normalizeDataRecord(initialNotifee.notification.data));
+    processNavigationIntentFromData(
+      normalizeDataRecord(initialNotifee.notification.data),
+    );
   } else {
-    const initialMessaging = await getMessagingInitialNotification(messagingInstance);
+    const initialMessaging =
+      await getMessagingInitialNotification(messagingInstance);
     if (initialMessaging?.data) {
-      processNavigationIntentFromData(normalizeDataRecord(initialMessaging.data));
+      processNavigationIntentFromData(
+        normalizeDataRecord(initialMessaging.data),
+      );
     }
   }
 
@@ -146,7 +162,9 @@ export async function handleBackgroundRemoteMessage(
 /**
  * Notifee background event handler registered from native entry (index.js).
  */
-export async function handleNotificationBackgroundEvent(event: Event): Promise<void> {
+export async function handleNotificationBackgroundEvent(
+  event: Event,
+): Promise<void> {
   const {type, detail} = event;
 
   if (type === EventType.ACTION_PRESS && detail.pressAction?.id) {
@@ -160,7 +178,9 @@ export async function handleNotificationBackgroundEvent(event: Event): Promise<v
     detail.notification?.data &&
     Object.keys(detail.notification.data).length > 0
   ) {
-    await storePendingNavigationIntent(normalizeDataRecord(detail.notification.data));
+    await storePendingNavigationIntent(
+      normalizeDataRecord(detail.notification.data),
+    );
   }
 }
 
@@ -170,7 +190,9 @@ async function ensurePermissions(): Promise<void> {
       PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
     );
     if (!hasPermission) {
-      await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+      await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      );
     }
   }
 
@@ -219,9 +241,14 @@ async function handleRemoteMessage(
 
   if (notificationPayload && cachedDispatch) {
     try {
-      await (cachedDispatch(createNotification(notificationPayload) as any) as Promise<unknown>);
+      await (cachedDispatch(
+        createNotification(notificationPayload) as any,
+      ) as Promise<unknown>);
     } catch (error) {
-      console.error('[firebaseNotifications] Failed to create notification', error);
+      console.error(
+        '[firebaseNotifications] Failed to create notification',
+        error,
+      );
       cachedDispatch(
         addNotificationToList({
           id: data.notificationId || `notif_${Date.now()}`,
@@ -256,14 +283,17 @@ async function handleRemoteMessage(
   }
 }
 
-async function presentNotifeeNotification(remoteMessage: RemoteMessage): Promise<void> {
+async function presentNotifeeNotification(
+  remoteMessage: RemoteMessage,
+): Promise<void> {
   const notification = remoteMessage.notification;
   const data = normalizeDataRecord(remoteMessage.data);
 
   const title = notification?.title ?? data.title ?? 'Yosemite Crew';
   const body = notification?.body ?? data.body ?? '';
   const imageUrl = notification?.android?.imageUrl || data.largeIcon;
-  const smallIcon = normalizeAndroidIconResource(data.smallIcon) ?? 'ic_launcher';
+  const smallIcon =
+    normalizeAndroidIconResource(data.smallIcon) ?? 'ic_launcher';
   const largeIcon = normalizeAndroidIconResource(imageUrl ?? data.largeIcon);
 
   const androidConfig: AndroidNotificationConfig = {
@@ -307,7 +337,9 @@ async function handleNotifeeEvent(event: Event): Promise<void> {
   switch (type) {
     case EventType.PRESS:
       if (detail.notification?.data) {
-        processNavigationIntentFromData(normalizeDataRecord(detail.notification.data));
+        processNavigationIntentFromData(
+          normalizeDataRecord(detail.notification.data),
+        );
       }
       if (detail.notification?.id) {
         await notifee.cancelNotification(detail.notification.id);
@@ -319,8 +351,13 @@ async function handleNotifeeEvent(event: Event): Promise<void> {
       }
       break;
     case EventType.ACTION_PRESS:
-      if (detail.pressAction?.id === 'mark-as-read' && detail.notification?.data) {
-        processNavigationIntentFromData(normalizeDataRecord(detail.notification.data));
+      if (
+        detail.pressAction?.id === 'mark-as-read' &&
+        detail.notification?.data
+      ) {
+        processNavigationIntentFromData(
+          normalizeDataRecord(detail.notification.data),
+        );
       }
       break;
     default:
@@ -331,7 +368,10 @@ async function handleNotifeeEvent(event: Event): Promise<void> {
 function processNavigationIntentFromData(data: DataRecord): void {
   if (!navigationHandler) {
     storePendingNavigationIntent(data).catch(error => {
-      console.warn('[Notifications] Failed to store navigation intent for later processing', error);
+      console.warn(
+        '[Notifications] Failed to store navigation intent for later processing',
+        error,
+      );
     });
     return;
   }
@@ -342,13 +382,16 @@ function processNavigationIntentFromData(data: DataRecord): void {
   }
 }
 
-function convertToNotificationPayload(remoteMessage: RemoteMessage): CreateNotificationPayload | null {
+function convertToNotificationPayload(
+  remoteMessage: RemoteMessage,
+): CreateNotificationPayload | null {
   const data = normalizeDataRecord(remoteMessage.data);
   const notification = remoteMessage.notification;
 
   const category = normalizeCategory(data.category);
   const priority = normalizePriority(data.priority);
-  const companionId = data.companionId || data.ownerId || DEFAULT_FALLBACK_COMPANION_ID;
+  const companionId =
+    data.companionId || data.ownerId || DEFAULT_FALLBACK_COMPANION_ID;
 
   if (!notification?.title && !data.title) {
     return null;
@@ -401,8 +444,16 @@ function normalizePriority(value?: string): NotificationPriority | undefined {
   return undefined;
 }
 
-function normalizeRelatedType(value?: string): CreateNotificationPayload['relatedType'] {
-  const allowed = ['task', 'appointment', 'document', 'message', 'payment'] as const;
+function normalizeRelatedType(
+  value?: string,
+): CreateNotificationPayload['relatedType'] {
+  const allowed = [
+    'task',
+    'appointment',
+    'document',
+    'message',
+    'payment',
+  ] as const;
   if (value && (allowed as readonly string[]).includes(value)) {
     return value as CreateNotificationPayload['relatedType'];
   }
@@ -421,7 +472,11 @@ function normalizeAndroidIconResource(value?: string): string | undefined {
 
   const lower = trimmed.toLowerCase();
 
-  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('file://')) {
+  if (
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('file://')
+  ) {
     return trimmed;
   }
 
@@ -445,7 +500,10 @@ function extractMetadata(data: DataRecord): Record<string, string | undefined> {
 
 async function storePendingNavigationIntent(data: DataRecord): Promise<void> {
   try {
-    await AsyncStorage.setItem(PENDING_INTENT_STORAGE_KEY, JSON.stringify(data));
+    await AsyncStorage.setItem(
+      PENDING_INTENT_STORAGE_KEY,
+      JSON.stringify(data),
+    );
   } catch (error) {
     console.warn('[Notifications] Failed to persist navigation intent', error);
   }
@@ -462,11 +520,16 @@ async function flushPendingNavigationIntent(): Promise<void> {
     const parsed = JSON.parse(stored) as DataRecord;
     processNavigationIntentFromData(parsed);
   } catch (error) {
-    console.warn('[Notifications] Failed to read stored navigation intent', error);
+    console.warn(
+      '[Notifications] Failed to read stored navigation intent',
+      error,
+    );
   }
 }
 
-function buildNavigationIntent(data: DataRecord): NotificationNavigationIntent | null {
+function buildNavigationIntent(
+  data: DataRecord,
+): NotificationNavigationIntent | null {
   const deepLink = data.deepLink ?? data.deeplink ?? data.url;
   const navigationId = data.navigationId;
   const root = (data.root as NotificationNavigationIntent['root']) ?? 'Main';

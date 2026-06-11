@@ -11,7 +11,6 @@ export const createAttachmentStyles = (theme: Theme) =>
       paddingHorizontal: theme.spacing['4'],
       alignItems: 'center',
       gap: theme.spacing['2'],
-
     },
     emptyStateIcon: {
       width: theme.spacing['16'],
@@ -115,11 +114,9 @@ export const createAttachmentStyles = (theme: Theme) =>
       width: '100%',
     },
     previewContentFallback: {
-
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
       width: '100%',
     },
   });

@@ -1114,6 +1114,53 @@ describe('HomeScreen', () => {
       });
     });
 
+    it('navigates to BrowseBusinesses with initialBusinessId when PMS business is selected from search', async () => {
+      const usePlacesBusinessSearchMock = require('@/features/linkedBusinesses/hooks/usePlacesBusinessSearch');
+      let capturedOnSelectPms: ((s: any) => void) | undefined;
+      usePlacesBusinessSearchMock.usePlacesBusinessSearch.mockImplementation(
+        ({onSelectPms}: any) => {
+          capturedOnSelectPms = onSelectPms;
+          return {
+            searchQuery: '',
+            setSearchQuery: jest.fn(),
+            searchResults: [],
+            searching: false,
+            handleSearchChange: jest.fn(),
+            handleSelectBusiness: jest.fn(),
+            clearResults: jest.fn(),
+          };
+        },
+      );
+
+      const store = createStore();
+      mockGetParent.mockReturnValue({navigate: mockNavigate});
+
+      renderAndWait(
+        <Provider store={store}>
+          <HomeScreen navigation={mockNavigationProp} route={{} as any} />
+        </Provider>,
+      );
+
+      await act(async () => {
+        capturedOnSelectPms?.({
+          id: 'place-1',
+          placeId: 'place-1',
+          name: 'Paws Clinic',
+          address: '1 Main St',
+          isPmsOrganisation: true,
+          organisationId: 'test-business-id',
+        });
+      });
+
+      expect(mockNavigate).toHaveBeenCalledWith('Appointments', {
+        screen: 'BrowseBusinesses',
+        params: {
+          initialBusinessId: 'test-business-id',
+          selectionToken: expect.any(Number),
+        },
+      });
+    });
+
     it('renders restricted task state when task access is disabled', () => {
       const store = createStore({
         coParent: {

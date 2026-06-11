@@ -641,6 +641,10 @@ describe('PaymentInvoiceScreen', () => {
                 amount: {value: 10, currency: 'USD'},
               },
               {
+                type: 'service_charge',
+                amount: {value: 2},
+              },
+              {
                 type: 'misc',
                 code: {text: ''},
                 amount: {},
@@ -657,6 +661,7 @@ describe('PaymentInvoiceScreen', () => {
     expect(screen.getByText('Consultation fee')).toBeTruthy();
     expect(screen.getByText('Discount')).toBeTruthy();
     expect(screen.getByText('Tax')).toBeTruthy();
+    expect(screen.getByText('Service charge')).toBeTruthy();
     expect(screen.queryByText('ignored')).toBeNull();
     expect(screen.queryByText('Grand-total')).toBeNull();
     expect(screen.getByText('—')).toBeTruthy();

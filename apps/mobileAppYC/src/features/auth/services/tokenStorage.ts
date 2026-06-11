@@ -1,7 +1,7 @@
 import * as Keychain from 'react-native-keychain';
 
-const TOKEN_STORAGE_SERVICE = 'yosemite-crew-auth-tokens';
-const TOKEN_STORAGE_ACCOUNT = 'yosemite-crew';
+const KEYCHAIN_SERVICE = 'yosemite-crew-session';
+const KEYCHAIN_ACCOUNT = 'yosemite-crew';
 
 export type AuthProviderName = 'amplify' | 'firebase';
 
@@ -17,7 +17,7 @@ export type StoredAuthTokens = {
 type KeychainOptions = Parameters<typeof Keychain.setGenericPassword>[2];
 
 const keychainOptions: KeychainOptions = {
-  service: TOKEN_STORAGE_SERVICE,
+  service: KEYCHAIN_SERVICE,
   accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   securityLevel: Keychain.SECURITY_LEVEL.SECURE_SOFTWARE,
 };
@@ -30,7 +30,7 @@ export const storeTokens = async (tokens: StoredAuthTokens): Promise<void> => {
     };
     const payload = JSON.stringify(tokensWithProvider);
     const didStore = await Keychain.setGenericPassword(
-      TOKEN_STORAGE_ACCOUNT,
+      KEYCHAIN_ACCOUNT,
       payload,
       keychainOptions,
     );
@@ -38,7 +38,6 @@ export const storeTokens = async (tokens: StoredAuthTokens): Promise<void> => {
     if (!didStore) {
       throw new Error('Unable to persist auth tokens to secure storage');
     }
-
   } catch (error) {
     throw new Error(
       error instanceof Error

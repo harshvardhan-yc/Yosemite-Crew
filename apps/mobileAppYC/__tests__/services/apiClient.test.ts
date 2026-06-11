@@ -142,6 +142,18 @@ describe('apiClient', () => {
       );
     });
 
+    it('rewrites localhost without explicit port to 10.0.2.2 (port-less path)', () => {
+      const {axiosMock} = loadClientWithEnv('android', {
+        baseUrl: 'http://localhost/api',
+      });
+
+      expect(axiosMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseURL: 'http://10.0.2.2/api',
+        }),
+      );
+    });
+
     it('handles URL parsing errors via string replacement fallback', () => {
       // Fix: Use globalThis instead of global
       const originalURL = globalThis.URL;
@@ -185,6 +197,81 @@ describe('apiClient', () => {
         Authorization: 'Bearer xyz-token',
         'X-Custom': 'abc',
       });
+    });
+  });
+
+  describe('updateApiClientBaseConfig', () => {
+    it('updates baseURL when baseUrl is provided', () => {
+      const {axiosMock} = loadClientWithEnv('ios');
+      const {
+        updateApiClientBaseConfig,
+      } = require('../../src/shared/services/apiClient');
+      const mockInstance =
+        axiosMock.create.mock.results[0]?.value ?? axiosMock.create();
+      mockInstance.defaults = {baseURL: '', timeout: 5000};
+
+      updateApiClientBaseConfig({baseUrl: 'https://new-api.example.com'});
+
+      expect(mockInstance.defaults.baseURL).toBe('https://new-api.example.com');
+    });
+
+    it('updates timeout when timeoutMs is provided', () => {
+      const {axiosMock} = loadClientWithEnv('ios');
+      const {
+        updateApiClientBaseConfig,
+      } = require('../../src/shared/services/apiClient');
+      const mockInstance =
+        axiosMock.create.mock.results[0]?.value ?? axiosMock.create();
+      mockInstance.defaults = {baseURL: '', timeout: 5000};
+
+      updateApiClientBaseConfig({timeoutMs: 10000});
+
+      expect(mockInstance.defaults.timeout).toBe(10000);
+    });
+
+    it('normalizes localhost baseUrl to 10.0.2.2 on Android', () => {
+      const {axiosMock} = loadClientWithEnv('android');
+      const {
+        updateApiClientBaseConfig,
+      } = require('../../src/shared/services/apiClient');
+      const mockInstance =
+        axiosMock.create.mock.results[0]?.value ?? axiosMock.create();
+      mockInstance.defaults = {baseURL: '', timeout: 5000};
+
+      updateApiClientBaseConfig({baseUrl: 'http://localhost:8080/api'});
+
+      expect(mockInstance.defaults.baseURL).toBe('http://10.0.2.2:8080/api');
+    });
+
+    it('ignores update when neither baseUrl nor timeoutMs given', () => {
+      const {axiosMock} = loadClientWithEnv('ios');
+      const {
+        updateApiClientBaseConfig,
+      } = require('../../src/shared/services/apiClient');
+      const mockInstance =
+        axiosMock.create.mock.results[0]?.value ?? axiosMock.create();
+      mockInstance.defaults = {baseURL: 'https://original.com', timeout: 5000};
+
+      updateApiClientBaseConfig({});
+
+      expect(mockInstance.defaults.baseURL).toBe('https://original.com');
+      expect(mockInstance.defaults.timeout).toBe(5000);
+    });
+
+    it('ignores timeoutMs when value is not a number', () => {
+      const {axiosMock} = loadClientWithEnv('ios');
+      const {
+        updateApiClientBaseConfig,
+      } = require('../../src/shared/services/apiClient');
+      const mockInstance =
+        axiosMock.create.mock.results[0]?.value ?? axiosMock.create();
+      mockInstance.defaults = {baseURL: '', timeout: 5000};
+
+      updateApiClientBaseConfig({
+        timeoutMs: 'not-a-number' as unknown as number,
+      });
+
+      expect(mockInstance.defaults.timeout).toBe(5000);
     });
   });
 

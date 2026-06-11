@@ -202,4 +202,44 @@ describe('TaskRecurringActionSheet', () => {
     expect(() => ref.current?.open()).not.toThrow();
     expect(() => ref.current?.close()).not.toThrow();
   });
+
+  it('shows primary loading label while primary action is in flight', async () => {
+    let resolvePrimary!: () => void;
+    const inFlight = new Promise<void>(resolve => {
+      resolvePrimary = resolve;
+    });
+    const onPrimary = jest.fn().mockReturnValue(inFlight);
+
+    const {getByText} = renderSheet({onPrimary});
+
+    act(() => {
+      fireEvent.press(getByText('Primary'));
+    });
+
+    expect(getByText('loading')).toBeTruthy();
+
+    await act(async () => {
+      resolvePrimary();
+    });
+  });
+
+  it('shows secondary loading label while secondary action is in flight', async () => {
+    let resolveSecondary!: () => void;
+    const inFlight = new Promise<void>(resolve => {
+      resolveSecondary = resolve;
+    });
+    const onSecondary = jest.fn().mockReturnValue(inFlight);
+
+    const {getByText} = renderSheet({onSecondary});
+
+    act(() => {
+      fireEvent.press(getByText('Secondary'));
+    });
+
+    expect(getByText('loading')).toBeTruthy();
+
+    await act(async () => {
+      resolveSecondary();
+    });
+  });
 });

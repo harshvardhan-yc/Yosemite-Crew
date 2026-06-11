@@ -2,7 +2,7 @@
 import React from 'react';
 import {View, Text, Image, StyleSheet, Platform} from 'react-native';
 import {useTheme} from '@/hooks';
-import { Images } from '@/assets/images';
+import {Images} from '@/assets/images';
 import {LiquidGlassIconButton} from '@/shared/components/common/LiquidGlassIconButton/LiquidGlassIconButton';
 import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
 
@@ -59,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
             onPress={onRightPress ?? (() => {})}
             size={iconButtonSize}
             style={styles.iconButton}>
-            <Image source={rightIcon} style={[styles.icon]} />
+            <Image source={rightIcon} style={styles.icon} />
           </LiquidGlassIconButton>
         </View>
       ) : (
@@ -95,7 +95,10 @@ const createStyles = (theme: any) => {
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: theme.spacing?.['5'] || 20,
-      paddingTop: Platform.OS === 'ios' ? theme.spacing?.['2'] || 8 : theme.spacing?.['5'] || 20,
+      paddingTop:
+        Platform.OS === 'ios'
+          ? theme.spacing?.['2'] || 8
+          : theme.spacing?.['5'] || 20,
       paddingBottom: theme.spacing?.['2'] || 8,
       overflow: 'visible',
     },
@@ -113,11 +116,7 @@ const createStyles = (theme: any) => {
       borderTopRightRadius: 0,
       borderBottomLeftRadius: theme.borderRadius['2xl'],
       borderBottomRightRadius: theme.borderRadius['2xl'],
-      shadowColor: theme.colors.neutralShadow ?? '#000000',
-      shadowOffset: {width: 0, height: 12},
-      shadowOpacity: 0.14,
-      shadowRadius: 18,
-      elevation: 10,
+      boxShadow: `0px 12px 18px ${theme.colors.neutralShadow ?? '#000000'}`,
       backgroundColor: 'transparent',
     },
     glassFallback: {
