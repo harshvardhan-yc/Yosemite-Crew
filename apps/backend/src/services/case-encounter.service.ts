@@ -115,11 +115,21 @@ type RoomUnitAssignmentRow = {
 type RoomUnitAssignmentDelegate = {
   findFirst(args: {
     where: {
-      admissionId: string;
+      admissionId?: string;
+      unitId?: string;
       releasedAt: null;
     };
     orderBy: { assignedAt: "desc" };
   }): Promise<RoomUnitAssignmentRow | null>;
+  findMany(args: {
+    where: {
+      encounterId?: string;
+      admissionId?: string;
+      unitId?: string;
+      releasedAt?: Date | null;
+    };
+    orderBy: { assignedAt: "asc" | "desc" };
+  }): Promise<RoomUnitAssignmentRow[]>;
   update(args: {
     where: { id: string };
     data: { releasedAt: Date };
@@ -267,6 +277,19 @@ const toAdmissionDomain = (row: AdmissionRow): AdmissionDomain => ({
   expectedStayDays: row.expectedStayDays ?? undefined,
   admittedAt: row.admittedAt,
   dischargedAt: row.dischargedAt ?? undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+const toRoomUnitAssignmentDomain = (row: RoomUnitAssignmentRow) => ({
+  id: row.id,
+  encounterId: row.encounterId,
+  admissionId: row.admissionId,
+  unitId: row.unitId,
+  assignedAt: row.assignedAt,
+  releasedAt: row.releasedAt ?? undefined,
+  assignedBy: row.assignedBy ?? undefined,
+  reason: row.reason ?? undefined,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -824,6 +847,21 @@ export const CaseEncounterService = {
         throw new CaseEncounterServiceError("Selected unit is inactive.", 409);
       }
 
+      const conflictingAssignment = await assignmentDelegate.findFirst({
+        where: {
+          unitId,
+          releasedAt: null,
+        },
+        orderBy: { assignedAt: "desc" },
+      });
+
+      if (conflictingAssignment && conflictingAssignment.admissionId !== id) {
+        throw new CaseEncounterServiceError(
+          "Room unit is already occupied.",
+          409,
+        );
+      }
+
       const activeAssignment = await assignmentDelegate.findFirst({
         where: {
           admissionId: id,
@@ -865,6 +903,29 @@ export const CaseEncounterService = {
     return (
       await attachEncounterAppointmentIds([toEncounterDomain(updatedEncounter)])
     )[0];
+  },
+
+  async listUnitAssignments(filters: {
+    encounterId?: string;
+    admissionId?: string;
+    unitId?: string;
+    activeOnly?: boolean;
+  }) {
+    const assignmentDelegate = (
+      prisma as unknown as { roomUnitAssignment: RoomUnitAssignmentDelegate }
+    ).roomUnitAssignment;
+
+    const rows = await assignmentDelegate.findMany({
+      where: {
+        encounterId: normalizeOptionalString(filters.encounterId),
+        admissionId: normalizeOptionalString(filters.admissionId),
+        unitId: normalizeOptionalString(filters.unitId),
+        releasedAt: filters.activeOnly ? null : undefined,
+      },
+      orderBy: { assignedAt: "asc" },
+    });
+
+    return rows.map(toRoomUnitAssignmentDomain);
   },
 
   async getEncounterById(encounterId: string): Promise<EncounterDomain> {

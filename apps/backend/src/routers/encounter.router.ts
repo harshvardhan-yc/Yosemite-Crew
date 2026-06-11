@@ -38,6 +38,14 @@ router.post(
 );
 
 router.get(
+  "/:id/$unit-assignments",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:view:any"),
+  EncounterController.listUnitAssignments,
+);
+
+router.get(
   "/:id",
   authorizeCognito,
   withOrgPermissions(),

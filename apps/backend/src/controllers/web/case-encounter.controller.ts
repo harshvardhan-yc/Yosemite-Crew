@@ -65,6 +65,58 @@ const assignUnitSchema = z
   })
   .passthrough();
 
+const unitAssignmentResource = (assignment: {
+  id: string;
+  encounterId: string;
+  admissionId: string;
+  unitId: string;
+  assignedAt: Date;
+  releasedAt?: Date;
+  assignedBy?: string;
+  reason?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}) => ({
+  name: "assignment",
+  part: [
+    { name: "id", valueString: assignment.id },
+    { name: "encounterId", valueString: assignment.encounterId },
+    { name: "admissionId", valueString: assignment.admissionId },
+    { name: "unitId", valueString: assignment.unitId },
+    { name: "assignedAt", valueDateTime: assignment.assignedAt.toISOString() },
+    ...(assignment.releasedAt
+      ? [
+          {
+            name: "releasedAt",
+            valueDateTime: assignment.releasedAt.toISOString(),
+          },
+        ]
+      : []),
+    ...(assignment.assignedBy
+      ? [{ name: "assignedBy", valueString: assignment.assignedBy }]
+      : []),
+    ...(assignment.reason
+      ? [{ name: "reason", valueString: assignment.reason }]
+      : []),
+    ...(assignment.createdAt
+      ? [
+          {
+            name: "createdAt",
+            valueDateTime: assignment.createdAt.toISOString(),
+          },
+        ]
+      : []),
+    ...(assignment.updatedAt
+      ? [
+          {
+            name: "updatedAt",
+            valueDateTime: assignment.updatedAt.toISOString(),
+          },
+        ]
+      : []),
+  ],
+});
+
 const parseReferenceId = (value?: string, prefix?: string) => {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
@@ -235,6 +287,21 @@ export const EncounterController = {
       return res.status(200).json(toEncounterResponseDTO(updated));
     } catch (error) {
       return handleError(res, error, "Failed to assign unit.");
+    }
+  },
+
+  listUnitAssignments: async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const assignments = await CaseEncounterService.listUnitAssignments({
+        encounterId: req.params.id,
+      });
+
+      return res.status(200).json({
+        resourceType: "Parameters",
+        parameter: assignments.map(unitAssignmentResource),
+      });
+    } catch (error) {
+      return handleError(res, error, "Failed to list unit assignments.");
     }
   },
 

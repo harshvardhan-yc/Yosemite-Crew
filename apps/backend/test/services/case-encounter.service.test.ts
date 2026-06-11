@@ -31,6 +31,7 @@ jest.mock("../../src/config/prisma", () => ({
     },
     roomUnitAssignment: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
     },
@@ -404,5 +405,102 @@ describe("CaseEncounterService", () => {
       },
     });
     expect(result.admission?.unitId).toBe("unit_1");
+  });
+
+  it("rejects assignment when the unit is already occupied by another admission", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue(
+      baseEncounterRow as never,
+    );
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      unitId: null,
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnit.findUnique.mockResolvedValue({
+      id: "unit_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      code: "KEN-01",
+      displayName: "Kennel 1",
+      size: "M",
+      speciesConstraints: ["dog"],
+      isActive: true,
+      createdAt: new Date("2026-06-11T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:00:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnitAssignment.findFirst.mockResolvedValue({
+      id: "assign_other",
+      encounterId: "enc_other",
+      admissionId: "enc_other",
+      unitId: "unit_1",
+      assignedAt: new Date("2026-06-11T10:45:00.000Z"),
+      releasedAt: null,
+      assignedBy: "user_2",
+      reason: "Occupied",
+      createdAt: new Date("2026-06-11T10:45:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:45:00.000Z"),
+    } as never);
+
+    await expect(
+      CaseEncounterService.assignUnit("enc_1", {
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      message: "Room unit is already occupied.",
+      statusCode: 409,
+    } satisfies Partial<CaseEncounterServiceError>);
+  });
+
+  it("lists unit assignment history for an encounter", async () => {
+    mockedPrisma.roomUnitAssignment.findMany.mockResolvedValue([
+      {
+        id: "assign_1",
+        encounterId: "enc_1",
+        admissionId: "enc_1",
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+        releasedAt: new Date("2026-06-11T12:00:00.000Z"),
+        assignedBy: "user_1",
+        reason: "Transfer",
+        createdAt: new Date("2026-06-11T11:00:00.000Z"),
+        updatedAt: new Date("2026-06-11T12:00:00.000Z"),
+      },
+      {
+        id: "assign_2",
+        encounterId: "enc_1",
+        admissionId: "enc_1",
+        unitId: "unit_2",
+        assignedAt: new Date("2026-06-11T12:15:00.000Z"),
+        releasedAt: null,
+        assignedBy: "user_1",
+        reason: null,
+        createdAt: new Date("2026-06-11T12:15:00.000Z"),
+        updatedAt: new Date("2026-06-11T12:15:00.000Z"),
+      },
+    ] as never);
+
+    const result = await CaseEncounterService.listUnitAssignments({
+      encounterId: "enc_1",
+    });
+
+    expect(mockedPrisma.roomUnitAssignment.findMany).toHaveBeenCalledWith({
+      where: {
+        encounterId: "enc_1",
+        admissionId: undefined,
+        unitId: undefined,
+        releasedAt: undefined,
+      },
+      orderBy: { assignedAt: "asc" },
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]?.unitId).toBe("unit_1");
+    expect(result[1]?.releasedAt).toBeUndefined();
   });
 });

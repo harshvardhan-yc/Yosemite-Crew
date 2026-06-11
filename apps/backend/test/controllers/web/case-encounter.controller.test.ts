@@ -26,6 +26,7 @@ jest.mock("../../../src/services/case-encounter.service", () => {
       updateEncounter: jest.fn(),
       dischargeEncounter: jest.fn(),
       assignUnit: jest.fn(),
+      listUnitAssignments: jest.fn(),
       getEncounterById: jest.fn(),
       listEncounters: jest.fn(),
     },
@@ -255,5 +256,38 @@ describe("CaseEncounterController", () => {
       assignedAt: new Date("2026-06-11T11:00:00.000Z"),
     });
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("lists unit assignments as Parameters payload", async () => {
+    req.params = { id: "enc_1" };
+    mockedService.listUnitAssignments.mockResolvedValue([
+      {
+        id: "assign_1",
+        encounterId: "enc_1",
+        admissionId: "enc_1",
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+        releasedAt: new Date("2026-06-11T12:00:00.000Z"),
+        assignedBy: "user_1",
+        reason: "Transfer",
+      },
+    ] as never);
+
+    await EncounterController.listUnitAssignments(req as any, res as any);
+
+    expect(mockedService.listUnitAssignments).toHaveBeenCalledWith({
+      encounterId: "enc_1",
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: "Parameters",
+        parameter: [
+          expect.objectContaining({
+            name: "assignment",
+          }),
+        ],
+      }),
+    );
   });
 });
