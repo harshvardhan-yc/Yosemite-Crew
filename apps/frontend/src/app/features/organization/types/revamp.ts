@@ -12,6 +12,7 @@ export type BookingMode = 'OUTPATIENT' | 'INPATIENT' | 'EITHER';
 
 export type ServiceRevamp = {
   id: string;
+  version?: number;
   code: string;
   name: string;
   description: string;
@@ -47,6 +48,7 @@ export type PackageBreakdownItem = {
 
 export type PackageRevamp = {
   id: string;
+  version?: number;
   code: string;
   name: string;
   description: string;
@@ -70,4 +72,6 @@ export type SpecialityRevamp = {
   organisationId: string;
   headVetId?: string;
   teamMemberIds: string[];
+  activeServiceCount?: number;
+  activePackageCount?: number;
 };

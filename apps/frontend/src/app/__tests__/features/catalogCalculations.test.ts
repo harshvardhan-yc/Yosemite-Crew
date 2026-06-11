@@ -4,7 +4,7 @@ import {
   computePackageTotals,
   computeServiceTotal,
   resetCounters,
-} from '@/app/features/organization/services/revampMockData';
+} from '@/app/features/organization/services/catalogCalculations';
 import { PackageRevamp, ServiceRevamp } from '@/app/features/organization/types/revamp';
 
 describe('generateCode', () => {
