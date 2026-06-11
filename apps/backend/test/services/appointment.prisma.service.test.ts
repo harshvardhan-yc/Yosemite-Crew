@@ -43,6 +43,9 @@ jest.mock("../../src/config/prisma", () => ({
       create: jest.fn(),
       findUnique: jest.fn(),
     },
+    admission: {
+      upsert: jest.fn(),
+    },
     occupancy: {
       findFirst: jest.fn(),
       create: jest.fn(),
@@ -54,7 +57,7 @@ jest.mock("../../src/config/prisma", () => ({
   },
 }));
 
-const mockedPrisma = jest.mocked(prisma);
+const mockedPrisma = prisma as any;
 const mockedTypes = jest.requireMock("@yosemite-crew/types") as {
   fromAppointmentRequestDTO: jest.Mock;
   toAppointmentResponseDTO: jest.Mock;
@@ -152,6 +155,7 @@ describe("AppointmentPrismaService", () => {
     mockedPrisma.occupancy.findFirst.mockResolvedValue(null);
     mockedPrisma.occupancy.create.mockResolvedValue({} as any);
     mockedPrisma.occupancy.deleteMany.mockResolvedValue({ count: 1 } as any);
+    mockedPrisma.admission.upsert.mockResolvedValue({} as any);
   });
 
   it("creates a requested appointment with product validation", async () => {
@@ -366,6 +370,16 @@ describe("AppointmentPrismaService", () => {
         }),
       }),
     );
+    expect(mockedPrisma.admission.upsert).toHaveBeenCalledWith({
+      where: { encounterId: "enc_1" },
+      update: {},
+      create: {
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        admittedAt: baseDomain.startTime,
+      },
+    });
     expect((result as any).encounterId).toBe("enc_1");
   });
 

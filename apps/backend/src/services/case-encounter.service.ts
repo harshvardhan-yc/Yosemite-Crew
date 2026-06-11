@@ -1,5 +1,6 @@
 import { prisma } from "src/config/prisma";
 import type {
+  Admission as AdmissionDomain,
   AppointmentKind,
   Case as CaseDomain,
   CaseStatus,
@@ -44,6 +45,28 @@ type AppointmentLinkRow = {
   encounterId: string | null;
   organisationId: string;
   companion: unknown;
+};
+
+type AdmissionRow = {
+  encounterId: string;
+  organisationId: string;
+  companionId: string;
+  bedUnitId: string | null;
+  expectedStayDays: number | null;
+  admittedAt: Date;
+  dischargedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type AdmissionFindManyDelegate = {
+  findMany(args: {
+    where: {
+      encounterId: {
+        in: string[];
+      };
+    };
+  }): Promise<AdmissionRow[]>;
 };
 
 export class CaseEncounterServiceError extends Error {
@@ -169,6 +192,18 @@ const toEncounterDomain = (row: EncounterRow): EncounterDomain => ({
   updatedAt: row.updatedAt,
 });
 
+const toAdmissionDomain = (row: AdmissionRow): AdmissionDomain => ({
+  encounterId: row.encounterId,
+  organisationId: row.organisationId,
+  companionId: row.companionId,
+  bedUnitId: row.bedUnitId ?? undefined,
+  expectedStayDays: row.expectedStayDays ?? undefined,
+  admittedAt: row.admittedAt,
+  dischargedAt: row.dischargedAt ?? undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
 const toAppointmentCompanionId = (value: unknown): string =>
   ((value as { id?: string } | null)?.id ?? "").trim();
 
@@ -200,6 +235,27 @@ const attachEncounterAppointmentIds = async (
     }
   }
 
+  const admissionDelegate = (
+    prisma as unknown as { admission: AdmissionFindManyDelegate }
+  ).admission;
+
+  const admissions = await admissionDelegate.findMany({
+    where: {
+      encounterId: {
+        in: encounters
+          .map((encounter) => encounter.id)
+          .filter((value): value is string => Boolean(value)),
+      },
+    },
+  });
+
+  const admissionByEncounterId = new Map(
+    admissions.map((admission) => [
+      admission.encounterId,
+      toAdmissionDomain(admission),
+    ]),
+  );
+
   return encounters.map((encounter) => ({
     ...encounter,
     appointmentId:
@@ -207,6 +263,10 @@ const attachEncounterAppointmentIds = async (
         ? encounter.appointmentId
         : (appointmentIdByEncounterId.get(encounter.id) ??
           encounter.appointmentId),
+    admission:
+      encounter.id == null
+        ? encounter.admission
+        : admissionByEncounterId.get(encounter.id),
   }));
 };
 

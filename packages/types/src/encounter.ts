@@ -1,4 +1,5 @@
 import type { Coding, Encounter as FHIREncounter, Extension } from '@yosemite-crew/fhir';
+import type { Admission } from './admission';
 import type { AppointmentKind } from './catalog';
 
 export const ENCOUNTER_STATUSES = [
@@ -29,6 +30,7 @@ export type Encounter = {
   reason?: string;
   periodStart?: Date;
   periodEnd?: Date;
+  admission?: Admission;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -38,6 +40,10 @@ const EXT_ENCOUNTER_PARENT_ID =
 const EXT_ENCOUNTER_APPOINTMENT_KIND =
   'https://yosemitecrew.com/fhir/StructureDefinition/encounter-appointment-kind';
 const EXT_ENCOUNTER_TITLE = 'https://yosemitecrew.com/fhir/StructureDefinition/encounter-title';
+const EXT_ADMISSION_BED_UNIT_ID =
+  'https://yosemitecrew.com/fhir/StructureDefinition/admission-bed-unit-id';
+const EXT_ADMISSION_EXPECTED_STAY_DAYS =
+  'https://yosemitecrew.com/fhir/StructureDefinition/admission-expected-stay-days';
 
 const getStringExtension = (extensions: Extension[] | undefined, url: string): string | undefined =>
   extensions?.find((extension) => extension.url === url)?.valueString ?? undefined;
@@ -68,6 +74,30 @@ export const toFHIREncounter = (value: Encounter): FHIREncounter => {
       valueString: value.title,
     });
   }
+
+  const hospitalization =
+    value.admission || value.appointmentKind === 'INPATIENT'
+      ? {
+          extension: [
+            ...(value.admission?.bedUnitId
+              ? [
+                  {
+                    url: EXT_ADMISSION_BED_UNIT_ID,
+                    valueString: value.admission.bedUnitId,
+                  },
+                ]
+              : []),
+            ...(typeof value.admission?.expectedStayDays === 'number'
+              ? [
+                  {
+                    url: EXT_ADMISSION_EXPECTED_STAY_DAYS,
+                    valueInteger: value.admission.expectedStayDays,
+                  },
+                ]
+              : []),
+          ],
+        }
+      : undefined;
 
   return {
     resourceType: 'Encounter',
@@ -106,6 +136,7 @@ export const toFHIREncounter = (value: Encounter): FHIREncounter => {
           },
         ]
       : undefined,
+    hospitalization,
     extension,
   };
 };

@@ -63,6 +63,18 @@ type CatalogSelection = Awaited<
   ReturnType<typeof CatalogService.resolveSelection>
 >;
 type TransactionClient = Prisma.TransactionClient;
+type AdmissionUpsertDelegate = {
+  upsert(args: {
+    where: { encounterId: string };
+    update: Record<string, never>;
+    create: {
+      encounterId: string;
+      organisationId: string;
+      companionId: string;
+      admittedAt: Date;
+    };
+  }): Promise<unknown>;
+};
 type CaseRow = {
   id: string;
   organisationId: string;
@@ -387,6 +399,23 @@ const ensureEncounterOnCheckIn = async (args: {
       encounterId: createdEncounter.id,
     },
   });
+
+  if (normalizeAppointmentKind(args.current.appointmentKind) === "INPATIENT") {
+    const admissionDelegate = (
+      args.tx as unknown as { admission: AdmissionUpsertDelegate }
+    ).admission;
+
+    await admissionDelegate.upsert({
+      where: { encounterId: createdEncounter.id },
+      update: {},
+      create: {
+        encounterId: createdEncounter.id,
+        organisationId: args.current.organisationId,
+        companionId,
+        admittedAt: args.current.startTime,
+      },
+    });
+  }
 
   return createdEncounter.id;
 };

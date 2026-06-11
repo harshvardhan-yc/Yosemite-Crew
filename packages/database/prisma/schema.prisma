@@ -577,12 +577,31 @@ model Encounter {
 
   caseRecord      Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
   appointments    Appointment[]   @relation("EncounterAppointments")
+  admission       Admission?
 
   @@index([caseId])
   @@index([organisationId, status])
   @@index([organisationId, appointmentKind])
   @@index([companionId])
   @@index([parentId])
+}
+
+model Admission {
+  encounterId       String   @id
+  organisationId    String
+  companionId       String
+  bedUnitId         String?
+  expectedStayDays  Int?
+  admittedAt        DateTime
+  dischargedAt      DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  encounter         Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, admittedAt])
+  @@index([organisationId, dischargedAt])
+  @@index([companionId])
 }
 
 model ChatSession {

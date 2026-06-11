@@ -132,6 +132,7 @@ export type { OrganisationInvite, InviteStatus } from './organisationInvite';
 export type { Service } from './service';
 export type { Case, CaseStatus } from './case';
 export { fromFHIRCase, toFHIRCase } from './case';
+export type { Admission } from './admission';
 export type { Encounter, EncounterClass, EncounterStatus } from './encounter';
 export { fromFHIREncounter, toFHIREncounter } from './encounter';
 export type {

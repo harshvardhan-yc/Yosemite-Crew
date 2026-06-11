@@ -26,6 +26,9 @@ jest.mock("../../src/config/prisma", () => ({
       findMany: jest.fn(),
       update: jest.fn(),
     },
+    admission: {
+      findMany: jest.fn(),
+    },
   },
 }));
 
@@ -67,6 +70,7 @@ describe("CaseEncounterService", () => {
     mockedPrisma.$transaction.mockImplementation(async (callback: any) =>
       callback(mockedPrisma),
     );
+    mockedPrisma.admission.findMany.mockResolvedValue([] as never);
   });
 
   it("creates a case", async () => {
@@ -212,11 +216,25 @@ describe("CaseEncounterService", () => {
     mockedPrisma.appointment.findMany.mockResolvedValue([
       { id: "appt_1", encounterId: "enc_1" },
     ] as never);
+    mockedPrisma.admission.findMany.mockResolvedValue([
+      {
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        bedUnitId: null,
+        expectedStayDays: null,
+        admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+        dischargedAt: null,
+        createdAt: new Date("2026-06-11T10:30:00.000Z"),
+        updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+      },
+    ] as never);
 
     const result = await CaseEncounterService.getEncounterById("enc_1");
 
     expect(result.id).toBe("enc_1");
     expect(result.appointmentId).toBe("appt_1");
+    expect(result.admission?.encounterId).toBe("enc_1");
   });
 
   it("lists encounters with linked appointment ids", async () => {
