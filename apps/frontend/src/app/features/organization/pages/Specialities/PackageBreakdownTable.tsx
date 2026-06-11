@@ -2,7 +2,7 @@ import React from 'react';
 import { MdDeleteForever } from 'react-icons/md';
 import { AiOutlineInfoCircle } from 'react-icons/ai';
 import { PackageBreakdownItem } from '@/app/features/organization/types/revamp';
-import { computePackageBreakdownItem } from '@/app/features/organization/services/revampMockData';
+import { computePackageBreakdownItem } from '@/app/features/organization/services/catalogCalculations';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
 import { formatMoney } from '@/app/lib/money';

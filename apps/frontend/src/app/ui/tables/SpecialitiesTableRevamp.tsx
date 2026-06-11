@@ -52,7 +52,12 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
         const revampCount = id
           ? allServices.filter((s) => s.specialityId === id && s.status === 'ACTIVE').length
           : 0;
-        const count = revampCount > 0 ? revampCount : (item.services?.length ?? 0);
+        const count =
+          revampCount > 0
+            ? revampCount
+            : ((item as SpecialityWeb & { activeServiceCount?: number }).activeServiceCount ??
+              item.services?.length ??
+              0);
         return <ProfileTitle>{count}</ProfileTitle>;
       },
     },
@@ -65,7 +70,11 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
         const revampCount = id
           ? allPackages.filter((p) => p.specialityId === id && p.status === 'ACTIVE').length
           : 0;
-        return <ProfileTitle>{revampCount}</ProfileTitle>;
+        const count =
+          revampCount > 0
+            ? revampCount
+            : ((item as SpecialityWeb & { activePackageCount?: number }).activePackageCount ?? 0);
+        return <ProfileTitle>{count}</ProfileTitle>;
       },
     },
     {
@@ -114,7 +123,8 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
 
   return (
     <div className="w-full">
-      <div className="hidden xl:flex">
+      {/* Table on wide screens; the table scrolls horizontally if space is tight */}
+      <div className="hidden lg:block w-full overflow-x-auto">
         <GenericTable
           data={filteredList}
           columns={columns}
@@ -124,7 +134,8 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
           tableClassName="specialities-table"
         />
       </div>
-      <div className="flex xl:hidden gap-4 sm:gap-10 flex-wrap">
+      {/* Responsive card grid below lg: 1 col on mobile, 2 on sm, 3 on md */}
+      <div className="grid lg:hidden grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {filteredList.length === 0 ? (
           <NoDataMessage />
         ) : (

@@ -21,6 +21,7 @@ import { useRouter } from 'next/navigation';
 import ServicesTab from '@/app/features/organization/pages/Specialities/ServicesTab';
 import PackagesTab from '@/app/features/organization/pages/Specialities/PackagesTab';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
+import { getCatalogErrorMessage } from '@/app/features/organization/services/catalogErrors';
 
 type SpecialityInfoProps = {
   showModal: boolean;
@@ -92,7 +93,10 @@ const SpecialityInfo = ({
       console.log(error);
       notify('error', {
         title: 'Unable to delete speciality',
-        text: 'Failed to delete speciality. Please try again.',
+        text: getCatalogErrorMessage(
+          error,
+          'Failed to delete speciality. It may have services, packages, or historical usage.'
+        ),
       });
     }
   };

@@ -1,17 +1,23 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PackageFormDraft from '@/app/features/organization/pages/Specialities/PackageFormDraft';
 import { PackageRevamp } from '@/app/features/organization/types/revamp';
 
 jest.mock('react-icons/md', () => ({
   MdOutlineArchive: () => <span data-testid="icon-archive" />,
+  MdDeleteForever: () => <span data-testid="icon-delete" />,
+}));
+jest.mock('react-icons/lu', () => ({
+  LuBedSingle: () => <span data-testid="icon-bed" />,
+  LuCheck: () => <span data-testid="icon-check-lu" />,
 }));
 jest.mock('react-icons/fi', () => ({
   FiCheck: () => <span data-testid="icon-check" />,
 }));
 jest.mock('react-icons/io', () => ({
   IoIosSearch: () => <span data-testid="icon-search" />,
+  IoIosClose: () => <span data-testid="icon-close" />,
 }));
 
 jest.mock('@/app/ui/inputs/FormInput/FormInput', () => ({
@@ -170,7 +176,7 @@ jest.mock('@/app/hooks/useBilling', () => ({
   useCurrencyForPrimaryOrg: () => 'USD',
 }));
 
-jest.mock('@/app/features/organization/services/revampMockData', () => ({
+jest.mock('@/app/features/organization/services/catalogCalculations', () => ({
   computePackageTotals: jest.fn((pkg: any) => ({
     totalCost: 200,
     totalItems: pkg.breakdown?.length ?? 0,
@@ -180,11 +186,36 @@ jest.mock('@/app/features/organization/services/revampMockData', () => ({
 const mockNotify = jest.fn();
 const mockAddPackage = jest.fn();
 const mockUpdatePackage = jest.fn();
-const mockArchivePackage = jest.fn();
+const mockDeletePackage = jest.fn();
+
+jest.mock('@/app/features/organization/services/catalogApiService', () => ({
+  catalogApi: {
+    searchItems: jest.fn(),
+    mapSearchItem: jest.fn((item) => item),
+  },
+}));
 
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
+import { catalogApi } from '@/app/features/organization/services/catalogApiService';
+
+const mockSearchItems = catalogApi.searchItems as jest.MockedFunction<
+  typeof catalogApi.searchItems
+>;
 
 const mockServices = [
+  {
+    id: 'inv-syringe-1',
+    code: 'INV-0001',
+    name: 'Syringe',
+    type: 'INVENTORY',
+    grossAmount: 4,
+    currency: 'USD',
+    defaultDiscount: 0,
+    maxDiscount: 0,
+    isBookable: false,
+    isInpatientPreferred: false,
+    status: 'ACTIVE',
+  },
   {
     id: 'svc-consult-1',
     code: 'CS-0001',
@@ -219,7 +250,7 @@ const setupStoreMock = (packages: any[] = [], services: any[] = mockServices) =>
       const state = {
         addPackage: mockAddPackage,
         updatePackage: mockUpdatePackage,
-        archivePackage: mockArchivePackage,
+        deletePackage: mockDeletePackage,
         packages,
         services,
       };
@@ -271,6 +302,7 @@ const mockEditPackage: PackageRevamp = {
 describe('PackageFormDraft', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSearchItems.mockResolvedValue([]);
     setupStoreMock();
     defaultProps.onClose = jest.fn();
   });
@@ -312,9 +344,9 @@ describe('PackageFormDraft', () => {
       ).toBeInTheDocument();
     });
 
-    it('does not render Archive Package button in create mode', () => {
+    it('does not render Delete Package button in create mode', () => {
       render(<PackageFormDraft {...defaultProps} />);
-      expect(screen.queryByText('Archive Package')).not.toBeInTheDocument();
+      expect(screen.queryByText('Delete Package')).not.toBeInTheDocument();
     });
 
     it('shows Cancel and Save Package buttons', () => {
@@ -341,15 +373,17 @@ describe('PackageFormDraft', () => {
       expect(mockAddPackage).not.toHaveBeenCalled();
     });
 
-    it('calls addPackage and onClose when form is valid', () => {
+    it('calls addPackage and onClose when form is valid', async () => {
       render(<PackageFormDraft {...defaultProps} />);
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New Package' } });
       addSyringeToBreakdown();
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
       expect(mockAddPackage).toHaveBeenCalledTimes(1);
-      expect(mockNotify).toHaveBeenCalledWith(
-        'success',
-        expect.objectContaining({ title: 'Package added' })
+      await waitFor(() =>
+        expect(mockNotify).toHaveBeenCalledWith(
+          'success',
+          expect.objectContaining({ title: 'Package added' })
+        )
       );
       expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
     });
@@ -585,9 +619,9 @@ describe('PackageFormDraft', () => {
       expect(screen.getByLabelText('Name')).toHaveValue('Wellness Package');
     });
 
-    it('shows Archive Package button in edit mode', () => {
+    it('shows Delete Package button in edit mode', () => {
       render(<PackageFormDraft {...defaultProps} editPackage={mockEditPackage} />);
-      expect(screen.getByText('Archive Package')).toBeInTheDocument();
+      expect(screen.getByText('Delete Package')).toBeInTheDocument();
     });
 
     it('shows package code in title slot', () => {
@@ -605,27 +639,35 @@ describe('PackageFormDraft', () => {
       expect(screen.getByTestId('breakdown-table')).toBeInTheDocument();
     });
 
-    it('calls updatePackage on save in edit mode', () => {
+    it('calls updatePackage on save in edit mode', async () => {
       render(<PackageFormDraft {...defaultProps} editPackage={mockEditPackage} />);
       fireEvent.click(screen.getByRole('button', { name: 'Save Package' }));
       expect(mockUpdatePackage).toHaveBeenCalledWith(
         'pkg-edit-1',
         expect.objectContaining({ name: 'Wellness Package' })
       );
-      expect(mockNotify).toHaveBeenCalledWith(
-        'success',
-        expect.objectContaining({ title: 'Package updated' })
+      await waitFor(() =>
+        expect(mockNotify).toHaveBeenCalledWith(
+          'success',
+          expect.objectContaining({ title: 'Package updated' })
+        )
       );
       expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
     });
 
-    it('calls archivePackage and onClose when Archive is clicked', () => {
+    it('confirms before deleting, then calls deletePackage and onClose', async () => {
       render(<PackageFormDraft {...defaultProps} editPackage={mockEditPackage} />);
-      fireEvent.click(screen.getByText('Archive Package'));
-      expect(mockArchivePackage).toHaveBeenCalledWith('pkg-edit-1');
-      expect(mockNotify).toHaveBeenCalledWith(
-        'success',
-        expect.objectContaining({ title: 'Package archived' })
+      // Clicking the toolbar button opens the confirmation modal — no delete yet.
+      fireEvent.click(screen.getByText('Delete Package'));
+      expect(mockDeletePackage).not.toHaveBeenCalled();
+      // Confirm in the modal.
+      fireEvent.click(screen.getByText('Delete'));
+      expect(mockDeletePackage).toHaveBeenCalledWith('pkg-edit-1');
+      await waitFor(() =>
+        expect(mockNotify).toHaveBeenCalledWith(
+          'success',
+          expect.objectContaining({ title: 'Package deleted' })
+        )
       );
       expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
     });

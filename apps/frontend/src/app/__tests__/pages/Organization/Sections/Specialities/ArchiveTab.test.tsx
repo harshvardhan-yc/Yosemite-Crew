@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 jest.mock('react-icons/md', () => ({
@@ -15,6 +15,7 @@ const mockRestoreService = jest.fn();
 const mockDeleteService = jest.fn();
 const mockRestorePackage = jest.fn();
 const mockDeletePackage = jest.fn();
+const mockLoadSpecialityCatalog = jest.fn();
 let mockServices: any[] = [];
 let mockPackages: any[] = [];
 
@@ -27,6 +28,7 @@ jest.mock('@/app/stores/revampCatalogStore', () => ({
       deleteService: mockDeleteService,
       restorePackage: mockRestorePackage,
       deletePackage: mockDeletePackage,
+      loadSpecialityCatalog: mockLoadSpecialityCatalog,
     }),
 }));
 
@@ -82,7 +84,7 @@ jest.mock('@/app/ui/primitives/Buttons/Delete', () => ({
   ),
 }));
 
-jest.mock('@/app/features/organization/services/revampMockData', () => ({
+jest.mock('@/app/features/organization/services/catalogCalculations', () => ({
   computeServiceTotal: () => ({ total: 50 }),
 }));
 
@@ -93,12 +95,16 @@ const SPEC_ID = 'spec-1';
 describe('ArchiveTab', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRestoreService.mockResolvedValue(undefined);
+    mockDeleteService.mockResolvedValue(undefined);
+    mockRestorePackage.mockResolvedValue(undefined);
+    mockDeletePackage.mockResolvedValue(undefined);
     mockServices = [];
     mockPackages = [];
   });
 
   it('shows empty state when no archived items', () => {
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     expect(screen.getByText('No archived services or packages.')).toBeInTheDocument();
     expect(screen.getByTestId('icon-info')).toBeInTheDocument();
   });
@@ -130,7 +136,7 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     expect(screen.getByText('X-Ray')).toBeInTheDocument();
     expect(screen.queryByText('Consult')).not.toBeInTheDocument();
     expect(screen.queryByText('Other')).not.toBeInTheDocument();
@@ -147,7 +153,7 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     expect(screen.getByText('Blood Panel')).toBeInTheDocument();
     expect(screen.getByText('Lab / Diagnostics')).toBeInTheDocument();
     expect(screen.getByText('$ 50.00')).toBeInTheDocument();
@@ -165,14 +171,14 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     expect(screen.getByRole('button', { name: 'Restore Ultrasound' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Delete Ultrasound permanently' })
     ).toBeInTheDocument();
   });
 
-  it('calls restoreService and notifies on restore click', () => {
+  it('calls restoreService and notifies on restore click', async () => {
     mockServices = [
       {
         id: 's1',
@@ -183,16 +189,18 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     fireEvent.click(screen.getByRole('button', { name: 'Restore Ultrasound' }));
     expect(mockRestoreService).toHaveBeenCalledWith('s1');
-    expect(mockNotify).toHaveBeenCalledWith(
-      'success',
-      expect.objectContaining({ title: 'Service restored' })
+    await waitFor(() =>
+      expect(mockNotify).toHaveBeenCalledWith(
+        'success',
+        expect.objectContaining({ title: 'Service restored' })
+      )
     );
   });
 
-  it('calls deleteService and notifies on delete click', () => {
+  it('calls deleteService and notifies on delete click', async () => {
     mockServices = [
       {
         id: 's1',
@@ -203,15 +211,17 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Ultrasound permanently' }));
     expect(mockDeleteService).not.toHaveBeenCalled();
     expect(screen.getByText('Delete service')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(mockDeleteService).toHaveBeenCalledWith('s1');
-    expect(mockNotify).toHaveBeenCalledWith(
-      'success',
-      expect.objectContaining({ title: 'Service deleted' })
+    await waitFor(() =>
+      expect(mockNotify).toHaveBeenCalledWith(
+        'success',
+        expect.objectContaining({ title: 'Service deleted' })
+      )
     );
   });
 
@@ -226,14 +236,14 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     expect(screen.getByText('Wellness Plan')).toBeInTheDocument();
     expect(screen.getByText('WP1')).toBeInTheDocument();
     expect(screen.getByText('Approx. 60 mins')).toBeInTheDocument();
     expect(screen.getByText('Package')).toBeInTheDocument();
   });
 
-  it('calls restorePackage and notifies on package restore', () => {
+  it('calls restorePackage and notifies on package restore', async () => {
     mockPackages = [
       {
         id: 'p1',
@@ -244,16 +254,18 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     fireEvent.click(screen.getByRole('button', { name: 'Restore Wellness Plan' }));
     expect(mockRestorePackage).toHaveBeenCalledWith('p1');
-    expect(mockNotify).toHaveBeenCalledWith(
-      'success',
-      expect.objectContaining({ title: 'Package restored' })
+    await waitFor(() =>
+      expect(mockNotify).toHaveBeenCalledWith(
+        'success',
+        expect.objectContaining({ title: 'Package restored' })
+      )
     );
   });
 
-  it('calls deletePackage and notifies on package delete', () => {
+  it('calls deletePackage and notifies on package delete', async () => {
     mockPackages = [
       {
         id: 'p1',
@@ -264,15 +276,17 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Wellness Plan permanently' }));
     expect(mockDeletePackage).not.toHaveBeenCalled();
     expect(screen.getByText('Delete package')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(mockDeletePackage).toHaveBeenCalledWith('p1');
-    expect(mockNotify).toHaveBeenCalledWith(
-      'success',
-      expect.objectContaining({ title: 'Package deleted' })
+    await waitFor(() =>
+      expect(mockNotify).toHaveBeenCalledWith(
+        'success',
+        expect.objectContaining({ title: 'Package deleted' })
+      )
     );
   });
 
@@ -297,7 +311,7 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     expect(screen.getByText('Services')).toBeInTheDocument();
     expect(screen.getByText('Packages')).toBeInTheDocument();
     expect(screen.getByText('X-Ray')).toBeInTheDocument();
@@ -316,7 +330,7 @@ describe('ArchiveTab', () => {
         status: 'ARCHIVED',
       },
     ];
-    render(<ArchiveTab specialityId={SPEC_ID} />);
+    render(<ArchiveTab specialityId={SPEC_ID} organisationId="org-1" />);
     expect(screen.getByText('CUSTOM_TYPE')).toBeInTheDocument();
   });
 });

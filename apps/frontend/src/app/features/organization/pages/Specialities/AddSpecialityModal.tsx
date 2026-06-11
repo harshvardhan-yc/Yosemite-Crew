@@ -30,7 +30,7 @@ const AddSpecialityModal = ({
     setShowModal(false);
   };
 
-  const submitSpeciality = () => {
+  const submitSpeciality = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
       setError('Speciality name is required.');
@@ -44,14 +44,18 @@ const AddSpecialityModal = ({
       setError('A speciality with this name already exists.');
       return;
     }
-    addSpeciality(trimmed, organisationId);
-    notify('success', { title: 'Speciality added', text: `"${trimmed}" has been created.` });
-    handleClose();
+    try {
+      await addSpeciality(trimmed, organisationId);
+      notify('success', { title: 'Speciality added', text: `"${trimmed}" has been created.` });
+      handleClose();
+    } catch {
+      notify('error', { title: 'Unable to add speciality', text: 'Please try again.' });
+    }
   };
 
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    submitSpeciality();
+    Promise.resolve(submitSpeciality()).catch(() => undefined);
   };
 
   return (
@@ -70,7 +74,13 @@ const AddSpecialityModal = ({
         />
         <div className="grid grid-cols-2 gap-3">
           <Secondary href="#" text="Cancel" onClick={handleClose} />
-          <Primary href="#" text="Add Speciality" onClick={submitSpeciality} />
+          <Primary
+            href="#"
+            text="Add Speciality"
+            onClick={() => {
+              Promise.resolve(submitSpeciality()).catch(() => undefined);
+            }}
+          />
         </div>
       </form>
     </CenterModal>

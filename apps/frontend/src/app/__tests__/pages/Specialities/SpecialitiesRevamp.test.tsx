@@ -75,10 +75,17 @@ const mockSpecialities = [
 ];
 
 describe('SpecialitiesRevamp', () => {
+  const mockLoadOrganisationCatalog = jest.fn();
+
   beforeEach(() => {
+    jest.clearAllMocks();
     mockSearchParamsGet.mockReturnValue(null);
     (useRevampCatalogStore as unknown as jest.Mock).mockImplementation((selector: any) =>
-      selector({ specialities: mockSpecialities })
+      selector({
+        specialities: mockSpecialities,
+        status: 'ready',
+        loadOrganisationCatalog: mockLoadOrganisationCatalog,
+      })
     );
     (useOrgStore as unknown as jest.Mock).mockImplementation((selector: any) =>
       selector({ primaryOrgId: 'org-1' })
@@ -157,7 +164,11 @@ describe('SpecialitiesRevamp', () => {
 
   it('shows "No specialities yet." when list is empty and no search query', () => {
     (useRevampCatalogStore as unknown as jest.Mock).mockImplementation((selector: any) =>
-      selector({ specialities: [] })
+      selector({
+        specialities: [],
+        status: 'ready',
+        loadOrganisationCatalog: mockLoadOrganisationCatalog,
+      })
     );
     render(<SpecialitiesRevamp />);
     expect(screen.getByText('No specialities yet.')).toBeInTheDocument();
@@ -165,7 +176,11 @@ describe('SpecialitiesRevamp', () => {
 
   it('shows an add button inside the empty state when no search query', () => {
     (useRevampCatalogStore as unknown as jest.Mock).mockImplementation((selector: any) =>
-      selector({ specialities: [] })
+      selector({
+        specialities: [],
+        status: 'ready',
+        loadOrganisationCatalog: mockLoadOrganisationCatalog,
+      })
     );
     render(<SpecialitiesRevamp />);
     const addButtons = screen.getAllByRole('button', { name: 'Add Speciality' });
@@ -178,7 +193,11 @@ describe('SpecialitiesRevamp', () => {
 
   it('does not show add button in empty state when search query is active', () => {
     (useRevampCatalogStore as unknown as jest.Mock).mockImplementation((selector: any) =>
-      selector({ specialities: [] })
+      selector({
+        specialities: [],
+        status: 'ready',
+        loadOrganisationCatalog: mockLoadOrganisationCatalog,
+      })
     );
     (useSearchStore as unknown as jest.Mock).mockImplementation((selector: any) =>
       selector({ query: 'something' })
@@ -198,7 +217,9 @@ describe('SpecialitiesRevamp', () => {
     );
     render(<SpecialitiesRevamp />);
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
-    expect(screen.getByText('No specialities yet.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Select an organisation before managing specialities.')
+    ).toBeInTheDocument();
   });
 
   // --- Section 5: openId from searchParams ---
