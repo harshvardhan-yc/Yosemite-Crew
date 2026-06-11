@@ -130,6 +130,10 @@ export type {
 
 export type { OrganisationInvite, InviteStatus } from './organisationInvite';
 export type { Service } from './service';
+export type { Case, CaseStatus } from './case';
+export { fromFHIRCase, toFHIRCase } from './case';
+export type { Encounter, EncounterClass, EncounterStatus } from './encounter';
+export { fromFHIREncounter, toFHIREncounter } from './encounter';
 export type {
   CatalogListRow,
   CatalogPackageBreakdownRow,
@@ -230,6 +234,18 @@ export {
   toAppointmentResponseDTO,
   fromAppointmentRequestDTO,
 } from './dto/appointment.dto';
+export {
+  type CaseRequestDTO,
+  type CaseResponseDTO,
+  fromCaseRequestDTO,
+  toCaseResponseDTO,
+} from './dto/case.dto';
+export {
+  type EncounterRequestDTO,
+  type EncounterResponseDTO,
+  fromEncounterRequestDTO,
+  toEncounterResponseDTO,
+} from './dto/encounter.dto';
 export type { Invoice, InvoiceItem, InvoiceStatus, PaymentCollectionMethod } from './invoice';
 export type { Appointment, AppointmentPaymentStatus } from './appointment';
 export { toFHIRInvoice, fromFHIRInvoice } from './invoice';

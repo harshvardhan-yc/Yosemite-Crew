@@ -21,6 +21,8 @@ export type AppointmentPaymentStatus = 'PAID' | 'UNPAID';
 
 export type Appointment = {
   id?: string;
+  caseId?: string;
+  encounterId?: string;
   companion: {
     id: string;
     name: string;
@@ -84,6 +86,10 @@ const EXT_APPOINTMENT_FORM_IDS =
 const EXT_APPOINTMENT_PAYMENT_STATUS =
   'https://yosemitecrew.com/fhir/StructureDefinition/appointment-payment-status';
 const EXT_APPOINTMENT_KIND = 'https://yosemitecrew.com/fhir/StructureDefinition/appointment-kind';
+const EXT_APPOINTMENT_CASE_ID =
+  'https://yosemitecrew.com/fhir/StructureDefinition/appointment-case-id';
+const EXT_APPOINTMENT_ENCOUNTER_ID =
+  'https://yosemitecrew.com/fhir/StructureDefinition/appointment-encounter-id';
 
 export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
   const participants: AppointmentParticipant[] = [];
@@ -277,6 +283,20 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
     });
   }
 
+  if (appointment.caseId) {
+    extension.push({
+      url: EXT_APPOINTMENT_CASE_ID,
+      valueString: appointment.caseId,
+    });
+  }
+
+  if (appointment.encounterId) {
+    extension.push({
+      url: EXT_APPOINTMENT_ENCOUNTER_ID,
+      valueString: appointment.encounterId,
+    });
+  }
+
   const fhirAppointment: FHIRAppointment = {
     resourceType: 'Appointment',
     id: appointment.id,
@@ -359,6 +379,12 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
   )?.valueString as AppointmentPaymentStatus | undefined;
   const appointmentKind = FHIRappointment.extension?.find((ext) => ext.url === EXT_APPOINTMENT_KIND)
     ?.valueString as AppointmentKind | undefined;
+  const caseId = FHIRappointment.extension?.find(
+    (ext) => ext.url === EXT_APPOINTMENT_CASE_ID
+  )?.valueString;
+  const encounterId = FHIRappointment.extension?.find(
+    (ext) => ext.url === EXT_APPOINTMENT_ENCOUNTER_ID
+  )?.valueString;
 
   // Construct internal Appointment object
   const leadId = leadParticipant?.actor?.reference?.split('/')[1] ?? '';
@@ -369,6 +395,8 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
 
   const appointment: Appointment = {
     id: FHIRappointment.id ?? '',
+    caseId: caseId || undefined,
+    encounterId: encounterId || undefined,
     organisationId: orgParticipant?.actor?.reference?.split('/')[1] ?? 'unknown-org',
     companion: {
       id: companionParticipant?.actor?.reference?.split('/')[1] ?? 'unknown-pet',

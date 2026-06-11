@@ -525,6 +525,9 @@ model Appointment {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
+  caseRecord        Case?             @relation("CaseAppointments", fields: [caseId], references: [id], onDelete: SetNull)
+  encounter         Encounter?        @relation("EncounterAppointments", fields: [encounterId], references: [id], onDelete: SetNull)
+
   @@index([organisationId, appointmentDate])
   @@index([organisationId])
   @@index([organisationId, productItemId])
@@ -533,6 +536,53 @@ model Appointment {
   @@index([status])
   @@index([expiresAt])
   @@unique([organisationId, idempotencyKey])
+}
+
+model Case {
+  id              String          @id @default(uuid())
+  organisationId  String
+  companionId     String
+  parentId        String?
+  status          String
+  appointmentKind AppointmentKind @default(OUTPATIENT)
+  title           String?
+  description     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  appointments    Appointment[]   @relation("CaseAppointments")
+  encounters      Encounter[]
+
+  @@index([organisationId, status])
+  @@index([organisationId, appointmentKind])
+  @@index([companionId])
+  @@index([parentId])
+}
+
+model Encounter {
+  id              String          @id @default(uuid())
+  caseId          String
+  organisationId  String
+  companionId     String
+  parentId        String?
+  status          String
+  encounterClass  String
+  appointmentKind AppointmentKind @default(OUTPATIENT)
+  title           String?
+  reason          String?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  caseRecord      Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  appointments    Appointment[]   @relation("EncounterAppointments")
+
+  @@index([caseId])
+  @@index([organisationId, status])
+  @@index([organisationId, appointmentKind])
+  @@index([companionId])
+  @@index([parentId])
 }
 
 model ChatSession {

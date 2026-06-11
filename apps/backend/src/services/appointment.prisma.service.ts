@@ -10,6 +10,7 @@ import {
   toAppointmentResponseDTO,
 } from "@yosemite-crew/types";
 import { prisma } from "src/config/prisma";
+import { CatalogService, CatalogServiceError } from "./catalog.service";
 
 type AppointmentStatus = AppointmentDomain["status"];
 
@@ -58,6 +59,11 @@ type RescheduleChanges = {
   durationMinutes?: number;
 };
 
+type CatalogSelection = Awaited<
+  ReturnType<typeof CatalogService.resolveSelection>
+>;
+type TransactionClient = Prisma.TransactionClient;
+
 type AppointmentListFilters = {
   organisationId?: string;
   companionId?: string;
@@ -87,6 +93,12 @@ const toNullableJsonValue = (
   value: Prisma.JsonValue | null | undefined,
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined =>
   value == null ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
+
+const normalizeOptionalString = (value?: string | null) => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
 
 const normalizeAppointmentKind = (
   value?: AppointmentKind | null,
@@ -121,6 +133,161 @@ const assertAppointmentTransition = (
       409,
     );
   }
+};
+
+const assertValidTimeRange = (startTime: Date, endTime: Date) => {
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    throw new AppointmentPrismaServiceError(
+      "Valid startTime and endTime are required.",
+      400,
+    );
+  }
+
+  if (endTime <= startTime) {
+    throw new AppointmentPrismaServiceError(
+      "endTime must be after startTime.",
+      400,
+    );
+  }
+};
+
+const assertCaseEncounterConsistency = (input: {
+  appointmentKind: AppointmentKind;
+  caseId?: string;
+  encounterId?: string;
+}) => {
+  if (input.appointmentKind === "INPATIENT" && !input.caseId) {
+    throw new AppointmentPrismaServiceError(
+      "caseId is required for inpatient appointments.",
+      400,
+    );
+  }
+
+  if (input.encounterId && !input.caseId) {
+    throw new AppointmentPrismaServiceError(
+      "caseId is required when encounterId is provided.",
+      400,
+    );
+  }
+};
+
+const resolveCatalogSelectionForAppointment = async (input: {
+  appointmentType?: AppointmentDomain["appointmentType"];
+  organisationId: string;
+}) => {
+  const selectionId = input.appointmentType?.id?.trim();
+  if (!selectionId) {
+    throw new AppointmentPrismaServiceError(
+      "Appointment type is required.",
+      400,
+    );
+  }
+
+  try {
+    return await CatalogService.resolveSelection(
+      selectionId,
+      input.organisationId,
+    );
+  } catch (error) {
+    if (error instanceof CatalogServiceError) {
+      throw new AppointmentPrismaServiceError(error.message, error.statusCode);
+    }
+
+    throw error;
+  }
+};
+
+const assertSelectionSupportsAppointmentKind = (
+  selection: CatalogSelection,
+  appointmentKind: AppointmentKind,
+) => {
+  if (!selection.isBookable) {
+    throw new AppointmentPrismaServiceError(
+      "Selected product is not bookable.",
+      400,
+    );
+  }
+
+  if (!selection.appointmentKinds.includes(appointmentKind)) {
+    throw new AppointmentPrismaServiceError(
+      `Selected product is not bookable for ${appointmentKind.toLowerCase()} appointments.`,
+      400,
+    );
+  }
+};
+
+const assertLeadAvailability = async (args: {
+  tx: TransactionClient;
+  organisationId: string;
+  leadId: string;
+  startTime: Date;
+  endTime: Date;
+  excludeAppointmentId?: string;
+}) => {
+  const overlapping = await args.tx.occupancy.findFirst({
+    where: {
+      userId: args.leadId,
+      organisationId: args.organisationId,
+      startTime: { lt: args.endTime },
+      endTime: { gt: args.startTime },
+      ...(args.excludeAppointmentId
+        ? {
+            NOT: {
+              sourceType: "APPOINTMENT",
+              referenceId: args.excludeAppointmentId,
+            },
+          }
+        : {}),
+    },
+  });
+
+  if (overlapping) {
+    throw new AppointmentPrismaServiceError(
+      "Selected vet is not available for this slot.",
+      409,
+    );
+  }
+};
+
+const upsertAppointmentOccupancy = async (args: {
+  tx: TransactionClient;
+  appointmentId: string;
+  organisationId: string;
+  leadId?: string;
+  startTime: Date;
+  endTime: Date;
+}) => {
+  await args.tx.occupancy.deleteMany({
+    where: {
+      organisationId: args.organisationId,
+      sourceType: "APPOINTMENT",
+      referenceId: args.appointmentId,
+    },
+  });
+
+  if (!args.leadId) {
+    return;
+  }
+
+  await assertLeadAvailability({
+    tx: args.tx,
+    organisationId: args.organisationId,
+    leadId: args.leadId,
+    startTime: args.startTime,
+    endTime: args.endTime,
+    excludeAppointmentId: args.appointmentId,
+  });
+
+  await args.tx.occupancy.create({
+    data: {
+      userId: args.leadId,
+      organisationId: args.organisationId,
+      startTime: args.startTime,
+      endTime: args.endTime,
+      sourceType: "APPOINTMENT",
+      referenceId: args.appointmentId,
+    },
+  });
 };
 
 const buildWhereFromFilters = (
@@ -232,6 +399,8 @@ const toDomain = (
   paymentStatus?: AppointmentPaymentStatus,
 ): AppointmentDomain => ({
   id: row.id,
+  caseId: row.caseId ?? undefined,
+  encounterId: row.encounterId ?? undefined,
   companion: row.companion as AppointmentDomain["companion"],
   lead: (row.lead as AppointmentDomain["lead"]) ?? undefined,
   supportStaff:
@@ -281,39 +450,71 @@ const toResponseList = async (
   );
 };
 
+const getLeadIdFromRow = (row: AppointmentRow): string | undefined => {
+  const lead = row.lead as { id?: string } | null;
+  return typeof lead?.id === "string" && lead.id.trim() ? lead.id : undefined;
+};
+
 const createAppointment = async (
   dto: AppointmentRequestDTO,
   status: AppointmentStatus,
 ): Promise<AppointmentResponseDTO> => {
   const input = fromAppointmentRequestDTO(dto);
-  const created = await prisma.appointment.create({
-    data: {
-      companion: toJsonValue(input.companion),
-      lead: input.lead ? toJsonValue(input.lead) : Prisma.JsonNull,
-      supportStaff: input.supportStaff ? toJsonValue(input.supportStaff) : [],
-      room: input.room ? toJsonValue(input.room) : Prisma.JsonNull,
-      appointmentType: input.appointmentType
-        ? toJsonValue(input.appointmentType)
-        : Prisma.JsonNull,
-      appointmentKind: normalizeAppointmentKind(input.appointmentKind),
-      organisationId: input.organisationId,
-      appointmentDate: input.appointmentDate,
-      startTime: input.startTime,
-      endTime: input.endTime,
-      timeSlot: input.timeSlot,
-      durationMinutes: input.durationMinutes,
-      status,
-      isEmergency: input.isEmergency ?? false,
-      concern: input.concern ?? null,
-      attachments: input.attachments
-        ? toJsonValue(input.attachments)
-        : Prisma.JsonNull,
-      formIds: input.formIds ?? [],
-      caseId: null,
-      encounterId: null,
-      productItemId: null,
-      expiresAt: null,
-    },
+  const appointmentKind = normalizeAppointmentKind(input.appointmentKind);
+  const caseId = normalizeOptionalString(input.caseId);
+  const encounterId = normalizeOptionalString(input.encounterId);
+  assertValidTimeRange(input.startTime, input.endTime);
+  assertCaseEncounterConsistency({ appointmentKind, caseId, encounterId });
+
+  const selection = await resolveCatalogSelectionForAppointment({
+    appointmentType: input.appointmentType,
+    organisationId: input.organisationId,
+  });
+  assertSelectionSupportsAppointmentKind(selection, appointmentKind);
+
+  const created = await prisma.$transaction(async (tx) => {
+    const appointment = await tx.appointment.create({
+      data: {
+        companion: toJsonValue(input.companion),
+        lead: input.lead ? toJsonValue(input.lead) : Prisma.JsonNull,
+        supportStaff: input.supportStaff ? toJsonValue(input.supportStaff) : [],
+        room: input.room ? toJsonValue(input.room) : Prisma.JsonNull,
+        appointmentType: input.appointmentType
+          ? toJsonValue(input.appointmentType)
+          : Prisma.JsonNull,
+        appointmentKind,
+        organisationId: input.organisationId,
+        appointmentDate: input.appointmentDate,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        timeSlot: input.timeSlot,
+        durationMinutes: input.durationMinutes,
+        status,
+        isEmergency: input.isEmergency ?? false,
+        concern: input.concern ?? null,
+        attachments: input.attachments
+          ? toJsonValue(input.attachments)
+          : Prisma.JsonNull,
+        formIds: input.formIds ?? [],
+        caseId: caseId ?? null,
+        encounterId: encounterId ?? null,
+        productItemId: selection.productItemId,
+        expiresAt: null,
+      },
+    });
+
+    if (status === "UPCOMING") {
+      await upsertAppointmentOccupancy({
+        tx,
+        appointmentId: appointment.id,
+        organisationId: appointment.organisationId,
+        leadId: input.lead?.id,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+      });
+    }
+
+    return appointment;
   });
 
   return toResponse(created as AppointmentRow);
@@ -327,6 +528,14 @@ const applyDtoPatch = (
   const input = fromAppointmentRequestDTO(dto);
 
   return {
+    caseId:
+      input.caseId === undefined
+        ? normalizeOptionalString(current.caseId)
+        : (normalizeOptionalString(input.caseId) ?? null),
+    encounterId:
+      input.encounterId === undefined
+        ? normalizeOptionalString(current.encounterId)
+        : (normalizeOptionalString(input.encounterId) ?? null),
     companion: toJsonValue(input.companion),
     lead:
       input.lead === undefined
@@ -399,13 +608,32 @@ export const AppointmentPrismaService = {
       "approveRequestedFromPms",
     );
 
+    const input = fromAppointmentRequestDTO(dto);
+    if (!input.lead?.id) {
+      throw new AppointmentPrismaServiceError(
+        "Lead vet is required to approve an appointment.",
+        400,
+      );
+    }
+
     const patch = applyDtoPatch(row, dto, "UPCOMING");
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        ...patch,
-        updatedAt: new Date(),
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      await upsertAppointmentOccupancy({
+        tx,
+        appointmentId,
+        organisationId: row.organisationId,
+        leadId: input.lead?.id,
+        startTime: patch.startTime,
+        endTime: patch.endTime,
+      });
+
+      return tx.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          ...patch,
+          updatedAt: new Date(),
+        },
+      });
     });
 
     return toResponse(updated as AppointmentRow);
@@ -534,39 +762,52 @@ export const AppointmentPrismaService = {
     const newEnd = toDate(changes.endTime);
     const nextStatus = row.status === "UPCOMING" ? "REQUESTED" : row.status;
     assertAppointmentTransition(row.status, nextStatus, "rescheduleFromParent");
+    assertValidTimeRange(newStart, newEnd);
 
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        startTime: newStart,
-        endTime: newEnd,
-        appointmentDate: newStart,
-        timeSlot: dayjs(newStart).format("HH:mm"),
-        durationMinutes:
-          typeof changes.durationMinutes === "number"
-            ? changes.durationMinutes
-            : dayjs(newEnd).diff(dayjs(newStart), "minute"),
-        concern:
-          typeof changes.concern === "string" ? changes.concern : row.concern,
-        isEmergency:
-          typeof changes.isEmergency === "boolean"
-            ? changes.isEmergency
-            : row.isEmergency,
-        status: nextStatus,
-        lead:
-          nextStatus === "REQUESTED"
-            ? Prisma.JsonNull
-            : toNullableJsonValue(row.lead),
-        supportStaff:
-          nextStatus === "REQUESTED"
-            ? []
-            : toNullableJsonValue(row.supportStaff),
-        room:
-          nextStatus === "REQUESTED"
-            ? Prisma.JsonNull
-            : toNullableJsonValue(row.room),
-        updatedAt: new Date(),
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      if (nextStatus === "REQUESTED") {
+        await upsertAppointmentOccupancy({
+          tx,
+          appointmentId,
+          organisationId: row.organisationId,
+          startTime: newStart,
+          endTime: newEnd,
+        });
+      }
+
+      return tx.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          startTime: newStart,
+          endTime: newEnd,
+          appointmentDate: newStart,
+          timeSlot: dayjs(newStart).format("HH:mm"),
+          durationMinutes:
+            typeof changes.durationMinutes === "number"
+              ? changes.durationMinutes
+              : dayjs(newEnd).diff(dayjs(newStart), "minute"),
+          concern:
+            typeof changes.concern === "string" ? changes.concern : row.concern,
+          isEmergency:
+            typeof changes.isEmergency === "boolean"
+              ? changes.isEmergency
+              : row.isEmergency,
+          status: nextStatus,
+          lead:
+            nextStatus === "REQUESTED"
+              ? Prisma.JsonNull
+              : toNullableJsonValue(row.lead),
+          supportStaff:
+            nextStatus === "REQUESTED"
+              ? []
+              : toNullableJsonValue(row.supportStaff),
+          room:
+            nextStatus === "REQUESTED"
+              ? Prisma.JsonNull
+              : toNullableJsonValue(row.room),
+          updatedAt: new Date(),
+        },
+      });
     });
 
     return toResponse(updated as AppointmentRow);
@@ -587,14 +828,61 @@ export const AppointmentPrismaService = {
       current as AppointmentRow | null,
       "Appointment not found",
     );
+    const input = fromAppointmentRequestDTO(dto);
+    const appointmentKind = normalizeAppointmentKind(
+      input.appointmentKind ?? row.appointmentKind,
+    );
+    const caseId =
+      input.caseId === undefined
+        ? normalizeOptionalString(row.caseId)
+        : normalizeOptionalString(input.caseId);
+    const encounterId =
+      input.encounterId === undefined
+        ? normalizeOptionalString(row.encounterId)
+        : normalizeOptionalString(input.encounterId);
+    assertValidTimeRange(
+      input.startTime ?? row.startTime,
+      input.endTime ?? row.endTime,
+    );
+    assertCaseEncounterConsistency({ appointmentKind, caseId, encounterId });
+    const selection = await resolveCatalogSelectionForAppointment({
+      appointmentType:
+        input.appointmentType ??
+        (row.appointmentType as AppointmentDomain["appointmentType"]),
+      organisationId: row.organisationId,
+    });
+    assertSelectionSupportsAppointmentKind(selection, appointmentKind);
     const patch = applyDtoPatch(row, dto, row.status);
+    const updated = await prisma.$transaction(async (tx) => {
+      if (patch.status === "UPCOMING") {
+        await upsertAppointmentOccupancy({
+          tx,
+          appointmentId,
+          organisationId: row.organisationId,
+          leadId: input.lead?.id ?? getLeadIdFromRow(row),
+          startTime: patch.startTime,
+          endTime: patch.endTime,
+        });
+      } else {
+        await upsertAppointmentOccupancy({
+          tx,
+          appointmentId,
+          organisationId: row.organisationId,
+          startTime: patch.startTime,
+          endTime: patch.endTime,
+        });
+      }
 
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        ...patch,
-        updatedAt: new Date(),
-      },
+      return tx.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          ...patch,
+          caseId: caseId ?? null,
+          encounterId: encounterId ?? null,
+          productItemId: selection.productItemId,
+          updatedAt: new Date(),
+        },
+      });
     });
 
     return toResponse(updated as AppointmentRow);
@@ -634,9 +922,19 @@ export const AppointmentPrismaService = {
       "cancelAppointmentFromParent",
     );
 
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: { status: "CANCELLED", updatedAt: new Date() },
+    const updated = await prisma.$transaction(async (tx) => {
+      await upsertAppointmentOccupancy({
+        tx,
+        appointmentId,
+        organisationId: row.organisationId,
+        startTime: row.startTime,
+        endTime: row.endTime,
+      });
+
+      return tx.appointment.update({
+        where: { id: appointmentId },
+        data: { status: "CANCELLED", updatedAt: new Date() },
+      });
     });
 
     return toResponse(updated as AppointmentRow);
@@ -657,9 +955,19 @@ export const AppointmentPrismaService = {
     );
     assertAppointmentTransition(row.status, "CANCELLED", "cancelAppointment");
 
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: { status: "CANCELLED", updatedAt: new Date() },
+    const updated = await prisma.$transaction(async (tx) => {
+      await upsertAppointmentOccupancy({
+        tx,
+        appointmentId,
+        organisationId: row.organisationId,
+        startTime: row.startTime,
+        endTime: row.endTime,
+      });
+
+      return tx.appointment.update({
+        where: { id: appointmentId },
+        data: { status: "CANCELLED", updatedAt: new Date() },
+      });
     });
 
     return toResponse(updated as AppointmentRow);

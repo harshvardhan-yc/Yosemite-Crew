@@ -11,13 +11,34 @@ jest.mock("@yosemite-crew/types", () => ({
   toAppointmentResponseDTO: jest.fn((appointment) => appointment),
 }));
 
+jest.mock("../../src/services/catalog.service", () => ({
+  CatalogServiceError: class CatalogServiceError extends Error {
+    constructor(
+      message: string,
+      public readonly statusCode: number,
+    ) {
+      super(message);
+      this.name = "CatalogServiceError";
+    }
+  },
+  CatalogService: {
+    resolveSelection: jest.fn(),
+  },
+}));
+
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
+    $transaction: jest.fn(),
     appointment: {
       create: jest.fn(),
       findUnique: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
+    },
+    occupancy: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      deleteMany: jest.fn(),
     },
     invoice: {
       findMany: jest.fn(),
@@ -30,8 +51,19 @@ const mockedTypes = jest.requireMock("@yosemite-crew/types") as {
   fromAppointmentRequestDTO: jest.Mock;
   toAppointmentResponseDTO: jest.Mock;
 };
+const mockedCatalog = jest.requireMock(
+  "../../src/services/catalog.service",
+) as {
+  CatalogService: {
+    resolveSelection: jest.Mock;
+  };
+};
+const mockedResolveSelection = mockedCatalog.CatalogService
+  .resolveSelection as unknown as jest.Mock;
 
 const baseDomain = {
+  caseId: "case_1",
+  encounterId: undefined,
   companion: {
     id: "comp_1",
     name: "Buddy",
@@ -101,11 +133,22 @@ describe("AppointmentPrismaService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedTypes.fromAppointmentRequestDTO.mockReturnValue(baseDomain as any);
+    mockedResolveSelection.mockImplementation(async () => ({
+      productItemId: "product_1",
+      isBookable: true,
+      appointmentKinds: ["OUTPATIENT", "INPATIENT"],
+    }));
+    mockedPrisma.$transaction.mockImplementation(async (callback: any) =>
+      callback(mockedPrisma),
+    );
+    mockedPrisma.occupancy.findFirst.mockResolvedValue(null);
+    mockedPrisma.occupancy.create.mockResolvedValue({} as any);
+    mockedPrisma.occupancy.deleteMany.mockResolvedValue({ count: 1 } as any);
   });
 
-  it("creates a requested appointment with outpatient fallback", async () => {
+  it("creates a requested appointment with product validation", async () => {
     mockedPrisma.appointment.create.mockResolvedValue(
-      makeRow({ status: "REQUESTED" }),
+      makeRow({ status: "REQUESTED", caseId: "case_1" }),
     );
     mockedPrisma.invoice.findMany.mockResolvedValue([]);
 
@@ -119,6 +162,8 @@ describe("AppointmentPrismaService", () => {
           status: "REQUESTED",
           appointmentKind: "INPATIENT",
           organisationId: "org_1",
+          caseId: "case_1",
+          productItemId: "product_1",
         }),
       }),
     );
@@ -128,7 +173,7 @@ describe("AppointmentPrismaService", () => {
 
   it("creates a PMS appointment as upcoming", async () => {
     mockedPrisma.appointment.create.mockResolvedValue(
-      makeRow({ status: "UPCOMING" }),
+      makeRow({ status: "UPCOMING", caseId: "case_1" }),
     );
     mockedPrisma.invoice.findMany.mockResolvedValue([]);
 
@@ -142,6 +187,14 @@ describe("AppointmentPrismaService", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           status: "UPCOMING",
+        }),
+      }),
+    );
+    expect(mockedPrisma.occupancy.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: "lead_1",
+          referenceId: "appt_1",
         }),
       }),
     );
@@ -189,6 +242,7 @@ describe("AppointmentPrismaService", () => {
         }),
       }),
     );
+    expect(mockedPrisma.occupancy.deleteMany).toHaveBeenCalled();
     expect(result.status).toBe("REQUESTED");
   });
 
@@ -232,5 +286,56 @@ describe("AppointmentPrismaService", () => {
       }),
     );
     expect(result).toHaveLength(1);
+  });
+
+  it("rejects products that are not bookable for the selected appointment kind", async () => {
+    mockedResolveSelection.mockImplementation(async () => ({
+      productItemId: "product_1",
+      isBookable: true,
+      appointmentKinds: ["OUTPATIENT"],
+    }));
+
+    await expect(
+      AppointmentPrismaService.createRequestedFromMobile({
+        resourceType: "Appointment",
+      } as any),
+    ).rejects.toMatchObject({
+      message: "Selected product is not bookable for inpatient appointments.",
+      statusCode: 400,
+    });
+  });
+
+  it("blocks PMS approval when the lead already has overlapping occupancy", async () => {
+    mockedPrisma.appointment.findUnique.mockResolvedValue(
+      makeRow({ status: "REQUESTED" }),
+    );
+    mockedPrisma.occupancy.findFirst.mockResolvedValue({ id: "occ_1" } as any);
+
+    await expect(
+      AppointmentPrismaService.approveRequestedFromPms("appt_1", {
+        resourceType: "Appointment",
+      } as any),
+    ).rejects.toMatchObject({
+      message: "Selected vet is not available for this slot.",
+      statusCode: 409,
+    });
+  });
+
+  it("requires caseId when encounterId is provided", async () => {
+    mockedTypes.fromAppointmentRequestDTO.mockReturnValue({
+      ...baseDomain,
+      caseId: undefined,
+      encounterId: "enc_1",
+      appointmentKind: "OUTPATIENT",
+    } as any);
+
+    await expect(
+      AppointmentPrismaService.createRequestedFromMobile({
+        resourceType: "Appointment",
+      } as any),
+    ).rejects.toMatchObject({
+      message: "caseId is required when encounterId is provided.",
+      statusCode: 400,
+    });
   });
 });
