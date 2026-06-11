@@ -27,7 +27,9 @@ jest.mock("../../src/config/prisma", () => ({
       update: jest.fn(),
     },
     admission: {
+      findUnique: jest.fn(),
       findMany: jest.fn(),
+      update: jest.fn(),
     },
   },
 }));
@@ -254,5 +256,68 @@ describe("CaseEncounterService", () => {
     expect(results).toHaveLength(2);
     expect(results[0]?.appointmentId).toBe("appt_1");
     expect(results[1]?.appointmentId).toBe("appt_2");
+  });
+
+  it("discharges an inpatient encounter and closes admission", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue(
+      baseEncounterRow as never,
+    );
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      bedUnitId: null,
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+    mockedPrisma.admission.update.mockResolvedValue({
+      encounterId: "enc_1",
+    } as never);
+    mockedPrisma.encounter.update.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "finished",
+      periodEnd: new Date("2026-06-11T12:00:00.000Z"),
+    } as never);
+    mockedPrisma.appointment.findMany.mockResolvedValue([
+      { id: "appt_1", encounterId: "enc_1" },
+    ] as never);
+    mockedPrisma.admission.findMany.mockResolvedValue([
+      {
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        bedUnitId: null,
+        expectedStayDays: null,
+        admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+        dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
+        createdAt: new Date("2026-06-11T10:30:00.000Z"),
+        updatedAt: new Date("2026-06-11T12:00:00.000Z"),
+      },
+    ] as never);
+
+    const result = await CaseEncounterService.dischargeEncounter("enc_1", {
+      dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
+    });
+
+    expect(mockedPrisma.admission.update).toHaveBeenCalledWith({
+      where: { encounterId: "enc_1" },
+      data: {
+        dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
+      },
+    });
+    expect(mockedPrisma.encounter.update).toHaveBeenCalledWith({
+      where: { id: "enc_1" },
+      data: {
+        status: "finished",
+        periodEnd: new Date("2026-06-11T12:00:00.000Z"),
+      },
+    });
+    expect(result.status).toBe("finished");
+    expect(result.admission?.dischargedAt?.toISOString()).toBe(
+      "2026-06-11T12:00:00.000Z",
+    );
   });
 });

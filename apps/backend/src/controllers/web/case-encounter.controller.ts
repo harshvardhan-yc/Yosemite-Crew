@@ -37,6 +37,19 @@ const encounterListQuerySchema = z.object({
   status: z.string().trim().optional(),
   appointmentKind: z.enum(["OUTPATIENT", "INPATIENT"]).optional(),
 });
+const dischargeEncounterSchema = z
+  .object({
+    resourceType: z.literal("Parameters").optional(),
+    parameter: z
+      .array(
+        z.object({
+          name: z.string(),
+          valueDateTime: z.string().datetime().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .passthrough();
 
 const parseReferenceId = (value?: string, prefix?: string) => {
   const trimmed = value?.trim();
@@ -155,6 +168,30 @@ export const EncounterController = {
       return res.status(200).json(toEncounterResponseDTO(updated));
     } catch (error) {
       return handleError(res, error, "Failed to update encounter.");
+    }
+  },
+
+  discharge: async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const payload = dischargeEncounterSchema.parse(req.body ?? {});
+      const dischargedAt = payload.parameter?.find(
+        (parameter) => parameter.name === "dischargedAt",
+      )?.valueDateTime;
+      const periodEnd = payload.parameter?.find(
+        (parameter) => parameter.name === "periodEnd",
+      )?.valueDateTime;
+
+      const updated = await CaseEncounterService.dischargeEncounter(
+        req.params.id,
+        {
+          dischargedAt: dischargedAt ? new Date(dischargedAt) : undefined,
+          periodEnd: periodEnd ? new Date(periodEnd) : undefined,
+        },
+      );
+
+      return res.status(200).json(toEncounterResponseDTO(updated));
+    } catch (error) {
+      return handleError(res, error, "Failed to discharge encounter.");
     }
   },
 

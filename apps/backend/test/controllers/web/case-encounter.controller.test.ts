@@ -24,6 +24,7 @@ jest.mock("../../../src/services/case-encounter.service", () => {
       listCases: jest.fn(),
       createEncounter: jest.fn(),
       updateEncounter: jest.fn(),
+      dischargeEncounter: jest.fn(),
       getEncounterById: jest.fn(),
       listEncounters: jest.fn(),
     },
@@ -184,5 +185,35 @@ describe("CaseEncounterController", () => {
       message: "Encounter not found.",
     });
     expect(mockedLogger.error).not.toHaveBeenCalled();
+  });
+
+  it("discharges an encounter from Parameters payload", async () => {
+    req.params = { id: "enc_1" };
+    req.body = {
+      resourceType: "Parameters",
+      parameter: [
+        {
+          name: "dischargedAt",
+          valueDateTime: "2026-06-11T12:00:00.000Z",
+        },
+      ],
+    };
+    mockedService.dischargeEncounter.mockResolvedValue({
+      id: "enc_1",
+      caseId: "case_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      status: "finished",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+    } as never);
+
+    await EncounterController.discharge(req as any, res as any);
+
+    expect(mockedService.dischargeEncounter).toHaveBeenCalledWith("enc_1", {
+      dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
+      periodEnd: undefined,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 });

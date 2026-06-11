@@ -21,6 +21,14 @@ router.patch(
   EncounterController.update,
 );
 
+router.post(
+  "/:id/$discharge",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  EncounterController.discharge,
+);
+
 router.get(
   "/:id",
   authorizeCognito,

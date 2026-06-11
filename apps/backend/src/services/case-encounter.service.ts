@@ -69,6 +69,18 @@ type AdmissionFindManyDelegate = {
   }): Promise<AdmissionRow[]>;
 };
 
+type AdmissionMutationDelegate = {
+  findUnique(args: {
+    where: { encounterId: string };
+  }): Promise<AdmissionRow | null>;
+  update(args: {
+    where: { encounterId: string };
+    data: {
+      dischargedAt?: Date;
+    };
+  }): Promise<AdmissionRow>;
+};
+
 export class CaseEncounterServiceError extends Error {
   constructor(
     message: string,
@@ -616,6 +628,69 @@ export const CaseEncounterService = {
               : (normalizeOptionalString(input.reason) ?? null),
           periodStart: input.periodStart ?? undefined,
           periodEnd: input.periodEnd ?? undefined,
+        },
+      })) as EncounterRow;
+    });
+
+    return (
+      await attachEncounterAppointmentIds([toEncounterDomain(updatedEncounter)])
+    )[0];
+  },
+
+  async dischargeEncounter(
+    encounterId: string,
+    input?: { dischargedAt?: Date; periodEnd?: Date },
+  ): Promise<EncounterDomain> {
+    const id = requireString(encounterId, "encounterId");
+    assertPeriod(undefined, input?.dischargedAt);
+    assertPeriod(undefined, input?.periodEnd);
+
+    const updatedEncounter = await prisma.$transaction(async (tx) => {
+      const encounter = (await tx.encounter.findUnique({
+        where: { id },
+      })) as EncounterRow | null;
+
+      if (!encounter) {
+        throw new CaseEncounterServiceError("Encounter not found.", 404);
+      }
+
+      const admissionDelegate = (
+        tx as unknown as { admission: AdmissionMutationDelegate }
+      ).admission;
+      const admission = await admissionDelegate.findUnique({
+        where: { encounterId: id },
+      });
+
+      if (!admission) {
+        throw new CaseEncounterServiceError(
+          "Admission not found for encounter.",
+          404,
+        );
+      }
+
+      if (admission.dischargedAt) {
+        throw new CaseEncounterServiceError(
+          "Admission is already discharged.",
+          409,
+        );
+      }
+
+      const dischargedAt = input?.dischargedAt ?? new Date();
+      const nextPeriodEnd = input?.periodEnd ?? dischargedAt;
+      assertPeriod(encounter.periodStart ?? undefined, nextPeriodEnd);
+
+      await admissionDelegate.update({
+        where: { encounterId: id },
+        data: {
+          dischargedAt,
+        },
+      });
+
+      return (await tx.encounter.update({
+        where: { id },
+        data: {
+          status: "finished",
+          periodEnd: nextPeriodEnd,
         },
       })) as EncounterRow;
     });
