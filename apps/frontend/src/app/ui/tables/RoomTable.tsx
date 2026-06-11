@@ -203,42 +203,44 @@ const RoomTable = ({
                     key={room.id || `${room.name}-${index}`}
                     className="border-b border-card-border last:border-b-0"
                   >
-                    <td className="px-4 py-4 align-top">
+                    <td className="px-4 py-4 align-middle">
                       <RoomCellText value={`${index + 1}.`} />
                     </td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="px-4 py-4 align-middle">
                       <RoomCellText value={room.name || '-'} />
                     </td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="px-4 py-4 align-middle">
                       <RoomCellText value={getRoomCode(room)} />
                     </td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="px-4 py-4 align-middle">
                       <RoomCellText value={toTitle(room.type)} />
                     </td>
-                    <td className="max-w-56 px-4 py-4 align-top">
+                    <td className="max-w-56 px-4 py-4 align-middle">
                       <RoomCellText
                         value={joinNames(specialityNameById, room.assignedSpecialiteis)}
                       />
                     </td>
-                    <td className="px-4 py-4 align-top">
+                    <td className="px-4 py-4 align-middle">
                       <RoomCellText
                         value={occupancyLabel}
                         className={isVacantLabel(occupancyLabel) ? 'text-blue-text' : ''}
                       />
                     </td>
-                    <td className="max-w-52 px-4 py-4 align-top">
+                    <td className="max-w-52 px-4 py-4 align-middle">
                       <RoomCellText value={joinNames(staffNameById, room.assignedStaffs)} />
                     </td>
-                    <td className="px-4 py-4 align-top">
-                      <AvailabilitySwitch
-                        checked={availability}
-                        disabled={!canEditRoom}
-                        roomName={room.name}
-                        onChange={(next) => onToggleAvailability?.(room, next)}
-                      />
+                    <td className="px-4 py-4 align-middle">
+                      <div className="flex items-center">
+                        <AvailabilitySwitch
+                          checked={availability}
+                          disabled={!canEditRoom}
+                          roomName={room.name}
+                          onChange={(next) => onToggleAvailability?.(room, next)}
+                        />
+                      </div>
                     </td>
-                    <td className="px-4 py-4 align-top">
-                      <div className="action-btn-col">
+                    <td className="px-4 py-4 align-middle">
+                      <div className="action-btn-col items-center">
                         <IconButton
                           label={`View ${room.name}`}
                           onClick={() => handleViewRoom(room)}
