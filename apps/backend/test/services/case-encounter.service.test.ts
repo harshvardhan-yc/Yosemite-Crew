@@ -26,6 +26,14 @@ jest.mock("../../src/config/prisma", () => ({
       findMany: jest.fn(),
       update: jest.fn(),
     },
+    roomUnit: {
+      findUnique: jest.fn(),
+    },
+    roomUnitAssignment: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+      create: jest.fn(),
+    },
     admission: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -319,5 +327,82 @@ describe("CaseEncounterService", () => {
     expect(result.admission?.dischargedAt?.toISOString()).toBe(
       "2026-06-11T12:00:00.000Z",
     );
+  });
+
+  it("assigns a unit to an active admission", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue(
+      baseEncounterRow as never,
+    );
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      unitId: null,
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnit.findUnique.mockResolvedValue({
+      id: "unit_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      code: "KEN-01",
+      displayName: "Kennel 1",
+      size: "M",
+      speciesConstraints: ["dog"],
+      isActive: true,
+      createdAt: new Date("2026-06-11T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:00:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnitAssignment.findFirst.mockResolvedValue(null as never);
+    mockedPrisma.roomUnitAssignment.create.mockResolvedValue({
+      id: "assign_1",
+    } as never);
+    mockedPrisma.admission.update.mockResolvedValue({
+      encounterId: "enc_1",
+    } as never);
+    mockedPrisma.appointment.findMany.mockResolvedValue([
+      { id: "appt_1", encounterId: "enc_1" },
+    ] as never);
+    mockedPrisma.admission.findMany.mockResolvedValue([
+      {
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        unitId: "unit_1",
+        expectedStayDays: null,
+        admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+        dischargedAt: null,
+        createdAt: new Date("2026-06-11T10:30:00.000Z"),
+        updatedAt: new Date("2026-06-11T11:00:00.000Z"),
+      },
+    ] as never);
+
+    const result = await CaseEncounterService.assignUnit("enc_1", {
+      unitId: "unit_1",
+      assignedBy: "user_1",
+      reason: "Post-op monitoring",
+      assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+    });
+
+    expect(mockedPrisma.roomUnitAssignment.create).toHaveBeenCalledWith({
+      data: {
+        encounterId: "enc_1",
+        admissionId: "enc_1",
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+        assignedBy: "user_1",
+        reason: "Post-op monitoring",
+      },
+    });
+    expect(mockedPrisma.admission.update).toHaveBeenCalledWith({
+      where: { encounterId: "enc_1" },
+      data: {
+        unitId: "unit_1",
+      },
+    });
+    expect(result.admission?.unitId).toBe("unit_1");
   });
 });

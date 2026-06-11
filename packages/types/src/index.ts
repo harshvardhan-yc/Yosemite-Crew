@@ -135,6 +135,8 @@ export { fromFHIRCase, toFHIRCase } from './case';
 export type { Admission } from './admission';
 export type { Encounter, EncounterClass, EncounterStatus } from './encounter';
 export { fromFHIREncounter, toFHIREncounter } from './encounter';
+export type { RoomUnit } from './roomUnit';
+export { fromFHIRRoomUnit, toFHIRRoomUnit } from './roomUnit';
 export type {
   CatalogListRow,
   CatalogPackageBreakdownRow,
@@ -247,6 +249,12 @@ export {
   fromEncounterRequestDTO,
   toEncounterResponseDTO,
 } from './dto/encounter.dto';
+export {
+  type RoomUnitRequestDTO,
+  type RoomUnitResponseDTO,
+  fromRoomUnitRequestDTO,
+  toRoomUnitResponseDTO,
+} from './dto/room-unit.dto';
 export type { Invoice, InvoiceItem, InvoiceStatus, PaymentCollectionMethod } from './invoice';
 export type { Appointment, AppointmentPaymentStatus } from './appointment';
 export { toFHIRInvoice, fromFHIRInvoice } from './invoice';

@@ -2,7 +2,7 @@ export type Admission = {
   encounterId: string;
   organisationId: string;
   companionId: string;
-  bedUnitId?: string;
+  unitId?: string;
   expectedStayDays?: number;
   admittedAt: Date;
   dischargedAt?: Date;

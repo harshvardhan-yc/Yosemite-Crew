@@ -40,8 +40,7 @@ const EXT_ENCOUNTER_PARENT_ID =
 const EXT_ENCOUNTER_APPOINTMENT_KIND =
   'https://yosemitecrew.com/fhir/StructureDefinition/encounter-appointment-kind';
 const EXT_ENCOUNTER_TITLE = 'https://yosemitecrew.com/fhir/StructureDefinition/encounter-title';
-const EXT_ADMISSION_BED_UNIT_ID =
-  'https://yosemitecrew.com/fhir/StructureDefinition/admission-bed-unit-id';
+const EXT_ADMISSION_UNIT_ID = 'https://yosemitecrew.com/fhir/StructureDefinition/admission-unit-id';
 const EXT_ADMISSION_EXPECTED_STAY_DAYS =
   'https://yosemitecrew.com/fhir/StructureDefinition/admission-expected-stay-days';
 
@@ -79,11 +78,11 @@ export const toFHIREncounter = (value: Encounter): FHIREncounter => {
     value.admission || value.appointmentKind === 'INPATIENT'
       ? {
           extension: [
-            ...(value.admission?.bedUnitId
+            ...(value.admission?.unitId
               ? [
                   {
-                    url: EXT_ADMISSION_BED_UNIT_ID,
-                    valueString: value.admission.bedUnitId,
+                    url: EXT_ADMISSION_UNIT_ID,
+                    valueString: value.admission.unitId,
                   },
                 ]
               : []),

@@ -25,6 +25,7 @@ jest.mock("../../../src/services/case-encounter.service", () => {
       createEncounter: jest.fn(),
       updateEncounter: jest.fn(),
       dischargeEncounter: jest.fn(),
+      assignUnit: jest.fn(),
       getEncounterById: jest.fn(),
       listEncounters: jest.fn(),
     },
@@ -213,6 +214,45 @@ describe("CaseEncounterController", () => {
     expect(mockedService.dischargeEncounter).toHaveBeenCalledWith("enc_1", {
       dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
       periodEnd: undefined,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("assigns a unit from Parameters payload", async () => {
+    req.params = { id: "enc_1" };
+    req.body = {
+      resourceType: "Parameters",
+      parameter: [
+        { name: "unitId", valueString: "unit_1" },
+        { name: "assignedBy", valueString: "user_1" },
+        { name: "reason", valueString: "Transfer to ICU unit" },
+        { name: "assignedAt", valueDateTime: "2026-06-11T11:00:00.000Z" },
+      ],
+    };
+    mockedService.assignUnit.mockResolvedValue({
+      id: "enc_1",
+      caseId: "case_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      status: "arrived",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      admission: {
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        unitId: "unit_1",
+        admittedAt: new Date("2026-06-11T10:00:00.000Z"),
+      },
+    } as never);
+
+    await EncounterController.assignUnit(req as any, res as any);
+
+    expect(mockedService.assignUnit).toHaveBeenCalledWith("enc_1", {
+      unitId: "unit_1",
+      assignedBy: "user_1",
+      reason: "Transfer to ICU unit",
+      assignedAt: new Date("2026-06-11T11:00:00.000Z"),
     });
     expect(res.status).toHaveBeenCalledWith(200);
   });

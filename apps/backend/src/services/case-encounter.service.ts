@@ -51,7 +51,7 @@ type AdmissionRow = {
   encounterId: string;
   organisationId: string;
   companionId: string;
-  bedUnitId: string | null;
+  unitId: string | null;
   expectedStayDays: number | null;
   admittedAt: Date;
   dischargedAt: Date | null;
@@ -76,9 +76,64 @@ type AdmissionMutationDelegate = {
   update(args: {
     where: { encounterId: string };
     data: {
+      unitId?: string;
       dischargedAt?: Date;
     };
   }): Promise<AdmissionRow>;
+};
+
+type RoomUnitRow = {
+  id: string;
+  organisationId: string;
+  roomId: string;
+  code: string;
+  displayName: string;
+  size: string | null;
+  speciesConstraints: unknown;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type RoomUnitDelegate = {
+  findUnique(args: { where: { id: string } }): Promise<RoomUnitRow | null>;
+};
+
+type RoomUnitAssignmentRow = {
+  id: string;
+  encounterId: string;
+  admissionId: string;
+  unitId: string;
+  assignedAt: Date;
+  releasedAt: Date | null;
+  assignedBy: string | null;
+  reason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type RoomUnitAssignmentDelegate = {
+  findFirst(args: {
+    where: {
+      admissionId: string;
+      releasedAt: null;
+    };
+    orderBy: { assignedAt: "desc" };
+  }): Promise<RoomUnitAssignmentRow | null>;
+  update(args: {
+    where: { id: string };
+    data: { releasedAt: Date };
+  }): Promise<RoomUnitAssignmentRow>;
+  create(args: {
+    data: {
+      encounterId: string;
+      admissionId: string;
+      unitId: string;
+      assignedAt: Date;
+      assignedBy: string | null;
+      reason: string | null;
+    };
+  }): Promise<RoomUnitAssignmentRow>;
 };
 
 export class CaseEncounterServiceError extends Error {
@@ -208,7 +263,7 @@ const toAdmissionDomain = (row: AdmissionRow): AdmissionDomain => ({
   encounterId: row.encounterId,
   organisationId: row.organisationId,
   companionId: row.companionId,
-  bedUnitId: row.bedUnitId ?? undefined,
+  unitId: row.unitId ?? undefined,
   expectedStayDays: row.expectedStayDays ?? undefined,
   admittedAt: row.admittedAt,
   dischargedAt: row.dischargedAt ?? undefined,
@@ -693,6 +748,118 @@ export const CaseEncounterService = {
           periodEnd: nextPeriodEnd,
         },
       })) as EncounterRow;
+    });
+
+    return (
+      await attachEncounterAppointmentIds([toEncounterDomain(updatedEncounter)])
+    )[0];
+  },
+
+  async assignUnit(
+    encounterId: string,
+    input: {
+      unitId: string;
+      assignedAt?: Date;
+      assignedBy?: string;
+      reason?: string;
+    },
+  ): Promise<EncounterDomain> {
+    const id = requireString(encounterId, "encounterId");
+    const unitId = requireString(input.unitId, "unitId");
+    const assignedAt = input.assignedAt ?? new Date();
+
+    if (Number.isNaN(assignedAt.getTime())) {
+      throw new CaseEncounterServiceError("Invalid assignedAt.", 400);
+    }
+
+    const updatedEncounter = await prisma.$transaction(async (tx) => {
+      const encounter = (await tx.encounter.findUnique({
+        where: { id },
+      })) as EncounterRow | null;
+
+      if (!encounter) {
+        throw new CaseEncounterServiceError("Encounter not found.", 404);
+      }
+
+      const admissionDelegate = (
+        tx as unknown as { admission: AdmissionMutationDelegate }
+      ).admission;
+      const roomUnitDelegate = (tx as unknown as { roomUnit: RoomUnitDelegate })
+        .roomUnit;
+      const assignmentDelegate = (
+        tx as unknown as { roomUnitAssignment: RoomUnitAssignmentDelegate }
+      ).roomUnitAssignment;
+
+      const admission = await admissionDelegate.findUnique({
+        where: { encounterId: id },
+      });
+
+      if (!admission) {
+        throw new CaseEncounterServiceError(
+          "Admission not found for encounter.",
+          404,
+        );
+      }
+
+      if (admission.dischargedAt) {
+        throw new CaseEncounterServiceError(
+          "Cannot assign unit to a discharged admission.",
+          409,
+        );
+      }
+
+      const unit = await roomUnitDelegate.findUnique({
+        where: { id: unitId },
+      });
+
+      if (!unit) {
+        throw new CaseEncounterServiceError("Room unit not found.", 404);
+      }
+
+      if (unit.organisationId !== encounter.organisationId) {
+        throw new CaseEncounterServiceError("Unit organisation mismatch.", 409);
+      }
+
+      if (!unit.isActive) {
+        throw new CaseEncounterServiceError("Selected unit is inactive.", 409);
+      }
+
+      const activeAssignment = await assignmentDelegate.findFirst({
+        where: {
+          admissionId: id,
+          releasedAt: null,
+        },
+        orderBy: { assignedAt: "desc" },
+      });
+
+      if (activeAssignment && activeAssignment.unitId !== unitId) {
+        await assignmentDelegate.update({
+          where: { id: activeAssignment.id },
+          data: { releasedAt: assignedAt },
+        });
+      }
+
+      if (!activeAssignment || activeAssignment.unitId !== unitId) {
+        await assignmentDelegate.create({
+          data: {
+            encounterId: id,
+            admissionId: id,
+            unitId,
+            assignedAt,
+            assignedBy: normalizeOptionalString(input.assignedBy) ?? null,
+            reason: normalizeOptionalString(input.reason) ?? null,
+          },
+        });
+      }
+
+      await admissionDelegate.update({
+        where: { encounterId: id },
+        data: {
+          unitId,
+        },
+      });
+
+      return encounter;
     });
 
     return (

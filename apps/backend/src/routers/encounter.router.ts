@@ -29,6 +29,14 @@ router.post(
   EncounterController.discharge,
 );
 
+router.post(
+  "/:id/$assign-unit",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  EncounterController.assignUnit,
+);
+
 router.get(
   "/:id",
   authorizeCognito,

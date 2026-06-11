@@ -46,6 +46,7 @@ import catalogRouter from "./catalog.router";
 import healthcareServiceRouter from "./healthcare-service.router";
 import episodeOfCareRouter from "./episode-of-care.router";
 import encounterRouter from "./encounter.router";
+import roomUnitRouter from "./room-unit.router";
 
 export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/organization`, organizationRounter);
@@ -56,6 +57,7 @@ export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/user-profile`, userProfileRouter);
   app.use(`/fhir/v1/speciality`, specialtyRouter);
   app.use(`/fhir/v1/organisation-room`, organisationRoomRouter);
+  app.use(`/fhir/v1/room-unit`, roomUnitRouter);
   app.use(`/fhir/v1/organisation-invites`, organisationInviteRouter);
   app.use(`/fhir/v1/availability`, availabilityRouter);
   app.use(`/v1/authUser`, authUserMobileRouter);

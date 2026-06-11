@@ -50,6 +50,20 @@ const dischargeEncounterSchema = z
       .optional(),
   })
   .passthrough();
+const assignUnitSchema = z
+  .object({
+    resourceType: z.literal("Parameters").optional(),
+    parameter: z
+      .array(
+        z.object({
+          name: z.string(),
+          valueString: z.string().optional(),
+          valueDateTime: z.string().datetime().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .passthrough();
 
 const parseReferenceId = (value?: string, prefix?: string) => {
   const trimmed = value?.trim();
@@ -192,6 +206,35 @@ export const EncounterController = {
       return res.status(200).json(toEncounterResponseDTO(updated));
     } catch (error) {
       return handleError(res, error, "Failed to discharge encounter.");
+    }
+  },
+
+  assignUnit: async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const payload = assignUnitSchema.parse(req.body ?? {});
+      const unitId = payload.parameter?.find(
+        (parameter) => parameter.name === "unitId",
+      )?.valueString;
+      const assignedBy = payload.parameter?.find(
+        (parameter) => parameter.name === "assignedBy",
+      )?.valueString;
+      const reason = payload.parameter?.find(
+        (parameter) => parameter.name === "reason",
+      )?.valueString;
+      const assignedAt = payload.parameter?.find(
+        (parameter) => parameter.name === "assignedAt",
+      )?.valueDateTime;
+
+      const updated = await CaseEncounterService.assignUnit(req.params.id, {
+        unitId: unitId ?? "",
+        assignedBy,
+        reason,
+        assignedAt: assignedAt ? new Date(assignedAt) : undefined,
+      });
+
+      return res.status(200).json(toEncounterResponseDTO(updated));
+    } catch (error) {
+      return handleError(res, error, "Failed to assign unit.");
     }
   },
 
