@@ -282,6 +282,21 @@ describe("CaseEncounterService", () => {
       createdAt: new Date("2026-06-11T10:30:00.000Z"),
       updatedAt: new Date("2026-06-11T10:30:00.000Z"),
     } as never);
+    mockedPrisma.roomUnitAssignment.findFirst.mockResolvedValue({
+      id: "assign_1",
+      encounterId: "enc_1",
+      admissionId: "enc_1",
+      unitId: "unit_1",
+      assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+      releasedAt: null,
+      assignedBy: "user_1",
+      reason: "Monitoring",
+      createdAt: new Date("2026-06-11T11:00:00.000Z"),
+      updatedAt: new Date("2026-06-11T11:00:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnitAssignment.update.mockResolvedValue({
+      id: "assign_1",
+    } as never);
     mockedPrisma.admission.update.mockResolvedValue({
       encounterId: "enc_1",
     } as never);
@@ -315,6 +330,13 @@ describe("CaseEncounterService", () => {
       where: { encounterId: "enc_1" },
       data: {
         dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
+        unitId: null,
+      },
+    });
+    expect(mockedPrisma.roomUnitAssignment.update).toHaveBeenCalledWith({
+      where: { id: "assign_1" },
+      data: {
+        releasedAt: new Date("2026-06-11T12:00:00.000Z"),
       },
     });
     expect(mockedPrisma.encounter.update).toHaveBeenCalledWith({
@@ -502,6 +524,127 @@ describe("CaseEncounterService", () => {
     expect(result).toHaveLength(2);
     expect(result[0]?.unitId).toBe("unit_1");
     expect(result[1]?.releasedAt).toBeUndefined();
+  });
+
+  it("lists unit assignment history for an admission", async () => {
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      unitId: "unit_1",
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnitAssignment.findMany.mockResolvedValue([
+      {
+        id: "assign_1",
+        encounterId: "enc_1",
+        admissionId: "enc_1",
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+        releasedAt: null,
+        assignedBy: "user_1",
+        reason: "Transfer",
+        createdAt: new Date("2026-06-11T11:00:00.000Z"),
+        updatedAt: new Date("2026-06-11T11:00:00.000Z"),
+      },
+    ] as never);
+
+    const result =
+      await CaseEncounterService.listAdmissionUnitAssignments("enc_1");
+
+    expect(mockedPrisma.admission.findUnique).toHaveBeenCalledWith({
+      where: { encounterId: "enc_1" },
+    });
+    expect(mockedPrisma.roomUnitAssignment.findMany).toHaveBeenCalledWith({
+      where: {
+        admissionId: "enc_1",
+      },
+      orderBy: { assignedAt: "asc" },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.admissionId).toBe("enc_1");
+  });
+
+  it("starts an encounter and keeps the original periodStart when present", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "arrived",
+    } as never);
+    mockedPrisma.encounter.update.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "in-progress",
+    } as never);
+    mockedPrisma.appointment.findMany.mockResolvedValue([
+      { id: "appt_1", encounterId: "enc_1" },
+    ] as never);
+    mockedPrisma.admission.findMany.mockResolvedValue([
+      {
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        unitId: "unit_1",
+        expectedStayDays: null,
+        admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+        dischargedAt: null,
+        createdAt: new Date("2026-06-11T10:30:00.000Z"),
+        updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+      },
+    ] as never);
+
+    const result = await CaseEncounterService.startEncounter("enc_1", {
+      startedAt: new Date("2026-06-11T12:00:00.000Z"),
+    });
+
+    expect(mockedPrisma.encounter.update).toHaveBeenCalledWith({
+      where: { id: "enc_1" },
+      data: {
+        status: "in-progress",
+        periodStart: new Date("2026-06-11T10:30:00.000Z"),
+      },
+    });
+    expect(result.status).toBe("in-progress");
+  });
+
+  it("marks an encounter ready for discharge", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "in-progress",
+    } as never);
+    mockedPrisma.encounter.update.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "onleave",
+    } as never);
+    mockedPrisma.appointment.findMany.mockResolvedValue([
+      { id: "appt_1", encounterId: "enc_1" },
+    ] as never);
+    mockedPrisma.admission.findMany.mockResolvedValue([
+      {
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        unitId: "unit_1",
+        expectedStayDays: null,
+        admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+        dischargedAt: null,
+        createdAt: new Date("2026-06-11T10:30:00.000Z"),
+        updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+      },
+    ] as never);
+
+    const result =
+      await CaseEncounterService.markEncounterReadyForDischarge("enc_1");
+
+    expect(mockedPrisma.encounter.update).toHaveBeenCalledWith({
+      where: { id: "enc_1" },
+      data: {
+        status: "onleave",
+      },
+    });
+    expect(result.status).toBe("onleave");
   });
 
   it("lists active inpatient encounters for an organisation", async () => {

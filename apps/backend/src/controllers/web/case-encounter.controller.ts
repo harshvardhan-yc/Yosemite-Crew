@@ -67,6 +67,19 @@ const assignUnitSchema = z
       .optional(),
   })
   .passthrough();
+const lifecycleOperationSchema = z
+  .object({
+    resourceType: z.literal("Parameters").optional(),
+    parameter: z
+      .array(
+        z.object({
+          name: z.string(),
+          valueDateTime: z.string().datetime().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .passthrough();
 
 const unitAssignmentResource = (assignment: {
   id: string;
@@ -305,6 +318,61 @@ export const EncounterController = {
       });
     } catch (error) {
       return handleError(res, error, "Failed to list unit assignments.");
+    }
+  },
+
+  listAdmissionUnitAssignments: async (
+    req: Request<{ id: string }>,
+    res: Response,
+  ) => {
+    try {
+      const assignments =
+        await CaseEncounterService.listAdmissionUnitAssignments(req.params.id);
+
+      return res.status(200).json({
+        resourceType: "Parameters",
+        parameter: assignments.map(unitAssignmentResource),
+      });
+    } catch (error) {
+      return handleError(
+        res,
+        error,
+        "Failed to list admission unit assignments.",
+      );
+    }
+  },
+
+  start: async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const payload = lifecycleOperationSchema.parse(req.body ?? {});
+      const startedAt = payload.parameter?.find(
+        (parameter) => parameter.name === "startedAt",
+      )?.valueDateTime;
+
+      const updated = await CaseEncounterService.startEncounter(req.params.id, {
+        startedAt: startedAt ? new Date(startedAt) : undefined,
+      });
+
+      return res.status(200).json(toEncounterResponseDTO(updated));
+    } catch (error) {
+      return handleError(res, error, "Failed to start encounter.");
+    }
+  },
+
+  readyForDischarge: async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      lifecycleOperationSchema.parse(req.body ?? {});
+      const updated = await CaseEncounterService.markEncounterReadyForDischarge(
+        req.params.id,
+      );
+
+      return res.status(200).json(toEncounterResponseDTO(updated));
+    } catch (error) {
+      return handleError(
+        res,
+        error,
+        "Failed to mark encounter ready for discharge.",
+      );
     }
   },
 

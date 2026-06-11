@@ -27,7 +27,10 @@ jest.mock("../../../src/services/case-encounter.service", () => {
       dischargeEncounter: jest.fn(),
       assignUnit: jest.fn(),
       listUnitAssignments: jest.fn(),
+      listAdmissionUnitAssignments: jest.fn(),
       listActiveInpatientEncounters: jest.fn(),
+      startEncounter: jest.fn(),
+      markEncounterReadyForDischarge: jest.fn(),
       getEncounterById: jest.fn(),
       listEncounters: jest.fn(),
     },
@@ -290,6 +293,89 @@ describe("CaseEncounterController", () => {
         ],
       }),
     );
+  });
+
+  it("lists admission unit assignments as Parameters payload", async () => {
+    req.params = { id: "enc_1" };
+    mockedService.listAdmissionUnitAssignments.mockResolvedValue([
+      {
+        id: "assign_1",
+        encounterId: "enc_1",
+        admissionId: "enc_1",
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+        releasedAt: null,
+        assignedBy: "user_1",
+        reason: "Monitoring",
+      },
+    ] as never);
+
+    await EncounterController.listAdmissionUnitAssignments(
+      req as any,
+      res as any,
+    );
+
+    expect(mockedService.listAdmissionUnitAssignments).toHaveBeenCalledWith(
+      "enc_1",
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: "Parameters",
+        parameter: [
+          expect.objectContaining({
+            name: "assignment",
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("starts an encounter from Parameters payload", async () => {
+    req.params = { id: "enc_1" };
+    req.body = {
+      resourceType: "Parameters",
+      parameter: [
+        { name: "startedAt", valueDateTime: "2026-06-11T12:00:00.000Z" },
+      ],
+    };
+    mockedService.startEncounter.mockResolvedValue({
+      id: "enc_1",
+      caseId: "case_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      status: "in-progress",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+    } as never);
+
+    await EncounterController.start(req as any, res as any);
+
+    expect(mockedService.startEncounter).toHaveBeenCalledWith("enc_1", {
+      startedAt: new Date("2026-06-11T12:00:00.000Z"),
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("marks an encounter ready for discharge", async () => {
+    req.params = { id: "enc_1" };
+    req.body = { resourceType: "Parameters" };
+    mockedService.markEncounterReadyForDischarge.mockResolvedValue({
+      id: "enc_1",
+      caseId: "case_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      status: "onleave",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+    } as never);
+
+    await EncounterController.readyForDischarge(req as any, res as any);
+
+    expect(mockedService.markEncounterReadyForDischarge).toHaveBeenCalledWith(
+      "enc_1",
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it("lists active inpatient encounters as a Bundle", async () => {

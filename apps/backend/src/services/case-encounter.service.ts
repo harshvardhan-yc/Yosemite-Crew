@@ -70,7 +70,7 @@ type AdmissionMutationDelegate = {
   update(args: {
     where: { encounterId: string };
     data: {
-      unitId?: string;
+      unitId?: string | null;
       dischargedAt?: Date;
     };
   }): Promise<AdmissionRow>;
@@ -185,6 +185,11 @@ const ACTIVE_INPATIENT_STATUSES = new Set<EncounterStatus>([
   "onleave",
 ]);
 
+const TERMINAL_ENCOUNTER_STATUSES = new Set<EncounterStatus>([
+  "finished",
+  "cancelled",
+]);
+
 const requireString = (value: string | undefined, field: string) => {
   const trimmed = value?.trim();
   if (!trimmed) {
@@ -221,6 +226,15 @@ const toEncounterClass = (value: string): EncounterClass => {
   }
 
   return value as EncounterClass;
+};
+
+const assertEncounterIsOpen = (encounter: EncounterRow, operation: string) => {
+  if (TERMINAL_ENCOUNTER_STATUSES.has(encounter.status as EncounterStatus)) {
+    throw new CaseEncounterServiceError(
+      `Cannot ${operation} a closed encounter.`,
+      409,
+    );
+  }
 };
 
 const assertPeriod = (start?: Date, end?: Date) => {
@@ -758,10 +772,32 @@ export const CaseEncounterService = {
       const nextPeriodEnd = input?.periodEnd ?? dischargedAt;
       assertPeriod(encounter.periodStart ?? undefined, nextPeriodEnd);
 
+      const activeAssignment = await (
+        tx as unknown as { roomUnitAssignment: RoomUnitAssignmentDelegate }
+      ).roomUnitAssignment.findFirst({
+        where: {
+          admissionId: id,
+          releasedAt: null,
+        },
+        orderBy: { assignedAt: "desc" },
+      });
+
+      if (activeAssignment) {
+        await (
+          tx as unknown as { roomUnitAssignment: RoomUnitAssignmentDelegate }
+        ).roomUnitAssignment.update({
+          where: { id: activeAssignment.id },
+          data: {
+            releasedAt: dischargedAt,
+          },
+        });
+      }
+
       await admissionDelegate.update({
         where: { encounterId: id },
         data: {
           dischargedAt,
+          unitId: null,
         },
       });
 
@@ -927,6 +963,98 @@ export const CaseEncounterService = {
     });
 
     return rows.map(toRoomUnitAssignmentDomain);
+  },
+
+  async listAdmissionUnitAssignments(admissionId: string) {
+    const id = requireString(admissionId, "admissionId");
+    const admission = await prisma.admission.findUnique({
+      where: { encounterId: id },
+    });
+
+    if (!admission) {
+      throw new CaseEncounterServiceError(
+        "Admission not found for encounter.",
+        404,
+      );
+    }
+
+    const assignmentDelegate = (
+      prisma as unknown as { roomUnitAssignment: RoomUnitAssignmentDelegate }
+    ).roomUnitAssignment;
+
+    const rows = await assignmentDelegate.findMany({
+      where: {
+        admissionId: id,
+      },
+      orderBy: { assignedAt: "asc" },
+    });
+
+    return rows.map(toRoomUnitAssignmentDomain);
+  },
+
+  async startEncounter(
+    encounterId: string,
+    input?: { startedAt?: Date },
+  ): Promise<EncounterDomain> {
+    const id = requireString(encounterId, "encounterId");
+    const startedAt = input?.startedAt ?? new Date();
+
+    if (Number.isNaN(startedAt.getTime())) {
+      throw new CaseEncounterServiceError("Invalid startedAt.", 400);
+    }
+
+    const updatedEncounter = await prisma.$transaction(async (tx) => {
+      const encounter = (await tx.encounter.findUnique({
+        where: { id },
+      })) as EncounterRow | null;
+
+      if (!encounter) {
+        throw new CaseEncounterServiceError("Encounter not found.", 404);
+      }
+
+      assertEncounterIsOpen(encounter, "start");
+
+      return (await tx.encounter.update({
+        where: { id },
+        data: {
+          status: "in-progress",
+          periodStart: encounter.periodStart ?? startedAt,
+        },
+      })) as EncounterRow;
+    });
+
+    return (
+      await attachEncounterAppointmentIds([toEncounterDomain(updatedEncounter)])
+    )[0];
+  },
+
+  async markEncounterReadyForDischarge(
+    encounterId: string,
+  ): Promise<EncounterDomain> {
+    const id = requireString(encounterId, "encounterId");
+
+    const updatedEncounter = await prisma.$transaction(async (tx) => {
+      const encounter = (await tx.encounter.findUnique({
+        where: { id },
+      })) as EncounterRow | null;
+
+      if (!encounter) {
+        throw new CaseEncounterServiceError("Encounter not found.", 404);
+      }
+
+      assertEncounterIsOpen(encounter, "mark ready for discharge");
+
+      return (await tx.encounter.update({
+        where: { id },
+        data: {
+          status: "onleave",
+        },
+      })) as EncounterRow;
+    });
+
+    return (
+      await attachEncounterAppointmentIds([toEncounterDomain(updatedEncounter)])
+    )[0];
   },
 
   async listActiveInpatientEncounters(filters: { organisationId?: string }) {

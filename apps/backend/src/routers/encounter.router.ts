@@ -46,6 +46,30 @@ router.get(
 );
 
 router.get(
+  "/:id/$admission-unit-assignments",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:view:any"),
+  EncounterController.listAdmissionUnitAssignments,
+);
+
+router.post(
+  "/:id/$start",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  EncounterController.start,
+);
+
+router.post(
+  "/:id/$ready-for-discharge",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  EncounterController.readyForDischarge,
+);
+
+router.get(
   "/$active-inpatients",
   authorizeCognito,
   withOrgPermissions(),
