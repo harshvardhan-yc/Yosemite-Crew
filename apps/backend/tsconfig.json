@@ -15,6 +15,7 @@
     "noUnusedParameters": false,
     "baseUrl": ".",
     "paths": {
+      "@yosemite-crew/lib": ["../../packages/lib/src/index.ts"],
       "@yosemite-crew/types": ["../../packages/types/src"],
       "@yosemite-crew/fhir": ["../../packages/fhir/src"],
       "@yosemite-crew/fhir-types": ["../../packages/fhir/src"]
