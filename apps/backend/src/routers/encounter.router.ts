@@ -46,6 +46,14 @@ router.get(
 );
 
 router.get(
+  "/$active-inpatients",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:view:any"),
+  EncounterController.listActiveInpatients,
+);
+
+router.get(
   "/:id",
   authorizeCognito,
   withOrgPermissions(),

@@ -60,13 +60,7 @@ type AdmissionRow = {
 };
 
 type AdmissionFindManyDelegate = {
-  findMany(args: {
-    where: {
-      encounterId: {
-        in: string[];
-      };
-    };
-  }): Promise<AdmissionRow[]>;
+  findMany(args: { where: Record<string, unknown> }): Promise<AdmissionRow[]>;
 };
 
 type AdmissionMutationDelegate = {
@@ -182,6 +176,13 @@ const ENCOUNTER_CLASSES = new Set<EncounterClass>([
   "EMER",
   "OBSENC",
   "VR",
+]);
+
+const ACTIVE_INPATIENT_STATUSES = new Set<EncounterStatus>([
+  "arrived",
+  "triaged",
+  "in-progress",
+  "onleave",
 ]);
 
 const requireString = (value: string | undefined, field: string) => {
@@ -926,6 +927,53 @@ export const CaseEncounterService = {
     });
 
     return rows.map(toRoomUnitAssignmentDomain);
+  },
+
+  async listActiveInpatientEncounters(filters: { organisationId?: string }) {
+    const organisationId = requireString(
+      filters.organisationId,
+      "organisationId",
+    );
+
+    const admissionDelegate = (
+      prisma as unknown as { admission: AdmissionFindManyDelegate }
+    ).admission;
+
+    const admissions = await admissionDelegate.findMany({
+      where: {
+        organisationId,
+        dischargedAt: null,
+      },
+    });
+
+    if (admissions.length === 0) {
+      return [];
+    }
+
+    const encounterIds = admissions.map((admission) => admission.encounterId);
+    const rows = (await prisma.encounter.findMany({
+      where: {
+        id: {
+          in: encounterIds,
+        },
+        organisationId,
+        appointmentKind: "INPATIENT",
+        status: {
+          in: [...ACTIVE_INPATIENT_STATUSES],
+        },
+      },
+      orderBy: { periodStart: "asc" },
+    })) as EncounterRow[];
+
+    const encounterById = new Map(
+      rows.map((row) => [row.id, toEncounterDomain(row)]),
+    );
+
+    const orderedEncounters = admissions
+      .map((admission) => encounterById.get(admission.encounterId))
+      .filter((value): value is EncounterDomain => Boolean(value));
+
+    return attachEncounterAppointmentIds(orderedEncounters);
   },
 
   async getEncounterById(encounterId: string): Promise<EncounterDomain> {

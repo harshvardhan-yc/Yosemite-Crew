@@ -37,6 +37,9 @@ const encounterListQuerySchema = z.object({
   status: z.string().trim().optional(),
   appointmentKind: z.enum(["OUTPATIENT", "INPATIENT"]).optional(),
 });
+const activeInpatientListQuerySchema = z.object({
+  organization: z.string().trim().optional(),
+});
 const dischargeEncounterSchema = z
   .object({
     resourceType: z.literal("Parameters").optional(),
@@ -302,6 +305,41 @@ export const EncounterController = {
       });
     } catch (error) {
       return handleError(res, error, "Failed to list unit assignments.");
+    }
+  },
+
+  listActiveInpatients: async (req: Request, res: Response) => {
+    try {
+      const query = activeInpatientListQuerySchema.parse(req.query);
+      const organisationId = parseReferenceId(
+        query.organization,
+        "Organization",
+      );
+
+      if (!organisationId) {
+        return res.status(400).json({
+          message: "organization is required.",
+        });
+      }
+
+      const values = await CaseEncounterService.listActiveInpatientEncounters({
+        organisationId,
+      });
+
+      return res.status(200).json({
+        resourceType: "Bundle",
+        type: "searchset",
+        total: values.length,
+        entry: values.map((value) => ({
+          resource: toEncounterResponseDTO(value),
+        })),
+      });
+    } catch (error) {
+      return handleError(
+        res,
+        error,
+        "Failed to list active inpatient encounters.",
+      );
     }
   },
 

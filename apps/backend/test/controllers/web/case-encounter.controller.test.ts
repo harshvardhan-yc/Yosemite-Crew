@@ -27,6 +27,7 @@ jest.mock("../../../src/services/case-encounter.service", () => {
       dischargeEncounter: jest.fn(),
       assignUnit: jest.fn(),
       listUnitAssignments: jest.fn(),
+      listActiveInpatientEncounters: jest.fn(),
       getEncounterById: jest.fn(),
       listEncounters: jest.fn(),
     },
@@ -289,5 +290,52 @@ describe("CaseEncounterController", () => {
         ],
       }),
     );
+  });
+
+  it("lists active inpatient encounters as a Bundle", async () => {
+    req.query = { organization: "Organization/org_1" };
+    mockedService.listActiveInpatientEncounters.mockResolvedValue([
+      {
+        id: "enc_1",
+        caseId: "case_1",
+        appointmentId: "appt_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        status: "arrived",
+        encounterClass: "IMP",
+        appointmentKind: "INPATIENT",
+        admission: {
+          encounterId: "enc_1",
+          organisationId: "org_1",
+          companionId: "comp_1",
+          unitId: "unit_1",
+          admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+        },
+      },
+    ] as never);
+
+    await EncounterController.listActiveInpatients(req as any, res as any);
+
+    expect(mockedService.listActiveInpatientEncounters).toHaveBeenCalledWith({
+      organisationId: "org_1",
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: "Bundle",
+        total: 1,
+      }),
+    );
+  });
+
+  it("requires an organisation for active inpatient list", async () => {
+    req.query = {};
+
+    await EncounterController.listActiveInpatients(req as any, res as any);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: "organization is required.",
+    });
   });
 });
