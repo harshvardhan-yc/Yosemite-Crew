@@ -63,6 +63,17 @@ type CatalogSelection = Awaited<
   ReturnType<typeof CatalogService.resolveSelection>
 >;
 type TransactionClient = Prisma.TransactionClient;
+type CaseRow = {
+  id: string;
+  organisationId: string;
+  companionId: string;
+};
+type EncounterLinkRow = {
+  id: string;
+  caseId: string;
+  organisationId: string;
+  companionId: string;
+};
 
 type AppointmentListFilters = {
   organisationId?: string;
@@ -156,13 +167,6 @@ const assertCaseEncounterConsistency = (input: {
   caseId?: string;
   encounterId?: string;
 }) => {
-  if (input.appointmentKind === "INPATIENT" && !input.caseId) {
-    throw new AppointmentPrismaServiceError(
-      "caseId is required for inpatient appointments.",
-      400,
-    );
-  }
-
   if (input.encounterId && !input.caseId) {
     throw new AppointmentPrismaServiceError(
       "caseId is required when encounterId is provided.",
@@ -214,6 +218,177 @@ const assertSelectionSupportsAppointmentKind = (
       400,
     );
   }
+};
+
+const getCompanionId = (
+  companion: AppointmentDomain["companion"] | Prisma.JsonValue,
+): string => ((companion as { id?: string } | null)?.id ?? "").trim();
+
+const getParentIdFromCompanion = (
+  companion: AppointmentDomain["companion"] | Prisma.JsonValue,
+): string | undefined =>
+  (
+    (companion as { parent?: { id?: string } } | null)?.parent?.id ?? ""
+  ).trim() || undefined;
+
+const resolveCaseContext = async (args: {
+  tx: TransactionClient;
+  appointmentKind: AppointmentKind;
+  caseId?: string;
+  organisationId: string;
+  companionId: string;
+  parentId?: string;
+  concern?: string;
+}): Promise<string | undefined> => {
+  const existingCaseId = normalizeOptionalString(args.caseId);
+
+  if (existingCaseId) {
+    const caseRow = (await args.tx.case.findUnique({
+      where: { id: existingCaseId },
+    })) as CaseRow | null;
+
+    if (!caseRow) {
+      throw new AppointmentPrismaServiceError("Case not found.", 404);
+    }
+
+    if (caseRow.organisationId !== args.organisationId) {
+      throw new AppointmentPrismaServiceError(
+        "Appointment case organisation mismatch.",
+        409,
+      );
+    }
+
+    if (caseRow.companionId !== args.companionId) {
+      throw new AppointmentPrismaServiceError(
+        "Appointment case companion mismatch.",
+        409,
+      );
+    }
+
+    return caseRow.id;
+  }
+
+  if (args.appointmentKind !== "INPATIENT") {
+    return undefined;
+  }
+
+  const created = await args.tx.case.create({
+    data: {
+      organisationId: args.organisationId,
+      companionId: args.companionId,
+      parentId: normalizeOptionalString(args.parentId) ?? null,
+      status: "active",
+      appointmentKind: args.appointmentKind,
+      title: "Inpatient case",
+      description: normalizeOptionalString(args.concern) ?? null,
+    },
+    select: { id: true },
+  });
+
+  return created.id;
+};
+
+const assertEncounterMatchesAppointmentContext = async (args: {
+  tx: TransactionClient;
+  encounterId?: string;
+  caseId?: string;
+  organisationId: string;
+  companionId: string;
+}) => {
+  const encounterId = normalizeOptionalString(args.encounterId);
+  if (!encounterId) {
+    return;
+  }
+
+  const encounter = (await args.tx.encounter.findUnique({
+    where: { id: encounterId },
+  })) as EncounterLinkRow | null;
+
+  if (!encounter) {
+    throw new AppointmentPrismaServiceError("Encounter not found.", 404);
+  }
+
+  if (encounter.caseId !== args.caseId) {
+    throw new AppointmentPrismaServiceError(
+      "Appointment encounter must belong to the selected case.",
+      409,
+    );
+  }
+
+  if (encounter.organisationId !== args.organisationId) {
+    throw new AppointmentPrismaServiceError(
+      "Appointment encounter organisation mismatch.",
+      409,
+    );
+  }
+
+  if (encounter.companionId !== args.companionId) {
+    throw new AppointmentPrismaServiceError(
+      "Appointment encounter companion mismatch.",
+      409,
+    );
+  }
+};
+
+const ensureEncounterOnCheckIn = async (args: {
+  tx: TransactionClient;
+  appointmentId: string;
+  current: AppointmentRow;
+}) => {
+  if (args.current.encounterId) {
+    return args.current.encounterId;
+  }
+
+  const companionId = getCompanionId(args.current.companion);
+  const caseId =
+    normalizeOptionalString(args.current.caseId) ??
+    (await resolveCaseContext({
+      tx: args.tx,
+      appointmentKind: normalizeAppointmentKind(args.current.appointmentKind),
+      organisationId: args.current.organisationId,
+      companionId,
+      parentId: getParentIdFromCompanion(args.current.companion),
+      concern: args.current.concern ?? undefined,
+    }));
+
+  if (!caseId) {
+    throw new AppointmentPrismaServiceError(
+      "caseId could not be resolved for check-in.",
+      400,
+    );
+  }
+
+  const createdEncounter = await args.tx.encounter.create({
+    data: {
+      caseId,
+      organisationId: args.current.organisationId,
+      companionId,
+      parentId: getParentIdFromCompanion(args.current.companion) ?? null,
+      status: "arrived",
+      encounterClass:
+        normalizeAppointmentKind(args.current.appointmentKind) === "INPATIENT"
+          ? "IMP"
+          : "AMB",
+      appointmentKind: normalizeAppointmentKind(args.current.appointmentKind),
+      title:
+        (args.current.appointmentType as { name?: string } | null)?.name ??
+        null,
+      reason: args.current.concern ?? null,
+      periodStart: args.current.startTime,
+      periodEnd: args.current.endTime,
+    },
+    select: { id: true },
+  });
+
+  await args.tx.appointment.update({
+    where: { id: args.appointmentId },
+    data: {
+      caseId,
+      encounterId: createdEncounter.id,
+    },
+  });
+
+  return createdEncounter.id;
 };
 
 const assertLeadAvailability = async (args: {
@@ -473,6 +648,25 @@ const createAppointment = async (
   assertSelectionSupportsAppointmentKind(selection, appointmentKind);
 
   const created = await prisma.$transaction(async (tx) => {
+    const companionId = getCompanionId(input.companion);
+    const resolvedCaseId = await resolveCaseContext({
+      tx,
+      appointmentKind,
+      caseId,
+      organisationId: input.organisationId,
+      companionId,
+      parentId: input.companion.parent?.id,
+      concern: input.concern,
+    });
+
+    await assertEncounterMatchesAppointmentContext({
+      tx,
+      encounterId,
+      caseId: resolvedCaseId,
+      organisationId: input.organisationId,
+      companionId,
+    });
+
     const appointment = await tx.appointment.create({
       data: {
         companion: toJsonValue(input.companion),
@@ -496,7 +690,7 @@ const createAppointment = async (
           ? toJsonValue(input.attachments)
           : Prisma.JsonNull,
         formIds: input.formIds ?? [],
-        caseId: caseId ?? null,
+        caseId: resolvedCaseId ?? null,
         encounterId: encounterId ?? null,
         productItemId: selection.productItemId,
         expiresAt: null,
@@ -618,6 +812,25 @@ export const AppointmentPrismaService = {
 
     const patch = applyDtoPatch(row, dto, "UPCOMING");
     const updated = await prisma.$transaction(async (tx) => {
+      const companionId = getCompanionId(input.companion);
+      const resolvedCaseId = await resolveCaseContext({
+        tx,
+        appointmentKind: patch.appointmentKind,
+        caseId: patch.caseId ?? undefined,
+        organisationId: row.organisationId,
+        companionId,
+        parentId: input.companion.parent?.id,
+        concern: input.concern,
+      });
+
+      await assertEncounterMatchesAppointmentContext({
+        tx,
+        encounterId: patch.encounterId ?? undefined,
+        caseId: resolvedCaseId,
+        organisationId: row.organisationId,
+        companionId,
+      });
+
       await upsertAppointmentOccupancy({
         tx,
         appointmentId,
@@ -631,6 +844,7 @@ export const AppointmentPrismaService = {
         where: { id: appointmentId },
         data: {
           ...patch,
+          caseId: resolvedCaseId ?? null,
           updatedAt: new Date(),
         },
       });
@@ -694,9 +908,21 @@ export const AppointmentPrismaService = {
       "checkInAppointmentParent",
     );
 
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: { status: "CHECKED_IN", updatedAt: new Date() },
+    const updated = await prisma.$transaction(async (tx) => {
+      const encounterId = await ensureEncounterOnCheckIn({
+        tx,
+        appointmentId,
+        current: row,
+      });
+
+      return tx.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          status: "CHECKED_IN",
+          encounterId,
+          updatedAt: new Date(),
+        },
+      });
     });
 
     return toResponse(updated as AppointmentRow);
@@ -716,9 +942,21 @@ export const AppointmentPrismaService = {
     );
     assertAppointmentTransition(row.status, "CHECKED_IN", "checkInAppointment");
 
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: { status: "CHECKED_IN", updatedAt: new Date() },
+    const updated = await prisma.$transaction(async (tx) => {
+      const encounterId = await ensureEncounterOnCheckIn({
+        tx,
+        appointmentId,
+        current: row,
+      });
+
+      return tx.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          status: "CHECKED_IN",
+          encounterId,
+          updatedAt: new Date(),
+        },
+      });
     });
 
     return toResponse(updated as AppointmentRow);
@@ -854,6 +1092,25 @@ export const AppointmentPrismaService = {
     assertSelectionSupportsAppointmentKind(selection, appointmentKind);
     const patch = applyDtoPatch(row, dto, row.status);
     const updated = await prisma.$transaction(async (tx) => {
+      const companionId = getCompanionId(input.companion);
+      const resolvedCaseId = await resolveCaseContext({
+        tx,
+        appointmentKind,
+        caseId,
+        organisationId: row.organisationId,
+        companionId,
+        parentId: input.companion.parent?.id,
+        concern: input.concern,
+      });
+
+      await assertEncounterMatchesAppointmentContext({
+        tx,
+        encounterId,
+        caseId: resolvedCaseId,
+        organisationId: row.organisationId,
+        companionId,
+      });
+
       if (patch.status === "UPCOMING") {
         await upsertAppointmentOccupancy({
           tx,
@@ -877,7 +1134,7 @@ export const AppointmentPrismaService = {
         where: { id: appointmentId },
         data: {
           ...patch,
-          caseId: caseId ?? null,
+          caseId: resolvedCaseId ?? null,
           encounterId: encounterId ?? null,
           productItemId: selection.productItemId,
           updatedAt: new Date(),

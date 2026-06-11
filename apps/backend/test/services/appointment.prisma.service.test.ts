@@ -35,6 +35,14 @@ jest.mock("../../src/config/prisma", () => ({
       findMany: jest.fn(),
       update: jest.fn(),
     },
+    case: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    encounter: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+    },
     occupancy: {
       findFirst: jest.fn(),
       create: jest.fn(),
@@ -147,6 +155,11 @@ describe("AppointmentPrismaService", () => {
   });
 
   it("creates a requested appointment with product validation", async () => {
+    mockedPrisma.case.findUnique.mockResolvedValue({
+      id: "case_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+    } as any);
     mockedPrisma.appointment.create.mockResolvedValue(
       makeRow({ status: "REQUESTED", caseId: "case_1" }),
     );
@@ -171,7 +184,47 @@ describe("AppointmentPrismaService", () => {
     expect(result.id).toBe("appt_1");
   });
 
+  it("auto-creates a case for inpatient appointments when frontend does not send one", async () => {
+    mockedTypes.fromAppointmentRequestDTO.mockReturnValue({
+      ...baseDomain,
+      caseId: undefined,
+    } as any);
+    mockedPrisma.case.create.mockResolvedValue({ id: "case_new" } as any);
+    mockedPrisma.appointment.create.mockResolvedValue(
+      makeRow({ status: "REQUESTED", caseId: "case_new" }),
+    );
+    mockedPrisma.invoice.findMany.mockResolvedValue([]);
+
+    const result = await AppointmentPrismaService.createRequestedFromMobile({
+      resourceType: "Appointment",
+    } as any);
+
+    expect(mockedPrisma.case.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          organisationId: "org_1",
+          companionId: "comp_1",
+          appointmentKind: "INPATIENT",
+          status: "active",
+        }),
+      }),
+    );
+    expect(mockedPrisma.appointment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          caseId: "case_new",
+        }),
+      }),
+    );
+    expect((result as any).caseId).toBe("case_new");
+  });
+
   it("creates a PMS appointment as upcoming", async () => {
+    mockedPrisma.case.findUnique.mockResolvedValue({
+      id: "case_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+    } as any);
     mockedPrisma.appointment.create.mockResolvedValue(
       makeRow({ status: "UPCOMING", caseId: "case_1" }),
     );
@@ -265,6 +318,55 @@ describe("AppointmentPrismaService", () => {
       message: "You are not allowed to modify this appointment.",
       statusCode: 403,
     });
+  });
+
+  it("creates an encounter on check-in when one does not exist", async () => {
+    mockedPrisma.appointment.findUnique.mockResolvedValue(
+      makeRow({ status: "UPCOMING", caseId: "case_1", encounterId: null }),
+    );
+    mockedPrisma.encounter.create.mockResolvedValue({ id: "enc_1" } as any);
+    mockedPrisma.appointment.update
+      .mockResolvedValueOnce({ id: "appt_1" } as any)
+      .mockResolvedValueOnce(
+        makeRow({
+          status: "CHECKED_IN",
+          caseId: "case_1",
+          encounterId: "enc_1",
+        }),
+      );
+    mockedPrisma.invoice.findMany.mockResolvedValue([]);
+
+    const result = await AppointmentPrismaService.checkInAppointment("appt_1");
+
+    expect(mockedPrisma.encounter.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          caseId: "case_1",
+          organisationId: "org_1",
+          companionId: "comp_1",
+          status: "arrived",
+          encounterClass: "IMP",
+        }),
+      }),
+    );
+    expect(mockedPrisma.appointment.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "appt_1" },
+      data: {
+        caseId: "case_1",
+        encounterId: "enc_1",
+      },
+    });
+    expect(mockedPrisma.appointment.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: "appt_1" },
+        data: expect.objectContaining({
+          status: "CHECKED_IN",
+          encounterId: "enc_1",
+        }),
+      }),
+    );
+    expect((result as any).encounterId).toBe("enc_1");
   });
 
   it("lists appointments for organisation with filters", async () => {
