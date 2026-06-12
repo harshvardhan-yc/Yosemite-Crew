@@ -139,4 +139,165 @@ describe("AppointmentPrismaController", () => {
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ message: "Bad" });
   });
+
+  it("creates PMS appointments with payment options", async () => {
+    req.query = { createPayment: "1", paymentCollectionMethod: "clinic" };
+    req.body = { resourceType: "Appointment" } as any;
+    mockedService.createAppointmentFromPms.mockResolvedValue({
+      id: "appt_2",
+    } as any);
+
+    await AppointmentController.createFromPms(req as any, res as any);
+
+    expect(mockedService.createAppointmentFromPms).toHaveBeenCalledWith(
+      req.body,
+      true,
+      "clinic",
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it("accepts and rejects requested appointments", async () => {
+    req.params = { appointmentId: "appt_1" };
+    req.body = { resourceType: "Appointment" } as any;
+    mockedService.approveRequestedFromPms.mockResolvedValue({
+      id: "appt_1",
+    } as any);
+    mockedService.rejectRequestedAppointment.mockResolvedValue({
+      id: "appt_2",
+    } as any);
+
+    await AppointmentController.acceptRequested(req as any, res as any);
+    await AppointmentController.rejectRequested(req as any, res as any);
+
+    expect(mockedService.approveRequestedFromPms).toHaveBeenCalledWith(
+      "appt_1",
+      req.body,
+    );
+    expect(mockedService.rejectRequestedAppointment).toHaveBeenCalledWith(
+      "appt_1",
+    );
+  });
+
+  it("checks in and updates appointments from PMS", async () => {
+    req.params = { appointmentId: "appt_1" };
+    req.body = { resourceType: "Appointment" } as any;
+    mockedService.checkInAppointment.mockResolvedValue({ id: "appt_1" } as any);
+    mockedService.updateAppointmentPMS.mockResolvedValue({
+      id: "appt_1",
+    } as any);
+
+    await AppointmentController.checkInAppointmentForPMS(
+      req as any,
+      res as any,
+    );
+    await AppointmentController.updateFromPms(req as any, res as any);
+
+    expect(mockedService.checkInAppointment).toHaveBeenCalledWith("appt_1");
+    expect(mockedService.updateAppointmentPMS).toHaveBeenCalledWith(
+      "appt_1",
+      req.body,
+    );
+  });
+
+  it("attaches forms, cancels, and fetches appointments", async () => {
+    req.params = { appointmentId: "appt_1" };
+    req.body = { formIds: ["form_1", "form_2"] };
+    mockedService.attachFormsToAppointment.mockResolvedValue({
+      id: "appt_1",
+    } as any);
+    mockedService.cancelAppointmentFromParent.mockResolvedValue({
+      id: "appt_1",
+    } as any);
+    mockedService.cancelAppointment.mockResolvedValue({ id: "appt_1" } as any);
+    mockedService.getById.mockResolvedValue({ id: "appt_1" } as any);
+    mockedService.getAppointmentsForCompanion.mockResolvedValue([
+      { id: "appt_1" },
+    ] as any);
+    mockedService.getAppointmentsForCompanionByOrganisation.mockResolvedValue([
+      { id: "appt_1" },
+    ] as any);
+    mockedService.getAppointmentsForParent.mockResolvedValue([
+      { id: "appt_1" },
+    ] as any);
+    mockedService.getAppointmentsForLead.mockResolvedValue([
+      { id: "appt_1" },
+    ] as any);
+
+    (req as any).userId = "user_1";
+    mockedAuth.getByProviderUserId.mockResolvedValue({
+      parentId: "parent_1",
+    } as any);
+
+    await AppointmentController.attachFormsToAppointment(
+      req as any,
+      res as any,
+    );
+    await AppointmentController.cancelFromMobile(req as any, res as any);
+    await AppointmentController.cancelFromPMS(req as any, res as any);
+    await AppointmentController.getById(req as any, res as any);
+    await AppointmentController.listByCompanion(
+      { params: { companionId: "comp_1" } } as any,
+      res as any,
+    );
+    await AppointmentController.listByCompanionForOrganisation(
+      { params: { companionId: "comp_1", organisationId: "org_1" } } as any,
+      res as any,
+    );
+    await AppointmentController.listByParent(req as any, res as any);
+    await AppointmentController.listByLead(
+      { params: { leadId: "lead_1" } } as any,
+      res as any,
+    );
+
+    expect(mockedService.attachFormsToAppointment).toHaveBeenCalledWith(
+      "appt_1",
+      ["form_1", "form_2"],
+    );
+    expect(mockedService.cancelAppointmentFromParent).toHaveBeenCalledWith(
+      "appt_1",
+      "parent_1",
+      undefined,
+    );
+    expect(mockedService.cancelAppointment).toHaveBeenCalledWith(
+      "appt_1",
+      undefined,
+    );
+    expect(mockedService.getById).toHaveBeenCalledWith("appt_1");
+    expect(mockedService.getAppointmentsForCompanion).toHaveBeenCalledWith(
+      "comp_1",
+    );
+    expect(
+      mockedService.getAppointmentsForCompanionByOrganisation,
+    ).toHaveBeenCalledWith("comp_1", "org_1");
+    expect(mockedService.getAppointmentsForParent).toHaveBeenCalledWith(
+      "parent_1",
+    );
+    expect(mockedService.getAppointmentsForLead).toHaveBeenCalledWith("lead_1");
+  });
+
+  it("handles mobile auth and upload validation errors", async () => {
+    await AppointmentController.cancelFromMobile(req as any, res as any);
+    expect(res.status).toHaveBeenCalledWith(401);
+
+    await AppointmentController.listByParent(req as any, res as any);
+    expect(res.status).toHaveBeenCalledWith(401);
+
+    await AppointmentController.getDocumentUplaodURL(
+      { body: {} } as any,
+      res as any,
+    );
+    expect(res.status).toHaveBeenCalledWith(401);
+
+    (req as any).userId = "user_1";
+    mockedAuth.getByProviderUserId.mockResolvedValueOnce({} as any);
+    await AppointmentController.rescheduleFromMobile(req as any, res as any);
+    expect(res.status).toHaveBeenCalledWith(400);
+
+    await AppointmentController.getDocumentUplaodURL(
+      { body: { companionId: "comp_1" }, userId: "user_1" } as any,
+      res as any,
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
 });

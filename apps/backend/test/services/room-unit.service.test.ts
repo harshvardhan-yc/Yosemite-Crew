@@ -121,6 +121,27 @@ describe("RoomUnitService", () => {
     expect(results[0]?.displayName).toBe("Kennel 1");
   });
 
+  it("lists room units with all filters", async () => {
+    mockedPrisma.roomUnit.findMany.mockResolvedValue([]);
+
+    await RoomUnitService.list({
+      organisationId: "org_1",
+      roomId: "room_1",
+      unitGroupId: "group_1",
+      isActive: false,
+    });
+
+    expect(mockedPrisma.roomUnit.findMany).toHaveBeenCalledWith({
+      where: {
+        organisationId: "org_1",
+        roomId: "room_1",
+        unitGroupId: "group_1",
+        isActive: false,
+      },
+      orderBy: { displayName: "asc" },
+    });
+  });
+
   it("deletes a room unit in the same organisation", async () => {
     mockedPrisma.roomUnit.findUnique.mockResolvedValue({
       id: "unit_1",
@@ -155,5 +176,65 @@ describe("RoomUnitService", () => {
       where: { id: "unit_1" },
     });
     expect(result.id).toBe("unit_1");
+  });
+
+  it("rejects missing units and unit group mismatches", async () => {
+    mockedPrisma.roomUnit.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      RoomUnitService.update("unit_missing", { displayName: "Updated" }),
+    ).rejects.toMatchObject({
+      message: "Room unit not found.",
+      statusCode: 404,
+    });
+
+    mockedPrisma.roomUnit.findUnique.mockResolvedValueOnce({
+      id: "unit_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      unitGroupId: "group_1",
+      code: "KEN-01",
+      displayName: "Kennel 1",
+      size: "M",
+      speciesConstraints: ["dog"],
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mockedPrisma.roomUnitGroup.findUnique.mockResolvedValueOnce({
+      id: "group_1",
+      roomId: "room_2",
+      organisationId: "org_1",
+    });
+
+    await expect(
+      RoomUnitService.update("unit_1", { unitGroupId: "group_1" }),
+    ).rejects.toMatchObject({
+      message: "Room unit group room mismatch.",
+      statusCode: 409,
+    });
+  });
+
+  it("rejects delete org mismatches", async () => {
+    mockedPrisma.roomUnit.findUnique.mockResolvedValueOnce({
+      id: "unit_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      unitGroupId: null,
+      code: "KEN-01",
+      displayName: "Kennel 1",
+      size: "M",
+      speciesConstraints: ["dog"],
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(
+      RoomUnitService.delete("unit_1", "org_2"),
+    ).rejects.toMatchObject({
+      message: "Unit organisation mismatch.",
+      statusCode: 409,
+    });
   });
 });

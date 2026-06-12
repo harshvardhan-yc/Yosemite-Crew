@@ -115,6 +115,25 @@ describe("RoomUnitGroupService", () => {
     expect(results[0]?.unitCount).toBe(2);
   });
 
+  it("lists room unit groups with room and status filters", async () => {
+    mockedPrisma.roomUnitGroup.findMany.mockResolvedValue([]);
+
+    await RoomUnitGroupService.list({
+      organisationId: "org_1",
+      roomId: "room_1",
+      isActive: false,
+    });
+
+    expect(mockedPrisma.roomUnitGroup.findMany).toHaveBeenCalledWith({
+      where: {
+        organisationId: "org_1",
+        roomId: "room_1",
+        isActive: false,
+      },
+      orderBy: [{ roomId: "asc" }, { name: "asc" }],
+    });
+  });
+
   it("deletes a room unit group within the same organisation", async () => {
     mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue({
       id: "group_1",
@@ -149,5 +168,84 @@ describe("RoomUnitGroupService", () => {
       where: { id: "group_1" },
     });
     expect(result.id).toBe("group_1");
+  });
+
+  it("rejects invalid room unit group inputs and missing rooms", async () => {
+    mockedPrisma.organisationRoom.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      RoomUnitGroupService.create({
+        id: "group_2",
+        organisationId: "org_1",
+        roomId: "room_missing",
+        name: "Dog ward",
+        unitCount: 2,
+      }),
+    ).rejects.toMatchObject({
+      message: "Organisation room not found.",
+      statusCode: 404,
+    });
+
+    await expect(
+      RoomUnitGroupService.create({
+        id: "group_3",
+        organisationId: "org_1",
+        roomId: "room_1",
+        name: "Dog ward",
+        unitCount: 0,
+      }),
+    ).rejects.toMatchObject({
+      message: "unitCount must be greater than 0.",
+      statusCode: 400,
+    });
+  });
+
+  it("rejects room org mismatches on update and delete", async () => {
+    mockedPrisma.roomUnitGroup.findUnique.mockResolvedValueOnce({
+      id: "group_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      name: "Dog ward",
+      size: "Medium",
+      unitCount: 2,
+      speciesConstraints: ["dog"],
+      capabilities: ["oxygen"],
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mockedPrisma.organisationRoom.findUnique.mockResolvedValueOnce({
+      id: "room_1",
+      organisationId: "org_2",
+      type: "INPATIENT",
+    });
+
+    await expect(
+      RoomUnitGroupService.update("group_1", { roomId: "room_1" }),
+    ).rejects.toMatchObject({
+      message: "Room organisation mismatch.",
+      statusCode: 409,
+    });
+
+    mockedPrisma.roomUnitGroup.findUnique.mockResolvedValueOnce({
+      id: "group_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      name: "Dog ward",
+      size: "Medium",
+      unitCount: 2,
+      speciesConstraints: ["dog"],
+      capabilities: ["oxygen"],
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(
+      RoomUnitGroupService.delete("group_1", "org_2"),
+    ).rejects.toMatchObject({
+      message: "Room organisation mismatch.",
+      statusCode: 409,
+    });
   });
 });

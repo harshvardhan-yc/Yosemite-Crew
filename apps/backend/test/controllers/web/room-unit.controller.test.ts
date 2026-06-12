@@ -91,4 +91,54 @@ describe("RoomUnitController", () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
   });
+
+  it("rejects invalid payloads and missing organisation ids", async () => {
+    req.body = { resourceType: "Observation" };
+    await RoomUnitController.create(req as any, res as any);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: "Invalid payload. Expected FHIR Location resource.",
+    });
+
+    res = buildResponse();
+    req.body = {
+      resourceType: "Location",
+      name: "Kennel 1",
+      partOf: { reference: "Location/room_1" },
+      extension: [],
+    };
+    await RoomUnitController.create(
+      { ...req, organisationId: undefined } as any,
+      res as any,
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: "Organization identifier is required.",
+    });
+  });
+
+  it("handles missing update ids and delete organisation ids", async () => {
+    req.body = {
+      resourceType: "Location",
+      name: "Kennel 1",
+      managingOrganization: { reference: "Organization/org_1" },
+      partOf: { reference: "Location/room_1" },
+      extension: [],
+    };
+
+    await RoomUnitController.update({ ...req, params: {} } as any, res as any);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: "Unit identifier is required.",
+    });
+
+    await RoomUnitController.delete(
+      { params: { id: "unit_1" } } as any,
+      res as any,
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: "Organization identifier is required.",
+    });
+  });
 });
