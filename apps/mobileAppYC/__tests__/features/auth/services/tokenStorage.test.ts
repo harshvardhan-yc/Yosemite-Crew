@@ -184,6 +184,60 @@ describe('tokenStorage', () => {
       );
     });
 
+    describe('legacy migration', () => {
+      it('should migrate tokens from old service and return them', async () => {
+        (Keychain.getGenericPassword as jest.Mock)
+          .mockResolvedValueOnce(false) // new service: no tokens
+          .mockResolvedValueOnce({
+            // legacy service: has tokens
+            username: 'yosemite-crew',
+            password: JSON.stringify(mockTokens),
+            service: 'yosemite-crew-auth-tokens',
+            storage: 'keychain' as const,
+          });
+        (Keychain.setGenericPassword as jest.Mock).mockResolvedValue(true);
+        (Keychain.resetGenericPassword as jest.Mock).mockResolvedValue(true);
+
+        const result = await loadStoredTokens();
+
+        expect(result).toEqual(mockTokens);
+        expect(Keychain.setGenericPassword).toHaveBeenCalledWith(
+          'yosemite-crew',
+          JSON.stringify(mockTokens),
+          expect.objectContaining({service: 'yosemite-crew-session'}),
+        );
+        expect(Keychain.resetGenericPassword).toHaveBeenCalledWith({
+          service: 'yosemite-crew-auth-tokens',
+        });
+      });
+
+      it('should return null when both new and legacy service have no tokens', async () => {
+        (Keychain.getGenericPassword as jest.Mock).mockResolvedValue(false);
+
+        const result = await loadStoredTokens();
+
+        expect(result).toBeNull();
+        expect(Keychain.getGenericPassword).toHaveBeenCalledTimes(2);
+      });
+
+      it('should return null without migrating when legacy JSON is invalid', async () => {
+        (Keychain.getGenericPassword as jest.Mock)
+          .mockResolvedValueOnce(false)
+          .mockResolvedValueOnce({
+            username: 'yosemite-crew',
+            password: 'invalid-json',
+            service: 'yosemite-crew-auth-tokens',
+            storage: 'keychain' as const,
+          });
+
+        const result = await loadStoredTokens();
+
+        expect(result).toBeNull();
+        expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+        expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
+      });
+    });
+
     it('should handle tokens with all optional fields', async () => {
       const minimalTokens = {
         idToken: 'id-token',
