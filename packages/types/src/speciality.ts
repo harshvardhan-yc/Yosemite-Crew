@@ -1,4 +1,4 @@
-import type { Extension, Organization as FHIROrganization } from '@yosemite-crew/fhir';
+import type { Bundle, Extension, Organization as FHIROrganization } from '@yosemite-crew/fhir';
 
 export type Speciality = {
   _id?: string;
@@ -10,6 +10,11 @@ export type Speciality = {
   headProfilePicUrl?: string; // Optional denormalized profile pic URL
   teamMemberIds?: string[];
   services?: string[]; // Embedded list of services under this dept
+  isActive?: boolean;
+  activeServiceCount?: number;
+  activePackageCount?: number;
+  archivedServiceCount?: number;
+  archivedPackageCount?: number;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -28,6 +33,14 @@ const CREATED_AT_EXTENSION_URL =
 const UPDATED_AT_EXTENSION_URL =
   'https://yosemitecrew.com/fhir/StructureDefinition/speciality-updated-at';
 const TEAM_EXTENSION_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/speciality-team';
+const ACTIVE_SERVICE_COUNT_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/speciality-active-service-count';
+const ACTIVE_PACKAGE_COUNT_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/speciality-active-package-count';
+const ARCHIVED_SERVICE_COUNT_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/speciality-archived-service-count';
+const ARCHIVED_PACKAGE_COUNT_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/speciality-archived-package-count';
 const HEAD_USER_ID_CHILD_URL = 'userId';
 const HEAD_NAME_CHILD_URL = 'name';
 const HEAD_PROFILE_PICTURE_CHILD_URL = 'profilePicture';
@@ -130,6 +143,34 @@ const buildExtensions = (speciality: Speciality): Extension[] | undefined => {
     });
   }
 
+  if (speciality.activeServiceCount != null) {
+    extensions.push({
+      url: ACTIVE_SERVICE_COUNT_EXTENSION_URL,
+      valueInteger: speciality.activeServiceCount,
+    });
+  }
+
+  if (speciality.activePackageCount != null) {
+    extensions.push({
+      url: ACTIVE_PACKAGE_COUNT_EXTENSION_URL,
+      valueInteger: speciality.activePackageCount,
+    });
+  }
+
+  if (speciality.archivedServiceCount != null) {
+    extensions.push({
+      url: ARCHIVED_SERVICE_COUNT_EXTENSION_URL,
+      valueInteger: speciality.archivedServiceCount,
+    });
+  }
+
+  if (speciality.archivedPackageCount != null) {
+    extensions.push({
+      url: ARCHIVED_PACKAGE_COUNT_EXTENSION_URL,
+      valueInteger: speciality.archivedPackageCount,
+    });
+  }
+
   // 🔹 NEW: team members on speciality
   if (speciality.teamMemberIds?.length) {
     extensions.push({
@@ -169,6 +210,7 @@ export const toFHIRSpeciality = (speciality: Speciality): FHIROrganization => {
   return {
     resourceType: 'Organization',
     id: speciality._id,
+    active: speciality.isActive ?? true,
     name: speciality.name,
     identifier: buildIdentifiers(speciality),
     partOf: {
@@ -183,6 +225,27 @@ export const toFHIRSpeciality = (speciality: Speciality): FHIROrganization => {
       : undefined,
   };
 };
+
+export const toFHIRSpecialityBundle = (
+  specialities: Speciality[],
+  options?: {
+    baseUrl?: string;
+    searchMode?: 'match' | 'include' | 'outcome';
+  }
+): Bundle => ({
+  resourceType: 'Bundle',
+  type: 'searchset',
+  total: specialities.length,
+  entry: specialities.map((speciality) => ({
+    fullUrl: options?.baseUrl
+      ? `${options.baseUrl.replace(/\/$/, '')}/${speciality._id ?? ''}`
+      : `Organization/${speciality._id ?? ''}`,
+    search: {
+      mode: options?.searchMode ?? 'match',
+    },
+    resource: toFHIRSpeciality(speciality),
+  })),
+});
 
 const toDate = (value?: string): Date | undefined => {
   if (!value) {
@@ -305,6 +368,18 @@ export const fromFHIRSpeciality = (resource: FHIROrganization): Speciality => {
   const createdAt = parseDateExtension(extensions, CREATED_AT_EXTENSION_URL);
   const updatedAtExtension = parseDateExtension(extensions, UPDATED_AT_EXTENSION_URL);
   const updatedAtMeta = toDate(resource.meta?.lastUpdated);
+  const activeServiceCount = extensions?.find(
+    (item) => item.url === ACTIVE_SERVICE_COUNT_EXTENSION_URL
+  )?.valueInteger;
+  const activePackageCount = extensions?.find(
+    (item) => item.url === ACTIVE_PACKAGE_COUNT_EXTENSION_URL
+  )?.valueInteger;
+  const archivedServiceCount = extensions?.find(
+    (item) => item.url === ARCHIVED_SERVICE_COUNT_EXTENSION_URL
+  )?.valueInteger;
+  const archivedPackageCount = extensions?.find(
+    (item) => item.url === ARCHIVED_PACKAGE_COUNT_EXTENSION_URL
+  )?.valueInteger;
 
   return {
     _id: resource.id ?? findIdentifierValue(resource.identifier, SPECIALITY_IDENTIFIER_SYSTEM),
@@ -314,8 +389,13 @@ export const fromFHIRSpeciality = (resource: FHIROrganization): Speciality => {
       DEPARTMENT_MASTER_IDENTIFIER_SYSTEM
     ),
     name: resource.name ?? '',
+    isActive: resource.active ?? true,
     teamMemberIds,
     services,
+    activeServiceCount: activeServiceCount != null ? activeServiceCount : undefined,
+    activePackageCount: activePackageCount != null ? activePackageCount : undefined,
+    archivedServiceCount: archivedServiceCount != null ? archivedServiceCount : undefined,
+    archivedPackageCount: archivedPackageCount != null ? archivedPackageCount : undefined,
     createdAt,
     updatedAt: updatedAtExtension ?? updatedAtMeta ?? undefined,
     ...headDetails,

@@ -40,6 +40,7 @@ import { isReadFromPostgres } from "src/config/read-switch";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
 import { ensureObjectId as ensureObjectIdStrict } from "src/utils/mongo";
 import { assertEmail } from "src/utils/sanitize";
+import { CatalogService, CatalogServiceError } from "./catalog.service";
 
 export class AppointmentServiceError extends Error {
   constructor(
@@ -236,6 +237,62 @@ const resolvePaymentStatusByAppointmentIdsFromMongo = async (
 };
 
 type AppointmentRequestInput = ReturnType<typeof fromAppointmentRequestDTO>;
+
+type DraftInvoiceItemInput = {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discountPercent?: number;
+};
+
+type LegacyServiceBridge = {
+  name: string;
+  cost: number;
+  maxDiscount?: number | null;
+  serviceType?: string;
+  observationToolId?: unknown;
+};
+
+const mapCatalogSelectionToDraftItems = (selection: {
+  billingItems: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    defaultDiscountPercent?: number | null;
+  }>;
+}): DraftInvoiceItemInput[] =>
+  selection.billingItems.map((item) => ({
+    description: item.name,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    discountPercent: item.defaultDiscountPercent ?? undefined,
+  }));
+
+const mapLegacyServiceToDraftItems = (
+  service: Pick<LegacyServiceBridge, "name" | "cost" | "maxDiscount">,
+  fallbackName?: string,
+): DraftInvoiceItemInput[] => [
+  {
+    description: fallbackName ?? service.name ?? "Consultation",
+    quantity: 1,
+    unitPrice: service.cost,
+    discountPercent: service.maxDiscount ?? undefined,
+  },
+];
+
+const resolveCatalogSelectionSafe = async (
+  selectionId: string,
+  organisationId: string,
+) => {
+  try {
+    return await CatalogService.resolveSelection(selectionId, organisationId);
+  } catch (error) {
+    if (error instanceof CatalogServiceError && error.statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
 
 const requireBaseAppointmentInput = (
   input: AppointmentRequestInput,
@@ -1816,31 +1873,46 @@ export const AppointmentService = {
     validateRequestedFromMobileInput(input);
 
     if (isReadFromPostgres()) {
-      const serviceId = input.appointmentType?.id;
-      if (!serviceId) {
+      const selectionId = input.appointmentType?.id;
+      if (!selectionId) {
         throw new AppointmentServiceError("serviceId is required", 400);
       }
+      const catalogSelection = await resolveCatalogSelectionSafe(
+        selectionId,
+        input.organisationId,
+      );
+      const legacyServiceId = catalogSelection?.legacyServiceId ?? selectionId;
       const service = await prisma.service.findFirst({
         where: {
-          id: serviceId,
+          id: legacyServiceId,
           organisationId: input.organisationId,
           isActive: true,
         },
       });
 
-      if (!service) {
+      if (!catalogSelection && !service) {
         throw new AppointmentServiceError("Invalid service selected", 404);
+      }
+
+      if (
+        catalogSelection &&
+        (!catalogSelection.isBookable ||
+          !catalogSelection.appointmentKinds.includes("OUTPATIENT"))
+      ) {
+        throw new AppointmentServiceError(
+          "Selected product is not bookable for outpatient appointments.",
+          400,
+        );
       }
 
       const usageReservation = await reserveAppointmentUsage(
         input.organisationId,
-        service.serviceType === "OBSERVATION_TOOL",
+        service?.serviceType === "OBSERVATION_TOOL",
       );
 
-      const consentForm = await getConsentFormForParentSafe(
-        input.organisationId,
-        serviceId,
-      );
+      const consentForm = service
+        ? await getConsentFormForParentSafe(input.organisationId, service.id)
+        : null;
 
       if (consentForm?.id) {
         input.formIds?.push(consentForm.id);
@@ -1860,6 +1932,7 @@ export const AppointmentService = {
             room: appointment.room as unknown as Prisma.InputJsonValue,
             appointmentType:
               appointment.appointmentType as unknown as Prisma.InputJsonValue,
+            productItemId: catalogSelection?.productItemId ?? undefined,
             organisationId: appointment.organisationId,
             appointmentDate: appointment.appointmentDate,
             startTime: appointment.startTime,
@@ -1901,17 +1974,12 @@ export const AppointmentService = {
         parentId: appointment.companion.parent.id,
         companionId: appointment.companion.id,
         organisationId: appointment.organisationId,
-        items: [
-          {
-            description:
-              appointment.appointmentType?.name ??
-              service.name ??
-              "Consultation",
-            quantity: 1,
-            unitPrice: service.cost,
-            discountPercent: service.maxDiscount ?? undefined,
-          },
-        ],
+        items: catalogSelection
+          ? mapCatalogSelectionToDraftItems(catalogSelection)
+          : mapLegacyServiceToDraftItems(
+              service as LegacyServiceBridge,
+              appointment.appointmentType?.name,
+            ),
         notes: appointment.concern ?? undefined,
         paymentCollectionMethod: "PAYMENT_INTENT",
       });
@@ -1925,7 +1993,9 @@ export const AppointmentService = {
         ? await StripeService.createPaymentIntentForInvoice(invoiceId)
         : undefined;
 
-      await maybeCreateObservationToolTask(service, appointment, created.id);
+      if (service) {
+        await maybeCreateObservationToolTask(service, appointment, created.id);
+      }
 
       return {
         appointment:
@@ -1936,30 +2006,53 @@ export const AppointmentService = {
     }
 
     // Validate service
-    const serviceId = ensureObjectId(input.appointmentType!.id, "serviceId");
+    const selectionId = input.appointmentType!.id;
+    const catalogSelection = await resolveCatalogSelectionSafe(
+      selectionId,
+      input.organisationId,
+    );
     const organisationId = ensureObjectId(
       input.organisationId,
       "organisationId",
     );
-    const service = await ServiceModel.findOne({
-      _id: serviceId,
-      organisationId: organisationId,
-      isActive: true,
-    });
+    const legacyServiceLookupId =
+      catalogSelection?.legacyServiceId ?? selectionId;
+    const serviceId =
+      legacyServiceLookupId && Types.ObjectId.isValid(legacyServiceLookupId)
+        ? ensureObjectId(legacyServiceLookupId, "serviceId")
+        : null;
+    const service = serviceId
+      ? await ServiceModel.findOne({
+          _id: serviceId,
+          organisationId: organisationId,
+          isActive: true,
+        })
+      : null;
 
-    if (!service) {
+    if (!catalogSelection && !service) {
       throw new AppointmentServiceError("Invalid service selected", 404);
+    }
+
+    if (
+      catalogSelection &&
+      (!catalogSelection.isBookable ||
+        !catalogSelection.appointmentKinds.includes("OUTPATIENT"))
+    ) {
+      throw new AppointmentServiceError(
+        "Selected product is not bookable for outpatient appointments.",
+        400,
+      );
     }
 
     const usageReservation = await reserveAppointmentUsage(
       organisationId,
-      service.serviceType === "OBSERVATION_TOOL",
+      service?.serviceType === "OBSERVATION_TOOL",
     );
 
-    const consentForm = await getConsentFormForParentSafe(
-      organisationId,
-      serviceId,
-    );
+    const consentForm =
+      service && serviceId
+        ? await getConsentFormForParentSafe(organisationId, serviceId)
+        : null;
 
     if (consentForm?.id) {
       input.formIds?.push(consentForm.id);
@@ -2002,15 +2095,12 @@ export const AppointmentService = {
       parentId: appointment.companion.parent.id,
       companionId: appointment.companion.id,
       organisationId: appointment.organisationId,
-      items: [
-        {
-          description:
-            appointment.appointmentType?.name ?? service.name ?? "Consultation",
-          quantity: 1,
-          unitPrice: service.cost,
-          discountPercent: service.maxDiscount ?? undefined,
-        },
-      ],
+      items: catalogSelection
+        ? mapCatalogSelectionToDraftItems(catalogSelection)
+        : mapLegacyServiceToDraftItems(
+            service as LegacyServiceBridge,
+            appointment.appointmentType?.name,
+          ),
       notes: appointment.concern ?? undefined,
       paymentCollectionMethod: "PAYMENT_INTENT",
     });
@@ -2025,11 +2115,13 @@ export const AppointmentService = {
       ? await StripeService.createPaymentIntentForInvoice(invoiceId)
       : undefined;
 
-    await maybeCreateObservationToolTask(
-      service,
-      appointment,
-      savedAppointment._id.toString(),
-    );
+    if (service) {
+      await maybeCreateObservationToolTask(
+        service,
+        appointment,
+        savedAppointment._id.toString(),
+      );
+    }
 
     return {
       appointment:
@@ -2067,42 +2159,50 @@ export const AppointmentService = {
     }
 
     if (isReadFromPostgres()) {
-      const serviceId = input.appointmentType!.id;
+      const selectionId = input.appointmentType!.id;
+      const catalogSelection = await resolveCatalogSelectionSafe(
+        selectionId,
+        input.organisationId,
+      );
+      const legacyServiceId = catalogSelection?.legacyServiceId ?? selectionId;
       const service = await prisma.service.findFirst({
         where: {
-          id: serviceId,
+          id: legacyServiceId,
           organisationId: input.organisationId,
           isActive: true,
         },
       });
 
-      if (!service) {
+      if (!catalogSelection && !service) {
         throw new AppointmentServiceError(
           "Invalid or inactive service for this organisation.",
           404,
         );
       }
 
+      if (
+        catalogSelection &&
+        (!catalogSelection.isBookable ||
+          !catalogSelection.appointmentKinds.includes("OUTPATIENT"))
+      ) {
+        throw new AppointmentServiceError(
+          "Selected product is not bookable for outpatient appointments.",
+          400,
+        );
+      }
+
       const usageReservation = await reserveAppointmentUsage(
         input.organisationId,
-        service.serviceType === "OBSERVATION_TOOL",
+        service?.serviceType === "OBSERVATION_TOOL",
       );
 
-      const consentForm = await getConsentFormForParentSafe(
-        input.organisationId,
-        serviceId,
-      );
+      const consentForm = service
+        ? await getConsentFormForParentSafe(input.organisationId, service.id)
+        : null;
 
       if (consentForm?.id) {
         input.formIds?.push(consentForm.id);
       }
-
-      const pricing = {
-        baseCost: service.cost,
-        quantity: 1,
-        finalCost: service.cost,
-        discountPercent: service.maxDiscount ?? undefined,
-      };
 
       const appointment = buildAppointmentFromInput(input, "UPCOMING", {
         lead: input.lead,
@@ -2135,6 +2235,7 @@ export const AppointmentService = {
               supportStaff: appointment.supportStaff ?? [],
               room: appointment.room,
               appointmentType: appointment.appointmentType,
+              productItemId: catalogSelection?.productItemId ?? undefined,
               organisationId: appointment.organisationId,
               appointmentDate: appointment.appointmentDate,
               startTime: appointment.startTime,
@@ -2169,14 +2270,12 @@ export const AppointmentService = {
           parentId: appointment.companion.parent.id,
           companionId: appointment.companion.id,
           organisationId: appointment.organisationId,
-          items: [
-            {
-              description: appointment.appointmentType?.name ?? "Consultation",
-              quantity: 1,
-              unitPrice: pricing.baseCost,
-              discountPercent: pricing.discountPercent,
-            },
-          ],
+          items: catalogSelection
+            ? mapCatalogSelectionToDraftItems(catalogSelection)
+            : mapLegacyServiceToDraftItems(
+                service as LegacyServiceBridge,
+                appointment.appointmentType?.name,
+              ),
           notes: appointment.concern,
           paymentCollectionMethod: resolvedPaymentCollectionMethod,
         });
@@ -2210,6 +2309,7 @@ export const AppointmentService = {
         }
 
         if (
+          service &&
           service.serviceType === "OBSERVATION_TOOL" &&
           service.observationToolId
         ) {
@@ -2261,44 +2361,60 @@ export const AppointmentService = {
     }
 
     // 2️⃣ Validate service
-    const serviceId = ensureObjectId(input.appointmentType!.id, "serviceId");
+    const selectionId = input.appointmentType!.id;
+    const catalogSelection = await resolveCatalogSelectionSafe(
+      selectionId,
+      input.organisationId,
+    );
     const organisationId = ensureObjectId(
       input.organisationId,
       "organisationId",
     );
-    const service = await ServiceModel.findOne({
-      _id: serviceId,
-      organisationId: organisationId,
-      isActive: true,
-    }).lean();
+    const legacyServiceLookupId =
+      catalogSelection?.legacyServiceId ?? selectionId;
+    const serviceId =
+      legacyServiceLookupId && Types.ObjectId.isValid(legacyServiceLookupId)
+        ? ensureObjectId(legacyServiceLookupId, "serviceId")
+        : null;
+    const service = serviceId
+      ? await ServiceModel.findOne({
+          _id: serviceId,
+          organisationId: organisationId,
+          isActive: true,
+        }).lean()
+      : null;
 
-    if (!service) {
+    if (!catalogSelection && !service) {
       throw new AppointmentServiceError(
         "Invalid or inactive service for this organisation.",
         404,
       );
     }
 
+    if (
+      catalogSelection &&
+      (!catalogSelection.isBookable ||
+        !catalogSelection.appointmentKinds.includes("OUTPATIENT"))
+    ) {
+      throw new AppointmentServiceError(
+        "Selected product is not bookable for outpatient appointments.",
+        400,
+      );
+    }
+
     const usageReservation = await reserveAppointmentUsage(
       organisationId,
-      service.serviceType === "OBSERVATION_TOOL",
+      service?.serviceType === "OBSERVATION_TOOL",
     );
 
-    const consentForm = await getConsentFormForParentSafe(
-      organisationId,
-      serviceId,
-    );
+    const consentForm =
+      service && serviceId
+        ? await getConsentFormForParentSafe(organisationId, serviceId)
+        : null;
 
     if (consentForm?.id) {
       input.formIds?.push(consentForm.id);
     }
-
-    const pricing = {
-      baseCost: service.cost,
-      quantity: 1,
-      finalCost: service.cost,
-      discountPercent: service.maxDiscount ?? undefined,
-    };
 
     const appointment = buildAppointmentFromInput(input, "UPCOMING", {
       lead: input.lead,
@@ -2351,14 +2467,12 @@ export const AppointmentService = {
           parentId: appointment.companion.parent.id,
           companionId: appointment.companion.id,
           organisationId: appointment.organisationId,
-          items: [
-            {
-              description: appointment.appointmentType?.name ?? "Consultation",
-              quantity: 1,
-              unitPrice: pricing.baseCost,
-              discountPercent: pricing.discountPercent,
-            },
-          ],
+          items: catalogSelection
+            ? mapCatalogSelectionToDraftItems(catalogSelection)
+            : mapLegacyServiceToDraftItems(
+                service as LegacyServiceBridge,
+                appointment.appointmentType?.name,
+              ),
           notes: appointment.concern,
           paymentCollectionMethod: resolvedPaymentCollectionMethod,
         },
@@ -2402,6 +2516,7 @@ export const AppointmentService = {
       }
 
       if (
+        service &&
         service.serviceType === "OBSERVATION_TOOL" &&
         service.observationToolId
       ) {

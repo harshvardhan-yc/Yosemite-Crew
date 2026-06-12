@@ -53,7 +53,7 @@ Do not move business logic into routers or controllers.
 - `src/integrations` for third-party integrations
 - `src/queues` and `src/workers` for background processing
 - `src/scripts` for backend maintenance and migration utilities
-- `prisma/schema.prisma` for Prisma schema changes
+- `../../packages/database/prisma/schema.prisma` for Prisma schema changes
 
 ## Safe Change Workflow
 

@@ -12,6 +12,7 @@ import OrganizationModel from "../../src/models/organization";
 import { ParentModel } from "../../src/models/parent";
 import { NotificationService } from "../../src/services/notification.service";
 import { AuditTrailService } from "../../src/services/audit-trail.service";
+import { CatalogService } from "../../src/services/catalog.service";
 import { sendEmailTemplate } from "../../src/utils/email";
 import { OrgBilling } from "../../src/models/organization.billing";
 import logger from "../../src/utils/logger";
@@ -93,6 +94,22 @@ jest.mock("../../src/services/audit-trail.service", () => ({
   },
 }));
 
+jest.mock("../../src/services/catalog.service", () => ({
+  __esModule: true,
+  CatalogServiceError: class CatalogServiceError extends Error {
+    constructor(
+      message: string,
+      public readonly statusCode: number,
+    ) {
+      super(message);
+      this.name = "CatalogServiceError";
+    }
+  },
+  CatalogService: {
+    resolveSelection: jest.fn(),
+  },
+}));
+
 jest.mock("../../src/utils/email", () => ({
   __esModule: true,
   sendEmailTemplate: jest.fn(),
@@ -157,6 +174,7 @@ describe("InvoiceService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (CatalogService.resolveSelection as jest.Mock).mockResolvedValue(null);
   });
 
   describe("InvoiceServiceError", () => {
@@ -1645,6 +1663,91 @@ describe("InvoiceService", () => {
 
       expect(result).toEqual(expect.objectContaining({ id: "inv_new" }));
       expect(prisma.invoice.create).toHaveBeenCalled();
+    });
+
+    it("creates invoice from catalog billing items in postgres", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (CatalogService.resolveSelection as jest.Mock).mockResolvedValueOnce({
+        productItemId: "prod_bundle",
+        productKind: "PACKAGE",
+        legacyServiceId: null,
+        isBookable: true,
+        appointmentKinds: ["OUTPATIENT"],
+        billingItems: [
+          {
+            productItemId: "prod_bundle",
+            name: "Dental Bundle",
+            kind: "PACKAGE",
+            quantity: 1,
+            unitPrice: 250,
+            defaultDiscountPercent: 5,
+          },
+          {
+            productItemId: "prod_xray",
+            name: "Dental X-Ray",
+            kind: "DIAGNOSTIC",
+            quantity: 2,
+            unitPrice: 40,
+            defaultDiscountPercent: null,
+          },
+        ],
+        includedItems: [],
+      });
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: "appt_1",
+        organisationId: "org_1",
+        companion: { id: "comp_1", parent: { id: "par_1" } },
+        appointmentType: { id: "prod_bundle", name: "Dental Bundle" },
+        productItemId: "prod_bundle",
+        concern: null,
+      });
+      (prisma.invoice.findFirst as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: "org_1",
+      });
+      (
+        prisma.organizationBilling.findUnique as jest.Mock
+      ).mockResolvedValueOnce({
+        currency: "usd",
+      });
+      (prisma.invoice.create as jest.Mock).mockResolvedValueOnce({
+        id: "inv_new",
+        appointmentId: "appt_1",
+        organisationId: "org_1",
+        companionId: "comp_1",
+        status: "AWAITING_PAYMENT",
+        items: [],
+        subtotal: 330,
+        discountTotal: 12.5,
+        taxTotal: 0,
+        taxPercent: 0,
+        totalAmount: 317.5,
+        currency: "usd",
+      });
+
+      await InvoiceService.bootstrapForAppointment("appt_1");
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: [
+              expect.objectContaining({
+                description: "Dental Bundle",
+                quantity: 1,
+                unitPrice: 250,
+                discountPercent: 5,
+              }),
+              expect.objectContaining({
+                description: "Dental X-Ray",
+                quantity: 2,
+                unitPrice: 40,
+              }),
+            ],
+          }),
+        }),
+      );
     });
 
     it("returns open invoice in mongo", async () => {

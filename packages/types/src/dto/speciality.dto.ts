@@ -1,5 +1,10 @@
-import type { Organization as FHIROrganization } from '@yosemite-crew/fhir';
-import { fromFHIRSpeciality, toFHIRSpeciality, type Speciality } from '../speciality';
+import type { Bundle, Organization as FHIROrganization } from '@yosemite-crew/fhir';
+import {
+  fromFHIRSpeciality,
+  toFHIRSpeciality,
+  toFHIRSpecialityBundle,
+  type Speciality,
+} from '../speciality';
 
 const normalizeId = (id?: string | Speciality['_id']): string | undefined => {
   if (!id) {
@@ -24,6 +29,7 @@ const normalizeId = (id?: string | Speciality['_id']): string | undefined => {
 export type SpecialityRequestDTO = FHIROrganization;
 
 export type SpecialityResponseDTO = FHIROrganization;
+export type SpecialityBundleResponseDTO = Bundle;
 
 export type SpecialityDTOAttributes = Speciality & {
   id?: string;
@@ -40,3 +46,8 @@ export const fromSpecialityRequestDTO = (dto: SpecialityRequestDTO): SpecialityD
 
 export const toSpecialityResponseDTO = (speciality: Speciality): SpecialityResponseDTO =>
   toFHIRSpeciality(speciality);
+
+export const toSpecialityBundleResponseDTO = (
+  specialities: Speciality[],
+  options?: Parameters<typeof toFHIRSpecialityBundle>[1]
+): SpecialityBundleResponseDTO => toFHIRSpecialityBundle(specialities, options);

@@ -149,6 +149,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma Client
+        if: matrix.workspace == 'backend' || matrix.workspace == '@yosemite-crew/database'
+        run: pnpm --filter @yosemite-crew/database run prisma:generate
+      
       - name: Validate workspace exists
         run: |
           if ! pnpm --filter "${{ matrix.workspace }}" exec true 2>/dev/null; then
@@ -166,7 +170,13 @@ jobs:
         run: pnpm run build --filter "${{ matrix.workspace }}"
 
       - name: Test
-        run: pnpm run test --filter "${{ matrix.workspace }}" -- --ci --maxWorkers=2
+        shell: bash
+        run: |
+          if [ "${{ matrix.workspace }}" = "@yosemite-crew/database" ]; then
+            pnpm run test --filter "${{ matrix.workspace }}"
+          else
+            pnpm run test --filter "${{ matrix.workspace }}" -- --ci --maxWorkers=2
+          fi
 
       - name: Test (with coverage)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
