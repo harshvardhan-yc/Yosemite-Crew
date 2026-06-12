@@ -60,7 +60,15 @@ jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
 
 jest.mock('@/app/ui/inputs/MultiSelectDropdown', () => ({
   __esModule: true,
-  default: ({ placeholder }: any) => <div>{placeholder}</div>,
+  default: ({ placeholder, value = [], onChange }: any) => (
+    <button
+      type="button"
+      aria-label={placeholder}
+      onClick={() => onChange?.(placeholder === 'Species' ? ['CANINE', 'FELINE'] : value)}
+    >
+      {placeholder}
+    </button>
+  ),
 }));
 
 jest.mock('@/app/ui/inputs/Timepicker', () => ({
@@ -119,7 +127,7 @@ describe('RoomInfo modal', () => {
       days: 'MON_SAT',
       startTime: '10:00',
       endTime: '20:00',
-      species: 'CANINE',
+      species: ['CANINE', 'FELINE'],
       totalUnits: 1,
     },
   };
@@ -133,6 +141,7 @@ describe('RoomInfo modal', () => {
 
     expect(screen.getAllByText('Room A').length).toBeGreaterThan(0);
     expect(screen.getByText('Room Code')).toBeInTheDocument();
+    expect(screen.getByText('Canine, Feline')).toBeInTheDocument();
     expect(screen.getByText('Medium')).toBeInTheDocument();
     expect(screen.getAllByText('1').length).toBeGreaterThan(0);
   });
@@ -148,6 +157,7 @@ describe('RoomInfo modal', () => {
     fireEvent.change(screen.getByLabelText('Units'), {
       target: { value: '2' },
     });
+    fireEvent.click(screen.getByLabelText('Species'));
     fireEvent.change(screen.getByLabelText('Add equipment name'), {
       target: { value: 'MRI Scanner' },
     });
@@ -161,6 +171,9 @@ describe('RoomInfo modal', () => {
           organisationId: 'org-1',
           name: 'Updated Room',
           unitCount: 2,
+          availability: expect.objectContaining({
+            species: ['CANINE', 'FELINE'],
+          }),
           units: [
             expect.objectContaining({
               id: 'unit-a',

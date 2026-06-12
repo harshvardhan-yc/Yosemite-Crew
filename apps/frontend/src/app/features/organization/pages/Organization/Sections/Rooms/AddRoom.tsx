@@ -42,7 +42,7 @@ type RoomFormData = OrganisationRoom & {
     days: string;
     startTime: string;
     endTime: string;
-    species: string;
+    species: string[];
     totalUnits: number;
   };
   units: RoomUnitDraft[];
@@ -64,7 +64,7 @@ const INITIAL_FORM_DATA: RoomFormData = {
     days: 'MON_SAT',
     startTime: '10:00',
     endTime: '20:00',
-    species: '',
+    species: [],
     totalUnits: 0,
   },
   units: [],
@@ -389,11 +389,11 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
                     defaultOption={formData.availability.days}
                     onSelect={(option) => updateAvailability({ days: option.value })}
                   />
-                  <LabelDropdown
+                  <MultiSelectDropdown
                     placeholder="Species"
+                    value={formData.availability.species}
+                    onChange={(value) => updateAvailability({ species: value })}
                     options={RoomSpeciesOptions}
-                    defaultOption={formData.availability.species}
-                    onSelect={(option) => updateAvailability({ species: option.value })}
                   />
                   <FormInput
                     intype="number"

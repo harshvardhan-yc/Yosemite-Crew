@@ -38,7 +38,7 @@ type ManagedRoom = OrganisationRoom & {
     days?: string;
     startTime?: string;
     endTime?: string;
-    species?: string;
+    species?: string | string[];
     totalUnits?: number;
   };
   unitCount?: number;
@@ -59,7 +59,7 @@ const DEFAULT_AVAILABILITY = {
   days: 'MON_SAT',
   startTime: '10:00',
   endTime: '20:00',
-  species: 'CANINE',
+  species: ['CANINE'],
   totalUnits: 0,
 };
 
@@ -83,6 +83,17 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 const getOptionLabel = (options: { label: string; value: string }[], value?: string) =>
   options.find((option) => option.value === value)?.label ?? value ?? '-';
 
+const getOptionLabels = (options: { label: string; value: string }[], values?: string[]) => {
+  if (!values?.length) return '-';
+  return values.map((value) => getOptionLabel(options, value)).join(', ');
+};
+
+const normalizeSpeciesValues = (value?: string | string[]) => {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (!value) return [];
+  return [value];
+};
+
 const getUnitCount = (unit: Partial<RoomUnitDetails>) => {
   const count = Number(unit.count ?? 1);
   return Number.isFinite(count) ? count : 1;
@@ -99,6 +110,7 @@ const getRoomForm = (room: ManagedRoom): ManagedRoom => ({
   availability: {
     ...DEFAULT_AVAILABILITY,
     ...(room.availability ?? {}),
+    species: normalizeSpeciesValues(room.availability?.species ?? DEFAULT_AVAILABILITY.species),
     totalUnits: room.availability?.totalUnits ?? room.unitCount ?? sumUnitCounts(room.units) ?? 0,
   },
   units:
@@ -553,7 +565,10 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
                     },
                     {
                       label: 'Species',
-                      value: getOptionLabel(RoomSpeciesOptions, formData.availability?.species),
+                      value: getOptionLabels(
+                        RoomSpeciesOptions,
+                        normalizeSpeciesValues(formData.availability?.species)
+                      ),
                     },
                     { label: 'Total units', value: totalUnits },
                     {
@@ -581,11 +596,11 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
                     value={formData.availability?.endTime ?? ''}
                     onChange={(value) => updateAvailability({ endTime: value })}
                   />
-                  <LabelDropdown
+                  <MultiSelectDropdown
                     placeholder="Species"
+                    value={normalizeSpeciesValues(formData.availability?.species)}
+                    onChange={(value) => updateAvailability({ species: value })}
                     options={RoomSpeciesOptions}
-                    defaultOption={formData.availability?.species}
-                    onSelect={(option) => updateAvailability({ species: option.value })}
                   />
                   <FormInput
                     intype="number"

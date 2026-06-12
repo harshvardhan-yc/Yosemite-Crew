@@ -41,7 +41,15 @@ jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
 
 jest.mock('@/app/ui/inputs/MultiSelectDropdown', () => ({
   __esModule: true,
-  default: ({ placeholder }: any) => <div>{placeholder}</div>,
+  default: ({ placeholder, value = [], onChange }: any) => (
+    <button
+      type="button"
+      aria-label={placeholder}
+      onClick={() => onChange?.(placeholder === 'Species' ? ['CANINE', 'FELINE'] : value)}
+    >
+      {placeholder}
+    </button>
+  ),
 }));
 
 jest.mock('@/app/ui/inputs/Timepicker', () => ({
@@ -174,6 +182,28 @@ describe('AddRoom', () => {
         expect.objectContaining({
           unitCount: 2,
           units: [expect.objectContaining({ id: 'unit-1', count: 2, size: 'Medium' })],
+        })
+      );
+    });
+  });
+
+  it('creates a room with multiple supported species', async () => {
+    roomService.createRoom.mockResolvedValue({});
+
+    render(<AddRoom showModal setShowModal={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Shared Ward' },
+    });
+    fireEvent.click(screen.getByLabelText('Species'));
+    fireEvent.click(screen.getByText('Add room'));
+
+    await waitFor(() => {
+      expect(roomService.createRoom).toHaveBeenCalledWith(
+        expect.objectContaining({
+          availability: expect.objectContaining({
+            species: ['CANINE', 'FELINE'],
+          }),
         })
       );
     });
