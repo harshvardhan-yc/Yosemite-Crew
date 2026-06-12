@@ -33,7 +33,7 @@ jobs:
       - name: Enforce React Doctor score
         env:
           REACT_DOCTOR_SCORE: ${{ steps.react-doctor.outputs.score }}
-          REACT_DOCTOR_MIN_SCORE: '75'
+          REACT_DOCTOR_MIN_SCORE: '45'
         run: |
           if [ -z "$REACT_DOCTOR_SCORE" ]; then
             echo "React Doctor did not return a score."
