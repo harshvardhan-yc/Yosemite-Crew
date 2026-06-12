@@ -21,11 +21,11 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const smtpSettings = getSmtpSettings();
 const SUPERTOKENS_API_KEY_FIELD = 'apiKey' as const;
 
 export function getSuperTokensConfig(): TypeInput {
   const supertokensApiKey = process.env.SUPERTOKENS_API_KEY;
+  const smtpSettings = getSmtpSettings();
 
   return {
     framework: 'express',

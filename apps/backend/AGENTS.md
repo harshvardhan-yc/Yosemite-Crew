@@ -2,7 +2,7 @@
 
 Inherits all root `AGENTS.md` rules. This file adds backend-specific rules.
 
-**Stack:** Express.js 4, TypeScript, MongoDB/Mongoose, Prisma, BullMQ, Zod, Winston.
+**Stack:** Express.js 4, TypeScript, Prisma, BullMQ, Zod, Winston.
 
 > **Important:** Do not refactor backend architecture unless explicitly asked.
 
@@ -80,3 +80,4 @@ AWS Cognito + `jsonwebtoken` + `jwks-rsa`. Never roll custom auth flows.
 - No synchronous processing of work that should be queued.
 - Never re-initialize Firebase Admin SDK in a handler — it's a singleton.
 - Always verify Stripe webhook signatures before processing.
+- No more usage of Mongodb or Mongoose anymore for new code

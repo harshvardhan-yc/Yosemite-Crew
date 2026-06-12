@@ -1,28 +1,36 @@
-import Accordion from "@/app/ui/primitives/Accordion/Accordion";
-import FormInput from "@/app/ui/inputs/FormInput/FormInput";
-import Modal from "@/app/ui/overlays/Modal";
-import React, { useMemo, useState } from "react";
-import { RoomsTypes } from "@/app/features/organization/pages/Organization/types";
-import { Primary } from "@/app/ui/primitives/Buttons";
-import MultiSelectDropdown from "@/app/ui/inputs/MultiSelectDropdown";
-import { OrganisationRoom } from "@yosemite-crew/types";
-import { useTeamForPrimaryOrg } from "@/app/hooks/useTeam";
-import { useSpecialitiesForPrimaryOrg } from "@/app/hooks/useSpecialities";
-import { createRoom } from "@/app/features/organization/services/roomService";
-import LabelDropdown from "@/app/ui/inputs/Dropdown/LabelDropdown";
-import Close from "@/app/ui/primitives/Icons/Close";
-import { useNotify } from "@/app/hooks/useNotify";
+import Accordion from '@/app/ui/primitives/Accordion/Accordion';
+import FormInput from '@/app/ui/inputs/FormInput/FormInput';
+import Modal from '@/app/ui/overlays/Modal';
+import React, { useMemo, useState } from 'react';
+import { RoomsTypes } from '@/app/features/organization/pages/Organization/types';
+import { Primary } from '@/app/ui/primitives/Buttons';
+import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
+import { OrganisationRoom } from '@yosemite-crew/types';
+import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
+import { useSpecialitiesForPrimaryOrg } from '@/app/hooks/useSpecialities';
+import { createRoom } from '@/app/features/organization/services/roomService';
+import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
+import Close from '@/app/ui/primitives/Icons/Close';
+import { useNotify } from '@/app/hooks/useNotify';
+import type { RoomReferenceMapping } from '@yosemite-crew/types';
+
+type RoomDraft = {
+  name: string;
+  code: string;
+  type: OrganisationRoom['type'];
+  assignedSpecialiteis: string[];
+  assignedStaffs: string[];
+};
 
 type AddRoomProps = {
   showModal: boolean;
   setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
-const INITIAL_FORM_DATA: OrganisationRoom = {
-  id: "",
-  organisationId: "",
-  name: "",
-  type: "CONSULTATION",
+const INITIAL_FORM_DATA: RoomDraft = {
+  name: '',
+  code: '',
+  type: 'CONSULTATION',
   assignedSpecialiteis: [],
   assignedStaffs: [],
 };
@@ -31,7 +39,7 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
   const teams = useTeamForPrimaryOrg();
   const { notify } = useNotify();
   const specialities = useSpecialitiesForPrimaryOrg();
-  const [formData, setFormData] = useState<OrganisationRoom>(INITIAL_FORM_DATA);
+  const [formData, setFormData] = useState<RoomDraft>(INITIAL_FORM_DATA);
   const [formDataErrors, setFormDataErrors] = useState<{
     name?: string;
   }>({});
@@ -42,7 +50,7 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
         label: team.name || team.practionerId,
         value: team.practionerId,
       })),
-    [teams],
+    [teams]
   );
 
   const SpecialitiesOptions = useMemo(
@@ -51,30 +59,62 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
         label: speciality.name,
         value: speciality._id || speciality.name,
       })),
-    [specialities],
+    [specialities]
   );
+
+  const specialitiesById = useMemo(
+    () =>
+      Object.fromEntries((SpecialitiesOptions ?? []).map((option) => [option.value, option.label])),
+    [SpecialitiesOptions]
+  );
+
+  const teamsById = useMemo(
+    () => Object.fromEntries((TeamOptions ?? []).map((option) => [option.value, option.label])),
+    [TeamOptions]
+  );
+
+  const toReferenceMappings = (
+    ids: string[],
+    byId: Record<string, string>
+  ): RoomReferenceMapping[] =>
+    ids
+      .map((id) => {
+        const name = byId[id];
+        return name ? { id, name } : undefined;
+      })
+      .filter((entry): entry is RoomReferenceMapping => Boolean(entry));
+
+  const buildCode = (name: string) => name.trim().replace(/\s+/g, '-').toUpperCase();
 
   const handleSave = async () => {
     const errors: { name?: string } = {};
-    if (!formData.name) errors.name = "Name is required";
+    if (!formData.name) errors.name = 'Name is required';
     setFormDataErrors(errors);
     if (Object.keys(errors).length > 0) {
       return;
     }
     try {
-      await createRoom(formData);
-      notify("success", {
-        title: "Room created",
-        text: "Room has been created successfully.",
+      await createRoom({
+        id: '',
+        organisationId: '',
+        name: formData.name,
+        code: formData.code || buildCode(formData.name),
+        type: formData.type,
+        assignedSpecialiteis: toReferenceMappings(formData.assignedSpecialiteis, specialitiesById),
+        assignedStaffs: toReferenceMappings(formData.assignedStaffs, teamsById),
+      });
+      notify('success', {
+        title: 'Room created',
+        text: 'Room has been created successfully.',
       });
       setShowModal(false);
       setFormData(INITIAL_FORM_DATA);
       setFormDataErrors({});
     } catch (error) {
       console.log(error);
-      notify("error", {
-        title: "Unable to create room",
-        text: "Failed to create room. Please try again.",
+      notify('error', {
+        title: 'Unable to create room',
+        text: 'Failed to create room. Please try again.',
       });
     }
   };
@@ -93,21 +133,14 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
         </div>
 
         <div className="flex overflow-y-auto flex-1 w-full flex-col gap-6 justify-between scrollbar-hidden">
-          <Accordion
-            title="Add room"
-            defaultOpen
-            showEditIcon={false}
-            isEditing={true}
-          >
+          <Accordion title="Add room" defaultOpen showEditIcon={false} isEditing={true}>
             <div className="flex flex-col gap-3">
               <FormInput
                 intype="text"
                 inname="name"
                 value={formData.name}
                 inlabel="Name"
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 error={formDataErrors.name}
               />
               <LabelDropdown
@@ -124,17 +157,13 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
               <MultiSelectDropdown
                 placeholder="Assigned specialities"
                 value={formData.assignedSpecialiteis || []}
-                onChange={(e) =>
-                  setFormData({ ...formData, assignedSpecialiteis: e })
-                }
+                onChange={(e) => setFormData({ ...formData, assignedSpecialiteis: e })}
                 options={SpecialitiesOptions}
               />
               <MultiSelectDropdown
                 placeholder="Assigned staff"
                 value={formData.assignedStaffs || []}
-                onChange={(e) =>
-                  setFormData({ ...formData, assignedStaffs: e })
-                }
+                onChange={(e) => setFormData({ ...formData, assignedStaffs: e })}
                 options={TeamOptions}
               />
             </div>

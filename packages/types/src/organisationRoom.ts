@@ -1,17 +1,47 @@
 import type { Extension, Location as FHIRLocation } from '@yosemite-crew/fhir';
 
+export type RoomReferenceMapping = {
+  id: string;
+  name: string;
+};
+
 export type OrganisationRoom = {
   id: string;
   name: string;
   organisationId: string;
-  type: 'CONSULTATION' | 'WAITING_AREA' | 'SURGERY' | 'ICU';
-  assignedSpecialiteis?: string[];
-  assignedStaffs?: string[];
+  code: string;
+  description?: string;
+  type:
+    | 'EXAM_ROOM'
+    | 'TREATMENT'
+    | 'SURGERY'
+    | 'DENTAL'
+    | 'IMAGING'
+    | 'WAITING'
+    | 'GROOMING'
+    | 'ICU'
+    | 'INPATIENT'
+    | 'ISOLATION'
+    | 'BOARDING'
+    | 'RECEPTION'
+    | 'CONSULTATION';
+  assignedSpecialiteis?: RoomReferenceMapping[];
+  assignedStaffs?: RoomReferenceMapping[];
+  availableNow?: boolean;
+  availabilityMode?: 'WORKING_HOURS' | 'ALL_DAY' | 'CUSTOM';
+  availabilityDays?: string[];
+  availabilityStartTime?: string;
+  availabilityEndTime?: string;
+  capabilities?: string[];
 };
 
 const ROOM_IDENTIFIER_SYSTEM = 'http://example.org/fhir/NamingSystem/organisation-room-id';
 const ORGANISATION_IDENTIFIER_SYSTEM =
   'http://example.org/fhir/NamingSystem/organisation-room-organisation-id';
+const ROOM_CODE_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-code';
+const ROOM_DESCRIPTION_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-description';
 const ROOM_TYPE_SYSTEM = 'http://example.org/fhir/CodeSystem/organisation-room-type';
 const PHYSICAL_TYPE_SYSTEM = 'http://terminology.hl7.org/CodeSystem/location-physical-type';
 const PHYSICAL_TYPE_ROOM_CODE = 'ro';
@@ -19,14 +49,39 @@ const SPECIALITIES_EXTENSION_URL =
   'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-specialities';
 const STAFFS_EXTENSION_URL =
   'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-staffs';
-const SPECIALITY_CHILD_URL = 'specialityId';
-const STAFF_CHILD_URL = 'staffId';
+const AVAILABLE_NOW_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-available-now';
+const AVAILABILITY_MODE_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-availability-mode';
+const AVAILABILITY_DAYS_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-availability-days';
+const AVAILABILITY_START_TIME_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-availability-start-time';
+const AVAILABILITY_END_TIME_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-availability-end-time';
+const CAPABILITIES_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/organisation-room-capabilities';
+const SPECIALITY_CHILD_URL = 'speciality';
+const SPECIALITY_ID_CHILD_URL = 'id';
+const SPECIALITY_NAME_CHILD_URL = 'name';
+const STAFF_CHILD_URL = 'staff';
+const STAFF_ID_CHILD_URL = 'id';
+const STAFF_NAME_CHILD_URL = 'name';
 
 const ROOM_TYPE_CODING_MAP: Record<OrganisationRoom['type'], { code: string; display: string }> = {
-  CONSULTATION: { code: 'consultation', display: 'Consultation Room' },
-  WAITING_AREA: { code: 'waiting-area', display: 'Waiting Area' },
+  EXAM_ROOM: { code: 'exam-room', display: 'Exam Room' },
+  TREATMENT: { code: 'treatment', display: 'Treatment' },
   SURGERY: { code: 'surgery', display: 'Surgery Room' },
+  DENTAL: { code: 'dental', display: 'Dental' },
+  IMAGING: { code: 'imaging', display: 'Imaging' },
+  WAITING: { code: 'waiting', display: 'Waiting Area' },
+  GROOMING: { code: 'grooming', display: 'Grooming' },
   ICU: { code: 'icu', display: 'ICU' },
+  INPATIENT: { code: 'inpatient', display: 'Inpatient' },
+  ISOLATION: { code: 'isolation', display: 'Isolation' },
+  BOARDING: { code: 'boarding', display: 'Boarding' },
+  RECEPTION: { code: 'reception', display: 'Reception' },
+  CONSULTATION: { code: 'consultation', display: 'Consultation Room' },
 };
 
 const REVERSE_ROOM_TYPE_CODING_MAP = Object.entries(ROOM_TYPE_CODING_MAP).reduce<
@@ -112,20 +167,106 @@ const buildExtensions = (room: OrganisationRoom): Extension[] | undefined => {
   if (room.assignedSpecialiteis?.length) {
     extensions.push({
       url: SPECIALITIES_EXTENSION_URL,
-      extension: room.assignedSpecialiteis.filter(Boolean).map<Extension>((specialityId) => ({
-        url: SPECIALITY_CHILD_URL,
-        valueString: specialityId,
-      })),
+      extension: room.assignedSpecialiteis
+        .filter((speciality): speciality is RoomReferenceMapping =>
+          Boolean(speciality?.id && speciality?.name)
+        )
+        .map<Extension>((speciality) => ({
+          url: SPECIALITY_CHILD_URL,
+          extension: [
+            {
+              url: SPECIALITY_ID_CHILD_URL,
+              valueString: speciality.id,
+            },
+            {
+              url: SPECIALITY_NAME_CHILD_URL,
+              valueString: speciality.name,
+            },
+          ],
+        })),
     });
   }
 
   if (room.assignedStaffs?.length) {
     extensions.push({
       url: STAFFS_EXTENSION_URL,
-      extension: room.assignedStaffs.filter(Boolean).map<Extension>((staffId) => ({
-        url: STAFF_CHILD_URL,
-        valueString: staffId,
+      extension: room.assignedStaffs
+        .filter((staff): staff is RoomReferenceMapping => Boolean(staff?.id && staff?.name))
+        .map<Extension>((staff) => ({
+          url: STAFF_CHILD_URL,
+          extension: [
+            {
+              url: STAFF_ID_CHILD_URL,
+              valueString: staff.id,
+            },
+            {
+              url: STAFF_NAME_CHILD_URL,
+              valueString: staff.name,
+            },
+          ],
+        })),
+    });
+  }
+
+  if (typeof room.availableNow === 'boolean') {
+    extensions.push({
+      url: AVAILABLE_NOW_EXTENSION_URL,
+      valueBoolean: room.availableNow,
+    });
+  }
+
+  if (room.availabilityMode) {
+    extensions.push({
+      url: AVAILABILITY_MODE_EXTENSION_URL,
+      valueString: room.availabilityMode,
+    });
+  }
+
+  if (room.availabilityDays?.length) {
+    extensions.push({
+      url: AVAILABILITY_DAYS_EXTENSION_URL,
+      extension: room.availabilityDays.filter(Boolean).map<Extension>((day) => ({
+        url: 'day',
+        valueString: day,
       })),
+    });
+  }
+
+  if (room.availabilityStartTime) {
+    extensions.push({
+      url: AVAILABILITY_START_TIME_EXTENSION_URL,
+      valueString: room.availabilityStartTime,
+    });
+  }
+
+  if (room.availabilityEndTime) {
+    extensions.push({
+      url: AVAILABILITY_END_TIME_EXTENSION_URL,
+      valueString: room.availabilityEndTime,
+    });
+  }
+
+  if (room.capabilities?.length) {
+    extensions.push({
+      url: CAPABILITIES_EXTENSION_URL,
+      extension: room.capabilities.filter(Boolean).map<Extension>((capability) => ({
+        url: 'capability',
+        valueString: capability,
+      })),
+    });
+  }
+
+  if (room.code) {
+    extensions.push({
+      url: ROOM_CODE_EXTENSION_URL,
+      valueString: room.code,
+    });
+  }
+
+  if (room.description) {
+    extensions.push({
+      url: ROOM_DESCRIPTION_EXTENSION_URL,
+      valueString: room.description,
     });
   }
 
@@ -155,6 +296,48 @@ const parseArrayExtension = (
 
   return values.length ? values : undefined;
 };
+
+const parseMappingExtension = (
+  extensions: Extension[] | undefined,
+  url: string
+): RoomReferenceMapping[] | undefined => {
+  const parent = extensions?.find((extension) => extension.url === url);
+
+  if (!parent?.extension?.length) {
+    return undefined;
+  }
+
+  const values = parent.extension
+    .map((child) => {
+      if (!child.extension?.length) {
+        return undefined;
+      }
+
+      const id = child.extension.find((entry) => entry.url === 'id')?.valueString?.trim();
+      const name = child.extension.find((entry) => entry.url === 'name')?.valueString?.trim();
+
+      if (!id || !name) {
+        return undefined;
+      }
+
+      return { id, name };
+    })
+    .filter((value): value is RoomReferenceMapping => value !== undefined);
+
+  return values.length ? values : undefined;
+};
+
+const parseBooleanExtension = (
+  extensions: Extension[] | undefined,
+  url: string
+): boolean | undefined =>
+  extensions?.find((extension) => extension.url === url)?.valueBoolean ?? undefined;
+
+const parseStringExtension = (
+  extensions: Extension[] | undefined,
+  url: string
+): string | undefined =>
+  extensions?.find((extension) => extension.url === url)?.valueString ?? undefined;
 
 const resolveOrganisationId = (resource: FHIRLocation): string | undefined => {
   const referenceId = parseReferenceId(resource.managingOrganization?.reference);
@@ -209,13 +392,19 @@ export const fromFHIROrganisationRoom = (resource: FHIRLocation): OrganisationRo
     id: resource.id ?? findIdentifierValue(resource.identifier, ROOM_IDENTIFIER_SYSTEM) ?? '',
     name: resource.name ?? '',
     organisationId: resolveOrganisationId(resource) ?? '',
+    code: parseStringExtension(resource.extension, ROOM_CODE_EXTENSION_URL) ?? '',
+    description: parseStringExtension(resource.extension, ROOM_DESCRIPTION_EXTENSION_URL),
     type: parseRoomType(resource),
-    assignedSpecialiteis: parseArrayExtension(
-      extensions,
-      SPECIALITIES_EXTENSION_URL,
-      SPECIALITY_CHILD_URL
-    ),
-    assignedStaffs: parseArrayExtension(extensions, STAFFS_EXTENSION_URL, STAFF_CHILD_URL),
+    assignedSpecialiteis: parseMappingExtension(extensions, SPECIALITIES_EXTENSION_URL),
+    assignedStaffs: parseMappingExtension(extensions, STAFFS_EXTENSION_URL),
+    availableNow: parseBooleanExtension(extensions, AVAILABLE_NOW_EXTENSION_URL),
+    availabilityMode: parseStringExtension(extensions, AVAILABILITY_MODE_EXTENSION_URL) as
+      | OrganisationRoom['availabilityMode']
+      | undefined,
+    availabilityDays: parseArrayExtension(extensions, AVAILABILITY_DAYS_EXTENSION_URL, 'day'),
+    availabilityStartTime: parseStringExtension(extensions, AVAILABILITY_START_TIME_EXTENSION_URL),
+    availabilityEndTime: parseStringExtension(extensions, AVAILABILITY_END_TIME_EXTENSION_URL),
+    capabilities: parseArrayExtension(extensions, CAPABILITIES_EXTENSION_URL, 'capability'),
   };
 };
 

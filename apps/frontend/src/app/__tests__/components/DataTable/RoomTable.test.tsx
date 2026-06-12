@@ -40,14 +40,25 @@ const mockRooms: OrganisationRoom[] = [
   {
     name: 'Exam Room 1',
     type: 'Consultation',
-    assignedSpecialiteis: ['spec-1', 'spec-2'],
-    assignedStaffs: ['staff-1', 'staff-2'],
+    code: 'EX-001',
+    assignedSpecialiteis: [
+      { id: 'spec-1', name: 'General' },
+      { id: 'spec-2', name: 'Dermatology' },
+    ],
+    assignedStaffs: [
+      { id: 'staff-1', name: 'Dr. Smith' },
+      { id: 'staff-2', name: 'Nurse Joy' },
+    ],
   },
   {
     name: 'Surgery A',
     type: 'Operating',
+    code: 'SU-001',
     assignedSpecialiteis: [], // Test empty list
-    assignedStaffs: ['staff-1', 'staff-99'], // staff-99 does not exist in mock
+    assignedStaffs: [
+      { id: 'staff-1', name: 'Dr. Smith' },
+      { id: 'staff-99', name: '' },
+    ],
   },
 ] as any;
 
@@ -83,6 +94,12 @@ describe('RoomTable Component', () => {
     it('joinNames maps IDs to names and joins them', () => {
       const map = { '1': 'One', '2': 'Two' };
       expect(joinNames(map, ['1', '2'])).toBe('One, Two');
+      expect(
+        joinNames(map, [
+          { id: '1', name: 'One' },
+          { id: '2', name: 'Two' },
+        ])
+      ).toBe('One, Two');
     });
 
     it('joinNames handles missing IDs or empty arrays', () => {
@@ -123,7 +140,7 @@ describe('RoomTable Component', () => {
     expect(within(row2).getByText('Surgery A')).toBeInTheDocument();
     // Empty specialities -> "-"
     expect(within(row2).getByText('-')).toBeInTheDocument();
-    // Staff "staff-99" missing -> "Dr. Smith"
+    // Staff list falls back to the embedded room reference names
     expect(within(row2).getByText('Dr. Smith')).toBeInTheDocument();
   });
 
@@ -182,7 +199,6 @@ describe('RoomTable Component', () => {
   });
 
   it('handles empty hooks gracefully (empty mappings)', () => {
-    // FIX: Return empty arrays instead of undefined to prevent crash in 'joinNames'
     mockUseTeam.mockReturnValue([]);
     mockUseSpecialities.mockReturnValue([]);
 
@@ -194,9 +210,7 @@ describe('RoomTable Component', () => {
     const rows = within(desktopView as HTMLElement).getAllByRole('row');
     const dataRow = rows[1];
 
-    // Since maps are empty, joinNames returns "-"
-    const dashes = within(dataRow).getAllByText('-');
-    // Expect 2 dashes (one for Specialities, one for Staff)
-    expect(dashes.length).toBe(2);
+    expect(within(dataRow).getByText('General, Dermatology')).toBeInTheDocument();
+    expect(within(dataRow).getByText('Dr. Smith, Nurse Joy')).toBeInTheDocument();
   });
 });
