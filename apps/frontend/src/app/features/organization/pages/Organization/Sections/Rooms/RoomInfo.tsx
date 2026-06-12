@@ -1,21 +1,17 @@
-import EditableAccordion, {
-  FieldConfig,
-} from "@/app/ui/primitives/Accordion/EditableAccordion";
-import Modal from "@/app/ui/overlays/Modal";
-import { OrganisationRoom } from "@yosemite-crew/types";
-import React, { useMemo } from "react";
-import { RoomsTypes } from "@/app/features/organization/pages/Organization/types";
-import { useTeamForPrimaryOrg } from "@/app/hooks/useTeam";
-import { useSpecialitiesForPrimaryOrg } from "@/app/hooks/useSpecialities";
-import {
-  deleteRoom,
-  updateRoom,
-} from "@/app/features/organization/services/roomService";
-import Close from "@/app/ui/primitives/Icons/Close";
-import { useNotify } from "@/app/hooks/useNotify";
+import EditableAccordion, { FieldConfig } from '@/app/ui/primitives/Accordion/EditableAccordion';
+import Modal from '@/app/ui/overlays/Modal';
+import { OrganisationRoom } from '@yosemite-crew/types';
+import React, { useMemo } from 'react';
+import { RoomsTypes } from '@/app/features/organization/pages/Organization/types';
+import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
+import { useSpecialitiesForPrimaryOrg } from '@/app/hooks/useSpecialities';
+import { deleteRoom, updateRoom } from '@/app/features/organization/services/roomService';
+import Close from '@/app/ui/primitives/Icons/Close';
+import { useNotify } from '@/app/hooks/useNotify';
+import type { RoomReferenceMapping } from '@yosemite-crew/types';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === "object" && error !== null) {
+  if (typeof error === 'object' && error !== null) {
     const maybeError = error as {
       message?: string;
       response?: {
@@ -46,28 +42,23 @@ const getFields = ({
   SpecialitiesOptions: { label: string; value: string }[];
 }) =>
   [
-    { label: "Name", key: "name", type: "text", required: true },
-    { label: "Type", key: "type", type: "dropdown", options: RoomsTypes },
+    { label: 'Name', key: 'name', type: 'text', required: true },
+    { label: 'Type', key: 'type', type: 'dropdown', options: RoomsTypes },
     {
-      label: "Assigned speciality",
-      key: "assignedSpecialiteis",
-      type: "multiSelect",
+      label: 'Assigned speciality',
+      key: 'assignedSpecialiteis',
+      type: 'multiSelect',
       options: SpecialitiesOptions,
     },
     {
-      label: "Assigned staff",
-      key: "assignedStaffs",
-      type: "multiSelect",
+      label: 'Assigned staff',
+      key: 'assignedStaffs',
+      type: 'multiSelect',
       options: TeamOptions,
     },
   ] satisfies FieldConfig[];
 
-const RoomInfo = ({
-  showModal,
-  setShowModal,
-  activeRoom,
-  canEditRoom,
-}: RoomInfoProps) => {
+const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfoProps) => {
   const { notify } = useNotify();
   const teams = useTeamForPrimaryOrg();
   const specialities = useSpecialitiesForPrimaryOrg();
@@ -78,7 +69,7 @@ const RoomInfo = ({
         label: team.name || team.practionerId,
         value: team.practionerId,
       })),
-    [teams],
+    [teams]
   );
 
   const SpecialitiesOptions = useMemo(
@@ -87,22 +78,44 @@ const RoomInfo = ({
         label: speciality.name,
         value: speciality._id || speciality.name,
       })),
-    [specialities],
+    [specialities]
   );
+
+  const specialitiesById = useMemo(
+    () =>
+      Object.fromEntries((SpecialitiesOptions ?? []).map((option) => [option.value, option.label])),
+    [SpecialitiesOptions]
+  );
+
+  const teamsById = useMemo(
+    () => Object.fromEntries((TeamOptions ?? []).map((option) => [option.value, option.label])),
+    [TeamOptions]
+  );
+
+  const toReferenceMappings = (
+    ids: string[] | undefined,
+    byId: Record<string, string>
+  ): RoomReferenceMapping[] =>
+    (ids ?? [])
+      .map((id) => {
+        const name = byId[id];
+        return name ? { id, name } : undefined;
+      })
+      .filter((entry): entry is RoomReferenceMapping => Boolean(entry));
 
   const fields = useMemo(
     () => getFields({ TeamOptions, SpecialitiesOptions }),
-    [TeamOptions, SpecialitiesOptions],
+    [TeamOptions, SpecialitiesOptions]
   );
 
   const roomInfoData = useMemo(
     () => ({
-      name: activeRoom?.name ?? "",
-      type: activeRoom?.type ?? "",
-      assignedSpecialiteis: activeRoom?.assignedSpecialiteis ?? "",
-      assignedStaffs: activeRoom?.assignedStaffs ?? "",
+      name: activeRoom?.name ?? '',
+      type: activeRoom?.type ?? '',
+      assignedSpecialiteis: activeRoom?.assignedSpecialiteis?.map((item) => item.id) ?? [],
+      assignedStaffs: activeRoom?.assignedStaffs?.map((item) => item.id) ?? [],
     }),
-    [activeRoom],
+    [activeRoom]
   );
 
   const handleUpdate = async (values: any) => {
@@ -110,24 +123,22 @@ const RoomInfo = ({
       const formData: OrganisationRoom = {
         id: activeRoom.id,
         organisationId: activeRoom.organisationId,
+        code: activeRoom.code,
         name: values.name,
         type: values.type,
-        assignedSpecialiteis: values.assignedSpecialiteis,
-        assignedStaffs: values.assignedStaffs,
+        assignedSpecialiteis: toReferenceMappings(values.assignedSpecialiteis, specialitiesById),
+        assignedStaffs: toReferenceMappings(values.assignedStaffs, teamsById),
       };
       await updateRoom(formData);
-      notify("success", {
-        title: "Room updated",
-        text: "Room details have been updated successfully.",
+      notify('success', {
+        title: 'Room updated',
+        text: 'Room details have been updated successfully.',
       });
       setShowModal(false);
     } catch (error) {
-      notify("error", {
-        title: "Unable to update room",
-        text: getErrorMessage(
-          error,
-          "Failed to update room. Please try again.",
-        ),
+      notify('error', {
+        title: 'Unable to update room',
+        text: getErrorMessage(error, 'Failed to update room. Please try again.'),
       });
       throw error;
     }
@@ -136,18 +147,15 @@ const RoomInfo = ({
   const handleDelete = async () => {
     try {
       await deleteRoom(activeRoom);
-      notify("success", {
-        title: "Room deleted",
-        text: "Room has been deleted successfully.",
+      notify('success', {
+        title: 'Room deleted',
+        text: 'Room has been deleted successfully.',
       });
       setShowModal(false);
     } catch (error) {
-      notify("error", {
-        title: "Unable to delete room",
-        text: getErrorMessage(
-          error,
-          "Failed to delete room. Please try again.",
-        ),
+      notify('error', {
+        title: 'Unable to delete room',
+        text: getErrorMessage(error, 'Failed to delete room. Please try again.'),
       });
     }
   };

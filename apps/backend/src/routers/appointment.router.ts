@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { AppointmentController } from "../controllers/web/appointment.controller";
+import { AppointmentController } from "../controllers/web/appointment.prisma.controller";
 import { authorizeCognito, authorizeCognitoMobile } from "src/middlewares/auth";
 import { withOrgPermissions, requirePermission } from "src/middlewares/rbac";
 

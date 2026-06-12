@@ -898,7 +898,7 @@ const ensureSpecialityDeletionAllowed = async (
   specialityId: string,
   organisationId: string,
 ) => {
-  const [products, appointments, invoices] = await Promise.all([
+  const [products, appointments, matchingAppointments] = await Promise.all([
     prisma.productItem.findMany({
       where: {
         organisationId,
@@ -919,11 +919,30 @@ const ensureSpecialityDeletionAllowed = async (
         },
       },
     }),
-    prisma.invoice.findMany({
-      where: { organisationId },
-      select: { id: true, items: true },
+    prisma.appointment.findMany({
+      where: {
+        organisationId,
+        appointmentType: {
+          path: ["speciality", "id"],
+          equals: specialityId,
+        },
+      },
+      select: {
+        id: true,
+      },
     }),
   ]);
+
+  const invoiceUsageCount = matchingAppointments.length
+    ? await prisma.invoice.count({
+        where: {
+          organisationId,
+          appointmentId: {
+            in: matchingAppointments.map((appointment) => appointment.id),
+          },
+        },
+      })
+    : 0;
 
   const dependencyDetails = {
     activeServices: products.filter(
@@ -939,7 +958,7 @@ const ensureSpecialityDeletionAllowed = async (
       (item) => item.kind === "PACKAGE" && !item.isActive,
     ).length,
     appointments,
-    invoices: invoices.length,
+    invoices: invoiceUsageCount,
   };
 
   if (Object.values(dependencyDetails).some((value) => value > 0)) {

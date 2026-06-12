@@ -9,8 +9,11 @@ import { OrganisationRoom } from '@yosemite-crew/types';
 jest.mock('@/app/ui/tables/tableUtils', () => ({
   joinNames: jest.fn((map, ids) => {
     if (!ids || ids.length === 0) return '-';
-    // Simple join logic for testing verification
-    return ids.map((id: string) => map[id] || id).join(', ');
+    return ids
+      .map((item: any) =>
+        typeof item === 'string' ? map[item] || item : item.name || map[item.id]
+      )
+      .join(', ');
   }),
 }));
 
@@ -22,9 +25,13 @@ const mockRoom: OrganisationRoom = {
   _id: 'room-101',
   name: 'Surgery Room A',
   type: 'Surgery',
+  code: 'SRG-101',
   // Note: Using spelling from source code interface
-  assignedSpecialiteis: ['spec-1', 'spec-2'],
-  assignedStaffs: ['staff-1'],
+  assignedSpecialiteis: [
+    { id: 'spec-1', name: 'Orthopedics' },
+    { id: 'spec-2', name: 'General' },
+  ],
+  assignedStaffs: [{ id: 'staff-1', name: 'Dr. Strange' }],
 } as any;
 
 const mockSpecialityMap = {
@@ -61,8 +68,8 @@ describe('RoomCard Component', () => {
     expect(screen.getByText('Surgery')).toBeInTheDocument();
 
     // Verify helper function calls
-    expect(joinNames).toHaveBeenCalledWith(mockSpecialityMap, ['spec-1', 'spec-2']);
-    expect(joinNames).toHaveBeenCalledWith(mockStaffMap, ['staff-1']);
+    expect(joinNames).toHaveBeenCalledWith(mockSpecialityMap, mockRoom.assignedSpecialiteis);
+    expect(joinNames).toHaveBeenCalledWith(mockStaffMap, mockRoom.assignedStaffs);
 
     // Verify Rendered output from helper
     expect(screen.getByText('Orthopedics, General')).toBeInTheDocument();

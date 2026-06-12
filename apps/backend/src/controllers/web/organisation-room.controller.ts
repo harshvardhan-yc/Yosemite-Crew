@@ -1,21 +1,16 @@
 import { Request, Response } from "express";
 import logger from "../../utils/logger";
 import {
+  fromFHIROrganisationRoom,
+  toFHIROrganisationRoom,
+  type OrganisationRoomRequestDTO,
+} from "@yosemite-crew/types";
+import {
   OrganisationRoomService,
   OrganisationRoomServiceError,
-  type OrganisationRoomFHIRPayload,
+  type OrganisationRoomInput,
 } from "../../services/organisation-room.service";
 import { OrgRequest } from "src/middlewares/rbac";
-
-const isFHIRLocationPayload = (
-  payload: unknown,
-): payload is OrganisationRoomFHIRPayload => {
-  return Boolean(
-    payload &&
-    typeof payload === "object" &&
-    (payload as { resourceType?: string }).resourceType === "Location",
-  );
-};
 
 const requireParam = (
   res: Response,
@@ -26,8 +21,14 @@ const requireParam = (
     res.status(400).json({ message });
     return false;
   }
+
   return true;
 };
+
+const getOrganisationId = (
+  req: Request,
+  fallback?: string,
+): string | undefined => (req as OrgRequest).organisationId ?? fallback;
 
 const handleServiceError = (
   res: Response,
@@ -44,25 +45,37 @@ const handleServiceError = (
   res.status(500).json({ message: responseMessage });
 };
 
-const respondNotFound = (res: Response) => {
-  res.status(404).json({ message: "Organisation room not found." });
-};
+const isRoomPayload = (value: unknown): value is OrganisationRoomRequestDTO =>
+  Boolean(
+    value &&
+    typeof value === "object" &&
+    (value as { resourceType?: string }).resourceType === "Location",
+  );
 
 export const OrganisationRoomController = {
   create: async (req: Request, res: Response) => {
     try {
-      const payload = req.body as OrganisationRoomFHIRPayload | undefined;
-
-      if (!isFHIRLocationPayload(payload)) {
-        res.status(400).json({
+      if (!isRoomPayload(req.body)) {
+        return res.status(400).json({
           message: "Invalid payload. Expected FHIR Location resource.",
         });
-        return;
       }
 
-      const { response, created } =
-        await OrganisationRoomService.create(payload);
-      res.status(created ? 201 : 200).json(response);
+      const payload = fromFHIROrganisationRoom(req.body);
+      const organisationId = getOrganisationId(req, payload.organisationId);
+
+      if (!organisationId) {
+        return res.status(400).json({
+          message: "Organization identifier is required.",
+        });
+      }
+
+      const created = await OrganisationRoomService.create({
+        ...payload,
+        organisationId,
+      } as Partial<OrganisationRoomInput>);
+
+      return res.status(201).json(toFHIROrganisationRoom(created));
     } catch (error) {
       handleServiceError(
         res,
@@ -73,30 +86,35 @@ export const OrganisationRoomController = {
     }
   },
 
-  update: async (req: Request, res: Response) => {
+  update: async (req: Request<{ id: string }>, res: Response) => {
     try {
       const { id } = req.params;
-      const payload = req.body as OrganisationRoomFHIRPayload | undefined;
 
       if (!requireParam(res, id, "Room identifier is required.")) {
         return;
       }
 
-      if (!isFHIRLocationPayload(payload)) {
-        res.status(400).json({
+      if (!isRoomPayload(req.body)) {
+        return res.status(400).json({
           message: "Invalid payload. Expected FHIR Location resource.",
         });
-        return;
       }
 
-      const resource = await OrganisationRoomService.update(id, payload);
+      const payload = fromFHIROrganisationRoom(req.body);
+      const organisationId = getOrganisationId(req, payload.organisationId);
 
-      if (!resource) {
-        respondNotFound(res);
-        return;
+      if (!organisationId) {
+        return res
+          .status(400)
+          .json({ message: "Organization identifier is required." });
       }
 
-      res.status(200).json(resource);
+      const updated = await OrganisationRoomService.update(id, {
+        ...payload,
+        organisationId,
+      } as Partial<OrganisationRoomInput>);
+
+      return res.status(200).json(toFHIROrganisationRoom(updated));
     } catch (error) {
       handleServiceError(
         res,
@@ -121,9 +139,12 @@ export const OrganisationRoomController = {
         return;
       }
 
-      const resources =
-        await OrganisationRoomService.getAllByOrganizationId(organizationId);
-      res.status(200).json(resources);
+      const rooms =
+        await OrganisationRoomService.getSummaryByOrganizationId(
+          organizationId,
+        );
+
+      return res.status(200).json(rooms.map(toFHIROrganisationRoom));
     } catch (error) {
       handleServiceError(
         res,
@@ -134,7 +155,71 @@ export const OrganisationRoomController = {
     }
   },
 
-  delete: async (req: Request, res: Response) => {
+  getById: async (
+    req: Request<{ organizationId: string; id: string }>,
+    res: Response,
+  ) => {
+    try {
+      const { organizationId, id } = req.params;
+
+      if (
+        !requireParam(
+          res,
+          organizationId,
+          "Organization identifier is required.",
+        ) ||
+        !requireParam(res, id, "Room identifier is required.")
+      ) {
+        return;
+      }
+
+      const room = await OrganisationRoomService.getById(id, organizationId);
+      return res.status(200).json(toFHIROrganisationRoom(room));
+    } catch (error) {
+      handleServiceError(
+        res,
+        error,
+        "Failed to retrieve organisation room",
+        "Unable to retrieve organisation room.",
+      );
+    }
+  },
+
+  toggleAvailability: async (
+    req: Request<{ organizationId: string; id: string }>,
+    res: Response,
+  ) => {
+    try {
+      const { organizationId, id } = req.params;
+
+      if (
+        !requireParam(
+          res,
+          organizationId,
+          "Organization identifier is required.",
+        ) ||
+        !requireParam(res, id, "Room identifier is required.")
+      ) {
+        return;
+      }
+
+      const room = await OrganisationRoomService.toggleAvailability(
+        id,
+        organizationId,
+      );
+
+      return res.status(200).json(toFHIROrganisationRoom(room));
+    } catch (error) {
+      handleServiceError(
+        res,
+        error,
+        "Failed to toggle organisation room availability",
+        "Unable to toggle organisation room availability.",
+      );
+    }
+  },
+
+  delete: async (req: Request<{ id: string }>, res: Response) => {
     try {
       const { id } = req.params;
       const { organisationId } = req as OrgRequest;
@@ -153,14 +238,8 @@ export const OrganisationRoomController = {
         return;
       }
 
-      const resource = await OrganisationRoomService.delete(id, organisationId);
-
-      if (!resource) {
-        respondNotFound(res);
-        return;
-      }
-
-      res.status(200).json(resource);
+      const deleted = await OrganisationRoomService.delete(id, organisationId);
+      return res.status(200).json(toFHIROrganisationRoom(deleted));
     } catch (error) {
       handleServiceError(
         res,

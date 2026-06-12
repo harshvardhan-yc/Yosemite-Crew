@@ -1,4 +1,4 @@
-import { InvoiceItem } from '@yosemite-crew/types';
+import { InvoiceItem, RoomReferenceMapping } from '@yosemite-crew/types';
 import { Team } from '@/app/features/organization/types/team';
 import { getStatusBadgeStyle } from '@/app/features/inventory/pages/Inventory/utils';
 
@@ -240,7 +240,12 @@ export const getStringified = (services: string[] = []): string => {
   return services.join(', ');
 };
 
-export const joinNames = (byId: Record<string, string>, ids: string[] = []) => {
-  const names = ids.map((id) => byId[id]).filter(Boolean);
+export const joinNames = (
+  byId: Record<string, string>,
+  ids: Array<string | RoomReferenceMapping> = []
+) => {
+  const names = ids
+    .map((item) => (typeof item === 'string' ? byId[item] : item.name || byId[item.id]))
+    .filter((name): name is string => Boolean(name));
   return names.length ? names.join(', ') : '-';
 };

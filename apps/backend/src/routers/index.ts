@@ -44,6 +44,10 @@ import companionHistoryRouter from "./companion-history.router";
 import authRouter from "./auth.router";
 import catalogRouter from "./catalog.router";
 import healthcareServiceRouter from "./healthcare-service.router";
+import episodeOfCareRouter from "./episode-of-care.router";
+import encounterRouter from "./encounter.router";
+import roomUnitRouter from "./room-unit.router";
+import roomUnitGroupRouter from "./room-unit-group.router";
 
 export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/organization`, organizationRounter);
@@ -54,6 +58,8 @@ export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/user-profile`, userProfileRouter);
   app.use(`/fhir/v1/speciality`, specialtyRouter);
   app.use(`/fhir/v1/organisation-room`, organisationRoomRouter);
+  app.use(`/fhir/v1/room-unit`, roomUnitRouter);
+  app.use(`/fhir/v1/room-unit-group`, roomUnitGroupRouter);
   app.use(`/fhir/v1/organisation-invites`, organisationInviteRouter);
   app.use(`/fhir/v1/availability`, availabilityRouter);
   app.use(`/v1/authUser`, authUserMobileRouter);
@@ -64,6 +70,8 @@ export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/service`, serviceRouter);
   app.use(`/fhir/v1/healthcare-service`, healthcareServiceRouter);
   app.use(`/fhir/v1/appointment`, appointmentRouter);
+  app.use(`/fhir/v1/episode-of-care`, episodeOfCareRouter);
+  app.use(`/fhir/v1/encounter`, encounterRouter);
   app.use(`/v1/stripe`, stripeRouter);
   app.use(`/v1/documenso`, documensoRouter);
   app.use(`/v1/organisation-rating`, ratingRouter);
