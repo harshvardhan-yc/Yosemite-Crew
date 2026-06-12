@@ -55,11 +55,10 @@ jobs:
 
       - name: Run React Doctor
         id: react-doctor
-        uses: millionco/react-doctor@main
+        uses: millionco/react-doctor@v2.1.0
         with:
           directory: apps/mobileAppYC
-          fail-on: error
-          annotations: true
+          blocking: error
           node-version: '22'
 
       - name: Enforce React Doctor score

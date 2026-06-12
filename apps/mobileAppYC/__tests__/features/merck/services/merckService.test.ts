@@ -256,8 +256,14 @@ describe('merckService', () => {
 
     expect(result.entries).toHaveLength(1);
     const subLinks = result.entries[0].subLinks;
-    expect(subLinks.some(l => l.url.includes('professional'))).toBe(false);
-    expect(subLinks.some(l => l.url.includes('evil.com'))).toBe(false);
+    const subLinkUrls = subLinks.map(l => l.url);
+    expect(subLinkUrls).toEqual([
+      'https://www.msdvetmanual.com/subtopic?media=hybrid',
+    ]);
+    expect(subLinkUrls).not.toContain(
+      'https://www.msdmanuals.com/professional/xyz',
+    );
+    expect(subLinkUrls).not.toContain('https://evil.com/page');
   });
 
   it('filters out entire entries whose primaryUrl is blocked', () => {
