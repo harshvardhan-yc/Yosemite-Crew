@@ -80,6 +80,7 @@ type RoomUnitRow = {
   id: string;
   organisationId: string;
   roomId: string;
+  unitGroupId: string | null;
   code: string;
   displayName: string;
   size: string | null;
@@ -91,6 +92,32 @@ type RoomUnitRow = {
 
 type RoomUnitDelegate = {
   findUnique(args: { where: { id: string } }): Promise<RoomUnitRow | null>;
+};
+
+type RoomUnitGroupRow = {
+  id: string;
+  organisationId: string;
+  roomId: string;
+  name: string;
+  size: string | null;
+  unitCount: number;
+  speciesConstraints: unknown;
+  capabilities: string[];
+  isActive: boolean;
+};
+
+type RoomUnitGroupDelegate = {
+  findUnique(args: { where: { id: string } }): Promise<RoomUnitGroupRow | null>;
+};
+
+type CompanionRow = {
+  id: string;
+  type: string;
+  speciesCode: string | null;
+};
+
+type CompanionDelegate = {
+  findUnique(args: { where: { id: string } }): Promise<CompanionRow | null>;
 };
 
 type RoomUnitAssignmentRow = {
@@ -250,6 +277,92 @@ const assertPeriod = (start?: Date, end?: Date) => {
     throw new CaseEncounterServiceError(
       "periodEnd must be after periodStart.",
       400,
+    );
+  }
+};
+
+const normalizeStringTokens = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [
+    ...new Set(
+      value
+        .map((item) =>
+          typeof item === "string" ? item.trim().toLowerCase() : "",
+        )
+        .filter((item) => item.length > 0),
+    ),
+  ];
+};
+
+const getCompanionSpeciesTokens = (companion: CompanionRow) => {
+  const tokens = new Set<string>();
+  const type = companion.type.trim().toLowerCase();
+
+  if (type) {
+    tokens.add(type);
+  }
+
+  if (companion.speciesCode?.trim()) {
+    tokens.add(companion.speciesCode.trim().toLowerCase());
+  }
+
+  const aliases: Record<string, string[]> = {
+    dog: ["canine"],
+    cat: ["feline"],
+    horse: ["equine"],
+    other: ["other"],
+  };
+
+  for (const alias of aliases[type] ?? []) {
+    tokens.add(alias);
+  }
+
+  return tokens;
+};
+
+const assertRoomUnitSpeciesCompatibility = (
+  unit: RoomUnitRow,
+  companion: CompanionRow,
+) => {
+  const constraints = normalizeStringTokens(unit.speciesConstraints);
+  if (constraints.length === 0) {
+    return;
+  }
+
+  const allowedSpecies = getCompanionSpeciesTokens(companion);
+  const isCompatible = constraints.some((constraint) =>
+    allowedSpecies.has(constraint),
+  );
+
+  if (!isCompatible) {
+    throw new CaseEncounterServiceError(
+      "Room unit is not compatible with this companion's species.",
+      409,
+    );
+  }
+};
+
+const assertRoomUnitGroupSpeciesCompatibility = (
+  group: RoomUnitGroupRow,
+  companion: CompanionRow,
+) => {
+  const constraints = normalizeStringTokens(group.speciesConstraints);
+  if (constraints.length === 0) {
+    return;
+  }
+
+  const allowedSpecies = getCompanionSpeciesTokens(companion);
+  const isCompatible = constraints.some((constraint) =>
+    allowedSpecies.has(constraint),
+  );
+
+  if (!isCompatible) {
+    throw new CaseEncounterServiceError(
+      "Room unit group is not compatible with this companion's species.",
+      409,
     );
   }
 };
@@ -846,6 +959,14 @@ export const CaseEncounterService = {
       ).admission;
       const roomUnitDelegate = (tx as unknown as { roomUnit: RoomUnitDelegate })
         .roomUnit;
+      const roomUnitGroupDelegate = (
+        tx as unknown as { roomUnitGroup: RoomUnitGroupDelegate }
+      ).roomUnitGroup;
+      const companionDelegate = (
+        tx as unknown as {
+          companion: CompanionDelegate;
+        }
+      ).companion;
       const assignmentDelegate = (
         tx as unknown as { roomUnitAssignment: RoomUnitAssignmentDelegate }
       ).roomUnitAssignment;
@@ -884,6 +1005,38 @@ export const CaseEncounterService = {
         throw new CaseEncounterServiceError("Selected unit is inactive.", 409);
       }
 
+      const companion = await companionDelegate.findUnique({
+        where: { id: encounter.companionId },
+      });
+
+      if (!companion) {
+        throw new CaseEncounterServiceError("Companion not found.", 404);
+      }
+
+      assertRoomUnitSpeciesCompatibility(unit, companion);
+
+      if (unit.unitGroupId) {
+        const group = await roomUnitGroupDelegate.findUnique({
+          where: { id: unit.unitGroupId },
+        });
+
+        if (!group) {
+          throw new CaseEncounterServiceError(
+            "Room unit group not found.",
+            404,
+          );
+        }
+
+        if (group.organisationId !== encounter.organisationId) {
+          throw new CaseEncounterServiceError(
+            "Room unit group organisation mismatch.",
+            409,
+          );
+        }
+
+        assertRoomUnitGroupSpeciesCompatibility(group, companion);
+      }
+
       const conflictingAssignment = await assignmentDelegate.findFirst({
         where: {
           unitId,
@@ -914,7 +1067,7 @@ export const CaseEncounterService = {
         });
       }
 
-      if (!activeAssignment || activeAssignment.unitId !== unitId) {
+      if (activeAssignment?.unitId !== unitId) {
         await assignmentDelegate.create({
           data: {
             encounterId: id,

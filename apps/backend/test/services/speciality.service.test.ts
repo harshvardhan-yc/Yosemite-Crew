@@ -1,7 +1,6 @@
 import { Types } from "mongoose";
 import { SpecialityService } from "../../src/services/speciality.service";
 import SpecialityModel from "../../src/models/speciality";
-import OrganisationRoomModel from "../../src/models/organisation-room";
 import UserModel from "../../src/models/user";
 import OrganizationModel from "../../src/models/organization";
 import { ServiceService } from "../../src/services/service.service";
@@ -11,7 +10,6 @@ import { prisma } from "src/config/prisma";
 
 // --- Mocks ---
 jest.mock("../../src/models/speciality");
-jest.mock("../../src/models/organisation-room");
 jest.mock("../../src/models/user");
 jest.mock("../../src/models/organization");
 jest.mock("../../src/services/service.service");
@@ -23,6 +21,14 @@ jest.mock("src/config/prisma", () => ({
     speciality: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    organisationRoom: {
+      findMany: jest.fn(),
+      update: jest.fn(),
+    },
+    organisationRoomSpeciality: {
+      deleteMany: jest.fn(),
     },
     organization: {
       findFirst: jest.fn(),
@@ -118,6 +124,10 @@ describe("SpecialityService", () => {
       process.env.READ_FROM_POSTGRES = "true";
       (prisma.speciality.findFirst as jest.Mock).mockReset();
       (prisma.speciality.findMany as jest.Mock).mockReset();
+      (prisma.speciality.deleteMany as jest.Mock).mockReset();
+      (prisma.organisationRoom.findMany as jest.Mock).mockReset();
+      (prisma.organisationRoom.update as jest.Mock).mockReset();
+      (prisma.organisationRoomSpeciality.deleteMany as jest.Mock).mockReset();
       (prisma.organization.findFirst as jest.Mock).mockReset();
       (prisma.user.findFirst as jest.Mock).mockReset();
     });
@@ -458,6 +468,20 @@ describe("SpecialityService", () => {
       (SpecialityModel.findOneAndDelete as jest.Mock).mockResolvedValue(
         mockDoc({ _id: mockSpecId }),
       );
+      (prisma.organisationRoom.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: "room_1",
+          assignedSpecialiteis: [mockSpecId.toHexString()],
+        },
+      ]);
+      (prisma.organisationRoom.update as jest.Mock).mockResolvedValue({
+        id: "room_1",
+      });
+      (
+        prisma.organisationRoomSpeciality.deleteMany as jest.Mock
+      ).mockResolvedValue({
+        count: 1,
+      });
 
       await SpecialityService.deleteSpeciality(
         mockSpecId.toHexString(),
@@ -467,7 +491,14 @@ describe("SpecialityService", () => {
       expect(ServiceService.deleteAllBySpecialityId).toHaveBeenCalledWith(
         mockSpecId.toString(),
       );
-      expect(OrganisationRoomModel.updateMany).toHaveBeenCalled();
+      expect(prisma.organisationRoomSpeciality.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organisationId: mockOrgId.toHexString(),
+            specialityId: mockSpecId.toHexString(),
+          }),
+        }),
+      );
     });
 
     it("deleteSpeciality should throw if not found", async () => {

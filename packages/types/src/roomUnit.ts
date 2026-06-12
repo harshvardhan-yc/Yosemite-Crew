@@ -4,10 +4,23 @@ export type RoomUnit = {
   id: string;
   organisationId: string;
   roomId: string;
+  unitGroupId?: string;
   code: string;
   displayName: string;
   size?: string;
   speciesConstraints?: string[];
+  isActive?: boolean;
+};
+
+export type RoomUnitGroup = {
+  id: string;
+  organisationId: string;
+  roomId: string;
+  name: string;
+  size?: string;
+  unitCount: number;
+  speciesConstraints?: string[];
+  capabilities?: string[];
   isActive?: boolean;
 };
 
@@ -17,6 +30,17 @@ const EXT_ROOM_UNIT_CODE = 'https://yosemitecrew.com/fhir/StructureDefinition/ro
 const EXT_ROOM_UNIT_SIZE = 'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-size';
 const EXT_ROOM_UNIT_SPECIES = 'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-species';
 const EXT_ROOM_UNIT_ACTIVE = 'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-active';
+const EXT_ROOM_UNIT_GROUP = 'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-group';
+const EXT_ROOM_UNIT_GROUP_SIZE =
+  'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-group-size';
+const EXT_ROOM_UNIT_GROUP_COUNT =
+  'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-group-count';
+const EXT_ROOM_UNIT_GROUP_SPECIES =
+  'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-group-species';
+const EXT_ROOM_UNIT_GROUP_CAPABILITY =
+  'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-group-capability';
+const EXT_ROOM_UNIT_GROUP_ACTIVE =
+  'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-group-active';
 
 const parseReferenceId = (reference?: string): string | undefined => {
   const trimmed = reference?.trim();
@@ -77,6 +101,14 @@ export const toFHIRRoomUnit = (unit: RoomUnit): FHIRLocation => ({
       url: EXT_ROOM_UNIT_CODE,
       valueString: unit.code,
     },
+    ...(unit.unitGroupId
+      ? [
+          {
+            url: EXT_ROOM_UNIT_GROUP,
+            valueString: unit.unitGroupId,
+          },
+        ]
+      : []),
     ...(unit.size
       ? [
           {
@@ -100,9 +132,78 @@ export const fromFHIRRoomUnit = (resource: FHIRLocation): RoomUnit => ({
   id: resource.id ?? '',
   organisationId: parseReferenceId(resource.managingOrganization?.reference) ?? '',
   roomId: parseReferenceId(resource.partOf?.reference) ?? '',
+  unitGroupId: getStringExtension(resource.extension, EXT_ROOM_UNIT_GROUP),
   code: getStringExtension(resource.extension, EXT_ROOM_UNIT_CODE) ?? '',
   displayName: resource.name ?? '',
   size: getStringExtension(resource.extension, EXT_ROOM_UNIT_SIZE),
   speciesConstraints: getStringArrayExtension(resource.extension, EXT_ROOM_UNIT_SPECIES),
   isActive: getBooleanExtension(resource.extension, EXT_ROOM_UNIT_ACTIVE) ?? true,
+});
+
+export const toFHIRRoomUnitGroup = (group: RoomUnitGroup): FHIRLocation => ({
+  resourceType: 'Location',
+  id: group.id,
+  identifier: [
+    {
+      system: 'http://example.org/fhir/NamingSystem/room-unit-group-id',
+      value: group.id,
+    },
+  ],
+  name: group.name,
+  managingOrganization: {
+    reference: `Organization/${group.organisationId}`,
+  },
+  partOf: {
+    reference: `Location/${group.roomId}`,
+  },
+  physicalType: {
+    coding: [
+      {
+        system: ROOM_UNIT_CODE_SYSTEM,
+        code: 'unit-group',
+        display: 'Unit Group',
+      },
+    ],
+    text: 'Unit Group',
+  },
+  extension: [
+    ...(group.size
+      ? [
+          {
+            url: EXT_ROOM_UNIT_GROUP_SIZE,
+            valueString: group.size,
+          },
+        ]
+      : []),
+    {
+      url: EXT_ROOM_UNIT_GROUP_COUNT,
+      valueInteger: group.unitCount,
+    },
+    ...(group.speciesConstraints?.map<Extension>((species) => ({
+      url: EXT_ROOM_UNIT_GROUP_SPECIES,
+      valueString: species,
+    })) ?? []),
+    ...(group.capabilities?.map<Extension>((capability) => ({
+      url: EXT_ROOM_UNIT_GROUP_CAPABILITY,
+      valueString: capability,
+    })) ?? []),
+    {
+      url: EXT_ROOM_UNIT_GROUP_ACTIVE,
+      valueBoolean: group.isActive ?? true,
+    },
+  ],
+});
+
+export const fromFHIRRoomUnitGroup = (resource: FHIRLocation): RoomUnitGroup => ({
+  id: resource.id ?? '',
+  organisationId: parseReferenceId(resource.managingOrganization?.reference) ?? '',
+  roomId: parseReferenceId(resource.partOf?.reference) ?? '',
+  name: resource.name ?? '',
+  size: getStringExtension(resource.extension, EXT_ROOM_UNIT_GROUP_SIZE),
+  unitCount:
+    resource.extension?.find((extension) => extension.url === EXT_ROOM_UNIT_GROUP_COUNT)
+      ?.valueInteger ?? 0,
+  speciesConstraints: getStringArrayExtension(resource.extension, EXT_ROOM_UNIT_GROUP_SPECIES),
+  capabilities: getStringArrayExtension(resource.extension, EXT_ROOM_UNIT_GROUP_CAPABILITY),
+  isActive: getBooleanExtension(resource.extension, EXT_ROOM_UNIT_GROUP_ACTIVE) ?? true,
 });

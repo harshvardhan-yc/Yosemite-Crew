@@ -1,27 +1,27 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { Request, Response } from "express";
-import { RoomUnitController } from "../../../src/controllers/web/room-unit.controller";
-import { RoomUnitService } from "../../../src/services/room-unit.service";
+import { RoomUnitGroupController } from "../../../src/controllers/web/room-unit-group.controller";
+import { RoomUnitGroupService } from "../../../src/services/room-unit-group.service";
 
-jest.mock("../../../src/services/room-unit.service", () => ({
-  RoomUnitService: {
+jest.mock("../../../src/services/room-unit-group.service", () => ({
+  RoomUnitGroupService: {
     create: jest.fn(),
     update: jest.fn(),
     list: jest.fn(),
     delete: jest.fn(),
   },
-  RoomUnitServiceError: class RoomUnitServiceError extends Error {
+  RoomUnitGroupServiceError: class RoomUnitGroupServiceError extends Error {
     constructor(
       message: string,
       public readonly statusCode: number,
     ) {
       super(message);
-      this.name = "RoomUnitServiceError";
+      this.name = "RoomUnitGroupServiceError";
     }
   },
 }));
 
-const mockedService = jest.mocked(RoomUnitService);
+const mockedService = jest.mocked(RoomUnitGroupService);
 
 const buildResponse = () => {
   const json = jest.fn();
@@ -32,7 +32,7 @@ const buildResponse = () => {
   };
 };
 
-describe("RoomUnitController", () => {
+describe("RoomUnitGroupController", () => {
   let req: Partial<Request>;
   let res: ReturnType<typeof buildResponse>;
 
@@ -42,51 +42,51 @@ describe("RoomUnitController", () => {
     res = buildResponse();
   });
 
-  it("creates a room unit", async () => {
+  it("creates a room unit group", async () => {
     req.body = {
       resourceType: "Location",
-      name: "Kennel 1",
+      name: "Dog ward",
       managingOrganization: { reference: "Organization/org_1" },
       partOf: { reference: "Location/room_1" },
       extension: [
         {
-          url: "https://yosemitecrew.com/fhir/StructureDefinition/room-unit-code",
-          valueString: "KEN-01",
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/room-unit-group-count",
+          valueInteger: 2,
         },
       ],
     };
-    mockedService.create.mockResolvedValue({ id: "unit_1" } as never);
+    mockedService.create.mockResolvedValue({ id: "group_1" } as never);
 
-    await RoomUnitController.create(req as any, res as any);
+    await RoomUnitGroupController.create(req as any, res as any);
 
     expect(mockedService.create).toHaveBeenCalledWith(
       expect.objectContaining({
         organisationId: "org_1",
         roomId: "room_1",
-        code: "KEN-01",
+        name: "Dog ward",
+        unitCount: 2,
       }),
     );
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  it("lists room units", async () => {
+  it("lists room unit groups", async () => {
     req.query = { organizationId: "org_1" };
     mockedService.list.mockResolvedValue([
       {
-        id: "unit_1",
+        id: "group_1",
         organisationId: "org_1",
         roomId: "room_1",
-        code: "KEN-01",
-        displayName: "Kennel 1",
+        name: "Dog ward",
+        unitCount: 2,
       },
     ] as never);
 
-    await RoomUnitController.list(req as any, res as any);
+    await RoomUnitGroupController.list(req as any, res as any);
 
     expect(mockedService.list).toHaveBeenCalledWith({
       organisationId: "org_1",
       roomId: undefined,
-      unitGroupId: undefined,
       isActive: undefined,
     });
     expect(res.status).toHaveBeenCalledWith(200);

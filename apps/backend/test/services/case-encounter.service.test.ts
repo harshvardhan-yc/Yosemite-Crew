@@ -29,6 +29,12 @@ jest.mock("../../src/config/prisma", () => ({
     roomUnit: {
       findUnique: jest.fn(),
     },
+    roomUnitGroup: {
+      findUnique: jest.fn(),
+    },
+    companion: {
+      findUnique: jest.fn(),
+    },
     roomUnitAssignment: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -81,6 +87,12 @@ describe("CaseEncounterService", () => {
     mockedPrisma.$transaction.mockImplementation(async (callback: any) =>
       callback(mockedPrisma),
     );
+    mockedPrisma.companion.findUnique.mockResolvedValue({
+      id: "comp_1",
+      type: "dog",
+      speciesCode: "canislf",
+    } as never);
+    mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue(null);
     mockedPrisma.admission.findMany.mockResolvedValue([] as never);
   });
 
@@ -379,6 +391,11 @@ describe("CaseEncounterService", () => {
       createdAt: new Date("2026-06-11T10:00:00.000Z"),
       updatedAt: new Date("2026-06-11T10:00:00.000Z"),
     } as never);
+    mockedPrisma.companion.findUnique.mockResolvedValue({
+      id: "comp_1",
+      type: "dog",
+      speciesCode: "canislf",
+    } as never);
     mockedPrisma.roomUnitAssignment.findFirst.mockResolvedValue(null as never);
     mockedPrisma.roomUnitAssignment.create.mockResolvedValue({
       id: "assign_1",
@@ -427,6 +444,107 @@ describe("CaseEncounterService", () => {
       },
     });
     expect(result.admission?.unitId).toBe("unit_1");
+  });
+
+  it("rejects assignment when the unit species constraints do not match", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue(
+      baseEncounterRow as never,
+    );
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      unitId: null,
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnit.findUnique.mockResolvedValue({
+      id: "unit_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      code: "KEN-01",
+      displayName: "Kennel 1",
+      size: "M",
+      speciesConstraints: ["cat"],
+      isActive: true,
+      createdAt: new Date("2026-06-11T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:00:00.000Z"),
+    } as never);
+    mockedPrisma.companion.findUnique.mockResolvedValue({
+      id: "comp_1",
+      type: "dog",
+      speciesCode: "canislf",
+    } as never);
+
+    await expect(
+      CaseEncounterService.assignUnit("enc_1", {
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      message: "Room unit is not compatible with this companion's species.",
+      statusCode: 409,
+    });
+  });
+
+  it("rejects assignment when the unit group species constraints do not match", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue(
+      baseEncounterRow as never,
+    );
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      companionId: "comp_1",
+      unitId: null,
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnit.findUnique.mockResolvedValue({
+      id: "unit_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      unitGroupId: "group_1",
+      code: "KEN-01",
+      displayName: "Kennel 1",
+      size: "M",
+      speciesConstraints: ["dog"],
+      isActive: true,
+      createdAt: new Date("2026-06-11T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:00:00.000Z"),
+    } as never);
+    mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue({
+      id: "group_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      name: "Cat ward",
+      size: "M",
+      unitCount: 2,
+      speciesConstraints: ["cat"],
+      capabilities: [],
+      isActive: true,
+    } as never);
+    mockedPrisma.companion.findUnique.mockResolvedValue({
+      id: "comp_1",
+      type: "dog",
+      speciesCode: "canislf",
+    } as never);
+
+    await expect(
+      CaseEncounterService.assignUnit("enc_1", {
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      message:
+        "Room unit group is not compatible with this companion's species.",
+      statusCode: 409,
+    });
   });
 
   it("rejects assignment when the unit is already occupied by another admission", async () => {

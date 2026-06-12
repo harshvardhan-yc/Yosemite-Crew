@@ -732,6 +732,8 @@ model User {
   lastName  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  roomStaffLinks OrganisationRoomStaff[]
 }
 
 model UserProfile {
@@ -831,10 +833,30 @@ enum OrgDocumentVisibility {
 }
 
 enum RoomType {
-  CONSULTATION
-  WAITING_AREA
+  EXAM_ROOM
+  TREATMENT
   SURGERY
+  DENTAL
+  IMAGING
+  WAITING
+  GROOMING
   ICU
+  INPATIENT
+  ISOLATION
+  BOARDING
+  RECEPTION
+  CONSULTATION
+}
+
+enum RoomOccupancyStatus {
+  VACANT
+  OCCUPIED
+}
+
+enum RoomAvailabilityMode {
+  WORKING_HOURS
+  ALL_DAY
+  CUSTOM
 }
 
 enum OrganisationInviteEmploymentType {
@@ -933,26 +955,71 @@ model OrganizationDocument {
 }
 
 model OrganisationRoom {
-  id                   String   @id @default(uuid())
-  fhirId               String?
-  organisationId       String
-  name                 String
-  type                 RoomType
-  assignedSpecialiteis String[]
-  assignedStaffs       String[]
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                    String                @id @default(uuid())
+  organisationId        String
+  name                  String
+  code                  String
+  description           String?
+  type                  RoomType
+  occupancyStatus       RoomOccupancyStatus   @default(VACANT)
+  availableNow          Boolean               @default(true)
+  availabilityMode      RoomAvailabilityMode  @default(ALL_DAY)
+  availabilityDays      String[]              @default([])
+  availabilityStartTime  String?
+  availabilityEndTime    String?
+  capabilities          String[]              @default([])
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
-  units                RoomUnit[]
+  units                 RoomUnit[]
+  unitGroups            RoomUnitGroup[]
+  specialityLinks       OrganisationRoomSpeciality[]
+  staffLinks            OrganisationRoomStaff[]
 
-  @@index([fhirId])
+  @@unique([organisationId, code])
   @@index([organisationId])
+  @@index([organisationId, type])
+}
+
+model OrganisationRoomSpeciality {
+  id             String   @id @default(uuid())
+  organisationId String
+  roomId         String
+  specialityId   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  room           OrganisationRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  speciality     Speciality       @relation(fields: [specialityId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, specialityId])
+  @@index([organisationId])
+  @@index([roomId])
+  @@index([specialityId])
+}
+
+model OrganisationRoomStaff {
+  id             String   @id @default(uuid())
+  organisationId String
+  roomId         String
+  staffUserId    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  room           OrganisationRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  staff          User             @relation(fields: [staffUserId], references: [userId], onDelete: Cascade)
+
+  @@unique([roomId, staffUserId])
+  @@index([organisationId])
+  @@index([roomId])
+  @@index([staffUserId])
 }
 
 model RoomUnit {
   id                 String   @id @default(uuid())
   organisationId     String
   roomId             String
+  unitGroupId        String?
   code               String
   displayName        String
   size               String?
@@ -962,13 +1029,37 @@ model RoomUnit {
   updatedAt          DateTime @updatedAt
 
   room               OrganisationRoom     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  unitGroup          RoomUnitGroup?       @relation(fields: [unitGroupId], references: [id], onDelete: SetNull)
   currentAdmissions  Admission[]          @relation("AdmissionCurrentUnit")
   assignments        RoomUnitAssignment[]
 
   @@unique([roomId, code])
   @@index([organisationId])
   @@index([roomId])
+  @@index([unitGroupId])
   @@index([organisationId, isActive])
+}
+
+model RoomUnitGroup {
+  id                  String   @id @default(uuid())
+  organisationId      String
+  roomId              String
+  name                String
+  size                String?
+  unitCount           Int      @default(0)
+  speciesConstraints   Json?
+  capabilities        String[] @default([])
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  room                OrganisationRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  units               RoomUnit[]
+
+  @@index([organisationId])
+  @@index([roomId])
+  @@index([isActive])
+  @@unique([roomId, name])
 }
 
 model RoomUnitAssignment {
@@ -1839,6 +1930,8 @@ model Speciality {
   isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+
+  roomLinks          OrganisationRoomSpeciality[]
 
   @@index([organisationId])
   @@index([organisationId, isActive])

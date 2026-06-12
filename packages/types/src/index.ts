@@ -76,7 +76,7 @@ export type {
 } from './parentCompanion';
 
 export type { Organization, Organisation, ToFHIROrganizationOptions } from './organization';
-export type { OrganisationRoom } from './organisationRoom';
+export type { OrganisationRoom, RoomReferenceMapping } from './organisationRoom';
 export {
   toFHIROrganisationRoom,
   fromFHIROrganisationRoom,
@@ -137,6 +137,8 @@ export type { Encounter, EncounterClass, EncounterStatus } from './encounter';
 export { fromFHIREncounter, toFHIREncounter } from './encounter';
 export type { RoomUnit } from './roomUnit';
 export { fromFHIRRoomUnit, toFHIRRoomUnit } from './roomUnit';
+export type { RoomUnitGroup } from './roomUnit';
+export { fromFHIRRoomUnitGroup, toFHIRRoomUnitGroup } from './roomUnit';
 export type {
   CatalogListRow,
   CatalogPackageBreakdownRow,

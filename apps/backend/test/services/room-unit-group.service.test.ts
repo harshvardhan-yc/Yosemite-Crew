@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { prisma } from "../../src/config/prisma";
-import { RoomUnitService } from "../../src/services/room-unit.service";
+import { RoomUnitGroupService } from "../../src/services/room-unit-group.service";
 
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
@@ -8,9 +8,6 @@ jest.mock("../../src/config/prisma", () => ({
       findUnique: jest.fn(),
     },
     roomUnitGroup: {
-      findUnique: jest.fn(),
-    },
-    roomUnit: {
       create: jest.fn(),
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -22,7 +19,7 @@ jest.mock("../../src/config/prisma", () => ({
 
 const mockedPrisma = prisma as any;
 
-describe("RoomUnitService", () => {
+describe("RoomUnitGroupService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedPrisma.organisationRoom.findUnique.mockResolvedValue({
@@ -32,51 +29,46 @@ describe("RoomUnitService", () => {
     });
   });
 
-  it("creates a room unit in a supported room", async () => {
-    mockedPrisma.roomUnit.create.mockResolvedValue({
-      id: "unit_1",
+  it("creates a room unit group for supported room types", async () => {
+    mockedPrisma.roomUnitGroup.create.mockResolvedValue({
+      id: "group_1",
       organisationId: "org_1",
       roomId: "room_1",
-      unitGroupId: "group_1",
-      code: "KEN-01",
-      displayName: "Kennel 1",
-      size: "M",
+      name: "Dog ward",
+      size: "Medium",
+      unitCount: 2,
       speciesConstraints: ["dog"],
+      capabilities: ["oxygen"],
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue({
-      id: "group_1",
-      roomId: "room_1",
-      organisationId: "org_1",
-    });
 
-    const result = await RoomUnitService.create({
-      id: "unit_1",
+    const result = await RoomUnitGroupService.create({
+      id: "group_1",
       organisationId: "org_1",
       roomId: "room_1",
-      unitGroupId: "group_1",
-      code: "KEN-01",
-      displayName: "Kennel 1",
-      size: "M",
+      name: "Dog ward",
+      size: "Medium",
+      unitCount: 2,
       speciesConstraints: ["dog"],
+      capabilities: ["oxygen"],
       isActive: true,
     });
 
-    expect(mockedPrisma.roomUnit.create).toHaveBeenCalledWith(
+    expect(mockedPrisma.roomUnitGroup.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          organisationId: "org_1",
           roomId: "room_1",
-          unitGroupId: "group_1",
-          code: "KEN-01",
+          unitCount: 2,
         }),
       }),
     );
-    expect(result.code).toBe("KEN-01");
+    expect(result.unitCount).toBe(2);
   });
 
-  it("rejects units for unsupported room types", async () => {
+  it("rejects unit groups with unsupported room types", async () => {
     mockedPrisma.organisationRoom.findUnique.mockResolvedValueOnce({
       id: "room_1",
       organisationId: "org_1",
@@ -84,12 +76,12 @@ describe("RoomUnitService", () => {
     });
 
     await expect(
-      RoomUnitService.create({
-        id: "unit_1",
+      RoomUnitGroupService.create({
+        id: "group_1",
         organisationId: "org_1",
         roomId: "room_1",
-        code: "KEN-01",
-        displayName: "Kennel 1",
+        name: "Dog ward",
+        unitCount: 2,
       }),
     ).rejects.toMatchObject({
       message:
@@ -98,62 +90,64 @@ describe("RoomUnitService", () => {
     });
   });
 
-  it("lists room units", async () => {
-    mockedPrisma.roomUnit.findMany.mockResolvedValue([
+  it("lists room unit groups", async () => {
+    mockedPrisma.roomUnitGroup.findMany.mockResolvedValue([
       {
-        id: "unit_1",
+        id: "group_1",
         organisationId: "org_1",
         roomId: "room_1",
-        unitGroupId: null,
-        code: "KEN-01",
-        displayName: "Kennel 1",
-        size: "M",
+        name: "Dog ward",
+        size: "Medium",
+        unitCount: 2,
         speciesConstraints: ["dog"],
+        capabilities: ["oxygen"],
         isActive: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
     ]);
 
-    const results = await RoomUnitService.list({ organisationId: "org_1" });
+    const results = await RoomUnitGroupService.list({
+      organisationId: "org_1",
+    });
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.displayName).toBe("Kennel 1");
+    expect(results[0]?.unitCount).toBe(2);
   });
 
-  it("deletes a room unit in the same organisation", async () => {
-    mockedPrisma.roomUnit.findUnique.mockResolvedValue({
-      id: "unit_1",
+  it("deletes a room unit group within the same organisation", async () => {
+    mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue({
+      id: "group_1",
       organisationId: "org_1",
       roomId: "room_1",
-      unitGroupId: null,
-      code: "KEN-01",
-      displayName: "Kennel 1",
-      size: "M",
+      name: "Dog ward",
+      size: "Medium",
+      unitCount: 2,
       speciesConstraints: ["dog"],
+      capabilities: ["oxygen"],
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    mockedPrisma.roomUnit.delete.mockResolvedValue({
-      id: "unit_1",
+    mockedPrisma.roomUnitGroup.delete.mockResolvedValue({
+      id: "group_1",
       organisationId: "org_1",
       roomId: "room_1",
-      unitGroupId: null,
-      code: "KEN-01",
-      displayName: "Kennel 1",
-      size: "M",
+      name: "Dog ward",
+      size: "Medium",
+      unitCount: 2,
       speciesConstraints: ["dog"],
+      capabilities: ["oxygen"],
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
 
-    const result = await RoomUnitService.delete("unit_1", "org_1");
+    const result = await RoomUnitGroupService.delete("group_1", "org_1");
 
-    expect(mockedPrisma.roomUnit.delete).toHaveBeenCalledWith({
-      where: { id: "unit_1" },
+    expect(mockedPrisma.roomUnitGroup.delete).toHaveBeenCalledWith({
+      where: { id: "group_1" },
     });
-    expect(result.id).toBe("unit_1");
+    expect(result.id).toBe("group_1");
   });
 });
