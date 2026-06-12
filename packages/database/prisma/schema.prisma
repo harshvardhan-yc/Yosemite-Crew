@@ -525,6 +525,9 @@ model Appointment {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
+  caseRecord        Case?             @relation("CaseAppointments", fields: [caseId], references: [id], onDelete: SetNull)
+  encounter         Encounter?        @relation("EncounterAppointments", fields: [encounterId], references: [id], onDelete: SetNull)
+
   @@index([organisationId, appointmentDate])
   @@index([organisationId])
   @@index([organisationId, productItemId])
@@ -533,6 +536,75 @@ model Appointment {
   @@index([status])
   @@index([expiresAt])
   @@unique([organisationId, idempotencyKey])
+}
+
+model Case {
+  id              String          @id @default(uuid())
+  organisationId  String
+  companionId     String
+  parentId        String?
+  status          String
+  appointmentKind AppointmentKind @default(OUTPATIENT)
+  title           String?
+  description     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  appointments    Appointment[]   @relation("CaseAppointments")
+  encounters      Encounter[]
+
+  @@index([organisationId, status])
+  @@index([organisationId, appointmentKind])
+  @@index([companionId])
+  @@index([parentId])
+}
+
+model Encounter {
+  id              String          @id @default(uuid())
+  caseId          String
+  organisationId  String
+  companionId     String
+  parentId        String?
+  status          String
+  encounterClass  String
+  appointmentKind AppointmentKind @default(OUTPATIENT)
+  title           String?
+  reason          String?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  caseRecord      Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  appointments    Appointment[]   @relation("EncounterAppointments")
+  admission       Admission?
+  unitAssignments RoomUnitAssignment[]
+
+  @@index([caseId])
+  @@index([organisationId, status])
+  @@index([organisationId, appointmentKind])
+  @@index([companionId])
+  @@index([parentId])
+}
+
+model Admission {
+  encounterId       String   @id
+  organisationId    String
+  companionId       String
+  unitId            String?
+  expectedStayDays  Int?
+  admittedAt        DateTime
+  dischargedAt      DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  encounter         Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  currentUnit       RoomUnit? @relation("AdmissionCurrentUnit", fields: [unitId], references: [id], onDelete: SetNull)
+  assignments       RoomUnitAssignment[]
+
+  @@index([organisationId, admittedAt])
+  @@index([organisationId, dischargedAt])
+  @@index([companionId])
 }
 
 model ChatSession {
@@ -660,6 +732,8 @@ model User {
   lastName  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  roomStaffLinks OrganisationRoomStaff[]
 }
 
 model UserProfile {
@@ -759,10 +833,30 @@ enum OrgDocumentVisibility {
 }
 
 enum RoomType {
-  CONSULTATION
-  WAITING_AREA
+  EXAM_ROOM
+  TREATMENT
   SURGERY
+  DENTAL
+  IMAGING
+  WAITING
+  GROOMING
   ICU
+  INPATIENT
+  ISOLATION
+  BOARDING
+  RECEPTION
+  CONSULTATION
+}
+
+enum RoomOccupancyStatus {
+  VACANT
+  OCCUPIED
+}
+
+enum RoomAvailabilityMode {
+  WORKING_HOURS
+  ALL_DAY
+  CUSTOM
 }
 
 enum OrganisationInviteEmploymentType {
@@ -861,18 +955,133 @@ model OrganizationDocument {
 }
 
 model OrganisationRoom {
-  id                   String   @id @default(uuid())
-  fhirId               String?
-  organisationId       String
-  name                 String
-  type                 RoomType
-  assignedSpecialiteis String[]
-  assignedStaffs       String[]
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                    String                @id @default(uuid())
+  organisationId        String
+  name                  String
+  code                  String
+  description           String?
+  type                  RoomType
+  occupancyStatus       RoomOccupancyStatus   @default(VACANT)
+  availableNow          Boolean               @default(true)
+  availabilityMode      RoomAvailabilityMode  @default(ALL_DAY)
+  availabilityDays      String[]              @default([])
+  availabilityStartTime  String?
+  availabilityEndTime    String?
+  capabilities          String[]              @default([])
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
-  @@index([fhirId])
+  units                 RoomUnit[]
+  unitGroups            RoomUnitGroup[]
+  specialityLinks       OrganisationRoomSpeciality[]
+  staffLinks            OrganisationRoomStaff[]
+
+  @@unique([organisationId, code])
   @@index([organisationId])
+  @@index([organisationId, type])
+}
+
+model OrganisationRoomSpeciality {
+  id             String   @id @default(uuid())
+  organisationId String
+  roomId         String
+  specialityId   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  room           OrganisationRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  speciality     Speciality       @relation(fields: [specialityId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, specialityId])
+  @@index([organisationId])
+  @@index([roomId])
+  @@index([specialityId])
+}
+
+model OrganisationRoomStaff {
+  id             String   @id @default(uuid())
+  organisationId String
+  roomId         String
+  staffUserId    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  room           OrganisationRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  staff          User             @relation(fields: [staffUserId], references: [userId], onDelete: Cascade)
+
+  @@unique([roomId, staffUserId])
+  @@index([organisationId])
+  @@index([roomId])
+  @@index([staffUserId])
+}
+
+model RoomUnit {
+  id                 String   @id @default(uuid())
+  organisationId     String
+  roomId             String
+  unitGroupId        String?
+  code               String
+  displayName        String
+  size               String?
+  speciesConstraints Json?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  room               OrganisationRoom     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  unitGroup          RoomUnitGroup?       @relation(fields: [unitGroupId], references: [id], onDelete: SetNull)
+  currentAdmissions  Admission[]          @relation("AdmissionCurrentUnit")
+  assignments        RoomUnitAssignment[]
+
+  @@unique([roomId, code])
+  @@index([organisationId])
+  @@index([roomId])
+  @@index([unitGroupId])
+  @@index([organisationId, isActive])
+}
+
+model RoomUnitGroup {
+  id                  String   @id @default(uuid())
+  organisationId      String
+  roomId              String
+  name                String
+  size                String?
+  unitCount           Int      @default(0)
+  speciesConstraints   Json?
+  capabilities        String[] @default([])
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  room                OrganisationRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  units               RoomUnit[]
+
+  @@index([organisationId])
+  @@index([roomId])
+  @@index([isActive])
+  @@unique([roomId, name])
+}
+
+model RoomUnitAssignment {
+  id           String   @id @default(uuid())
+  encounterId  String
+  admissionId  String
+  unitId       String
+  assignedAt   DateTime
+  releasedAt   DateTime?
+  assignedBy   String?
+  reason       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  encounter    Encounter  @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  admission    Admission  @relation(fields: [admissionId], references: [encounterId], onDelete: Cascade)
+  unit         RoomUnit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId, assignedAt])
+  @@index([admissionId, assignedAt])
+  @@index([unitId, assignedAt])
+  @@index([releasedAt])
 }
 
 model OrganisationInvite {
@@ -1721,6 +1930,8 @@ model Speciality {
   isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+
+  roomLinks          OrganisationRoomSpeciality[]
 
   @@index([organisationId])
   @@index([organisationId, isActive])

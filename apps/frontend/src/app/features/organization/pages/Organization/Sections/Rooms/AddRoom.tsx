@@ -12,7 +12,7 @@ import {
 } from '@/app/features/organization/pages/Organization/types';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
-import { OrganisationRoom } from '@yosemite-crew/types';
+import { OrganisationRoom, RoomReferenceMapping } from '@yosemite-crew/types';
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import { useSpecialitiesForPrimaryOrg } from '@/app/hooks/useSpecialities';
 import { createRoom } from '@/app/features/organization/services/roomService';
@@ -35,8 +35,10 @@ type RoomUnitDraft = {
   occupied?: boolean;
 };
 
-type RoomFormData = OrganisationRoom & {
+type RoomFormData = Omit<OrganisationRoom, 'assignedSpecialiteis' | 'assignedStaffs'> & {
   code: string;
+  assignedSpecialiteis: string[];
+  assignedStaffs: string[];
   availability: {
     isAvailable: boolean;
     days: string;
@@ -76,6 +78,17 @@ const buildRoomId = () => `room-${Date.now()}`;
 
 const getTotalUnits = (units: RoomUnitDraft[], fallback: number) =>
   units.length ? units.reduce((total, unit) => total + unit.count, 0) : fallback;
+
+const toOptionMap = (options: { label: string; value: string }[]) =>
+  Object.fromEntries(options.map((option) => [option.value, option.label]));
+
+const toReferenceMappings = (ids: string[], byId: Record<string, string>): RoomReferenceMapping[] =>
+  ids
+    .map((id) => {
+      const name = byId[id];
+      return name ? { id, name } : undefined;
+    })
+    .filter((entry): entry is RoomReferenceMapping => Boolean(entry));
 
 const SectionHeader = ({
   title,
@@ -178,6 +191,8 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
     () => Array.from(new Set([...RoomEquipmentOptions, ...formData.equipment])),
     [formData.equipment]
   );
+  const specialitiesById = useMemo(() => toOptionMap(SpecialitiesOptions), [SpecialitiesOptions]);
+  const teamsById = useMemo(() => toOptionMap(TeamOptions), [TeamOptions]);
 
   const isDirty =
     JSON.stringify(formData) !== JSON.stringify(INITIAL_FORM_DATA) ||
@@ -255,7 +270,8 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
     setSaving(true);
     try {
       const totalUnits = getTotalUnits(formData.units, formData.availability.totalUnits);
-      const roomPayload: RoomFormData = {
+      const roomPayload: OrganisationRoom &
+        Pick<RoomFormData, 'availability' | 'unitCount' | 'units' | 'equipment'> = {
         ...formData,
         id: formData.id || buildRoomId(),
         unitCount: totalUnits,
@@ -263,6 +279,14 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
           ...formData.availability,
           totalUnits,
         },
+        assignedSpecialiteis: toReferenceMappings(formData.assignedSpecialiteis, specialitiesById),
+        assignedStaffs: toReferenceMappings(formData.assignedStaffs, teamsById),
+        availableNow: formData.availability.isAvailable,
+        availabilityMode: 'CUSTOM',
+        availabilityDays: [formData.availability.days],
+        availabilityStartTime: formData.availability.startTime,
+        availabilityEndTime: formData.availability.endTime,
+        capabilities: formData.equipment,
       };
       await createRoom(roomPayload);
       notify('success', {

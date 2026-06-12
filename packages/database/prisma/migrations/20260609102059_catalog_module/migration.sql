@@ -23,13 +23,13 @@ CREATE TYPE "ProductKind" AS ENUM ('CONSULTATION', 'PROCEDURE', 'DIAGNOSTIC', 'M
 CREATE TYPE "PackageItemPricingMode" AS ENUM ('INCLUDED', 'INHERITED_PRICE', 'OVERRIDE_PRICE');
 
 -- DropForeignKey
-ALTER TABLE "EnterpriseMembership" DROP CONSTRAINT "EnterpriseMembership_enterpriseId_fkey";
+ALTER TABLE public."EnterpriseMembership" DROP CONSTRAINT "EnterpriseMembership_enterpriseId_fkey";
 
 -- DropForeignKey
-ALTER TABLE "Tenant" DROP CONSTRAINT "Tenant_enterpriseId_fkey";
+ALTER TABLE public."Tenant" DROP CONSTRAINT "Tenant_enterpriseId_fkey";
 
 -- DropForeignKey
-ALTER TABLE "TenantMembership" DROP CONSTRAINT "TenantMembership_tenantId_fkey";
+ALTER TABLE public."TenantMembership" DROP CONSTRAINT "TenantMembership_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "auth_challenges" DROP CONSTRAINT "auth_challenges_authAccountId_fkey";
@@ -54,16 +54,16 @@ ADD COLUMN     "productItemId" TEXT;
 ALTER TABLE "Speciality" ADD COLUMN     "isActive" BOOLEAN NOT NULL DEFAULT true;
 
 -- DropTable
-DROP TABLE "Enterprise";
+DROP TABLE public."Enterprise";
 
 -- DropTable
-DROP TABLE "EnterpriseMembership";
+DROP TABLE public."EnterpriseMembership";
 
 -- DropTable
-DROP TABLE "Tenant";
+DROP TABLE public."Tenant";
 
 -- DropTable
-DROP TABLE "TenantMembership";
+DROP TABLE public."TenantMembership";
 
 -- DropTable
 DROP TABLE "auth_accounts";

@@ -19,7 +19,7 @@ import {
   RoomsTypes,
   RoomUnitSizeOptions,
 } from '@/app/features/organization/pages/Organization/types';
-import { OrganisationRoom } from '@yosemite-crew/types';
+import { OrganisationRoom, RoomReferenceMapping } from '@yosemite-crew/types';
 import React, { useMemo, useRef, useState } from 'react';
 import { FiCheck, FiChevronDown, FiEdit2, FiPlus, FiTrash2 } from 'react-icons/fi';
 
@@ -31,8 +31,10 @@ type RoomUnitDetails = {
   occupied?: boolean;
 };
 
-type ManagedRoom = OrganisationRoom & {
+type ManagedRoom = Omit<OrganisationRoom, 'assignedSpecialiteis' | 'assignedStaffs'> & {
   code?: string;
+  assignedSpecialiteis?: string[];
+  assignedStaffs?: string[];
   availability?: {
     isAvailable?: boolean;
     days?: string;
@@ -45,6 +47,11 @@ type ManagedRoom = OrganisationRoom & {
   units?: RoomUnitDetails[];
   equipment?: string[];
   archived?: boolean;
+};
+
+type RoomFormInput = Omit<ManagedRoom, 'assignedSpecialiteis' | 'assignedStaffs'> & {
+  assignedSpecialiteis?: RoomReferenceMapping[] | string[];
+  assignedStaffs?: RoomReferenceMapping[] | string[];
 };
 
 type RoomInfoProps = {
@@ -94,6 +101,25 @@ const normalizeSpeciesValues = (value?: string | string[]) => {
   return [value];
 };
 
+const normalizeReferenceIds = (values?: RoomReferenceMapping[] | string[]) =>
+  (values ?? [])
+    .map((value) => (typeof value === 'string' ? value : value.id))
+    .filter((value): value is string => Boolean(value));
+
+const toOptionMap = (options: { label: string; value: string }[]) =>
+  Object.fromEntries(options.map((option) => [option.value, option.label]));
+
+const toReferenceMappings = (
+  ids: string[] | undefined,
+  byId: Record<string, string>
+): RoomReferenceMapping[] =>
+  (ids ?? [])
+    .map((id) => {
+      const name = byId[id];
+      return name ? { id, name } : undefined;
+    })
+    .filter((entry): entry is RoomReferenceMapping => Boolean(entry));
+
 const getUnitCount = (unit: Partial<RoomUnitDetails>) => {
   const count = Number(unit.count ?? 1);
   return Number.isFinite(count) ? count : 1;
@@ -102,11 +128,11 @@ const getUnitCount = (unit: Partial<RoomUnitDetails>) => {
 const sumUnitCounts = (units: Array<Partial<RoomUnitDetails>> | undefined) =>
   units?.reduce((total, unit) => total + getUnitCount(unit), 0) ?? 0;
 
-const getRoomForm = (room: ManagedRoom): ManagedRoom => ({
+const getRoomForm = (room: RoomFormInput): ManagedRoom => ({
   ...room,
   code: room.code ?? room.id ?? '',
-  assignedSpecialiteis: room.assignedSpecialiteis ?? [],
-  assignedStaffs: room.assignedStaffs ?? [],
+  assignedSpecialiteis: normalizeReferenceIds(room.assignedSpecialiteis),
+  assignedStaffs: normalizeReferenceIds(room.assignedStaffs),
   availability: {
     ...DEFAULT_AVAILABILITY,
     ...(room.availability ?? {}),
@@ -292,18 +318,9 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
     [specialities]
   );
 
-  const staffNameById = useMemo(
-    () => Object.fromEntries(TeamOptions.map((team) => [team.value, team.label])),
-    [TeamOptions]
-  );
+  const staffNameById = useMemo(() => toOptionMap(TeamOptions), [TeamOptions]);
 
-  const specialityNameById = useMemo(
-    () =>
-      Object.fromEntries(
-        SpecialitiesOptions.map((speciality) => [speciality.value, speciality.label])
-      ),
-    [SpecialitiesOptions]
-  );
+  const specialityNameById = useMemo(() => toOptionMap(SpecialitiesOptions), [SpecialitiesOptions]);
 
   const equipmentOptions = useMemo(
     () => Array.from(new Set([...RoomEquipmentOptions, ...(formData.equipment ?? [])])),
@@ -383,13 +400,25 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
   const handleUpdate = async () => {
     setSaving(true);
     try {
-      const payload: ManagedRoom = {
+      const payload: OrganisationRoom &
+        Pick<ManagedRoom, 'availability' | 'unitCount' | 'units' | 'equipment'> = {
         ...formData,
         unitCount: totalUnits,
         availability: {
           ...(formData.availability ?? DEFAULT_AVAILABILITY),
           totalUnits,
         },
+        assignedSpecialiteis: toReferenceMappings(
+          formData.assignedSpecialiteis,
+          specialityNameById
+        ),
+        assignedStaffs: toReferenceMappings(formData.assignedStaffs, staffNameById),
+        availableNow: formData.availability?.isAvailable ?? true,
+        availabilityMode: 'CUSTOM',
+        availabilityDays: formData.availability?.days ? [formData.availability.days] : undefined,
+        availabilityStartTime: formData.availability?.startTime,
+        availabilityEndTime: formData.availability?.endTime,
+        capabilities: formData.equipment,
       };
       await updateRoom(payload);
       notify('success', {

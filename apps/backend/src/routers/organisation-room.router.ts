@@ -36,6 +36,30 @@ router.get(
   OrganisationRoomController.getAllByOrganizationId,
 );
 
+router.get(
+  "/organization/:organizationId/:id",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("room:view:any"),
+  OrganisationRoomController.getById,
+);
+
+router.get(
+  "/organization/:organizationId/summary",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("room:view:any"),
+  OrganisationRoomController.getAllByOrganizationId,
+);
+
+router.patch(
+  "/organization/:organizationId/:id/availability",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("room:edit:any"),
+  OrganisationRoomController.toggleAvailability,
+);
+
 // Delete room
 router.delete(
   "/:id",

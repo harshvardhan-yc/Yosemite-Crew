@@ -2,6 +2,7 @@ import {
   IntegrationService,
   IntegrationServiceError,
 } from "../../src/services/integration.service";
+import IntegrationAccountModel from "../../src/models/integration-account";
 import { prisma } from "../../src/config/prisma";
 import { isReadFromPostgres } from "../../src/config/read-switch";
 import { getIntegrationAdapter } from "../../src/integrations";
@@ -23,6 +24,23 @@ jest.mock("../../src/config/prisma", () => ({
   },
 }));
 
+jest.mock("../../src/models/integration-account", () => {
+  const ctor: any = jest.fn().mockImplementation((doc) => ({
+    ...doc,
+    save: jest.fn().mockResolvedValue(undefined),
+    toJSON: jest.fn().mockImplementation(() => ({ ...doc, id: "mongo-id" })),
+  }));
+  ctor.findOne = jest.fn();
+  ctor.findMany = jest.fn();
+  ctor.find = jest.fn();
+  ctor.findOneAndUpdate = jest.fn();
+  ctor.updateOne = jest.fn();
+  return {
+    __esModule: true,
+    default: ctor,
+  };
+});
+
 jest.mock("../../src/integrations", () => {
   const actual = jest.requireActual("../../src/integrations");
   return {
@@ -34,6 +52,18 @@ jest.mock("../../src/integrations", () => {
 describe("IntegrationService", () => {
   const readSwitch = isReadFromPostgres as jest.Mock;
   const adapter = { validateCredentials: jest.fn() };
+  const mockedModel = IntegrationAccountModel as any;
+
+  const makeLeanQuery = (result: unknown): any => ({
+    setOptions: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(result),
+  });
+
+  const makeDocQuery = (result: unknown): any => ({
+    setOptions: jest.fn().mockResolvedValue(result),
+  });
 
   beforeEach(() => {
     jest.restoreAllMocks();
@@ -41,6 +71,10 @@ describe("IntegrationService", () => {
     readSwitch.mockReturnValue(true);
     (getIntegrationAdapter as jest.Mock).mockReturnValue(adapter);
     adapter.validateCredentials.mockResolvedValue({ ok: true });
+    mockedModel.findOne.mockReturnValue(makeLeanQuery(null));
+    mockedModel.findMany.mockReturnValue(makeLeanQuery([]));
+    mockedModel.findOneAndUpdate.mockResolvedValue(null);
+    mockedModel.updateOne.mockResolvedValue({ acknowledged: true });
   });
 
   it("rejects unsupported providers", () => {
@@ -136,5 +170,88 @@ describe("IntegrationService", () => {
     await expect(
       IntegrationService.requireAccount("org-1", "IDEXX"),
     ).rejects.toThrow("Integration not found.");
+  });
+
+  it("rejects invalid organisation ids and blank providers", async () => {
+    expect(() => IntegrationService.ensureProvider("   ")).toThrow(
+      IntegrationServiceError,
+    );
+    await expect(
+      IntegrationService.listForOrganisation("bad.id"),
+    ).rejects.toThrow("Invalid organisationId.");
+  });
+
+  it("creates and lists merck accounts on the mongo path", async () => {
+    readSwitch.mockReturnValue(false);
+    mockedModel.find.mockReturnValue(
+      makeLeanQuery([{ provider: "IDEXX" } as any]),
+    );
+    mockedModel.findOne.mockReturnValueOnce(makeLeanQuery(null));
+    mockedModel.findOne.mockReturnValueOnce(
+      makeLeanQuery({
+        provider: "MERCK_MANUALS",
+      }),
+    );
+
+    const list = (await IntegrationService.listForOrganisation(
+      "org_1",
+    )) as any[];
+
+    expect(list.map((item) => item.provider)).toEqual([
+      "IDEXX",
+      "MERCK_MANUALS",
+    ]);
+    expect(mockedModel.find).toHaveBeenCalled();
+  });
+
+  it("upserts mongo credentials and marks account disabled before validation", async () => {
+    readSwitch.mockReturnValue(false);
+    mockedModel.findOneAndUpdate.mockResolvedValue({
+      organisationId: "org_1",
+      provider: "IDEXX",
+      status: "disabled",
+      toJSON: () => ({ id: "mongo-upsert" }),
+    });
+
+    const result = await IntegrationService.upsertCredentials(
+      "org_1",
+      "IDEXX",
+      { username: "u", password: "p" } as any,
+    );
+
+    expect(result).toEqual({ id: "mongo-upsert" });
+    expect(getIntegrationAdapter).toHaveBeenCalledWith("IDEXX");
+    expect(adapter.validateCredentials).toHaveBeenCalled();
+  });
+
+  it("creates merck accounts on the mongo path when enabling and disabling", async () => {
+    readSwitch.mockReturnValue(false);
+    mockedModel.findOne
+      .mockReturnValueOnce(makeDocQuery(null))
+      .mockReturnValueOnce(makeDocQuery(null));
+
+    const enabledMerck = await IntegrationService.setEnabled(
+      "org_1",
+      "MERCK_MANUALS",
+    );
+    const disabledMerck = await IntegrationService.setDisabled(
+      "org_1",
+      "MERCK_MANUALS",
+    );
+
+    expect(enabledMerck).toMatchObject({
+      provider: "MERCK_MANUALS",
+      status: "enabled",
+    });
+    expect(disabledMerck).toMatchObject({
+      provider: "MERCK_MANUALS",
+      status: "disabled",
+    });
+  });
+
+  it("short-circuits merck credential validation", async () => {
+    expect(
+      await IntegrationService.validateCredentials("org_1", "MERCK_MANUALS"),
+    ).toEqual({ ok: true });
   });
 });
