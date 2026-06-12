@@ -332,10 +332,10 @@ describe('Inventory Page', () => {
     render(<ProtectedInventory />);
 
     expect(screen.getByRole('button', { name: 'Inventory info' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Stock' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Turnover' })).toBeInTheDocument();
-    expect(screen.getByTestId('add-btn')).toBeInTheDocument();
-    expect(screen.getByTestId('inventory-filters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Filter' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort by' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add item' })).toBeInTheDocument();
     expect(screen.getByTestId('inventory-table')).toBeInTheDocument();
     expect(screen.queryByTestId('turnover-filters')).not.toBeInTheDocument();
     expect(screen.queryByTestId('turnover-table')).not.toBeInTheDocument();
@@ -344,7 +344,6 @@ describe('Inventory Page', () => {
 
     expect(screen.getByTestId('turnover-filters')).toBeInTheDocument();
     expect(screen.getByTestId('turnover-table')).toBeInTheDocument();
-    expect(screen.queryByTestId('inventory-filters')).not.toBeInTheDocument();
     expect(screen.queryByTestId('inventory-table')).not.toBeInTheDocument();
   });
 
@@ -412,9 +411,10 @@ describe('Inventory Page', () => {
 
   it('filters inventory by category', async () => {
     render(<ProtectedInventory />);
-    const catSelect = screen.getByTestId('category-select');
 
-    fireEvent.change(catSelect, { target: { value: 'Medicine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Medicine' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('item-1')).toBeInTheDocument();
@@ -424,9 +424,10 @@ describe('Inventory Page', () => {
 
   it('filters inventory by status', async () => {
     render(<ProtectedInventory />);
-    const statusSelect = screen.getByTestId('status-select');
 
-    fireEvent.change(statusSelect, { target: { value: 'ACTIVE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Visible' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     await waitFor(() => {
       expect(screen.getByTestId('item-1')).toBeInTheDocument();
       expect(screen.queryByTestId('item-2')).not.toBeInTheDocument();
@@ -435,9 +436,10 @@ describe('Inventory Page', () => {
 
   it('filters inventory by stock health (Special Status Filter)', async () => {
     render(<ProtectedInventory />);
-    const stockHealthSelect = screen.getByTestId('stock-health-select');
 
-    fireEvent.change(stockHealthSelect, { target: { value: 'Low Stock' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'low stock' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     await waitFor(() => {
       expect(screen.queryByTestId('item-1')).not.toBeInTheDocument();
       expect(screen.getByTestId('item-2')).toBeInTheDocument();
@@ -449,7 +451,7 @@ describe('Inventory Page', () => {
   it('opens add modal on button click', () => {
     render(<ProtectedInventory />);
     expect(screen.queryByTestId('add-modal')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('add-btn'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }));
     expect(screen.getByTestId('add-modal')).toBeInTheDocument();
   });
 
@@ -505,7 +507,7 @@ describe('Inventory Page', () => {
     });
     render(<ProtectedInventory />);
 
-    fireEvent.click(screen.getByTestId('add-btn'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }));
     fireEvent.click(screen.getByTestId('submit-add'));
 
     await waitFor(() => {
@@ -523,7 +525,7 @@ describe('Inventory Page', () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     render(<ProtectedInventory />);
-    const btn = screen.getByTestId('add-btn');
+    const btn = screen.getByRole('button', { name: 'Add item' });
     expect(btn).toBeDisabled();
 
     // Cleanup before re-rendering for the error test part
@@ -539,7 +541,7 @@ describe('Inventory Page', () => {
     render(<ProtectedInventory />);
 
     mockCreateItem.mockRejectedValue(new Error('API Fail'));
-    fireEvent.click(screen.getByTestId('add-btn'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }));
     fireEvent.click(screen.getByTestId('submit-add'));
 
     await waitFor(() => {

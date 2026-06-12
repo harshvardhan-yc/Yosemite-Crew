@@ -642,6 +642,11 @@ describe('Inventory Utils', () => {
   it('exports correct defaultFilters', () => {
     expect(defaultFilters).toEqual({
       category: 'all',
+      categories: [],
+      subCategories: [],
+      locations: [],
+      abcClasses: [],
+      suppliers: [],
       status: 'ALL',
       visibility: 'ALL',
       search: '',

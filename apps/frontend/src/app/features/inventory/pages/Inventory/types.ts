@@ -2,7 +2,13 @@ import { BusinessType } from '@/app/features/organization/types/org';
 
 export type InventoryStatus = 'ACTIVE' | 'HIDDEN';
 
-export type StockHealthStatus = 'HEALTHY' | 'LOW_STOCK' | 'EXPIRED' | 'EXPIRING_SOON';
+export type StockHealthStatus =
+  | 'HEALTHY'
+  | 'LOW_STOCK'
+  | 'EXPIRED'
+  | 'EXPIRING_SOON'
+  | 'OUT_OF_STOCK'
+  | 'OVERSTOCKED';
 
 export type InventoryBatchApi = {
   batchNumber?: string;
@@ -146,8 +152,11 @@ export const CategoryOptionsByBusiness: Record<BusinessType, string[]> = {
 };
 export const SubCategoryOptions: string[] = [
   'Accessories',
+  'Analgesic',
   'Antibiotic',
+  'Antibiotics',
   'Anti-inflammatory',
+  'NSAIDs',
   'Dewormer',
   'Painkiller',
   'Antifungal',
@@ -174,6 +183,7 @@ export const SubCategoryOptions: string[] = [
   'Dental care',
   'Nutritional',
   'Orthopedic support',
+  'Surgical glove',
 ];
 export const DepartmentOptions: string[] = [
   'Veterinary',
@@ -223,11 +233,18 @@ export const IntendedUsageOptions: Record<BusinessType, string[]> = {
 };
 
 // Hospital
-export const ItemTypeOptions: string[] = ['Drug', 'No-drug'];
+export const ItemTypeOptions: string[] = ['Drug', 'Non-drug'];
+export const DrugScheduleOptions: string[] = [
+  'Schedule II',
+  'Schedule III',
+  'Schedule IV',
+  'Schedule V',
+  'Non-scheduled',
+];
 export const PrescriptionRequiredOptions: string[] = ['Yes', 'No'];
 export const RegulationTypeOptions: string[] = ['Controlled', 'Non-controlled'];
 export const StorageConditionOptions: string[] = [
-  'Room temp',
+  'Room temperature',
   'Refrigerated',
   'Freezer',
   'Cold chain (2-8°C)',
@@ -269,9 +286,13 @@ export type BasicInfoValues = {
   department: string;
   description: string;
   status: string;
+  brand?: string;
+  imageUrl?: string;
+  visibleInInventory?: boolean;
 
   // Hospital
   itemType?: string;
+  drugSchedule?: string;
   prescriptionRequired?: string;
   regulationType?: string;
   storageCondition?: string;
@@ -298,48 +319,47 @@ export type BasicInfoValues = {
 export const FormOptions = [
   'Tablet',
   'Capsule',
-  'Ointment',
-  'Powder',
+  'Injection',
   'Liquid',
   'Solution',
+  'Suspension',
+  'Ointment',
+  'Cream',
+  'Powder',
   'Spray',
   'Wipe',
-  'Treat',
   'Food pack',
+  'Kit',
+  'Device',
   'Other',
 ];
 export const UnitOptions = [
-  'tablets',
-  'ml',
-  'gms',
-  'kg',
-  'piece',
-  'pack',
-  'litre',
-  'bag',
-  'roll',
-  'box',
-  'pair',
-  'sheet',
-  'cartridge',
-  'can',
-  'jar',
+  'mg',
+  'mcg',
+  'g',
+  'mL',
+  'mg/mL',
+  'mcg/mL',
+  'IU',
+  'IU/mL',
+  '%',
+  'dose',
+  'Not applicable',
 ];
 export const SpeciesOptions = ['Canine', 'Feline', 'Equine'];
 export const AdminstrationOptions = [
   'Oral',
   'Topical',
   'Injectable',
-  'Rectal',
   'Ophthalmic',
-  'Inhalation',
   'Otic',
-  'Sublingual',
-  'Buccal',
   'Intranasal',
+  'Inhalation',
+  'Rectal',
   'IV',
   'IM',
   'SC',
+  'Not applicable',
 ];
 // Hospital
 export const TherapeuticOptions = [
@@ -424,6 +444,12 @@ export type ClassificationValues = {
   unitofMeasure?: string | string[];
   species?: string | string[];
   administration?: string;
+  itemType?: string;
+  drugSchedule?: string;
+  storageCondition?: string;
+  controlledSubstance?: string;
+  prescriptionRequired?: string;
+  reportableToGovernment?: string;
 
   // Hospital
   therapeuticClass?: string;
@@ -497,14 +523,27 @@ export const StockLocationOptions = [
   'Isolation ward',
 ];
 export const StockTypeOptions = ['Central store', 'Pharmacy', 'Surgery', 'Lab', 'Cold storage'];
+export const AbcClassOptions = ['Class A', 'Class B', 'Class C'];
+export const WithdrawalPeriodOptions = [
+  'Not applicable',
+  '24 hours',
+  '48 hours',
+  '7 days',
+  '14 days',
+  '30 days',
+];
+export const ExpiryWarningOptions = ['2 weeks', '1 month', '3 months', '6 months'];
 
 export type StockValues = {
   current: string;
   allocated: string;
   available: string;
+  maxStock?: string;
   reorderLevel: string;
   reorderQuantity: string;
   stockLocation: string;
+  abcClass?: string;
+  withdrawlPeriod?: string;
   minStockAlert?: string;
 
   // Hospital
@@ -516,6 +555,8 @@ export type BatchValues = {
   batch: string;
   manufactureDate: string;
   expiryDate: string;
+  expiryWarningBefore?: string;
+  barcode?: string;
   nextRefillDate?: string;
   quantity?: string;
   allocated?: string;
@@ -556,6 +597,11 @@ export interface InventoryItem {
 
 export type InventoryFiltersState = {
   category: string;
+  categories: string[];
+  subCategories: string[];
+  locations: string[];
+  abcClasses: string[];
+  suppliers: string[];
   visibility: 'ALL' | 'ACTIVE' | 'HIDDEN';
   status: string;
   search: string;

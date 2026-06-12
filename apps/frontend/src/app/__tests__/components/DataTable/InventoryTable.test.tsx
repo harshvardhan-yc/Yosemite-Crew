@@ -38,7 +38,11 @@ jest.mock('@/app/ui/tables/GenericTable/GenericTable', () => ({
 
 jest.mock('@/app/features/inventory/pages/Inventory/utils', () => ({
   displayStatusLabel: () => 'Healthy',
+  formatCurrencyValue: (value: string | number) => `$ ${value}`,
   formatDisplayDate: () => '01 Jan 2025',
+  formatPercentValue: () => '50%',
+  getAvailableStock: () => 2,
+  getMarginPercent: () => 50,
   getStatusBadgeStyle: () => ({ backgroundColor: '#000', color: '#fff' }),
 }));
 
@@ -79,7 +83,7 @@ describe('InventoryTable', () => {
     expect(tableScope.getByText('2 units')).toBeInTheDocument();
     expect(tableScope.getByText('$ 5')).toBeInTheDocument();
     expect(tableScope.getByText('$ 10')).toBeInTheDocument();
-    expect(tableScope.getByText('$ 20')).toBeInTheDocument();
+    expect(tableScope.getByText('50%')).toBeInTheDocument();
     expect(tableScope.getByText('01 Jan 2025')).toBeInTheDocument();
     expect(tableScope.getByText('Shelf A')).toBeInTheDocument();
     expect(tableScope.getByText('Healthy')).toBeInTheDocument();

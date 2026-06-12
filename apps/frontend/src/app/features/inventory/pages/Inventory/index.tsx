@@ -4,14 +4,14 @@ import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import PageSkeleton from '@/app/ui/layout/PageSkeleton';
-import { Primary } from '@/app/ui/primitives/Buttons';
-import InventoryFilters from '@/app/ui/filters/InventoryFilters';
 import InventoryTurnoverFilters from '@/app/ui/filters/InventoryTurnoverFilters';
 import {
+  AbcClassOptions,
   CategoryOptionsByBusiness,
   InventoryFiltersState,
   InventoryItem,
   InventoryTurnoverItem,
+  SubCategoryOptions,
 } from '@/app/features/inventory/pages/Inventory/types';
 import { defaultFilters } from '@/app/features/inventory/pages/Inventory/utils';
 import { BusinessType, BusinessTypes } from '@/app/features/organization/types/org';
@@ -27,9 +27,11 @@ import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import Fallback from '@/app/ui/overlays/Fallback';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { IoInformationCircleOutline } from 'react-icons/io5';
-import BoardScopeToggle from '@/app/ui/primitives/BoardScopeToggle/BoardScopeToggle';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
 import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
+import Modal from '@/app/ui/overlays/Modal';
+import { Primary } from '@/app/ui/primitives/Buttons';
+import { FiCheck, FiFilter, FiPlus, FiSearch, FiSliders, FiX } from 'react-icons/fi';
 
 const INVENTORY_PAGE_SKELETON = <PageSkeleton variant="list" />;
 
@@ -51,6 +53,27 @@ const InventoryInfo = dynamic(() =>
 );
 
 type InventoryView = 'inventory' | 'turnover';
+
+const hospitalCategorySubcategories: Record<string, string[]> = {
+  Medicine: ['Antibiotics', 'NSAIDs', 'Analgesic', 'Anti-inflammatory'],
+  'Surgical supply': ['Surgical glove', 'Sutures', 'Scalpel', 'Mask & gloves'],
+  Consumable: ['Bandage', 'IV Line', 'Syringe', 'Cannula', 'Catheter'],
+  Vaccine: ['Vaccine'],
+  'IV/Fluid therapy': ['Fluid set'],
+  'Diagnostic kit': ['Ophthalmic', 'Otic', 'Dermatology'],
+  Laboratory: ['Kit'],
+  Food: ['Food pack', 'Nutritional'],
+  Supplement: ['Vitamin', 'Probiotic', 'Mineral Mix'],
+  Equipment: ['Device', 'Orthopedic support'],
+  'Cleaning supply': ['Disinfectant wipes', 'Sterilization pouch'],
+  'Imaging consumable': ['Kit'],
+};
+
+const toggleArrayValue = (values: string[], value: string) =>
+  values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+
+const getSupplierName = (item: InventoryItem) =>
+  (item.vendor?.supplierName || item.vendor?.vendor || '').trim();
 
 const Inventory = () => {
   useLoadOrg();
@@ -79,10 +102,12 @@ const Inventory = () => {
   const [filteredTurnoverList, setFilteredTurnoverList] = useState<InventoryTurnoverItem[]>([]);
   const [addPopup, setAddPopup] = useState(false);
   const [viewInventory, setViewInventory] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [activeInventory, setActiveInventory] = useState<InventoryItem | null>(null);
   const [savingItem, setSavingItem] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<InventoryView>('inventory');
+  const [sortMode, setSortMode] = useState<'name' | 'expiry' | 'stock'>('name');
   const { plannerSectionRef } = usePlannerAutoLock({ activeView: 'list', topOffset: 72 });
 
   const loadingList = status === 'loading';
@@ -98,14 +123,17 @@ const Inventory = () => {
   }, [primaryOrgId, orgsById, businessType]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(headerSearchQuery), 300);
+    const timer = setTimeout(() => setDebouncedSearch(filters.search || headerSearchQuery), 300);
     return () => clearTimeout(timer);
-  }, [headerSearchQuery]);
+  }, [headerSearchQuery, filters.search]);
 
-  const categoryOptions = useMemo(
-    () => CategoryOptionsByBusiness[resolvedBusinessType] ?? [],
-    [resolvedBusinessType]
-  );
+  const categoryOptions = useMemo(() => {
+    const configured = CategoryOptionsByBusiness[resolvedBusinessType] ?? [];
+    const fromItems = inventory
+      .map((item) => item.basicInfo.category?.trim())
+      .filter((category): category is string => Boolean(category));
+    return Array.from(new Set([...configured, ...fromItems]));
+  }, [resolvedBusinessType, inventory]);
 
   const stockLocationOptions = useMemo(() => {
     const roomNames = rooms
@@ -113,6 +141,38 @@ const Inventory = () => {
       .filter((name): name is string => Boolean(name));
     return roomNames.length > 0 ? Array.from(new Set(roomNames)) : undefined;
   }, [rooms]);
+
+  const locationFilterOptions = useMemo(() => {
+    const fromItems = inventory
+      .map((item) => item.stock?.stockLocation?.trim())
+      .filter((location): location is string => Boolean(location));
+    return Array.from(new Set([...(stockLocationOptions ?? []), ...fromItems]));
+  }, [inventory, stockLocationOptions]);
+
+  const supplierFilterOptions = useMemo(() => {
+    const suppliers = new Set<string>();
+    inventory.forEach((item) => {
+      const supplier = getSupplierName(item);
+      if (supplier) suppliers.add(supplier);
+    });
+    return Array.from(suppliers);
+  }, [inventory]);
+
+  const categorySubcategoryOptions = useMemo(() => {
+    return categoryOptions.reduce<Record<string, string[]>>((acc, category) => {
+      const configured = hospitalCategorySubcategories[category] ?? [];
+      const fromItems = inventory.reduce<string[]>((subCategories, item) => {
+        const subCategory = item.basicInfo.subCategory?.trim();
+        if (item.basicInfo.category === category && subCategory) {
+          subCategories.push(subCategory);
+        }
+        return subCategories;
+      }, []);
+      const fallback = configured.length > 0 ? configured : SubCategoryOptions.slice(0, 6);
+      acc[category] = Array.from(new Set([...fallback, ...fromItems]));
+      return acc;
+    }, {});
+  }, [categoryOptions, inventory]);
 
   const turnoverCategoryOptions = useMemo(() => {
     return Array.from(
@@ -138,22 +198,71 @@ const Inventory = () => {
     const normalizedSearch = debouncedSearch.trim().toLowerCase();
     const visibilityFilter = (filters.visibility ?? 'ALL').toUpperCase();
     const stockHealthFilter = filters.status.toUpperCase();
+    const selectedCategories = filters.categories ?? [];
+    const selectedSubCategories = filters.subCategories ?? [];
+    const selectedLocations = filters.locations ?? [];
+    const selectedAbcClasses = filters.abcClasses ?? [];
+    const selectedSuppliers = filters.suppliers ?? [];
     const nextFiltered = inventory.filter((item) => {
       const statusKey = (item.status || item.basicInfo.status || '').toUpperCase();
-      const stockHealthKey = (item.stockHealth || '').toUpperCase();
+      const stockHealthKey = (item.stockHealth || '').toUpperCase().replaceAll(' ', '_');
       const categoryMatch =
-        filters.category === 'all' ||
+        (filters.category === 'all' && selectedCategories.length === 0) ||
+        selectedCategories.includes(item.basicInfo.category ?? '') ||
         item.basicInfo.category?.toLowerCase() === filters.category.toLowerCase();
+      const subCategoryMatch =
+        selectedSubCategories.length === 0 ||
+        selectedSubCategories.includes(item.basicInfo.subCategory ?? '');
+      const locationMatch =
+        selectedLocations.length === 0 ||
+        selectedLocations.includes(item.stock?.stockLocation ?? '');
+      const abcClassMatch =
+        selectedAbcClasses.length === 0 || selectedAbcClasses.includes(item.stock?.abcClass ?? '');
+      const supplierMatch =
+        selectedSuppliers.length === 0 || selectedSuppliers.includes(getSupplierName(item));
       const visibilityMatch = visibilityFilter === 'ALL' || statusKey === visibilityFilter;
       const stockHealthMatch = stockHealthFilter === 'ALL' || stockHealthKey === stockHealthFilter;
       const searchMatch =
         !normalizedSearch ||
         item.basicInfo.name.toLowerCase().includes(normalizedSearch) ||
+        item.basicInfo.category?.toLowerCase().includes(normalizedSearch) ||
+        item.basicInfo.subCategory?.toLowerCase().includes(normalizedSearch) ||
+        item.batch?.batch?.toLowerCase().includes(normalizedSearch) ||
         item.basicInfo.description?.toLowerCase().includes(normalizedSearch);
-      return categoryMatch && visibilityMatch && stockHealthMatch && searchMatch;
+      return (
+        categoryMatch &&
+        subCategoryMatch &&
+        locationMatch &&
+        abcClassMatch &&
+        supplierMatch &&
+        visibilityMatch &&
+        stockHealthMatch &&
+        searchMatch
+      );
+    });
+    nextFiltered.sort((a, b) => {
+      if (sortMode === 'expiry') {
+        return String(a.batch.expiryDate || '').localeCompare(String(b.batch.expiryDate || ''));
+      }
+      if (sortMode === 'stock') {
+        return Number(a.stock.current || 0) - Number(b.stock.current || 0);
+      }
+      return a.basicInfo.name.localeCompare(b.basicInfo.name);
     });
     setFilteredInventory(nextFiltered);
-  }, [inventory, filters.category, filters.visibility, filters.status, debouncedSearch]);
+  }, [
+    inventory,
+    filters.category,
+    filters.categories,
+    filters.subCategories,
+    filters.locations,
+    filters.abcClasses,
+    filters.suppliers,
+    filters.visibility,
+    filters.status,
+    debouncedSearch,
+    sortMode,
+  ]);
 
   useEffect(() => {
     setActiveInventory((prev) => {
@@ -280,6 +389,59 @@ const Inventory = () => {
     [inventoryModule]
   );
 
+  const handleRestock = useCallback((item: InventoryItem) => {
+    setActiveInventory(item);
+    setViewInventory(true);
+  }, []);
+
+  const toggleCategoryFilter = useCallback(
+    (category: string) => {
+      setFilters((prev) => {
+        const categories = toggleArrayValue(prev.categories ?? [], category);
+        const categorySubcategories = categorySubcategoryOptions[category] ?? [];
+        const subCategories = categories.includes(category)
+          ? prev.subCategories
+          : prev.subCategories.filter(
+              (subCategory) => !categorySubcategories.includes(subCategory)
+            );
+        return {
+          ...prev,
+          category: categories.length === 1 ? categories[0] : 'all',
+          categories,
+          subCategories,
+        };
+      });
+    },
+    [categorySubcategoryOptions]
+  );
+
+  const toggleListFilter = useCallback(
+    (key: 'subCategories' | 'locations' | 'abcClasses' | 'suppliers', value: string) => {
+      setFilters((prev) => ({
+        ...prev,
+        [key]: toggleArrayValue(prev[key] ?? [], value),
+      }));
+    },
+    []
+  );
+
+  const selectedFilterChips = useMemo(() => {
+    const chips: string[] = [];
+    if (filters.status !== 'ALL') chips.push(filters.status);
+    chips.push(...(filters.categories ?? []));
+    chips.push(...(filters.subCategories ?? []));
+    chips.push(...(filters.locations ?? []));
+    chips.push(...(filters.abcClasses ?? []));
+    chips.push(...(filters.suppliers ?? []));
+    if (filters.category !== 'all' && !(filters.categories ?? []).includes(filters.category)) {
+      chips.push(filters.category);
+    }
+    if (filters.visibility !== 'ALL') {
+      chips.push(filters.visibility === 'ACTIVE' ? 'Visible' : 'Hidden');
+    }
+    return chips;
+  }, [filters]);
+
   return (
     <div className="relative min-w-0 flex h-full min-h-0 flex-col gap-4 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-3! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-3!">
       <div className="flex justify-between items-center w-full flex-wrap gap-3">
@@ -301,14 +463,23 @@ const Inventory = () => {
           </h1>
         </div>
         <div className="ml-auto flex items-center justify-end gap-3 flex-wrap">
-          <BoardScopeToggle
-            showMineOnly={activeView === 'turnover'}
-            onChange={(nextShowMineOnly) =>
-              setActiveView(nextShowMineOnly ? 'turnover' : 'inventory')
-            }
-            allLabel="Stock"
-            mineLabel="Turnover"
-          />
+          {canEditInventory && (
+            <Primary
+              href="#"
+              text={savingItem ? 'Saving...' : 'Add item'}
+              onClick={() => setAddPopup(true)}
+              isDisabled={savingItem || !primaryOrgId}
+              icon={<FiPlus size={18} aria-hidden="true" />}
+              className="h-11!"
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => setActiveView(activeView === 'turnover' ? 'inventory' : 'turnover')}
+            className="inline-flex h-11 items-center justify-center rounded-2xl border border-text-primary bg-white px-4 text-body-3-emphasis text-text-primary"
+          >
+            {activeView === 'turnover' ? 'Stock' : 'Turnover'}
+          </button>
         </div>
       </div>
 
@@ -317,24 +488,53 @@ const Inventory = () => {
 
       <PermissionGate allOf={[PERMISSIONS.INVENTORY_VIEW_ANY]} fallback={<Fallback />}>
         <div className={wrapperClassName}>
-          <div className="w-full shrink-0">
+          <div className="flex w-full shrink-0 flex-col gap-4">
             {activeView === 'inventory' ? (
-              <InventoryFilters
-                filters={filters}
-                onChange={setFilters}
-                categories={categoryOptions}
-                loading={loadingList}
-                categoryAction={
-                  canEditInventory ? (
-                    <Primary
-                      href="#"
-                      text={savingItem ? 'Saving...' : 'Add'}
-                      onClick={() => setAddPopup(true)}
-                      isDisabled={savingItem || !primaryOrgId}
-                    />
-                  ) : null
-                }
-              />
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFilterOpen(true)}
+                    className="inline-flex h-11 items-center gap-2 rounded-2xl border border-card-border bg-white px-4 text-body-4 text-text-primary"
+                  >
+                    <FiSliders size={18} aria-hidden="true" />
+                    <span>Filter</span>
+                    {selectedFilterChips.length > 0 && (
+                      <span className="rounded-full bg-badge-blue-bg px-2 text-caption-1 text-badge-blue-text">
+                        {selectedFilterChips.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSortMode((prev) =>
+                        prev === 'name' ? 'expiry' : prev === 'expiry' ? 'stock' : 'name'
+                      )
+                    }
+                    className="inline-flex h-11 items-center gap-2 rounded-2xl border border-card-border bg-white px-4 text-body-4 text-text-primary"
+                  >
+                    <FiFilter size={18} aria-hidden="true" />
+                    <span>Sort by</span>
+                  </button>
+                </div>
+                <div className="relative w-full xl:max-w-100">
+                  <FiSearch
+                    size={18}
+                    aria-hidden="true"
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary"
+                  />
+                  <input
+                    aria-label="Search inventory"
+                    value={filters.search}
+                    onChange={(event) =>
+                      setFilters((prev) => ({ ...prev, search: event.target.value }))
+                    }
+                    placeholder="Search by item name, category, batch..."
+                    className="h-11 w-full rounded-2xl border border-card-border bg-white pl-11 pr-4 text-body-4 text-text-primary outline-none focus:border-input-border-active"
+                  />
+                </div>
+              </div>
             ) : (
               <InventoryTurnoverFilters
                 list={turnover}
@@ -354,6 +554,7 @@ const Inventory = () => {
                 setActiveInventory={setActiveInventory}
                 setViewInventory={setViewInventory}
                 filteredList={filteredInventory}
+                onRestock={handleRestock}
               />
             ) : (
               <InventoryTurnoverTable filteredList={filteredTurnoverList} />
@@ -368,6 +569,184 @@ const Inventory = () => {
           onSubmit={handleCreateInventory}
           stockLocationOptions={stockLocationOptions}
         />
+
+        {filterOpen && (
+          <Modal showModal={filterOpen} setShowModal={setFilterOpen}>
+            <div className="flex h-full flex-col gap-5">
+              <div className="flex items-center justify-between border-b border-card-border pb-4">
+                <div className="flex items-center gap-2 text-body-3-emphasis text-text-primary">
+                  <FiSliders size={18} aria-hidden="true" />
+                  <span>Filter</span>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full border border-blue-text px-4 py-2 text-body-4 text-blue-text"
+                  onClick={() => setFilters(defaultFilters)}
+                >
+                  Clear all
+                </button>
+              </div>
+              {selectedFilterChips.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedFilterChips.map((chip) => (
+                    <span
+                      key={chip}
+                      className="inline-flex items-center gap-1 rounded-full bg-badge-blue-bg px-3 py-1 text-caption-1 text-badge-blue-text"
+                    >
+                      {chip}
+                      <FiX size={14} aria-hidden="true" />
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
+                <div className="flex flex-col gap-2 border-b border-card-border pb-4">
+                  <div className="text-body-4-emphasis text-text-primary">Stock status</div>
+                  {['ALL', 'LOW_STOCK', 'EXPIRED', 'OUT_OF_STOCK'].map((status) => (
+                    <label
+                      key={status}
+                      className="flex items-center gap-3 text-body-4 text-text-primary"
+                    >
+                      <input
+                        type="radio"
+                        name="stock-status"
+                        checked={filters.status === status}
+                        onChange={() => setFilters((prev) => ({ ...prev, status }))}
+                      />
+                      <span>
+                        {status === 'ALL' ? 'All' : status.replaceAll('_', ' ').toLowerCase()}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {locationFilterOptions.length > 0 && (
+                  <div className="flex flex-col gap-2 border-b border-card-border pb-4">
+                    <div className="text-body-4-emphasis text-text-primary">Location</div>
+                    {locationFilterOptions.map((location) => (
+                      <label
+                        key={location}
+                        className="flex items-center gap-3 text-body-4 text-text-primary"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={filters.locations.includes(location)}
+                          onChange={() => toggleListFilter('locations', location)}
+                          className="size-4 accent-blue-text"
+                        />
+                        <span>{location}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-col gap-2 border-b border-card-border pb-4">
+                  <div className="text-body-4-emphasis text-text-primary">Category</div>
+                  {categoryOptions.map((category) => (
+                    <div key={category} className="flex flex-col gap-2">
+                      <label className="flex items-center gap-3 text-body-4 text-text-primary">
+                        <input
+                          type="checkbox"
+                          checked={filters.categories.includes(category)}
+                          onChange={() => toggleCategoryFilter(category)}
+                          className="size-4 accent-blue-text"
+                        />
+                        <span>{category}</span>
+                      </label>
+                      {filters.categories.includes(category) &&
+                        categorySubcategoryOptions[category]?.map((subCategory) => (
+                          <label
+                            key={`${category}-${subCategory}`}
+                            className="ml-7 flex items-center gap-3 text-body-4 text-text-secondary"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={filters.subCategories.includes(subCategory)}
+                              onChange={() => toggleListFilter('subCategories', subCategory)}
+                              className="size-4 accent-blue-text"
+                            />
+                            <span>{subCategory}</span>
+                          </label>
+                        ))}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-2 border-b border-card-border pb-4">
+                  <div className="text-body-4-emphasis text-text-primary">ABC class</div>
+                  {AbcClassOptions.map((abcClass) => (
+                    <label
+                      key={abcClass}
+                      className="flex items-center gap-3 text-body-4 text-text-primary"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={filters.abcClasses.includes(abcClass)}
+                        onChange={() => toggleListFilter('abcClasses', abcClass)}
+                        className="size-4 accent-blue-text"
+                      />
+                      <span>{abcClass}</span>
+                    </label>
+                  ))}
+                </div>
+                {supplierFilterOptions.length > 0 && (
+                  <div className="flex flex-col gap-2 border-b border-card-border pb-4">
+                    <div className="text-body-4-emphasis text-text-primary">Supplier</div>
+                    {supplierFilterOptions.map((supplier) => (
+                      <label
+                        key={supplier}
+                        className="flex items-center gap-3 text-body-4 text-text-primary"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={filters.suppliers.includes(supplier)}
+                          onChange={() => toggleListFilter('suppliers', supplier)}
+                          className="size-4 accent-blue-text"
+                        />
+                        <span>{supplier}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  <div className="text-body-4-emphasis text-text-primary">Visibility</div>
+                  {(['ALL', 'ACTIVE', 'HIDDEN'] as const).map((visibility) => (
+                    <label
+                      key={visibility}
+                      className="flex items-center gap-3 text-body-4 text-text-primary"
+                    >
+                      <input
+                        type="radio"
+                        name="inventory-visibility"
+                        checked={filters.visibility === visibility}
+                        onChange={() => setFilters((prev) => ({ ...prev, visibility }))}
+                      />
+                      <span>
+                        {visibility === 'ALL'
+                          ? 'All'
+                          : visibility === 'ACTIVE'
+                            ? 'Visible'
+                            : 'Hidden'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Primary
+                  href="#"
+                  text="Apply"
+                  onClick={() => setFilterOpen(false)}
+                  icon={<FiCheck size={18} aria-hidden="true" />}
+                />
+                <button
+                  type="button"
+                  onClick={() => setFilterOpen(false)}
+                  className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-text-primary bg-white px-4 text-body-3-emphasis text-text-primary"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
 
         {activeInventory && (
           <InventoryInfo

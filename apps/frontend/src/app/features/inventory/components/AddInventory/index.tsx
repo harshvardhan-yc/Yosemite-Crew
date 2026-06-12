@@ -9,12 +9,12 @@ import Close from '@/app/ui/primitives/Icons/Close';
 import Labels from '@/app/ui/widgets/Labels/Labels';
 
 const labels: { key: InventorySectionKey; name: string }[] = [
-  { key: 'basicInfo', name: 'Basic Information' },
-  { key: 'classification', name: 'Classification attribute' },
+  { key: 'basicInfo', name: 'Basic Details' },
+  { key: 'classification', name: 'Clinical Details' },
+  { key: 'stock', name: 'Stock Control' },
+  { key: 'batch', name: 'Batch and expiry' },
   { key: 'pricing', name: 'Pricing' },
   { key: 'vendor', name: 'Vendor details' },
-  { key: 'stock', name: 'Stock and quantity details' },
-  { key: 'batch', name: 'Batch / Lot details' },
 ];
 
 const emptyInventoryItem: InventoryItem = {
@@ -25,6 +25,9 @@ const emptyInventoryItem: InventoryItem = {
     department: '',
     description: '',
     status: 'Active',
+    brand: '',
+    imageUrl: '',
+    visibleInInventory: true,
 
     // Hospital
     itemType: undefined,
@@ -51,6 +54,12 @@ const emptyInventoryItem: InventoryItem = {
     unitofMeasure: '',
     species: [],
     administration: '',
+    itemType: 'Drug',
+    drugSchedule: '',
+    storageCondition: '',
+    controlledSubstance: 'false',
+    prescriptionRequired: 'false',
+    reportableToGovernment: 'false',
     therapeuticClass: undefined,
     strength: undefined,
     dosageForm: undefined,
@@ -88,9 +97,12 @@ const emptyInventoryItem: InventoryItem = {
     current: '',
     allocated: '',
     available: '',
+    maxStock: '',
     reorderLevel: '',
     reorderQuantity: '',
     stockLocation: '',
+    abcClass: '',
+    withdrawlPeriod: '',
     stockType: undefined,
     minStockAlert: undefined,
   },
@@ -98,6 +110,8 @@ const emptyInventoryItem: InventoryItem = {
     batch: '',
     manufactureDate: '',
     expiryDate: '',
+    expiryWarningBefore: '',
+    barcode: '',
     serial: undefined,
     tracking: undefined,
     litterId: undefined,
@@ -112,6 +126,17 @@ const logValidationFailure = (section: InventorySectionKey, details: Record<stri
   if (process.env.NODE_ENV === 'development') {
     console.warn(`[Inventory] Validation failed for ${section}`, JSON.stringify(details));
   }
+};
+
+const nonDrugClassificationDefaults = {
+  drugSchedule: '',
+  form: '',
+  administration: '',
+  strength: '',
+  unitofMeasure: '',
+  controlledSubstance: 'false',
+  prescriptionRequired: 'false',
+  reportableToGovernment: 'false',
 };
 
 type AddInventoryProps = {
@@ -162,6 +187,37 @@ const AddInventory = ({
       });
       return;
     }
+
+    if (section === 'classification') {
+      setFormData((prev) => ({
+        ...prev,
+        classification: {
+          ...prev.classification,
+          ...patch,
+          ...(patch.itemType === 'Non-drug' ? nonDrugClassificationDefaults : {}),
+        },
+      }));
+      return;
+    }
+
+    if (section === 'stock') {
+      setFormData((prev) => ({
+        ...prev,
+        stock: {
+          ...prev.stock,
+          ...patch,
+          available: String(
+            Math.max(
+              0,
+              Number(patch.current ?? prev.stock.current ?? 0) -
+                Number(patch.allocated ?? prev.stock.allocated ?? 0)
+            )
+          ),
+        },
+      }));
+      return;
+    }
+
     setFormData((prev) => ({
       ...prev,
       [section]: { ...prev[section], ...patch },
@@ -171,9 +227,12 @@ const AddInventory = ({
   const validateBasicInfo = (): Partial<Record<keyof typeof formData.basicInfo, string>> => {
     const basic = formData.basicInfo;
     const errors: Partial<Record<keyof typeof formData.basicInfo, string>> = {};
-    if (!basic.name) errors.name = 'Name is required';
-    if (!basic.category) errors.category = 'Category is required';
-    if (!basic.subCategory) errors.subCategory = 'Sub category is required';
+    if (!basic.name.trim()) {
+      errors.name = 'Item name cannot be empty';
+    } else if (basic.name.trim().length > 100) {
+      errors.name = 'Item name must be under 100 characters';
+    }
+    if (!basic.category) errors.category = 'Select Category';
     return errors;
   };
 
@@ -352,14 +411,47 @@ const AddInventory = ({
   return (
     <Modal showModal={showModal} setShowModal={setShowModal}>
       <div className="flex flex-col h-full gap-6">
-        <div className="flex justify-between items-center">
-          <div className="opacity-0">
-            <Close onClick={() => {}} />
-          </div>
-          <div className="flex justify-center items-center gap-2">
-            <div className="text-body-1 text-text-primary">Add Inventory</div>
+        <div className="flex items-center justify-between border-b border-card-border pb-4">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="text-body-1 text-text-primary">Add item</div>
+            <div className="text-caption-1 text-text-secondary">
+              Create an inventory item with clinical, stock, batch, pricing, and vendor details.
+            </div>
           </div>
           <Close onClick={() => setShowModal(false)} />
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-body-4-emphasis text-text-primary">Visible in Inventory</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={formData.basicInfo.visibleInInventory !== false}
+            aria-label="Visible in Inventory"
+            onClick={() =>
+              setFormData((prev) => ({
+                ...prev,
+                basicInfo: {
+                  ...prev.basicInfo,
+                  visibleInInventory: prev.basicInfo.visibleInInventory === false,
+                },
+              }))
+            }
+            className="inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors"
+            style={{
+              backgroundColor:
+                formData.basicInfo.visibleInInventory === false
+                  ? 'var(--color-neutral-300)'
+                  : 'var(--color-success-bright)',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              className={`block size-6 rounded-full bg-white shadow-sm transition-transform ${
+                formData.basicInfo.visibleInInventory === false ? 'translate-x-0' : 'translate-x-6'
+              }`}
+            />
+          </button>
         </div>
 
         <Labels

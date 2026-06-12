@@ -1,12 +1,18 @@
 'use client';
 import React from 'react';
+import Image from 'next/image';
 import { IoEye } from 'react-icons/io5';
+import { LuPackagePlus } from 'react-icons/lu';
 import GenericTable from '@/app/ui/tables/GenericTable/GenericTable';
 import InventoryCard from '@/app/ui/cards/InventoryCard';
 import { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import {
   displayStatusLabel,
+  formatCurrencyValue,
   formatDisplayDate,
+  formatPercentValue,
+  getAvailableStock,
+  getMarginPercent,
 } from '@/app/features/inventory/pages/Inventory/utils';
 import { getInventoryStatusStyle } from '@/app/ui/tables/tableUtils';
 
@@ -23,6 +29,7 @@ type InventoryTableProps = {
   filteredList: InventoryItem[];
   setActiveInventory: (inventory: InventoryItem) => void;
   setViewInventory: (open: boolean) => void;
+  onRestock?: (inventory: InventoryItem) => void;
 };
 
 const displayValue = (val?: string | number | null) => {
@@ -31,23 +38,21 @@ const displayValue = (val?: string | number | null) => {
   return val;
 };
 
-const formatCurrency = (value: string | number | undefined) => {
-  const num = Number(value ?? 0);
-  if (!Number.isFinite(num)) return '—';
-  return `$ ${num}`;
-};
+const getSku = (item: InventoryItem) => item.basicInfo.skuCode || item.sku || '—';
 
-const totalValue = (item: InventoryItem) => {
-  const price = Number(item.pricing.selling ?? 0);
-  const onHand = Number(item.stock.current ?? 0);
-  if (!Number.isFinite(price) || !Number.isFinite(onHand)) return '—';
-  return `$ ${Math.round(price * onHand)}`;
+const getImageFallback = (item: InventoryItem) => {
+  const category = item.basicInfo.category.toLowerCase();
+  if (category.includes('surgical') || category.includes('consumable')) return '🧤';
+  if (category.includes('food')) return '🥫';
+  if (category.includes('equipment')) return '🧰';
+  return '💊';
 };
 
 const InventoryTable = ({
   filteredList,
   setActiveInventory,
   setViewInventory,
+  onRestock,
 }: InventoryTableProps) => {
   const handleViewInventory = (inventory: InventoryItem) => {
     setActiveInventory(inventory);
@@ -58,23 +63,76 @@ const InventoryTable = ({
     {
       label: 'Item name',
       key: 'name',
-      width: '160px',
+      width: '190px',
       render: (item: InventoryItem) => (
-        <div className="appointment-profile-title">{item.basicInfo.name}</div>
+        <div className="flex items-center gap-3">
+          <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-card-hover text-xl">
+            {(() => {
+              const imageSrc = item.basicInfo.imageUrl || item.imageUrl;
+              if (!imageSrc) {
+                return <span aria-hidden="true">{getImageFallback(item)}</span>;
+              }
+              return (
+                <Image
+                  src={imageSrc}
+                  alt=""
+                  width={48}
+                  height={48}
+                  className="size-full object-cover"
+                />
+              );
+            })()}
+          </div>
+          <div className="min-w-0">
+            <div className="appointment-profile-title whitespace-normal leading-tight">
+              {item.basicInfo.name}
+            </div>
+            <div className="text-caption-1 text-text-secondary">{getSku(item)}</div>
+          </div>
+        </div>
       ),
     },
     {
-      label: 'Category',
+      label: 'Category/Sub-category',
       key: 'category',
-      width: '110px',
+      width: '125px',
       render: (item: InventoryItem) => (
-        <div className="appointment-profile-title">{item.basicInfo.category}</div>
+        <div className="appointment-profile-title whitespace-normal">
+          {item.basicInfo.category || '—'}
+          {item.basicInfo.subCategory ? `/${item.basicInfo.subCategory}` : ''}
+        </div>
       ),
+    },
+    {
+      label: 'ABC',
+      key: 'abc',
+      width: '48px',
+      render: (item: InventoryItem) => (
+        <div className="appointment-profile-title">
+          {(item.stock.abcClass || '').replace('Class ', '') || '—'}
+        </div>
+      ),
+    },
+    {
+      label: 'Expiry date',
+      key: 'expiry',
+      width: '92px',
+      render: (item: InventoryItem) => {
+        const label = formatDisplayDate(item.batch.expiryDate) || '—';
+        const expired = displayStatusLabel(item).toLowerCase() === 'expired';
+        return (
+          <div
+            className={`appointment-profile-title ${expired ? 'text-text-error' : 'text-green-text'}`}
+          >
+            {label}
+          </div>
+        );
+      },
     },
     {
       label: 'On hand',
       key: 'on-hand',
-      width: '90px',
+      width: '76px',
       render: (item: InventoryItem) => (
         <div className="appointment-profile-title">
           {displayValue(item.stock.current || '') === '—' ? '—' : `${item.stock.current} units`}
@@ -82,51 +140,61 @@ const InventoryTable = ({
       ),
     },
     {
+      label: 'Available',
+      key: 'available',
+      width: '76px',
+      render: (item: InventoryItem) => {
+        const value = getAvailableStock(item);
+        const low = displayStatusLabel(item).toLowerCase() === 'low stock';
+        return (
+          <div className={`appointment-profile-title ${low ? 'text-orange-600' : ''}`}>
+            {value ?? '—'}
+          </div>
+        );
+      },
+    },
+    {
       label: 'Unit cost',
       key: 'unit-cost',
-      width: '90px',
+      width: '76px',
       render: (item: InventoryItem) => (
-        <div className="appointment-profile-title">{formatCurrency(item.pricing.purchaseCost)}</div>
+        <div className="appointment-profile-title">
+          {formatCurrencyValue(item.pricing.purchaseCost)}
+        </div>
       ),
     },
     {
       label: 'Selling price',
       key: 'selling-price',
-      width: '100px',
+      width: '82px',
       render: (item: InventoryItem) => (
-        <div className="appointment-profile-title">{formatCurrency(item.pricing.selling)}</div>
+        <div className="appointment-profile-title">{formatCurrencyValue(item.pricing.selling)}</div>
       ),
     },
     {
-      label: 'Total value',
-      key: 'total-vale',
-      width: '90px',
+      label: 'Margin',
+      key: 'margin',
+      width: '78px',
       render: (item: InventoryItem) => (
-        <div className="appointment-profile-title">{totalValue(item)}</div>
-      ),
-    },
-    {
-      label: 'Expiry',
-      key: 'expiry',
-      width: '100px',
-      render: (item: InventoryItem) => (
-        <div className="appointment-profile-title">
-          {formatDisplayDate(item.batch.expiryDate) || '—'}
+        <div className="appointment-profile-title text-green-text">
+          {formatPercentValue(getMarginPercent(item))}
         </div>
       ),
     },
     {
       label: 'Location',
       key: 'location',
-      width: '100px',
+      width: '86px',
       render: (item: InventoryItem) => (
-        <div className="appointment-profile-title">{displayValue(item.stock.stockLocation)}</div>
+        <div className="appointment-profile-title text-blue-text">
+          {displayValue(item.stock.stockLocation)}
+        </div>
       ),
     },
     {
       label: 'Status',
       key: 'status',
-      width: '110px',
+      width: '94px',
       render: (item: InventoryItem) => (
         <div
           className="appointment-status"
@@ -139,15 +207,26 @@ const InventoryTable = ({
     {
       label: 'Actions',
       key: 'actions',
-      width: '64px',
+      width: '78px',
       render: (item: InventoryItem) => (
         <div className="action-btn-col">
+          {onRestock && (
+            <button
+              type="button"
+              onClick={() => onRestock(item)}
+              aria-label={`Restock ${item.basicInfo.name}`}
+              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-9 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+            >
+              <LuPackagePlus size={18} color="var(--color-neutral-900)" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => handleViewInventory(item)}
-            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+            aria-label={`View ${item.basicInfo.name}`}
+            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-9 rounded-full! border border-black-text! bg-black-text! flex items-center justify-center cursor-pointer"
           >
-            <IoEye size={20} color="var(--color-neutral-900)" />
+            <IoEye size={18} color="var(--color-white)" />
           </button>
         </div>
       ),
@@ -156,7 +235,7 @@ const InventoryTable = ({
 
   return (
     <div className="table-wrapper inventory-scroll-x h-full min-h-0 overflow-hidden">
-      <div className="table-list hidden xl:flex h-full min-h-0 flex-1 overflow-y-auto pr-1 pb-2">
+      <div className="inventory-table-list h-full min-h-0 flex-1 overflow-y-auto pr-1 pb-2">
         <GenericTable
           data={filteredList}
           columns={columns}
@@ -166,7 +245,7 @@ const InventoryTable = ({
           tableClassName="inventory-table-fixed"
         />
       </div>
-      <div className="card-list flex xl:hidden gap-4 sm:gap-6 flex-wrap">
+      <div className="inventory-card-list gap-4 sm:gap-6 flex-wrap">
         {(() => {
           if (filteredList.length === 0) {
             return (
