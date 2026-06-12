@@ -1,7 +1,16 @@
 import React, {useMemo, useCallback} from 'react';
-import {View, Text, StyleSheet, type StyleProp, type TextStyle} from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  type StyleProp,
+  type TextStyle,
+} from 'react-native';
 import {BookingSummaryCard} from '@/features/appointments/components/BookingSummaryCard/BookingSummaryCard';
-import {CompanionSelector, type CompanionBase} from '@/shared/components/common/CompanionSelector/CompanionSelector';
+import {
+  CompanionSelector,
+  type CompanionBase,
+} from '@/shared/components/common/CompanionSelector/CompanionSelector';
 import CalendarMonthStrip from '@/features/appointments/components/CalendarMonthStrip/CalendarMonthStrip';
 import TimeSlotPills from '@/features/appointments/components/TimeSlotPills/TimeSlotPills';
 import {Input} from '@/shared/components/common/Input/Input';
@@ -173,13 +182,19 @@ export const AppointmentFormContent: React.FC<AppointmentFormContentProps> = ({
       />
 
       <CalendarMonthStrip
+        key={`${selectedDate.getFullYear()}-${selectedDate.getMonth()}`}
         selectedDate={selectedDate}
         onChange={handleDateChange}
         datesWithMarkers={dateMarkers}
       />
 
       <Text style={styles.sectionTitle}>Available slots</Text>
-      <TimeSlotPills slots={slots} selected={selectedSlot} onSelect={onSelectSlot} resetKey={resetKey} />
+      <TimeSlotPills
+        slots={slots}
+        selected={selectedSlot}
+        onSelect={onSelectSlot}
+        resetKey={resetKey}
+      />
       {slots.length === 0 && (
         <Text style={styles.emptySlotsText}>{emptySlotsMessage}</Text>
       )}

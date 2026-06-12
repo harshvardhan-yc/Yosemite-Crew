@@ -1,8 +1,15 @@
-import type { CreateAuthChallengeTriggerHandler } from 'aws-lambda';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import type {CreateAuthChallengeTriggerHandler} from 'aws-lambda';
+import {SESClient, SendEmailCommand} from '@aws-sdk/client-ses';
 
 const OTP_LENGTH = 4;
 const OTP_METADATA_PREFIX = 'PASSWORDLESS_OTP';
+const CANDIDATE_ATTR_KEYS = [
+  'given_name',
+  'name',
+  'custom:first_name',
+  'preferred_username',
+] as const;
+const EMAIL_SEPARATOR_PATTERN = /@/;
 const DEMO_PASSWORD_METADATA_PREFIX = 'DEMO_PASSWORD';
 const DEMO_LOGIN_EMAIL = 'test@yosemitecrew.com';
 const DEMO_LOGIN_PASSWORD = 'Test@YosemiteCrew@1234';
@@ -230,11 +237,10 @@ const resolveRecipientName = (
   }
 
   const attrs = event.request.userAttributes ?? {};
-  const candidateKeys = ['given_name', 'name', 'custom:first_name', 'preferred_username'];
-  for (const key of candidateKeys) {
-    const value = attrs[key];
-    if (value && value.trim() && !value.includes('@')) {
-      return value.trim();
+  for (const key of CANDIDATE_ATTR_KEYS) {
+    const value = attrs[key]?.trim();
+    if (value && !EMAIL_SEPARATOR_PATTERN.test(value)) {
+      return value;
     }
   }
 
@@ -247,9 +253,14 @@ const resolveRecipientName = (
   return 'there';
 };
 
-const sendOtpEmail = async (email: string, otp: string, recipientName: string) => {
+const sendOtpEmail = async (
+  email: string,
+  otp: string,
+  recipientName: string,
+) => {
   const fromEmail = process.env.PASSWORDLESS_OTP_EMAIL_FROM;
-  const subject = process.env.PASSWORDLESS_OTP_EMAIL_SUBJECT ?? 'Your login code';
+  const subject =
+    process.env.PASSWORDLESS_OTP_EMAIL_SUBJECT ?? 'Your login code';
 
   if (!fromEmail) {
     if (DEBUG_LOG_OTP) {
@@ -260,12 +271,12 @@ const sendOtpEmail = async (email: string, otp: string, recipientName: string) =
 
   const command = new SendEmailCommand({
     Source: fromEmail,
-    Destination: { ToAddresses: [email] },
+    Destination: {ToAddresses: [email]},
     Message: {
-      Subject: { Data: subject },
+      Subject: {Data: subject},
       Body: {
-        Html: { Data: buildOtpEmailHtml(recipientName, otp) },
-        Text: { Data: buildOtpEmailText(recipientName, otp) },
+        Html: {Data: buildOtpEmailHtml(recipientName, otp)},
+        Text: {Data: buildOtpEmailText(recipientName, otp)},
       },
     },
   });
@@ -273,7 +284,9 @@ const sendOtpEmail = async (email: string, otp: string, recipientName: string) =
   await sesClient.send(command);
 };
 
-const resolveEmail = (event: Parameters<CreateAuthChallengeTriggerHandler>[0]): string | null => {
+const resolveEmail = (
+  event: Parameters<CreateAuthChallengeTriggerHandler>[0],
+): string | null => {
   const metadataEmail = event.request.clientMetadata?.loginEmail?.trim();
   if (metadataEmail && metadataEmail.includes('@')) {
     return metadataEmail.toLowerCase();
@@ -282,7 +295,10 @@ const resolveEmail = (event: Parameters<CreateAuthChallengeTriggerHandler>[0]): 
   if (userAttrs.email && userAttrs.email.trim().includes('@')) {
     return userAttrs.email.trim().toLowerCase();
   }
-  if (userAttrs.preferred_username && userAttrs.preferred_username.trim().includes('@')) {
+  if (
+    userAttrs.preferred_username &&
+    userAttrs.preferred_username.trim().includes('@')
+  ) {
     return userAttrs.preferred_username.trim().toLowerCase();
   }
   if (event.userName && event.userName.trim().includes('@')) {
@@ -291,7 +307,7 @@ const resolveEmail = (event: Parameters<CreateAuthChallengeTriggerHandler>[0]): 
   return null;
 };
 
-export const handler: CreateAuthChallengeTriggerHandler = async (event) => {
+export const handler: CreateAuthChallengeTriggerHandler = async event => {
   console.log('Passwordless create-auth challenge invoked', {
     userName: event.userName,
     clientMetadata: event.request.clientMetadata,
@@ -306,10 +322,12 @@ export const handler: CreateAuthChallengeTriggerHandler = async (event) => {
       clientMetadata: event.request.clientMetadata,
       userAttributes: event.request.userAttributes,
     });
-    throw new Error('Cannot issue passwordless challenge without an email address.');
+    throw new Error(
+      'Cannot issue passwordless challenge without an email address.',
+    );
   }
 
-  console.log('Passwordless create-auth challenge resolved email', { email });
+  console.log('Passwordless create-auth challenge resolved email', {email});
 
   const session = event.request.session ?? [];
   const previousChallenge = session[session.length - 1];

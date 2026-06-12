@@ -1,4 +1,4 @@
-import {useState, useMemo, useCallback} from 'react';
+import {useState, useMemo, useCallback, useEffect, useRef} from 'react';
 import {useSelector} from 'react-redux';
 import type {Region} from 'react-native-maps';
 import type {RootState} from '@/app/store';
@@ -19,6 +19,7 @@ export interface ClinicMapDiscoveryState {
   setCategory: (c: BusinessCategory | undefined) => void;
   setOpenNow: (v: boolean) => void;
   enrichWithDistance: (userCoords: UserCoords) => VetBusiness[];
+  pinAndSelectClinic: (business: VetBusiness) => void;
 }
 
 const mergeAndDeduplicate = (
@@ -44,12 +45,16 @@ const enrichClinicWithDistance = (
 
 export const useClinicMapDiscovery = (
   searchQuery: string,
+  initialSelectedId?: string,
+  selectionToken?: number,
 ): ClinicMapDiscoveryState => {
   const reduxBusinesses = useSelector(
     (state: RootState) => state.businesses?.businesses ?? [],
   );
 
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
+  const lastAppliedTokenRef = useRef<number | undefined>(undefined);
+  const [pinnedClinic, setPinnedClinic] = useState<VetBusiness | null>(null);
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
   const [category, setCategory] = useState<BusinessCategory | undefined>(
     undefined,
@@ -61,8 +66,26 @@ export const useClinicMapDiscovery = (
     [reduxBusinesses],
   );
 
+  useEffect(() => {
+    if (!initialSelectedId || !selectionToken) return;
+    if (lastAppliedTokenRef.current === selectionToken) return;
+
+    const found = allClinics.find(c => c.id === initialSelectedId);
+    if (found) {
+      lastAppliedTokenRef.current = selectionToken;
+      setPinnedClinic(found);
+      setSelectedClinicId(initialSelectedId);
+    }
+  }, [initialSelectedId, selectionToken, allClinics]);
+
+  const allClinicsWithPinned = useMemo(() => {
+    if (!pinnedClinic) return allClinics;
+    if (allClinics.some(c => c.id === pinnedClinic.id)) return allClinics;
+    return [pinnedClinic, ...allClinics];
+  }, [allClinics, pinnedClinic]);
+
   const visibleClinics = useMapRegionFilter({
-    businesses: allClinics,
+    businesses: allClinicsWithPinned,
     region: mapRegion,
     searchQuery,
     category,
@@ -71,9 +94,16 @@ export const useClinicMapDiscovery = (
 
   const enrichWithDistance = useCallback(
     (userCoords: UserCoords): VetBusiness[] =>
-      allClinics.map(clinic => enrichClinicWithDistance(clinic, userCoords)),
-    [allClinics],
+      allClinicsWithPinned.map(clinic =>
+        enrichClinicWithDistance(clinic, userCoords),
+      ),
+    [allClinicsWithPinned],
   );
+
+  const pinAndSelectClinic = useCallback((business: VetBusiness) => {
+    setPinnedClinic(business);
+    setSelectedClinicId(business.id);
+  }, []);
 
   return {
     visibleClinics,
@@ -86,5 +116,6 @@ export const useClinicMapDiscovery = (
     setCategory,
     setOpenNow,
     enrichWithDistance,
+    pinAndSelectClinic,
   };
 };

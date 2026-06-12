@@ -9,17 +9,14 @@ import {
 } from '@testing-library/react-native';
 import {Provider} from 'react-redux';
 import configureStore from 'redux-mock-store';
-
-// 1. Redux Store Setup
-const middlewares: any[] = [];
-const mockStore = configureStore(middlewares);
-
-// 2. Relative Imports
 import BookingFormScreen from '../../../../src/features/appointments/screens/BookingFormScreen';
 import {createAppointment} from '../../../../src/features/appointments/appointmentsSlice';
 import {uploadDocumentFiles} from '../../../../src/features/documents/documentSlice';
 import {fetchServiceSlots} from '../../../../src/features/appointments/businessesSlice';
 import {mockTheme} from '../../../setup/mockTheme';
+
+const middlewares: any[] = [];
+const mockStore = configureStore(middlewares);
 
 // --- Global Capture for setState ---
 // This allows us to trigger state updates from within the mocked hook
@@ -83,6 +80,15 @@ jest.mock('../../../../src/features/documents/documentSlice', () => {
 jest.mock('../../../../src/features/companion', () => ({
   setSelectedCompanion: jest.fn(() => ({type: 'SET_COMPANION'})),
 }));
+
+jest.mock(
+  '@/features/observationalTools/services/observationToolService',
+  () => ({
+    observationToolApi: {
+      linkSubmissionToAppointment: jest.fn(),
+    },
+  }),
+);
 
 // Utils
 jest.mock('../../../../src/features/appointments/utils/availability', () => ({
@@ -747,5 +753,207 @@ describe('BookingFormScreen', () => {
       fireEvent.press(privacy[1]);
       expect(mockLegalNav.handleOpenPrivacy).toHaveBeenCalled();
     }
+  });
+
+  it('fires onDateChange and resets time slot', () => {
+    const {getByTestId} = setup();
+    fireEvent.press(getByTestId('change-date'));
+    expect(fetchServiceSlots).toHaveBeenCalled();
+  });
+
+  it('edit-service calls navigation.goBack when otContext is false', () => {
+    const {getByTestId} = setup();
+    fireEvent.press(getByTestId('edit-service'));
+    expect(mockGoBack).toHaveBeenCalled();
+  });
+
+  it('uses Observational Tool as specialty label when otContext is set but service has no specialty', async () => {
+    const selectServiceByIdMock =
+      require('../../../../src/features/appointments/selectors').selectServiceById;
+    selectServiceByIdMock.mockReturnValue(() => ({
+      id: 'svc-1',
+      name: 'OT Service',
+      specialty: null,
+      basePrice: 50,
+    }));
+
+    const {getByTestId} = setup({
+      ...defaultParams,
+      otContext: {submissionId: 'sub-1'},
+      appointmentType: undefined,
+      serviceSpecialty: undefined,
+    });
+
+    fireEvent.press(getByTestId('select-slot'));
+    fireEvent.press(getByTestId('toggle-agree-business'));
+    fireEvent.press(getByTestId('toggle-agree-app'));
+
+    (createAppointment as unknown as jest.Mock).mockReturnValue({
+      type: 'appointments/createAppointment/fulfilled',
+      payload: {appointment: {id: 'appt-ot', companionId: 'c1'}},
+      unwrap: () =>
+        Promise.resolve({appointment: {id: 'appt-ot', companionId: 'c1'}}),
+    });
+
+    fireEvent.press(getByTestId('submit-booking-btn'));
+
+    await waitFor(() => {
+      expect(createAppointment).toHaveBeenCalledWith(
+        expect.objectContaining({specialityName: 'Observational Tool'}),
+      );
+    });
+
+    selectServiceByIdMock.mockReturnValue(() => ({
+      id: 'svc-1',
+      name: 'Service',
+      specialty: 'General',
+    }));
+  });
+
+  it('links OT submission to appointment after successful booking', async () => {
+    const {
+      observationToolApi,
+    } = require('@/features/observationalTools/services/observationToolService');
+    observationToolApi.linkSubmissionToAppointment.mockResolvedValue({});
+
+    const {getByTestId} = setup({
+      ...defaultParams,
+      otContext: {submissionId: 'sub-42'},
+    });
+
+    fireEvent.press(getByTestId('select-slot'));
+    fireEvent.press(getByTestId('toggle-agree-business'));
+    fireEvent.press(getByTestId('toggle-agree-app'));
+
+    (createAppointment as unknown as jest.Mock).mockReturnValue({
+      type: 'appointments/createAppointment/fulfilled',
+      payload: {appointment: {id: 'appt-link', companionId: 'c1'}},
+      unwrap: () =>
+        Promise.resolve({
+          appointment: {id: 'appt-link', companionId: 'c1'},
+        }),
+    });
+
+    fireEvent.press(getByTestId('submit-booking-btn'));
+
+    await waitFor(() => {
+      expect(
+        observationToolApi.linkSubmissionToAppointment,
+      ).toHaveBeenCalledWith({
+        submissionId: 'sub-42',
+        appointmentId: 'appt-link',
+      });
+    });
+  });
+
+  it('resolveAttachmentName returns attachment fallback when key path has no filename', async () => {
+    const {getByTestId} = setup();
+
+    act(() => {
+      capturedSetFiles([{key: '/', uri: 'path/1', type: 'image/png'}] as any);
+    });
+
+    fireEvent.press(getByTestId('select-slot'));
+    fireEvent.press(getByTestId('toggle-agree-business'));
+    fireEvent.press(getByTestId('toggle-agree-app'));
+
+    (uploadDocumentFiles as unknown as jest.Mock).mockImplementation(args => ({
+      type: 'documents/upload/pending',
+      meta: {arg: args},
+      unwrap: () =>
+        Promise.resolve([{key: '/', name: undefined, type: 'image/png'}]),
+    }));
+
+    (createAppointment as unknown as jest.Mock).mockReturnValue({
+      type: 'appointments/createAppointment/fulfilled',
+      payload: {appointment: {id: 'appt-1', companionId: 'c1'}},
+      unwrap: () =>
+        Promise.resolve({appointment: {id: 'appt-1', companionId: 'c1'}}),
+    });
+
+    fireEvent.press(getByTestId('submit-booking-btn'));
+
+    await waitFor(() => {
+      expect(createAppointment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attachments: [
+            {key: '/', name: 'attachment', contentType: 'image/png'},
+          ],
+        }),
+      );
+    });
+  });
+
+  it('syncs presetSpecialtyLabel change to type state during re-render and resets emergency', () => {
+    const selectServiceByIdMock =
+      require('../../../../src/features/appointments/selectors').selectServiceById;
+    selectServiceByIdMock.mockReturnValue(() => ({
+      id: 'svc-1',
+      name: 'Service',
+      specialty: null,
+      basePrice: 50,
+    }));
+
+    const {getByTestId} = setup({
+      ...defaultParams,
+      appointmentType: undefined,
+      serviceSpecialty: undefined,
+    });
+
+    selectServiceByIdMock.mockReturnValue(() => ({
+      id: 'svc-1',
+      name: 'Service',
+      specialty: 'Cardiology',
+      basePrice: 50,
+    }));
+
+    act(() => {
+      fireEvent.press(getByTestId('toggle-emergency'));
+    });
+
+    selectServiceByIdMock.mockReturnValue(() => ({
+      id: 'svc-1',
+      name: 'Service',
+      specialty: 'General',
+    }));
+  });
+
+  it('handles OT link failure gracefully and still navigates', async () => {
+    const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const {
+      observationToolApi,
+    } = require('@/features/observationalTools/services/observationToolService');
+    observationToolApi.linkSubmissionToAppointment.mockRejectedValue(
+      new Error('link failed'),
+    );
+
+    const {getByTestId} = setup({
+      ...defaultParams,
+      otContext: {submissionId: 'sub-fail'},
+    });
+
+    fireEvent.press(getByTestId('select-slot'));
+    fireEvent.press(getByTestId('toggle-agree-business'));
+    fireEvent.press(getByTestId('toggle-agree-app'));
+
+    (createAppointment as unknown as jest.Mock).mockReturnValue({
+      type: 'appointments/createAppointment/fulfilled',
+      payload: {appointment: {id: 'appt-fail', companionId: 'c1'}},
+      unwrap: () =>
+        Promise.resolve({
+          appointment: {id: 'appt-fail', companionId: 'c1'},
+        }),
+    });
+
+    fireEvent.press(getByTestId('submit-booking-btn'));
+
+    await waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[Booking] Failed to link OT submission',
+        expect.any(Error),
+      );
+    });
+
+    consoleSpy.mockRestore();
   });
 });

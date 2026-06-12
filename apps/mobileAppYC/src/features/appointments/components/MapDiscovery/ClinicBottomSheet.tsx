@@ -204,8 +204,7 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.background,
       borderTopLeftRadius: theme.borderRadius.xl,
       borderTopRightRadius: theme.borderRadius.xl,
-      ...theme.shadows.floatingMd,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 0px 12px ${theme.colors.neutralShadow}`,
     },
     handle: {
       backgroundColor: theme.colors.border,
@@ -230,11 +229,7 @@ const createStyles = (theme: any) =>
       overflow: 'hidden',
     },
     cardWrapperSelected: {
-      shadowColor: theme.colors.primary,
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 6,
+      boxShadow: `0px 2px 8px ${theme.colors.primary}4D`,
     },
     emptyState: {
       padding: theme.spacing['6'],

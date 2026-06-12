@@ -33,15 +33,22 @@ export const CompanionProfileImage: React.FC<CompanionProfileImageProps> = ({
     return trimmed.charAt(0).toUpperCase();
   }, [name]);
 
-  React.useEffect(() => {
+  const [prevNormalizedUri, setPrevNormalizedUri] =
+    React.useState(normalizedUri);
+  if (normalizedUri !== prevNormalizedUri) {
+    setPrevNormalizedUri(normalizedUri);
     setLoadFailed(false);
-  }, [normalizedUri]);
+  }
 
   const shouldRenderImage = normalizedUri && !loadFailed;
 
   return (
     <View style={styles.profileHeader}>
-      <View style={[styles.avatar, {width: size, height: size, borderRadius: size / 2}]}>
+      <View
+        style={[
+          styles.avatar,
+          {width: size, height: size, borderRadius: size / 2},
+        ]}>
         {shouldRenderImage ? (
           <Image
             source={{uri: normalizedUri}}

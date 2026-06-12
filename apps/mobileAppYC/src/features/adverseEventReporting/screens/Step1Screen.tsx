@@ -15,30 +15,39 @@ import type {ReporterType} from '@/features/adverseEventReporting/types';
 
 type Props = NativeStackScreenProps<AdverseEventStackParamList, 'Step1'>;
 
-export const Step1Screen: React.FC<Props> = ({ navigation }) => {
-  const { theme } = useTheme();
+export const Step1Screen: React.FC<Props> = ({navigation}) => {
+  const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const dispatch = useDispatch();
-  const {draft, updateDraft, setReporterType: setReporterTypeInDraft} = useAdverseEventReport();
-  const companions = useSelector((state: RootState) => state.companion.companions);
-  const globalSelectedCompanionId = useSelector((state: RootState) => state.companion.selectedCompanionId);
+  const {
+    draft,
+    updateDraft,
+    setReporterType: setReporterTypeInDraft,
+  } = useAdverseEventReport();
+  const companions = useSelector(
+    (state: RootState) => state.companion.companions,
+  );
+  const globalSelectedCompanionId = useSelector(
+    (state: RootState) => state.companion.selectedCompanionId,
+  );
 
-  const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(draft.companionId ?? null);
-  const [reporterType, setReporterType] = useState<ReporterType>(draft.reporterType);
+  const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(
+    draft.companionId ?? globalSelectedCompanionId ?? null,
+  );
+  const [reporterType, setReporterType] = useState<ReporterType>(
+    draft.reporterType,
+  );
   const [agreeToTerms, setAgreeToTerms] = useState(draft.agreeToTerms);
   const [termsError, setTermsError] = useState('');
 
-  // Set the globally selected companion as default when component mounts
+  const companionSyncedRef = React.useRef(false);
   useEffect(() => {
-    if (!selectedCompanionId) {
-      const fallbackCompanionId = draft.companionId ?? globalSelectedCompanionId;
-      if (fallbackCompanionId) {
-        setSelectedCompanionId(fallbackCompanionId);
-        updateDraft({companionId: fallbackCompanionId});
-        dispatch(setSelectedCompanion(fallbackCompanionId));
-      }
+    if (!companionSyncedRef.current && selectedCompanionId) {
+      companionSyncedRef.current = true;
+      updateDraft({companionId: selectedCompanionId});
+      dispatch(setSelectedCompanion(selectedCompanionId));
     }
-  }, [dispatch, draft.companionId, globalSelectedCompanionId, selectedCompanionId, updateDraft]);
+  }, [dispatch, selectedCompanionId, updateDraft]);
 
   const handleNext = () => {
     if (!selectedCompanionId) {
@@ -88,14 +97,25 @@ export const Step1Screen: React.FC<Props> = ({ navigation }) => {
     <AERLayout
       stepLabel="Step 1 of 5"
       onBack={() => navigation.goBack()}
-      bottomButton={{ title: 'Next', onPress: handleNext, disabled: !isCompanionSelected }}
-    >
+      bottomButton={{
+        title: 'Next',
+        onPress: handleNext,
+        disabled: !isCompanionSelected,
+      }}>
       <Image source={Images.adverse2} style={styles.heroImage} />
 
       <Text style={styles.title}>Veterinary product adverse events</Text>
-      <Text style={styles.subtitle}>Notify the manufacturer about any issues or concerns you experienced with a pharmaceutical product used for your pet.</Text>
+      <Text style={styles.subtitle}>
+        Notify the manufacturer about any issues or concerns you experienced
+        with a pharmaceutical product used for your pet.
+      </Text>
 
-      <Text style={styles.descriptionText}>To report a potential side effect, unexpected reaction, or any other concern following the use of a YosemiteCrew Animal Health product, please fill out the following form as completely and accurately as possible.</Text>
+      <Text style={styles.descriptionText}>
+        To report a potential side effect, unexpected reaction, or any other
+        concern following the use of a YosemiteCrew Animal Health product,
+        please fill out the following form as completely and accurately as
+        possible.
+      </Text>
 
       <View style={styles.companionSelector}>
         <CompanionSelector
@@ -113,8 +133,7 @@ export const Step1Screen: React.FC<Props> = ({ navigation }) => {
 
         <TouchableOpacity
           style={styles.radioOption}
-          onPress={() => handleReporterTypeSelect('parent')}
-        >
+          onPress={() => handleReporterTypeSelect('parent')}>
           <View style={styles.radioOuter}>
             {reporterType === 'parent' && <View style={styles.radioInner} />}
           </View>
@@ -123,8 +142,7 @@ export const Step1Screen: React.FC<Props> = ({ navigation }) => {
 
         <TouchableOpacity
           style={styles.radioOption}
-          onPress={() => handleReporterTypeSelect('guardian')}
-        >
+          onPress={() => handleReporterTypeSelect('guardian')}>
           <View style={styles.radioOuter}>
             {reporterType === 'guardian' && <View style={styles.radioInner} />}
           </View>
@@ -139,8 +157,7 @@ export const Step1Screen: React.FC<Props> = ({ navigation }) => {
           activeOpacity={0.9}
           onPress={handleToggleTerms}
           accessibilityRole="checkbox"
-          accessibilityState={{checked: agreeToTerms}}
-        >
+          accessibilityState={{checked: agreeToTerms}}>
           <Checkbox
             value={agreeToTerms}
             onValueChange={() => {
@@ -181,7 +198,7 @@ const createStyles = (theme: any) =>
       color: theme.colors.secondary,
       marginBottom: theme.spacing['2'],
       textAlign: 'center',
-            paddingHorizontal: theme.spacing['16'],
+      paddingHorizontal: theme.spacing['16'],
     },
     subtitle: {
       ...theme.typography.subtitleBold14,
@@ -194,7 +211,6 @@ const createStyles = (theme: any) =>
       ...theme.typography.titleSmall,
       color: theme.colors.text,
       marginBottom: theme.spacing['6'],
-
     },
     companionSelector: {
       marginBottom: theme.spacing['6'],
@@ -231,7 +247,6 @@ const createStyles = (theme: any) =>
     radioLabel: {
       ...theme.typography.body,
       color: theme.colors.secondary,
-
     },
     checkboxSection: {
       marginBottom: theme.spacing['6'],
@@ -244,7 +259,7 @@ const createStyles = (theme: any) =>
       ...theme.typography.pillSubtitleBold15,
       lineHeight: 18,
       color: theme.colors.secondary,
-        marginBottom: theme.spacing['2'],
+      marginBottom: theme.spacing['2'],
     },
     consentRow: {
       flexDirection: 'row',

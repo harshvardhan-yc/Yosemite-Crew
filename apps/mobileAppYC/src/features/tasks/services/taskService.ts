@@ -252,6 +252,9 @@ export const mapApiTaskToTask = (apiTask: any): Task => {
     dueAt: dueAt ?? undefined,
     timezone: apiTask?.timezone,
     date,
+    recurrenceEndDate: recurrence?.endDate
+      ? (formatDateToISODate(new Date(recurrence.endDate)) ?? undefined)
+      : undefined,
     time,
     frequency,
     assignedTo: apiTask?.assignedTo ?? apiTask?.assigned_to,

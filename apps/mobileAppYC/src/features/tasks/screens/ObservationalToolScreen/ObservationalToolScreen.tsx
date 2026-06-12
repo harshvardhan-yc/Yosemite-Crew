@@ -148,7 +148,9 @@ export const ObservationalToolScreen: React.FC = () => {
   const [definitionLoading, setDefinitionLoading] = useState(false);
   const [remoteDefinition, setRemoteDefinition] =
     useState<ObservationToolDefinitionRemote | null>(null);
-  const [companionImageError, setCompanionImageError] = useState(false);
+  const [companionImageErrorUri, setCompanionImageErrorUri] = useState<
+    string | null
+  >(null);
   const scrollToTop = useCallback(() => {
     scrollViewRef.current?.scrollTo({y: 0, animated: true});
   }, []);
@@ -455,11 +457,11 @@ export const ObservationalToolScreen: React.FC = () => {
     });
   }, [providerEntries, requestBusinessPhoto]);
 
-  useEffect(() => {
-    if (!selectedProviderId && providerEntries.length === 1) {
-      setSelectedProviderId(providerEntries[0].businessId);
-    }
-  }, [providerEntries, selectedProviderId]);
+  const effectiveProviderId =
+    selectedProviderId ??
+    (providerEntries.length === 1
+      ? (providerEntries[0]?.businessId ?? null)
+      : null);
 
   const totalSteps = steps.length;
   const effectiveStepIndex =
@@ -536,6 +538,8 @@ export const ObservationalToolScreen: React.FC = () => {
     () => normalizeImageUri(companion?.profileImage ?? null),
     [companion?.profileImage],
   );
+  const companionImageError =
+    !!companionImageUri && companionImageErrorUri === companionImageUri;
   const companionImageSource = useMemo(
     () =>
       companionImageUri && !companionImageError
@@ -543,10 +547,6 @@ export const ObservationalToolScreen: React.FC = () => {
         : null,
     [companionImageError, companionImageUri],
   );
-
-  useEffect(() => {
-    setCompanionImageError(false);
-  }, [companionImageUri]);
 
   const companionInitial = useMemo(() => {
     const nameSource = companion?.name ?? toolLabel;
@@ -577,7 +577,7 @@ export const ObservationalToolScreen: React.FC = () => {
   };
 
   const startAssessment = () => {
-    if (providerEntries.length > 0 && !selectedProviderId) {
+    if (providerEntries.length > 0 && !effectiveProviderId) {
       setProviderTouched(true);
       return;
     }
@@ -588,10 +588,13 @@ export const ObservationalToolScreen: React.FC = () => {
     if (!providerEntries.length) {
       return null;
     }
-    if (selectedProviderId) {
-      const selected = providerEntries.find(
-        entry => entry.businessId === selectedProviderId,
-      );
+    const epid =
+      selectedProviderId ??
+      (providerEntries.length === 1
+        ? (providerEntries[0]?.businessId ?? null)
+        : null);
+    if (epid) {
+      const selected = providerEntries.find(entry => entry.businessId === epid);
       if (selected) return selected;
     }
     return providerEntries[0] ?? null;
@@ -602,7 +605,12 @@ export const ObservationalToolScreen: React.FC = () => {
       return;
     }
 
-    if (providerEntries.length > 0 && !selectedProviderId) {
+    const epid =
+      selectedProviderId ??
+      (providerEntries.length === 1
+        ? (providerEntries[0]?.businessId ?? null)
+        : null);
+    if (providerEntries.length > 0 && !epid) {
       setProviderTouched(true);
       return;
     }
@@ -810,7 +818,7 @@ export const ObservationalToolScreen: React.FC = () => {
           <View key={option.id}>
             <Pressable
               onPress={() => toggleOption(currentStep.id, option.id)}
-              style={[styles.optionRadioRow]}>
+              style={styles.optionRadioRow}>
               <Text
                 style={[
                   styles.optionRadioLabel,
@@ -915,7 +923,7 @@ export const ObservationalToolScreen: React.FC = () => {
               <Image
                 source={companionImageSource}
                 style={styles.stepHero}
-                onError={() => setCompanionImageError(true)}
+                onError={() => setCompanionImageErrorUri(companionImageUri)}
               />
             ) : (
               <View style={styles.stepHeroFallback}>
@@ -959,7 +967,7 @@ export const ObservationalToolScreen: React.FC = () => {
         fallbackStyle={styles.glassCardFallback}>
         <View style={styles.providerList}>
           {providerEntries.map(entry => {
-            const selected = selectedProviderId === entry.businessId;
+            const selected = effectiveProviderId === entry.businessId;
             const isLocalAsset = typeof entry.image === 'number';
             const primaryUri =
               typeof entry.image === 'string'
@@ -1046,7 +1054,7 @@ export const ObservationalToolScreen: React.FC = () => {
           })}
         </View>
       </LiquidGlassCard>
-      {providerTouched && !selectedProviderId ? (
+      {providerTouched && !effectiveProviderId ? (
         <Text style={styles.validationText}>Please select a provider</Text>
       ) : null}
     </>
@@ -1090,7 +1098,7 @@ export const ObservationalToolScreen: React.FC = () => {
             <Image
               source={companionImageSource}
               style={styles.introImage}
-              onError={() => setCompanionImageError(true)}
+              onError={() => setCompanionImageErrorUri(companionImageUri)}
             />
           ) : (
             <View style={styles.initialFallback}>
@@ -1203,8 +1211,7 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     introImageWrapper: {
       width: theme.spacing['24'],
@@ -1284,7 +1291,7 @@ const createStyles = (theme: any) =>
     providerCardSelected: {
       borderColor: theme.colors.primary,
       borderWidth: 1.5,
-      ...theme.shadows.medium,
+      boxShadow: `0px 4px 6px ${theme.colors.neutralShadow}`,
     },
     providerImage: {
       width: theme.spacing['32'],
@@ -1447,7 +1454,7 @@ const createStyles = (theme: any) =>
     },
     optionImageCardSelected: {
       borderColor: theme.colors.primary,
-      ...theme.shadows.medium,
+      boxShadow: `0px 4px 6px ${theme.colors.neutralShadow}`,
     },
     optionImageLarge: {
       width: theme.spacing['25'],

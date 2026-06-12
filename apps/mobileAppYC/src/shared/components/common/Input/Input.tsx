@@ -3,7 +3,7 @@
 // src/components/common/Input/Input.tsx
 // ============================================
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, {useState, useRef, useCallback} from 'react';
 import {
   Keyboard,
   TextInput,
@@ -17,7 +17,7 @@ import {
   TouchableOpacity,
   useColorScheme,
 } from 'react-native';
-import { useTheme } from '@/hooks';
+import {useTheme} from '@/hooks';
 import {
   getFloatingLabelAnimatedStyle,
   getInputContainerBaseStyle,
@@ -56,10 +56,21 @@ export const Input: React.FC<InputProps> = ({
   placeholderOffset,
   ...textInputProps
 }) => {
-  const { theme } = useTheme();
+  const {theme} = useTheme();
   const systemColorScheme = useColorScheme();
   const [isFocused, setIsFocused] = useState(false);
-  const [hasValue, setHasValue] = useState(!!value);
+  const [hasValue, setHasValue] = useState(
+    value !== undefined && value !== null && `${value}`.length > 0,
+  );
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    const nextHasValue =
+      value !== undefined && value !== null && `${value}`.length > 0;
+    if (hasValue !== nextHasValue) {
+      setHasValue(nextHasValue);
+    }
+  }
   const animatedValue = useRef(new Animated.Value(value ? 1 : 0)).current;
   const {
     keyboardAppearance: keyboardAppearanceProp,
@@ -69,20 +80,22 @@ export const Input: React.FC<InputProps> = ({
     ...restTextInputProps
   } = textInputProps;
   const isMultiline = Boolean(restTextInputProps.multiline);
-  const keyboardAppearance =
-    systemColorScheme === 'dark' ? 'dark' : 'light';
+  const keyboardAppearance = systemColorScheme === 'dark' ? 'dark' : 'light';
   const resolvedKeyboardAppearance =
     keyboardAppearanceProp ?? keyboardAppearance;
   const resolvedReturnKeyType = returnKeyTypeProp ?? 'done';
   const resolvedReturnKeyLabel = returnKeyLabelProp ?? 'Done';
 
-  const animateLabel = useCallback((toValue: number) => {
-    Animated.timing(animatedValue, {
-      toValue,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
-  }, [animatedValue]);
+  const animateLabel = useCallback(
+    (toValue: number) => {
+      Animated.timing(animatedValue, {
+        toValue,
+        duration: 200,
+        useNativeDriver: false,
+      }).start();
+    },
+    [animatedValue],
+  );
 
   const handleFocus = (e: any) => {
     setIsFocused(true);
@@ -99,27 +112,17 @@ export const Input: React.FC<InputProps> = ({
   };
 
   const handleChangeText = (text: string) => {
-    setHasValue(!!text);
+    const newHasValue = !!text;
+    setHasValue(newHasValue);
+    animateLabel(newHasValue ? 1 : 0);
     onChangeText?.(text);
   };
 
   React.useEffect(() => {
     const hasExternalValue =
       value !== undefined && value !== null && `${value}`.length > 0;
-
-    if (hasValue !== hasExternalValue) {
-      setHasValue(hasExternalValue);
-    }
-  }, [value, hasValue]);
-
-  React.useEffect(() => {
-    const shouldAnimateUp = !!value || hasValue;
-    if (shouldAnimateUp) {
-      animateLabel(1);
-    } else {
-      animateLabel(0);
-    }
-  }, [value, hasValue, animateLabel]);
+    animateLabel(hasExternalValue ? 1 : 0);
+  }, [value, animateLabel]);
 
   const getInputContainerStyle = (): ViewStyle => {
     const baseStyle = getInputContainerBaseStyle(theme, error);
@@ -141,16 +144,20 @@ export const Input: React.FC<InputProps> = ({
     const baseStyle = getValueTextStyle(theme, hasValue || isFocused);
     return {
       ...baseStyle,
-      color: hasValue || isFocused ? theme.colors.text : theme.colors.placeholder,
-      fontFamily: hasValue || isFocused
-        ? theme.typography.inputFilled.fontFamily
-        : theme.typography.input.fontFamily,
-      fontWeight: hasValue || isFocused
-        ? theme.typography.inputFilled.fontWeight
-        : theme.typography.input.fontWeight,
-      letterSpacing: hasValue || isFocused
-        ? theme.typography.inputFilled.letterSpacing
-        : theme.typography.input.letterSpacing,
+      color:
+        hasValue || isFocused ? theme.colors.text : theme.colors.placeholder,
+      fontFamily:
+        hasValue || isFocused
+          ? theme.typography.inputFilled.fontFamily
+          : theme.typography.input.fontFamily,
+      fontWeight:
+        hasValue || isFocused
+          ? theme.typography.inputFilled.fontWeight
+          : theme.typography.input.fontWeight,
+      letterSpacing:
+        hasValue || isFocused
+          ? theme.typography.inputFilled.letterSpacing
+          : theme.typography.input.letterSpacing,
       lineHeight: Platform.OS === 'ios' ? undefined : baseStyle.lineHeight,
       height: undefined,
     };
@@ -169,7 +176,10 @@ export const Input: React.FC<InputProps> = ({
       ...baseStyle,
       left: animatedValue.interpolate({
         inputRange: [0, 1],
-        outputRange: [theme.spacing['5'] + effectivePlaceholderOffset, theme.spacing['5']],
+        outputRange: [
+          theme.spacing['5'] + effectivePlaceholderOffset,
+          theme.spacing['5'],
+        ],
       }),
       color: animatedValue.interpolate({
         inputRange: [0, 1],
@@ -214,7 +224,7 @@ export const Input: React.FC<InputProps> = ({
           enablesReturnKeyAutomatically={true}
           returnKeyType={resolvedReturnKeyType}
           returnKeyLabel={resolvedReturnKeyLabel}
-          onSubmitEditing={(event) => {
+          onSubmitEditing={event => {
             onSubmitEditing?.(event);
             if (!isMultiline) {
               Keyboard.dismiss();
@@ -228,9 +238,7 @@ export const Input: React.FC<InputProps> = ({
           </IconWrapper>
         )}
       </View>
-      {error && (
-        <Text style={[getErrorStyle(), errorStyle]}>{error}</Text>
-      )}
+      {error && <Text style={[getErrorStyle(), errorStyle]}>{error}</Text>}
     </View>
   );
 };

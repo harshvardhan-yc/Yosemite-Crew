@@ -36,6 +36,9 @@ jest.mock(
   '../../../../src/features/legal/components/LegalContentRenderer',
   () => {
     const {View, Text} = require('react-native');
+    const getBlockKey = (block: any) =>
+      block.segments.map((segment: any) => segment.text).join('|');
+
     return {
       LegalContentRenderer: ({sections}: any) => (
         <View testID="legal-renderer">
@@ -44,7 +47,7 @@ jest.mock(
               <Text>{s.title}</Text>
               {s.blocks.map((b: any, index: number) => (
                 <Text
-                  key={`${s.id}-block-${index}`}
+                  key={`${s.id}-block-${getBlockKey(b)}`}
                   testID={`block-${s.id}-${index}`}>
                   {b.segments[0].text}
                 </Text>

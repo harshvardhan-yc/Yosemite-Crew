@@ -1,7 +1,71 @@
-import React, {forwardRef, useImperativeHandle, useMemo, useRef, useState, useEffect} from 'react';
-import {GenericSelectBottomSheet, type SelectItem} from '@/shared/components/common/GenericSelectBottomSheet/GenericSelectBottomSheet';
+import React, {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from 'react';
+import {
+  GenericSelectBottomSheet,
+  type SelectItem,
+} from '@/shared/components/common/GenericSelectBottomSheet/GenericSelectBottomSheet';
 import {resolveObservationalToolLabel} from '@/features/tasks/utils/taskLabels';
-import {observationToolApi, type ObservationToolDefinitionRemote} from '@/features/observationalTools/services/observationToolService';
+import {
+  observationToolApi,
+  type ObservationToolDefinitionRemote,
+} from '@/features/observationalTools/services/observationToolService';
+
+let _tools: ObservationToolDefinitionRemote[] = [];
+let _toolsLoaded = false;
+let _toolsFetching = false;
+const _toolsListeners = new Set<() => void>();
+
+function _notifyTools() {
+  _toolsListeners.forEach(l => l());
+}
+
+function _startFetchTools() {
+  if (_toolsFetching) return;
+  _toolsFetching = true;
+  observationToolApi
+    .list({onlyActive: true})
+    .then(list => {
+      _tools = list;
+    })
+    .catch(error => {
+      console.warn(
+        '[ObservationalToolBottomSheet] Failed to fetch tools',
+        error,
+      );
+    })
+    .finally(() => {
+      _toolsLoaded = true;
+      _notifyTools();
+    });
+}
+
+function _subscribeTools(listener: () => void) {
+  _toolsListeners.add(listener);
+  _startFetchTools();
+  return () => {
+    _toolsListeners.delete(listener);
+  };
+}
+
+function _getToolsSnapshot(): ObservationToolDefinitionRemote[] {
+  return _tools;
+}
+
+function _getToolsLoadingSnapshot(): boolean {
+  return !_toolsLoaded;
+}
+
+export function _resetToolsStoreForTesting() {
+  _tools = [];
+  _toolsLoaded = false;
+  _toolsFetching = false;
+  _toolsListeners.clear();
+}
 
 export interface ObservationalToolBottomSheetRef {
   open: () => void;
@@ -20,40 +84,30 @@ export const ObservationalToolBottomSheet = forwardRef<
   ObservationalToolBottomSheetProps
 >(({selectedTool, onSelect, companionType, onSheetChange}, ref) => {
   const bottomSheetRef = useRef<any>(null);
-  const [tools, setTools] = useState<ObservationToolDefinitionRemote[]>([]);
-  const [loading, setLoading] = useState(false);
+  const tools = useSyncExternalStore(
+    _subscribeTools,
+    _getToolsSnapshot,
+    _getToolsSnapshot,
+  );
+  const loading = useSyncExternalStore(
+    _subscribeTools,
+    _getToolsLoadingSnapshot,
+    _getToolsLoadingSnapshot,
+  );
 
   useImperativeHandle(ref, () => ({
     open: () => bottomSheetRef.current?.open(),
     close: () => bottomSheetRef.current?.close(),
   }));
 
-  useEffect(() => {
-    let isMounted = true;
-    const fetchTools = async () => {
-      try {
-        setLoading(true);
-        const list = await observationToolApi.list({onlyActive: true});
-        if (isMounted) {
-          setTools(list);
-        }
-      } catch (error) {
-        console.warn('[ObservationalToolBottomSheet] Failed to fetch tools', error);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-    fetchTools();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const inferSpeciesFromName = (name?: string | null) => {
     const normalized = (name ?? '').toLowerCase();
-    if (normalized.includes('feline') || normalized.includes('cat')) return 'cat';
-    if (normalized.includes('canine') || normalized.includes('dog')) return 'dog';
-    if (normalized.includes('equine') || normalized.includes('horse')) return 'horse';
+    if (normalized.includes('feline') || normalized.includes('cat'))
+      return 'cat';
+    if (normalized.includes('canine') || normalized.includes('dog'))
+      return 'dog';
+    if (normalized.includes('equine') || normalized.includes('horse'))
+      return 'horse';
     return null;
   };
 
@@ -64,11 +118,13 @@ export const ObservationalToolBottomSheet = forwardRef<
     });
   }, [companionType, tools]);
 
-  const toolItems: SelectItem[] = useMemo(() =>
-    availableTools.map(tool => ({
-      id: tool.id,
-      label: tool.name ?? resolveObservationalToolLabel(tool.id),
-    })), [availableTools]
+  const toolItems: SelectItem[] = useMemo(
+    () =>
+      availableTools.map(tool => ({
+        id: tool.id,
+        label: tool.name ?? resolveObservationalToolLabel(tool.id),
+      })),
+    [availableTools],
   );
 
   const selectedItem = selectedTool

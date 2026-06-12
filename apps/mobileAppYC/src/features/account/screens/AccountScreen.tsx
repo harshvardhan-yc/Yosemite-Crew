@@ -86,7 +86,9 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
   const [failedProfileImages, setFailedProfileImages] = useState<
     Record<string, boolean>
   >({});
-  const [appVersion, setAppVersion] = useState<string>('');
+  const [appVersion] = useState<string>(
+    () => `${DeviceInfo.getVersion()} (${DeviceInfo.getBuildNumber()})`,
+  );
   const handleProfileImageError = React.useCallback((id: string) => {
     setFailedProfileImages(prev => {
       if (prev[id]) {
@@ -264,11 +266,6 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
 
     return () => backHandler.remove();
   }, [isDeleteSheetOpen]);
-
-  useEffect(() => {
-    const version = `${DeviceInfo.getVersion()} (${DeviceInfo.getBuildNumber()})`;
-    setAppVersion(version);
-  }, []);
 
   const handleDeletePress = React.useCallback(() => {
     setIsDeleteSheetOpen(true);
@@ -663,8 +660,7 @@ const createStyles = (theme: any) => {
     cardShadowWrapper: {
       borderRadius: theme.borderRadius.lg,
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.lg,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 10px 15px ${theme.colors.neutralShadow}`,
       overflow: 'visible',
     },
   });

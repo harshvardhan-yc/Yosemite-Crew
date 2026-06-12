@@ -43,14 +43,13 @@ jest.mock('@/shared/components/common', () => {
         <MockView {...props} testID={inputTestId}>
                               {label && <MockText>Label: {label}</MockText>}   
                 {placeholder && <MockText>Placeholder: {placeholder}</MockText>}
-                    <MockText>Value: {value}</MockText>         {' '}
-          {error && <MockText>Error: {error}</MockText>}         {' '}
-          <MockText>Editable: {String(editable)}</MockText>         {' '}
+                    <MockText>Value: {value}</MockText>
+          {error && <MockText>Error: {error}</MockText>}
+          <MockText>Editable: {String(editable)}</MockText>
           <MockTouchableOpacity
             testID={`${inputTestId}-touchable`}
             onPress={() => onChangeText && onChangeText('mock change')}
           />
-                 {' '}
         </MockView>
       );
     },
@@ -70,11 +69,11 @@ jest.mock('@/shared/components/common', () => {
           onPress={onPress}>
                               {label && <MockText>Label: {label}</MockText>}   
                 {placeholder && <MockText>Placeholder: {placeholder}</MockText>}
-                    <MockText>Value: {value || ''}</MockText>         {' '}
+                    <MockText>Value: {value || ''}</MockText>
           {rightComponent?.props?.source && (
             <MockText>Icon: {rightComponent.props.source}</MockText>
           )}
-                    {error && <MockText>Error: {error}</MockText>}       {' '}
+                    {error && <MockText>Error: {error}</MockText>}
         </MockTouchableOpacity>
       );
     },
@@ -112,7 +111,10 @@ jest.mock('@/assets/images', () => ({
 
 // Mock hooks to prevent Redux context errors
 jest.mock('@/hooks', () => ({
-  useTheme: () => ({theme: require('../../setup/mockTheme').mockTheme, isDark: false}),
+  useTheme: () => ({
+    theme: require('../../setup/mockTheme').mockTheme,
+    isDark: false,
+  }),
   useAppDispatch: () => jest.fn(),
   useAppSelector: jest.fn(),
 }));
@@ -139,7 +141,7 @@ jest.mock('@/features/tasks/components/shared/taskFormStyles', () => ({
 jest.mock('react-native/Libraries/Image/Image', () => {
   const MockImage = (props: any) => (
     <MockView testID="mock-image">
-            <MockText>Source: {props.source}</MockText>   {' '}
+            <MockText>Source: {props.source}</MockText>
     </MockView>
   );
   MockImage.displayName = 'Image';
@@ -147,8 +149,6 @@ jest.mock('react-native/Libraries/Image/Image', () => {
 });
 
 // --- Mock Data ---
-
-
 
 const baseFormData: TaskFormData = {
   title: '',

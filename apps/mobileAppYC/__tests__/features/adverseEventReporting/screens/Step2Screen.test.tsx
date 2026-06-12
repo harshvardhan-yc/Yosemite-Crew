@@ -60,7 +60,7 @@ jest.mock(
         {/* Render rows to verify data mapping and individual row onPress */}
         {rows.map((row: any, index: number) => (
           <TouchableOpacity
-            key={index}
+            key={row.label}
             onPress={row.onPress}
             testID={`row-${index}`}>
             <Text>

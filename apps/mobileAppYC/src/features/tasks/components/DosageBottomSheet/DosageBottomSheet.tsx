@@ -1,6 +1,22 @@
-import React, {forwardRef, useImperativeHandle, useRef, useState, useMemo} from 'react';
-import {View, Text, StyleSheet, ScrollView, TouchableOpacity, Image} from 'react-native';
-import {ConfirmActionBottomSheet, ConfirmActionBottomSheetRef} from '@/shared/components/common/ConfirmActionBottomSheet/ConfirmActionBottomSheet';
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useMemo,
+} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+} from 'react-native';
+import {
+  ConfirmActionBottomSheet,
+  ConfirmActionBottomSheetRef,
+} from '@/shared/components/common/ConfirmActionBottomSheet/ConfirmActionBottomSheet';
 import {SimpleDatePicker} from '@/shared/components/common/SimpleDatePicker/SimpleDatePicker';
 import {Input} from '@/shared/components/common/Input/Input';
 import {useTheme} from '@/hooks';
@@ -18,211 +34,219 @@ interface DosageBottomSheetProps {
   onSheetChange?: (index: number) => void;
 }
 
-export const DosageBottomSheet = forwardRef<DosageBottomSheetRef, DosageBottomSheetProps>(
-  ({dosages, onSave, onSheetChange}, ref) => {
-    const {theme} = useTheme();
-    const styles = useMemo(() => createStyles(theme), [theme]);
-    const bottomSheetRef = useRef<ConfirmActionBottomSheetRef>(null);
-    const [tempDosages, setTempDosages] = useState<DosageSchedule[]>(dosages);
-    const [showTimePicker, setShowTimePicker] = useState(false);
-    const [editingDosageId, setEditingDosageId] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
+export const DosageBottomSheet = forwardRef<
+  DosageBottomSheetRef,
+  DosageBottomSheetProps
+>(({dosages, onSave, onSheetChange}, ref) => {
+  const {theme} = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const bottomSheetRef = useRef<ConfirmActionBottomSheetRef>(null);
+  const [tempDosages, setTempDosages] = useState<DosageSchedule[]>(dosages);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [editingDosageId, setEditingDosageId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-    // Sync tempDosages when dosages prop changes
-    React.useEffect(() => {
-      setTempDosages(dosages);
-    }, [dosages]);
-
-    useImperativeHandle(ref, () => ({
-      open: () => bottomSheetRef.current?.open(),
+  useImperativeHandle(
+    ref,
+    () => ({
+      open: () => {
+        setTempDosages(dosages);
+        bottomSheetRef.current?.open();
+      },
       close: () => bottomSheetRef.current?.close(),
-    }));
+    }),
+    [dosages],
+  );
 
-    const handleAddDosage = () => {
-      const newDosage: DosageSchedule = {
-        id: `dosage_${Date.now()}`,
-        label: `Dose ${tempDosages.length + 1}`,
-        time: new Date().toISOString(),
-      };
-      setTempDosages([...tempDosages, newDosage]);
+  const handleAddDosage = () => {
+    const newDosage: DosageSchedule = {
+      id: `dosage_${Date.now()}`,
+      label: `Dose ${tempDosages.length + 1}`,
+      time: new Date().toISOString(),
     };
+    setTempDosages([...tempDosages, newDosage]);
+  };
 
-    const handleRemoveDosage = (id: string) => {
-      const filtered = tempDosages.filter(d => d.id !== id);
-      setTempDosages(filtered);
-    };
+  const handleRemoveDosage = (id: string) => {
+    const filtered = tempDosages.filter(d => d.id !== id);
+    setTempDosages(filtered);
+  };
 
-    const handleLabelChange = (id: string, newLabel: string) => {
+  const handleLabelChange = (id: string, newLabel: string) => {
+    const updated = tempDosages.map(d =>
+      d.id === id ? {...d, label: newLabel} : d,
+    );
+    setTempDosages(updated);
+  };
+
+  const handleTimeChange = (selectedTime: Date) => {
+    if (editingDosageId) {
       const updated = tempDosages.map(d =>
-        d.id === id ? {...d, label: newLabel} : d,
+        d.id === editingDosageId ? {...d, time: selectedTime.toISOString()} : d,
       );
       setTempDosages(updated);
-    };
+    }
+  };
 
-    const handleTimeChange = (selectedTime: Date) => {
-      if (editingDosageId) {
-        const updated = tempDosages.map(d =>
-          d.id === editingDosageId ? {...d, time: selectedTime.toISOString()} : d,
-        );
-        setTempDosages(updated);
-      }
-    };
+  const handleTimePickerDismiss = () => {
+    setShowTimePicker(false);
+    setEditingDosageId(null);
+  };
 
-    const handleTimePickerDismiss = () => {
-      setShowTimePicker(false);
-      setEditingDosageId(null);
-    };
+  const handleEditTime = (dosageId: string) => {
+    setEditingDosageId(dosageId);
+    setShowTimePicker(true);
+  };
 
-    const handleEditTime = (dosageId: string) => {
-      setEditingDosageId(dosageId);
-      setShowTimePicker(true);
-    };
-
-    const formatTime = (isoTime: string) => {
-      try {
-        // Handle both ISO string and regular date formats
-        let date: Date;
-        if (isoTime.includes('T')) {
-          // ISO format: use as-is
-          date = new Date(isoTime);
-        } else if (isoTime.includes(':')) {
-          // Time-only format (HH:mm:ss), create date with today's date
-          const [hours, minutes, seconds] = isoTime.split(':').map(Number);
-          if (Number.isNaN(hours) || Number.isNaN(minutes)) return 'Invalid time';
-          date = new Date();
-          date.setHours(hours, minutes, seconds || 0, 0);
-        } else {
-          return 'Invalid time';
-        }
-
-        if (Number.isNaN(date.getTime())) return 'Invalid time';
-
-        return date.toLocaleTimeString('en-US', {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true,
-        });
-      } catch {
+  const formatTime = (isoTime: string) => {
+    try {
+      // Handle both ISO string and regular date formats
+      let date: Date;
+      if (isoTime.includes('T')) {
+        // ISO format: use as-is
+        date = new Date(isoTime);
+      } else if (isoTime.includes(':')) {
+        // Time-only format (HH:mm:ss), create date with today's date
+        const [hours, minutes, seconds] = isoTime.split(':').map(Number);
+        if (Number.isNaN(hours) || Number.isNaN(minutes)) return 'Invalid time';
+        date = new Date();
+        date.setHours(hours, minutes, seconds || 0, 0);
+      } else {
         return 'Invalid time';
       }
-    };
 
-    const handleSave = async () => {
-      if (saving) {
-        return;
+      if (Number.isNaN(date.getTime())) return 'Invalid time';
+
+      return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } catch {
+      return 'Invalid time';
+    }
+  };
+
+  const handleSave = async () => {
+    if (saving) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await Promise.resolve(onSave(tempDosages));
+      bottomSheetRef.current?.close();
+    } catch (error) {
+      console.warn('[DosageBottomSheet] Failed to save dosages', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const currentEditingDosage = tempDosages.find(d => d.id === editingDosageId);
+
+  const getDateFromDosageTime = (dosageTime: string): Date => {
+    try {
+      if (dosageTime.includes('T')) {
+        // ISO format
+        return new Date(dosageTime);
+      } else if (dosageTime.includes(':')) {
+        // Time-only format
+        const [hours, minutes, seconds] = dosageTime.split(':').map(Number);
+        const date = new Date();
+        date.setHours(hours, minutes, seconds || 0, 0);
+        return date;
       }
+      return new Date();
+    } catch {
+      return new Date();
+    }
+  };
 
-      try {
-        setSaving(true);
-        await Promise.resolve(onSave(tempDosages));
-        bottomSheetRef.current?.close();
-      } catch (error) {
-        console.warn('[DosageBottomSheet] Failed to save dosages', error);
-      } finally {
-        setSaving(false);
-      }
-    };
-
-    const currentEditingDosage = tempDosages.find(d => d.id === editingDosageId);
-
-    const getDateFromDosageTime = (dosageTime: string): Date => {
-      try {
-        if (dosageTime.includes('T')) {
-          // ISO format
-          return new Date(dosageTime);
-        } else if (dosageTime.includes(':')) {
-          // Time-only format
-          const [hours, minutes, seconds] = dosageTime.split(':').map(Number);
-          const date = new Date();
-          date.setHours(hours, minutes, seconds || 0, 0);
-          return date;
-        }
-        return new Date();
-      } catch {
-        return new Date();
-      }
-    };
-
-    return (
-      <ConfirmActionBottomSheet
-        ref={bottomSheetRef}
-        title="Dosage"
-        snapPoints={['80%']}
-        onSheetChange={onSheetChange}
-        primaryButton={{
-          label: 'Save',
-          onPress: handleSave,
-          loading: saving,
-          disabled: saving,
-          tintColor: theme.colors.secondary,
-          style: styles.saveButton,
-          textStyle: styles.saveButtonText,
-          shadowIntensity: 'none',
-        }}>
-        <View style={styles.container}>
-          <ScrollView
-            style={styles.scrollView}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}>
-            {tempDosages.map((dosage, _index) => (
-              <View key={dosage.id} style={styles.dosageRow}>
-                <View style={styles.inputField}>
-                  <Input
-                    label="Dosage"
-                    value={dosage.label}
-                    onChangeText={text => handleLabelChange(dosage.id, text)}
-                    placeholder="Enter dose name"
-                    containerStyle={styles.inputContainer}
-                  />
-                </View>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => handleEditTime(dosage.id)}
-                  style={styles.inputField}>
-                  <Input
-                    label="Time"
-                    value={formatTime(dosage.time)}
-                    placeholder="Select time"
-                    editable={false}
-                    pointerEvents="none"
-                    icon={<Image source={Images.clockIcon} style={styles.clockIconInput} />}
-                    containerStyle={styles.inputContainer}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  style={styles.removeButton}
-                  onPress={() => handleRemoveDosage(dosage.id)}>
-                  <Image source={Images.deleteIcon} style={styles.deleteIcon} />
-                </TouchableOpacity>
+  return (
+    <ConfirmActionBottomSheet
+      ref={bottomSheetRef}
+      title="Dosage"
+      snapPoints={['80%']}
+      onSheetChange={onSheetChange}
+      primaryButton={{
+        label: 'Save',
+        onPress: handleSave,
+        loading: saving,
+        disabled: saving,
+        tintColor: theme.colors.secondary,
+        style: styles.saveButton,
+        textStyle: styles.saveButtonText,
+        shadowIntensity: 'none',
+      }}>
+      <View style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}>
+          {tempDosages.map((dosage, _index) => (
+            <View key={dosage.id} style={styles.dosageRow}>
+              <View style={styles.inputField}>
+                <Input
+                  label="Dosage"
+                  value={dosage.label}
+                  onChangeText={text => handleLabelChange(dosage.id, text)}
+                  placeholder="Enter dose name"
+                  containerStyle={styles.inputContainer}
+                />
               </View>
-            ))}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => handleEditTime(dosage.id)}
+                style={styles.inputField}>
+                <Input
+                  label="Time"
+                  value={formatTime(dosage.time)}
+                  placeholder="Select time"
+                  editable={false}
+                  pointerEvents="none"
+                  icon={
+                    <Image
+                      source={Images.clockIcon}
+                      style={styles.clockIconInput}
+                    />
+                  }
+                  containerStyle={styles.inputContainer}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={styles.removeButton}
+                onPress={() => handleRemoveDosage(dosage.id)}>
+                <Image source={Images.deleteIcon} style={styles.deleteIcon} />
+              </TouchableOpacity>
+            </View>
+          ))}
 
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={styles.addButton}
-              onPress={handleAddDosage}>
-              <Image source={Images.addIcon} style={styles.addIcon} />
-              <Text style={styles.addText}>Add</Text>
-            </TouchableOpacity>
-          </ScrollView>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.addButton}
+            onPress={handleAddDosage}>
+            <Image source={Images.addIcon} style={styles.addIcon} />
+            <Text style={styles.addText}>Add</Text>
+          </TouchableOpacity>
+        </ScrollView>
 
-          {showTimePicker && currentEditingDosage && (
-            <SimpleDatePicker
-              value={getDateFromDosageTime(currentEditingDosage.time)}
-              onDateChange={handleTimeChange}
-              show={showTimePicker}
-              onDismiss={handleTimePickerDismiss}
-              mode="time"
-            />
-          )}
-        </View>
-      </ConfirmActionBottomSheet>
-    );
-  },
-);
+        {showTimePicker && currentEditingDosage && (
+          <SimpleDatePicker
+            value={getDateFromDosageTime(currentEditingDosage.time)}
+            onDateChange={handleTimeChange}
+            show={showTimePicker}
+            onDismiss={handleTimePickerDismiss}
+            mode="time"
+          />
+        )}
+      </View>
+    </ConfirmActionBottomSheet>
+  );
+});
 
-  const createStyles = (theme: any) =>
+const createStyles = (theme: any) =>
   StyleSheet.create({
     container: {
       flex: 1,

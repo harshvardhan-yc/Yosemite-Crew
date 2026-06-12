@@ -408,6 +408,7 @@ export const MyAppointmentsScreen: React.FC = () => {
     return (
       <View style={styles.cardWrapper}>
         <AppointmentCard
+          key={`${item.id}-${String(avatarSource || '')}`}
           doctorName={cardTitle}
           specialization={cardSubtitle}
           hospital={businessName}
@@ -682,6 +683,7 @@ const PastAppointmentCard: React.FC<PastAppointmentCardProps> = ({
   return (
     <View style={styles.cardWrapper}>
       <AppointmentCard
+        key={`${item.id}-${String(avatarSource || '')}`}
         doctorName={cardTitle}
         specialization={cardSubtitle}
         hospital={businessName}

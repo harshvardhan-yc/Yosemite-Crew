@@ -49,6 +49,9 @@ import {AvatarGroup} from '@/shared/components/common/AvatarGroup/AvatarGroup';
 import i18n from '@/localization/i18n';
 
 type Nav = NativeStackNavigationProp<AppointmentStackParamList>;
+type InvoicePriceComponent = NonNullable<
+  Invoice['totalPriceComponent']
+>[number];
 
 const useGuardianInfo = (authUser: any, invoice: any) => {
   return useMemo(() => {
@@ -277,6 +280,9 @@ const buildInvoiceItemKey = ({
   lineTotal,
   qty,
 }: InvoiceItem) => `${description}-${rate}-${lineTotal}-${qty ?? 0}`;
+
+const buildPriceComponentKey = (priceComponent: InvoicePriceComponent) =>
+  JSON.stringify(priceComponent);
 
 const formatDateTimeDisplay = (iso?: string) => {
   if (!iso) return '—';
@@ -616,7 +622,7 @@ const BreakdownCard = ({
               const typeText = (pc?.type ?? '').toString().toLowerCase();
               return codeText !== 'grand-total' && typeText !== 'informational';
             })
-            .map((pc: any, idx: number) => {
+            .map((pc: InvoicePriceComponent, idx: number) => {
               const rawLabel =
                 pc.code?.text ??
                 pc.type?.toString().replaceAll('_', ' ').replaceAll('-', ' ') ??
@@ -631,7 +637,7 @@ const BreakdownCard = ({
                   : '—';
               return (
                 <BreakdownRow
-                  key={`${label}-${idx}`}
+                  key={buildPriceComponentKey(pc)}
                   label={label}
                   value={value}
                   subtle={label.toLowerCase().includes('discount')}
@@ -1236,13 +1242,14 @@ export const PaymentInvoiceScreen: React.FC = () => {
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [paymentIntentLoading, setPaymentIntentLoading] = useState(false);
 
-  // Reset one-shot guards when navigating between different appointments
-  useEffect(() => {
+  const [prevAppointmentId, setPrevAppointmentId] = useState(appointmentId);
+  if (appointmentId !== prevAppointmentId) {
+    setPrevAppointmentId(appointmentId);
     invoiceRequestedRef.current = false;
     paymentIntentRequestedRef.current = false;
     setInvoiceLoading(false);
     setPaymentIntentLoading(false);
-  }, [appointmentId]);
+  }
 
   const invoiceFromStore = useSelector(
     appointmentId ? selectInvoiceForAppointment(appointmentId) : () => null,
@@ -1385,13 +1392,13 @@ export const PaymentInvoiceScreen: React.FC = () => {
       return;
     }
     paymentIntentRequestedRef.current = true;
-    setPaymentIntentLoading(true);
-    dispatch(fetchPaymentIntentForAppointment({appointmentId}))
-      .unwrap()
-      .catch(() => {
-        // best-effort
-      })
-      .finally(() => setPaymentIntentLoading(false));
+    (async () => {
+      setPaymentIntentLoading(true);
+      await dispatch(fetchPaymentIntentForAppointment({appointmentId}))
+        .unwrap()
+        .catch(() => {});
+      setPaymentIntentLoading(false);
+    })().catch(() => {});
   }, [
     appointmentId,
     dispatch,
@@ -1622,8 +1629,7 @@ const createStyles = (theme: any) =>
     cardShadowWrapper: {
       borderRadius: theme.borderRadius.lg,
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.lg,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 10px 15px ${theme.colors.neutralShadow}`,
       overflow: 'visible',
     },
     glassCard: {

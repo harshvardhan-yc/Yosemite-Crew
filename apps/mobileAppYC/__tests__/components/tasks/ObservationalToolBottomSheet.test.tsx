@@ -1,7 +1,16 @@
 import React from 'react';
-import {render, screen, fireEvent, act, waitFor} from '@testing-library/react-native';
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  waitFor,
+} from '@testing-library/react-native';
 // FIX 1: Update component import path
-import {ObservationalToolBottomSheet} from '@/features/tasks/components/ObservationalToolBottomSheet/ObservationalToolBottomSheet';
+import {
+  ObservationalToolBottomSheet,
+  _resetToolsStoreForTesting,
+} from '@/features/tasks/components/ObservationalToolBottomSheet/ObservationalToolBottomSheet';
 // FIX 2: Update helper import path
 // FIX 3: Update type import path
 import type {ObservationalToolBottomSheetRef} from '@/features/tasks/components/ObservationalToolBottomSheet/ObservationalToolBottomSheet';
@@ -12,7 +21,10 @@ import type {
 } from '@/shared/components/common/GenericSelectBottomSheet/GenericSelectBottomSheet';
 
 jest.mock('@/hooks', () => ({
-  useTheme: () => ({theme: require('../../setup/mockTheme').mockTheme, isDark: false}),
+  useTheme: () => ({
+    theme: require('../../setup/mockTheme').mockTheme,
+    isDark: false,
+  }),
   useAppDispatch: () => jest.fn(),
   useAppSelector: jest.fn(),
 }));
@@ -70,13 +82,16 @@ const mockObservationTools = [
   },
 ];
 
-jest.mock('@/features/observationalTools/services/observationToolService', () => ({
-  observationToolApi: {
-    list: jest.fn(() => Promise.resolve(mockObservationTools)),
-    get: jest.fn(),
-    submit: jest.fn(),
-  },
-}));
+jest.mock(
+  '@/features/observationalTools/services/observationToolService',
+  () => ({
+    observationToolApi: {
+      list: jest.fn(() => Promise.resolve(mockObservationTools)),
+      get: jest.fn(),
+      submit: jest.fn(),
+    },
+  }),
+);
 
 // FIX 5: Update mocked helper path
 jest.mock('@/features/tasks/utils/taskLabels', () => ({
@@ -165,6 +180,7 @@ const renderComponent = async (props: {
 describe('ObservationalToolBottomSheet', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    _resetToolsStoreForTesting();
   });
 
   it('renders and passes correct static props to GenericSelectBottomSheet', async () => {
@@ -246,11 +262,13 @@ describe('ObservationalToolBottomSheet', () => {
 
   it('shows loading message initially before API data loads', async () => {
     // Create a delayed promise to simulate loading
-    const delayedPromise = new Promise<typeof mockObservationTools>((resolve) => {
+    const delayedPromise = new Promise<typeof mockObservationTools>(resolve => {
       setTimeout(() => resolve(mockObservationTools), 100);
     });
 
-    const {observationToolApi} = require('@/features/observationalTools/services/observationToolService');
+    const {
+      observationToolApi,
+    } = require('@/features/observationalTools/services/observationToolService');
     observationToolApi.list.mockImplementationOnce(() => delayedPromise);
 
     const ref = React.createRef<ObservationalToolBottomSheetRef>();
@@ -266,7 +284,9 @@ describe('ObservationalToolBottomSheet', () => {
     );
 
     // Initially should show loading message
-    expect(screen.getByText('EmptyMessage: Loading observational tools...')).toBeTruthy();
+    expect(
+      screen.getByText('EmptyMessage: Loading observational tools...'),
+    ).toBeTruthy();
 
     // Wait for the API call to complete
     await act(async () => {
@@ -275,7 +295,11 @@ describe('ObservationalToolBottomSheet', () => {
 
     // After loading, should show the regular empty message
     await waitFor(() => {
-      expect(screen.getByText('EmptyMessage: No observational tools available for this companion')).toBeTruthy();
+      expect(
+        screen.getByText(
+          'EmptyMessage: No observational tools available for this companion',
+        ),
+      ).toBeTruthy();
     });
   });
 });

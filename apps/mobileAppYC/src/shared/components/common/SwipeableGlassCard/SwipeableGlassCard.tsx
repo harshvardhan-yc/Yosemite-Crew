@@ -125,7 +125,8 @@ export const SwipeableGlassCard: React.FC<SwipeableGlassCardProps> = ({
       translateX.setValue(nextOffset);
     };
     const handleRelease = (_: any, gestureState: any) => {
-      const isMostlyVertical = Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      const isMostlyVertical =
+        Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
 
       if (enableHorizontalSwipeOnly && isMostlyVertical) {
         if (Math.abs(gestureState.dx) < 8 && Math.abs(gestureState.dy) < 8) {
@@ -136,7 +137,8 @@ export const SwipeableGlassCard: React.FC<SwipeableGlassCardProps> = ({
         return;
       }
 
-      const isTap = Math.abs(gestureState.dx) < 8 && Math.abs(gestureState.dy) < 8;
+      const isTap =
+        Math.abs(gestureState.dx) < 8 && Math.abs(gestureState.dy) < 8;
       if (isTap) {
         animateTo(0, () => onPress?.());
         return;
@@ -157,7 +159,9 @@ export const SwipeableGlassCard: React.FC<SwipeableGlassCardProps> = ({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (evt, gestureState) => {
         if (enableHorizontalSwipeOnly) {
-          return Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dy) < 10;
+          return (
+            Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dy) < 10
+          );
         }
         return Math.abs(gestureState.dx) > 6 || Math.abs(gestureState.dy) > 6;
       },
@@ -211,7 +215,8 @@ export const SwipeableGlassCard: React.FC<SwipeableGlassCardProps> = ({
   const cardPropsWithReveal = useMemo(() => {
     const baseCardStyle =
       Platform.OS === 'android' ? styles.androidCardBase : undefined;
-    const borderReset = Platform.OS === 'android' ? styles.androidBorderReset : undefined;
+    const borderReset =
+      Platform.OS === 'android' ? styles.androidBorderReset : undefined;
     const revealStyle = isRevealed ? styles.revealedCard : undefined;
     const mergedStyle = [
       baseCardStyle,
@@ -231,7 +236,9 @@ export const SwipeableGlassCard: React.FC<SwipeableGlassCardProps> = ({
       return {
         shadow: resolvedShadow,
         style: mergedStyle.length ? mergedStyle : undefined,
-        fallbackStyle: mergedFallbackStyle.length ? mergedFallbackStyle : undefined,
+        fallbackStyle: mergedFallbackStyle.length
+          ? mergedFallbackStyle
+          : undefined,
       };
     }
 
@@ -251,7 +258,9 @@ export const SwipeableGlassCard: React.FC<SwipeableGlassCardProps> = ({
     styles.revealedCard,
   ]);
 
-  const containerRevealStyle = isRevealed ? styles.revealedContainer : undefined;
+  const containerRevealStyle = isRevealed
+    ? styles.revealedContainer
+    : undefined;
 
   return (
     <View
@@ -300,8 +309,7 @@ const createStyles = (theme: any) =>
     },
     shadowWrapper: {
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.md,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 4px 6px ${theme.colors.neutralShadow}`,
     },
     revealedContainer: {
       borderTopRightRadius: 0,

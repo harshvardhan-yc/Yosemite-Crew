@@ -19,7 +19,12 @@ const ensureCalendarPermission = async (): Promise<boolean> => {
       'Enable calendar access to sync tasks with your calendar.',
       [
         {text: 'Not now', style: 'cancel'},
-        {text: 'Open settings', onPress: () => { Linking.openSettings?.(); }},
+        {
+          text: 'Open settings',
+          onPress: () => {
+            Linking.openSettings?.();
+          },
+        },
       ],
     );
   };
@@ -51,8 +56,11 @@ const ensureCalendarPermission = async (): Promise<boolean> => {
 };
 
 const buildRecurrenceParams = (
-  task: Task
-): {recurrence?: 'daily' | 'weekly' | 'monthly' | 'yearly'; recurrenceRule?: any} => {
+  task: Task,
+): {
+  recurrence?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  recurrenceRule?: any;
+} => {
   const freq = (task.frequency || '').toString().toLowerCase();
   let recurrenceFreq: 'daily' | 'weekly' | 'monthly' | 'yearly' | undefined;
 
@@ -98,7 +106,9 @@ const buildRecurrenceParams = (
   };
 };
 
-const parseDosageTime = (timeString: string): {hours: number; minutes: number} | null => {
+const parseDosageTime = (
+  timeString: string,
+): {hours: number; minutes: number} | null => {
   try {
     let hours: number, minutes: number;
 
@@ -130,7 +140,7 @@ const buildDosageEventNotes = (
   task: Task,
   dosageLabel: string,
   companionName?: string,
-  assignedToName?: string
+  assignedToName?: string,
 ): string => {
   const parts: string[] = [];
 
@@ -173,7 +183,7 @@ const createSingleDosageEvent = async (
   alarms: Array<{date: number}> | undefined,
   recurrenceParams: ReturnType<typeof buildRecurrenceParams>,
   companionName?: string,
-  assignedToName?: string
+  assignedToName?: string,
 ): Promise<string | null> => {
   const timeInfo = parseDosageTime(dosage.time);
   if (!timeInfo) {
@@ -186,7 +196,12 @@ const createSingleDosageEvent = async (
   const eventEnd = new Date(eventDate.getTime() + 30 * 60 * 1000);
 
   const eventTitle = `${task.title} - ${dosage.label}`;
-  const eventNotes = buildDosageEventNotes(task, dosage.label, companionName, assignedToName);
+  const eventNotes = buildDosageEventNotes(
+    task,
+    dosage.label,
+    companionName,
+    assignedToName,
+  );
 
   console.log('[Calendar] Creating dosage event:', {
     dosageLabel: dosage.label,
@@ -203,8 +218,12 @@ const createSingleDosageEvent = async (
     notes: eventNotes,
     allDay: false,
     alarms,
-    ...(recurrenceParams.recurrence ? {recurrence: recurrenceParams.recurrence} : {}),
-    ...(recurrenceParams.recurrenceRule ? {recurrenceRule: recurrenceParams.recurrenceRule} : {}),
+    ...(recurrenceParams.recurrence
+      ? {recurrence: recurrenceParams.recurrence}
+      : {}),
+    ...(recurrenceParams.recurrenceRule
+      ? {recurrenceRule: recurrenceParams.recurrenceRule}
+      : {}),
     calendarId: task.calendarProvider,
   });
 
@@ -217,13 +236,21 @@ const createSingleDosageEvent = async (
 const createDosageCalendarEvents = async (
   task: Task,
   companionName?: string,
-  assignedToName?: string
+  assignedToName?: string,
 ): Promise<string | null> => {
-  if (!task.details || !('dosages' in task.details) || !Array.isArray(task.details.dosages)) {
+  if (
+    !task.details ||
+    !('dosages' in task.details) ||
+    !Array.isArray(task.details.dosages)
+  ) {
     return null;
   }
 
-  const dosages = task.details.dosages as Array<{id: string; label: string; time: string}>;
+  const dosages = task.details.dosages as Array<{
+    id: string;
+    label: string;
+    time: string;
+  }>;
   const eventIds: string[] = [];
 
   const recurrenceParams = buildRecurrenceParams(task);
@@ -242,7 +269,7 @@ const createDosageCalendarEvents = async (
         alarms,
         recurrenceParams,
         companionName,
-        assignedToName
+        assignedToName,
       );
 
       if (eventId) {
@@ -256,11 +283,17 @@ const createDosageCalendarEvents = async (
     }
 
     const joinedIds = eventIds.join(',');
-    console.log('[Calendar] All dosage events created:', {count: eventIds.length, ids: joinedIds});
+    console.log('[Calendar] All dosage events created:', {
+      count: eventIds.length,
+      ids: joinedIds,
+    });
     return joinedIds;
   } catch (error) {
     console.error('[Calendar] Failed to create dosage events:', error);
-    Alert.alert('Calendar', 'Unable to add medication dosages to your calendar.');
+    Alert.alert(
+      'Calendar',
+      'Unable to add medication dosages to your calendar.',
+    );
     return null;
   }
 };
@@ -268,7 +301,7 @@ const createDosageCalendarEvents = async (
 export const createCalendarEventForTask = async (
   task: Task,
   companionName?: string,
-  assignedToName?: string
+  assignedToName?: string,
 ): Promise<string | null> => {
   console.log('[Calendar] Creating event for task:', {
     taskId: task.id,
@@ -329,7 +362,11 @@ export const createCalendarEventForTask = async (
       }
 
       // Add medication details
-      if (task.details && 'medicineName' in task.details && task.details.medicineName) {
+      if (
+        task.details &&
+        'medicineName' in task.details &&
+        task.details.medicineName
+      ) {
         const medicationParts = [
           `💊 MEDICATION`,
           `   Medicine: ${task.details.medicineName}`,
@@ -337,7 +374,11 @@ export const createCalendarEventForTask = async (
         if ('medicineType' in task.details && task.details.medicineType) {
           medicationParts.push(`   Type: ${task.details.medicineType}`);
         }
-        if ('dosages' in task.details && task.details.dosages && task.details.dosages.length > 0) {
+        if (
+          'dosages' in task.details &&
+          task.details.dosages &&
+          task.details.dosages.length > 0
+        ) {
           medicationParts.push(`   Dosage Schedule:`);
           task.details.dosages.forEach((d: any) => {
             medicationParts.push(`      • ${d.label} at ${d.time}`);
@@ -388,8 +429,12 @@ export const createCalendarEventForTask = async (
       notes: eventNotes,
       allDay: false,
       alarms,
-      ...(recurrenceParams.recurrence ? {recurrence: recurrenceParams.recurrence} : {}),
-      ...(recurrenceParams.recurrenceRule ? {recurrenceRule: recurrenceParams.recurrenceRule} : {}),
+      ...(recurrenceParams.recurrence
+        ? {recurrence: recurrenceParams.recurrence}
+        : {}),
+      ...(recurrenceParams.recurrenceRule
+        ? {recurrenceRule: recurrenceParams.recurrenceRule}
+        : {}),
       calendarId: task.calendarProvider,
     });
 
@@ -402,7 +447,9 @@ export const createCalendarEventForTask = async (
   }
 };
 
-export const removeCalendarEvents = async (eventIdString: string | null | undefined): Promise<void> => {
+export const removeCalendarEvents = async (
+  eventIdString: string | null | undefined,
+): Promise<void> => {
   if (!eventIdString) {
     console.log('[Calendar] No event IDs to remove');
     return;
@@ -415,9 +462,15 @@ export const removeCalendarEvents = async (eventIdString: string | null | undefi
   }
 
   // Handle comma-separated event IDs (for medication tasks with multiple dosages)
-  const eventIds = eventIdString.split(',').map(id => id.trim()).filter(Boolean);
+  const eventIds = eventIdString.split(',').flatMap(id => {
+    const t = id.trim();
+    return t ? [t] : [];
+  });
 
-  console.log('[Calendar] Removing calendar events:', {count: eventIds.length, ids: eventIds});
+  console.log('[Calendar] Removing calendar events:', {
+    count: eventIds.length,
+    ids: eventIds,
+  });
 
   try {
     for (const eventId of eventIds) {
@@ -434,7 +487,10 @@ export const removeCalendarEvents = async (eventIdString: string | null | undefi
   }
 };
 
-export const openCalendarEvent = async (eventId: string, fallbackDate?: string | Date) => {
+export const openCalendarEvent = async (
+  eventId: string,
+  fallbackDate?: string | Date,
+) => {
   const hasPermission = await ensureCalendarPermission();
   if (!hasPermission) {
     return;
@@ -463,10 +519,16 @@ export const openCalendarEvent = async (eventId: string, fallbackDate?: string |
     if (supported) {
       await Linking.openURL(url);
     } else {
-      Alert.alert('Calendar', 'Event saved. Please open your calendar app to view it.');
+      Alert.alert(
+        'Calendar',
+        'Event saved. Please open your calendar app to view it.',
+      );
     }
   } catch (error) {
     console.warn('[Calendar] Failed to open event', error);
-    Alert.alert('Calendar', 'Event saved. Please open your calendar app to view it.');
+    Alert.alert(
+      'Calendar',
+      'Event saved. Please open your calendar app to view it.',
+    );
   }
 };

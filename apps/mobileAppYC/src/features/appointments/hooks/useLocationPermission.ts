@@ -1,4 +1,4 @@
-import {useState, useEffect} from 'react';
+import {useReducer, useEffect} from 'react';
 import {Platform, PermissionsAndroid} from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import i18n from '@/localization';
@@ -28,6 +28,42 @@ const GEOLOCATION_OPTIONS = {
   maximumAge: 60000,
 };
 
+type LocationState = {
+  userLocation: UserLocation | null;
+  hasPermission: boolean;
+  isLoading: boolean;
+};
+
+type LocationAction =
+  | {type: 'GRANTED'; location: UserLocation}
+  | {type: 'DENIED'}
+  | {type: 'ERROR'};
+
+const initialState: LocationState = {
+  userLocation: null,
+  hasPermission: false,
+  isLoading: true,
+};
+
+function locationReducer(
+  state: LocationState,
+  action: LocationAction,
+): LocationState {
+  switch (action.type) {
+    case 'GRANTED':
+      return {
+        userLocation: action.location,
+        hasPermission: true,
+        isLoading: false,
+      };
+    case 'DENIED':
+    case 'ERROR':
+      return {...state, hasPermission: false, isLoading: false};
+    default:
+      return state;
+  }
+}
+
 const requestAndroidPermission = async (): Promise<boolean> => {
   const result = await PermissionsAndroid.request(
     PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
@@ -56,9 +92,7 @@ const requestPermission = async (): Promise<boolean> => {
 };
 
 export const useLocationPermission = (): LocationPermissionState => {
-  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
-  const [hasPermission, setHasPermission] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [state, dispatch] = useReducer(locationReducer, initialState);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,8 +102,7 @@ export const useLocationPermission = (): LocationPermissionState => {
         const granted = await requestPermission();
         if (!granted) {
           if (!cancelled) {
-            setHasPermission(false);
-            setIsLoading(false);
+            dispatch({type: 'DENIED'});
           }
           return;
         }
@@ -77,24 +110,23 @@ export const useLocationPermission = (): LocationPermissionState => {
         Geolocation.getCurrentPosition(
           position => {
             if (cancelled) return;
-            setUserLocation({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
+            dispatch({
+              type: 'GRANTED',
+              location: {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+              },
             });
-            setHasPermission(true);
-            setIsLoading(false);
           },
           () => {
             if (cancelled) return;
-            setHasPermission(false);
-            setIsLoading(false);
+            dispatch({type: 'ERROR'});
           },
           GEOLOCATION_OPTIONS,
         );
       } catch {
         if (!cancelled) {
-          setHasPermission(false);
-          setIsLoading(false);
+          dispatch({type: 'ERROR'});
         }
       }
     };
@@ -105,11 +137,17 @@ export const useLocationPermission = (): LocationPermissionState => {
     };
   }, []);
 
-  const mapCenter = userLocation ?? DEFAULT_CENTER;
+  const mapCenter = state.userLocation ?? DEFAULT_CENTER;
   const userCoords: UserCoords = {
     lat: mapCenter.latitude,
     lng: mapCenter.longitude,
   };
 
-  return {userLocation, userCoords, hasPermission, isLoading, mapCenter};
+  return {
+    userLocation: state.userLocation,
+    userCoords,
+    hasPermission: state.hasPermission,
+    isLoading: state.isLoading,
+    mapCenter,
+  };
 };

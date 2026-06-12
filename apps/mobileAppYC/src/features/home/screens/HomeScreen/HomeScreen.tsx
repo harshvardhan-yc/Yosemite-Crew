@@ -192,9 +192,7 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
   const accessLoading = useSelector(
     (state: RootState) => state.coParent?.accessLoading,
   );
-  const [initialLoadStarted, setInitialLoadStarted] = React.useState(
-    Boolean(user?.id),
-  );
+  const initialLoadStarted = Boolean(user?.id);
   const [initialRequests, setInitialRequests] = React.useState({
     companions: false,
     appointments: false,
@@ -203,7 +201,7 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
     linkedBusinesses: false,
     notifications: false,
   });
-  const [initialLoadComplete, setInitialLoadComplete] = React.useState(false);
+  const initialLoadCompleteRef = React.useRef(false);
 
   const targetCompanionId = React.useMemo(() => {
     const fallback =
@@ -282,7 +280,9 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
     useBusinessPhotoFallback();
   const {handleCheckIn: handleCheckInUtil} = useCheckInHandler();
   useAutoSelectCompanion(companions, selectedCompanionIdRedux);
-  const [headerAvatarError, setHeaderAvatarError] = React.useState(false);
+  const [headerAvatarErrorUri, setHeaderAvatarErrorUri] = React.useState<
+    string | null
+  >(null);
   const [msdLogoLoadFailed, setMsdLogoLoadFailed] = React.useState(false);
   const headerAvatarUri = React.useMemo(
     () =>
@@ -291,6 +291,8 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
       ),
     [authUser?.profilePicture, authUser?.profileToken],
   );
+  const headerAvatarError =
+    !!headerAvatarUri && headerAvatarErrorUri === headerAvatarUri;
   const getAccessEntry = React.useCallback(
     (companionId?: string | null) => {
       if (companionId) {
@@ -387,10 +389,10 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
       navigation
         .getParent<NavigationProp<TabParamList>>()
         ?.navigate('Appointments', {
-          screen: 'BusinessDetails',
+          screen: 'BrowseBusinesses',
           params: {
-            businessId: businessPayload.id,
-            returnTo: {tab: 'HomeStack', screen: 'Home'},
+            initialBusinessId: businessPayload.id,
+            selectionToken: Date.now(),
           },
         });
     },
@@ -465,10 +467,6 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
       targetCompanionId,
     ]),
   );
-
-  React.useEffect(() => {
-    setHeaderAvatarError(false);
-  }, [headerAvatarUri]);
 
   // Fetch companions on mount and set the first one as default
   React.useEffect(() => {
@@ -611,12 +609,6 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
     }, [dispatch, markInitialRequest, selectedCompanionIdRedux]),
   );
 
-  React.useEffect(() => {
-    if (user?.id && !initialLoadStarted) {
-      setInitialLoadStarted(true);
-    }
-  }, [initialLoadStarted, user?.id]);
-
   const areRequiredRequestsStarted = React.useMemo(() => {
     if (!initialLoadStarted) return false;
     if (user?.parentId && !initialRequests.companions) return false;
@@ -690,25 +682,17 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
   ]);
 
   React.useEffect(() => {
-    if (initialLoadComplete) {
-      return;
-    }
-    if (isHomeDataReady) {
-      setInitialLoadComplete(true);
-    }
-  }, [initialLoadComplete, isHomeDataReady]);
-
-  React.useEffect(() => {
     if (!initialLoadStarted) {
       hideLoader();
       return;
     }
-    if (initialLoadComplete) {
+    if (initialLoadCompleteRef.current || isHomeDataReady) {
+      initialLoadCompleteRef.current = true;
       hideLoader();
     } else {
       showLoader();
     }
-  }, [hideLoader, initialLoadComplete, initialLoadStarted, showLoader]);
+  }, [hideLoader, initialLoadStarted, isHomeDataReady, showLoader]);
 
   React.useEffect(() => {
     return () => {
@@ -1103,7 +1087,7 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
 
     return (
       <AppointmentCard
-        key={appointment.id}
+        key={`${appointment.id}-${String(avatarSource ?? '')}`}
         doctorName={cardTitle}
         specialization={cardSubtitle}
         hospital={businessName}
@@ -1334,7 +1318,7 @@ export const HomeScreen: React.FC<Props> = ({navigation}) => {
                 <Image
                   source={{uri: headerAvatarUri}}
                   style={styles.avatarImage}
-                  onError={() => setHeaderAvatarError(true)}
+                  onError={() => setHeaderAvatarErrorUri(headerAvatarUri)}
                 />
               ) : (
                 <Text style={styles.avatarInitials}>
@@ -1700,8 +1684,7 @@ const createStyles = (theme: any) =>
     tileShadowWrapper: {
       borderRadius: theme.borderRadius.lg,
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.md,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 4px 6px ${theme.colors.neutralShadow}`,
     },
     tileTitle: sharedTileStyles(theme).tileTitle,
     tileSubtitle: sharedTileStyles(theme).tileSubtitle,
@@ -1730,8 +1713,7 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.secondary,
       justifyContent: 'center',
       alignItems: 'center',
-      ...theme.shadows.sm,
-      shadowColor: theme.colors.black,
+      boxShadow: `0px 1px 3px ${theme.colors.black}`,
     },
     quickActionBrandIconWrapper: {
       backgroundColor: theme.colors.cardBackground,
@@ -1785,8 +1767,7 @@ const createStyles = (theme: any) =>
       marginTop: theme.spacing['1'],
       borderWidth: 0,
       borderColor: 'transparent',
-      ...theme.shadows.sm,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 3px ${theme.colors.neutralShadow}`,
     },
     reviewButtonText: {
       ...theme.typography.paragraphBold,

@@ -482,11 +482,13 @@ const useMerckSearchController = ({
     setHasSearched(initialHasSearched);
   }, [compact, initialEntries, initialHasSearched]);
 
-  React.useEffect(() => {
+  const [prevCompact, setPrevCompact] = React.useState(compact);
+  if (compact !== prevCompact) {
+    setPrevCompact(compact);
     if (compact) {
       setRefineOpen(false);
     }
-  }, [compact]);
+  }
 
   const executeSearch = React.useCallback(async () => {
     const trimmedQuery = query.trim();
@@ -1408,8 +1410,7 @@ const createStyles = (theme: any) =>
     resultCardShadowWrapper: {
       borderRadius: theme.borderRadius.lg,
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.lg,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 10px 15px ${theme.colors.neutralShadow}`,
       overflow: 'visible',
     },
     resultCardGlass: {

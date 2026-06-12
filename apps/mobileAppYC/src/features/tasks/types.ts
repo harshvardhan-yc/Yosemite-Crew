@@ -20,7 +20,10 @@ export type ParasitePreventionType = 'deworming' | 'flea-tick-prevention';
 export type ChronicConditionType = 'pain' | 'diabetes' | 'epilepsy';
 
 // Health Task Types
-export type HealthTaskType = 'give-medication' | 'take-observational-tool' | 'vaccination';
+export type HealthTaskType =
+  | 'give-medication'
+  | 'take-observational-tool'
+  | 'vaccination';
 
 // Hygiene Task Types
 export type HygieneTaskType =
@@ -50,12 +53,7 @@ export type MedicationType =
 export type MedicationFrequency = 'once' | 'daily' | 'weekly' | 'monthly';
 
 // Task Frequency
-export type TaskFrequency =
-  | 'once'
-  | 'daily'
-  | 'weekly'
-  | 'monthly';
-
+export type TaskFrequency = 'once' | 'daily' | 'weekly' | 'monthly';
 
 // Reminder Options
 export type ReminderOption =
@@ -68,7 +66,11 @@ export type ReminderOption =
   | 'custom';
 
 // Task Status
-export type TaskStatusApi = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+export type TaskStatusApi =
+  | 'PENDING'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CANCELLED';
 export type TaskStatus =
   | TaskStatusApi
   | 'pending'
@@ -160,7 +162,8 @@ export interface Task {
    */
   dueAt?: string;
   timezone?: string | null;
-  date: string; // ISO date
+  date: string; // ISO date (start date)
+  recurrenceEndDate?: string; // ISO date (YYYY-MM-DD) — end of recurrence series, local timezone
   time?: string; // ISO time string
   frequency: TaskFrequency;
   assignedTo?: string; // User ID
@@ -246,8 +249,7 @@ export interface ObservationalToolFormData extends BaseTaskFormData {
 }
 
 export interface TaskFormData
-  extends MedicationFormData,
-    ObservationalToolFormData {
+  extends MedicationFormData, ObservationalToolFormData {
   description: string;
 }
 

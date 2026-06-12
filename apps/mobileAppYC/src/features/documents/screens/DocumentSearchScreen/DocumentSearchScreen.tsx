@@ -1,5 +1,11 @@
 import React, {useMemo, useState, useRef, useCallback} from 'react';
-import {View, Text, ScrollView, StyleSheet, ActivityIndicator} from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Header} from '@/shared/components/common/Header/Header';
@@ -11,11 +17,15 @@ import {useSelector, useDispatch} from 'react-redux';
 import type {RootState, AppDispatch} from '@/app/store';
 import type {DocumentStackParamList} from '@/navigation/types';
 import {setSelectedCompanion} from '@/features/companion';
-import {searchDocuments, clearSearchResults} from '@/features/documents/documentSlice';
+import {
+  searchDocuments,
+  clearSearchResults,
+} from '@/features/documents/documentSlice';
 import {createAllCommonStyles} from '@/shared/utils/screenStyles';
 import {LiquidGlassHeaderScreen} from '@/shared/components/common/LiquidGlassHeader/LiquidGlassHeaderScreen';
 
-type DocumentSearchNavigationProp = NativeStackNavigationProp<DocumentStackParamList>;
+type DocumentSearchNavigationProp =
+  NativeStackNavigationProp<DocumentStackParamList>;
 
 export const DocumentSearchScreen: React.FC = () => {
   const {theme} = useTheme();
@@ -23,11 +33,17 @@ export const DocumentSearchScreen: React.FC = () => {
   const navigation = useNavigation<DocumentSearchNavigationProp>();
   const dispatch = useDispatch<AppDispatch>();
 
-  const companions = useSelector((state: RootState) => state.companion.companions);
-  const selectedCompanionId = useSelector((state: RootState) => state.companion.selectedCompanionId);
-  const {searchResults = [], searchLoading = false, searchError = null} = useSelector(
-    (state: RootState) => state.documents ?? {},
+  const companions = useSelector(
+    (state: RootState) => state.companion.companions,
   );
+  const selectedCompanionId = useSelector(
+    (state: RootState) => state.companion.selectedCompanionId,
+  );
+  const {
+    searchResults = [],
+    searchLoading = false,
+    searchError = null,
+  } = useSelector((state: RootState) => state.documents ?? {});
 
   const [query, setQuery] = useState('');
   const lastQueryRef = useRef('');
@@ -46,7 +62,12 @@ export const DocumentSearchScreen: React.FC = () => {
 
   React.useEffect(() => {
     if (lastQueryRef.current && selectedCompanionId) {
-      dispatch(searchDocuments({companionId: selectedCompanionId, query: lastQueryRef.current}));
+      dispatch(
+        searchDocuments({
+          companionId: selectedCompanionId,
+          query: lastQueryRef.current,
+        }),
+      );
     }
   }, [dispatch, selectedCompanionId]);
 
@@ -60,8 +81,13 @@ export const DocumentSearchScreen: React.FC = () => {
       return;
     }
     lastQueryRef.current = trimmed;
-    dispatch(searchDocuments({companionId: selectedCompanionId, query: trimmed}));
+    dispatch(
+      searchDocuments({companionId: selectedCompanionId, query: trimmed}),
+    );
   }, [query, selectedCompanionId, dispatch, searchResults.length]);
+
+  const triggerSearchRef = useRef(triggerSearch);
+  triggerSearchRef.current = triggerSearch;
 
   React.useEffect(() => {
     if (!query.trim()) {
@@ -69,10 +95,10 @@ export const DocumentSearchScreen: React.FC = () => {
       return;
     }
     const timer = setTimeout(() => {
-      triggerSearch();
+      triggerSearchRef.current();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [query, selectedCompanionId, triggerSearch, dispatch]);
+  }, [query, selectedCompanionId, dispatch]);
 
   const handleViewDocument = (documentId: string) => {
     navigation.navigate('DocumentPreview', {documentId});
@@ -100,7 +126,9 @@ export const DocumentSearchScreen: React.FC = () => {
             onSubmitEditing={triggerSearch}
             autoFocus
             containerStyle={styles.searchBar}
-            rightElement={searchLoading ? <ActivityIndicator size="small" /> : null}
+            rightElement={
+              searchLoading ? <ActivityIndicator size="small" /> : null
+            }
           />
         </>
       }
@@ -122,7 +150,9 @@ export const DocumentSearchScreen: React.FC = () => {
             permissionLabel="documents"
           />
 
-          {searchError ? <Text style={styles.errorText}>{searchError}</Text> : null}
+          {searchError ? (
+            <Text style={styles.errorText}>{searchError}</Text>
+          ) : null}
 
           {searchLoading && (
             <View style={styles.loaderContainer}>

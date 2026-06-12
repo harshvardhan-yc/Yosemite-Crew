@@ -1,6 +1,9 @@
 import {renderHook, act} from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {useCurrencyPreference} from '../../src/shared/hooks/useCurrencyPreference';
+import {
+  useCurrencyPreference,
+  _resetCurrencyStoreForTesting,
+} from '../../src/shared/hooks/useCurrencyPreference';
 
 // --- Mocks ---
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -11,6 +14,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 describe('useCurrencyPreference Hook', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    _resetCurrencyStoreForTesting();
   });
 
   // ===========================================================================
@@ -28,7 +32,9 @@ describe('useCurrencyPreference Hook', () => {
     // Wait for effect to finish
     await act(async () => {});
 
-    expect(AsyncStorage.getItem).toHaveBeenCalledWith('app_currency_preference');
+    expect(AsyncStorage.getItem).toHaveBeenCalledWith(
+      'app_currency_preference',
+    );
     expect(result.current.currency).toBe('USD');
     expect(result.current.isLoading).toBe(false);
   });
@@ -55,7 +61,9 @@ describe('useCurrencyPreference Hook', () => {
 
   it('handles storage read errors gracefully (logs warning but keeps default)', async () => {
     const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    (AsyncStorage.getItem as jest.Mock).mockRejectedValue(new Error('Read Error'));
+    (AsyncStorage.getItem as jest.Mock).mockRejectedValue(
+      new Error('Read Error'),
+    );
 
     const {result} = renderHook(() => useCurrencyPreference());
 
@@ -84,7 +92,10 @@ describe('useCurrencyPreference Hook', () => {
       await result.current.setCurrency('EUR');
     });
 
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith('app_currency_preference', 'EUR');
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      'app_currency_preference',
+      'EUR',
+    );
     expect(result.current.currency).toBe('EUR');
   });
 
@@ -100,7 +111,7 @@ describe('useCurrencyPreference Hook', () => {
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Unsupported currency: JPY')
+      expect.stringContaining('Unsupported currency: JPY'),
     );
     expect(AsyncStorage.setItem).not.toHaveBeenCalled();
     expect(result.current.currency).toBe('USD'); // Unchanged
@@ -111,7 +122,9 @@ describe('useCurrencyPreference Hook', () => {
   it('handles storage write errors gracefully when setting currency', async () => {
     const consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
-    (AsyncStorage.setItem as jest.Mock).mockRejectedValue(new Error('Write Error'));
+    (AsyncStorage.setItem as jest.Mock).mockRejectedValue(
+      new Error('Write Error'),
+    );
 
     const {result} = renderHook(() => useCurrencyPreference());
     await act(async () => {});
@@ -121,7 +134,10 @@ describe('useCurrencyPreference Hook', () => {
     });
 
     // It attempts to set item
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith('app_currency_preference', 'EUR');
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      'app_currency_preference',
+      'EUR',
+    );
 
     // Logs warning
     expect(consoleSpy).toHaveBeenCalledWith(

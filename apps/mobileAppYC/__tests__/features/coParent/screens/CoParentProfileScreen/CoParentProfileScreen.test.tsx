@@ -33,13 +33,15 @@ const mockActions = {
   })),
 };
 
-jest.mock('../../../../../src/features/coParent', () => ({
-  // Fixed spread argument error by accepting a single argument (payload)
+jest.mock('../../../../../src/features/coParent/thunks', () => ({
   addCoParent: (arg: any) => mockActions.addCoParent(arg),
+}));
+
+jest.mock('../../../../../src/features/coParent/selectors', () => ({
   selectCoParentById: (id: string) => (state: any) => {
-    // Simulate finding the co-parent in the mock state list
     return state.coParent?.coParents?.find((cp: any) => cp.id === id);
   },
+  selectCoParentLoading: (state: any) => state.coParent?.loading ?? false,
 }));
 
 jest.mock('@/features/companion', () => ({
@@ -69,6 +71,13 @@ jest.mock(
 
 jest.mock('@/hooks', () => ({
   useTheme: () => ({theme: mockTheme, isDark: false}),
+}));
+
+jest.mock('@/shared/components/common', () => ({
+  GifLoader: () => {
+    const {View} = require('react-native');
+    return <View testID="gif-loader" />;
+  },
 }));
 
 // Asset Mocks
@@ -188,6 +197,7 @@ describe('CoParentProfileScreen', () => {
     mockState = {
       coParent: {
         coParents: [mockCoParent],
+        loading: false,
       },
       companion: {
         companions: [mockCompanion],
@@ -223,6 +233,29 @@ describe('CoParentProfileScreen', () => {
       <CoParentProfileScreen navigation={mockNavigation} route={mockRoute} />,
     );
     expect(getByText('Co-Parent not found')).toBeTruthy();
+  });
+
+  it('renders loader while co-parent data is loading', () => {
+    mockState.coParent.coParents = [];
+    mockState.coParent.loading = true;
+
+    const {getByTestId, queryByText} = render(
+      <CoParentProfileScreen navigation={mockNavigation} route={mockRoute} />,
+    );
+
+    expect(getByTestId('gif-loader')).toBeTruthy();
+    expect(queryByText('Co-Parent not found')).toBeNull();
+  });
+
+  it('renders selected co-parent while co-parent data is refreshing', () => {
+    mockState.coParent.loading = true;
+
+    const {getByText, queryByTestId} = render(
+      <CoParentProfileScreen navigation={mockNavigation} route={mockRoute} />,
+    );
+
+    expect(getByText('John Doe')).toBeTruthy();
+    expect(queryByTestId('gif-loader')).toBeNull();
   });
 
   it('renders initials when profile picture is missing', () => {
@@ -345,19 +378,31 @@ describe('CoParentProfileScreen', () => {
   });
 
   it('handles Invite Failure flow', async () => {
-    mockUnwrap.mockRejectedValueOnce(new Error('Failed'));
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    try {
+      mockUnwrap.mockRejectedValueOnce(new Error('Failed'));
 
-    const {getByTestId} = render(
-      <CoParentProfileScreen navigation={mockNavigation} route={mockRoute} />,
-    );
+      const {getByTestId} = render(
+        <CoParentProfileScreen navigation={mockNavigation} route={mockRoute} />,
+      );
 
-    const inviteBtn = getByTestId('send-invite-btn');
+      const inviteBtn = getByTestId('send-invite-btn');
 
-    await act(async () => {
-      fireEvent.press(inviteBtn);
-    });
+      await act(async () => {
+        fireEvent.press(inviteBtn);
+      });
 
-    expect(Alert.alert).toHaveBeenCalledWith('Error', 'Failed to send invite');
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Failed to send invite:',
+        expect.any(Error),
+      );
+      expect(Alert.alert).toHaveBeenCalledWith(
+        'Error',
+        'Failed to send invite',
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it('alerts if no companion is selected (Branch: !companionId)', () => {
@@ -393,7 +438,7 @@ describe('CoParentProfileScreen', () => {
     expect(mockActions.addCoParent).not.toHaveBeenCalled();
   });
 
-  it('uses email as name if name is missing (Branch: inviteName length check)', () => {
+  it('uses email as name if name is missing (Branch: inviteName length check)', async () => {
     const noNameCoParent = {...mockCoParent, firstName: '', lastName: ''};
     mockState.coParent.coParents = [noNameCoParent];
 
@@ -401,7 +446,7 @@ describe('CoParentProfileScreen', () => {
       <CoParentProfileScreen navigation={mockNavigation} route={mockRoute} />,
     );
 
-    fireEvent.press(getByTestId('send-invite-btn'));
+    await act(async () => fireEvent.press(getByTestId('send-invite-btn')));
 
     expect(mockActions.addCoParent).toHaveBeenCalledWith(
       expect.objectContaining({
