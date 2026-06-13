@@ -1,6 +1,7 @@
 import {
   materializeCarePathwaySeeds,
   materializeTaskTemplateSeed,
+  materializeTaskWorkflowSeeds,
 } from "../../src/services/task-workflow-materializer";
 
 describe("task workflow materializer", () => {
@@ -71,5 +72,46 @@ describe("task workflow materializer", () => {
     expect(seeds[0].dueAt.toISOString()).toBe("2026-01-01T08:30:00.000Z");
     expect(seeds[2].name).toBe("Discharge review");
     expect(seeds[2].assignedTo).toBe("employee-1");
+  });
+
+  it("materializes a task workflow seed from a template instance snapshot", () => {
+    const seeds = materializeTaskWorkflowSeeds(
+      "TASK_TEMPLATE",
+      {
+        sections: [
+          {
+            id: "definition",
+            data: {
+              taskKind: "MEDICATION",
+              category: "Medication",
+              name: "Evening medicine",
+            },
+          },
+          {
+            id: "assignment",
+            data: {
+              defaultRole: "EMPLOYEE_TASK",
+            },
+          },
+          {
+            id: "timing",
+            data: {
+              dueOffsetMinutes: 30,
+            },
+          },
+        ],
+      },
+      {
+        organisationId: "org-1",
+        createdBy: "creator-1",
+        templateId: "tmpl-3",
+        anchorAt: new Date("2026-01-01T09:00:00.000Z"),
+        resolveAssignee: () => "employee-2",
+      },
+    );
+
+    expect(seeds).toHaveLength(1);
+    expect(seeds[0].assignedTo).toBe("employee-2");
+    expect(seeds[0].dueAt.toISOString()).toBe("2026-01-01T09:30:00.000Z");
   });
 });

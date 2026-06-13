@@ -1,5 +1,5 @@
-import { TaskKind } from "@prisma/client";
-import { TaskAudience } from "./task.service";
+import { TemplateKind, TaskKind } from "@prisma/client";
+import type { TaskAudience } from "./task.service";
 
 type RecurrenceType = "ONCE" | "DAILY" | "WEEKLY" | "CUSTOM";
 
@@ -51,6 +51,7 @@ export type TaskTemplateInstanceData = {
   name: string;
   description?: string;
   defaultRole: TaskAudience;
+  dueOffsetMinutes?: number;
   defaultMedication?: TaskWorkflowSeed["medication"];
   defaultObservationToolId?: string;
   defaultRecurrence?: {
@@ -98,6 +99,8 @@ export type TaskWorkflowContext = {
   templateId?: string;
   source?: "YC_LIBRARY" | "ORG_TEMPLATE" | "CUSTOM";
   timezone?: string;
+  anchorAt?: Date;
+  dueAt?: Date;
 };
 
 const ensureHourMinute = (value: string) => {
@@ -136,10 +139,224 @@ const buildRecurrence = (
   };
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const getSectionById = (snapshot: unknown, sectionId: string) => {
+  if (!isRecord(snapshot) || !Array.isArray(snapshot.sections))
+    return undefined;
+  return snapshot.sections.find(
+    (section): section is Record<string, unknown> =>
+      isRecord(section) && section.id === sectionId,
+  );
+};
+
+const getSectionFieldValue = (
+  section: Record<string, unknown> | undefined,
+  key: string,
+) => {
+  if (!section) return undefined;
+
+  if (isRecord(section.data) && key in section.data) {
+    return section.data[key];
+  }
+
+  if (isRecord(section.values) && key in section.values) {
+    return section.values[key];
+  }
+
+  if (Array.isArray(section.fields)) {
+    const field = section.fields.find(
+      (item): item is Record<string, unknown> =>
+        isRecord(item) && item.key === key,
+    );
+    if (!field) return undefined;
+    return field.value ?? field.answer ?? field.defaultValue;
+  }
+
+  return section[key];
+};
+
+const getWorkflowValue = (
+  snapshot: unknown,
+  key: string,
+  sectionIds: string[] = [],
+) => {
+  if (isRecord(snapshot) && snapshot[key] !== undefined) {
+    return snapshot[key];
+  }
+
+  for (const sectionId of sectionIds) {
+    const value = getSectionFieldValue(
+      getSectionById(snapshot, sectionId),
+      key,
+    );
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const asTrimmedString = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
+
+const toTaskAudience = (value: unknown): TaskAudience | undefined =>
+  value === "EMPLOYEE_TASK" || value === "PARENT_TASK"
+    ? value
+    : value === "EMPLOYEE"
+      ? "EMPLOYEE_TASK"
+      : value === "PARENT"
+        ? "PARENT_TASK"
+        : undefined;
+
+const toTaskKind = (value: unknown): TaskKind | undefined =>
+  value === "MEDICATION" ||
+  value === "OBSERVATION_TOOL" ||
+  value === "HYGIENE" ||
+  value === "DIET" ||
+  value === "CUSTOM"
+    ? value
+    : undefined;
+
+const toDateFromOffset = (anchorAt: Date | undefined, offsetMinutes = 0) =>
+  new Date((anchorAt ?? new Date()).getTime() + offsetMinutes * 60 * 1000);
+
+const parseTaskTemplateInstanceData = (
+  snapshot: unknown,
+): TaskTemplateInstanceData => {
+  const defaultRole = toTaskAudience(
+    getWorkflowValue(snapshot, "defaultRole", ["assignment"]),
+  );
+
+  const taskKind = toTaskKind(
+    getWorkflowValue(snapshot, "taskKind", ["definition"]),
+  );
+
+  if (!taskKind) {
+    throw new Error("Invalid taskKind");
+  }
+
+  if (!defaultRole) {
+    throw new Error("Invalid defaultRole");
+  }
+
+  return {
+    taskKind,
+    category: asTrimmedString(
+      getWorkflowValue(snapshot, "category", ["definition"]),
+    ),
+    name: asTrimmedString(getWorkflowValue(snapshot, "name", ["definition"])),
+    description:
+      (getWorkflowValue(snapshot, "description", ["definition"]) as
+        | string
+        | undefined) ?? undefined,
+    defaultRole,
+    dueOffsetMinutes:
+      typeof getWorkflowValue(snapshot, "dueOffsetMinutes", ["timing"]) ===
+      "number"
+        ? (getWorkflowValue(snapshot, "dueOffsetMinutes", ["timing"]) as number)
+        : undefined,
+    defaultMedication: getWorkflowValue(snapshot, "defaultMedication", [
+      "definition",
+    ]) as TaskWorkflowSeed["medication"] | undefined,
+    defaultObservationToolId:
+      (getWorkflowValue(snapshot, "defaultObservationToolId", [
+        "assignment",
+      ]) as string | undefined) ?? undefined,
+    defaultRecurrence: getWorkflowValue(snapshot, "recurrence", ["timing"]) as
+      | TaskTemplateInstanceData["defaultRecurrence"]
+      | undefined,
+    defaultReminderOffsetMinutes:
+      typeof getWorkflowValue(snapshot, "defaultReminderOffsetMinutes", [
+        "timing",
+      ]) === "number"
+        ? (getWorkflowValue(snapshot, "defaultReminderOffsetMinutes", [
+            "timing",
+          ]) as number)
+        : undefined,
+    syncWithCalendar:
+      (getWorkflowValue(snapshot, "syncWithCalendar", ["assignment"]) as
+        | boolean
+        | undefined) ?? undefined,
+  };
+};
+
+const parseCarePathwayInstanceData = (
+  snapshot: unknown,
+): CarePathwayInstanceData => {
+  const taskBlocksValue = getWorkflowValue(snapshot, "taskBlocks", [
+    "schedule",
+  ]);
+  const taskBlocks = Array.isArray(taskBlocksValue)
+    ? taskBlocksValue.filter(isRecord).map((block) => ({
+        dayOffset: Number(block.dayOffset ?? 0),
+        timeOfDay: asTrimmedString(block.timeOfDay),
+        taskKind: toTaskKind(block.taskKind) ?? "CUSTOM",
+        category: asTrimmedString(block.category),
+        name: asTrimmedString(block.name),
+        audience: toTaskAudience(block.audience) ?? "EMPLOYEE_TASK",
+        assignedRole: toTaskAudience(block.assignedRole),
+        reminderOffsetMinutes:
+          typeof block.reminderOffsetMinutes === "number"
+            ? block.reminderOffsetMinutes
+            : undefined,
+        additionalNotes:
+          (block.additionalNotes as string | undefined) ?? undefined,
+        medication: block.medication as
+          | TaskWorkflowSeed["medication"]
+          | undefined,
+        observationToolId:
+          (block.observationToolId as string | undefined) ?? undefined,
+        recurrence: isRecord(block.recurrence)
+          ? {
+              type:
+                (block.recurrence.type as RecurrenceType | undefined) ?? "ONCE",
+              customCron:
+                (block.recurrence.customCron as string | undefined) ??
+                undefined,
+              endAfterDays:
+                (block.recurrence.endAfterDays as number | undefined) ??
+                undefined,
+            }
+          : undefined,
+      }))
+    : [];
+
+  return {
+    admissionOffsetMinutes:
+      typeof getWorkflowValue(snapshot, "admissionOffsetMinutes", [
+        "admission",
+      ]) === "number"
+        ? (getWorkflowValue(snapshot, "admissionOffsetMinutes", [
+            "admission",
+          ]) as number)
+        : undefined,
+    taskBlocks,
+    dischargeOffsetMinutes:
+      typeof getWorkflowValue(snapshot, "dischargeOffsetMinutes", [
+        "discharge",
+      ]) === "number"
+        ? (getWorkflowValue(snapshot, "dischargeOffsetMinutes", [
+            "discharge",
+          ]) as number)
+        : undefined,
+    followUpTaskName:
+      (getWorkflowValue(snapshot, "followUpTaskName", ["discharge"]) as
+        | string
+        | undefined) ?? undefined,
+    signOffRequired:
+      (getWorkflowValue(snapshot, "signOffRequired", ["discharge"]) as
+        | boolean
+        | undefined) ?? undefined,
+  };
+};
+
 export const materializeTaskTemplateSeed = (
   data: TaskTemplateInstanceData,
   context: TaskWorkflowContext & {
-    dueAt: Date;
+    anchorAt?: Date;
     resolveAssignee: (audience: TaskAudience) => string;
   },
 ): TaskWorkflowSeed => ({
@@ -157,7 +374,8 @@ export const materializeTaskTemplateSeed = (
   description: data.description,
   medication: data.defaultMedication,
   observationToolId: data.defaultObservationToolId,
-  dueAt: context.dueAt,
+  dueAt:
+    context.dueAt ?? toDateFromOffset(context.anchorAt, data.dueOffsetMinutes),
   timezone: context.timezone,
   recurrence: buildRecurrence(data.defaultRecurrence),
   reminder:
@@ -252,4 +470,43 @@ export const materializeCarePathwaySeeds = (
   }
 
   return seeds;
+};
+
+export const materializeTaskWorkflowSeeds = (
+  templateKind: TemplateKind,
+  snapshot: unknown,
+  context: TaskWorkflowContext & {
+    anchorAt?: Date;
+    admissionAt?: Date;
+    resolveAssignee: (
+      audience: TaskAudience,
+      block?: CarePathwayTaskBlock,
+    ) => string;
+  },
+): TaskWorkflowSeed[] => {
+  if (templateKind === "TASK_TEMPLATE") {
+    const parsed = parseTaskTemplateInstanceData(snapshot);
+    return [
+      materializeTaskTemplateSeed(parsed, {
+        ...context,
+        anchorAt: context.anchorAt,
+        resolveAssignee: (audience) => context.resolveAssignee(audience),
+      }),
+    ];
+  }
+
+  if (templateKind === "CARE_PATHWAY") {
+    const parsed = parseCarePathwayInstanceData(snapshot);
+    if (!context.admissionAt) {
+      throw new Error(
+        "admissionAt is required for CARE_PATHWAY materialization",
+      );
+    }
+    return materializeCarePathwaySeeds(parsed, {
+      ...context,
+      admissionAt: context.admissionAt,
+    });
+  }
+
+  return [];
 };

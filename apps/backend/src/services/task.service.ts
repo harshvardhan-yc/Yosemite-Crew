@@ -5,6 +5,7 @@ import {
   TaskStatus as PrismaTaskStatus,
 } from "@prisma/client";
 import { prisma } from "src/config/prisma";
+import type { TaskWorkflowSeed } from "./task-workflow-materializer";
 import { sendEmailTemplate } from "../utils/email";
 import logger from "../utils/logger";
 
@@ -32,6 +33,7 @@ export type MedicationInput = {
   name?: string;
   type?: string;
   notes?: string;
+  frequency?: string;
   doses?: MedicationDoseInput[];
 };
 
@@ -201,8 +203,16 @@ const sanitizeMedication = (input?: MedicationInput | null) => {
   const type = typeof input.type === "string" ? input.type.trim() : undefined;
   const notes =
     typeof input.notes === "string" ? input.notes.trim() : undefined;
+  const frequency =
+    typeof input.frequency === "string" ? input.frequency.trim() : undefined;
 
-  if (!name && !type && !notes && (!doses || doses.length === 0)) {
+  if (
+    !name &&
+    !type &&
+    !notes &&
+    !frequency &&
+    (!doses || doses.length === 0)
+  ) {
     return undefined;
   }
 
@@ -210,6 +220,7 @@ const sanitizeMedication = (input?: MedicationInput | null) => {
     name,
     type,
     notes,
+    frequency,
     doses: doses?.length ? doses : undefined,
   };
 };
@@ -379,6 +390,19 @@ const buildCreateTaskData = (input: {
   attachments: toNullableJsonInput(input.attachments ?? []),
   status: "PENDING" as PrismaTaskStatus,
 });
+
+type TaskWriteClient = Pick<Prisma.TransactionClient, "task">;
+
+const createTaskRow = async (
+  client: TaskWriteClient,
+  input: Parameters<typeof buildCreateTaskData>[0],
+) => {
+  const doc = await client.task.create({
+    data: buildCreateTaskData(input),
+  });
+
+  return toTaskLike(doc);
+};
 
 const updateTaskRow = async (
   taskId: string,
@@ -628,8 +652,9 @@ export const TaskService = {
             ).type,
             endDate:
               (template.defaultRecurrence as { defaultEndOffsetDays?: number })
-                .defaultEndOffsetDays != null
-                ? new Date(
+                .defaultEndOffsetDays == null
+                ? undefined
+                : new Date(
                     input.dueAt.getTime() +
                       ((
                         template.defaultRecurrence as {
@@ -640,8 +665,7 @@ export const TaskService = {
                         60 *
                         60 *
                         1000,
-                  )
-                : undefined,
+                  ),
             cronExpression: (
               template.defaultRecurrence as { customCron?: string }
             ).customCron,
@@ -734,6 +758,55 @@ export const TaskService = {
     return mapped;
   },
 
+  async createFromWorkflowSeed(
+    input: TaskWorkflowSeed,
+    options?: { client?: TaskWriteClient; notify?: boolean },
+  ): Promise<TaskLike> {
+    assertCompanionRequirement({
+      audience: input.audience,
+      companionId: input.companionId,
+      medication: input.medication,
+      observationToolId: input.observationToolId,
+    });
+
+    const mapped = await createTaskRow(options?.client ?? prisma, {
+      organisationId: input.organisationId,
+      appointmentId: input.appointmentId,
+      companionId: input.companionId,
+      createdBy: input.createdBy,
+      assignedBy: input.assignedBy,
+      assignedTo: input.assignedTo,
+      audience: input.audience,
+      source: input.source,
+      libraryTaskId: input.libraryTaskId,
+      templateId: input.templateId,
+      category: input.category,
+      name: input.name,
+      description: input.description,
+      additionalNotes: input.additionalNotes,
+      medication: input.medication,
+      observationToolId: input.observationToolId,
+      dueAt: input.dueAt,
+      timezone: input.timezone,
+      recurrence: input.recurrence
+        ? {
+            type: input.recurrence.type,
+            endDate: input.recurrence.endDate,
+            cronExpression: input.recurrence.cronExpression,
+          }
+        : undefined,
+      reminder: input.reminder,
+      syncWithCalendar: input.syncWithCalendar,
+      attachments: input.attachments,
+    });
+
+    if (options?.notify !== false) {
+      void sendTaskAssignmentEmail(mapped);
+    }
+
+    return mapped;
+  },
+
   async updateTask(
     taskId: string,
     updates: TaskUpdateInput,
@@ -806,7 +879,7 @@ export const TaskService = {
     } else if (newStatus === "PENDING") {
       nextStatus = "PENDING";
     } else {
-      nextStatus = newStatus as PrismaTaskStatus;
+      nextStatus = newStatus;
     }
 
     let completionDoc: TaskCompletionLike | undefined;

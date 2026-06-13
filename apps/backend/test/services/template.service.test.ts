@@ -5,10 +5,23 @@ import {
 } from "../../src/services/template.service";
 import { buildClinicalTemplateSchemaSnapshot } from "../../src/services/clinical-template-blueprints";
 import { buildTaskWorkflowTemplateSchemaSnapshot } from "../../src/services/task-workflow-blueprints";
+import { TaskWorkflowService } from "../../src/services/task-workflow.service";
+
+jest.mock("../../src/services/task-workflow.service", () => ({
+  TaskWorkflowService: {
+    launchFromTemplateInstance: jest.fn(),
+  },
+}));
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
     $transaction: jest.fn(),
+    appointment: {
+      findFirst: jest.fn(),
+    },
+    admission: {
+      findUnique: jest.fn(),
+    },
     template: {
       create: jest.fn(),
       findUnique: jest.fn(),
@@ -36,6 +49,12 @@ describe("TemplateService", () => {
 
   const mockedPrisma = prisma as unknown as {
     $transaction: jest.Mock;
+    appointment: {
+      findFirst: jest.Mock;
+    };
+    admission: {
+      findUnique: jest.Mock;
+    };
     template: {
       create: jest.Mock;
       findUnique: jest.Mock;
@@ -52,6 +71,10 @@ describe("TemplateService", () => {
       findUnique: jest.Mock;
       update: jest.Mock;
     };
+  };
+
+  const mockedTaskWorkflowService = TaskWorkflowService as unknown as {
+    launchFromTemplateInstance: jest.Mock;
   };
 
   beforeEach(() => {
@@ -598,5 +621,98 @@ describe("TemplateService", () => {
     await expect(
       TemplateService.submitInstance(instanceId, organisationId),
     ).rejects.toThrow("Template instance not found");
+  });
+
+  it("materializes task workflow seeds when submitting a task template instance", async () => {
+    mockedPrisma.templateInstance.findUnique.mockResolvedValueOnce({
+      id: instanceId,
+      templateId,
+      templateVersion: 1,
+      organisationId,
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: null,
+      status: "DRAFT",
+      data: {
+        sections: [
+          {
+            id: "definition",
+            data: {
+              taskKind: "MEDICATION",
+              category: "Medication",
+              name: "Morning medicine",
+            },
+          },
+          {
+            id: "assignment",
+            data: {
+              defaultRole: "EMPLOYEE_TASK",
+            },
+          },
+          {
+            id: "timing",
+            data: {
+              dueOffsetMinutes: 45,
+            },
+          },
+        ],
+      },
+      authorId: "user-1",
+      signedBy: null,
+      signedAt: null,
+      generatedPdfUrl: null,
+      generatedPdf: null,
+      createdAt: new Date("2026-01-01T10:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T10:00:00.000Z"),
+      template: {
+        id: templateId,
+        kind: "TASK_TEMPLATE",
+        ownership: "ORG_TEMPLATE",
+      },
+    });
+    mockedPrisma.appointment.findFirst.mockResolvedValueOnce({
+      companion: {
+        id: "comp-1",
+        parent: { id: "parent-1" },
+      },
+      lead: { id: "user-2" },
+      supportStaff: [{ id: "user-3" }],
+      startTime: new Date("2026-01-01T08:00:00.000Z"),
+      encounterId: null,
+    });
+    mockedPrisma.templateInstance.update.mockResolvedValueOnce({
+      id: instanceId,
+      status: "COMPLETED",
+    });
+    mockedTaskWorkflowService.launchFromTemplateInstance.mockResolvedValueOnce({
+      schedule: { id: "schedule-1" },
+      taskIds: ["task-1"],
+      seedCount: 1,
+    });
+
+    const result = await TemplateService.submitInstance(
+      instanceId,
+      organisationId,
+      "user-9",
+    );
+
+    expect(
+      mockedTaskWorkflowService.launchFromTemplateInstance,
+    ).toHaveBeenCalledWith(
+      instanceId,
+      organisationId,
+      "user-9",
+      expect.objectContaining({
+        client: prisma,
+        notify: true,
+      }),
+    );
+    expect(mockedPrisma.templateInstance.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: instanceId },
+        data: { status: "COMPLETED" },
+      }),
+    );
+    expect(result.status).toBe("COMPLETED");
   });
 });

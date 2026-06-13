@@ -217,6 +217,71 @@ describe("TaskService", () => {
     expect(result.id).toBe("task-3");
   });
 
+  it("creates a task from a workflow seed", async () => {
+    mockedPrisma.task.create.mockResolvedValueOnce({
+      id: "task-4",
+      audience: "PARENT_TASK",
+      createdBy: "user-1",
+      assignedTo: "parent-1",
+      dueAt,
+      name: "Discharge follow-up",
+    });
+
+    const result = await TaskService.createFromWorkflowSeed(
+      {
+        source: "ORG_TEMPLATE",
+        organisationId: "org-1",
+        createdBy: "user-1",
+        assignedBy: "user-1",
+        assignedTo: "parent-1",
+        audience: "PARENT_TASK",
+        companionId: "comp-1",
+        category: "Discharge",
+        name: "Discharge follow-up",
+        medication: {
+          name: "Antibiotic",
+          frequency: "BID",
+        },
+        dueAt,
+      },
+      { notify: false },
+    );
+
+    expect(mockedPrisma.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: "ORG_TEMPLATE",
+          assignedTo: "parent-1",
+          medication: expect.objectContaining({
+            name: "Antibiotic",
+            frequency: "BID",
+          }),
+        }),
+      }),
+    );
+    expect(result.id).toBe("task-4");
+  });
+
+  it("rejects workflow seeds that require a companion but do not provide one", async () => {
+    await expect(
+      TaskService.createFromWorkflowSeed(
+        {
+          source: "ORG_TEMPLATE",
+          organisationId: "org-1",
+          createdBy: "user-1",
+          assignedTo: "parent-1",
+          audience: "PARENT_TASK",
+          category: "Discharge",
+          name: "Discharge follow-up",
+          dueAt,
+        },
+        { notify: false },
+      ),
+    ).rejects.toThrow(
+      "companionId is required for parent, medication, or observation tool tasks",
+    );
+  });
+
   it("updates a task and blocks reassignment by non-creators", async () => {
     mockedPrisma.task.findFirst.mockResolvedValueOnce({
       id: "task-1",

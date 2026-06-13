@@ -193,9 +193,11 @@ export const TemplateController = {
 
   async submitInstance(req: Request, res: Response) {
     try {
+      const submittedBy = resolveUserId(req);
       const instance = await TemplateService.submitInstance(
         req.params.instanceId,
         req.params.organisationId,
+        submittedBy,
       );
       return res.json(instance);
     } catch (error) {

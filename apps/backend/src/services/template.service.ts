@@ -10,6 +10,7 @@ import { z } from "zod";
 import { prisma } from "src/config/prisma";
 import { validateClinicalTemplateBlueprint } from "src/services/clinical-template-blueprints";
 import { validateTaskWorkflowTemplateBlueprint } from "src/services/task-workflow-blueprints";
+import { TaskWorkflowService } from "src/services/task-workflow.service";
 
 export class TemplateServiceError extends Error {
   constructor(
@@ -724,27 +725,61 @@ export const TemplateService = {
     });
   },
 
-  async submitInstance(instanceId: string, organisationId?: string) {
-    const instance = await prisma.templateInstance.findUnique({
-      where: { id: ensureId(instanceId, "instanceId") },
-    });
+  async submitInstance(
+    instanceId: string,
+    organisationId?: string,
+    submittedBy?: string,
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const instance = await tx.templateInstance.findUnique({
+        where: { id: ensureId(instanceId, "instanceId") },
+        include: {
+          template: {
+            select: {
+              id: true,
+              kind: true,
+              ownership: true,
+            },
+          },
+        },
+      });
 
-    if (!instance) {
-      throw new TemplateServiceError("Template instance not found", 404);
-    }
+      if (!instance) {
+        throw new TemplateServiceError("Template instance not found", 404);
+      }
 
-    if (organisationId && instance.organisationId !== organisationId) {
-      throw new TemplateServiceError(
-        "Template instance does not belong to organisation",
-        403,
+      if (organisationId && instance.organisationId !== organisationId) {
+        throw new TemplateServiceError(
+          "Template instance does not belong to organisation",
+          403,
+        );
+      }
+
+      if (instance.status === "COMPLETED") {
+        return instance;
+      }
+
+      const createdBy = ensureId(
+        submittedBy ?? instance.authorId ?? instance.signedBy ?? "",
+        "submittedBy",
       );
-    }
 
-    return prisma.templateInstance.update({
-      where: { id: instance.id },
-      data: {
-        status: "COMPLETED",
-      },
+      await TaskWorkflowService.launchFromTemplateInstance(
+        instance.id,
+        organisationId,
+        createdBy,
+        {
+          client: tx,
+          notify: true,
+        },
+      );
+
+      return tx.templateInstance.update({
+        where: { id: instance.id },
+        data: {
+          status: "COMPLETED",
+        },
+      });
     });
   },
 };

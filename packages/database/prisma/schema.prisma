@@ -1220,6 +1220,14 @@ enum TemplateInstanceStatus {
   VOID
 }
 
+enum TaskScheduleStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
 enum ClinicalArtifactKind {
   SOAP_NOTE
   PRESCRIPTION
@@ -1594,6 +1602,7 @@ model TemplateInstance {
   updatedAt       DateTime              @updatedAt
 
   template        Template              @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  taskSchedule    TaskSchedule?
 
   @@index([templateId])
   @@index([organisationId, appointmentId])
@@ -1837,6 +1846,39 @@ model Task {
   @@index([companionId, dueAt])
   @@index([organisationId, dueAt])
   @@index([dueAt])
+}
+
+model TaskSchedule {
+  id                String            @id @default(uuid())
+  templateInstanceId String            @unique
+  templateId        String
+  templateVersion   Int
+  templateKind      TemplateKind
+  organisationId    String
+  appointmentId     String?
+  caseId            String?
+  encounterId      String?
+  companionId       String?
+  createdBy         String
+  activatedBy       String?
+  activatedAt       DateTime?
+  completedAt       DateTime?
+  lastMaterializedAt DateTime?
+  status            TaskScheduleStatus @default(DRAFT)
+  scheduleInput     Json?
+  materializedSeeds Json?
+  generatedTaskIds  Json?
+  metadata          Json?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  templateInstance  TemplateInstance   @relation(fields: [templateInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, status])
+  @@index([templateId, templateVersion])
+  @@index([appointmentId])
+  @@index([encounterId])
+  @@index([companionId])
 }
 
 model TaskCompletion {
