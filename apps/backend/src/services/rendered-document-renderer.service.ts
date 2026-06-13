@@ -5,6 +5,8 @@ import {
   renderPdf,
   type PdfField,
   type PdfSection,
+  type PdfBranding,
+  type PdfTemplateKind,
 } from "src/services/formPDF.service";
 import type { RenderedDocumentSource } from "src/services/rendered-document.service";
 
@@ -32,6 +34,29 @@ type TemplateInstanceDocumentSource = {
   };
 };
 
+type FormSubmissionDocumentSource = {
+  submission: {
+    id: string;
+    formId: string;
+    formVersion: number;
+    appointmentId: string | null;
+    companionId: string | null;
+    parentId: string | null;
+    submittedBy: string | null;
+    answers: Prisma.JsonValue;
+    submittedAt: Date;
+  };
+  form: {
+    name: string;
+    category: string;
+    orgId: string;
+    schema: Prisma.JsonValue;
+  };
+  version: {
+    schemaSnapshot: Prisma.JsonValue;
+  };
+};
+
 type ClinicalArtifactDocumentSource = {
   artifact: {
     id: string;
@@ -52,6 +77,20 @@ type ClinicalArtifactDocumentSource = {
     updatedAt: Date;
   };
   data: Record<string, unknown>;
+};
+
+type OrganizationBrand = {
+  name: string;
+  imageUrl: string | null;
+  phoneNo: string;
+  website: string | null;
+  address: {
+    addressLine: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    country: string | null;
+  } | null;
 };
 
 const humanizeLabel = (value: string) =>
@@ -142,6 +181,30 @@ const buildDocumentDetailsSection = (
   ],
 });
 
+const buildOrganizationBranding = (
+  organization: OrganizationBrand,
+): PdfBranding => {
+  const addressLines = [
+    organization.address?.addressLine,
+    [
+      organization.address?.city,
+      organization.address?.state,
+      organization.address?.postalCode,
+    ]
+      .filter((line): line is string => Boolean(line && line.trim()))
+      .join(", "),
+    organization.address?.country,
+  ].filter((line): line is string => Boolean(line && line.trim()));
+
+  return {
+    organizationName: organization.name,
+    addressLines,
+    logoUrl: organization.imageUrl,
+    phoneNo: organization.phoneNo,
+    website: organization.website,
+  };
+};
+
 const buildTemplateInstanceViewModel = (
   input: RenderedDocumentPdfSource,
   record: TemplateInstanceDocumentSource,
@@ -163,6 +226,30 @@ const buildTemplateInstanceViewModel = (
     {
       title: "Captured Data",
       fields: flattenJson(record.data),
+    },
+  ],
+});
+
+const buildFormSubmissionViewModel = (
+  input: RenderedDocumentPdfSource,
+  record: FormSubmissionDocumentSource,
+) => ({
+  title: input.title,
+  submittedAt: record.submission.submittedAt.toISOString(),
+  sections: [
+    buildDocumentDetailsSection(input.title, input.source, {
+      formName: record.form.name,
+      formCategory: record.form.category,
+      formId: record.submission.formId,
+      formVersion: record.submission.formVersion,
+      appointmentId: record.submission.appointmentId,
+      companionId: record.submission.companionId,
+      parentId: record.submission.parentId,
+      submittedBy: record.submission.submittedBy,
+    }),
+    {
+      title: "Captured Data",
+      fields: flattenJson(record.submission.answers),
     },
   ],
 });
@@ -218,6 +305,106 @@ const loadTemplateInstanceDocument = async (
   }
 
   return record as unknown as TemplateInstanceDocumentSource;
+};
+
+const loadFormSubmissionDocument = async (
+  source: RenderedDocumentSource,
+): Promise<FormSubmissionDocumentSource> => {
+  const submission = await prisma.formSubmission.findUnique({
+    where: { id: source.sourceId },
+  });
+
+  if (!submission) {
+    throw new Error("Form submission not found");
+  }
+
+  const form = await prisma.form.findUnique({
+    where: { id: submission.formId },
+  });
+
+  if (!form) {
+    throw new Error("Form not found");
+  }
+
+  if (source.templateId && source.templateId !== submission.formId) {
+    throw new Error("Form submission does not match source form");
+  }
+
+  if (
+    source.templateVersion !== undefined &&
+    source.templateVersion !== submission.formVersion
+  ) {
+    throw new Error("Form submission does not match source version");
+  }
+
+  if (form.orgId !== source.organisationId) {
+    throw new Error("Form submission does not belong to organisation");
+  }
+
+  const version = await prisma.formVersion.findUnique({
+    where: {
+      formId_version: {
+        formId: submission.formId,
+        version: submission.formVersion,
+      },
+    },
+  });
+
+  if (!version) {
+    throw new Error("Form version not found");
+  }
+
+  return {
+    submission: {
+      id: submission.id,
+      formId: submission.formId,
+      formVersion: submission.formVersion,
+      appointmentId: submission.appointmentId,
+      companionId: submission.companionId,
+      parentId: submission.parentId,
+      submittedBy: submission.submittedBy,
+      answers: submission.answers,
+      submittedAt: submission.submittedAt,
+    },
+    form: {
+      name: form.name,
+      category: form.category,
+      orgId: form.orgId,
+      schema: form.schema,
+    },
+    version: {
+      schemaSnapshot: version.schemaSnapshot,
+    },
+  };
+};
+
+const loadOrganizationBrand = async (
+  organisationId: string,
+): Promise<OrganizationBrand> => {
+  const organization = await prisma.organization.findUnique({
+    where: { id: organisationId },
+    select: {
+      name: true,
+      imageUrl: true,
+      phoneNo: true,
+      website: true,
+      address: {
+        select: {
+          addressLine: true,
+          city: true,
+          state: true,
+          postalCode: true,
+          country: true,
+        },
+      },
+    },
+  });
+
+  if (!organization) {
+    throw new Error("Organisation not found");
+  }
+
+  return organization;
 };
 
 const loadClinicalArtifactDocument = async (
@@ -336,11 +523,36 @@ export const renderRenderedDocumentPdf = async (
   switch (input.source.sourceKind) {
     case "TEMPLATE_INSTANCE": {
       const record = await loadTemplateInstanceDocument(input.source);
-      return renderPdf(buildTemplateInstanceViewModel(input, record));
+      const organization = await loadOrganizationBrand(
+        input.source.organisationId,
+      );
+
+      return renderPdf(buildTemplateInstanceViewModel(input, record), {
+        templateKind: input.source.templateKind as PdfTemplateKind,
+        branding: buildOrganizationBranding(organization),
+      });
+    }
+    case "FORM_SUBMISSION": {
+      const record = await loadFormSubmissionDocument(input.source);
+      const organization = await loadOrganizationBrand(
+        input.source.organisationId,
+      );
+
+      return renderPdf(buildFormSubmissionViewModel(input, record), {
+        templateKind: "FORM",
+        branding: buildOrganizationBranding(organization),
+      });
     }
     case "CLINICAL_ARTIFACT": {
       const record = await loadClinicalArtifactDocument(input.source);
-      return renderPdf(buildClinicalArtifactViewModel(input, record));
+      const organization = await loadOrganizationBrand(
+        input.source.organisationId,
+      );
+
+      return renderPdf(buildClinicalArtifactViewModel(input, record), {
+        templateKind: input.source.templateKind as PdfTemplateKind,
+        branding: buildOrganizationBranding(organization),
+      });
     }
     default:
       throw new Error("Unsupported rendered document source kind");

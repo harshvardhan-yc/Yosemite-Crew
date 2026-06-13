@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { ClinicalArtifactKind, Prisma, TemplateKind } from "@prisma/client";
+import {
+  ClinicalArtifactKind,
+  Prisma,
+  RenderedDocumentSourceKind as PrismaRenderedDocumentSourceKind,
+  TemplateKind,
+} from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { DocumensoService } from "src/services/documenso.service";
 import { renderRenderedDocumentPdf } from "src/services/rendered-document-renderer.service";
@@ -25,7 +30,8 @@ export type RenderedDocumentKind =
 
 export type RenderedDocumentSourceKind =
   | "TEMPLATE_INSTANCE"
-  | "CLINICAL_ARTIFACT";
+  | "CLINICAL_ARTIFACT"
+  | "FORM_SUBMISSION";
 
 export type RenderedDocumentStatus = "DRAFT" | "SIGNED";
 
@@ -81,12 +87,23 @@ export type RenderedDocument = {
   mimeType: "application/pdf";
   signable: boolean;
   source: RenderedDocumentSource;
+  pdf?: RenderedDocumentPdfSnapshot | null;
   createdAt: Date;
   updatedAt: Date;
   signedAt?: Date | null;
   signedBy?: string | null;
   signing?: RenderedDocumentSigning | null;
   signature?: RenderedDocumentSignature | null;
+};
+
+export type RenderedDocumentPdfSnapshot = {
+  version: 1;
+  renderer: "rendered-document-renderer.service";
+  renderedAt: string;
+  title: string;
+  mimeType: "application/pdf";
+  documentKind: RenderedDocumentKind;
+  source: RenderedDocumentSource;
 };
 
 export type BuildRenderedDocumentInput = {
@@ -187,6 +204,19 @@ const normalizeSignatureText = (value?: string | null): string | null => {
   return normalized;
 };
 
+export const buildRenderedDocumentPdfSnapshot = (
+  document: Pick<RenderedDocument, "kind" | "source" | "title">,
+  renderedAt = new Date(),
+): RenderedDocumentPdfSnapshot => ({
+  version: 1,
+  renderer: "rendered-document-renderer.service",
+  renderedAt: renderedAt.toISOString(),
+  title: document.title,
+  mimeType: "application/pdf",
+  documentKind: document.kind,
+  source: document.source,
+});
+
 export const isSignableRenderedDocumentKind = (
   kind: RenderedDocumentKind,
 ): boolean => SIGNABLE_RENDERED_DOCUMENT_KINDS.has(kind);
@@ -217,6 +247,7 @@ export const buildRenderedDocumentDraft = (
       organisationId,
       sourceId,
     },
+    pdf: null,
     createdAt: now,
     updatedAt: now,
     signedAt: null,
@@ -270,7 +301,8 @@ const toRenderedDocumentCreateData = (
 ): Prisma.RenderedDocumentUncheckedCreateInput => ({
   id: draft.id,
   organisationId: draft.organisationId,
-  sourceKind: draft.source.sourceKind,
+  sourceKind: draft.source
+    .sourceKind as unknown as PrismaRenderedDocumentSourceKind,
   sourceId: draft.source.sourceId,
   templateInstanceId: input.templateInstanceId ?? undefined,
   clinicalArtifactId: input.clinicalArtifactId ?? undefined,
@@ -285,7 +317,11 @@ const toRenderedDocumentCreateData = (
   signable: draft.signable,
   pdfUrl: input.pdfUrl ?? undefined,
   pdf:
-    input.pdf === undefined ? undefined : (input.pdf as Prisma.InputJsonValue),
+    input.pdf === undefined
+      ? (buildRenderedDocumentPdfSnapshot(
+          draft,
+        ) as unknown as Prisma.InputJsonValue)
+      : (input.pdf as Prisma.InputJsonValue),
   signedBy: draft.signedBy ?? undefined,
   signedAt: draft.signedAt ?? undefined,
   signing: draft.signing ?? undefined,
@@ -390,6 +426,19 @@ export const signPersistedRenderedDocument = async (
       templateVersionId: existing.templateVersionId,
     },
   });
+  const renderedPdfSnapshot = buildRenderedDocumentPdfSnapshot({
+    title: existing.title,
+    kind,
+    source: {
+      sourceKind: existing.sourceKind,
+      sourceId: existing.sourceId,
+      organisationId: existing.organisationId,
+      templateKind: existing.kind as TemplateKind | ClinicalArtifactKind,
+      templateId: existing.templateId,
+      templateVersion: existing.templateVersion,
+      templateVersionId: existing.templateVersionId,
+    },
+  });
 
   const doc = await DocumensoService.createDocument({
     pdf,
@@ -423,6 +472,7 @@ export const signPersistedRenderedDocument = async (
   return client.renderedDocument.update({
     where: { id: existing.id },
     data: {
+      pdf: renderedPdfSnapshot as unknown as Prisma.InputJsonValue,
       signing: {
         required: true,
         provider: "DOCUMENSO",
@@ -509,6 +559,7 @@ export const completePersistedRenderedDocumentSigning = async (
       status: "SIGNED",
       signedBy: signing.signerId ?? existing.signedBy ?? undefined,
       signedAt: new Date(),
+      pdfUrl: signedPdf.downloadUrl ?? existing.pdfUrl ?? undefined,
       signing: {
         ...signing,
         status: "SIGNED",

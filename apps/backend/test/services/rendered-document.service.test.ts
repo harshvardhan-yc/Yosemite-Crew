@@ -2,6 +2,7 @@ import { ClinicalArtifactKind, TemplateKind } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import {
   buildDocumentSignature,
+  buildRenderedDocumentPdfSnapshot,
   buildRenderedDocumentDraft,
   createRenderedDocumentRecord,
   getPersistedRenderedDocument,
@@ -107,6 +108,29 @@ describe("rendered-document service", () => {
     expect(draft.source.templateKind).toBe(TemplateKind.FORM);
     expect(draft.version).toBe(1);
     expect(draft.signature).toBeNull();
+    expect(draft.pdf).toBeNull();
+  });
+
+  it("builds a rendered document pdf snapshot", () => {
+    const draft = buildRenderedDocumentDraft({
+      title: "Intake Consent",
+      source: buildTemplateSource(),
+    });
+
+    const snapshot = buildRenderedDocumentPdfSnapshot(
+      draft,
+      new Date("2026-06-13T12:00:00.000Z"),
+    );
+
+    expect(snapshot).toEqual({
+      version: 1,
+      renderer: "rendered-document-renderer.service",
+      renderedAt: "2026-06-13T12:00:00.000Z",
+      title: "Intake Consent",
+      mimeType: "application/pdf",
+      documentKind: "FORM",
+      source: draft.source,
+    });
   });
 
   it("preserves non-signable task kinds in the draft contract", () => {
@@ -258,7 +282,15 @@ describe("rendered-document service", () => {
       status: "DRAFT",
       signable: true,
       pdfUrl: null,
-      pdf: null,
+      pdf: {
+        version: 1,
+        renderer: "rendered-document-renderer.service",
+        renderedAt: "2026-06-13T00:00:00.000Z",
+        title: "Intake Consent",
+        mimeType: "application/pdf",
+        documentKind: "FORM",
+        source: buildTemplateSource(),
+      },
       signedBy: null,
       signedAt: null,
       createdAt: new Date("2026-06-13T00:00:00.000Z"),
@@ -281,6 +313,11 @@ describe("rendered-document service", () => {
           title: "Intake Consent",
           kind: "FORM",
           signable: true,
+          pdf: expect.objectContaining({
+            renderer: "rendered-document-renderer.service",
+            documentKind: "FORM",
+            title: "Intake Consent",
+          }),
         }),
         include: { signature: true },
       }),
@@ -462,6 +499,11 @@ describe("rendered-document service", () => {
       expect.objectContaining({
         where: { id: "doc-1" },
         data: expect.objectContaining({
+          pdf: expect.objectContaining({
+            renderer: "rendered-document-renderer.service",
+            title: "Intake Consent",
+            documentKind: "FORM",
+          }),
           signing: expect.objectContaining({
             status: "IN_PROGRESS",
             documentId: "42",
@@ -595,6 +637,21 @@ describe("rendered-document service", () => {
         data: expect.objectContaining({
           renderedDocumentId: "doc-1",
           signerId: "user-1",
+        }),
+      }),
+    );
+    expect(mockedPrisma.renderedDocument.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "doc-1" },
+        data: expect.objectContaining({
+          status: "SIGNED",
+          pdfUrl: "https://signed.example/doc.pdf",
+          signing: expect.objectContaining({
+            status: "SIGNED",
+            pdf: expect.objectContaining({
+              url: "https://signed.example/doc.pdf",
+            }),
+          }),
         }),
       }),
     );

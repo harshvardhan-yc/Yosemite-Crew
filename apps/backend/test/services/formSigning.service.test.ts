@@ -1,13 +1,11 @@
 import { FormSigningService } from "../../src/services/formSigning.service";
-import {
-  FormModel,
-  FormSubmissionModel,
-  FormVersionModel,
-} from "../../src/models/form";
+import { FormModel, FormSubmissionModel } from "../../src/models/form";
 import { ParentModel } from "../../src/models/parent";
 import UserModel from "../../src/models/user";
-import { DocumensoService } from "../../src/services/documenso.service";
-import { generateFormSubmissionPdf } from "../../src/services/formPDF.service";
+import {
+  createRenderedDocumentRecord,
+  signPersistedRenderedDocument,
+} from "../../src/services/rendered-document.service";
 
 jest.mock("../../src/config/read-switch", () => ({
   isReadFromPostgres: jest.fn(() => false),
@@ -43,18 +41,17 @@ jest.mock("../../src/services/documenso.service", () => ({
     createDocument: jest.fn(),
     distributeDocument: jest.fn(),
     resolveOrganisationApiKey: jest.fn(),
+    downloadSignedDocument: jest.fn(),
   },
 }));
 
-jest.mock("../../src/services/formPDF.service", () => ({
-  generateFormSubmissionPdf: jest.fn(),
+jest.mock("../../src/services/rendered-document.service", () => ({
+  createRenderedDocumentRecord: jest.fn(),
+  signPersistedRenderedDocument: jest.fn(),
 }));
 
 const mockedFormSubmissionModel = FormSubmissionModel as unknown as {
   findById: jest.Mock;
-};
-const mockedFormVersionModel = FormVersionModel as unknown as {
-  findOne: jest.Mock;
 };
 const mockedFormModel = FormModel as unknown as {
   findById: jest.Mock;
@@ -65,12 +62,10 @@ const mockedParentModel = ParentModel as unknown as {
 const mockedUserModel = UserModel as unknown as {
   findOne: jest.Mock;
 };
-const mockedDocumensoService = DocumensoService as unknown as {
-  createDocument: jest.Mock;
-  distributeDocument: jest.Mock;
-  resolveOrganisationApiKey: jest.Mock;
-};
-const mockedGeneratePdf = generateFormSubmissionPdf as jest.Mock;
+const mockedCreateRenderedDocumentRecord =
+  createRenderedDocumentRecord as jest.Mock;
+const mockedSignPersistedRenderedDocument =
+  signPersistedRenderedDocument as jest.Mock;
 
 describe("FormSigningService.startSigning", () => {
   beforeEach(() => {
@@ -91,8 +86,8 @@ describe("FormSigningService.startSigning", () => {
       }),
     ).rejects.toThrow("Unauthorized to sign this submission");
 
-    expect(mockedGeneratePdf).not.toHaveBeenCalled();
-    expect(mockedDocumensoService.createDocument).not.toHaveBeenCalled();
+    expect(mockedCreateRenderedDocumentRecord).not.toHaveBeenCalled();
+    expect(mockedSignPersistedRenderedDocument).not.toHaveBeenCalled();
   });
 
   it("allows parent signing when submission belongs to the parent", async () => {
@@ -103,14 +98,10 @@ describe("FormSigningService.startSigning", () => {
       parentId: "parent-owner",
       formId: "form-1",
       formVersion: 1,
-      signing: { status: "PENDING" },
+      signing: { status: "NOT_STARTED" },
       answers: { consent: true },
       submittedAt: new Date("2026-01-01"),
       save,
-    });
-
-    mockedFormVersionModel.findOne.mockReturnValueOnce({
-      lean: jest.fn().mockResolvedValue({ schemaSnapshot: [] }),
     });
 
     mockedFormModel.findById.mockReturnValueOnce({
@@ -121,11 +112,6 @@ describe("FormSigningService.startSigning", () => {
       }),
     });
 
-    mockedDocumensoService.resolveOrganisationApiKey.mockResolvedValueOnce(
-      "documenso-api-key",
-    );
-    mockedGeneratePdf.mockResolvedValueOnce(Buffer.from("pdf"));
-
     mockedParentModel.findById.mockReturnValueOnce({
       lean: jest.fn().mockResolvedValue({
         email: "parent@example.com",
@@ -134,11 +120,17 @@ describe("FormSigningService.startSigning", () => {
       }),
     });
 
-    mockedDocumensoService.createDocument.mockResolvedValueOnce({
-      id: 123,
-      recipients: [{ token: "recipient-token" }],
+    mockedCreateRenderedDocumentRecord.mockResolvedValueOnce({
+      id: "rendered-doc-1",
+      signing: null,
     });
-    mockedDocumensoService.distributeDocument.mockResolvedValueOnce(undefined);
+    mockedSignPersistedRenderedDocument.mockResolvedValueOnce({
+      id: "rendered-doc-1",
+      signing: {
+        documentId: "123",
+        signingUrl: "https://documenso.example/sign/recipient-token",
+      },
+    });
 
     await expect(
       FormSigningService.startSigning({
@@ -147,11 +139,32 @@ describe("FormSigningService.startSigning", () => {
         initiatedBy: "parent-owner",
       }),
     ).resolves.toEqual({
-      documentId: 123,
+      documentId: "123",
       signingUrl: "https://documenso.example/sign/recipient-token",
     });
 
-    expect(mockedDocumensoService.createDocument).toHaveBeenCalledTimes(1);
+    expect(mockedCreateRenderedDocumentRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Intake",
+        source: expect.objectContaining({
+          sourceKind: "FORM_SUBMISSION",
+          sourceId: "submission-1",
+          organisationId: "org-1",
+          templateKind: "FORM",
+          templateId: "form-1",
+          templateVersion: 1,
+        }),
+      }),
+    );
+    expect(mockedSignPersistedRenderedDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        renderedDocumentId: "rendered-doc-1",
+        organisationId: "org-1",
+        signerType: "PARENT",
+        signerEmail: "parent@example.com",
+        signerName: "Parent One",
+      }),
+    );
     expect(save).toHaveBeenCalledTimes(1);
   });
 
@@ -163,14 +176,10 @@ describe("FormSigningService.startSigning", () => {
       formId: "form-2",
       formVersion: 1,
       submittedBy: "submission-owner",
-      signing: { status: "PENDING" },
+      signing: { status: "NOT_STARTED" },
       answers: { consent: true },
       submittedAt: new Date("2026-01-01"),
       save,
-    });
-
-    mockedFormVersionModel.findOne.mockReturnValueOnce({
-      lean: jest.fn().mockResolvedValue({ schemaSnapshot: [] }),
     });
 
     mockedFormModel.findById.mockReturnValueOnce({
@@ -181,11 +190,6 @@ describe("FormSigningService.startSigning", () => {
       }),
     });
 
-    mockedDocumensoService.resolveOrganisationApiKey.mockResolvedValueOnce(
-      "documenso-api-key",
-    );
-    mockedGeneratePdf.mockResolvedValueOnce(Buffer.from("pdf"));
-
     mockedUserModel.findOne.mockReturnValueOnce({
       lean: jest.fn().mockResolvedValue({
         email: "owner@example.com",
@@ -194,11 +198,17 @@ describe("FormSigningService.startSigning", () => {
       }),
     });
 
-    mockedDocumensoService.createDocument.mockResolvedValueOnce({
-      id: 456,
-      recipients: [{ token: "vet-token" }],
+    mockedCreateRenderedDocumentRecord.mockResolvedValueOnce({
+      id: "rendered-doc-2",
+      signing: null,
     });
-    mockedDocumensoService.distributeDocument.mockResolvedValueOnce(undefined);
+    mockedSignPersistedRenderedDocument.mockResolvedValueOnce({
+      id: "rendered-doc-2",
+      signing: {
+        documentId: "456",
+        signingUrl: "https://documenso.example/sign/vet-token",
+      },
+    });
 
     await expect(
       FormSigningService.startSigning({
@@ -206,15 +216,31 @@ describe("FormSigningService.startSigning", () => {
         initiatedBy: "attacker-user",
       }),
     ).resolves.toEqual({
-      documentId: 456,
+      documentId: "456",
       signingUrl: "https://documenso.example/sign/vet-token",
     });
 
     expect(mockedUserModel.findOne).toHaveBeenCalledWith({
       userId: "submission-owner",
     });
-    expect(mockedDocumensoService.createDocument).toHaveBeenCalledWith(
+    expect(mockedCreateRenderedDocumentRecord).toHaveBeenCalledWith(
       expect.objectContaining({
+        title: "Clinical Form",
+        source: expect.objectContaining({
+          sourceKind: "FORM_SUBMISSION",
+          sourceId: "submission-2",
+          organisationId: "org-2",
+          templateKind: "FORM",
+          templateId: "form-2",
+          templateVersion: 1,
+        }),
+      }),
+    );
+    expect(mockedSignPersistedRenderedDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        renderedDocumentId: "rendered-doc-2",
+        organisationId: "org-2",
+        signerType: "PMS_USER",
         signerEmail: "owner@example.com",
         signerName: "Owner User",
       }),

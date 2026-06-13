@@ -1199,6 +1199,7 @@ enum RenderedDocumentStatus {
 enum RenderedDocumentSourceKind {
   TEMPLATE_INSTANCE
   CLINICAL_ARTIFACT
+  FORM_SUBMISSION
 }
 
 enum DocumentSignatureSignerType {
