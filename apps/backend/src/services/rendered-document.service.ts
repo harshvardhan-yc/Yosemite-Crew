@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { ClinicalArtifactKind, Prisma, TemplateKind } from "@prisma/client";
 import { prisma } from "src/config/prisma";
+import { DocumensoService } from "src/services/documenso.service";
+import { renderRenderedDocumentPdf } from "src/services/rendered-document-renderer.service";
 
 export class RenderedDocumentServiceError extends Error {
   constructor(
@@ -28,6 +30,28 @@ export type RenderedDocumentSourceKind =
 export type RenderedDocumentStatus = "DRAFT" | "SIGNED";
 
 export type DocumentSignatureSignerType = "PMS_USER" | "PARENT" | "SYSTEM";
+
+export type RenderedDocumentSigningStatus =
+  | "NOT_STARTED"
+  | "IN_PROGRESS"
+  | "SIGNED";
+
+export type RenderedDocumentSigningProvider = "DOCUMENSO";
+
+export type RenderedDocumentSigning = {
+  required: boolean;
+  provider: RenderedDocumentSigningProvider;
+  status: RenderedDocumentSigningStatus;
+  documentId?: string | null;
+  signerId?: string | null;
+  signerType?: DocumentSignatureSignerType | null;
+  signerEmail?: string | null;
+  signerName?: string | null;
+  signingUrl?: string | null;
+  pdf?: {
+    url?: string | null;
+  } | null;
+};
 
 export type RenderedDocumentSource = {
   sourceKind: RenderedDocumentSourceKind;
@@ -61,6 +85,7 @@ export type RenderedDocument = {
   updatedAt: Date;
   signedAt?: Date | null;
   signedBy?: string | null;
+  signing?: RenderedDocumentSigning | null;
   signature?: RenderedDocumentSignature | null;
 };
 
@@ -87,6 +112,9 @@ export type PersistRenderedDocumentInput = BuildRenderedDocumentInput & {
 export type PersistRenderedDocumentSignatureInput =
   SignRenderedDocumentInput & {
     renderedDocumentId: string;
+    organisationId?: string;
+    signerEmail: string;
+    signerName: string;
   };
 
 type RenderedDocumentWriteClient = Pick<
@@ -193,6 +221,7 @@ export const buildRenderedDocumentDraft = (
     updatedAt: now,
     signedAt: null,
     signedBy: null,
+    signing: null,
     signature: null,
   };
 };
@@ -259,6 +288,7 @@ const toRenderedDocumentCreateData = (
     input.pdf === undefined ? undefined : (input.pdf as Prisma.InputJsonValue),
   signedBy: draft.signedBy ?? undefined,
   signedAt: draft.signedAt ?? undefined,
+  signing: draft.signing ?? undefined,
 });
 
 export const createRenderedDocumentRecord = async (
@@ -273,8 +303,9 @@ export const createRenderedDocumentRecord = async (
   });
 };
 
-const loadPersistedRenderedDocumentOrThrow = async (
+export const getPersistedRenderedDocument = async (
   renderedDocumentId: string,
+  organisationId?: string,
   client: RenderedDocumentWriteClient = renderedDocumentClient,
 ): Promise<PersistedRenderedDocument> => {
   const document = await client.renderedDocument.findUnique({
@@ -288,6 +319,17 @@ const loadPersistedRenderedDocumentOrThrow = async (
     throw new RenderedDocumentServiceError("Rendered document not found", 404);
   }
 
+  if (
+    organisationId !== undefined &&
+    document.organisationId !==
+      normalizeRequiredString(organisationId, "organisationId")
+  ) {
+    throw new RenderedDocumentServiceError(
+      "Rendered document does not belong to organisation",
+      403,
+    );
+  }
+
   return document;
 };
 
@@ -295,8 +337,9 @@ export const signPersistedRenderedDocument = async (
   input: PersistRenderedDocumentSignatureInput,
   client: RenderedDocumentWriteClient = renderedDocumentClient,
 ): Promise<PersistedRenderedDocument> => {
-  const existing = await loadPersistedRenderedDocumentOrThrow(
+  const existing = await getPersistedRenderedDocument(
     input.renderedDocumentId,
+    input.organisationId,
     client,
   );
   const kind = toRenderedDocumentKind(existing.kind);
@@ -312,15 +355,151 @@ export const signPersistedRenderedDocument = async (
     throw new RenderedDocumentServiceError("Document is already signed", 409);
   }
 
-  const signature = buildDocumentSignature(existing.id, input);
+  if (
+    existing.signing &&
+    typeof existing.signing === "object" &&
+    !Array.isArray(existing.signing) &&
+    (existing.signing as RenderedDocumentSigning).status === "IN_PROGRESS"
+  ) {
+    throw new RenderedDocumentServiceError(
+      "Document signing is already in progress",
+      409,
+    );
+  }
+
+  const apiKey = await DocumensoService.resolveOrganisationApiKey(
+    existing.organisationId,
+  );
+
+  if (!apiKey) {
+    throw new RenderedDocumentServiceError(
+      "Documenso API key not configured for organisation",
+      400,
+    );
+  }
+
+  const pdf = await renderRenderedDocumentPdf({
+    title: existing.title,
+    source: {
+      sourceKind: existing.sourceKind,
+      sourceId: existing.sourceId,
+      organisationId: existing.organisationId,
+      templateKind: existing.kind as TemplateKind | ClinicalArtifactKind,
+      templateId: existing.templateId,
+      templateVersion: existing.templateVersion,
+      templateVersionId: existing.templateVersionId,
+    },
+  });
+
+  const doc = await DocumensoService.createDocument({
+    pdf,
+    signerEmail: input.signerEmail,
+    signerName: input.signerName,
+    apiKey,
+  });
+
+  if (!doc || typeof doc.id !== "number") {
+    throw new RenderedDocumentServiceError(
+      "Unable to create Documenso document",
+      502,
+    );
+  }
+
+  const documensoPublicBaseUrl =
+    process.env.DOCUMENSO_URL ??
+    process.env.DOCUMENSO_HOST_URL ??
+    process.env.DOCUMENSO_BASE_URL ??
+    "";
+  const signingUrl =
+    documensoPublicBaseUrl && doc.recipients?.[0]?.token
+      ? `${documensoPublicBaseUrl}/sign/${doc.recipients[0].token}`
+      : null;
+
+  await DocumensoService.distributeDocument({
+    documentId: doc.id,
+    apiKey,
+  });
+
+  return client.renderedDocument.update({
+    where: { id: existing.id },
+    data: {
+      signing: {
+        required: true,
+        provider: "DOCUMENSO",
+        status: "IN_PROGRESS",
+        documentId: doc.id.toString(),
+        signerId: input.signerId,
+        signerType: input.signerType,
+        signerEmail: input.signerEmail,
+        signerName: input.signerName,
+        signingUrl,
+      } as unknown as Prisma.InputJsonValue,
+    },
+    include: { signature: true },
+  });
+};
+
+export const completePersistedRenderedDocumentSigning = async (
+  renderedDocumentId: string,
+  client: RenderedDocumentWriteClient = renderedDocumentClient,
+): Promise<PersistedRenderedDocument> => {
+  const existing = await getPersistedRenderedDocument(
+    renderedDocumentId,
+    undefined,
+    client,
+  );
+
+  if (!existing.signing) {
+    throw new RenderedDocumentServiceError("Document signing not started", 409);
+  }
+
+  if (existing.status === "SIGNED") {
+    return existing;
+  }
+
+  const signing = existing.signing as RenderedDocumentSigning;
+  if (signing.status === "SIGNED") {
+    return existing;
+  }
+
+  const documentId = signing.documentId;
+  if (!documentId) {
+    throw new RenderedDocumentServiceError(
+      "Documenso document id missing",
+      400,
+    );
+  }
+
+  const apiKey = await DocumensoService.resolveOrganisationApiKey(
+    existing.organisationId,
+  );
+
+  if (!apiKey) {
+    throw new RenderedDocumentServiceError(
+      "Documenso API key not configured for organisation",
+      400,
+    );
+  }
+
+  const signedPdf = await DocumensoService.downloadSignedDocument({
+    documentId: Number.parseInt(documentId, 10),
+    apiKey,
+  });
+
+  if (!signedPdf) {
+    throw new RenderedDocumentServiceError(
+      "Unable to download signed document",
+      502,
+    );
+  }
 
   await client.documentSignature.create({
     data: {
       renderedDocumentId: existing.id,
-      signerId: signature.signerId,
-      signerType: signature.signerType,
-      signatureText: signature.signatureText ?? undefined,
-      signedAt: signature.signedAt,
+      signerId:
+        signing.signerId ?? signing.signerEmail ?? existing.signedBy ?? "",
+      signerType: signing.signerType ?? "PMS_USER",
+      signedAt: new Date(),
     },
   });
 
@@ -328,8 +507,15 @@ export const signPersistedRenderedDocument = async (
     where: { id: existing.id },
     data: {
       status: "SIGNED",
-      signedBy: signature.signerId,
-      signedAt: signature.signedAt,
+      signedBy: signing.signerId ?? existing.signedBy ?? undefined,
+      signedAt: new Date(),
+      signing: {
+        ...signing,
+        status: "SIGNED",
+        pdf: {
+          url: signedPdf.downloadUrl ?? null,
+        },
+      } as unknown as Prisma.InputJsonValue,
     },
     include: { signature: true },
   });

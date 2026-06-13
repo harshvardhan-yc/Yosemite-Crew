@@ -4,6 +4,10 @@ import {
   ClinicalArtifactStatus,
 } from "@prisma/client";
 import { prisma } from "src/config/prisma";
+import {
+  createRenderedDocumentRecord,
+  type PersistRenderedDocumentInput,
+} from "src/services/rendered-document.service";
 
 export class ClinicalArtifactServiceError extends Error {
   constructor(
@@ -287,6 +291,41 @@ const toNullableString = (value: string | null | undefined) => {
   return value === null ? null : value.trim();
 };
 
+const DOCUMENT_BACKED_CLINICAL_KINDS = new Set<ClinicalArtifactKind>([
+  "SOAP_NOTE",
+  "PRESCRIPTION",
+  "DISCHARGE_SUMMARY",
+  "VITAL_RECORD",
+]);
+
+const clinicalArtifactTitleByKind: Record<ClinicalArtifactKind, string> = {
+  SOAP_NOTE: "SOAP note",
+  PRESCRIPTION: "Prescription",
+  DISCHARGE_SUMMARY: "Discharge summary",
+  VITAL_RECORD: "Vital record",
+};
+
+const buildClinicalArtifactRenderedDocumentInput = (artifact: {
+  id: string;
+  organisationId: string;
+  kind: ClinicalArtifactKind;
+  templateId?: string | null;
+  templateVersion?: number | null;
+  templateVersionId?: string | null;
+}): PersistRenderedDocumentInput => ({
+  title: clinicalArtifactTitleByKind[artifact.kind],
+  source: {
+    sourceKind: "CLINICAL_ARTIFACT",
+    sourceId: artifact.id,
+    organisationId: artifact.organisationId,
+    templateKind: artifact.kind,
+    templateId: artifact.templateId ?? undefined,
+    templateVersion: artifact.templateVersion ?? undefined,
+    templateVersionId: artifact.templateVersionId ?? undefined,
+  },
+  clinicalArtifactId: artifact.id,
+});
+
 const assertArtifactKind = (
   artifact: { kind: ClinicalArtifactKind; organisationId: string },
   expectedKind: ClinicalArtifactKind,
@@ -494,6 +533,20 @@ export const ClinicalArtifactService = {
         },
       });
 
+      if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
+        await createRenderedDocumentRecord(
+          buildClinicalArtifactRenderedDocumentInput({
+            id: createdArtifact.id,
+            organisationId: createdArtifact.organisationId,
+            kind: createdArtifact.kind,
+            templateId: createdArtifact.templateId,
+            templateVersion: createdArtifact.templateVersion,
+            templateVersionId: createdArtifact.templateVersionId,
+          }),
+          tx,
+        );
+      }
+
       return {
         artifact: createdArtifact,
         soapNote: createdSoapNote,
@@ -648,6 +701,20 @@ export const ClinicalArtifactService = {
         },
       });
 
+      if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
+        await createRenderedDocumentRecord(
+          buildClinicalArtifactRenderedDocumentInput({
+            id: createdArtifact.id,
+            organisationId: createdArtifact.organisationId,
+            kind: createdArtifact.kind,
+            templateId: createdArtifact.templateId,
+            templateVersion: createdArtifact.templateVersion,
+            templateVersionId: createdArtifact.templateVersionId,
+          }),
+          tx,
+        );
+      }
+
       return buildPrescriptionRecord(createdArtifact, createdPrescription);
     });
 
@@ -794,6 +861,20 @@ export const ClinicalArtifactService = {
           metadata: toNullableJsonInput(input.metadata),
         },
       });
+
+      if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
+        await createRenderedDocumentRecord(
+          buildClinicalArtifactRenderedDocumentInput({
+            id: createdArtifact.id,
+            organisationId: createdArtifact.organisationId,
+            kind: createdArtifact.kind,
+            templateId: createdArtifact.templateId,
+            templateVersion: createdArtifact.templateVersion,
+            templateVersionId: createdArtifact.templateVersionId,
+          }),
+          tx,
+        );
+      }
 
       return buildDischargeSummaryRecord(
         createdArtifact,
@@ -954,6 +1035,20 @@ export const ClinicalArtifactService = {
           metadata: toNullableJsonInput(input.metadata),
         },
       });
+
+      if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
+        await createRenderedDocumentRecord(
+          buildClinicalArtifactRenderedDocumentInput({
+            id: createdArtifact.id,
+            organisationId: createdArtifact.organisationId,
+            kind: createdArtifact.kind,
+            templateId: createdArtifact.templateId,
+            templateVersion: createdArtifact.templateVersion,
+            templateVersionId: createdArtifact.templateVersionId,
+          }),
+          tx,
+        );
+      }
 
       return buildVitalRecordRecord(createdArtifact, createdVitalRecord);
     });

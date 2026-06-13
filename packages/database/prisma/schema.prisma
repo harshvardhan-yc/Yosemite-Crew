@@ -1646,6 +1646,7 @@ model RenderedDocument {
   signable          Boolean                   @default(true)
   pdfUrl            String?
   pdf               Json?
+  signing           Json?
   signedBy          String?
   signedAt          DateTime?
   createdAt         DateTime                  @default(now())

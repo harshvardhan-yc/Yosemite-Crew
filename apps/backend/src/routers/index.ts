@@ -23,6 +23,7 @@ import invoiceRouter from "./invoice.router";
 import formRouter from "./form.router";
 import templateRouter from "./template.router";
 import templateFhirRouter from "./template.fhir.router";
+import renderedDocumentFhirRouter from "./rendered-document.fhir.router";
 import clinicalArtifactFhirRouter from "./clinical-artifact.fhir.router";
 import expenseRouter from "./expense.router";
 import deviceTokenRouter from "./deviceToken.router";
@@ -83,6 +84,7 @@ export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/invoice`, invoiceRouter);
   app.use(`/fhir/v1/form`, formRouter);
   app.use(`/fhir/v1/template`, templateFhirRouter);
+  app.use(`/fhir/v1/rendered-document`, renderedDocumentFhirRouter);
   app.use(`/fhir/v1/task`, taskFhirRouter);
   app.use(`/fhir/v1/clinical-artifact`, clinicalArtifactFhirRouter);
   app.use(`/fhir/v1/task-schedule`, taskScheduleFhirRouter);
