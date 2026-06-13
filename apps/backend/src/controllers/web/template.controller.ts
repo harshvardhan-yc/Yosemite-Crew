@@ -114,6 +114,44 @@ export const TemplateController = {
     }
   },
 
+  async listLibrary(req: Request, res: Response) {
+    try {
+      const query = listQuerySchema.parse(req.query);
+      const templates = await TemplateService.listLibrary(query);
+      return res.json(templates);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async listOrganisationTemplates(req: Request, res: Response) {
+    try {
+      const query = listQuerySchema.parse(req.query);
+      const templates = await TemplateService.listForOrganisation(
+        req.params.organisationId,
+        query,
+      );
+      return res.json(templates);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async listUserTemplates(req: Request, res: Response) {
+    try {
+      const query = listQuerySchema.parse(req.query);
+      const userId = resolveUserId(req);
+      const templates = await TemplateService.listForUser(
+        req.params.organisationId,
+        userId,
+        query,
+      );
+      return res.json(templates);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async getById(req: Request, res: Response) {
     try {
       const template = await TemplateService.getById(

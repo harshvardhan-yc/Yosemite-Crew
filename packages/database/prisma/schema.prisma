@@ -1197,6 +1197,12 @@ enum TemplateStatus {
   ARCHIVED
 }
 
+enum TemplateOwnershipType {
+  YC_LIBRARY
+  ORG_TEMPLATE
+  USER_TEMPLATE
+}
+
 enum TemplateScope {
   ORGANISATION
   SPECIALITY
@@ -1523,26 +1529,30 @@ model FormSubmission {
 }
 
 model Template {
-  id                 String            @id @default(uuid())
-  organisationId     String
+  id                 String               @id @default(uuid())
+  organisationId     String?
+  ownerUserId        String?
+  ownership          TemplateOwnershipType @default(ORG_TEMPLATE)
   kind               TemplateKind
   name               String
   description        String?
-  status             TemplateStatus     @default(DRAFT)
-  scope              TemplateScope      @default(ORGANISATION)
+  status             TemplateStatus       @default(DRAFT)
+  scope              TemplateScope        @default(ORGANISATION)
   rules              Json?
-  latestVersion      Int               @default(1)
+  latestVersion      Int                  @default(1)
   publishedVersion   Int?
   createdBy          String
   updatedBy          String
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   versions           TemplateVersion[]
   instances          TemplateInstance[]
 
-  @@index([organisationId, kind, status])
+  @@index([organisationId, ownership, kind, status])
   @@index([organisationId, scope])
+  @@index([ownerUserId])
+  @@index([ownership, kind, status])
 }
 
 model TemplateVersion {

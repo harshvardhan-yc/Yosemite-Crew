@@ -2,6 +2,7 @@ import {
   Prisma,
   TemplateInstanceStatus,
   TemplateKind,
+  TemplateOwnershipType,
   TemplateScope,
   TemplateStatus,
 } from "@prisma/client";
@@ -79,19 +80,70 @@ export const templateSchemaSnapshotSchema = z.object({
 
 export const templateConfigSchema = z.record(z.unknown()).default({});
 
-export const createTemplateSchema = z.object({
-  organisationId: z.string().trim().min(1),
-  kind: z.nativeEnum(TemplateKind),
-  name: z.string().trim().min(1),
-  description: z.string().trim().min(1).optional(),
-  scope: z.nativeEnum(TemplateScope).default("ORGANISATION"),
-  rules: z.record(z.unknown()).optional(),
-  schemaSnapshot: templateSchemaSnapshotSchema,
-  renderConfigSnapshot: templateConfigSchema.optional(),
-  validationSnapshot: templateConfigSchema.optional(),
-  createdBy: z.string().trim().min(1),
-  updatedBy: z.string().trim().min(1).optional(),
-});
+export const createTemplateSchema = z
+  .object({
+    organisationId: z.string().trim().min(1).optional(),
+    ownerUserId: z.string().trim().min(1).optional(),
+    ownership: z.nativeEnum(TemplateOwnershipType).default("ORG_TEMPLATE"),
+    kind: z.nativeEnum(TemplateKind),
+    name: z.string().trim().min(1),
+    description: z.string().trim().min(1).optional(),
+    scope: z.nativeEnum(TemplateScope).default("ORGANISATION"),
+    rules: z.record(z.unknown()).optional(),
+    schemaSnapshot: templateSchemaSnapshotSchema,
+    renderConfigSnapshot: templateConfigSchema.optional(),
+    validationSnapshot: templateConfigSchema.optional(),
+    createdBy: z.string().trim().min(1),
+    updatedBy: z.string().trim().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.ownership === "YC_LIBRARY") {
+      if (value.organisationId !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["organisationId"],
+          message: "YC library templates must not be bound to an organisation",
+        });
+      }
+
+      if (value.ownerUserId !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["ownerUserId"],
+          message: "YC library templates must not be owned by a user",
+        });
+      }
+    }
+
+    if (
+      value.ownership === "ORG_TEMPLATE" &&
+      value.organisationId === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["organisationId"],
+        message: "Organisation is required for organisation templates",
+      });
+    }
+
+    if (value.ownership === "USER_TEMPLATE") {
+      if (value.organisationId === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["organisationId"],
+          message: "Organisation is required for user templates",
+        });
+      }
+
+      if (value.ownerUserId === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["ownerUserId"],
+          message: "Owner user is required for user templates",
+        });
+      }
+    }
+  });
 
 export const updateTemplateSchema = z.object({
   name: z.string().trim().min(1).optional(),
@@ -182,9 +234,24 @@ const resolveVersionPayload = (template: {
 });
 
 const assertTemplateOrganisation = (
-  template: { organisationId: string },
+  template: {
+    organisationId: string | null;
+    ownerUserId?: string | null;
+    ownership: TemplateOwnershipType;
+  },
   organisationId?: string,
+  ownerUserId?: string,
 ) => {
+  if (template.ownership === "YC_LIBRARY") {
+    return;
+  }
+
+  if (template.ownership === "USER_TEMPLATE" && ownerUserId) {
+    if (template.ownerUserId !== ownerUserId) {
+      throw new TemplateServiceError("Template does not belong to user", 403);
+    }
+  }
+
   if (organisationId && template.organisationId !== organisationId) {
     throw new TemplateServiceError(
       "Template does not belong to organisation",
@@ -229,11 +296,17 @@ export const TemplateService = {
   async create(input: CreateTemplateInput) {
     const parsed = createTemplateSchema.parse(input);
     const updatedBy = parsed.updatedBy ?? parsed.createdBy;
+    const organisationId =
+      parsed.ownership === "YC_LIBRARY" ? undefined : parsed.organisationId;
+    const ownerUserId =
+      parsed.ownership === "USER_TEMPLATE" ? parsed.ownerUserId : undefined;
 
     const template = await prisma.$transaction(async (tx) => {
       const created = await tx.template.create({
         data: {
-          organisationId: parsed.organisationId,
+          organisationId,
+          ownerUserId,
+          ownership: parsed.ownership,
           kind: parsed.kind,
           name: parsed.name,
           description: parsed.description ?? undefined,
@@ -434,6 +507,61 @@ export const TemplateService = {
     const items = await prisma.template.findMany({
       where: {
         organisationId: ensureId(organisationId, "organisationId"),
+        ownership: "ORG_TEMPLATE",
+        kind: filters?.kind,
+        status: filters?.status,
+        scope: filters?.scope,
+      },
+      orderBy: [{ updatedAt: "desc" }],
+      include: {
+        versions: {
+          orderBy: { version: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    return items;
+  },
+
+  async listLibrary(filters?: {
+    kind?: TemplateKind;
+    status?: TemplateStatus;
+    scope?: TemplateScope;
+  }) {
+    const items = await prisma.template.findMany({
+      where: {
+        ownership: "YC_LIBRARY",
+        kind: filters?.kind,
+        status: filters?.status,
+        scope: filters?.scope,
+      },
+      orderBy: [{ updatedAt: "desc" }],
+      include: {
+        versions: {
+          orderBy: { version: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    return items;
+  },
+
+  async listForUser(
+    organisationId: string,
+    ownerUserId: string,
+    filters?: {
+      kind?: TemplateKind;
+      status?: TemplateStatus;
+      scope?: TemplateScope;
+    },
+  ) {
+    const items = await prisma.template.findMany({
+      where: {
+        organisationId: ensureId(organisationId, "organisationId"),
+        ownerUserId: ensureId(ownerUserId, "ownerUserId"),
+        ownership: "USER_TEMPLATE",
         kind: filters?.kind,
         status: filters?.status,
         scope: filters?.scope,

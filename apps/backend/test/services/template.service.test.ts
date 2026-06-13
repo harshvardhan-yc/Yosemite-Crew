@@ -72,6 +72,8 @@ describe("TemplateService", () => {
     mockedPrisma.template.findUnique.mockResolvedValueOnce({
       id: templateId,
       organisationId,
+      ownerUserId: null,
+      ownership: "ORG_TEMPLATE",
       kind: "SOAP_NOTE",
       name: "SOAP note",
       description: null,
@@ -89,6 +91,7 @@ describe("TemplateService", () => {
 
     const result = await TemplateService.create({
       organisationId,
+      ownership: "ORG_TEMPLATE",
       kind: "SOAP_NOTE",
       name: "SOAP note",
       scope: "ORGANISATION",
@@ -131,11 +134,196 @@ describe("TemplateService", () => {
     expect(result.id).toBe(templateId);
   });
 
+  it("creates a YC library template without organisation ownership", async () => {
+    mockedPrisma.template.create.mockResolvedValueOnce({
+      id: templateId,
+      organisationId: null,
+      ownerUserId: null,
+      ownership: "YC_LIBRARY",
+      latestVersion: 1,
+      publishedVersion: null,
+      status: "DRAFT",
+    });
+    mockedPrisma.template.findUnique.mockResolvedValueOnce({
+      id: templateId,
+      organisationId: null,
+      ownerUserId: null,
+      ownership: "YC_LIBRARY",
+      kind: "SOAP_NOTE",
+      name: "YC SOAP note",
+      description: null,
+      status: "DRAFT",
+      scope: "ORGANISATION",
+      rules: null,
+      latestVersion: 1,
+      publishedVersion: null,
+      createdBy: "creator-1",
+      updatedBy: "creator-1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      versions: [{ version: 1 }],
+    });
+
+    const result = await TemplateService.create({
+      ownership: "YC_LIBRARY",
+      kind: "SOAP_NOTE",
+      name: "YC SOAP note",
+      scope: "ORGANISATION",
+      schemaSnapshot: {
+        sections: [],
+      },
+      createdBy: "creator-1",
+    });
+
+    expect(mockedPrisma.template.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          organisationId: undefined,
+          ownership: "YC_LIBRARY",
+        }),
+      }),
+    );
+    expect(result.id).toBe(templateId);
+  });
+
+  it("rejects a user-owned template without owner metadata", async () => {
+    await expect(
+      TemplateService.create({
+        organisationId,
+        ownership: "USER_TEMPLATE",
+        kind: "SOAP_NOTE",
+        name: "User SOAP note",
+        scope: "ORGANISATION",
+        schemaSnapshot: {
+          sections: [],
+        },
+        createdBy: "creator-1",
+      }),
+    ).rejects.toThrow("Owner user is required for user templates");
+  });
+
+  it("lists YC library templates", async () => {
+    mockedPrisma.template.findMany.mockResolvedValueOnce([
+      {
+        id: "library-1",
+        ownership: "YC_LIBRARY",
+        organisationId: null,
+        ownerUserId: null,
+        kind: "SOAP_NOTE",
+        name: "YC SOAP",
+        description: null,
+        status: "PUBLISHED",
+        scope: "ORGANISATION",
+        rules: null,
+        latestVersion: 1,
+        publishedVersion: 1,
+        createdBy: "yc-admin",
+        updatedBy: "yc-admin",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        versions: [],
+      },
+    ]);
+
+    const result = await TemplateService.listLibrary({ kind: "SOAP_NOTE" });
+
+    expect(mockedPrisma.template.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          ownership: "YC_LIBRARY",
+          kind: "SOAP_NOTE",
+        }),
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  it("lists organisation templates", async () => {
+    mockedPrisma.template.findMany.mockResolvedValueOnce([
+      {
+        id: "org-1",
+        ownership: "ORG_TEMPLATE",
+        organisationId,
+        ownerUserId: null,
+        kind: "SOAP_NOTE",
+        name: "Org SOAP",
+        description: null,
+        status: "DRAFT",
+        scope: "ORGANISATION",
+        rules: null,
+        latestVersion: 1,
+        publishedVersion: null,
+        createdBy: "creator-1",
+        updatedBy: "creator-1",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        versions: [],
+      },
+    ]);
+
+    const result = await TemplateService.listForOrganisation(organisationId, {
+      status: "DRAFT",
+    });
+
+    expect(mockedPrisma.template.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organisationId,
+          ownership: "ORG_TEMPLATE",
+          status: "DRAFT",
+        }),
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  it("lists user templates", async () => {
+    mockedPrisma.template.findMany.mockResolvedValueOnce([
+      {
+        id: "user-1",
+        ownership: "USER_TEMPLATE",
+        organisationId,
+        ownerUserId: "user-1",
+        kind: "SOAP_NOTE",
+        name: "My SOAP",
+        description: null,
+        status: "DRAFT",
+        scope: "ORGANISATION",
+        rules: null,
+        latestVersion: 1,
+        publishedVersion: null,
+        createdBy: "user-1",
+        updatedBy: "user-1",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        versions: [],
+      },
+    ]);
+
+    const result = await TemplateService.listForUser(organisationId, "user-1", {
+      scope: "ORGANISATION",
+    });
+
+    expect(mockedPrisma.template.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organisationId,
+          ownerUserId: "user-1",
+          ownership: "USER_TEMPLATE",
+          scope: "ORGANISATION",
+        }),
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
   it("creates a new version when updating a published template", async () => {
     mockedPrisma.template.findUnique
       .mockResolvedValueOnce({
         id: templateId,
         organisationId,
+        ownerUserId: null,
+        ownership: "ORG_TEMPLATE",
         kind: "SOAP_NOTE",
         name: "SOAP note",
         description: null,
@@ -152,6 +340,8 @@ describe("TemplateService", () => {
       .mockResolvedValueOnce({
         id: templateId,
         organisationId,
+        ownerUserId: null,
+        ownership: "ORG_TEMPLATE",
         kind: "SOAP_NOTE",
         name: "SOAP note updated",
         description: null,
@@ -212,6 +402,8 @@ describe("TemplateService", () => {
       .mockResolvedValueOnce({
         id: templateId,
         organisationId,
+        ownerUserId: null,
+        ownership: "ORG_TEMPLATE",
         kind: "SOAP_NOTE",
         name: "SOAP note",
         description: null,
@@ -228,6 +420,8 @@ describe("TemplateService", () => {
       .mockResolvedValueOnce({
         id: templateId,
         organisationId,
+        ownerUserId: null,
+        ownership: "ORG_TEMPLATE",
         kind: "SOAP_NOTE",
         name: "SOAP note",
         description: null,
