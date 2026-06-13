@@ -53,6 +53,26 @@ export type ClinicalTemplateSchemaSnapshot = {
   sections: BlueprintSection[];
 };
 
+export type ClinicalTemplateBlueprintValidation = {
+  requiredSectionIds: string[];
+  missingSectionIds: string[];
+  missingFieldPaths: string[];
+  invalidFieldPaths: string[];
+};
+
+type SnapshotField = {
+  key?: string;
+  type?: BlueprintFieldType;
+  repeatable?: boolean;
+  options?: Array<{ label?: string; value?: string }>;
+  rules?: Record<string, unknown>;
+};
+
+type SnapshotSection = {
+  id?: string;
+  fields?: SnapshotField[];
+};
+
 const clinicalBlueprints: Record<
   ClinicalTemplateKind,
   ClinicalTemplateSchemaSnapshot
@@ -96,6 +116,9 @@ const clinicalBlueprints: Record<
             type: "vitalRow",
             repeatable: true,
             order: 1,
+            rules: {
+              columns: ["label", "value", "unit"],
+            },
           },
           {
             key: "examFindings",
@@ -108,6 +131,9 @@ const clinicalBlueprints: Record<
             label: "Test results",
             type: "table",
             order: 3,
+            rules: {
+              columns: ["testName", "result", "unit"],
+            },
           },
         ],
       },
@@ -120,6 +146,7 @@ const clinicalBlueprints: Record<
             key: "diagnoses",
             label: "Diagnoses",
             type: "diagnosis",
+            required: true,
             repeatable: true,
             order: 1,
           },
@@ -139,6 +166,9 @@ const clinicalBlueprints: Record<
               { label: "Moderate", value: "moderate" },
               { label: "Severe", value: "severe" },
             ],
+            rules: {
+              allowCustom: false,
+            },
           },
         ],
       },
@@ -151,8 +181,12 @@ const clinicalBlueprints: Record<
             key: "medications",
             label: "Medications",
             type: "medicationLine",
+            required: true,
             repeatable: true,
             order: 1,
+            rules: {
+              columns: ["drug", "dose", "frequency", "duration"],
+            },
           },
           {
             key: "procedures",
@@ -160,11 +194,15 @@ const clinicalBlueprints: Record<
             type: "procedure",
             repeatable: true,
             order: 2,
+            rules: {
+              columns: ["procedure", "notes"],
+            },
           },
           {
             key: "instructions",
             label: "Instructions",
             type: "instructionBlock",
+            required: true,
             order: 3,
           },
           {
@@ -190,6 +228,9 @@ const clinicalBlueprints: Record<
             type: "medicationLine",
             repeatable: true,
             order: 1,
+            rules: {
+              columns: ["drug", "dose", "frequency", "duration"],
+            },
           },
         ],
       },
@@ -232,6 +273,7 @@ const clinicalBlueprints: Record<
             key: "summaryText",
             label: "Summary text",
             type: "richText",
+            required: true,
             order: 1,
           },
         ],
@@ -245,6 +287,7 @@ const clinicalBlueprints: Record<
             key: "diagnosisItems",
             label: "Diagnosis items",
             type: "diagnosis",
+            required: true,
             repeatable: true,
             order: 1,
           },
@@ -259,8 +302,12 @@ const clinicalBlueprints: Record<
             key: "medicationLines",
             label: "Medication lines",
             type: "medicationLine",
+            required: true,
             repeatable: true,
             order: 1,
+            rules: {
+              columns: ["drug", "dose", "frequency", "duration"],
+            },
           },
         ],
       },
@@ -286,6 +333,7 @@ const clinicalBlueprints: Record<
             key: "dischargeInstructions",
             label: "Discharge instructions",
             type: "instructionBlock",
+            required: true,
             order: 1,
           },
         ],
@@ -317,8 +365,12 @@ const clinicalBlueprints: Record<
             key: "vitalRows",
             label: "Vital rows",
             type: "vitalRow",
+            required: true,
             repeatable: true,
             order: 1,
+            rules: {
+              columns: ["label", "value", "unit"],
+            },
           },
         ],
       },
@@ -373,6 +425,97 @@ const isClinicalTemplateKind = (
   kind === "DISCHARGE_SUMMARY" ||
   kind === "VITAL_RECORD";
 
+const getSnapshotSections = (snapshot: unknown): SnapshotSection[] => {
+  if (!snapshot || typeof snapshot !== "object" || !("sections" in snapshot)) {
+    return [];
+  }
+
+  const sections = (snapshot as { sections?: unknown }).sections;
+
+  return Array.isArray(sections) ? (sections as SnapshotSection[]) : [];
+};
+
+const getSnapshotSection = (
+  sections: ReturnType<typeof getSnapshotSections>,
+  sectionId: string,
+) => sections.find((section) => section?.id?.trim() === sectionId);
+
+const getSnapshotFields = (section: SnapshotSection | undefined) => {
+  if (!section || !Array.isArray(section.fields)) {
+    return [];
+  }
+
+  return section.fields;
+};
+
+const validateBlueprintField = (
+  kind: ClinicalTemplateKind,
+  sectionId: string,
+  field: BlueprintField,
+  snapshotField: SnapshotField | undefined,
+) => {
+  const issues: string[] = [];
+
+  if (!snapshotField) {
+    if (field.required) {
+      issues.push(`${kind}.${sectionId}.${field.key}`);
+    }
+
+    return issues;
+  }
+
+  if (snapshotField.type !== field.type) {
+    issues.push(`${kind}.${sectionId}.${field.key}.type`);
+  }
+
+  if (
+    field.repeatable !== undefined &&
+    snapshotField.repeatable !== field.repeatable
+  ) {
+    issues.push(`${kind}.${sectionId}.${field.key}.repeatable`);
+  }
+
+  if (field.options !== undefined) {
+    const snapshotOptions = snapshotField.options ?? [];
+    const expectedOptions = field.options;
+
+    const optionsMatch =
+      snapshotOptions.length === expectedOptions.length &&
+      expectedOptions.every((option, index) => {
+        const snapshotOption = snapshotOptions[index];
+        return (
+          snapshotOption?.label === option.label &&
+          snapshotOption?.value === option.value
+        );
+      });
+
+    if (!optionsMatch) {
+      issues.push(`${kind}.${sectionId}.${field.key}.options`);
+    }
+  }
+
+  if (field.rules !== undefined) {
+    const snapshotRules = snapshotField.rules;
+    if (!snapshotRules || typeof snapshotRules !== "object") {
+      issues.push(`${kind}.${sectionId}.${field.key}.rules`);
+    } else {
+      const expectedRules = field.rules;
+      const rulesMatch = Object.entries(expectedRules).every(([key, value]) => {
+        const snapshotValue = Object.entries(snapshotRules).find(
+          ([snapshotKey]) => snapshotKey === key,
+        )?.[1];
+        return JSON.stringify(snapshotValue) === JSON.stringify(value);
+      });
+
+      if (!rulesMatch) {
+        issues.push(`${kind}.${sectionId}.${field.key}.rules`);
+      }
+    }
+  }
+
+  return issues;
+};
+
 export const getClinicalTemplateBlueprint = (
   kind: ClinicalTemplateKind,
 ): ClinicalTemplateSchemaSnapshot => clinicalBlueprints[kind];
@@ -389,15 +532,17 @@ export const buildClinicalTemplateSchemaSnapshot = (
 export const validateClinicalTemplateBlueprint = (
   kind: TemplateKind,
   snapshot: unknown,
-) => {
+): ClinicalTemplateBlueprintValidation => {
   if (!isClinicalTemplateKind(kind)) {
-    return { requiredSectionIds: [], missingSectionIds: [] as string[] };
+    return {
+      requiredSectionIds: [],
+      missingSectionIds: [],
+      missingFieldPaths: [],
+      invalidFieldPaths: [],
+    };
   }
 
-  const sections =
-    snapshot && typeof snapshot === "object" && "sections" in snapshot
-      ? (snapshot as { sections?: Array<{ id?: string }> }).sections
-      : undefined;
+  const sections = getSnapshotSections(snapshot);
 
   const sectionIds = new Set(
     (sections ?? [])
@@ -410,7 +555,45 @@ export const validateClinicalTemplateBlueprint = (
     (sectionId) => !sectionIds.has(sectionId),
   );
 
-  return { requiredSectionIds, missingSectionIds };
+  const missingFieldPaths: string[] = [];
+  const invalidFieldPaths: string[] = [];
+
+  for (const section of clinicalBlueprints[kind].sections) {
+    const snapshotSection = getSnapshotSection(sections, section.id);
+    const snapshotFields = getSnapshotFields(snapshotSection);
+
+    for (const blueprintField of section.fields) {
+      const snapshotField = snapshotFields.find(
+        (field) => field?.key?.trim() === blueprintField.key,
+      );
+      const issues = validateBlueprintField(
+        kind,
+        section.id,
+        blueprintField,
+        snapshotField,
+      );
+
+      for (const issue of issues) {
+        if (
+          issue.endsWith(".type") ||
+          issue.endsWith(".repeatable") ||
+          issue.endsWith(".options") ||
+          issue.endsWith(".rules")
+        ) {
+          invalidFieldPaths.push(issue);
+        } else {
+          missingFieldPaths.push(issue);
+        }
+      }
+    }
+  }
+
+  return {
+    requiredSectionIds,
+    missingSectionIds,
+    missingFieldPaths,
+    invalidFieldPaths,
+  };
 };
 
 export const getClinicalTemplateKinds = () =>

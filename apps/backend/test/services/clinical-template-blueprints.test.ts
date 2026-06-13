@@ -17,6 +17,18 @@ describe("clinical template blueprints", () => {
     ]);
   });
 
+  it("accepts a valid SOAP note schema snapshot", () => {
+    const snapshot = buildClinicalTemplateSchemaSnapshot("SOAP_NOTE");
+    const result = validateClinicalTemplateBlueprint(
+      TemplateKind.SOAP_NOTE,
+      snapshot,
+    );
+
+    expect(result.missingSectionIds).toHaveLength(0);
+    expect(result.missingFieldPaths).toHaveLength(0);
+    expect(result.invalidFieldPaths).toHaveLength(0);
+  });
+
   it("returns the prescription blueprint with medication and instruction sections", () => {
     const blueprint = getClinicalTemplateBlueprint("PRESCRIPTION");
 
@@ -48,6 +60,91 @@ describe("clinical template blueprints", () => {
     );
 
     expect(invalid.missingSectionIds).toEqual(["vitals", "notes", "metadata"]);
+  });
+
+  it("detects invalid field types within a clinical section", () => {
+    const snapshot = buildClinicalTemplateSchemaSnapshot("PRESCRIPTION");
+    const instructionsSection = snapshot.sections.find(
+      (section) => section.id === "instructions",
+    );
+
+    if (!instructionsSection) {
+      throw new Error("Missing instructions section");
+    }
+
+    instructionsSection.fields[0] = {
+      ...instructionsSection.fields[0],
+      type: "text",
+    };
+
+    const result = validateClinicalTemplateBlueprint(
+      TemplateKind.PRESCRIPTION,
+      snapshot,
+    );
+
+    expect(result.invalidFieldPaths).toContain(
+      "PRESCRIPTION.instructions.usageInstructions.type",
+    );
+  });
+
+  it("detects invalid select options within a clinical section", () => {
+    const snapshot = buildClinicalTemplateSchemaSnapshot("SOAP_NOTE");
+    const assessmentSection = snapshot.sections.find(
+      (section) => section.id === "assessment",
+    );
+
+    if (!assessmentSection) {
+      throw new Error("Missing assessment section");
+    }
+
+    const severityField = assessmentSection.fields.find(
+      (field) => field.key === "severity",
+    );
+
+    if (!severityField) {
+      throw new Error("Missing severity field");
+    }
+
+    severityField.options = [{ label: "Low", value: "low" }];
+
+    const result = validateClinicalTemplateBlueprint(
+      TemplateKind.SOAP_NOTE,
+      snapshot,
+    );
+
+    expect(result.invalidFieldPaths).toContain(
+      "SOAP_NOTE.assessment.severity.options",
+    );
+  });
+
+  it("detects invalid field rules for repeater and table configurations", () => {
+    const snapshot = buildClinicalTemplateSchemaSnapshot("SOAP_NOTE");
+    const objectiveSection = snapshot.sections.find(
+      (section) => section.id === "objective",
+    );
+
+    if (!objectiveSection) {
+      throw new Error("Missing objective section");
+    }
+
+    const testResultsField = objectiveSection.fields.find(
+      (field) => field.key === "testResults",
+    );
+
+    if (!testResultsField) {
+      throw new Error("Missing testResults field");
+    }
+
+    testResultsField.rules = { columns: ["wrong"] };
+
+    const result = validateClinicalTemplateBlueprint(
+      TemplateKind.SOAP_NOTE,
+      snapshot,
+    );
+
+    expect(result.invalidFieldPaths).toContain(
+      "SOAP_NOTE.objective.testResults.rules",
+    );
   });
 
   it("ignores non-clinical template kinds", () => {

@@ -202,7 +202,37 @@ describe("TemplateService", () => {
         createdBy: "creator-1",
       }),
     ).rejects.toThrow(
-      "Template schema is missing required sections: medications, instructions, notes",
+      "Template schema is invalid for PRESCRIPTION: missing sections: medications, instructions, notes",
+    );
+  });
+
+  it("rejects a clinical template schema with an invalid field type", async () => {
+    const snapshot = buildClinicalTemplateSchemaSnapshot("PRESCRIPTION");
+    const instructionsSection = snapshot.sections.find(
+      (section) => section.id === "instructions",
+    );
+
+    if (!instructionsSection) {
+      throw new Error("Missing instructions section");
+    }
+
+    instructionsSection.fields[0] = {
+      ...instructionsSection.fields[0],
+      type: "text",
+    };
+
+    await expect(
+      TemplateService.create({
+        organisationId,
+        ownership: "ORG_TEMPLATE",
+        kind: "PRESCRIPTION",
+        name: "Prescription template",
+        scope: "ORGANISATION",
+        schemaSnapshot: snapshot,
+        createdBy: "creator-1",
+      }),
+    ).rejects.toThrow(
+      "Template schema is invalid for PRESCRIPTION: invalid fields: PRESCRIPTION.instructions.usageInstructions.type",
     );
   });
 

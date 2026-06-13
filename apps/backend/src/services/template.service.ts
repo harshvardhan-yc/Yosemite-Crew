@@ -297,14 +297,30 @@ const validateTemplateSchemaForKind = (
   kind: TemplateKind,
   schemaSnapshot: unknown,
 ) => {
-  const { missingSectionIds } = validateClinicalTemplateBlueprint(
-    kind,
-    schemaSnapshot,
-  );
+  const { missingSectionIds, missingFieldPaths, invalidFieldPaths } =
+    validateClinicalTemplateBlueprint(kind, schemaSnapshot);
 
-  if (missingSectionIds.length > 0) {
+  if (
+    missingSectionIds.length > 0 ||
+    missingFieldPaths.length > 0 ||
+    invalidFieldPaths.length > 0
+  ) {
+    const issues = [
+      missingSectionIds.length > 0
+        ? `missing sections: ${missingSectionIds.join(", ")}`
+        : null,
+      missingFieldPaths.length > 0
+        ? `missing fields: ${missingFieldPaths.join(", ")}`
+        : null,
+      invalidFieldPaths.length > 0
+        ? `invalid fields: ${invalidFieldPaths.join(", ")}`
+        : null,
+    ]
+      .filter((issue): issue is string => issue !== null)
+      .join("; ");
+
     throw new TemplateServiceError(
-      `Template schema is missing required sections: ${missingSectionIds.join(", ")}`,
+      `Template schema is invalid for ${kind}: ${issues}`,
       400,
     );
   }
