@@ -32,9 +32,15 @@ type TemplateInstanceWorkflowPayload = Prisma.TemplateInstanceGetPayload<{
   };
 }>;
 
+type TemplateInstanceWithSchedule = TemplateInstanceWorkflowPayload & {
+  taskSchedule: NonNullable<TemplateInstanceWorkflowPayload["taskSchedule"]>;
+};
+
 type LaunchTaskWorkflowOptions = {
   client?: Prisma.TransactionClient;
   notify?: boolean;
+  force?: boolean;
+  deferUntil?: Date;
 };
 
 type AppointmentContext = {
@@ -139,6 +145,9 @@ const loadAppointmentContext = async (
   };
 };
 
+const isFutureDate = (value: Date | undefined, reference: Date) =>
+  value instanceof Date && value.getTime() > reference.getTime();
+
 const resolveAssignee = (
   audience: TaskAudience,
   context: AppointmentContext,
@@ -151,11 +160,6 @@ const resolveAssignee = (
   return context.leadId ?? context.supportStaffIds[0] ?? createdBy;
 };
 
-const hasGeneratedTasks = (value: unknown): value is string[] =>
-  Array.isArray(value) &&
-  value.length > 0 &&
-  value.every((item) => typeof item === "string" && item.trim().length > 0);
-
 const normalizeTemplateInstance = (
   instance: TemplateInstanceWorkflowPayload | null,
 ) => {
@@ -163,6 +167,237 @@ const normalizeTemplateInstance = (
     throw new TaskWorkflowServiceError("Template instance not found", 404);
   }
   return instance;
+};
+
+const hasScheduleTasks = (
+  schedule: TemplateInstanceWorkflowPayload["taskSchedule"] | null,
+) =>
+  !!schedule &&
+  Array.isArray(schedule.generatedTaskIds) &&
+  schedule.generatedTaskIds.length > 0;
+
+const toTaskIdList = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0,
+      )
+    : [];
+
+const launchWorkflowInstance = async (
+  client: Prisma.TransactionClient,
+  instance: TemplateInstanceWorkflowPayload,
+  submittedBy: string,
+  options?: LaunchTaskWorkflowOptions,
+) => {
+  const existingSchedule = instance.taskSchedule;
+  const now = new Date();
+  const deferUntil = options?.deferUntil;
+  const shouldDefer = isFutureDate(deferUntil, now);
+
+  if (hasScheduleTasks(existingSchedule) && !options?.force) {
+    const activeSchedule = existingSchedule as NonNullable<
+      typeof existingSchedule
+    >;
+    return {
+      schedule: toTaskScheduleLike(activeSchedule),
+      taskIds: toTaskIdList(activeSchedule.generatedTaskIds),
+      seedCount: Array.isArray(activeSchedule.materializedSeeds)
+        ? activeSchedule.materializedSeeds.length
+        : 0,
+    };
+  }
+
+  if (options?.force && hasScheduleTasks(existingSchedule)) {
+    const activeSchedule = existingSchedule as NonNullable<
+      typeof existingSchedule
+    >;
+    for (const taskId of toTaskIdList(activeSchedule.generatedTaskIds)) {
+      await TaskService.changeStatus(taskId, "CANCELLED", submittedBy);
+    }
+  }
+
+  if (
+    instance.template.kind !== TemplateKind.TASK_TEMPLATE &&
+    instance.template.kind !== TemplateKind.CARE_PATHWAY
+  ) {
+    throw new TaskWorkflowServiceError(
+      "Template kind does not support task workflow generation",
+      400,
+    );
+  }
+
+  const createdBy = submittedBy.trim();
+  if (!createdBy) {
+    throw new TaskWorkflowServiceError("submittedBy is required", 400);
+  }
+
+  const context = await loadAppointmentContext(client, instance);
+  const source = resolveSource(instance.template.ownership);
+
+  const seeds = materializeTaskWorkflowSeeds(
+    instance.template.kind,
+    instance.data,
+    {
+      organisationId: instance.organisationId,
+      createdBy,
+      assignedBy: createdBy,
+      appointmentId: instance.appointmentId ?? undefined,
+      companionId: context.companionId,
+      templateId: instance.templateId,
+      source,
+      anchorAt: context.anchorAt,
+      admissionAt: context.admissionAt,
+      resolveAssignee: (audience) =>
+        resolveAssignee(audience, context, createdBy),
+    },
+  );
+
+  const metadata = {
+    templateKind: instance.template.kind,
+    ownership: instance.template.ownership,
+    ...(shouldDefer && deferUntil
+      ? { deferredUntil: deferUntil.toISOString() }
+      : {}),
+  } as Prisma.InputJsonValue;
+
+  const persistedSchedule = instance.taskSchedule
+    ? await client.taskSchedule.update({
+        where: { templateInstanceId: instance.id },
+        data: {
+          templateId: instance.templateId,
+          templateVersion: instance.templateVersion,
+          templateKind: instance.template.kind,
+          organisationId: instance.organisationId,
+          appointmentId: instance.appointmentId ?? undefined,
+          caseId: instance.caseId ?? undefined,
+          encounterId: instance.encounterId ?? undefined,
+          companionId: context.companionId,
+          createdBy,
+          activatedBy: submittedBy ?? createdBy,
+          activatedAt: shouldDefer ? deferUntil : now,
+          status: shouldDefer
+            ? "DRAFT"
+            : instance.template.kind === TemplateKind.TASK_TEMPLATE
+              ? "COMPLETED"
+              : "ACTIVE",
+          scheduleInput: instance.data as Prisma.InputJsonValue,
+          materializedSeeds: seeds.map(toJsonSeed) as Prisma.InputJsonValue,
+          generatedTaskIds: Prisma.DbNull,
+          completedAt: shouldDefer
+            ? null
+            : instance.template.kind === TemplateKind.TASK_TEMPLATE
+              ? now
+              : null,
+          lastMaterializedAt: now,
+          metadata,
+        },
+      })
+    : await client.taskSchedule.create({
+        data: {
+          templateInstanceId: instance.id,
+          templateId: instance.templateId,
+          templateVersion: instance.templateVersion,
+          templateKind: instance.template.kind,
+          organisationId: instance.organisationId,
+          appointmentId: instance.appointmentId ?? undefined,
+          caseId: instance.caseId ?? undefined,
+          encounterId: instance.encounterId ?? undefined,
+          companionId: context.companionId,
+          createdBy,
+          activatedBy: submittedBy ?? createdBy,
+          activatedAt: shouldDefer ? deferUntil : now,
+          status: shouldDefer
+            ? "DRAFT"
+            : instance.template.kind === TemplateKind.TASK_TEMPLATE
+              ? "COMPLETED"
+              : "ACTIVE",
+          scheduleInput: instance.data as Prisma.InputJsonValue,
+          materializedSeeds: seeds.map(toJsonSeed) as Prisma.InputJsonValue,
+          generatedTaskIds: Prisma.DbNull,
+          completedAt: shouldDefer
+            ? null
+            : instance.template.kind === TemplateKind.TASK_TEMPLATE
+              ? now
+              : null,
+          lastMaterializedAt: now,
+          metadata,
+        },
+      });
+
+  if (shouldDefer) {
+    return {
+      schedule: toTaskScheduleLike(persistedSchedule),
+      taskIds: [],
+      seedCount: seeds.length,
+    };
+  }
+
+  const generatedTaskIds: string[] = [];
+  for (const seed of seeds) {
+    const task = await TaskService.createFromWorkflowSeed(seed, {
+      client,
+      notify: options?.notify,
+    });
+    generatedTaskIds.push(task.id);
+  }
+
+  const updatedSchedule = await client.taskSchedule.update({
+    where: { id: persistedSchedule.id },
+    data: {
+      generatedTaskIds: generatedTaskIds as Prisma.InputJsonValue,
+      completedAt:
+        instance.template.kind === TemplateKind.TASK_TEMPLATE ? now : null,
+      status:
+        instance.template.kind === TemplateKind.TASK_TEMPLATE
+          ? "COMPLETED"
+          : "ACTIVE",
+    },
+  });
+
+  return {
+    schedule: toTaskScheduleLike(updatedSchedule),
+    taskIds: generatedTaskIds,
+    seedCount: seeds.length,
+  };
+};
+
+const loadScheduleByInstanceId = async (
+  client: Prisma.TransactionClient,
+  instanceId: string,
+  organisationId?: string,
+): Promise<TemplateInstanceWithSchedule> => {
+  const instance = normalizeTemplateInstance(
+    await client.templateInstance.findUnique({
+      where: { id: instanceId.trim() },
+      include: {
+        template: {
+          select: {
+            id: true,
+            kind: true,
+            ownership: true,
+          },
+        },
+        taskSchedule: true,
+      },
+    }),
+  );
+
+  if (organisationId && instance.organisationId !== organisationId) {
+    throw new TaskWorkflowServiceError(
+      "Template instance does not belong to organisation",
+      403,
+    );
+  }
+
+  if (!instance.taskSchedule) {
+    throw new TaskWorkflowServiceError("Task schedule not found", 404);
+  }
+
+  return {
+    ...instance,
+    taskSchedule: instance.taskSchedule,
+  };
 };
 
 export const TaskWorkflowService = {
@@ -173,7 +408,6 @@ export const TaskWorkflowService = {
     options?: LaunchTaskWorkflowOptions,
   ) {
     const client = options?.client ?? prisma;
-
     const instance = normalizeTemplateInstance(
       await client.templateInstance.findUnique({
         where: { id: instanceId.trim() },
@@ -197,141 +431,116 @@ export const TaskWorkflowService = {
       );
     }
 
-    if (
-      instance.taskSchedule?.generatedTaskIds &&
-      hasGeneratedTasks(instance.taskSchedule.generatedTaskIds)
-    ) {
-      return {
-        schedule: toTaskScheduleLike(instance.taskSchedule),
-        taskIds: instance.taskSchedule.generatedTaskIds,
-        seedCount: Array.isArray(instance.taskSchedule.materializedSeeds)
-          ? instance.taskSchedule.materializedSeeds.length
-          : 0,
-      };
-    }
+    return launchWorkflowInstance(
+      client,
+      instance,
+      (submittedBy ?? instance.authorId ?? instance.signedBy ?? "").trim(),
+      options,
+    );
+  },
 
-    if (
-      instance.template.kind !== TemplateKind.TASK_TEMPLATE &&
-      instance.template.kind !== TemplateKind.CARE_PATHWAY
-    ) {
-      throw new TaskWorkflowServiceError(
-        "Template kind does not support task workflow generation",
-        400,
-      );
-    }
-
-    const createdBy = (
-      submittedBy ??
-      instance.authorId ??
-      instance.signedBy ??
-      ""
-    ).trim();
-    if (!createdBy) {
-      throw new TaskWorkflowServiceError("submittedBy is required", 400);
-    }
-
-    const context = await loadAppointmentContext(client, instance);
-    const source = resolveSource(instance.template.ownership);
-
-    const seeds = materializeTaskWorkflowSeeds(
-      instance.template.kind,
-      instance.data,
-      {
-        organisationId: instance.organisationId,
-        createdBy,
-        assignedBy: createdBy,
-        appointmentId: instance.appointmentId ?? undefined,
-        companionId: context.companionId,
-        templateId: instance.templateId,
-        source,
-        anchorAt: context.anchorAt,
-        admissionAt: context.admissionAt,
-        resolveAssignee: (audience) =>
-          resolveAssignee(audience, context, createdBy),
-      },
+  async pauseSchedule(
+    instanceId: string,
+    actorId: string,
+    organisationId?: string,
+  ) {
+    const client = prisma;
+    const instance = await loadScheduleByInstanceId(
+      client,
+      instanceId,
+      organisationId,
     );
 
-    const schedule = instance.taskSchedule
-      ? await client.taskSchedule.update({
-          where: { templateInstanceId: instance.id },
-          data: {
-            templateId: instance.templateId,
-            templateVersion: instance.templateVersion,
-            templateKind: instance.template.kind,
-            organisationId: instance.organisationId,
-            appointmentId: instance.appointmentId ?? undefined,
-            caseId: instance.caseId ?? undefined,
-            encounterId: instance.encounterId ?? undefined,
-            companionId: context.companionId,
-            createdBy,
-            activatedBy: submittedBy ?? createdBy,
-            activatedAt: new Date(),
-            status:
-              instance.template.kind === TemplateKind.TASK_TEMPLATE
-                ? "COMPLETED"
-                : "ACTIVE",
-            scheduleInput: instance.data as Prisma.InputJsonValue,
-            materializedSeeds: seeds.map(toJsonSeed) as Prisma.InputJsonValue,
-            lastMaterializedAt: new Date(),
-            metadata: {
-              templateKind: instance.template.kind,
-              ownership: instance.template.ownership,
-            } as Prisma.InputJsonValue,
-          },
-        })
-      : await client.taskSchedule.create({
-          data: {
-            templateInstanceId: instance.id,
-            templateId: instance.templateId,
-            templateVersion: instance.templateVersion,
-            templateKind: instance.template.kind,
-            organisationId: instance.organisationId,
-            appointmentId: instance.appointmentId ?? undefined,
-            caseId: instance.caseId ?? undefined,
-            encounterId: instance.encounterId ?? undefined,
-            companionId: context.companionId,
-            createdBy,
-            activatedBy: submittedBy ?? createdBy,
-            activatedAt: new Date(),
-            status:
-              instance.template.kind === TemplateKind.TASK_TEMPLATE
-                ? "COMPLETED"
-                : "ACTIVE",
-            scheduleInput: instance.data as Prisma.InputJsonValue,
-            materializedSeeds: seeds.map(toJsonSeed) as Prisma.InputJsonValue,
-            lastMaterializedAt: new Date(),
-            metadata: {
-              templateKind: instance.template.kind,
-              ownership: instance.template.ownership,
-            } as Prisma.InputJsonValue,
-          },
-        });
-
-    const generatedTaskIds: string[] = [];
-
-    for (const seed of seeds) {
-      const task = await TaskService.createFromWorkflowSeed(seed, {
-        client,
-        notify: options?.notify,
-      });
-      generatedTaskIds.push(task.id);
-    }
-
-    const updatedSchedule = await client.taskSchedule.update({
-      where: { id: schedule.id },
+    const updated = await client.taskSchedule.update({
+      where: { templateInstanceId: instance.id },
       data: {
-        generatedTaskIds: generatedTaskIds as Prisma.InputJsonValue,
-        completedAt:
-          instance.template.kind === TemplateKind.TASK_TEMPLATE
-            ? new Date()
-            : undefined,
+        status: "PAUSED",
+        activatedBy: actorId.trim(),
       },
     });
 
-    return {
-      schedule: toTaskScheduleLike(updatedSchedule),
-      taskIds: generatedTaskIds,
-      seedCount: seeds.length,
-    };
+    return toTaskScheduleLike(updated);
+  },
+
+  async resumeSchedule(
+    instanceId: string,
+    actorId: string,
+    organisationId?: string,
+  ) {
+    const client = prisma;
+    const instance = await loadScheduleByInstanceId(
+      client,
+      instanceId,
+      organisationId,
+    );
+
+    if (instance.taskSchedule.status !== "PAUSED") {
+      throw new TaskWorkflowServiceError("Schedule is not paused", 400);
+    }
+
+    const updated = await client.taskSchedule.update({
+      where: { templateInstanceId: instance.id },
+      data: {
+        status: "ACTIVE",
+        activatedBy: actorId.trim(),
+      },
+    });
+
+    return toTaskScheduleLike(updated);
+  },
+
+  async cancelSchedule(
+    instanceId: string,
+    actorId: string,
+    organisationId?: string,
+  ) {
+    const client = prisma;
+    const instance = await loadScheduleByInstanceId(
+      client,
+      instanceId,
+      organisationId,
+    );
+
+    const generatedTaskIds = toTaskIdList(
+      instance.taskSchedule.generatedTaskIds,
+    );
+    for (const taskId of generatedTaskIds) {
+      await TaskService.changeStatus(taskId, "CANCELLED", actorId.trim());
+    }
+
+    const updated = await client.taskSchedule.update({
+      where: { templateInstanceId: instance.id },
+      data: {
+        status: "CANCELLED",
+        completedAt: new Date(),
+        generatedTaskIds: generatedTaskIds as Prisma.InputJsonValue,
+      },
+    });
+
+    return toTaskScheduleLike(updated);
+  },
+
+  async regenerateSchedule(
+    instanceId: string,
+    organisationId?: string,
+    submittedBy?: string,
+    options?: LaunchTaskWorkflowOptions,
+  ) {
+    const client = options?.client ?? prisma;
+    const instance = await loadScheduleByInstanceId(
+      client,
+      instanceId,
+      organisationId,
+    );
+
+    return launchWorkflowInstance(
+      client,
+      instance,
+      (submittedBy ?? instance.authorId ?? instance.signedBy ?? "").trim(),
+      {
+        ...options,
+        force: true,
+      },
+    );
   },
 };

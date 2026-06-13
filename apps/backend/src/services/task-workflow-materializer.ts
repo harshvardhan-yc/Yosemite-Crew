@@ -64,6 +64,7 @@ export type TaskTemplateInstanceData = {
 };
 
 export type CarePathwayTaskBlock = {
+  id?: string;
   dayOffset: number;
   timeOfDay: string;
   taskKind: TaskKind;
@@ -71,6 +72,7 @@ export type CarePathwayTaskBlock = {
   name: string;
   audience: TaskAudience;
   assignedRole?: TaskAudience;
+  dependsOn?: string[];
   reminderOffsetMinutes?: number;
   additionalNotes?: string;
   medication?: TaskWorkflowSeed["medication"];
@@ -291,6 +293,7 @@ const parseCarePathwayInstanceData = (
   ]);
   const taskBlocks = Array.isArray(taskBlocksValue)
     ? taskBlocksValue.filter(isRecord).map((block) => ({
+        id: asTrimmedString(block.id),
         dayOffset: Number(block.dayOffset ?? 0),
         timeOfDay: asTrimmedString(block.timeOfDay),
         taskKind: toTaskKind(block.taskKind) ?? "CUSTOM",
@@ -298,6 +301,11 @@ const parseCarePathwayInstanceData = (
         name: asTrimmedString(block.name),
         audience: toTaskAudience(block.audience) ?? "EMPLOYEE_TASK",
         assignedRole: toTaskAudience(block.assignedRole),
+        dependsOn: Array.isArray(block.dependsOn)
+          ? block.dependsOn
+              .map((dep) => asTrimmedString(dep))
+              .filter((dep): dep is string => Boolean(dep))
+          : undefined,
         reminderOffsetMinutes:
           typeof block.reminderOffsetMinutes === "number"
             ? block.reminderOffsetMinutes
@@ -353,6 +361,69 @@ const parseCarePathwayInstanceData = (
   };
 };
 
+type OrderedCarePathwayBlock = CarePathwayTaskBlock & { _index: number };
+
+const sortCarePathwayBlocks = (blocks: CarePathwayTaskBlock[]) => {
+  const hasExplicitIds = blocks.some((block) => block.id);
+  if (!hasExplicitIds) {
+    return blocks.map((block, index) => ({ ...block, _index: index }));
+  }
+
+  const nodes = blocks.map((block, index) => ({
+    ...block,
+    _index: index,
+  })) as OrderedCarePathwayBlock[];
+
+  const byId = new Map<string, OrderedCarePathwayBlock>();
+  for (const node of nodes) {
+    if (node.id) {
+      byId.set(node.id, node);
+    }
+  }
+
+  for (const node of nodes) {
+    for (const dependencyId of node.dependsOn ?? []) {
+      if (!byId.has(dependencyId)) {
+        throw new Error(`Unknown task dependency: ${dependencyId}`);
+      }
+    }
+  }
+
+  const sorted: OrderedCarePathwayBlock[] = [];
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (node: OrderedCarePathwayBlock) => {
+    if (!node.id) {
+      sorted.push(node);
+      return;
+    }
+
+    if (visited.has(node.id)) return;
+    if (visiting.has(node.id)) {
+      throw new Error(`Circular task dependency detected: ${node.id}`);
+    }
+
+    visiting.add(node.id);
+    for (const dependencyId of node.dependsOn ?? []) {
+      const dependency = byId.get(dependencyId);
+      if (dependency) {
+        visit(dependency);
+      }
+    }
+    visiting.delete(node.id);
+    visited.add(node.id);
+    sorted.push(node);
+  };
+
+  const orderedByInput = [...nodes].sort((a, b) => a._index - b._index);
+  for (const node of orderedByInput) {
+    visit(node);
+  }
+
+  return sorted;
+};
+
 export const materializeTaskTemplateSeed = (
   data: TaskTemplateInstanceData,
   context: TaskWorkflowContext & {
@@ -403,7 +474,7 @@ export const materializeCarePathwaySeeds = (
       (data.admissionOffsetMinutes ?? 0) * 60 * 1000,
   );
 
-  const seeds = data.taskBlocks.map((block) => {
+  const seeds = sortCarePathwayBlocks(data.taskBlocks).map((block) => {
     const dueAt = buildDueAt(admissionAnchor, block.dayOffset, block.timeOfDay);
     return {
       source: context.source ?? "ORG_TEMPLATE",

@@ -23,6 +23,7 @@ jest.mock("src/config/prisma", () => ({
 jest.mock("../../src/services/task.service", () => ({
   TaskService: {
     createFromWorkflowSeed: jest.fn(),
+    changeStatus: jest.fn(),
   },
 }));
 
@@ -44,6 +45,7 @@ const mockedPrisma = prisma as unknown as {
 
 const mockedTaskService = TaskService as unknown as {
   createFromWorkflowSeed: jest.Mock;
+  changeStatus: jest.Mock;
 };
 
 describe("TaskWorkflowService", () => {
@@ -196,6 +198,360 @@ describe("TaskWorkflowService", () => {
     expect(mockedTaskService.createFromWorkflowSeed).not.toHaveBeenCalled();
     expect(mockedPrisma.taskSchedule.update).not.toHaveBeenCalled();
     expect(result.taskIds).toEqual(["task-1", "task-2"]);
+  });
+
+  it("pauses, resumes, and cancels a schedule", async () => {
+    mockedPrisma.templateInstance.findUnique.mockResolvedValueOnce({
+      id: "instance-4",
+      organisationId: "org-1",
+      appointmentId: null,
+      caseId: null,
+      encounterId: null,
+      templateId: "template-4",
+      templateVersion: 1,
+      authorId: "creator-1",
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T08:00:00.000Z"),
+      data: {},
+      template: {
+        id: "template-4",
+        kind: "CARE_PATHWAY",
+        ownership: "ORG_TEMPLATE",
+      },
+      taskSchedule: {
+        id: "schedule-4",
+        templateInstanceId: "instance-4",
+        templateId: "template-4",
+        templateVersion: 1,
+        templateKind: "CARE_PATHWAY",
+        organisationId: "org-1",
+        createdBy: "creator-1",
+        status: "ACTIVE",
+        generatedTaskIds: ["task-7", "task-8"],
+        materializedSeeds: [{ id: "seed-1" }],
+      },
+    });
+    mockedPrisma.taskSchedule.update.mockResolvedValue({
+      id: "schedule-4",
+      templateInstanceId: "instance-4",
+      templateId: "template-4",
+      templateVersion: 1,
+      templateKind: "CARE_PATHWAY",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "PAUSED",
+      generatedTaskIds: ["task-7", "task-8"],
+      materializedSeeds: [{ id: "seed-1" }],
+    });
+
+    const paused = await TaskWorkflowService.pauseSchedule(
+      "instance-4",
+      "actor-1",
+      "org-1",
+    );
+    expect(paused.status).toBe("PAUSED");
+
+    mockedPrisma.templateInstance.findUnique.mockResolvedValueOnce({
+      id: "instance-4",
+      organisationId: "org-1",
+      appointmentId: null,
+      caseId: null,
+      encounterId: null,
+      templateId: "template-4",
+      templateVersion: 1,
+      authorId: "creator-1",
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T08:00:00.000Z"),
+      data: {},
+      template: {
+        id: "template-4",
+        kind: "CARE_PATHWAY",
+        ownership: "ORG_TEMPLATE",
+      },
+      taskSchedule: {
+        id: "schedule-4",
+        templateInstanceId: "instance-4",
+        templateId: "template-4",
+        templateVersion: 1,
+        templateKind: "CARE_PATHWAY",
+        organisationId: "org-1",
+        createdBy: "creator-1",
+        status: "PAUSED",
+        generatedTaskIds: ["task-7", "task-8"],
+        materializedSeeds: [{ id: "seed-1" }],
+      },
+    });
+    mockedPrisma.taskSchedule.update.mockResolvedValueOnce({
+      id: "schedule-4",
+      templateInstanceId: "instance-4",
+      templateId: "template-4",
+      templateVersion: 1,
+      templateKind: "CARE_PATHWAY",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "ACTIVE",
+      generatedTaskIds: ["task-7", "task-8"],
+      materializedSeeds: [{ id: "seed-1" }],
+    });
+
+    const resumed = await TaskWorkflowService.resumeSchedule(
+      "instance-4",
+      "actor-1",
+      "org-1",
+    );
+    expect(resumed.status).toBe("ACTIVE");
+
+    mockedPrisma.templateInstance.findUnique.mockResolvedValueOnce({
+      id: "instance-4",
+      organisationId: "org-1",
+      appointmentId: null,
+      caseId: null,
+      encounterId: null,
+      templateId: "template-4",
+      templateVersion: 1,
+      authorId: "creator-1",
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T08:00:00.000Z"),
+      data: {},
+      template: {
+        id: "template-4",
+        kind: "CARE_PATHWAY",
+        ownership: "ORG_TEMPLATE",
+      },
+      taskSchedule: {
+        id: "schedule-4",
+        templateInstanceId: "instance-4",
+        templateId: "template-4",
+        templateVersion: 1,
+        templateKind: "CARE_PATHWAY",
+        organisationId: "org-1",
+        createdBy: "creator-1",
+        status: "ACTIVE",
+        generatedTaskIds: ["task-7", "task-8"],
+        materializedSeeds: [{ id: "seed-1" }],
+      },
+    });
+    mockedTaskService.changeStatus.mockResolvedValue({
+      task: { id: "task-7" },
+    });
+    mockedPrisma.taskSchedule.update.mockResolvedValueOnce({
+      id: "schedule-4",
+      templateInstanceId: "instance-4",
+      templateId: "template-4",
+      templateVersion: 1,
+      templateKind: "CARE_PATHWAY",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "CANCELLED",
+      generatedTaskIds: ["task-7", "task-8"],
+      materializedSeeds: [{ id: "seed-1" }],
+    });
+
+    const cancelled = await TaskWorkflowService.cancelSchedule(
+      "instance-4",
+      "actor-1",
+      "org-1",
+    );
+    expect(mockedTaskService.changeStatus).toHaveBeenCalledWith(
+      "task-7",
+      "CANCELLED",
+      "actor-1",
+    );
+    expect(cancelled.status).toBe("CANCELLED");
+  });
+
+  it("regenerates a schedule by cancelling old tasks and creating new ones", async () => {
+    mockedPrisma.templateInstance.findUnique.mockResolvedValueOnce({
+      id: "instance-5",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: null,
+      templateId: "template-5",
+      templateVersion: 1,
+      authorId: "creator-1",
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T08:00:00.000Z"),
+      data: {
+        sections: [
+          {
+            id: "definition",
+            data: {
+              taskKind: "MEDICATION",
+              category: "Medication",
+              name: "Rebuilt medicine",
+            },
+          },
+          {
+            id: "assignment",
+            data: {
+              defaultRole: "EMPLOYEE_TASK",
+            },
+          },
+          {
+            id: "timing",
+            data: {
+              dueOffsetMinutes: 15,
+            },
+          },
+        ],
+      },
+      template: {
+        id: "template-5",
+        kind: "TASK_TEMPLATE",
+        ownership: "ORG_TEMPLATE",
+      },
+      taskSchedule: {
+        id: "schedule-5",
+        templateInstanceId: "instance-5",
+        templateId: "template-5",
+        templateVersion: 1,
+        templateKind: "TASK_TEMPLATE",
+        organisationId: "org-1",
+        createdBy: "creator-1",
+        status: "COMPLETED",
+        generatedTaskIds: ["task-old"],
+        materializedSeeds: [{ id: "seed-old" }],
+      },
+    });
+    mockedTaskService.changeStatus.mockResolvedValue({
+      task: { id: "task-old" },
+    });
+    mockedPrisma.taskSchedule.update.mockResolvedValueOnce({
+      id: "schedule-5",
+      templateInstanceId: "instance-5",
+      templateId: "template-5",
+      templateVersion: 1,
+      templateKind: "TASK_TEMPLATE",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "COMPLETED",
+      generatedTaskIds: ["task-new"],
+      materializedSeeds: [{ id: "seed-new" }],
+    });
+    mockedPrisma.taskSchedule.create.mockResolvedValueOnce({
+      id: "schedule-5",
+      templateInstanceId: "instance-5",
+      templateId: "template-5",
+      templateVersion: 1,
+      templateKind: "TASK_TEMPLATE",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "COMPLETED",
+      generatedTaskIds: null,
+      materializedSeeds: [{ id: "seed-new" }],
+    });
+    mockedTaskService.createFromWorkflowSeed.mockResolvedValueOnce({
+      id: "task-new",
+    });
+
+    const result = await TaskWorkflowService.regenerateSchedule(
+      "instance-5",
+      "org-1",
+      "creator-1",
+      { client: prisma, notify: false },
+    );
+
+    expect(mockedTaskService.changeStatus).toHaveBeenCalledWith(
+      "task-old",
+      "CANCELLED",
+      "creator-1",
+    );
+    expect(mockedTaskService.createFromWorkflowSeed).toHaveBeenCalledTimes(1);
+    expect(result.taskIds).toEqual(["task-new"]);
+  });
+
+  it("defers a schedule launch until the requested activation time", async () => {
+    mockedPrisma.templateInstance.findUnique.mockResolvedValueOnce({
+      id: "instance-6",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: null,
+      templateId: "template-6",
+      templateVersion: 1,
+      authorId: "creator-1",
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T08:00:00.000Z"),
+      data: {
+        sections: [
+          {
+            id: "definition",
+            data: {
+              taskKind: "MEDICATION",
+              category: "Medication",
+              name: "Delayed medicine",
+            },
+          },
+          {
+            id: "assignment",
+            data: {
+              defaultRole: "EMPLOYEE_TASK",
+            },
+          },
+          {
+            id: "timing",
+            data: {
+              dueOffsetMinutes: 45,
+            },
+          },
+        ],
+      },
+      template: {
+        id: "template-6",
+        kind: "TASK_TEMPLATE",
+        ownership: "ORG_TEMPLATE",
+      },
+      taskSchedule: null,
+    });
+    mockedPrisma.taskSchedule.create.mockResolvedValueOnce({
+      id: "schedule-6",
+      templateInstanceId: "instance-6",
+      templateId: "template-6",
+      templateVersion: 1,
+      templateKind: "TASK_TEMPLATE",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "DRAFT",
+      generatedTaskIds: null,
+      materializedSeeds: [{ id: "seed-delayed" }],
+    });
+    mockedPrisma.taskSchedule.update.mockResolvedValueOnce({
+      id: "schedule-6",
+      templateInstanceId: "instance-6",
+      templateId: "template-6",
+      templateVersion: 1,
+      templateKind: "TASK_TEMPLATE",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "DRAFT",
+      generatedTaskIds: null,
+      materializedSeeds: [{ id: "seed-delayed" }],
+    });
+
+    const deferredUntil = new Date("2026-06-14T10:00:00.000Z");
+    const result = await TaskWorkflowService.launchFromTemplateInstance(
+      "instance-6",
+      "org-1",
+      "creator-1",
+      { client: prisma, notify: false, deferUntil: deferredUntil },
+    );
+
+    expect(mockedTaskService.createFromWorkflowSeed).not.toHaveBeenCalled();
+    expect(result.taskIds).toEqual([]);
+    expect(mockedPrisma.taskSchedule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "DRAFT",
+          activatedAt: deferredUntil,
+        }),
+      }),
+    );
   });
 
   it("rejects unsupported template kinds", async () => {

@@ -74,6 +74,44 @@ describe("task workflow materializer", () => {
     expect(seeds[2].assignedTo).toBe("employee-1");
   });
 
+  it("orders care pathway blocks by dependency graph", () => {
+    const seeds = materializeCarePathwaySeeds(
+      {
+        taskBlocks: [
+          {
+            id: "followup",
+            dayOffset: 0,
+            timeOfDay: "10:00",
+            taskKind: "CUSTOM",
+            category: "Follow-up",
+            name: "Review results",
+            audience: "EMPLOYEE_TASK",
+            dependsOn: ["labs"],
+          },
+          {
+            id: "labs",
+            dayOffset: 0,
+            timeOfDay: "08:00",
+            taskKind: "OBSERVATION_TOOL",
+            category: "Vitals",
+            name: "Collect samples",
+            audience: "EMPLOYEE_TASK",
+          },
+        ],
+      },
+      {
+        admissionAt: new Date("2026-01-01T00:00:00.000Z"),
+        organisationId: "org-1",
+        createdBy: "creator-1",
+        templateId: "tmpl-3",
+        resolveAssignee: () => "employee-1",
+      },
+    );
+
+    expect(seeds[0].name).toBe("Collect samples");
+    expect(seeds[1].name).toBe("Review results");
+  });
+
   it("materializes a task workflow seed from a template instance snapshot", () => {
     const seeds = materializeTaskWorkflowSeeds(
       "TASK_TEMPLATE",
