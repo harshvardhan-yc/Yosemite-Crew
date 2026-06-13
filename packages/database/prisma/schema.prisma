@@ -1181,6 +1181,39 @@ enum FormStatus {
   archived
 }
 
+enum TemplateKind {
+  FORM
+  SOAP_NOTE
+  VITAL_RECORD
+  PRESCRIPTION
+  DISCHARGE_SUMMARY
+  TASK_TEMPLATE
+  CARE_PATHWAY
+}
+
+enum TemplateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum TemplateScope {
+  ORGANISATION
+  SPECIALITY
+  SERVICE
+  APPOINTMENT_KIND
+  INPATIENT
+  OUTPATIENT
+}
+
+enum TemplateInstanceStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  SIGNED
+  VOID
+}
+
 enum ServiceType {
   CONSULTATION
   OBSERVATION_TOOL
@@ -1472,6 +1505,75 @@ model FormSubmission {
   @@index([companionId])
   @@index([parentId])
   @@index([submittedAt])
+}
+
+model Template {
+  id                 String            @id @default(uuid())
+  organisationId     String
+  kind               TemplateKind
+  name               String
+  description        String?
+  status             TemplateStatus     @default(DRAFT)
+  scope              TemplateScope      @default(ORGANISATION)
+  rules              Json?
+  latestVersion      Int               @default(1)
+  publishedVersion   Int?
+  createdBy          String
+  updatedBy          String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  versions           TemplateVersion[]
+  instances          TemplateInstance[]
+
+  @@index([organisationId, kind, status])
+  @@index([organisationId, scope])
+}
+
+model TemplateVersion {
+  id                    String   @id @default(uuid())
+  templateId            String
+  version               Int
+  schemaSnapshot        Json
+  renderConfigSnapshot   Json?
+  validationSnapshot    Json?
+  publishedAt           DateTime?
+  createdBy             String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  template              Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+  @@index([templateId])
+  @@index([publishedAt])
+}
+
+model TemplateInstance {
+  id              String                @id @default(uuid())
+  templateId      String
+  templateVersion Int
+  organisationId  String
+  appointmentId   String?
+  caseId          String?
+  encounterId     String?
+  status          TemplateInstanceStatus @default(DRAFT)
+  data            Json
+  authorId        String?
+  signedBy        String?
+  signedAt        DateTime?
+  generatedPdfUrl String?
+  generatedPdf    Json?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  template        Template              @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@index([organisationId, appointmentId])
+  @@index([organisationId, encounterId])
+  @@index([organisationId, caseId])
+  @@index([status])
 }
 
 model Service {

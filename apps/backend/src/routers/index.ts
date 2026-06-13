@@ -21,6 +21,7 @@ import documensoRouter from "./documenso.router";
 import ratingRouter from "./organisationRating.router";
 import invoiceRouter from "./invoice.router";
 import formRouter from "./form.router";
+import templateRouter from "./template.router";
 import expenseRouter from "./expense.router";
 import deviceTokenRouter from "./deviceToken.router";
 import chatRouter from "./chat.router";
@@ -77,6 +78,7 @@ export function registerRoutes(app: Express) {
   app.use(`/v1/organisation-rating`, ratingRouter);
   app.use(`/fhir/v1/invoice`, invoiceRouter);
   app.use(`/fhir/v1/form`, formRouter);
+  app.use(`/v1/templates`, templateRouter);
   app.use(`/v1/expense`, expenseRouter);
   app.use(`/v1/device-token`, deviceTokenRouter);
   app.use(`/v1/chat`, chatRouter);
