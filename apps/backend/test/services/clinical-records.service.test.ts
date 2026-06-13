@@ -4,6 +4,10 @@ import {
   ClinicalArtifactServiceError,
 } from "../../src/services/clinical-artifact.service";
 
+jest.mock("../../src/services/rendered-document.service", () => ({
+  createRenderedDocumentRecord: jest.fn(),
+}));
+
 jest.mock("src/config/prisma", () => ({
   prisma: {
     $transaction: jest.fn(),

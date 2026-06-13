@@ -54,6 +54,15 @@ export class FormSigningService {
       return id.length > 0 ? id : undefined;
     }
 
+    if (
+      value &&
+      typeof value === "object" &&
+      typeof (value as { toString?: unknown }).toString === "function"
+    ) {
+      const id = (value as { toString: () => string }).toString();
+      return id.length > 0 && id !== "[object Object]" ? id : undefined;
+    }
+
     return undefined;
   }
 
@@ -231,6 +240,13 @@ export class FormSigningService {
           submittedBy: submission.submittedBy ?? undefined,
         });
 
+      const sourceId =
+        FormSigningService.normalizeId(submission.id) ??
+        FormSigningService.normalizeId((submission as { _id?: unknown })._id);
+      if (!sourceId) {
+        throw new Error("Unable to determine submission id");
+      }
+
       if (!signerEmail) {
         logger.error("Signer email is missing");
         throw new Error("Signer email is required for signing");
@@ -240,7 +256,7 @@ export class FormSigningService {
         title: form.name,
         source: {
           sourceKind: "FORM_SUBMISSION",
-          sourceId: String(submission.id),
+          sourceId,
           organisationId: form.orgId,
           templateKind: "FORM",
           templateId: formId,
@@ -336,6 +352,13 @@ export class FormSigningService {
         submittedBy: submission.submittedBy,
       });
 
+    const sourceId =
+      FormSigningService.normalizeId(submission.id) ??
+      FormSigningService.normalizeId((submission as { _id?: unknown })._id);
+    if (!sourceId) {
+      throw new Error("Unable to determine submission id");
+    }
+
     if (!signerEmail) {
       logger.error("Signer email is missing");
       throw new Error("Signer email is required for signing");
@@ -345,7 +368,7 @@ export class FormSigningService {
       title: form.name,
       source: {
         sourceKind: "FORM_SUBMISSION",
-        sourceId: submission.id as string,
+        sourceId,
         organisationId: form.orgId,
         templateKind: "FORM",
         templateId: formId,
