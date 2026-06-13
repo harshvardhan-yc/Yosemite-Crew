@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import { prisma } from "src/config/prisma";
 import { validateClinicalTemplateBlueprint } from "src/services/clinical-template-blueprints";
+import { validateTaskWorkflowTemplateBlueprint } from "src/services/task-workflow-blueprints";
 
 export class TemplateServiceError extends Error {
   constructor(
@@ -297,8 +298,13 @@ const validateTemplateSchemaForKind = (
   kind: TemplateKind,
   schemaSnapshot: unknown,
 ) => {
+  const validation =
+    kind === "TASK_TEMPLATE" || kind === "CARE_PATHWAY"
+      ? validateTaskWorkflowTemplateBlueprint(kind, schemaSnapshot)
+      : validateClinicalTemplateBlueprint(kind, schemaSnapshot);
+
   const { missingSectionIds, missingFieldPaths, invalidFieldPaths } =
-    validateClinicalTemplateBlueprint(kind, schemaSnapshot);
+    validation;
 
   if (
     missingSectionIds.length > 0 ||

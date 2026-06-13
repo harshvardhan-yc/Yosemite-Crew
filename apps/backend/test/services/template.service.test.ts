@@ -4,6 +4,7 @@ import {
   TemplateServiceError,
 } from "../../src/services/template.service";
 import { buildClinicalTemplateSchemaSnapshot } from "../../src/services/clinical-template-blueprints";
+import { buildTaskWorkflowTemplateSchemaSnapshot } from "../../src/services/task-workflow-blueprints";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -233,6 +234,27 @@ describe("TemplateService", () => {
       }),
     ).rejects.toThrow(
       "Template schema is invalid for PRESCRIPTION: invalid fields: PRESCRIPTION.instructions.usageInstructions.type",
+    );
+  });
+
+  it("rejects a care pathway schema missing required sections", async () => {
+    const snapshot = buildTaskWorkflowTemplateSchemaSnapshot("CARE_PATHWAY");
+    snapshot.sections = snapshot.sections.filter(
+      (section) => section.id !== "schedule",
+    );
+
+    await expect(
+      TemplateService.create({
+        organisationId,
+        ownership: "ORG_TEMPLATE",
+        kind: "CARE_PATHWAY",
+        name: "Inpatient pathway",
+        scope: "INPATIENT",
+        schemaSnapshot: snapshot,
+        createdBy: "creator-1",
+      }),
+    ).rejects.toThrow(
+      "Template schema is invalid for CARE_PATHWAY: missing sections: schedule",
     );
   });
 
