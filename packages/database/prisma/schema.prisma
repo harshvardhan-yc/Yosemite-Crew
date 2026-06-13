@@ -1214,6 +1214,21 @@ enum TemplateInstanceStatus {
   VOID
 }
 
+enum ClinicalArtifactKind {
+  SOAP_NOTE
+  PRESCRIPTION
+  DISCHARGE_SUMMARY
+  VITAL_RECORD
+}
+
+enum ClinicalArtifactStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  SIGNED
+  VOID
+}
+
 enum ServiceType {
   CONSULTATION
   OBSERVATION_TOOL
@@ -1543,6 +1558,7 @@ model TemplateVersion {
   updatedAt             DateTime @updatedAt
 
   template              Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  clinicalArtifacts     ClinicalArtifact[]
 
   @@unique([templateId, version])
   @@index([templateId])
@@ -1574,6 +1590,52 @@ model TemplateInstance {
   @@index([organisationId, encounterId])
   @@index([organisationId, caseId])
   @@index([status])
+}
+
+model ClinicalArtifact {
+  id              String                  @id @default(uuid())
+  organisationId  String
+  appointmentId   String?
+  caseId          String?
+  encounterId     String?
+  kind            ClinicalArtifactKind
+  status          ClinicalArtifactStatus  @default(DRAFT)
+  templateId      String?
+  templateVersion Int?
+  templateVersionId String?
+  authorId        String?
+  signedBy        String?
+  signedAt        DateTime?
+  summary         String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  soapNote        SoapNote?
+  templateVersionRecord TemplateVersion?   @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, kind, status])
+  @@index([organisationId, appointmentId])
+  @@index([organisationId, encounterId])
+  @@index([organisationId, caseId])
+  @@index([templateId, templateVersion])
+  @@index([templateVersionId])
+}
+
+model SoapNote {
+  id              String           @id @default(uuid())
+  artifactId      String           @unique
+  subjective      Json?
+  objective       Json?
+  assessment      Json?
+  plan            Json?
+  diagnoses       Json?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  artifact        ClinicalArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@index([artifactId])
 }
 
 model Service {
