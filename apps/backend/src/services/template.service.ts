@@ -8,6 +8,7 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "src/config/prisma";
+import { validateClinicalTemplateBlueprint } from "src/services/clinical-template-blueprints";
 
 export class TemplateServiceError extends Error {
   constructor(
@@ -292,10 +293,28 @@ const loadTemplateVersionOrThrow = async (
   return templateVersion;
 };
 
+const validateTemplateSchemaForKind = (
+  kind: TemplateKind,
+  schemaSnapshot: unknown,
+) => {
+  const { missingSectionIds } = validateClinicalTemplateBlueprint(
+    kind,
+    schemaSnapshot,
+  );
+
+  if (missingSectionIds.length > 0) {
+    throw new TemplateServiceError(
+      `Template schema is missing required sections: ${missingSectionIds.join(", ")}`,
+      400,
+    );
+  }
+};
+
 export const TemplateService = {
   async create(input: CreateTemplateInput) {
     const parsed = createTemplateSchema.parse(input);
     const updatedBy = parsed.updatedBy ?? parsed.createdBy;
+    validateTemplateSchemaForKind(parsed.kind, parsed.schemaSnapshot);
     const organisationId =
       parsed.ownership === "YC_LIBRARY" ? undefined : parsed.organisationId;
     const ownerUserId =
@@ -363,6 +382,14 @@ export const TemplateService = {
     const currentVersion = hasVersionChanges
       ? await loadTemplateVersionOrThrow(template.id, targetVersion)
       : null;
+    const nextSchemaSnapshot =
+      parsed.schemaSnapshot === undefined
+        ? currentVersion?.schemaSnapshot
+        : parsed.schemaSnapshot;
+
+    if (nextSchemaSnapshot != null) {
+      validateTemplateSchemaForKind(template.kind, nextSchemaSnapshot);
+    }
 
     if (createNewVersion && hasVersionChanges) {
       const nextVersion = template.latestVersion + 1;
@@ -385,7 +412,7 @@ export const TemplateService = {
             templateId: template.id,
             version: nextVersion,
             schemaSnapshot: toJsonInput(
-              parsed.schemaSnapshot ?? currentVersion?.schemaSnapshot,
+              nextSchemaSnapshot ?? currentVersion?.schemaSnapshot,
             ),
             renderConfigSnapshot: toJsonInput(
               parsed.renderConfigSnapshot ??

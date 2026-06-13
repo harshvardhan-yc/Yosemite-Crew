@@ -3,6 +3,7 @@ import {
   TemplateService,
   TemplateServiceError,
 } from "../../src/services/template.service";
+import { buildClinicalTemplateSchemaSnapshot } from "../../src/services/clinical-template-blueprints";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -30,6 +31,7 @@ describe("TemplateService", () => {
   const organisationId = "org-1";
   const templateId = "tmpl-1";
   const instanceId = "inst-1";
+  const soapSnapshot = buildClinicalTemplateSchemaSnapshot("SOAP_NOTE");
 
   const mockedPrisma = prisma as unknown as {
     $transaction: jest.Mock;
@@ -96,19 +98,7 @@ describe("TemplateService", () => {
       name: "SOAP note",
       scope: "ORGANISATION",
       schemaSnapshot: {
-        sections: [
-          {
-            id: "subjective",
-            title: "Subjective",
-            fields: [
-              {
-                key: "chiefComplaint",
-                label: "Chief complaint",
-                type: "textarea",
-              },
-            ],
-          },
-        ],
+        sections: soapSnapshot.sections,
       },
       createdBy: "creator-1",
     });
@@ -169,9 +159,7 @@ describe("TemplateService", () => {
       kind: "SOAP_NOTE",
       name: "YC SOAP note",
       scope: "ORGANISATION",
-      schemaSnapshot: {
-        sections: [],
-      },
+      schemaSnapshot: soapSnapshot,
       createdBy: "creator-1",
     });
 
@@ -194,12 +182,28 @@ describe("TemplateService", () => {
         kind: "SOAP_NOTE",
         name: "User SOAP note",
         scope: "ORGANISATION",
+        schemaSnapshot: soapSnapshot,
+        createdBy: "creator-1",
+      }),
+    ).rejects.toThrow("Owner user is required for user templates");
+  });
+
+  it("rejects a clinical template schema missing required sections", async () => {
+    await expect(
+      TemplateService.create({
+        organisationId,
+        ownership: "ORG_TEMPLATE",
+        kind: "PRESCRIPTION",
+        name: "Prescription template",
+        scope: "ORGANISATION",
         schemaSnapshot: {
           sections: [],
         },
         createdBy: "creator-1",
       }),
-    ).rejects.toThrow("Owner user is required for user templates");
+    ).rejects.toThrow(
+      "Template schema is missing required sections: medications, instructions, notes",
+    );
   });
 
   it("lists YC library templates", async () => {
@@ -371,15 +375,7 @@ describe("TemplateService", () => {
       templateId,
       {
         name: "SOAP note updated",
-        schemaSnapshot: {
-          sections: [
-            {
-              id: "subjective",
-              title: "Subjective",
-              fields: [],
-            },
-          ],
-        },
+        schemaSnapshot: soapSnapshot,
         updatedBy: "editor-1",
       },
       organisationId,
