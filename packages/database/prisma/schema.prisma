@@ -1621,6 +1621,9 @@ model ClinicalArtifact {
   updatedAt       DateTime                @updatedAt
 
   soapNote        SoapNote?
+  prescription    Prescription?
+  dischargeSummary DischargeSummary?
+  vitalRecord     VitalRecord?
   templateVersionRecord TemplateVersion?   @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
 
   @@index([organisationId, kind, status])
@@ -1646,6 +1649,55 @@ model SoapNote {
   artifact        ClinicalArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
 
   @@index([artifactId])
+}
+
+model Prescription {
+  id              String           @id @default(uuid())
+  artifactId      String           @unique
+  medications     Json?
+  instructions    Json?
+  notes           Json?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  artifact        ClinicalArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@index([artifactId])
+}
+
+model DischargeSummary {
+  id              String           @id @default(uuid())
+  artifactId      String           @unique
+  summary         Json?
+  diagnoses       Json?
+  medications     Json?
+  followUp        Json?
+  instructions    Json?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  artifact        ClinicalArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@index([artifactId])
+}
+
+model VitalRecord {
+  id              String           @id @default(uuid())
+  artifactId      String           @unique
+  measuredAt      DateTime
+  recordedBy      String?
+  vitals          Json
+  notes           Json?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  artifact        ClinicalArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@index([artifactId])
+  @@index([measuredAt])
 }
 
 model Service {
