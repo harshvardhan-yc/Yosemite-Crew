@@ -1394,6 +1394,11 @@ enum InventoryItemStatus {
   DELETED
 }
 
+enum InventoryItemType {
+  MEDICAL
+  NON_MEDICAL
+}
+
 enum DayOfWeek {
   MONDAY
   TUESDAY
@@ -2061,31 +2066,50 @@ model AccountWithdrawal {
 }
 
 model InventoryItem {
-  id             String               @id @default(uuid())
-  organisationId String
-  businessType   InventoryBusinessType
-  name           String
-  sku            String?
-  category       String
-  subCategory    String?
-  description    String?
-  imageUrl       String?
-  attributes     Json                @default("{}")
-  onHand         Int                 @default(0)
-  allocated      Int                 @default(0)
-  reorderLevel   Int?
-  unitCost       Float?
-  sellingPrice   Float?
-  currency       String?
-  vendorId       String?
-  status         InventoryItemStatus @default(ACTIVE)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  id                        String               @id @default(uuid())
+  organisationId            String
+  businessType              InventoryBusinessType
+  itemType                  InventoryItemType     @default(NON_MEDICAL)
+  name                      String
+  sku                       String?
+  category                  String
+  subCategory               String?
+  description               String?
+  imageUrl                  String?
+  attachments               Json?
+  attributes                Json                 @default("{}")
+  genericName               String?
+  strength                  String?
+  dosageForm                String?
+  routeOfAdministration     String?
+  drugClass                 String?
+  prescriptionRequired      Boolean              @default(false)
+  controlledItem            Boolean              @default(false)
+  storageInstructions       String?
+  expiryTrackingRequired    Boolean              @default(false)
+  unitOfMeasure             String?
+  packageQuantity           Int?
+  storageLocation           String?
+  onHand                    Int                  @default(0)
+  allocated                 Int                  @default(0)
+  minimumStock              Int?
+  emergencyStockLevel       Int?
+  reorderLevel              Int?
+  unitCost                  Float?
+  sellingPrice              Float?
+  taxRate                   Float?
+  currency                  String?
+  vendorId                  String?
+  status                    InventoryItemStatus   @default(ACTIVE)
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
 
+  @@unique([organisationId, sku])
   @@index([organisationId, name])
-  @@index([category, subCategory])
-  @@index([businessType])
-  @@index([status])
+  @@index([organisationId, category, subCategory])
+  @@index([organisationId, businessType])
+  @@index([organisationId, status])
+  @@index([organisationId, vendorId])
 }
 
 model InventoryBatch {
@@ -2116,6 +2140,10 @@ model InventoryVendor {
   brand             String?
   vendorType        String?
   licenseNumber     String?
+  vendorItemCode    String?
+  purchasePrice     Float?
+  lastPurchaseDate  DateTime?
+  notes             String?
   paymentTerms      String?
   deliveryFrequency String?
   leadTimeDays      Int?
@@ -2124,6 +2152,36 @@ model InventoryVendor {
   updatedAt         DateTime @updatedAt
 
   @@index([organisationId, name])
+  @@index([organisationId, vendorItemCode])
+}
+
+model InventoryCategory {
+  id            String   @id @default(uuid())
+  code          String   @unique
+  name          String
+  isMedical     Boolean  @default(false)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subcategories  InventorySubcategory[]
+}
+
+model InventorySubcategory {
+  id            String   @id @default(uuid())
+  categoryId    String
+  code          String
+  name          String
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category      InventoryCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, code])
+  @@index([categoryId])
+  @@index([code])
 }
 
 model InventoryMetaField {
