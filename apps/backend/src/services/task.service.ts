@@ -465,9 +465,7 @@ const updateTaskRow = async (
           ? (task.reminder ?? undefined)
           : toNullableJsonInput(buildReminder(updates.reminder)),
       syncWithCalendar:
-        updates.syncWithCalendar === undefined
-          ? (task.syncWithCalendar ?? undefined)
-          : updates.syncWithCalendar,
+        updates.syncWithCalendar ?? task.syncWithCalendar ?? undefined,
       attachments:
         updates.attachments === undefined
           ? (task.attachments ?? undefined)
