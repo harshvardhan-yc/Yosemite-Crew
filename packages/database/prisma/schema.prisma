@@ -1191,6 +1191,22 @@ enum TemplateKind {
   CARE_PATHWAY
 }
 
+enum RenderedDocumentStatus {
+  DRAFT
+  SIGNED
+}
+
+enum RenderedDocumentSourceKind {
+  TEMPLATE_INSTANCE
+  CLINICAL_ARTIFACT
+}
+
+enum DocumentSignatureSignerType {
+  PMS_USER
+  PARENT
+  SYSTEM
+}
+
 enum TemplateStatus {
   DRAFT
   PUBLISHED
@@ -1603,12 +1619,62 @@ model TemplateInstance {
 
   template        Template              @relation(fields: [templateId], references: [id], onDelete: Cascade)
   taskSchedule    TaskSchedule?
+  renderedDocuments RenderedDocument[]
 
   @@index([templateId])
   @@index([organisationId, appointmentId])
   @@index([organisationId, encounterId])
   @@index([organisationId, caseId])
   @@index([status])
+}
+
+model RenderedDocument {
+  id                String                    @id @default(uuid())
+  organisationId    String
+  sourceKind        RenderedDocumentSourceKind
+  sourceId          String
+  templateInstanceId String?                  @unique
+  clinicalArtifactId String?                  @unique
+  templateId        String?
+  templateVersion   Int?
+  templateVersionId String?
+  kind              TemplateKind
+  version           Int                       @default(1)
+  title             String
+  mimeType          String                    @default("application/pdf")
+  status            RenderedDocumentStatus    @default(DRAFT)
+  signable          Boolean                   @default(true)
+  pdfUrl            String?
+  pdf               Json?
+  signedBy          String?
+  signedAt          DateTime?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  templateInstance  TemplateInstance?         @relation(fields: [templateInstanceId], references: [id], onDelete: SetNull)
+  clinicalArtifact  ClinicalArtifact?         @relation(fields: [clinicalArtifactId], references: [id], onDelete: SetNull)
+  signature        DocumentSignature?
+
+  @@index([organisationId, kind, status])
+  @@index([sourceKind, sourceId])
+  @@index([templateId, templateVersion])
+  @@index([templateVersionId])
+}
+
+model DocumentSignature {
+  id                 String                   @id @default(uuid())
+  renderedDocumentId String                   @unique
+  signerId          String
+  signerType        DocumentSignatureSignerType
+  signatureText     String?
+  signedAt          DateTime                  @default(now())
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  renderedDocument  RenderedDocument          @relation(fields: [renderedDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([renderedDocumentId])
+  @@index([signerId])
 }
 
 model ClinicalArtifact {
@@ -1634,6 +1700,7 @@ model ClinicalArtifact {
   dischargeSummary DischargeSummary?
   vitalRecord     VitalRecord?
   templateVersionRecord TemplateVersion?   @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
+  renderedDocuments RenderedDocument[]
 
   @@index([organisationId, kind, status])
   @@index([organisationId, appointmentId])

@@ -9,6 +9,10 @@ import {
 import { z } from "zod";
 import { prisma } from "src/config/prisma";
 import { validateClinicalTemplateBlueprint } from "src/services/clinical-template-blueprints";
+import {
+  createRenderedDocumentRecord,
+  type PersistRenderedDocumentInput,
+} from "src/services/rendered-document.service";
 import { validateTaskWorkflowTemplateBlueprint } from "src/services/task-workflow-blueprints";
 import { TaskWorkflowService } from "src/services/task-workflow.service";
 
@@ -225,6 +229,29 @@ const toNullableJsonInput = (
 
   return value as Prisma.InputJsonValue;
 };
+
+const buildRenderedDocumentSummary = (
+  renderedDocument: Awaited<ReturnType<typeof createRenderedDocumentRecord>>,
+) => ({
+  renderedDocumentId: renderedDocument.id,
+  sourceKind: renderedDocument.sourceKind,
+  sourceId: renderedDocument.sourceId,
+  kind: renderedDocument.kind,
+  version: renderedDocument.version,
+  status: renderedDocument.status,
+  signable: renderedDocument.signable,
+  mimeType: renderedDocument.mimeType,
+  signedAt: renderedDocument.signedAt ?? null,
+  signedBy: renderedDocument.signedBy ?? null,
+});
+
+const DOCUMENT_BACKED_TEMPLATE_KINDS = new Set<TemplateKind>([
+  "FORM",
+  "SOAP_NOTE",
+  "PRESCRIPTION",
+  "DISCHARGE_SUMMARY",
+  "VITAL_RECORD",
+]);
 
 const resolveVersionPayload = (template: {
   latestVersion: number;
@@ -774,10 +801,41 @@ export const TemplateService = {
         },
       );
 
+      let renderedDocumentSummary:
+        | Awaited<ReturnType<typeof createRenderedDocumentRecord>>
+        | undefined;
+
+      if (DOCUMENT_BACKED_TEMPLATE_KINDS.has(instance.template.kind)) {
+        const renderedDocumentInput: PersistRenderedDocumentInput = {
+          title:
+            instance.template.kind === "FORM"
+              ? "Form submission"
+              : instance.template.kind.split("_").join(" "),
+          source: {
+            sourceKind: "TEMPLATE_INSTANCE",
+            sourceId: instance.id,
+            organisationId: instance.organisationId,
+            templateKind: instance.template.kind,
+            templateId: instance.templateId,
+            templateVersion: instance.templateVersion,
+          },
+          templateInstanceId: instance.id,
+        };
+
+        renderedDocumentSummary = await createRenderedDocumentRecord(
+          renderedDocumentInput,
+          tx,
+        );
+      }
+
       return tx.templateInstance.update({
         where: { id: instance.id },
         data: {
           status: "COMPLETED",
+          generatedPdf: renderedDocumentSummary
+            ? buildRenderedDocumentSummary(renderedDocumentSummary)
+            : toNullableJsonInput(instance.generatedPdf),
+          generatedPdfUrl: renderedDocumentSummary?.pdfUrl ?? undefined,
         },
       });
     });

@@ -38,6 +38,11 @@ jest.mock("src/config/prisma", () => ({
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    renderedDocument: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
   },
 }));
 
@@ -67,6 +72,11 @@ describe("TemplateService", () => {
       update: jest.Mock;
     };
     templateInstance: {
+      create: jest.Mock;
+      findUnique: jest.Mock;
+      update: jest.Mock;
+    };
+    renderedDocument: {
       create: jest.Mock;
       findUnique: jest.Mock;
       update: jest.Mock;
@@ -710,9 +720,110 @@ describe("TemplateService", () => {
     expect(mockedPrisma.templateInstance.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: instanceId },
-        data: { status: "COMPLETED" },
+        data: expect.objectContaining({
+          status: "COMPLETED",
+        }),
       }),
     );
+    expect(mockedPrisma.renderedDocument.create).not.toHaveBeenCalled();
     expect(result.status).toBe("COMPLETED");
+  });
+
+  it("creates a rendered document draft when submitting a document-backed template instance", async () => {
+    mockedPrisma.templateInstance.findUnique.mockResolvedValueOnce({
+      id: instanceId,
+      templateId,
+      templateVersion: 2,
+      organisationId,
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: null,
+      status: "DRAFT",
+      data: { chiefComplaint: "Coughing" },
+      authorId: "user-1",
+      signedBy: null,
+      signedAt: null,
+      generatedPdfUrl: null,
+      generatedPdf: null,
+      createdAt: new Date("2026-01-01T10:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T10:00:00.000Z"),
+      template: {
+        id: templateId,
+        kind: "SOAP_NOTE",
+        ownership: "ORG_TEMPLATE",
+      },
+    });
+    mockedPrisma.renderedDocument.create.mockResolvedValueOnce({
+      id: "doc-1",
+      organisationId,
+      sourceKind: "TEMPLATE_INSTANCE",
+      sourceId: instanceId,
+      templateInstanceId: instanceId,
+      clinicalArtifactId: null,
+      templateId,
+      templateVersion: 2,
+      templateVersionId: null,
+      kind: "SOAP_NOTE",
+      version: 1,
+      title: "SOAP NOTE",
+      mimeType: "application/pdf",
+      status: "DRAFT",
+      signable: true,
+      pdfUrl: null,
+      pdf: null,
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T10:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T10:00:00.000Z"),
+      signature: null,
+    });
+    mockedPrisma.templateInstance.update.mockResolvedValueOnce({
+      id: instanceId,
+      status: "COMPLETED",
+      generatedPdf: {
+        renderedDocumentId: "doc-1",
+        sourceKind: "TEMPLATE_INSTANCE",
+        sourceId: instanceId,
+        kind: "SOAP_NOTE",
+        version: 1,
+        status: "DRAFT",
+        signable: true,
+        mimeType: "application/pdf",
+        signedAt: null,
+        signedBy: null,
+      },
+      generatedPdfUrl: null,
+    });
+    mockedTaskWorkflowService.launchFromTemplateInstance.mockResolvedValueOnce({
+      schedule: { id: "schedule-1" },
+      taskIds: [],
+      seedCount: 0,
+    });
+
+    const result = await TemplateService.submitInstance(
+      instanceId,
+      organisationId,
+      "user-9",
+    );
+
+    expect(mockedPrisma.renderedDocument.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          templateInstanceId: instanceId,
+          sourceKind: "TEMPLATE_INSTANCE",
+          sourceId: instanceId,
+          kind: "SOAP_NOTE",
+          title: "SOAP NOTE",
+          signable: true,
+        }),
+      }),
+    );
+    expect(result.generatedPdf).toEqual(
+      expect.objectContaining({
+        renderedDocumentId: "doc-1",
+        kind: "SOAP_NOTE",
+        sourceId: instanceId,
+      }),
+    );
   });
 });
