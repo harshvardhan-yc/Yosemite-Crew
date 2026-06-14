@@ -21,7 +21,7 @@ const dischargeSummaryLimiter = rateLimit({
   },
 });
 
-router.get(
+router.post(
   "/organisation/:organisationId/appointment/:appointmentId/soap-notes",
   authorizeCognito,
   withOrgPermissions(),
@@ -30,7 +30,7 @@ router.get(
     ClinicalArtifactFhirController.listSoapNotesForAppointment(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/encounter/:encounterId/soap-notes",
   authorizeCognito,
   withOrgPermissions(),
@@ -47,7 +47,7 @@ router.post(
   (req, res) => ClinicalArtifactFhirController.createSoapNote(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/soap-note/:soapNoteId",
   authorizeCognito,
   withOrgPermissions(),
@@ -63,7 +63,7 @@ router.patch(
   (req, res) => ClinicalArtifactFhirController.updateSoapNote(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/appointment/:appointmentId/prescriptions",
   authorizeCognito,
   withOrgPermissions(),
@@ -72,7 +72,7 @@ router.get(
     ClinicalArtifactFhirController.listPrescriptionsForAppointment(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/encounter/:encounterId/prescriptions",
   authorizeCognito,
   withOrgPermissions(),
@@ -89,7 +89,7 @@ router.post(
   (req, res) => ClinicalArtifactFhirController.createPrescription(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/prescription/:prescriptionId",
   authorizeCognito,
   withOrgPermissions(),
@@ -105,7 +105,7 @@ router.patch(
   (req, res) => ClinicalArtifactFhirController.updatePrescription(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/appointment/:appointmentId/discharge-summaries",
   authorizeCognito,
   withOrgPermissions(),
@@ -118,7 +118,7 @@ router.get(
     ),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/encounter/:encounterId/discharge-summaries",
   authorizeCognito,
   withOrgPermissions(),
@@ -135,7 +135,7 @@ router.post(
   (req, res) => ClinicalArtifactFhirController.createDischargeSummary(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/discharge-summary/:dischargeSummaryId",
   authorizeCognito,
   withOrgPermissions(),
@@ -151,7 +151,7 @@ router.patch(
   (req, res) => ClinicalArtifactFhirController.updateDischargeSummary(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/appointment/:appointmentId/vital-records",
   authorizeCognito,
   withOrgPermissions(),
@@ -160,7 +160,7 @@ router.get(
     ClinicalArtifactFhirController.listVitalRecordsForAppointment(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/encounter/:encounterId/vital-records",
   authorizeCognito,
   withOrgPermissions(),
@@ -177,7 +177,7 @@ router.post(
   (req, res) => ClinicalArtifactFhirController.createVitalRecord(req, res),
 );
 
-router.get(
+router.post(
   "/organisation/:organisationId/vital-record/:vitalRecordId",
   authorizeCognito,
   withOrgPermissions(),

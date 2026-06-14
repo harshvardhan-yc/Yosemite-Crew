@@ -72,12 +72,54 @@ const findRoute = (path: string, method: string) => {
 describe("clinical-artifact.fhir.router", () => {
   it("exposes the clinical artifact routes", () => {
     expect(
-      findRoute("/organisation/:organisationId/soap-note/:soapNoteId", "get"),
+      findRoute(
+        "/organisation/:organisationId/appointment/:appointmentId/soap-notes",
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        "/organisation/:organisationId/encounter/:encounterId/soap-notes",
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute("/organisation/:organisationId/soap-note/:soapNoteId", "post"),
     ).toBeDefined();
     expect(
       findRoute(
         "/organisation/:organisationId/appointment/:appointmentId/vital-records",
-        "get",
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        "/organisation/:organisationId/encounter/:encounterId/vital-records",
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        "/organisation/:organisationId/appointment/:appointmentId/prescriptions",
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        "/organisation/:organisationId/prescription/:prescriptionId",
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        "/organisation/:organisationId/discharge-summary/:dischargeSummaryId",
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        "/organisation/:organisationId/vital-record/:vitalRecordId",
+        "post",
       ),
     ).toBeDefined();
   });
@@ -96,7 +138,7 @@ describe("clinical-artifact.fhir.router", () => {
   it("rate limits discharge summary reads", () => {
     const route = findRoute(
       "/organisation/:organisationId/appointment/:appointmentId/discharge-summaries",
-      "get",
+      "post",
     );
 
     expect(route?.stack.map((layer) => layer.handle)).toContain(
