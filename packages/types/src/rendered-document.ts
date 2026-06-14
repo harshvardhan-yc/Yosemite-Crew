@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { ClinicalArtifactKind } from './clinical-artifact';
 import type { TemplateKind } from './template';
 
@@ -167,6 +166,15 @@ const normalizeSignatureText = (value?: string | null): string | null => {
   return normalized;
 };
 
+const createRenderedDocumentId = (): string => {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi?.randomUUID) {
+    return cryptoApi.randomUUID();
+  }
+
+  return `rendered-document-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
 export const buildRenderedDocumentPdfSnapshot = (
   document: Pick<RenderedDocument, 'kind' | 'source' | 'title'>,
   renderedAt = new Date()
@@ -191,7 +199,7 @@ export const buildRenderedDocumentDraft = (input: BuildRenderedDocumentInput): R
   const now = new Date();
 
   return {
-    id: randomUUID(),
+    id: createRenderedDocumentId(),
     version: input.version ?? 1,
     kind,
     status: 'DRAFT',
