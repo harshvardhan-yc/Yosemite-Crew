@@ -352,11 +352,10 @@ const assertSoapNoteArtifact = (
 const toClinicalArtifactKind = <TKind extends ClinicalArtifactKind>(
   artifact: SoapNoteRecord["artifact"],
   kind: TKind,
-): ClinicalArtifactWithKind<TKind> =>
-  ({
-    ...artifact,
-    kind,
-  }) as ClinicalArtifactWithKind<TKind>;
+): ClinicalArtifactWithKind<TKind> => ({
+  ...artifact,
+  kind,
+});
 
 const buildPrescriptionRecord = (
   artifact: SoapNoteRecord["artifact"],

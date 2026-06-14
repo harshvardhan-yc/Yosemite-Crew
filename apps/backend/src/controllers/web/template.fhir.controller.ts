@@ -153,17 +153,14 @@ const createInstanceFromQuestionnaireResponse = async (
     template,
   );
 
-  const instanceUpdateData: {
-    data: Record<string, unknown>;
-    status?: never;
-  } = {
-    data: instanceInput.data as Record<string, unknown>,
-  };
-
-  if (!submit) {
-    (instanceUpdateData as { status?: never }).status =
-      instanceInput.status as never;
-  }
+  const instanceUpdateData = submit
+    ? {
+        data: instanceInput.data,
+      }
+    : {
+        data: instanceInput.data,
+        status: instanceInput.status,
+      };
 
   let instance = instanceId
     ? await TemplateService.updateInstance(
@@ -178,7 +175,7 @@ const createInstanceFromQuestionnaireResponse = async (
         caseId: instanceInput.caseId ?? undefined,
         encounterId: instanceInput.encounterId ?? undefined,
         authorId: instanceInput.authorId ?? userId,
-        data: instanceInput.data as Record<string, unknown>,
+        data: instanceInput.data,
       });
 
   if (submit) {

@@ -1,10 +1,22 @@
-import { randomUUID } from "node:crypto";
 import {
-  ClinicalArtifactKind,
   Prisma,
   RenderedDocumentSourceKind as PrismaRenderedDocumentSourceKind,
-  TemplateKind,
 } from "@prisma/client";
+import {
+  buildDocumentSignature as buildDocumentSignatureContract,
+  buildRenderedDocumentDraft as buildRenderedDocumentDraftContract,
+  buildRenderedDocumentPdfSnapshot,
+  isSignableRenderedDocumentKind,
+  signRenderedDocument as signRenderedDocumentContract,
+  type BuildRenderedDocumentInput,
+  type PersistRenderedDocumentInput,
+  type PersistRenderedDocumentSignatureInput,
+  type RenderedDocument,
+  type RenderedDocumentKind,
+  type RenderedDocumentSignature,
+  type RenderedDocumentSigning,
+  type SignRenderedDocumentInput,
+} from "@yosemite-crew/types";
 import { prisma } from "src/config/prisma";
 import { DocumensoService } from "src/services/documenso.service";
 import { renderRenderedDocumentPdf } from "src/services/rendered-document-renderer.service";
@@ -19,120 +31,23 @@ export class RenderedDocumentServiceError extends Error {
   }
 }
 
-export type RenderedDocumentKind =
-  | "FORM"
-  | "SOAP_NOTE"
-  | "PRESCRIPTION"
-  | "DISCHARGE_SUMMARY"
-  | "VITAL_RECORD"
-  | "TASK_TEMPLATE"
-  | "CARE_PATHWAY";
-
-export type RenderedDocumentSourceKind =
-  | "TEMPLATE_INSTANCE"
-  | "CLINICAL_ARTIFACT"
-  | "FORM_SUBMISSION";
-
-export type RenderedDocumentStatus = "DRAFT" | "SIGNED";
-
-export type DocumentSignatureSignerType = "PMS_USER" | "PARENT" | "SYSTEM";
-
-export type RenderedDocumentSigningStatus =
-  | "NOT_STARTED"
-  | "IN_PROGRESS"
-  | "SIGNED";
-
-export type RenderedDocumentSigningProvider = "DOCUMENSO";
-
-export type RenderedDocumentSigning = {
-  required: boolean;
-  provider: RenderedDocumentSigningProvider;
-  status: RenderedDocumentSigningStatus;
-  documentId?: string | null;
-  signerId?: string | null;
-  signerType?: DocumentSignatureSignerType | null;
-  signerEmail?: string | null;
-  signerName?: string | null;
-  signingUrl?: string | null;
-  pdf?: {
-    url?: string | null;
-  } | null;
-};
-
-export type RenderedDocumentSource = {
-  sourceKind: RenderedDocumentSourceKind;
-  sourceId: string;
-  organisationId: string;
-  templateKind: TemplateKind | ClinicalArtifactKind;
-  templateId?: string | null;
-  templateVersion?: number | null;
-  templateVersionId?: string | null;
-};
-
-export type RenderedDocumentSignature = {
-  documentId: string;
-  signerId: string;
-  signerType: DocumentSignatureSignerType;
-  signedAt: Date;
-  signatureText?: string | null;
-};
-
-export type RenderedDocument = {
-  id: string;
-  version: number;
-  kind: RenderedDocumentKind;
-  status: RenderedDocumentStatus;
-  title: string;
-  organisationId: string;
-  mimeType: "application/pdf";
-  signable: boolean;
-  source: RenderedDocumentSource;
-  pdf?: RenderedDocumentPdfSnapshot | null;
-  createdAt: Date;
-  updatedAt: Date;
-  signedAt?: Date | null;
-  signedBy?: string | null;
-  signing?: RenderedDocumentSigning | null;
-  signature?: RenderedDocumentSignature | null;
-};
-
-export type RenderedDocumentPdfSnapshot = {
-  version: 1;
-  renderer: "rendered-document-renderer.service";
-  renderedAt: string;
-  title: string;
-  mimeType: "application/pdf";
-  documentKind: RenderedDocumentKind;
-  source: RenderedDocumentSource;
-};
-
-export type BuildRenderedDocumentInput = {
-  title: string;
-  source: RenderedDocumentSource;
-  version?: number;
-};
-
-export type SignRenderedDocumentInput = {
-  signerId: string;
-  signerType: DocumentSignatureSignerType;
-  signatureText?: string | null;
-  signedAt?: Date;
-};
-
-export type PersistRenderedDocumentInput = BuildRenderedDocumentInput & {
-  templateInstanceId?: string;
-  clinicalArtifactId?: string;
-  pdfUrl?: string | null;
-  pdf?: unknown;
-};
-
-export type PersistRenderedDocumentSignatureInput =
-  SignRenderedDocumentInput & {
-    renderedDocumentId: string;
-    organisationId?: string;
-    signerEmail: string;
-    signerName: string;
-  };
+export type {
+  BuildRenderedDocumentInput,
+  DocumentSignatureSignerType,
+  PersistRenderedDocumentInput,
+  PersistRenderedDocumentSignatureInput,
+  RenderedDocument,
+  RenderedDocumentKind,
+  RenderedDocumentPdfSnapshot,
+  RenderedDocumentSignature,
+  RenderedDocumentSigning,
+  RenderedDocumentSigningProvider,
+  RenderedDocumentSigningStatus,
+  RenderedDocumentSource,
+  RenderedDocumentSourceKind,
+  RenderedDocumentStatus,
+  SignRenderedDocumentInput,
+} from "@yosemite-crew/types";
 
 type RenderedDocumentWriteClient = Pick<
   Prisma.TransactionClient,
@@ -145,13 +60,39 @@ type PersistedRenderedDocument = Prisma.RenderedDocumentGetPayload<{
 
 const renderedDocumentClient = prisma as unknown as RenderedDocumentWriteClient;
 
-const SIGNABLE_RENDERED_DOCUMENT_KINDS = new Set<RenderedDocumentKind>([
-  "FORM",
-  "SOAP_NOTE",
-  "PRESCRIPTION",
-  "DISCHARGE_SUMMARY",
-  "VITAL_RECORD",
-]);
+const translateRenderedDocumentContractError = (
+  error: unknown,
+): RenderedDocumentServiceError => {
+  if (error instanceof RenderedDocumentServiceError) {
+    return error;
+  }
+
+  const message =
+    error instanceof Error ? error.message : "Invalid rendered document input";
+
+  switch (message) {
+    case "Document kind is not signable":
+    case "Document is already signed":
+      return new RenderedDocumentServiceError(message, 409);
+    case "Invalid title":
+    case "Invalid organisationId":
+    case "Invalid sourceId":
+    case "Invalid documentId":
+    case "Invalid signerId":
+    case "Invalid signatureText":
+    case "Unsupported rendered document kind":
+    default:
+      return new RenderedDocumentServiceError(message, 400);
+  }
+};
+
+const withRenderedDocumentServiceError = <T>(fn: () => T): T => {
+  try {
+    return fn();
+  } catch (error) {
+    throw translateRenderedDocumentContractError(error);
+  }
+};
 
 const normalizeRequiredString = (value: string, fieldName: string): string => {
   if (typeof value !== "string") {
@@ -166,134 +107,33 @@ const normalizeRequiredString = (value: string, fieldName: string): string => {
   return normalized;
 };
 
-const toRenderedDocumentKind = (
-  kind: TemplateKind | ClinicalArtifactKind,
-): RenderedDocumentKind => {
-  switch (kind) {
-    case TemplateKind.FORM:
-      return "FORM";
-    case TemplateKind.SOAP_NOTE:
-      return "SOAP_NOTE";
-    case TemplateKind.PRESCRIPTION:
-      return "PRESCRIPTION";
-    case TemplateKind.DISCHARGE_SUMMARY:
-      return "DISCHARGE_SUMMARY";
-    case TemplateKind.VITAL_RECORD:
-      return "VITAL_RECORD";
-    case TemplateKind.TASK_TEMPLATE:
-      return "TASK_TEMPLATE";
-    case TemplateKind.CARE_PATHWAY:
-      return "CARE_PATHWAY";
-    default:
-      throw new RenderedDocumentServiceError(
-        "Unsupported rendered document kind",
-      );
-  }
-};
-
-const normalizeSignatureText = (value?: string | null): string | null => {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  const normalized = value.trim();
-  if (!normalized) {
-    throw new RenderedDocumentServiceError("Invalid signatureText");
-  }
-
-  return normalized;
-};
-
-export const buildRenderedDocumentPdfSnapshot = (
-  document: Pick<RenderedDocument, "kind" | "source" | "title">,
-  renderedAt = new Date(),
-): RenderedDocumentPdfSnapshot => ({
-  version: 1,
-  renderer: "rendered-document-renderer.service",
-  renderedAt: renderedAt.toISOString(),
-  title: document.title,
-  mimeType: "application/pdf",
-  documentKind: document.kind,
-  source: document.source,
-});
-
-export const isSignableRenderedDocumentKind = (
-  kind: RenderedDocumentKind,
-): boolean => SIGNABLE_RENDERED_DOCUMENT_KINDS.has(kind);
+export {
+  buildRenderedDocumentPdfSnapshot,
+  isSignableRenderedDocumentKind,
+} from "@yosemite-crew/types";
 
 export const buildRenderedDocumentDraft = (
   input: BuildRenderedDocumentInput,
-): RenderedDocument => {
-  const title = normalizeRequiredString(input.title, "title");
-  const organisationId = normalizeRequiredString(
-    input.source.organisationId,
-    "organisationId",
+): RenderedDocument =>
+  withRenderedDocumentServiceError(() =>
+    buildRenderedDocumentDraftContract(input),
   );
-  const sourceId = normalizeRequiredString(input.source.sourceId, "sourceId");
-  const kind = toRenderedDocumentKind(input.source.templateKind);
-  const now = new Date();
-
-  return {
-    id: randomUUID(),
-    version: input.version ?? 1,
-    kind,
-    status: "DRAFT",
-    title,
-    organisationId,
-    mimeType: "application/pdf",
-    signable: isSignableRenderedDocumentKind(kind),
-    source: {
-      ...input.source,
-      organisationId,
-      sourceId,
-    },
-    pdf: null,
-    createdAt: now,
-    updatedAt: now,
-    signedAt: null,
-    signedBy: null,
-    signing: null,
-    signature: null,
-  };
-};
 
 export const buildDocumentSignature = (
   documentId: string,
   input: SignRenderedDocumentInput,
-): RenderedDocumentSignature => ({
-  documentId: normalizeRequiredString(documentId, "documentId"),
-  signerId: normalizeRequiredString(input.signerId, "signerId"),
-  signerType: input.signerType,
-  signedAt: input.signedAt ?? new Date(),
-  signatureText: normalizeSignatureText(input.signatureText),
-});
+): RenderedDocumentSignature =>
+  withRenderedDocumentServiceError(() =>
+    buildDocumentSignatureContract(documentId, input),
+  );
 
 export const signRenderedDocument = (
   document: RenderedDocument,
   input: SignRenderedDocumentInput,
-): RenderedDocument => {
-  if (!document.signable) {
-    throw new RenderedDocumentServiceError(
-      "Document kind is not signable",
-      409,
-    );
-  }
-
-  if (document.status === "SIGNED") {
-    throw new RenderedDocumentServiceError("Document is already signed", 409);
-  }
-
-  const signature = buildDocumentSignature(document.id, input);
-
-  return {
-    ...document,
-    status: "SIGNED",
-    signedAt: signature.signedAt,
-    signedBy: signature.signerId,
-    signature,
-    updatedAt: signature.signedAt,
-  };
-};
+): RenderedDocument =>
+  withRenderedDocumentServiceError(() =>
+    signRenderedDocumentContract(document, input),
+  );
 
 const toRenderedDocumentCreateData = (
   input: PersistRenderedDocumentInput,
@@ -301,8 +141,7 @@ const toRenderedDocumentCreateData = (
 ): Prisma.RenderedDocumentUncheckedCreateInput => ({
   id: draft.id,
   organisationId: draft.organisationId,
-  sourceKind: draft.source
-    .sourceKind as unknown as PrismaRenderedDocumentSourceKind,
+  sourceKind: draft.source.sourceKind as PrismaRenderedDocumentSourceKind,
   sourceId: draft.source.sourceId,
   templateInstanceId: input.templateInstanceId ?? undefined,
   clinicalArtifactId: input.clinicalArtifactId ?? undefined,
@@ -378,7 +217,7 @@ export const signPersistedRenderedDocument = async (
     input.organisationId,
     client,
   );
-  const kind = toRenderedDocumentKind(existing.kind);
+  const kind = existing.kind as RenderedDocumentKind;
 
   if (!isSignableRenderedDocumentKind(kind)) {
     throw new RenderedDocumentServiceError(
@@ -420,7 +259,7 @@ export const signPersistedRenderedDocument = async (
       sourceKind: existing.sourceKind,
       sourceId: existing.sourceId,
       organisationId: existing.organisationId,
-      templateKind: existing.kind as TemplateKind | ClinicalArtifactKind,
+      templateKind: existing.kind as RenderedDocumentKind,
       templateId: existing.templateId,
       templateVersion: existing.templateVersion,
       templateVersionId: existing.templateVersionId,
@@ -433,7 +272,7 @@ export const signPersistedRenderedDocument = async (
       sourceKind: existing.sourceKind,
       sourceId: existing.sourceId,
       organisationId: existing.organisationId,
-      templateKind: existing.kind as TemplateKind | ClinicalArtifactKind,
+      templateKind: existing.kind as RenderedDocumentKind,
       templateId: existing.templateId,
       templateVersion: existing.templateVersion,
       templateVersionId: existing.templateVersionId,

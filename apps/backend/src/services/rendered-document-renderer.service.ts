@@ -8,7 +8,7 @@ import {
   type PdfBranding,
   type PdfTemplateKind,
 } from "src/services/formPDF.service";
-import type { RenderedDocumentSource } from "src/services/rendered-document.service";
+import type { RenderedDocumentSource } from "@yosemite-crew/types";
 
 type RenderedDocumentPdfSource = {
   title: string;

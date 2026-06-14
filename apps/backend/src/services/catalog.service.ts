@@ -407,7 +407,7 @@ const PRODUCT_CODE_PREFIXES: Record<ProductKind, string> = {
 const MAX_PACKAGE_NESTING_DEPTH = 3;
 
 const escapeRegExp = (value: string) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 const ensureSpecialityExists = async (
   organisationId: string,
@@ -494,7 +494,7 @@ const generateProductCode = async (
     select: { code: true },
   });
 
-  const matcher = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)$`);
+  const matcher = new RegExp(String.raw`^${escapeRegExp(prefix)}-(\d+)$`);
   const maxValue = codes.reduce((max, row) => {
     const match = row.code ? matcher.exec(row.code) : null;
     if (!match) return max;
@@ -819,7 +819,7 @@ const ensurePackageItemsValid = async (params: {
   );
   for (const item of params.packageItems) {
     const child = childMap.get(item.childProductItemId);
-    if (!child || !child.isActive) {
+    if (!child?.isActive) {
       throw new CatalogServiceError(
         "One or more package child items are unavailable.",
         409,
@@ -1611,13 +1611,13 @@ export const CatalogService = {
     assertPriceConfig(input.price);
 
     const nextOrganisationId =
-      input.organisationId != null
-        ? requireSafeString(input.organisationId, "organisationId")
-        : existing.organisationId;
+      input.organisationId == null
+        ? existing.organisationId
+        : requireSafeString(input.organisationId, "organisationId");
     const nextSpecialityId =
-      input.specialityId !== undefined
-        ? optionalSafeString(input.specialityId)
-        : existing.specialityId;
+      input.specialityId === undefined
+        ? existing.specialityId
+        : optionalSafeString(input.specialityId);
     await ensureSpecialityExists(nextOrganisationId, nextSpecialityId);
     if (nextKind === "PACKAGE" && packageItems) {
       await ensurePackageItemsValid({
@@ -1628,7 +1628,7 @@ export const CatalogService = {
     }
 
     const nextCode =
-      input.code !== undefined ? optionalSafeString(input.code) : existing.code;
+      input.code === undefined ? existing.code : optionalSafeString(input.code);
     const resolvedCode =
       nextCode ?? (await generateProductCode(nextOrganisationId, nextKind));
     await ensureCodeUniqueness({
@@ -1642,23 +1642,23 @@ export const CatalogService = {
         where: { id: productId },
         data: {
           organisationId:
-            input.organisationId != null ? nextOrganisationId : undefined,
+            input.organisationId == null ? undefined : nextOrganisationId,
           name:
-            input.name != null
-              ? requireSafeString(input.name, "name")
-              : undefined,
+            input.name == null
+              ? undefined
+              : requireSafeString(input.name, "name"),
           description:
-            input.description !== undefined
-              ? (optionalSafeString(input.description) ?? null)
-              : undefined,
+            input.description === undefined
+              ? undefined
+              : (optionalSafeString(input.description) ?? null),
           code: resolvedCode,
           kind: input.kind,
           specialityId:
-            input.specialityId !== undefined ? nextSpecialityId : undefined,
+            input.specialityId === undefined ? undefined : nextSpecialityId,
           legacyServiceId:
-            input.legacyServiceId !== undefined
-              ? optionalSafeString(input.legacyServiceId)
-              : undefined,
+            input.legacyServiceId === undefined
+              ? undefined
+              : optionalSafeString(input.legacyServiceId),
           isActive: input.isActive,
           version: {
             increment: 1,
@@ -2426,20 +2426,20 @@ export const CatalogService = {
       ? requireSafeString(input.name, "name")
       : existing.name;
     const headUserId =
-      input.headUserId !== undefined
-        ? (optionalSafeString(input.headUserId) ?? null)
-        : existing.headUserId;
+      input.headUserId === undefined
+        ? existing.headUserId
+        : (optionalSafeString(input.headUserId) ?? null);
     const teamMemberIds =
-      input.teamMemberIds !== undefined
+      input.teamMemberIds === undefined
         ? Array.from(
             new Set([
-              ...sanitizeTeamMemberIds(input.teamMemberIds),
+              ...(existing.memberUserIds ?? []),
               ...(headUserId ? [headUserId] : []),
             ]),
           )
         : Array.from(
             new Set([
-              ...(existing.memberUserIds ?? []),
+              ...sanitizeTeamMemberIds(input.teamMemberIds),
               ...(headUserId ? [headUserId] : []),
             ]),
           );
@@ -2457,15 +2457,15 @@ export const CatalogService = {
         name,
         headUserId,
         headName:
-          input.headName !== undefined
-            ? optionalSafeString(input.headName)
-            : existing.headName,
+          input.headName === undefined
+            ? existing.headName
+            : optionalSafeString(input.headName),
         headProfilePicUrl:
-          input.headProfilePicUrl !== undefined
-            ? optionalSafeString(input.headProfilePicUrl)
-            : existing.headProfilePicUrl,
+          input.headProfilePicUrl === undefined
+            ? existing.headProfilePicUrl
+            : optionalSafeString(input.headProfilePicUrl),
         memberUserIds: teamMemberIds,
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
       },
     });
   },
