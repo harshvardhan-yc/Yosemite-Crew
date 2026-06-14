@@ -182,10 +182,17 @@ export const updateTemplateInstanceSchema = z.object({
   generatedPdf: z.record(z.unknown()).optional().nullable(),
 });
 
+export const updateTemplateCatalogLinksSchema = z.object({
+  catalogItemIds: z.array(z.string().trim().min(1)).default([]),
+});
+
 type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 type CreateTemplateInstanceInput = z.infer<typeof createTemplateInstanceSchema>;
 type UpdateTemplateInstanceInput = z.infer<typeof updateTemplateInstanceSchema>;
+type UpdateTemplateCatalogLinksInput = z.infer<
+  typeof updateTemplateCatalogLinksSchema
+>;
 
 const ensureId = (value: string, field: string) => {
   const trimmed = value.trim();
@@ -261,6 +268,27 @@ const resolveVersionPayload = (template: {
     template.publishedVersion != null &&
     template.publishedVersion === template.latestVersion,
   targetVersion: template.latestVersion,
+});
+
+const templateInclude = {
+  versions: {
+    orderBy: { version: "desc" as const },
+  },
+  catalogLinks: {
+    select: {
+      catalogItemId: true,
+    },
+  },
+};
+
+const withCatalogItemIds = <
+  T extends { catalogLinks?: Array<{ catalogItemId: string }> },
+>(
+  template: T,
+) => ({
+  ...template,
+  catalogItemIds:
+    template.catalogLinks?.map((link) => link.catalogItemId) ?? [],
 });
 
 const assertTemplateOrganisation = (
@@ -573,6 +601,91 @@ export const TemplateService = {
     return TemplateService.getById(template.id);
   },
 
+  async updateCatalogLinks(
+    templateId: string,
+    input: UpdateTemplateCatalogLinksInput,
+    organisationId?: string,
+  ) {
+    const parsed = updateTemplateCatalogLinksSchema.parse(input);
+    const template = await loadTemplateOrThrow(templateId, organisationId);
+
+    if (template.ownership === "YC_LIBRARY") {
+      throw new TemplateServiceError(
+        "YC library templates cannot own catalog links.",
+        400,
+      );
+    }
+
+    const uniqueCatalogItemIds = Array.from(new Set(parsed.catalogItemIds));
+    if (uniqueCatalogItemIds.length === 0) {
+      await prisma.templateCatalogLink.deleteMany({
+        where: { templateId: template.id },
+      });
+      return TemplateService.getById(template.id, organisationId);
+    }
+
+    const organisationFilter =
+      template.organisationId != null
+        ? { organisationId: template.organisationId }
+        : {};
+    const catalogItems = await prisma.productItem.findMany({
+      where: {
+        id: { in: uniqueCatalogItemIds },
+        ...organisationFilter,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (catalogItems.length !== uniqueCatalogItemIds.length) {
+      throw new TemplateServiceError(
+        "One or more catalog items were not found for this organisation.",
+        404,
+      );
+    }
+
+    const existingLinks = await prisma.templateCatalogLink.findMany({
+      where: {
+        catalogItemId: { in: uniqueCatalogItemIds },
+        templateId: { not: template.id },
+      },
+      select: {
+        catalogItemId: true,
+        template: {
+          select: {
+            kind: true,
+          },
+        },
+      },
+    });
+
+    const conflicts = existingLinks.filter(
+      (link) => link.template.kind === template.kind,
+    );
+    if (conflicts.length > 0) {
+      throw new TemplateServiceError(
+        "Each catalog item can only be linked to one template per kind.",
+        400,
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.templateCatalogLink.deleteMany({
+        where: { templateId: template.id },
+      });
+
+      await tx.templateCatalogLink.createMany({
+        data: uniqueCatalogItemIds.map((catalogItemId) => ({
+          templateId: template.id,
+          catalogItemId,
+        })),
+      });
+    });
+
+    return TemplateService.getById(template.id, organisationId);
+  },
+
   async listForOrganisation(
     organisationId: string,
     filters?: {
@@ -590,15 +703,10 @@ export const TemplateService = {
         scope: filters?.scope,
       },
       orderBy: [{ updatedAt: "desc" }],
-      include: {
-        versions: {
-          orderBy: { version: "desc" },
-          take: 1,
-        },
-      },
+      include: templateInclude,
     });
 
-    return items;
+    return items.map(withCatalogItemIds);
   },
 
   async listLibrary(filters?: {
@@ -614,15 +722,10 @@ export const TemplateService = {
         scope: filters?.scope,
       },
       orderBy: [{ updatedAt: "desc" }],
-      include: {
-        versions: {
-          orderBy: { version: "desc" },
-          take: 1,
-        },
-      },
+      include: templateInclude,
     });
 
-    return items;
+    return items.map(withCatalogItemIds);
   },
 
   async listForUser(
@@ -644,25 +747,16 @@ export const TemplateService = {
         scope: filters?.scope,
       },
       orderBy: [{ updatedAt: "desc" }],
-      include: {
-        versions: {
-          orderBy: { version: "desc" },
-          take: 1,
-        },
-      },
+      include: templateInclude,
     });
 
-    return items;
+    return items.map(withCatalogItemIds);
   },
 
   async getById(templateId: string, organisationId?: string) {
     const template = await prisma.template.findUnique({
       where: { id: ensureId(templateId, "templateId") },
-      include: {
-        versions: {
-          orderBy: { version: "desc" },
-        },
-      },
+      include: templateInclude,
     });
 
     if (!template) {
@@ -671,7 +765,7 @@ export const TemplateService = {
 
     assertTemplateOrganisation(template, organisationId);
 
-    return template;
+    return withCatalogItemIds(template);
   },
 
   async createInstance(

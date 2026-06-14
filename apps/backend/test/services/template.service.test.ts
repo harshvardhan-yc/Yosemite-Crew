@@ -33,6 +33,14 @@ jest.mock("src/config/prisma", () => ({
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    productItem: {
+      findMany: jest.fn(),
+    },
+    templateCatalogLink: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+      findMany: jest.fn(),
+    },
     templateInstance: {
       create: jest.fn(),
       findUnique: jest.fn(),
@@ -71,6 +79,14 @@ describe("TemplateService", () => {
       findUnique: jest.Mock;
       update: jest.Mock;
     };
+    productItem: {
+      findMany: jest.Mock;
+    };
+    templateCatalogLink: {
+      deleteMany: jest.Mock;
+      createMany: jest.Mock;
+      findMany: jest.Mock;
+    };
     templateInstance: {
       create: jest.Mock;
       findUnique: jest.Mock;
@@ -95,6 +111,10 @@ describe("TemplateService", () => {
       }
       return undefined;
     });
+    mockedPrisma.productItem.findMany.mockResolvedValue([]);
+    mockedPrisma.templateCatalogLink.findMany.mockResolvedValue([]);
+    mockedPrisma.templateCatalogLink.deleteMany.mockResolvedValue({ count: 0 });
+    mockedPrisma.templateCatalogLink.createMany.mockResolvedValue({ count: 0 });
   });
 
   it("creates a template with an initial version", async () => {
@@ -544,6 +564,70 @@ describe("TemplateService", () => {
         where: { id: "ver-2" },
       }),
     );
+  });
+
+  it("updates catalog links from the template side", async () => {
+    const baseTemplate = {
+      id: templateId,
+      organisationId,
+      ownerUserId: null,
+      ownership: "ORG_TEMPLATE",
+      kind: "SOAP_NOTE",
+      name: "SOAP note",
+      description: null,
+      status: "DRAFT",
+      scope: "ORGANISATION",
+      rules: null,
+      latestVersion: 1,
+      publishedVersion: null,
+      createdBy: "creator-1",
+      updatedBy: "creator-1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      versions: [{ version: 1 }],
+      catalogLinks: [],
+    };
+
+    mockedPrisma.template.findUnique
+      .mockResolvedValueOnce(baseTemplate)
+      .mockResolvedValueOnce({
+        ...baseTemplate,
+        catalogLinks: [{ catalogItemId: "svc-1" }, { catalogItemId: "pkg-1" }],
+      });
+    mockedPrisma.productItem.findMany.mockResolvedValueOnce([
+      { id: "svc-1" },
+      { id: "pkg-1" },
+    ]);
+    mockedPrisma.templateCatalogLink.findMany.mockResolvedValueOnce([]);
+
+    const result = await TemplateService.updateCatalogLinks(
+      templateId,
+      { catalogItemIds: ["svc-1", "pkg-1"] },
+      organisationId,
+    );
+
+    expect(mockedPrisma.productItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ["svc-1", "pkg-1"] },
+          organisationId,
+        }),
+      }),
+    );
+    expect(mockedPrisma.templateCatalogLink.deleteMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { templateId },
+      }),
+    );
+    expect(mockedPrisma.templateCatalogLink.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          { templateId, catalogItemId: "svc-1" },
+          { templateId, catalogItemId: "pkg-1" },
+        ],
+      }),
+    );
+    expect(result.catalogItemIds).toEqual(["svc-1", "pkg-1"]);
   });
 
   it("creates an instance from the published version", async () => {

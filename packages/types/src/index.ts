@@ -148,6 +148,7 @@ export type {
   CatalogFHIRInput,
   CatalogFHIRResource,
   CatalogTab,
+  CatalogTemplateBinding,
   AppointmentKind,
   CatalogPricePolicy,
   CatalogSearchItem,

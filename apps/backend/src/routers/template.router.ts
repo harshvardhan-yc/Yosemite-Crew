@@ -52,6 +52,14 @@ router.patch(
   (req, res) => TemplateController.update(req, res),
 );
 
+router.patch(
+  "/pms/templates/organisation/:organisationId/:templateId/catalog-links",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission(["forms:edit:any"]),
+  (req, res) => TemplateController.updateCatalogLinks(req, res),
+);
+
 router.post(
   "/pms/templates/organisation/:organisationId/:templateId/publish",
   authorizeCognito,

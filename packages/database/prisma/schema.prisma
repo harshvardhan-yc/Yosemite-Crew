@@ -1578,6 +1578,7 @@ model Template {
 
   versions           TemplateVersion[]
   instances          TemplateInstance[]
+  catalogLinks       TemplateCatalogLink[]
 
   @@index([organisationId, ownership, kind, status])
   @@index([organisationId, scope])
@@ -1603,6 +1604,21 @@ model TemplateVersion {
   @@unique([templateId, version])
   @@index([templateId])
   @@index([publishedAt])
+}
+
+model TemplateCatalogLink {
+  id             String   @id @default(uuid())
+  templateId     String
+  catalogItemId  String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  template       Template   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  catalogItem    ProductItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, catalogItemId])
+  @@index([templateId])
+  @@index([catalogItemId])
 }
 
 model TemplateInstance {
@@ -1819,6 +1835,7 @@ model ProductItem {
   bookable        ProductBookable?
   package         ProductPackage?
   packageItems    ProductPackageItem[] @relation("ProductPackageComponent")
+  templateLinks   TemplateCatalogLink[]
 
   @@index([organisationId])
   @@index([organisationId, kind, isActive])

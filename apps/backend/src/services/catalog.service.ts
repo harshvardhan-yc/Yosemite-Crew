@@ -6,11 +6,13 @@ import type {
   CatalogPricePolicy,
   CatalogPackageSummary,
   CatalogTab,
+  CatalogTemplateBinding,
   PackageItemPricingMode,
   ProductKind,
   ResolvedCatalogItem,
   ResolvedCatalogSelection,
   SpecialityCatalogView,
+  TemplateKind,
 } from "@yosemite-crew/types";
 import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
@@ -1270,8 +1272,42 @@ const buildResolvedItem = (params: {
   packageProductItemId: params.packageProductItemId ?? null,
 });
 
+const resolveSelectionTemplateKinds = (params: {
+  productKind: ProductKind;
+  appointmentKinds: AppointmentKind[];
+}): TemplateKind[] => {
+  const templateKinds: TemplateKind[] = [];
+
+  const pushUnique = (templateKind: TemplateKind) => {
+    if (!templateKinds.includes(templateKind)) {
+      templateKinds.push(templateKind);
+    }
+  };
+
+  if (params.productKind === "MEDICATION") {
+    pushUnique("PRESCRIPTION");
+    return templateKinds;
+  }
+
+  if (params.productKind === "PACKAGE") {
+    if (params.appointmentKinds.includes("INPATIENT")) {
+      pushUnique("CARE_PATHWAY");
+      pushUnique("SOAP_NOTE");
+      pushUnique("DISCHARGE_SUMMARY");
+      return templateKinds;
+    }
+
+    pushUnique("SOAP_NOTE");
+    return templateKinds;
+  }
+
+  pushUnique("SOAP_NOTE");
+  return templateKinds;
+};
+
 export const resolveCatalogSelectionFromRecord = (
   product: ProductRecord,
+  templateBindings: CatalogTemplateBinding[] = [],
 ): ResolvedCatalogSelection => {
   if (!product.isActive) {
     throw new CatalogServiceError("Selected product is inactive.", 400);
@@ -1280,6 +1316,10 @@ export const resolveCatalogSelectionFromRecord = (
   const appointmentKinds = toAppointmentKinds(product.bookable);
   const parentPrice = getDefaultPrice(product.prices);
   const isBookable = appointmentKinds.length > 0;
+  const templateKinds = resolveSelectionTemplateKinds({
+    productKind: product.kind,
+    appointmentKinds,
+  });
 
   if (product.kind !== "PACKAGE") {
     const parentAmounts = computeLineAmounts({
@@ -1305,6 +1345,8 @@ export const resolveCatalogSelectionFromRecord = (
       additionalDiscountAmount: 0,
       finalAmount: parentAmounts.finalAmount,
       breakdownItemCount: 1,
+      templateKinds,
+      templateBindings,
       billingItems: [
         buildResolvedItem({
           productItemId: product.id,
@@ -1452,6 +1494,8 @@ export const resolveCatalogSelectionFromRecord = (
     additionalDiscountAmount,
     finalAmount,
     breakdownItemCount: billingItems.length + includedItems.length,
+    templateKinds,
+    templateBindings,
     billingItems,
     includedItems,
   };
@@ -1486,6 +1530,43 @@ const productSelectionInclude = {
   },
 };
 
+const loadTemplateBindingsForProduct = async (params: {
+  productItemId: string;
+  templateKinds: TemplateKind[];
+}) => {
+  if (params.templateKinds.length === 0) {
+    return [];
+  }
+
+  const links = await prisma.templateCatalogLink.findMany({
+    where: {
+      catalogItemId: params.productItemId,
+      template: {
+        kind: {
+          in: params.templateKinds,
+        },
+      },
+    },
+    include: {
+      template: {
+        select: {
+          id: true,
+          kind: true,
+          latestVersion: true,
+          publishedVersion: true,
+        },
+      },
+    },
+  });
+
+  return links.map<CatalogTemplateBinding>((link) => ({
+    templateKind: link.template.kind,
+    templateId: link.template.id,
+    templateVersion:
+      link.template.publishedVersion ?? link.template.latestVersion,
+  }));
+};
+
 export const CatalogService = {
   async createProduct(input: CatalogProductUpsertInput) {
     const organisationId = requireSafeString(
@@ -1518,57 +1599,59 @@ export const CatalogService = {
       code: resolvedCode,
     });
 
+    const createData = {
+      organisationId,
+      name,
+      description: description ?? undefined,
+      code: resolvedCode,
+      kind: input.kind,
+      specialityId: specialityId ?? undefined,
+      legacyServiceId: legacyServiceId ?? undefined,
+      isActive: input.isActive ?? true,
+      prices: input.price
+        ? {
+            create: {
+              unitPrice: input.price.unitPrice,
+              currency: input.price.currency ?? undefined,
+              defaultDiscountPercent:
+                input.price.defaultDiscountPercent ?? undefined,
+              maxDiscountPercent: input.price.maxDiscountPercent ?? undefined,
+              isDefault: true,
+            },
+          }
+        : undefined,
+      bookable: input.bookable
+        ? {
+            create: {
+              durationMinutes: input.bookable.durationMinutes,
+              supportsOutpatient: input.bookable.supportsOutpatient ?? true,
+              supportsInpatient: input.bookable.supportsInpatient ?? false,
+            },
+          }
+        : undefined,
+      package:
+        input.kind === "PACKAGE"
+          ? {
+              create: {
+                leadCount: packageSummary?.leadCount ?? 1,
+                supportCount: packageSummary?.supportCount ?? 0,
+                additionalDiscountPercent:
+                  packageSummary?.additionalDiscountPercent ?? 0,
+                items:
+                  packageItems && packageItems.length > 0
+                    ? {
+                        create: packageItems,
+                      }
+                    : undefined,
+              } satisfies Prisma.ProductPackageCreateWithoutProductItemInput,
+            }
+          : undefined,
+    } satisfies Prisma.ProductItemCreateInput;
+
     const created = (await prisma.productItem.create({
-      data: {
-        organisationId,
-        name,
-        description: description ?? undefined,
-        code: resolvedCode,
-        kind: input.kind,
-        specialityId: specialityId ?? undefined,
-        legacyServiceId: legacyServiceId ?? undefined,
-        isActive: input.isActive ?? true,
-        prices: input.price
-          ? {
-              create: {
-                unitPrice: input.price.unitPrice,
-                currency: input.price.currency ?? undefined,
-                defaultDiscountPercent:
-                  input.price.defaultDiscountPercent ?? undefined,
-                maxDiscountPercent: input.price.maxDiscountPercent ?? undefined,
-                isDefault: true,
-              },
-            }
-          : undefined,
-        bookable: input.bookable
-          ? {
-              create: {
-                durationMinutes: input.bookable.durationMinutes,
-                supportsOutpatient: input.bookable.supportsOutpatient ?? true,
-                supportsInpatient: input.bookable.supportsInpatient ?? false,
-              },
-            }
-          : undefined,
-        package:
-          input.kind === "PACKAGE"
-            ? {
-                create: {
-                  leadCount: packageSummary?.leadCount ?? 1,
-                  supportCount: packageSummary?.supportCount ?? 0,
-                  additionalDiscountPercent:
-                    packageSummary?.additionalDiscountPercent ?? 0,
-                  items:
-                    packageItems && packageItems.length > 0
-                      ? {
-                          create: packageItems,
-                        }
-                      : undefined,
-                } satisfies Prisma.ProductPackageCreateWithoutProductItemInput,
-              }
-            : undefined,
-      },
+      data: createData,
       include: productSelectionInclude,
-    })) as ProductRecord;
+    })) as unknown as ProductRecord;
 
     return mapProductRecordToView(created);
   },
@@ -1638,32 +1721,34 @@ export const CatalogService = {
     });
 
     const updated = await prisma.$transaction(async (tx) => {
+      const updateData = {
+        organisationId:
+          input.organisationId == null ? undefined : nextOrganisationId,
+        name:
+          input.name == null
+            ? undefined
+            : requireSafeString(input.name, "name"),
+        description:
+          input.description === undefined
+            ? undefined
+            : (optionalSafeString(input.description) ?? null),
+        code: resolvedCode,
+        kind: input.kind,
+        specialityId:
+          input.specialityId === undefined ? undefined : nextSpecialityId,
+        legacyServiceId:
+          input.legacyServiceId === undefined
+            ? undefined
+            : optionalSafeString(input.legacyServiceId),
+        isActive: input.isActive,
+        version: {
+          increment: 1,
+        },
+      } satisfies Prisma.ProductItemUpdateInput;
+
       await tx.productItem.update({
         where: { id: productId },
-        data: {
-          organisationId:
-            input.organisationId == null ? undefined : nextOrganisationId,
-          name:
-            input.name == null
-              ? undefined
-              : requireSafeString(input.name, "name"),
-          description:
-            input.description === undefined
-              ? undefined
-              : (optionalSafeString(input.description) ?? null),
-          code: resolvedCode,
-          kind: input.kind,
-          specialityId:
-            input.specialityId === undefined ? undefined : nextSpecialityId,
-          legacyServiceId:
-            input.legacyServiceId === undefined
-              ? undefined
-              : optionalSafeString(input.legacyServiceId),
-          isActive: input.isActive,
-          version: {
-            increment: 1,
-          },
-        },
+        data: updateData,
       });
 
       if (input.price !== undefined) {
@@ -1779,7 +1864,7 @@ export const CatalogService = {
       return (await tx.productItem.findUnique({
         where: { id: productId },
         include: productSelectionInclude,
-      })) as ProductRecord | null;
+      })) as unknown as ProductRecord | null;
     });
 
     if (!updated) {
@@ -1797,7 +1882,7 @@ export const CatalogService = {
         ...(organisationId ? { organisationId } : {}),
       },
       include: productSelectionInclude,
-    })) as ProductRecord | null;
+    })) as unknown as ProductRecord | null;
 
     if (!product) {
       throw new CatalogServiceError("Product not found.", 404);
@@ -1815,7 +1900,7 @@ export const CatalogService = {
         ...(organisationId ? { organisationId } : {}),
       },
       include: productSelectionInclude,
-    })) as ProductRecord | null;
+    })) as unknown as ProductRecord | null;
 
     if (!product) {
       throw new CatalogServiceError("Package not found.", 404);
@@ -1876,7 +1961,7 @@ export const CatalogService = {
       },
       include: productSelectionInclude,
       orderBy: [{ name: "asc" }],
-    })) as ProductRecord[];
+    })) as unknown as ProductRecord[];
 
     return products.map(mapProductRecordToView);
   },
@@ -1912,7 +1997,7 @@ export const CatalogService = {
       },
       include: productSelectionInclude,
       orderBy: [{ name: "asc" }],
-    })) as ProductRecord[];
+    })) as unknown as ProductRecord[];
 
     const services = products
       .filter((product) => product.kind !== "PACKAGE")
@@ -1938,13 +2023,22 @@ export const CatalogService = {
         ...(organisationId ? { organisationId } : {}),
       },
       include: productSelectionInclude,
-    })) as ProductRecord | null;
+    })) as unknown as ProductRecord | null;
 
     if (!product) {
       throw new CatalogServiceError("Product not found.", 404);
     }
 
-    return resolveCatalogSelectionFromRecord(product);
+    const templateKinds = resolveSelectionTemplateKinds({
+      productKind: product.kind,
+      appointmentKinds: toAppointmentKinds(product.bookable),
+    });
+    const templateBindings = await loadTemplateBindingsForProduct({
+      productItemId: product.id,
+      templateKinds,
+    });
+
+    return resolveCatalogSelectionFromRecord(product, templateBindings);
   },
 
   async getOrganisationSummary(
@@ -2122,7 +2216,7 @@ export const CatalogService = {
       },
       include: productSelectionInclude,
       orderBy: [{ name: "asc" }],
-    })) as ProductRecord[];
+    })) as unknown as ProductRecord[];
 
     return {
       services: products
@@ -2223,49 +2317,49 @@ export const CatalogService = {
         : Promise.resolve(null),
     ]);
 
-    const mappedProducts = (products as ProductRecord[]).map<CatalogSearchItem>(
-      (product) => {
-        const row = mapProductRecordToCatalogListRow(product);
-        const blockReason =
-          params.excludePackageId && product.kind === "PACKAGE"
-            ? product.id === params.excludePackageId
-              ? "Current package cannot include itself."
-              : packageGraph &&
-                  packageContainsTarget(
-                    packageGraph,
-                    product.id,
-                    params.excludePackageId,
-                  )
-                ? "Adding this package would create a cycle."
-                : null
-            : null;
+    const mappedProducts = (
+      products as unknown as ProductRecord[]
+    ).map<CatalogSearchItem>((product) => {
+      const row = mapProductRecordToCatalogListRow(product);
+      const blockReason =
+        params.excludePackageId && product.kind === "PACKAGE"
+          ? product.id === params.excludePackageId
+            ? "Current package cannot include itself."
+            : packageGraph &&
+                packageContainsTarget(
+                  packageGraph,
+                  product.id,
+                  params.excludePackageId,
+                )
+              ? "Adding this package would create a cycle."
+              : null
+          : null;
 
-        return {
-          id: product.id,
-          organisationId: product.organisationId,
-          specialityId: product.specialityId,
-          code: product.code,
-          name: product.name,
-          description: product.description,
-          kind: product.kind,
-          source: "CATALOG",
-          status: product.isActive ? "ACTIVE" : "ARCHIVED",
-          isBookable: row.isBookable,
-          durationMinutes: row.durationMinutes,
-          unitPrice: row.unitPrice ?? row.totalAmount,
-          currency: row.currency ?? null,
-          defaultDiscountPercent: row.defaultDiscountPercent ?? 0,
-          maxDiscountPercent: row.maxDiscountPercent ?? 0,
-          totalAmount: row.totalAmount,
-          canBeAddedToPackage: !blockReason,
-          blockReason,
-          nestedBreakdown:
-            params.includeNestedBreakdown && product.kind === "PACKAGE"
-              ? mapPackageRecordToDetail(product).items
-              : null,
-        };
-      },
-    );
+      return {
+        id: product.id,
+        organisationId: product.organisationId,
+        specialityId: product.specialityId,
+        code: product.code,
+        name: product.name,
+        description: product.description,
+        kind: product.kind,
+        source: "CATALOG",
+        status: product.isActive ? "ACTIVE" : "ARCHIVED",
+        isBookable: row.isBookable,
+        durationMinutes: row.durationMinutes,
+        unitPrice: row.unitPrice ?? row.totalAmount,
+        currency: row.currency ?? null,
+        defaultDiscountPercent: row.defaultDiscountPercent ?? 0,
+        maxDiscountPercent: row.maxDiscountPercent ?? 0,
+        totalAmount: row.totalAmount,
+        canBeAddedToPackage: !blockReason,
+        blockReason,
+        nestedBreakdown:
+          params.includeNestedBreakdown && product.kind === "PACKAGE"
+            ? mapPackageRecordToDetail(product).items
+            : null,
+      };
+    });
 
     const mappedInventory = inventoryItems.map<CatalogSearchItem>((item) => ({
       id: item.id,

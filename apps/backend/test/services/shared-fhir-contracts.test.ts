@@ -1,8 +1,11 @@
 import {
   clinicalArtifactFhirMapper,
+  fromFHIRAppointment,
+  toFHIRAppointment,
   taskScheduleFhirMapper,
   templateMapper,
   taskFhirMapper,
+  type Appointment,
   type TemplateLike,
   type TemplateInstanceLike,
   type TaskLike,
@@ -121,6 +124,57 @@ describe("shared fhir contracts", () => {
     expect(created.assignedTo).toBe("user-2");
     expect(created.category).toBe("Vitals");
     expect(created.dueAt.toISOString()).toBe("2026-01-05T09:00:00.000Z");
+  });
+
+  it("round-trips appointment template defaults through the shared package", () => {
+    const appointment = {
+      companion: {
+        id: "comp-1",
+        name: "Buddy",
+        species: "Dog",
+        parent: {
+          id: "parent-1",
+          name: "Parent One",
+        },
+      },
+      organisationId: "org-1",
+      appointmentDate: new Date("2026-01-05T09:00:00.000Z"),
+      startTime: new Date("2026-01-05T09:00:00.000Z"),
+      endTime: new Date("2026-01-05T09:30:00.000Z"),
+      timeSlot: "09:00",
+      durationMinutes: 30,
+      status: "UPCOMING",
+      appointmentType: {
+        id: "service-1",
+        name: "Consultation",
+        speciality: {
+          id: "spec-1",
+          name: "Internal Medicine",
+        },
+      },
+      templateDefaults: [
+        {
+          templateKind: "SOAP_NOTE",
+          templateId: "tmpl-1",
+          templateVersion: 2,
+          source: "ORGANISATION_DEFAULT",
+        },
+      ],
+    } as Appointment;
+
+    const fhirAppointment = toFHIRAppointment(appointment);
+    const parsedAppointment = fromFHIRAppointment(fhirAppointment);
+
+    expect(
+      fhirAppointment.extension?.filter(
+        (extension) =>
+          extension.url ===
+          "https://yosemitecrew.com/fhir/StructureDefinition/appointment-template-defaults",
+      ),
+    ).toHaveLength(1);
+    expect(parsedAppointment.templateDefaults).toEqual(
+      appointment.templateDefaults,
+    );
   });
 
   it("round-trips questionnaire responses through the shared package", () => {

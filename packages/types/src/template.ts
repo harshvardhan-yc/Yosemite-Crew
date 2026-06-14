@@ -119,7 +119,12 @@ export interface TemplateLike {
   updatedBy: string;
   createdAt: Date;
   updatedAt: Date;
+  catalogItemIds?: string[];
   versions?: TemplateVersionLike[];
+}
+
+export interface TemplateCatalogLink {
+  catalogItemId: string;
 }
 
 export interface TemplateInstanceLike {

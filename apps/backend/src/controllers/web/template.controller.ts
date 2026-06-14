@@ -6,6 +6,7 @@ import {
   createTemplateSchema,
   TemplateService,
   TemplateServiceError,
+  updateTemplateCatalogLinksSchema,
   updateTemplateInstanceSchema,
   updateTemplateSchema,
 } from "src/services/template.service";
@@ -89,6 +90,20 @@ export const TemplateController = {
       const template = await TemplateService.archive(
         req.params.templateId,
         resolveUserId(req),
+        req.params.organisationId,
+      );
+      return res.json(template);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async updateCatalogLinks(req: Request, res: Response) {
+    try {
+      const body = updateTemplateCatalogLinksSchema.parse(req.body);
+      const template = await TemplateService.updateCatalogLinks(
+        req.params.templateId,
+        body,
         req.params.organisationId,
       );
       return res.json(template);
