@@ -3,6 +3,7 @@ import type { Router } from "express";
 const authorizeCognito = jest.fn((_req, _res, next) => next());
 const withOrgPermissions = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
+const dischargeSummaryLimiter = jest.fn((_req, _res, next) => next());
 
 const ClinicalArtifactFhirController = {
   listSoapNotesForAppointment: jest.fn(),
@@ -34,6 +35,11 @@ jest.mock("../../src/middlewares/auth", () => ({
 jest.mock("../../src/middlewares/rbac", () => ({
   withOrgPermissions,
   requirePermission,
+}));
+
+jest.mock("express-rate-limit", () => ({
+  __esModule: true,
+  default: jest.fn(() => dischargeSummaryLimiter),
 }));
 
 jest.mock(
@@ -85,5 +91,16 @@ describe("clinical-artifact.fhir.router", () => {
     expect(route?.stack.length).toBeGreaterThanOrEqual(3);
     expect(requirePermission).toHaveBeenCalledWith(["prescription:edit:any"]);
     expect(requirePermission).toHaveBeenCalledWith(["forms:view:any"]);
+  });
+
+  it("rate limits discharge summary reads", () => {
+    const route = findRoute(
+      "/organisation/:organisationId/appointment/:appointmentId/discharge-summaries",
+      "get",
+    );
+
+    expect(route?.stack.map((layer) => layer.handle)).toContain(
+      dischargeSummaryLimiter,
+    );
   });
 });
