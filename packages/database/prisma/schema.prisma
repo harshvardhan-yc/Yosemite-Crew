@@ -2210,6 +2210,55 @@ model InventoryStockMovement {
   @@index([batchId])
 }
 
+enum InventoryConsumptionSourceType {
+  PRESCRIPTION
+  PACKAGE
+  PROCEDURE
+}
+
+enum InventoryConsumptionAction {
+  CONSUME
+  RESERVE
+  RELEASE
+}
+
+model InventoryConsumptionRule {
+  id                 String                        @id @default(uuid())
+  organisationId     String
+  sourceType         InventoryConsumptionSourceType
+  sourceKey          String
+  inventoryItemId    String
+  quantityMultiplier Float                         @default(1)
+  notes              String?
+  active             Boolean                       @default(true)
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  @@unique([organisationId, sourceType, sourceKey, inventoryItemId])
+  @@index([organisationId, sourceType, sourceKey])
+  @@index([organisationId, inventoryItemId])
+}
+
+model InventoryConsumptionEvent {
+  id              String                        @id @default(uuid())
+  organisationId  String
+  sourceType      InventoryConsumptionSourceType
+  sourceId        String
+  sourceLineKey   String?
+  action          InventoryConsumptionAction     @default(CONSUME)
+  idempotencyKey  String                         @unique
+  inventoryItemId String
+  quantity        Int
+  status          String                         @default("APPLIED")
+  metadata        Json?
+  occurredAt      DateTime                       @default(now())
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
+
+  @@index([organisationId, sourceType, sourceId])
+  @@index([organisationId, inventoryItemId])
+}
+
 model BaseAvailability {
   id             String    @id @default(uuid())
   userId         String

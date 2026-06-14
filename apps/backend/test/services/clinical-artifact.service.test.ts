@@ -4,6 +4,12 @@ import {
   ClinicalArtifactServiceError,
 } from "../../src/services/clinical-artifact.service";
 
+jest.mock("../../src/services/inventory-consumption.service", () => ({
+  InventoryConsumptionService: {
+    consumePrescription: jest.fn(),
+  },
+}));
+
 jest.mock("src/config/prisma", () => ({
   prisma: {
     $transaction: jest.fn(),
@@ -91,6 +97,67 @@ describe("ClinicalArtifactService", () => {
       }
       return undefined;
     });
+  });
+
+  it("triggers inventory consumption when a prescription is signed", async () => {
+    mockedPrisma.clinicalArtifact.create.mockResolvedValueOnce({
+      id: artifactId,
+      organisationId,
+      kind: "PRESCRIPTION",
+      status: "SIGNED",
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: "enc-1",
+      templateId: "tmpl-2",
+      templateVersion: 4,
+      templateVersionId: "tmpl-ver-2",
+      authorId: "author-1",
+      signedBy: "author-1",
+      signedAt: new Date("2026-01-01T00:00:00.000Z"),
+      summary: "Rx summary",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    mockedPrisma.prescription.create.mockResolvedValueOnce({
+      id: "prescription-1",
+      artifactId,
+      medications: [
+        { inventoryItemId: "item-1", quantity: 2, sourceLineKey: "line-1" },
+      ],
+      instructions: { text: "Take daily" },
+      notes: null,
+      metadata: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    await ClinicalArtifactService.createPrescription({
+      organisationId,
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      templateId: "tmpl-2",
+      templateVersion: 4,
+      templateVersionId: "tmpl-ver-2",
+      authorId: "author-1",
+      status: "SIGNED",
+      medications: [
+        { inventoryItemId: "item-1", quantity: 2, sourceLineKey: "line-1" },
+      ],
+      instructions: { text: "Take daily" },
+      notes: null,
+      metadata: null,
+    });
+
+    const { InventoryConsumptionService } =
+      await import("../../src/services/inventory-consumption.service");
+    expect(
+      InventoryConsumptionService.consumePrescription,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId,
+        prescriptionId: "prescription-1",
+      }),
+    );
   });
 
   it("creates a SOAP note artifact with structured payload", async () => {

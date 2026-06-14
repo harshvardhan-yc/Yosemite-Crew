@@ -8,6 +8,7 @@ import {
   createRenderedDocumentRecord,
   type PersistRenderedDocumentInput,
 } from "src/services/rendered-document.service";
+import { InventoryConsumptionService } from "src/services/inventory-consumption.service";
 
 export class ClinicalArtifactServiceError extends Error {
   constructor(
@@ -100,6 +101,10 @@ type ClinicalPrisma = typeof prisma & {
 };
 
 const clinicalPrisma = prisma as ClinicalPrisma;
+
+const shouldConsumeInventoryForPrescription = (
+  status: ClinicalArtifactStatus,
+) => status === "SIGNED" || status === "COMPLETED";
 
 export type SoapNoteInput = ClinicalArtifactBaseInput & {
   subjective?: unknown;
@@ -717,6 +722,17 @@ export const ClinicalArtifactService = {
       return buildPrescriptionRecord(createdArtifact, createdPrescription);
     });
 
+    if (shouldConsumeInventoryForPrescription(artifact.artifact.status)) {
+      await InventoryConsumptionService.consumePrescription({
+        organisationId,
+        prescriptionId: artifact.prescription.id,
+        medications: artifact.prescription.medications,
+        metadata: artifact.prescription.metadata as
+          | Prisma.InputJsonValue
+          | undefined,
+      });
+    }
+
     return artifact;
   },
 
@@ -770,6 +786,17 @@ export const ClinicalArtifactService = {
 
       return buildPrescriptionRecord(artifact, prescription);
     });
+
+    if (shouldConsumeInventoryForPrescription(updated.artifact.status)) {
+      await InventoryConsumptionService.consumePrescription({
+        organisationId: updated.artifact.organisationId,
+        prescriptionId: updated.prescription.id,
+        medications: updated.prescription.medications,
+        metadata: updated.prescription.metadata as
+          | Prisma.InputJsonValue
+          | undefined,
+      });
+    }
 
     return updated;
   },
