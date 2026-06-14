@@ -83,6 +83,7 @@ describe("shared fhir contracts", () => {
       createdBy: "user-1",
       assignedBy: "user-1",
       assignedTo: "user-2",
+      assignedGroupId: "group-1",
       audience: "EMPLOYEE_TASK",
       source: "ORG_TEMPLATE",
       libraryTaskId: null,
@@ -122,6 +123,7 @@ describe("shared fhir contracts", () => {
       )?.valueString,
     ).toBe("template-1");
     expect(created.assignedTo).toBe("user-2");
+    expect(created.assignedGroupId).toBe("group-1");
     expect(created.category).toBe("Vitals");
     expect(created.dueAt.toISOString()).toBe("2026-01-05T09:00:00.000Z");
   });

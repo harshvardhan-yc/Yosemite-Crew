@@ -7,6 +7,7 @@ import {
 jest.mock("../../src/services/inventory-consumption.service", () => ({
   InventoryConsumptionService: {
     consumePrescription: jest.fn(),
+    releasePrescription: jest.fn(),
   },
 }));
 
@@ -384,6 +385,184 @@ describe("ClinicalArtifactService", () => {
       }),
     );
     expect(result.artifact.kind).toBe("PRESCRIPTION");
+  });
+
+  it("releases inventory when a signed prescription is voided", async () => {
+    const signedMedications = [
+      { inventoryItemId: "item-1", quantity: 2, sourceLineKey: "line-1" },
+    ];
+    mockedPrisma.prescription.findUnique.mockResolvedValueOnce({
+      id: "prescription-1",
+      artifactId,
+      medications: signedMedications,
+      instructions: { text: "Take daily" },
+      notes: null,
+      metadata: { source: "original" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      artifact: {
+        id: artifactId,
+        organisationId,
+        appointmentId: "appt-1",
+        caseId: null,
+        encounterId: "enc-1",
+        kind: "PRESCRIPTION",
+        status: "SIGNED",
+        templateId: "tmpl-2",
+        templateVersion: 4,
+        templateVersionId: "tmpl-ver-2",
+        authorId: "author-1",
+        signedBy: "author-1",
+        signedAt: new Date("2026-01-01T00:00:00.000Z"),
+        summary: "Rx summary",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+    mockedPrisma.clinicalArtifact.update.mockResolvedValueOnce({
+      id: artifactId,
+      organisationId,
+      kind: "PRESCRIPTION",
+      status: "VOID",
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: "enc-1",
+      templateId: "tmpl-2",
+      templateVersion: 4,
+      templateVersionId: "tmpl-ver-2",
+      authorId: "author-1",
+      signedBy: "author-1",
+      signedAt: new Date("2026-01-01T00:00:00.000Z"),
+      summary: "Rx summary",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+    mockedPrisma.prescription.update.mockResolvedValueOnce({
+      id: "prescription-1",
+      artifactId,
+      medications: signedMedications,
+      instructions: { text: "Take daily" },
+      notes: null,
+      metadata: { source: "original" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+
+    await ClinicalArtifactService.updatePrescription(
+      "prescription-1",
+      { status: "VOID" },
+      organisationId,
+    );
+
+    const { InventoryConsumptionService } =
+      await import("../../src/services/inventory-consumption.service");
+    expect(
+      InventoryConsumptionService.releasePrescription,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId,
+        prescriptionId: "prescription-1",
+        medications: signedMedications,
+      }),
+    );
+    expect(
+      InventoryConsumptionService.consumePrescription,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("reconciles inventory when a signed prescription is revised", async () => {
+    const originalMedications = [
+      { inventoryItemId: "item-1", quantity: 2, sourceLineKey: "line-1" },
+    ];
+    const revisedMedications = [
+      { inventoryItemId: "item-1", quantity: 3, sourceLineKey: "line-1" },
+    ];
+    mockedPrisma.prescription.findUnique.mockResolvedValueOnce({
+      id: "prescription-2",
+      artifactId,
+      medications: originalMedications,
+      instructions: { text: "Take daily" },
+      notes: null,
+      metadata: { source: "original" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      artifact: {
+        id: artifactId,
+        organisationId,
+        appointmentId: "appt-1",
+        caseId: null,
+        encounterId: "enc-1",
+        kind: "PRESCRIPTION",
+        status: "SIGNED",
+        templateId: "tmpl-2",
+        templateVersion: 4,
+        templateVersionId: "tmpl-ver-2",
+        authorId: "author-1",
+        signedBy: "author-1",
+        signedAt: new Date("2026-01-01T00:00:00.000Z"),
+        summary: "Rx summary",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+    mockedPrisma.clinicalArtifact.update.mockResolvedValueOnce({
+      id: artifactId,
+      organisationId,
+      kind: "PRESCRIPTION",
+      status: "SIGNED",
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: "enc-1",
+      templateId: "tmpl-2",
+      templateVersion: 4,
+      templateVersionId: "tmpl-ver-2",
+      authorId: "author-1",
+      signedBy: "author-1",
+      signedAt: new Date("2026-01-01T00:00:00.000Z"),
+      summary: "Rx summary",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+    mockedPrisma.prescription.update.mockResolvedValueOnce({
+      id: "prescription-2",
+      artifactId,
+      medications: revisedMedications,
+      instructions: { text: "Take daily" },
+      notes: null,
+      metadata: { source: "revision" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+
+    await ClinicalArtifactService.updatePrescription(
+      "prescription-2",
+      {
+        medications: revisedMedications,
+        metadata: { source: "revision" },
+      },
+      organisationId,
+    );
+
+    const { InventoryConsumptionService } =
+      await import("../../src/services/inventory-consumption.service");
+    expect(
+      InventoryConsumptionService.releasePrescription,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId,
+        prescriptionId: "prescription-2",
+        medications: originalMedications,
+      }),
+    );
+    expect(
+      InventoryConsumptionService.consumePrescription,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId,
+        prescriptionId: "prescription-2",
+        medications: revisedMedications,
+      }),
+    );
   });
 
   it("creates a discharge summary artifact and document draft", async () => {

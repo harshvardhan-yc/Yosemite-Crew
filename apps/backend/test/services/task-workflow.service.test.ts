@@ -80,6 +80,7 @@ describe("TaskWorkflowService", () => {
             id: "assignment",
             data: {
               defaultRole: "EMPLOYEE_TASK",
+              defaultAssigneeRole: "EMPLOYEE_TASK",
             },
           },
           {
@@ -153,6 +154,105 @@ describe("TaskWorkflowService", () => {
       }),
     );
     expect(result.taskIds).toEqual(["task-1"]);
+  });
+
+  it("uses an explicit assignee role when materializing a task template", async () => {
+    mockedPrisma.templateInstance.findUnique.mockResolvedValueOnce({
+      id: "instance-1",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: null,
+      templateId: "template-1",
+      templateVersion: 3,
+      authorId: "creator-1",
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T08:00:00.000Z"),
+      data: {
+        sections: [
+          {
+            id: "definition",
+            data: {
+              taskKind: "MEDICATION",
+              category: "Medication",
+              name: "Parent review",
+            },
+          },
+          {
+            id: "assignment",
+            data: {
+              defaultRole: "EMPLOYEE_TASK",
+              defaultAssigneeRole: "PARENT_TASK",
+            },
+          },
+          {
+            id: "timing",
+            data: {
+              dueOffsetMinutes: 30,
+            },
+          },
+        ],
+      },
+      template: {
+        id: "template-1",
+        kind: "TASK_TEMPLATE",
+        ownership: "ORG_TEMPLATE",
+      },
+      taskSchedule: null,
+    });
+    mockedPrisma.appointment.findFirst.mockResolvedValueOnce({
+      companion: { parent: { id: "parent-1" } },
+      lead: { id: "lead-1" },
+      supportStaff: [{ id: "staff-1" }],
+      startTime: new Date("2026-01-01T08:00:00.000Z"),
+      encounterId: null,
+    });
+    mockedPrisma.taskSchedule.create.mockResolvedValueOnce({
+      id: "schedule-1",
+      templateInstanceId: "instance-1",
+      templateId: "template-1",
+      templateVersion: 3,
+      templateKind: "TASK_TEMPLATE",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "COMPLETED",
+      materializedSeeds: [],
+      generatedTaskIds: null,
+    });
+    mockedPrisma.taskSchedule.update.mockResolvedValueOnce({
+      id: "schedule-1",
+      templateInstanceId: "instance-1",
+      templateId: "template-1",
+      templateVersion: 3,
+      templateKind: "TASK_TEMPLATE",
+      organisationId: "org-1",
+      createdBy: "creator-1",
+      status: "COMPLETED",
+      materializedSeeds: [],
+      generatedTaskIds: ["task-1"],
+    });
+    mockedTaskService.createFromWorkflowSeed.mockResolvedValueOnce({
+      id: "task-1",
+    });
+
+    await TaskWorkflowService.launchFromTemplateInstance(
+      "instance-1",
+      "org-1",
+      "creator-1",
+      { client: prisma, notify: false },
+    );
+
+    expect(mockedTaskService.createFromWorkflowSeed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assignedTo: "parent-1",
+        audience: "EMPLOYEE_TASK",
+      }),
+      expect.objectContaining({
+        client: prisma,
+        notify: false,
+      }),
+    );
   });
 
   it("returns an existing generated schedule without duplicating tasks", async () => {
@@ -534,7 +634,7 @@ describe("TaskWorkflowService", () => {
       materializedSeeds: [{ id: "seed-delayed" }],
     });
 
-    const deferredUntil = new Date("2026-06-14T10:00:00.000Z");
+    const deferredUntil = new Date("2026-06-15T10:00:00.000Z");
     const result = await TaskWorkflowService.launchFromTemplateInstance(
       "instance-6",
       "org-1",

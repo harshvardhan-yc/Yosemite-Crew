@@ -26,6 +26,7 @@ export interface TaskLike {
   createdBy: string;
   assignedBy: string | null;
   assignedTo: string;
+  assignedGroupId: string | null;
   audience: TaskAudience;
   source: TaskSource | string;
   libraryTaskId: string | null;
@@ -57,6 +58,7 @@ export interface CreateCustomTaskInput {
   createdBy: string;
   assignedBy?: string;
   assignedTo: string;
+  assignedGroupId?: string | null;
   audience: TaskAudience;
   source?: TaskSource;
   libraryTaskId?: string;
@@ -92,6 +94,7 @@ export interface TaskUpdateInput {
   dueAt?: Date;
   timezone?: string | null;
   assignedTo?: string;
+  assignedGroupId?: string | null;
   medication?: MedicationInput | null;
   observationToolId?: string | null;
   reminder?: {
@@ -129,6 +132,8 @@ const TASK_ASSIGNED_BY_EXTENSION_URL =
   'https://yosemitecrew.com/fhir/StructureDefinition/task-assigned-by';
 const TASK_ASSIGNED_TO_EXTENSION_URL =
   'https://yosemitecrew.com/fhir/StructureDefinition/task-assigned-to';
+const TASK_ASSIGNED_GROUP_ID_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/task-assigned-group-id';
 const TASK_CATEGORY_EXTENSION_URL =
   'https://yosemitecrew.com/fhir/StructureDefinition/task-category';
 const TASK_DUE_AT_EXTENSION_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/task-due-at';
@@ -238,6 +243,13 @@ const taskExtensions = (task: TaskLike): Extension[] => {
     { url: TASK_CATEGORY_EXTENSION_URL, valueString: task.category },
     { url: TASK_DUE_AT_EXTENSION_URL, valueDateTime: task.dueAt.toISOString() },
   ];
+
+  if (task.assignedGroupId) {
+    extensions.push({
+      url: TASK_ASSIGNED_GROUP_ID_EXTENSION_URL,
+      valueString: task.assignedGroupId,
+    });
+  }
 
   if (task.organisationId) {
     extensions.push({
@@ -383,6 +395,8 @@ const taskFromFhir = (
     assignedBy:
       getStringExtension(extensions, TASK_ASSIGNED_BY_EXTENSION_URL) ?? defaults?.assignedBy,
     assignedTo,
+    assignedGroupId:
+      getStringExtension(extensions, TASK_ASSIGNED_GROUP_ID_EXTENSION_URL) ?? undefined,
     audience: audienceFromExtension(extensions) ?? 'EMPLOYEE_TASK',
     source:
       (getStringExtension(extensions, TASK_SOURCE_EXTENSION_URL) as TaskSource | undefined) ??
@@ -427,6 +441,8 @@ const taskUpdateInputFromFhir = (task: Task): TaskUpdateInput => ({
   })(),
   timezone: getStringExtension(task.extension, TASK_TIMEZONE_EXTENSION_URL) ?? undefined,
   assignedTo: normalizeReferenceId(task.owner),
+  assignedGroupId:
+    getStringExtension(task.extension, TASK_ASSIGNED_GROUP_ID_EXTENSION_URL) ?? undefined,
   medication: parseJson<MedicationInput>(
     getStringExtension(task.extension, TASK_MEDICATION_EXTENSION_URL)
   ),

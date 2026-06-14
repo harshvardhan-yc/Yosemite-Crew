@@ -107,7 +107,105 @@ const consumeInventoryItem = async (
     return existingEvent;
   }
 
-  if (action !== "CONSUME") {
+  if (action === "RESERVE") {
+    return tx.inventoryConsumptionEvent.create({
+      data: {
+        organisationId,
+        sourceType,
+        sourceId,
+        sourceLineKey,
+        action,
+        idempotencyKey,
+        inventoryItemId,
+        quantity,
+        status: "SKIPPED",
+        metadata,
+      },
+    });
+  }
+
+  if (action === "RELEASE") {
+    const movements = await tx.inventoryStockMovement.findMany({
+      where: {
+        itemId: inventoryItemId,
+        referenceId: sourceId,
+        change: { lt: 0 },
+      },
+      orderBy: [{ createdAt: "desc" }],
+    });
+
+    if (!movements.length) {
+      throw new InventoryConsumptionServiceError(
+        "No prior consumption found to release",
+        400,
+      );
+    }
+
+    let remainingRelease = quantity;
+    for (const movement of movements) {
+      if (remainingRelease <= 0) break;
+      const consumedQuantity = Math.abs(movement.change ?? 0);
+      if (consumedQuantity <= 0) continue;
+      const restore = Math.min(remainingRelease, consumedQuantity);
+      remainingRelease -= restore;
+
+      if (movement.batchId) {
+        await tx.inventoryBatch.update({
+          where: { id: movement.batchId },
+          data: { quantity: { increment: restore } },
+        });
+      }
+
+      await tx.inventoryStockMovement.create({
+        data: {
+          itemId: inventoryItemId,
+          batchId: movement.batchId ?? undefined,
+          change: restore,
+          reason: "PRESCRIPTION_RELEASE",
+          referenceId: sourceId,
+        },
+      });
+    }
+
+    if (remainingRelease > 0) {
+      throw new InventoryConsumptionServiceError(
+        "Failed to release full requested quantity",
+        500,
+      );
+    }
+
+    const batchesAfter = await tx.inventoryBatch.findMany({
+      where: { itemId: inventoryItemId, organisationId },
+    });
+    const onHand = batchesAfter.reduce(
+      (sum, batch) => sum + (batch.quantity ?? 0),
+      0,
+    );
+    const allocated = batchesAfter.reduce(
+      (sum, batch) => sum + (batch.allocated ?? 0),
+      0,
+    );
+
+    await tx.inventoryItem.update({
+      where: { id: inventoryItemId },
+      data: { onHand, allocated },
+    });
+
+    return tx.inventoryConsumptionEvent.create({
+      data: {
+        organisationId,
+        sourceType,
+        sourceId,
+        sourceLineKey,
+        action,
+        idempotencyKey,
+        inventoryItemId,
+        quantity,
+        status: "APPLIED",
+        metadata,
+      },
+    });
+  } else if (action !== "CONSUME") {
     return tx.inventoryConsumptionEvent.create({
       data: {
         organisationId,
@@ -534,6 +632,44 @@ export const InventoryConsumptionService = {
           sourceType: "PRESCRIPTION",
           sourceId: prescriptionId,
           action: "CONSUME",
+          metadata: params.metadata,
+          lines,
+        },
+        lines,
+      );
+    });
+  },
+
+  async releasePrescription(params: {
+    organisationId: string;
+    prescriptionId: string;
+    medications: unknown;
+    metadata?: Prisma.InputJsonValue;
+  }) {
+    const organisationId = asNonEmptyString(params.organisationId);
+    const prescriptionId = asNonEmptyString(params.prescriptionId);
+    if (!organisationId || !prescriptionId) {
+      throw new InventoryConsumptionServiceError(
+        "organisationId and prescriptionId are required",
+        400,
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const lines = await resolvePrescriptionLines(
+        tx,
+        organisationId,
+        params.medications,
+      );
+      if (!lines.length) return [];
+
+      return consumeResolvedLines(
+        tx,
+        {
+          organisationId,
+          sourceType: "PRESCRIPTION",
+          sourceId: prescriptionId,
+          action: "RELEASE",
           metadata: params.metadata,
           lines,
         },

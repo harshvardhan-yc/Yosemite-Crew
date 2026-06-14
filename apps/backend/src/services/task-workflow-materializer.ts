@@ -51,6 +51,7 @@ export type TaskTemplateInstanceData = {
   name: string;
   description?: string;
   defaultRole: TaskAudience;
+  defaultAssigneeRole?: TaskAudience;
   dueOffsetMinutes?: number;
   defaultMedication?: TaskWorkflowSeed["medication"];
   defaultObservationToolId?: string;
@@ -90,6 +91,30 @@ export type CarePathwayInstanceData = {
   dischargeOffsetMinutes?: number;
   followUpTaskName?: string;
   signOffRequired?: boolean;
+  shiftWindows?: Array<{
+    start: string;
+    end: string;
+    days?: number[];
+  }>;
+  exceptions?: Array<{
+    date: string;
+    mode: "SKIP" | "SHIFT";
+    start?: string;
+    end?: string;
+  }>;
+};
+
+type ParsedShiftWindow = {
+  start: string;
+  end: string;
+  days?: number[];
+};
+
+type ParsedScheduleException = {
+  date: string;
+  mode: "SKIP" | "SHIFT";
+  start?: string;
+  end?: string;
 };
 
 export type TaskWorkflowContext = {
@@ -123,6 +148,67 @@ const buildDueAt = (anchor: Date, dayOffset: number, timeOfDay: string) => {
   dueAt.setUTCDate(dueAt.getUTCDate() + dayOffset);
   dueAt.setUTCHours(hours, minutes, 0, 0);
   return dueAt;
+};
+
+const toUtcDateKey = (value: Date) => value.toISOString().slice(0, 10);
+
+const toMinutesOfDay = (value: string) => {
+  const { hours, minutes } = parseTimeOfDay(value);
+  return hours * 60 + minutes;
+};
+
+const setUtcTime = (date: Date, timeOfDay: string) => {
+  const { hours, minutes } = parseTimeOfDay(timeOfDay);
+  const next = new Date(date);
+  next.setUTCHours(hours, minutes, 0, 0);
+  return next;
+};
+
+const matchesShiftDay = (windowDays: number[] | undefined, dueAt: Date) =>
+  !windowDays || windowDays.includes(dueAt.getUTCDay());
+
+const getExceptionForDate = (
+  exceptions: ParsedScheduleException[] | undefined,
+  dueAt: Date,
+) => exceptions?.find((entry) => entry.date === toUtcDateKey(dueAt));
+
+const clampToShiftWindows = (
+  dueAt: Date,
+  windows: ParsedShiftWindow[] | undefined,
+) => {
+  if (!windows || windows.length === 0) {
+    return dueAt;
+  }
+
+  const matchingWindows = windows.filter((window) =>
+    matchesShiftDay(window.days, dueAt),
+  );
+
+  if (matchingWindows.length === 0) {
+    return dueAt;
+  }
+
+  const dueMinutes = dueAt.getUTCHours() * 60 + dueAt.getUTCMinutes();
+  for (const window of matchingWindows) {
+    const startMinutes = toMinutesOfDay(window.start);
+    const endMinutes = toMinutesOfDay(window.end);
+    if (dueMinutes >= startMinutes && dueMinutes <= endMinutes) {
+      return dueAt;
+    }
+  }
+
+  const sortedWindows = matchingWindows
+    .map((window) => ({
+      window,
+      startMinutes: toMinutesOfDay(window.start),
+    }))
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+
+  const nextWindow =
+    sortedWindows.find((entry) => entry.startMinutes > dueMinutes) ??
+    sortedWindows[0];
+
+  return setUtcTime(dueAt, nextWindow.window.start);
 };
 
 const buildRecurrence = (
@@ -255,6 +341,10 @@ const parseTaskTemplateInstanceData = (
         | string
         | undefined) ?? undefined,
     defaultRole,
+    defaultAssigneeRole:
+      toTaskAudience(
+        getWorkflowValue(snapshot, "defaultAssigneeRole", ["assignment"]),
+      ) ?? defaultRole,
     dueOffsetMinutes:
       typeof getWorkflowValue(snapshot, "dueOffsetMinutes", ["timing"]) ===
       "number"
@@ -358,6 +448,55 @@ const parseCarePathwayInstanceData = (
       (getWorkflowValue(snapshot, "signOffRequired", ["discharge"]) as
         | boolean
         | undefined) ?? undefined,
+    shiftWindows: Array.isArray(
+      getWorkflowValue(snapshot, "shiftWindows", ["schedule"]),
+    )
+      ? ((
+          getWorkflowValue(snapshot, "shiftWindows", ["schedule"]) as Array<{
+            start?: unknown;
+            end?: unknown;
+            days?: unknown;
+          }>
+        )
+          .filter(
+            (window) =>
+              typeof window.start === "string" &&
+              typeof window.end === "string",
+          )
+          .map((window) => ({
+            start: window.start as string,
+            end: window.end as string,
+            days: Array.isArray(window.days)
+              ? window.days.filter(
+                  (day): day is number =>
+                    typeof day === "number" && day >= 0 && day <= 6,
+                )
+              : undefined,
+          })) as ParsedShiftWindow[])
+      : undefined,
+    exceptions: Array.isArray(
+      getWorkflowValue(snapshot, "exceptions", ["schedule"]),
+    )
+      ? ((
+          getWorkflowValue(snapshot, "exceptions", ["schedule"]) as Array<{
+            date?: unknown;
+            mode?: unknown;
+            start?: unknown;
+            end?: unknown;
+          }>
+        )
+          .filter(
+            (entry) =>
+              typeof entry.date === "string" &&
+              (entry.mode === "SKIP" || entry.mode === "SHIFT"),
+          )
+          .map((entry) => ({
+            date: entry.date as string,
+            mode: entry.mode as "SKIP" | "SHIFT",
+            start: typeof entry.start === "string" ? entry.start : undefined,
+            end: typeof entry.end === "string" ? entry.end : undefined,
+          })) as ParsedScheduleException[])
+      : undefined,
   };
 };
 
@@ -424,11 +563,76 @@ const sortCarePathwayBlocks = (blocks: CarePathwayTaskBlock[]) => {
   return sorted;
 };
 
+const buildCarePathwaySeed = (
+  block: CarePathwayTaskBlock,
+  admissionAnchor: Date,
+  context: TaskWorkflowContext & {
+    source?: "YC_LIBRARY" | "ORG_TEMPLATE" | "CUSTOM";
+    templateId?: string;
+    admissionAt: Date;
+    resolveAssignee: (
+      audience: TaskAudience,
+      assignedRole?: TaskAudience,
+      block?: CarePathwayTaskBlock,
+    ) => string;
+  },
+  data: CarePathwayInstanceData,
+): TaskWorkflowSeed | null => {
+  const baseDueAt = buildDueAt(
+    admissionAnchor,
+    block.dayOffset,
+    block.timeOfDay,
+  );
+  const exception = getExceptionForDate(data.exceptions, baseDueAt);
+  if (exception?.mode === "SKIP") {
+    return null;
+  }
+
+  const dueAt =
+    exception?.mode === "SHIFT" && exception.start
+      ? setUtcTime(baseDueAt, exception.start)
+      : clampToShiftWindows(baseDueAt, data.shiftWindows);
+
+  return {
+    source: context.source ?? "ORG_TEMPLATE",
+    templateId: context.templateId,
+    organisationId: context.organisationId,
+    appointmentId: context.appointmentId,
+    companionId: context.companionId,
+    createdBy: context.createdBy,
+    assignedBy: context.assignedBy,
+    assignedTo: context.resolveAssignee(
+      block.audience,
+      block.assignedRole ?? block.audience,
+      block,
+    ),
+    audience: block.audience,
+    category: block.category,
+    name: block.name,
+    additionalNotes: block.additionalNotes,
+    medication: block.medication,
+    observationToolId: block.observationToolId,
+    dueAt,
+    timezone: context.timezone,
+    recurrence: buildRecurrence(block.recurrence, undefined),
+    reminder:
+      block.reminderOffsetMinutes === undefined
+        ? undefined
+        : {
+            enabled: true,
+            offsetMinutes: block.reminderOffsetMinutes,
+          },
+  };
+};
+
 export const materializeTaskTemplateSeed = (
   data: TaskTemplateInstanceData,
   context: TaskWorkflowContext & {
     anchorAt?: Date;
-    resolveAssignee: (audience: TaskAudience) => string;
+    resolveAssignee: (
+      audience: TaskAudience,
+      assignedRole?: TaskAudience,
+    ) => string;
   },
 ): TaskWorkflowSeed => ({
   source: context.source ?? "ORG_TEMPLATE",
@@ -438,7 +642,10 @@ export const materializeTaskTemplateSeed = (
   companionId: context.companionId,
   createdBy: context.createdBy,
   assignedBy: context.assignedBy,
-  assignedTo: context.resolveAssignee(data.defaultRole),
+  assignedTo: context.resolveAssignee(
+    data.defaultRole,
+    data.defaultAssigneeRole,
+  ),
   audience: data.defaultRole,
   category: data.category,
   name: data.name,
@@ -465,7 +672,8 @@ export const materializeCarePathwaySeeds = (
     admissionAt: Date;
     resolveAssignee: (
       audience: TaskAudience,
-      block: CarePathwayTaskBlock,
+      assignedRole?: TaskAudience,
+      block?: CarePathwayTaskBlock,
     ) => string;
   },
 ): TaskWorkflowSeed[] => {
@@ -474,35 +682,9 @@ export const materializeCarePathwaySeeds = (
       (data.admissionOffsetMinutes ?? 0) * 60 * 1000,
   );
 
-  const seeds = sortCarePathwayBlocks(data.taskBlocks).map((block) => {
-    const dueAt = buildDueAt(admissionAnchor, block.dayOffset, block.timeOfDay);
-    return {
-      source: context.source ?? "ORG_TEMPLATE",
-      templateId: context.templateId,
-      organisationId: context.organisationId,
-      appointmentId: context.appointmentId,
-      companionId: context.companionId,
-      createdBy: context.createdBy,
-      assignedBy: context.assignedBy,
-      assignedTo: context.resolveAssignee(block.audience, block),
-      audience: block.audience,
-      category: block.category,
-      name: block.name,
-      additionalNotes: block.additionalNotes,
-      medication: block.medication,
-      observationToolId: block.observationToolId,
-      dueAt,
-      timezone: context.timezone,
-      recurrence: buildRecurrence(block.recurrence, undefined),
-      reminder:
-        block.reminderOffsetMinutes === undefined
-          ? undefined
-          : {
-              enabled: true,
-              offsetMinutes: block.reminderOffsetMinutes,
-            },
-    } satisfies TaskWorkflowSeed;
-  });
+  const seeds = sortCarePathwayBlocks(data.taskBlocks)
+    .map((block) => buildCarePathwaySeed(block, admissionAnchor, context, data))
+    .filter((seed): seed is TaskWorkflowSeed => seed !== null);
 
   if (data.followUpTaskName) {
     seeds.push({
@@ -513,7 +695,7 @@ export const materializeCarePathwaySeeds = (
       companionId: context.companionId,
       createdBy: context.createdBy,
       assignedBy: context.assignedBy,
-      assignedTo: context.resolveAssignee("EMPLOYEE_TASK", {
+      assignedTo: context.resolveAssignee("EMPLOYEE_TASK", "EMPLOYEE_TASK", {
         dayOffset: 0,
         timeOfDay: "09:00",
         taskKind: "CUSTOM",
@@ -551,6 +733,7 @@ export const materializeTaskWorkflowSeeds = (
     admissionAt?: Date;
     resolveAssignee: (
       audience: TaskAudience,
+      assignedRole?: TaskAudience,
       block?: CarePathwayTaskBlock,
     ) => string;
   },
@@ -561,7 +744,8 @@ export const materializeTaskWorkflowSeeds = (
       materializeTaskTemplateSeed(parsed, {
         ...context,
         anchorAt: context.anchorAt,
-        resolveAssignee: (audience) => context.resolveAssignee(audience),
+        resolveAssignee: (audience, assignedRole) =>
+          context.resolveAssignee(audience, assignedRole),
       }),
     ];
   }

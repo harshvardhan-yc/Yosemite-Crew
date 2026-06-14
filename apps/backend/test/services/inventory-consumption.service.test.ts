@@ -26,6 +26,7 @@ jest.mock("src/config/prisma", () => ({
     },
     inventoryStockMovement: {
       create: jest.fn(),
+      findMany: jest.fn(),
     },
     productItem: {
       findFirst: jest.fn(),
@@ -54,6 +55,7 @@ type MockedPrisma = typeof prisma & {
   };
   inventoryStockMovement: {
     create: jest.Mock;
+    findMany: jest.Mock;
   };
   productItem: {
     findFirst: jest.Mock;
@@ -72,6 +74,7 @@ describe("InventoryConsumptionService", () => {
       return undefined;
     });
     mockedPrisma.inventoryConsumptionEvent.findUnique.mockResolvedValue(null);
+    mockedPrisma.inventoryStockMovement.findMany.mockResolvedValue([]);
   });
 
   it("upserts normalized mapping rules", async () => {
@@ -228,6 +231,69 @@ describe("InventoryConsumptionService", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sourceKey: "amoxicillin",
+        }),
+      }),
+    );
+  });
+
+  it("releases prescription lines back into inventory", async () => {
+    mockedPrisma.inventoryStockMovement.findMany.mockResolvedValueOnce([
+      {
+        id: "movement-1",
+        itemId: "item-1",
+        batchId: "batch-1",
+        change: -2,
+        reason: "MANUAL_ADJUSTMENT",
+        referenceId: "rx-1",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+    mockedPrisma.inventoryItem.findFirst.mockResolvedValueOnce({
+      id: "item-1",
+      organisationId: "org-1",
+      onHand: 8,
+      allocated: 0,
+    });
+    mockedPrisma.inventoryBatch.findMany.mockResolvedValueOnce([
+      { id: "batch-1", quantity: 8, allocated: 0 },
+    ]);
+    mockedPrisma.inventoryBatch.update.mockResolvedValue({});
+    mockedPrisma.inventoryStockMovement.create.mockResolvedValue({});
+    mockedPrisma.inventoryItem.update.mockResolvedValue({});
+    mockedPrisma.inventoryConsumptionEvent.create.mockResolvedValue({
+      id: "event-release-1",
+    });
+
+    const events = await InventoryConsumptionService.releasePrescription({
+      organisationId: "org-1",
+      prescriptionId: "rx-1",
+      medications: [
+        {
+          inventoryItemId: "item-1",
+          quantity: 2,
+          sourceLineKey: "line-1",
+        },
+      ],
+    });
+
+    expect(events).toHaveLength(1);
+    expect(mockedPrisma.inventoryBatch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "batch-1" },
+        data: { quantity: { increment: 2 } },
+      }),
+    );
+    expect(mockedPrisma.inventoryItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { onHand: 8, allocated: 0 },
+      }),
+    );
+    expect(mockedPrisma.inventoryStockMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          change: 2,
+          reason: "PRESCRIPTION_RELEASE",
+          referenceId: "rx-1",
         }),
       }),
     );

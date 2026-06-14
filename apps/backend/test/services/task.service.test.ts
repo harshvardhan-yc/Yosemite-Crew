@@ -1,7 +1,14 @@
 import { prisma } from "src/config/prisma";
 import { sendEmailTemplate } from "../../src/utils/email";
 import logger from "../../src/utils/logger";
+import { AuditTrailService } from "../../src/services/audit-trail.service";
 import { TaskService } from "../../src/services/task.service";
+
+jest.mock("../../src/services/audit-trail.service", () => ({
+  AuditTrailService: {
+    recordSafely: jest.fn(),
+  },
+}));
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -64,6 +71,9 @@ const mockedPrisma = prisma as unknown as {
     findFirst: jest.Mock;
   };
 };
+const mockedAuditTrailService = AuditTrailService as unknown as {
+  recordSafely: jest.Mock;
+};
 
 describe("TaskService", () => {
   const dueAt = new Date("2026-01-01T12:00:00.000Z");
@@ -75,6 +85,7 @@ describe("TaskService", () => {
   it("creates a custom task and sends an assignment email", async () => {
     mockedPrisma.task.create.mockResolvedValueOnce({
       id: "task-1",
+      organisationId: "org-1",
       audience: "EMPLOYEE_TASK",
       assignedTo: "user-2",
       assignedBy: "user-1",
@@ -125,7 +136,60 @@ describe("TaskService", () => {
         templateId: "taskAssigned",
       }),
     );
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "TASK_CREATED",
+        entityType: "TASK",
+        entityId: "task-1",
+      }),
+    );
     expect(result.id).toBe("task-1");
+  });
+
+  it("creates a custom task with a group target without emailing a user", async () => {
+    mockedPrisma.task.create.mockResolvedValueOnce({
+      id: "task-group-1",
+      organisationId: "org-1",
+      audience: "EMPLOYEE_TASK",
+      assignedTo: "user-2",
+      assignedGroupId: "group-1",
+      assignedBy: "user-1",
+      createdBy: "user-1",
+      companionId: "comp-1",
+      dueAt,
+      name: "Check vitals",
+      additionalNotes: "Take before lunch",
+    });
+
+    const result = await TaskService.createCustom({
+      category: "Care",
+      name: "Check vitals",
+      createdBy: "user-1",
+      assignedBy: "user-1",
+      assignedTo: "user-2",
+      assignedGroupId: "group-1",
+      dueAt,
+      audience: "EMPLOYEE_TASK",
+      companionId: "comp-1",
+      additionalNotes: "Take before lunch",
+    });
+
+    expect(mockedPrisma.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          assignedGroupId: "group-1",
+        }),
+      }),
+    );
+    expect(sendEmailTemplate).not.toHaveBeenCalled();
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "TASK_CREATED",
+        entityType: "TASK",
+        entityId: "task-group-1",
+      }),
+    );
+    expect(result.assignedGroupId).toBe("group-1");
   });
 
   it("creates a task from a library definition", async () => {
@@ -138,6 +202,8 @@ describe("TaskService", () => {
     });
     mockedPrisma.task.create.mockResolvedValueOnce({
       id: "task-2",
+      organisationId: "org-1",
+      companionId: "comp-1",
       audience: "EMPLOYEE_TASK",
       createdBy: "user-1",
       assignedTo: "user-2",
@@ -167,6 +233,13 @@ describe("TaskService", () => {
         }),
       }),
     );
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "TASK_CREATED",
+        entityType: "TASK",
+        entityId: "task-2",
+      }),
+    );
   });
 
   it("creates a task from a template with reminder defaults", async () => {
@@ -189,6 +262,8 @@ describe("TaskService", () => {
     });
     mockedPrisma.task.create.mockResolvedValueOnce({
       id: "task-3",
+      organisationId: "org-1",
+      companionId: "comp-1",
       audience: "PARENT_TASK",
       createdBy: "user-1",
       assignedTo: "user-3",
@@ -214,12 +289,21 @@ describe("TaskService", () => {
         }),
       }),
     );
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "TASK_CREATED",
+        entityType: "TASK",
+        entityId: "task-3",
+      }),
+    );
     expect(result.id).toBe("task-3");
   });
 
   it("creates a task from a workflow seed", async () => {
     mockedPrisma.task.create.mockResolvedValueOnce({
       id: "task-4",
+      organisationId: "org-1",
+      companionId: "comp-1",
       audience: "PARENT_TASK",
       createdBy: "user-1",
       assignedTo: "parent-1",
@@ -259,6 +343,13 @@ describe("TaskService", () => {
         }),
       }),
     );
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "TASK_CREATED",
+        entityType: "TASK",
+        entityId: "task-4",
+      }),
+    );
     expect(result.id).toBe("task-4");
   });
 
@@ -285,6 +376,7 @@ describe("TaskService", () => {
   it("updates a task and blocks reassignment by non-creators", async () => {
     mockedPrisma.task.findFirst.mockResolvedValueOnce({
       id: "task-1",
+      organisationId: "org-1",
       createdBy: "user-1",
       assignedTo: "user-2",
       recurrence: null,
@@ -299,9 +391,56 @@ describe("TaskService", () => {
     ).rejects.toThrow("Only task creator can reassign task");
   });
 
+  it("reassigns a task to a group for creators", async () => {
+    mockedPrisma.task.findFirst.mockResolvedValueOnce({
+      id: "task-1",
+      organisationId: "org-1",
+      companionId: "comp-1",
+      createdBy: "user-1",
+      assignedTo: "user-2",
+      assignedGroupId: null,
+      recurrence: null,
+      medication: null,
+      reminder: null,
+      attachments: null,
+      syncWithCalendar: false,
+    });
+    mockedPrisma.task.update.mockResolvedValueOnce({
+      id: "task-1",
+      organisationId: "org-1",
+      companionId: "comp-1",
+      assignedGroupId: "group-1",
+      assignedBy: "user-1",
+    });
+
+    const result = await TaskService.updateTask(
+      "task-1",
+      { assignedGroupId: "group-1" },
+      "user-1",
+    );
+
+    expect(mockedPrisma.task.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          assignedGroupId: "group-1",
+          assignedBy: "user-1",
+        }),
+      }),
+    );
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "TASK_REASSIGNED",
+        entityType: "TASK",
+        entityId: "task-1",
+      }),
+    );
+    expect(result.assignedGroupId).toBe("group-1");
+  });
+
   it("changes status and creates completion records", async () => {
     mockedPrisma.task.findFirst.mockResolvedValueOnce({
       id: "task-1",
+      organisationId: "org-1",
       createdBy: "user-1",
       assignedTo: "user-2",
       companionId: "comp-1",
@@ -321,6 +460,8 @@ describe("TaskService", () => {
     });
     mockedPrisma.task.update.mockResolvedValueOnce({
       id: "task-1",
+      organisationId: "org-1",
+      companionId: "comp-1",
       status: "COMPLETED",
     });
 
@@ -340,6 +481,13 @@ describe("TaskService", () => {
           taskId: "task-1",
           companionId: "comp-1",
         }),
+      }),
+    );
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "TASK_STATUS_CHANGED",
+        entityType: "TASK",
+        entityId: "task-1",
       }),
     );
     expect(result.task.status).toBe("COMPLETED");
@@ -384,6 +532,25 @@ describe("TaskService", () => {
       }),
     );
     expect(result).toEqual([{ id: "task-2", _id: "task-2" }]);
+  });
+
+  it("lists tasks for a group", async () => {
+    mockedPrisma.task.findMany.mockResolvedValueOnce([{ id: "task-3" }]);
+
+    const result = await TaskService.listForGroup({
+      organisationId: "org-1",
+      groupId: "group-1",
+    });
+
+    expect(mockedPrisma.task.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organisationId: "org-1",
+          assignedGroupId: "group-1",
+        }),
+      }),
+    );
+    expect(result).toEqual([{ id: "task-3", _id: "task-3" }]);
   });
 
   it("links a task to an appointment", async () => {

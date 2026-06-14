@@ -5,6 +5,7 @@ import {
   TaskStatus as PrismaTaskStatus,
 } from "@prisma/client";
 import { prisma } from "src/config/prisma";
+import { AuditTrailService } from "./audit-trail.service";
 import type { TaskWorkflowSeed } from "./task-workflow-materializer";
 import { sendEmailTemplate } from "../utils/email";
 import logger from "../utils/logger";
@@ -115,6 +116,7 @@ const buildDisplayName = (
 type TaskAssignmentEmailTask = {
   audience: TaskAudience;
   assignedTo?: string | null;
+  assignedGroupId?: string | null;
   assignedBy?: string | null;
   createdBy: string;
   companionId?: string | null;
@@ -125,6 +127,7 @@ type TaskAssignmentEmailTask = {
 
 const sendTaskAssignmentEmail = async (task: TaskAssignmentEmailTask) => {
   if (task.audience !== "EMPLOYEE_TASK") return;
+  if (task.assignedGroupId) return;
   if (!task.assignedTo) return;
   logger.info("Sending task assigned email");
   try {
@@ -167,6 +170,30 @@ const sendTaskAssignmentEmail = async (task: TaskAssignmentEmailTask) => {
   } catch (error) {
     logger.error("Failed to send task assignment email.", error);
   }
+};
+
+const recordTaskAudit = async (params: {
+  organisationId?: string | null;
+  companionId?: string | null;
+  eventType: "TASK_CREATED" | "TASK_REASSIGNED" | "TASK_STATUS_CHANGED";
+  actorId?: string | null;
+  entityId: string;
+  metadata?: Record<string, unknown>;
+}) => {
+  if (!params.organisationId || !params.companionId) {
+    return;
+  }
+
+  await AuditTrailService.recordSafely({
+    organisationId: params.organisationId,
+    companionId: params.companionId,
+    actorType: params.actorId ? "PMS_USER" : "SYSTEM",
+    actorId: params.actorId ?? undefined,
+    eventType: params.eventType,
+    entityType: "TASK",
+    entityId: params.entityId,
+    metadata: params.metadata,
+  });
 };
 
 const assertCanUpdateTask = (isCreator: boolean, isAssignee: boolean) => {
@@ -338,6 +365,7 @@ const buildCreateTaskData = (input: {
   createdBy: string;
   assignedBy?: string;
   assignedTo: string;
+  assignedGroupId?: string | null;
   audience: TaskAudience;
   source: TaskSource;
   libraryTaskId?: string;
@@ -371,6 +399,7 @@ const buildCreateTaskData = (input: {
   createdBy: input.createdBy,
   assignedBy: input.assignedBy ?? input.createdBy,
   assignedTo: input.assignedTo,
+  assignedGroupId: input.assignedGroupId ?? undefined,
   audience: input.audience as PrismaTaskAudience,
   source: input.source as PrismaTaskSource,
   libraryTaskId: input.libraryTaskId ?? undefined,
@@ -413,6 +442,8 @@ const updateTaskRow = async (
     dueAt?: Date;
     timezone?: string | null;
     assignedTo?: string;
+    assignedGroupId?: string | null;
+    assignedBy?: string;
     medication?: MedicationInput | null;
     observationToolId?: string | null;
     reminder?: {
@@ -452,6 +483,14 @@ const updateTaskRow = async (
           ? (task.timezone ?? undefined)
           : (updates.timezone ?? undefined),
       assignedTo: updates.assignedTo ?? task.assignedTo,
+      assignedGroupId:
+        updates.assignedGroupId === undefined
+          ? (task.assignedGroupId ?? undefined)
+          : (updates.assignedGroupId ?? undefined),
+      assignedBy:
+        updates.assignedBy === undefined
+          ? (task.assignedBy ?? undefined)
+          : (updates.assignedBy ?? undefined),
       medication:
         updates.medication === undefined
           ? (task.medication ?? undefined)
@@ -481,6 +520,7 @@ export interface BaseTaskCreateInput {
   createdBy: string;
   assignedBy?: string;
   assignedTo: string;
+  assignedGroupId?: string | null;
   dueAt: Date;
   timezone?: string;
   medication?: MedicationInput;
@@ -532,6 +572,7 @@ export interface TaskUpdateInput {
   dueAt?: Date;
   timezone?: string | null;
   assignedTo?: string;
+  assignedGroupId?: string | null;
   medication?: MedicationInput | null;
   observationToolId?: string | null;
   reminder?: {
@@ -582,6 +623,7 @@ export const TaskService = {
         createdBy: input.createdBy,
         assignedBy: input.assignedBy,
         assignedTo: input.assignedTo,
+        assignedGroupId: input.assignedGroupId,
         audience: input.audience,
         source: "YC_LIBRARY",
         libraryTaskId: input.libraryTaskId,
@@ -601,6 +643,20 @@ export const TaskService = {
     });
 
     const mapped = toTaskLike(doc);
+    await recordTaskAudit({
+      organisationId: mapped.organisationId,
+      companionId: mapped.companionId,
+      actorId: mapped.createdBy,
+      eventType: "TASK_CREATED",
+      entityId: mapped.id,
+      metadata: {
+        source: mapped.source,
+        audience: mapped.audience,
+        assignedTo: mapped.assignedTo,
+        assignedGroupId: mapped.assignedGroupId ?? null,
+        status: mapped.status,
+      },
+    });
     void sendTaskAssignmentEmail(mapped);
     return mapped;
   },
@@ -687,6 +743,7 @@ export const TaskService = {
         createdBy: input.createdBy,
         assignedBy: input.assignedBy,
         assignedTo: input.assignedTo,
+        assignedGroupId: input.assignedGroupId,
         audience,
         source: "ORG_TEMPLATE",
         libraryTaskId: template.libraryTaskId ?? undefined,
@@ -710,6 +767,20 @@ export const TaskService = {
     });
 
     const mapped = toTaskLike(doc);
+    await recordTaskAudit({
+      organisationId: mapped.organisationId,
+      companionId: mapped.companionId,
+      actorId: mapped.createdBy,
+      eventType: "TASK_CREATED",
+      entityId: mapped.id,
+      metadata: {
+        source: mapped.source,
+        audience: mapped.audience,
+        assignedTo: mapped.assignedTo,
+        assignedGroupId: mapped.assignedGroupId ?? null,
+        status: mapped.status,
+      },
+    });
     void sendTaskAssignmentEmail(mapped);
     return mapped;
   },
@@ -734,6 +805,7 @@ export const TaskService = {
         createdBy: input.createdBy,
         assignedBy: input.assignedBy,
         assignedTo: input.assignedTo,
+        assignedGroupId: input.assignedGroupId,
         audience: input.audience,
         source: "CUSTOM",
         category: input.category,
@@ -752,6 +824,20 @@ export const TaskService = {
     });
 
     const mapped = toTaskLike(doc);
+    await recordTaskAudit({
+      organisationId: mapped.organisationId,
+      companionId: mapped.companionId,
+      actorId: mapped.createdBy,
+      eventType: "TASK_CREATED",
+      entityId: mapped.id,
+      metadata: {
+        source: mapped.source,
+        audience: mapped.audience,
+        assignedTo: mapped.assignedTo,
+        assignedGroupId: mapped.assignedGroupId ?? null,
+        status: mapped.status,
+      },
+    });
     void sendTaskAssignmentEmail(mapped);
     return mapped;
   },
@@ -802,6 +888,21 @@ export const TaskService = {
       void sendTaskAssignmentEmail(mapped);
     }
 
+    await recordTaskAudit({
+      organisationId: mapped.organisationId,
+      companionId: mapped.companionId,
+      actorId: mapped.createdBy,
+      eventType: "TASK_CREATED",
+      entityId: mapped.id,
+      metadata: {
+        source: mapped.source,
+        audience: mapped.audience,
+        assignedTo: mapped.assignedTo,
+        assignedGroupId: mapped.assignedGroupId ?? null,
+        status: mapped.status,
+      },
+    });
+
     return mapped;
   },
 
@@ -823,6 +924,10 @@ export const TaskService = {
       }
     }
 
+    if (updates.assignedGroupId !== undefined && !isCreator) {
+      throw new TaskServiceError("Only task creator can reassign task", 403);
+    }
+
     const updated = await updateTaskRow(
       taskId,
       {
@@ -832,6 +937,12 @@ export const TaskService = {
         dueAt: updates.dueAt,
         timezone: updates.timezone,
         assignedTo: updates.assignedTo,
+        assignedGroupId: updates.assignedGroupId,
+        assignedBy:
+          updates.assignedTo !== undefined ||
+          updates.assignedGroupId !== undefined
+            ? actorId
+            : undefined,
         medication: updates.medication,
         observationToolId: updates.observationToolId,
         reminder: updates.reminder,
@@ -842,7 +953,29 @@ export const TaskService = {
       task,
     );
 
-    return toTaskLike(updated);
+    const mapped = toTaskLike(updated);
+
+    if (
+      updates.assignedTo !== undefined ||
+      updates.assignedGroupId !== undefined
+    ) {
+      await recordTaskAudit({
+        organisationId: mapped.organisationId,
+        companionId: mapped.companionId,
+        actorId,
+        eventType: "TASK_REASSIGNED",
+        entityId: mapped.id,
+        metadata: {
+          previousAssignedTo: task.assignedTo,
+          previousAssignedGroupId: task.assignedGroupId ?? null,
+          assignedTo: mapped.assignedTo,
+          assignedGroupId: mapped.assignedGroupId ?? null,
+          assignedBy: mapped.assignedBy ?? null,
+        },
+      });
+    }
+
+    return mapped;
   },
 
   async changeStatus(
@@ -911,10 +1044,25 @@ export const TaskService = {
       },
     });
 
-    return {
+    const mapped = {
       task: toTaskLike(updated),
       completion: completionDoc,
     };
+
+    await recordTaskAudit({
+      organisationId: updated.organisationId,
+      companionId: updated.companionId,
+      actorId,
+      eventType: "TASK_STATUS_CHANGED",
+      entityId: updated.id,
+      metadata: {
+        previousStatus: task.status,
+        nextStatus,
+        completedBy,
+      },
+    });
+
+    return mapped;
   },
 
   async getById(taskId: string): Promise<TaskLike | null> {
@@ -984,6 +1132,52 @@ export const TaskService = {
 
     const userId = asNonEmptyString(params.userId);
     if (userId) where.assignedTo = userId;
+
+    const companionId = asNonEmptyString(params.companionId);
+    if (companionId) where.companionId = companionId;
+
+    const status = sanitizeStatusList(params.status);
+    if (status) where.status = { in: status };
+
+    const fromDueAt = isValidDate(params.fromDueAt)
+      ? params.fromDueAt
+      : undefined;
+    const toDueAt = isValidDate(params.toDueAt) ? params.toDueAt : undefined;
+    if (fromDueAt || toDueAt) {
+      where.dueAt = {};
+      if (fromDueAt) where.dueAt.gte = fromDueAt;
+      if (toDueAt) where.dueAt.lte = toDueAt;
+    }
+
+    const tasks = await prisma.task.findMany({
+      where,
+      orderBy: { dueAt: "asc" },
+    });
+    return tasks.map(toTaskLike);
+  },
+
+  async listForGroup(params: {
+    organisationId: string;
+    groupId: string;
+    companionId?: string;
+    fromDueAt?: Date;
+    toDueAt?: Date;
+    status?: TaskStatus[];
+  }): Promise<TaskLike[]> {
+    const organisationId = asNonEmptyString(params.organisationId);
+    if (!organisationId) {
+      throw new TaskServiceError("Invalid organisationId");
+    }
+
+    const groupId = asNonEmptyString(params.groupId);
+    if (!groupId) {
+      throw new TaskServiceError("Invalid groupId");
+    }
+
+    const where: Prisma.TaskWhereInput = {
+      organisationId,
+      assignedGroupId: groupId,
+    };
 
     const companionId = asNonEmptyString(params.companionId);
     if (companionId) where.companionId = companionId;

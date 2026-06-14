@@ -1343,6 +1343,7 @@ enum AuditEntityType {
   INVOICE
   DOCUMENT
   FORM
+  TASK
 }
 
 enum AuditEventType {
@@ -1371,6 +1372,9 @@ enum AuditEventType {
   DOCUMENT_DELETED
   FORM_ATTACHED
   FORM_SUBMITTED
+  TASK_CREATED
+  TASK_REASSIGNED
+  TASK_STATUS_CHANGED
 }
 
 enum WithdrawalStatus {
@@ -1910,6 +1914,7 @@ model Task {
   createdBy         String
   assignedBy        String?
   assignedTo        String
+  assignedGroupId   String?
   audience          TaskAudience
   source            TaskSource
   libraryTaskId     String?
@@ -1934,6 +1939,7 @@ model Task {
   updatedAt         DateTime     @updatedAt
 
   @@index([assignedTo, dueAt])
+  @@index([assignedGroupId, dueAt])
   @@index([companionId, dueAt])
   @@index([organisationId, dueAt])
   @@index([dueAt])

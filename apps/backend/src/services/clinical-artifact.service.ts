@@ -106,6 +106,13 @@ const shouldConsumeInventoryForPrescription = (
   status: ClinicalArtifactStatus,
 ) => status === "SIGNED" || status === "COMPLETED";
 
+const isSamePrescriptionPayload = (
+  nextMedications: unknown,
+  previousMedications: unknown,
+) =>
+  JSON.stringify(nextMedications ?? null) ===
+  JSON.stringify(previousMedications ?? null);
+
 export type SoapNoteInput = ClinicalArtifactBaseInput & {
   subjective?: unknown;
   objective?: unknown;
@@ -787,7 +794,40 @@ export const ClinicalArtifactService = {
       return buildPrescriptionRecord(artifact, prescription);
     });
 
-    if (shouldConsumeInventoryForPrescription(updated.artifact.status)) {
+    const wasConsumed = shouldConsumeInventoryForPrescription(
+      record.artifact.status,
+    );
+    const isConsumed = shouldConsumeInventoryForPrescription(
+      updated.artifact.status,
+    );
+    const medicationChanged = !isSamePrescriptionPayload(
+      updated.prescription.medications,
+      record.medications,
+    );
+
+    if (wasConsumed && !isConsumed) {
+      await InventoryConsumptionService.releasePrescription({
+        organisationId: updated.artifact.organisationId,
+        prescriptionId: updated.prescription.id,
+        medications: record.medications,
+        metadata: record.metadata as Prisma.InputJsonValue | undefined,
+      });
+    } else if (!wasConsumed && isConsumed) {
+      await InventoryConsumptionService.consumePrescription({
+        organisationId: updated.artifact.organisationId,
+        prescriptionId: updated.prescription.id,
+        medications: updated.prescription.medications,
+        metadata: updated.prescription.metadata as
+          | Prisma.InputJsonValue
+          | undefined,
+      });
+    } else if (wasConsumed && isConsumed && medicationChanged) {
+      await InventoryConsumptionService.releasePrescription({
+        organisationId: updated.artifact.organisationId,
+        prescriptionId: updated.prescription.id,
+        medications: record.medications,
+        metadata: record.metadata as Prisma.InputJsonValue | undefined,
+      });
       await InventoryConsumptionService.consumePrescription({
         organisationId: updated.artifact.organisationId,
         prescriptionId: updated.prescription.id,

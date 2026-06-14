@@ -9,6 +9,7 @@ describe("fhir-task.mapper", () => {
     createdBy: "user-1",
     assignedBy: "user-1",
     assignedTo: "user-2",
+    assignedGroupId: "group-1",
     audience: "EMPLOYEE_TASK",
     source: "ORG_TEMPLATE",
     libraryTaskId: null,
@@ -46,6 +47,10 @@ describe("fhir-task.mapper", () => {
           url: "https://yosemitecrew.com/fhir/StructureDefinition/task-template-id",
           valueString: "template-1",
         }),
+        expect.objectContaining({
+          url: "https://yosemitecrew.com/fhir/StructureDefinition/task-assigned-group-id",
+          valueString: "group-1",
+        }),
       ]),
     );
   });
@@ -71,6 +76,10 @@ describe("fhir-task.mapper", () => {
             url: "https://yosemitecrew.com/fhir/StructureDefinition/task-due-at",
             valueString: "2026-01-05T09:00:00.000Z",
           },
+          {
+            url: "https://yosemitecrew.com/fhir/StructureDefinition/task-assigned-group-id",
+            valueString: "group-1",
+          },
         ],
       },
       {
@@ -81,6 +90,7 @@ describe("fhir-task.mapper", () => {
 
     expect(created.organisationId).toBe("org-1");
     expect(created.assignedTo).toBe("user-2");
+    expect(created.assignedGroupId).toBe("group-1");
     expect(created.category).toBe("Take temperature");
     expect(created.dueAt.toISOString()).toBe("2026-01-05T09:00:00.000Z");
   });

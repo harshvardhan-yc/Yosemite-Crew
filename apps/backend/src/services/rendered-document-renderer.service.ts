@@ -79,6 +79,12 @@ type ClinicalArtifactDocumentSource = {
   data: Record<string, unknown>;
 };
 
+type ClinicalArtifactLoaderConfig = {
+  load: (
+    source: RenderedDocumentSource,
+  ) => Promise<ClinicalArtifactDocumentSource>;
+};
+
 type OrganizationBrand = {
   name: string;
   imageUrl: string | null;
@@ -410,111 +416,124 @@ const loadOrganizationBrand = async (
 const loadClinicalArtifactDocument = async (
   source: RenderedDocumentSource,
 ): Promise<ClinicalArtifactDocumentSource> => {
-  switch (source.templateKind) {
-    case "SOAP_NOTE": {
-      const record = await prisma.soapNote.findUnique({
-        where: { id: source.sourceId },
-        include: { artifact: true },
-      });
+  const loaders: Record<string, ClinicalArtifactLoaderConfig> = {
+    SOAP_NOTE: {
+      load: async (clinicalSource) => {
+        const record = await prisma.soapNote.findUnique({
+          where: { id: clinicalSource.sourceId },
+          include: { artifact: true },
+        });
 
-      if (!record) {
-        throw new Error("SOAP note not found");
-      }
+        if (!record) {
+          throw new Error("SOAP note not found");
+        }
 
-      if (record.artifact.organisationId !== source.organisationId) {
-        throw new Error("SOAP note does not belong to organisation");
-      }
+        if (record.artifact.organisationId !== clinicalSource.organisationId) {
+          throw new Error("SOAP note does not belong to organisation");
+        }
 
-      return {
-        artifact: record.artifact,
-        data: {
-          subjective: record.subjective,
-          objective: record.objective,
-          assessment: record.assessment,
-          plan: record.plan,
-          diagnoses: record.diagnoses,
-          metadata: record.metadata,
-        },
-      };
-    }
-    case "PRESCRIPTION": {
-      const record = await prisma.prescription.findUnique({
-        where: { id: source.sourceId },
-        include: { artifact: true },
-      });
+        return {
+          artifact: record.artifact,
+          data: {
+            subjective: record.subjective,
+            objective: record.objective,
+            assessment: record.assessment,
+            plan: record.plan,
+            diagnoses: record.diagnoses,
+            metadata: record.metadata,
+          },
+        };
+      },
+    },
+    PRESCRIPTION: {
+      load: async (clinicalSource) => {
+        const record = await prisma.prescription.findUnique({
+          where: { id: clinicalSource.sourceId },
+          include: { artifact: true },
+        });
 
-      if (!record) {
-        throw new Error("Prescription not found");
-      }
+        if (!record) {
+          throw new Error("Prescription not found");
+        }
 
-      if (record.artifact.organisationId !== source.organisationId) {
-        throw new Error("Prescription does not belong to organisation");
-      }
+        if (record.artifact.organisationId !== clinicalSource.organisationId) {
+          throw new Error("Prescription does not belong to organisation");
+        }
 
-      return {
-        artifact: record.artifact,
-        data: {
-          medications: record.medications,
-          instructions: record.instructions,
-          notes: record.notes,
-          metadata: record.metadata,
-        },
-      };
-    }
-    case "DISCHARGE_SUMMARY": {
-      const record = await prisma.dischargeSummary.findUnique({
-        where: { id: source.sourceId },
-        include: { artifact: true },
-      });
+        return {
+          artifact: record.artifact,
+          data: {
+            medications: record.medications,
+            instructions: record.instructions,
+            notes: record.notes,
+            metadata: record.metadata,
+          },
+        };
+      },
+    },
+    DISCHARGE_SUMMARY: {
+      load: async (clinicalSource) => {
+        const record = await prisma.dischargeSummary.findUnique({
+          where: { id: clinicalSource.sourceId },
+          include: { artifact: true },
+        });
 
-      if (!record) {
-        throw new Error("Discharge summary not found");
-      }
+        if (!record) {
+          throw new Error("Discharge summary not found");
+        }
 
-      if (record.artifact.organisationId !== source.organisationId) {
-        throw new Error("Discharge summary does not belong to organisation");
-      }
+        if (record.artifact.organisationId !== clinicalSource.organisationId) {
+          throw new Error("Discharge summary does not belong to organisation");
+        }
 
-      return {
-        artifact: record.artifact,
-        data: {
-          summary: record.summary,
-          diagnoses: record.diagnoses,
-          medications: record.medications,
-          followUp: record.followUp,
-          instructions: record.instructions,
-          metadata: record.metadata,
-        },
-      };
-    }
-    case "VITAL_RECORD": {
-      const record = await prisma.vitalRecord.findUnique({
-        where: { id: source.sourceId },
-        include: { artifact: true },
-      });
+        return {
+          artifact: record.artifact,
+          data: {
+            summary: record.summary,
+            diagnoses: record.diagnoses,
+            medications: record.medications,
+            followUp: record.followUp,
+            instructions: record.instructions,
+            metadata: record.metadata,
+          },
+        };
+      },
+    },
+    VITAL_RECORD: {
+      load: async (clinicalSource) => {
+        const record = await prisma.vitalRecord.findUnique({
+          where: { id: clinicalSource.sourceId },
+          include: { artifact: true },
+        });
 
-      if (!record) {
-        throw new Error("Vital record not found");
-      }
+        if (!record) {
+          throw new Error("Vital record not found");
+        }
 
-      if (record.artifact.organisationId !== source.organisationId) {
-        throw new Error("Vital record does not belong to organisation");
-      }
+        if (record.artifact.organisationId !== clinicalSource.organisationId) {
+          throw new Error("Vital record does not belong to organisation");
+        }
 
-      return {
-        artifact: record.artifact,
-        data: {
-          measuredAt: record.measuredAt,
-          recordedBy: record.recordedBy,
-          vitals: record.vitals,
-          notes: record.notes,
-          metadata: record.metadata,
-        },
-      };
-    }
-    default:
-      throw new Error("Unsupported clinical document kind");
+        return {
+          artifact: record.artifact,
+          data: {
+            measuredAt: record.measuredAt,
+            recordedBy: record.recordedBy,
+            vitals: record.vitals,
+            notes: record.notes,
+            metadata: record.metadata,
+          },
+        };
+      },
+    },
+  };
+
+  const loader = loaders[source.templateKind as keyof typeof loaders];
+  if (!loader) {
+    throw new Error("Unsupported clinical document kind");
   }
+
+  return loader.load(source);
 };
 
 export const renderRenderedDocumentPdf = async (

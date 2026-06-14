@@ -191,6 +191,51 @@ export class FormSigningService {
     };
   }
 
+  private static async createAndStartRenderedDocumentSigning({
+    formId,
+    formName,
+    formOrgId,
+    formVersion,
+    sourceId,
+    signerEmail,
+    signerName,
+    signerId,
+    signerType,
+  }: {
+    formId: string;
+    formName: string;
+    formOrgId: string;
+    formVersion: number;
+    sourceId: string;
+    signerEmail: string;
+    signerName: string;
+    signerId: string;
+    signerType: "PARENT" | "PMS_USER";
+  }) {
+    const renderedDocument = await createRenderedDocumentRecord({
+      title: formName,
+      source: {
+        sourceKind: "FORM_SUBMISSION",
+        sourceId,
+        organisationId: formOrgId,
+        templateKind: "FORM",
+        templateId: formId,
+        templateVersion: formVersion,
+      },
+    });
+
+    const signedRenderedDocument = await signPersistedRenderedDocument({
+      renderedDocumentId: renderedDocument.id,
+      organisationId: formOrgId,
+      signerId,
+      signerType,
+      signerEmail,
+      signerName,
+    });
+
+    return { renderedDocument, signedRenderedDocument };
+  }
+
   private static ensureParentOwnsSubmission(
     submissionParentId: unknown,
     initiatedBy?: string,
@@ -252,28 +297,20 @@ export class FormSigningService {
         throw new Error("Signer email is required for signing");
       }
 
-      const renderedDocument = await createRenderedDocumentRecord({
-        title: form.name,
-        source: {
-          sourceKind: "FORM_SUBMISSION",
+      const { renderedDocument, signedRenderedDocument } =
+        await FormSigningService.createAndStartRenderedDocumentSigning({
+          formId,
+          formName: form.name,
+          formOrgId: form.orgId,
+          formVersion: submission.formVersion,
           sourceId,
-          organisationId: form.orgId,
-          templateKind: "FORM",
-          templateId: formId,
-          templateVersion: submission.formVersion,
-        },
-      });
-
-      const signedRenderedDocument = await signPersistedRenderedDocument({
-        renderedDocumentId: renderedDocument.id,
-        organisationId: form.orgId,
-        signerId: isParent
-          ? (initiatedBy ?? "")
-          : (submission.submittedBy ?? ""),
-        signerType: isParent ? "PARENT" : "PMS_USER",
-        signerEmail,
-        signerName,
-      });
+          signerEmail,
+          signerName,
+          signerId: isParent
+            ? (initiatedBy ?? "")
+            : (submission.submittedBy ?? ""),
+          signerType: isParent ? "PARENT" : "PMS_USER",
+        });
 
       await prisma.formSubmission.update({
         where: { id: submission.id },
@@ -364,26 +401,20 @@ export class FormSigningService {
       throw new Error("Signer email is required for signing");
     }
 
-    const renderedDocument = await createRenderedDocumentRecord({
-      title: form.name,
-      source: {
-        sourceKind: "FORM_SUBMISSION",
+    const { renderedDocument, signedRenderedDocument } =
+      await FormSigningService.createAndStartRenderedDocumentSigning({
+        formId,
+        formName: form.name,
+        formOrgId: form.orgId,
+        formVersion: submission.formVersion,
         sourceId,
-        organisationId: form.orgId,
-        templateKind: "FORM",
-        templateId: formId,
-        templateVersion: submission.formVersion,
-      },
-    });
-
-    const signedRenderedDocument = await signPersistedRenderedDocument({
-      renderedDocumentId: renderedDocument.id,
-      organisationId: form.orgId,
-      signerId: isParent ? (initiatedBy ?? "") : (submission.submittedBy ?? ""),
-      signerType: isParent ? "PARENT" : "PMS_USER",
-      signerEmail,
-      signerName,
-    });
+        signerEmail,
+        signerName,
+        signerId: isParent
+          ? (initiatedBy ?? "")
+          : (submission.submittedBy ?? ""),
+        signerType: isParent ? "PARENT" : "PMS_USER",
+      });
 
     // 7️⃣ Persist signing state
     submission.signing = {

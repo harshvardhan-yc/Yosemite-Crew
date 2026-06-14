@@ -152,8 +152,9 @@ const resolveAssignee = (
   audience: TaskAudience,
   context: AppointmentContext,
   createdBy: string,
+  assignedRole: TaskAudience = audience,
 ) => {
-  if (audience === "PARENT_TASK") {
+  if (assignedRole === "PARENT_TASK") {
     return context.parentId ?? createdBy;
   }
 
@@ -248,8 +249,8 @@ const launchWorkflowInstance = async (
       source,
       anchorAt: context.anchorAt,
       admissionAt: context.admissionAt,
-      resolveAssignee: (audience) =>
-        resolveAssignee(audience, context, createdBy),
+      resolveAssignee: (audience, assignedRole) =>
+        resolveAssignee(audience, context, createdBy, assignedRole),
     },
   );
 
