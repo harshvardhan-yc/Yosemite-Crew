@@ -447,4 +447,178 @@ export const ClinicalArtifactFhirController = {
       return handleError(error, res);
     }
   },
+
+  async finalizeSoapNote(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.finalizeSoapNote(
+        req.params.soapNoteId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.soapNoteToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async reopenSoapNote(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.reopenSoapNote(
+        req.params.soapNoteId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.soapNoteToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async amendSoapNote(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.amendSoapNote(
+        req.params.soapNoteId,
+        req.params.organisationId,
+      );
+      return res
+        .status(201)
+        .json(clinicalArtifactFhirMapper.soapNoteToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async finalizePrescription(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.finalizePrescription(
+        req.params.prescriptionId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(
+          clinicalArtifactFhirMapper.prescriptionToMedicationRequest(record),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async reopenPrescription(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.reopenPrescription(
+        req.params.prescriptionId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(
+          clinicalArtifactFhirMapper.prescriptionToMedicationRequest(record),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async amendPrescription(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.amendPrescription(
+        req.params.prescriptionId,
+        req.params.organisationId,
+      );
+      return res
+        .status(201)
+        .json(
+          clinicalArtifactFhirMapper.prescriptionToMedicationRequest(record),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async finalizeDischargeSummary(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.finalizeDischargeSummary(
+        req.params.dischargeSummaryId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.dischargeSummaryToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async reopenDischargeSummary(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.reopenDischargeSummary(
+        req.params.dischargeSummaryId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.dischargeSummaryToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async amendDischargeSummary(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.amendDischargeSummary(
+        req.params.dischargeSummaryId,
+        req.params.organisationId,
+      );
+      return res
+        .status(201)
+        .json(clinicalArtifactFhirMapper.dischargeSummaryToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async finalizeVitalRecord(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.finalizeVitalRecord(
+        req.params.vitalRecordId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.vitalRecordToObservation(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async reopenVitalRecord(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.reopenVitalRecord(
+        req.params.vitalRecordId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.vitalRecordToObservation(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async amendVitalRecord(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.amendVitalRecord(
+        req.params.vitalRecordId,
+        req.params.organisationId,
+      );
+      return res
+        .status(201)
+        .json(clinicalArtifactFhirMapper.vitalRecordToObservation(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
 };
