@@ -11,15 +11,21 @@ import Close from '@/app/ui/primitives/Icons/Close';
 import { useNotify } from '@/app/hooks/useNotify';
 import { useSpecialitiesForPrimaryOrg } from '@/app/hooks/useSpecialities';
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
-import { deleteRoom, updateRoom } from '@/app/features/organization/services/roomService';
+import {
+  deleteRoom,
+  toggleRoomAvailability,
+  updateRoom,
+} from '@/app/features/organization/services/roomService';
 import {
   RoomDaysOptions,
   RoomEquipmentOptions,
   RoomSpeciesOptions,
   RoomsTypes,
   RoomUnitSizeOptions,
+  UnitCapableRoomTypes,
 } from '@/app/features/organization/pages/Organization/types';
-import { OrganisationRoom, RoomReferenceMapping } from '@yosemite-crew/types';
+import { OrganisationRoom, RoomReferenceMapping, RoomUnitGroup } from '@yosemite-crew/types';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import React, { useMemo, useRef, useState } from 'react';
 import { FiCheck, FiChevronDown, FiEdit2, FiPlus, FiTrash2 } from 'react-icons/fi';
 
@@ -70,6 +76,8 @@ const DEFAULT_AVAILABILITY = {
   totalUnits: 0,
 };
 
+const EMPTY_IDS: string[] = [];
+
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error !== null) {
     const maybeError = error as {
@@ -101,6 +109,9 @@ const normalizeSpeciesValues = (value?: string | string[]) => {
   return [value];
 };
 
+const isUnitCapableRoomType = (type?: OrganisationRoom['type']) =>
+  Boolean(type && UnitCapableRoomTypes.includes(type as (typeof UnitCapableRoomTypes)[number]));
+
 const normalizeReferenceIds = (values?: RoomReferenceMapping[] | string[]) =>
   (values ?? [])
     .map((value) => (typeof value === 'string' ? value : value.id))
@@ -128,7 +139,10 @@ const getUnitCount = (unit: Partial<RoomUnitDetails>) => {
 const sumUnitCounts = (units: Array<Partial<RoomUnitDetails>> | undefined) =>
   units?.reduce((total, unit) => total + getUnitCount(unit), 0) ?? 0;
 
-const getRoomForm = (room: RoomFormInput): ManagedRoom => ({
+const uniqueValues = (values: Array<string | undefined>) =>
+  Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+
+const getRoomForm = (room: RoomFormInput, unitGroups: RoomUnitGroup[] = []): ManagedRoom => ({
   ...room,
   code: room.code ?? room.id ?? '',
   assignedSpecialiteis: normalizeReferenceIds(room.assignedSpecialiteis),
@@ -136,8 +150,23 @@ const getRoomForm = (room: RoomFormInput): ManagedRoom => ({
   availability: {
     ...DEFAULT_AVAILABILITY,
     ...(room.availability ?? {}),
-    species: normalizeSpeciesValues(room.availability?.species ?? DEFAULT_AVAILABILITY.species),
-    totalUnits: room.availability?.totalUnits ?? room.unitCount ?? sumUnitCounts(room.units) ?? 0,
+    isAvailable:
+      room.availableNow ?? room.availability?.isAvailable ?? DEFAULT_AVAILABILITY.isAvailable,
+    days: room.availabilityDays?.[0] ?? room.availability?.days ?? DEFAULT_AVAILABILITY.days,
+    startTime:
+      room.availabilityStartTime ?? room.availability?.startTime ?? DEFAULT_AVAILABILITY.startTime,
+    endTime: room.availabilityEndTime ?? room.availability?.endTime ?? DEFAULT_AVAILABILITY.endTime,
+    species: normalizeSpeciesValues(
+      room.availability?.species ??
+        uniqueValues(unitGroups.flatMap((group) => group.speciesConstraints ?? [])) ??
+        DEFAULT_AVAILABILITY.species
+    ),
+    totalUnits:
+      room.availability?.totalUnits ??
+      room.unitCount ??
+      (room.units
+        ? sumUnitCounts(room.units)
+        : unitGroups.reduce((total, group) => total + group.unitCount, 0)),
   },
   units:
     room.units?.map((unit, index) => ({
@@ -146,9 +175,26 @@ const getRoomForm = (room: RoomFormInput): ManagedRoom => ({
       size: unit.size || 'Medium',
       count: getUnitCount(unit),
       occupied: unit.occupied ?? false,
-    })) ?? [],
-  unitCount: room.unitCount ?? sumUnitCounts(room.units) ?? 0,
-  equipment: room.equipment ?? ['Oxygen Tank', 'Dental Unit', 'Isolation unit'],
+    })) ??
+    unitGroups.map((group, index) => ({
+      id: group.id || `unit-${index + 1}`,
+      name: group.name || `${index + 1}`,
+      size: group.size || 'Medium',
+      count: group.unitCount,
+      occupied: false,
+    })),
+  unitCount:
+    room.unitCount ??
+    (room.units
+      ? sumUnitCounts(room.units)
+      : unitGroups.reduce((total, group) => total + group.unitCount, 0)),
+  equipment: room.equipment ??
+    room.capabilities ??
+    uniqueValues(unitGroups.flatMap((group) => group.capabilities ?? [])) ?? [
+      'Oxygen Tank',
+      'Dental Unit',
+      'Isolation unit',
+    ],
 });
 
 const getTotalUnits = (room: ManagedRoom) =>
@@ -156,8 +202,10 @@ const getTotalUnits = (room: ManagedRoom) =>
     ? sumUnitCounts(room.units)
     : (room.availability?.totalUnits ?? room.unitCount ?? 0);
 
-const getRoomStateKey = (room: OrganisationRoom, showModal: boolean) =>
-  `${showModal ? 'open' : 'closed'}:${room.id || room.name}`;
+const getRoomStateKey = (room: OrganisationRoom, showModal: boolean, unitGroups: RoomUnitGroup[]) =>
+  `${showModal ? 'open' : 'closed'}:${room.id || room.name}:${unitGroups
+    .map((group) => `${group.id}:${group.unitCount}`)
+    .join('|')}`;
 
 const SectionHeader = ({
   title,
@@ -278,10 +326,24 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
   const { notify } = useNotify();
   const teams = useTeamForPrimaryOrg();
   const specialities = useSpecialitiesForPrimaryOrg();
-  const roomStateKey = getRoomStateKey(activeRoom, showModal);
+  const roomUnitGroupsById = useOrganisationRoomStore((state) => state.roomUnitGroupsById);
+  const roomUnitGroupIds = useOrganisationRoomStore(
+    (state) =>
+      (activeRoom.id ? state.roomUnitGroupIdsByRoomId[activeRoom.id] : undefined) ?? EMPTY_IDS
+  );
+  const roomUnitGroups = useMemo(
+    () =>
+      roomUnitGroupIds
+        .map((id) => roomUnitGroupsById[id])
+        .filter((group): group is RoomUnitGroup => group != null),
+    [roomUnitGroupIds, roomUnitGroupsById]
+  );
+  const roomStateKey = getRoomStateKey(activeRoom, showModal, roomUnitGroups);
   const syncedRoomStateKeyRef = useRef(roomStateKey);
   const [mode, setMode] = useState<'view' | 'edit'>('view');
-  const [formData, setFormData] = useState<ManagedRoom>(() => getRoomForm(activeRoom));
+  const [formData, setFormData] = useState<ManagedRoom>(() =>
+    getRoomForm(activeRoom, roomUnitGroups)
+  );
   const [saving, setSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
@@ -296,7 +358,7 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
   if (syncedRoomStateKeyRef.current !== roomStateKey) {
     syncedRoomStateKeyRef.current = roomStateKey;
     setMode('view');
-    setFormData(getRoomForm(activeRoom));
+    setFormData(getRoomForm(activeRoom, roomUnitGroups));
     setCustomEquipmentName('');
   }
 
@@ -326,9 +388,10 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
     () => Array.from(new Set([...RoomEquipmentOptions, ...(formData.equipment ?? [])])),
     [formData.equipment]
   );
+  const supportsUnits = isUnitCapableRoomType(formData.type);
 
   const isDirty =
-    JSON.stringify(formData) !== JSON.stringify(getRoomForm(activeRoom)) ||
+    JSON.stringify(formData) !== JSON.stringify(getRoomForm(activeRoom, roomUnitGroups)) ||
     customEquipmentName.trim().length > 0;
   const totalUnits = getTotalUnits(formData);
 
@@ -355,13 +418,15 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
   };
 
   const discardChanges = () => {
-    setFormData(getRoomForm(activeRoom));
+    setFormData(getRoomForm(activeRoom, roomUnitGroups));
     setMode('view');
     setCustomEquipmentName('');
     setShowDiscardConfirm(false);
   };
 
   const addUnitDraft = () => {
+    if (!supportsUnits) return;
+
     setFormData((prev) => ({
       ...prev,
       units: [
@@ -397,6 +462,19 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
     setCustomEquipmentName('');
   };
 
+  const handleRoomTypeChange = (type: OrganisationRoom['type']) => {
+    const nextSupportsUnits = isUnitCapableRoomType(type);
+    setFormData((prev) => ({
+      ...prev,
+      type,
+      units: nextSupportsUnits ? prev.units : [],
+      availability: {
+        ...(prev.availability ?? DEFAULT_AVAILABILITY),
+        totalUnits: nextSupportsUnits ? (prev.availability?.totalUnits ?? 0) : 0,
+      },
+    }));
+  };
+
   const handleUpdate = async () => {
     setSaving(true);
     try {
@@ -408,6 +486,7 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
           ...(formData.availability ?? DEFAULT_AVAILABILITY),
           totalUnits,
         },
+        units: supportsUnits ? (formData.units ?? []) : [],
         assignedSpecialiteis: toReferenceMappings(
           formData.assignedSpecialiteis,
           specialityNameById
@@ -433,6 +512,27 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAvailabilityToggle = async (checked: boolean) => {
+    if (mode === 'edit') {
+      updateAvailability({ isAvailable: checked });
+      return;
+    }
+
+    try {
+      await toggleRoomAvailability(activeRoom, checked);
+      updateAvailability({ isAvailable: checked });
+      notify('success', {
+        title: checked ? 'Room available' : 'Room unavailable',
+        text: `${activeRoom.name} availability has been updated.`,
+      });
+    } catch (error) {
+      notify('error', {
+        title: 'Unable to update room',
+        text: getErrorMessage(error, 'Failed to update room availability. Please try again.'),
+      });
     }
   };
 
@@ -535,7 +635,7 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
                   <FormInput
                     intype="text"
                     value={formData.code ?? ''}
-                    inlabel="Room code (optional)"
+                    inlabel="Room code"
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                   />
                   <div className="sm:col-span-2">
@@ -544,10 +644,7 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
                       options={RoomsTypes}
                       defaultOption={formData.type}
                       onSelect={(option) =>
-                        setFormData({
-                          ...formData,
-                          type: option.value as OrganisationRoom['type'],
-                        })
+                        handleRoomTypeChange(option.value as OrganisationRoom['type'])
                       }
                     />
                   </div>
@@ -576,7 +673,7 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
                     checked={formData.availability?.isAvailable ?? true}
                     disabled={!canEditRoom}
                     label="Toggle room availability"
-                    onChange={(checked) => updateAvailability({ isAvailable: checked })}
+                    onChange={(checked) => void handleAvailabilityToggle(checked)}
                   />
                 }
               />
@@ -631,17 +728,24 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
                     onChange={(value) => updateAvailability({ species: value })}
                     options={RoomSpeciesOptions}
                   />
-                  <FormInput
-                    intype="number"
-                    value={String(formData.availability?.totalUnits ?? 0)}
-                    inlabel="Total Units"
-                    onChange={(e) => {
-                      const parsed = Number(e.target.value);
-                      updateAvailability({
-                        totalUnits: Number.isNaN(parsed) ? 0 : Math.max(0, parsed),
-                      });
-                    }}
-                  />
+                  {supportsUnits && (
+                    <FormInput
+                      intype="number"
+                      value={String(formData.availability?.totalUnits ?? 0)}
+                      inlabel="Total Units"
+                      onChange={(e) => {
+                        const parsed = Number(e.target.value);
+                        updateAvailability({
+                          totalUnits: Number.isNaN(parsed) ? 0 : Math.max(0, parsed),
+                        });
+                      }}
+                    />
+                  )}
+                  {!supportsUnits && (
+                    <p className="sm:col-span-2 rounded-2xl border border-card-border px-3 py-2 text-caption-1 text-text-secondary">
+                      Units are available for ICU, Inpatient, Isolation, and Boarding rooms.
+                    </p>
+                  )}
                   <div className="sm:col-span-2">
                     <MultiSelectDropdown
                       placeholder="Assigned Staff (optional)"
@@ -660,7 +764,7 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
                 open={openSections.units}
                 onToggle={() => toggleSection('units')}
                 action={
-                  mode === 'edit' ? (
+                  mode === 'edit' && supportsUnits ? (
                     <button
                       type="button"
                       aria-label="Add unit type"
@@ -718,9 +822,14 @@ const RoomInfo = ({ showModal, setShowModal, activeRoom, canEditRoom }: RoomInfo
                       </div>
                     )
                   )}
-                  {(formData.units ?? []).length === 0 && (
+                  {(formData.units ?? []).length === 0 && supportsUnits && (
                     <p className="px-1 text-body-4 text-text-secondary">
                       No unit types configured.
+                    </p>
+                  )}
+                  {!supportsUnits && (
+                    <p className="px-1 text-body-4 text-text-secondary">
+                      Select ICU, Inpatient, Isolation, or Boarding to configure unit types.
                     </p>
                   )}
                 </div>

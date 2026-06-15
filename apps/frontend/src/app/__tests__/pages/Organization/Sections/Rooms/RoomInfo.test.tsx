@@ -3,13 +3,16 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 import RoomInfo from '@/app/features/organization/pages/Organization/Sections/Rooms/RoomInfo';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 
 const updateRoomMock = jest.fn();
 const deleteRoomMock = jest.fn();
+const toggleRoomAvailabilityMock = jest.fn();
 
 jest.mock('@/app/features/organization/services/roomService', () => ({
   updateRoom: (...args: any[]) => updateRoomMock(...args),
   deleteRoom: (...args: any[]) => deleteRoomMock(...args),
+  toggleRoomAvailability: (...args: any[]) => toggleRoomAvailabilityMock(...args),
 }));
 
 jest.mock('@/app/hooks/useNotify', () => ({
@@ -117,7 +120,7 @@ describe('RoomInfo modal', () => {
     id: 'room-1',
     organisationId: 'org-1',
     name: 'Room A',
-    type: 'SURGERY',
+    type: 'INPATIENT',
     assignedSpecialiteis: ['spec-1'],
     assignedStaffs: ['team-1'],
     unitCount: 1,
@@ -134,6 +137,13 @@ describe('RoomInfo modal', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    useOrganisationRoomStore.setState({
+      roomUnitGroupsById: {},
+      roomUnitGroupIdsByRoomId: {},
+      roomUnitsById: {},
+      roomUnitIdsByRoomId: {},
+      roomUnitIdsByGroupId: {},
+    });
   });
 
   it('renders room details with normalized legacy unit data', () => {

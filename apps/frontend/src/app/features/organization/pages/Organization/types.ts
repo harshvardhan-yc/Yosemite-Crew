@@ -19,17 +19,25 @@ export const EmploymentTypes = [
   { label: 'Contract', value: 'CONTRACTOR' },
 ];
 export const RoomsTypes = [
-  { label: 'Consultation', value: 'CONSULTATION' },
-  { label: 'Waiting area', value: 'WAITING_AREA' },
+  { label: 'Exam room', value: 'EXAM_ROOM' },
+  { label: 'Treatment', value: 'TREATMENT' },
   { label: 'Surgery', value: 'SURGERY' },
-  { label: 'Icu', value: 'ICU' },
+  { label: 'Dental', value: 'DENTAL' },
+  { label: 'Imaging', value: 'IMAGING' },
+  { label: 'Waiting', value: 'WAITING' },
+  { label: 'Grooming', value: 'GROOMING' },
+  { label: 'ICU', value: 'ICU' },
+  { label: 'Inpatient', value: 'INPATIENT' },
+  { label: 'Isolation', value: 'ISOLATION' },
+  { label: 'Boarding', value: 'BOARDING' },
+  { label: 'Reception', value: 'RECEPTION' },
+  { label: 'Consultation', value: 'CONSULTATION' },
 ];
+export const UnitCapableRoomTypes = ['ICU', 'INPATIENT', 'ISOLATION', 'BOARDING'] as const;
 export const RoomSpeciesOptions = [
   { label: 'Canine', value: 'CANINE' },
   { label: 'Feline', value: 'FELINE' },
-  { label: 'Avian', value: 'AVIAN' },
-  { label: 'Exotic', value: 'EXOTIC' },
-  { label: 'Mixed', value: 'MIXED' },
+  { label: 'Equine', value: 'EQUINE' },
 ];
 export const RoomDaysOptions = [
   { label: 'Mon - Sat', value: 'MON_SAT' },

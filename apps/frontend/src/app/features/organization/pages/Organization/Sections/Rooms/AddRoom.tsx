@@ -9,6 +9,7 @@ import {
   RoomSpeciesOptions,
   RoomsTypes,
   RoomUnitSizeOptions,
+  UnitCapableRoomTypes,
 } from '@/app/features/organization/pages/Organization/types';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
@@ -78,6 +79,9 @@ const buildRoomId = () => `room-${Date.now()}`;
 
 const getTotalUnits = (units: RoomUnitDraft[], fallback: number) =>
   units.length ? units.reduce((total, unit) => total + unit.count, 0) : fallback;
+
+const isUnitCapableRoomType = (type: OrganisationRoom['type']) =>
+  UnitCapableRoomTypes.includes(type as (typeof UnitCapableRoomTypes)[number]);
 
 const toOptionMap = (options: { label: string; value: string }[]) =>
   Object.fromEntries(options.map((option) => [option.value, option.label]));
@@ -158,7 +162,7 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
   const { notify } = useNotify();
   const specialities = useSpecialitiesForPrimaryOrg();
   const [formData, setFormData] = useState<RoomFormData>(INITIAL_FORM_DATA);
-  const [formDataErrors, setFormDataErrors] = useState<{ name?: string }>({});
+  const [formDataErrors, setFormDataErrors] = useState<{ name?: string; code?: string }>({});
   const [saving, setSaving] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [customEquipmentName, setCustomEquipmentName] = useState('');
@@ -193,6 +197,7 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
   );
   const specialitiesById = useMemo(() => toOptionMap(SpecialitiesOptions), [SpecialitiesOptions]);
   const teamsById = useMemo(() => toOptionMap(TeamOptions), [TeamOptions]);
+  const supportsUnits = isUnitCapableRoomType(formData.type);
 
   const isDirty =
     JSON.stringify(formData) !== JSON.stringify(INITIAL_FORM_DATA) ||
@@ -225,6 +230,8 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
   };
 
   const addUnitDraft = () => {
+    if (!supportsUnits) return;
+
     setFormData((prev) => ({
       ...prev,
       units: [
@@ -261,8 +268,21 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
     setCustomEquipmentName('');
   };
 
+  const handleRoomTypeChange = (type: OrganisationRoom['type']) => {
+    const nextSupportsUnits = isUnitCapableRoomType(type);
+    setFormData((prev) => ({
+      ...prev,
+      type,
+      units: nextSupportsUnits ? prev.units : [],
+      availability: {
+        ...prev.availability,
+        totalUnits: nextSupportsUnits ? prev.availability.totalUnits : 0,
+      },
+    }));
+  };
+
   const handleSave = async () => {
-    const errors: { name?: string } = {};
+    const errors: { name?: string; code?: string } = {};
     if (!formData.name.trim()) errors.name = 'Name is required';
     setFormDataErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -279,6 +299,7 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
           ...formData.availability,
           totalUnits,
         },
+        units: supportsUnits ? formData.units : [],
         assignedSpecialiteis: toReferenceMappings(formData.assignedSpecialiteis, specialitiesById),
         assignedStaffs: toReferenceMappings(formData.assignedStaffs, teamsById),
         availableNow: formData.availability.isAvailable,
@@ -294,8 +315,7 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
         text: 'Room has been created successfully.',
       });
       resetAndClose();
-    } catch (error) {
-      console.log(error);
+    } catch {
       notify('error', {
         title: 'Unable to create room',
         text: 'Failed to create room. Please try again.',
@@ -345,17 +365,15 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
                     intype="text"
                     inname="code"
                     value={formData.code}
-                    inlabel="Room code (optional)"
+                    inlabel="Room code"
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                    error={formDataErrors.code}
                   />
                   <div className="sm:col-span-2">
                     <LabelDropdown
                       placeholder="Room Type"
                       onSelect={(option) =>
-                        setFormData({
-                          ...formData,
-                          type: option.value as OrganisationRoom['type'],
-                        })
+                        handleRoomTypeChange(option.value as OrganisationRoom['type'])
                       }
                       defaultOption={formData.type}
                       options={RoomsTypes}
@@ -419,18 +437,25 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
                     onChange={(value) => updateAvailability({ species: value })}
                     options={RoomSpeciesOptions}
                   />
-                  <FormInput
-                    intype="number"
-                    inname="totalUnits"
-                    value={String(formData.availability.totalUnits)}
-                    inlabel="Total Units"
-                    onChange={(e) => {
-                      const parsed = Number(e.target.value);
-                      updateAvailability({
-                        totalUnits: Number.isNaN(parsed) ? 0 : Math.max(0, parsed),
-                      });
-                    }}
-                  />
+                  {supportsUnits && (
+                    <FormInput
+                      intype="number"
+                      inname="totalUnits"
+                      value={String(formData.availability.totalUnits)}
+                      inlabel="Total Units"
+                      onChange={(e) => {
+                        const parsed = Number(e.target.value);
+                        updateAvailability({
+                          totalUnits: Number.isNaN(parsed) ? 0 : Math.max(0, parsed),
+                        });
+                      }}
+                    />
+                  )}
+                  {!supportsUnits && (
+                    <p className="sm:col-span-2 rounded-2xl border border-card-border px-3 py-2 text-caption-1 text-text-secondary">
+                      Units are available for ICU, Inpatient, Isolation, and Boarding rooms.
+                    </p>
+                  )}
                   <div className="sm:col-span-2">
                     <MultiSelectDropdown
                       placeholder="Assigned Staff (optional)"
@@ -449,14 +474,16 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
                 open={openSections.units}
                 onToggle={() => toggleSection('units')}
                 action={
-                  <button
-                    type="button"
-                    aria-label="Add unit type"
-                    onClick={addUnitDraft}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-text-primary text-white"
-                  >
-                    <FiPlus size={16} aria-hidden="true" />
-                  </button>
+                  supportsUnits ? (
+                    <button
+                      type="button"
+                      aria-label="Add unit type"
+                      onClick={addUnitDraft}
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-text-primary text-white"
+                    >
+                      <FiPlus size={16} aria-hidden="true" />
+                    </button>
+                  ) : null
                 }
               />
               {openSections.units && (
@@ -491,9 +518,14 @@ const AddRoom = ({ showModal, setShowModal }: AddRoomProps) => {
                       </div>
                     </div>
                   ))}
-                  {formData.units.length === 0 && (
+                  {formData.units.length === 0 && supportsUnits && (
                     <p className="px-1 text-body-4 text-text-secondary">
                       Add unit types when this room contains kennels, wards, pods, or bays.
+                    </p>
+                  )}
+                  {!supportsUnits && (
+                    <p className="px-1 text-body-4 text-text-secondary">
+                      Select ICU, Inpatient, Isolation, or Boarding to configure unit types.
                     </p>
                   )}
                 </div>

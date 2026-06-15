@@ -39,7 +39,8 @@ type RoomTableProps = {
 
 const getRoomCode = (room: RoomManagementRoom) => room.code || room.id || '-';
 
-const getAvailability = (room: RoomManagementRoom) => room.availability?.isAvailable ?? true;
+const getAvailability = (room: RoomManagementRoom) =>
+  room.availableNow ?? room.availability?.isAvailable ?? true;
 
 const getOccupancyLabel = (room: RoomManagementRoom) => {
   const units = room.units ?? [];

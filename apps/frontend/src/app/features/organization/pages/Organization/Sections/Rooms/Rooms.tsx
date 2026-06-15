@@ -8,7 +8,7 @@ import { OrganisationRoom } from '@yosemite-crew/types';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import { PERMISSIONS } from '@/app/lib/permissions';
 import { usePermissions } from '@/app/hooks/usePermissions';
-import { updateRoom } from '@/app/features/organization/services/roomService';
+import { toggleRoomAvailability } from '@/app/features/organization/services/roomService';
 import { useNotify } from '@/app/hooks/useNotify';
 
 type ManagedRoom = OrganisationRoom & {
@@ -45,13 +45,7 @@ const Rooms = () => {
   const handleToggleAvailability = async (room: ManagedRoom, isAvailable: boolean) => {
     if (!canEditRoom) return;
     try {
-      await updateRoom({
-        ...room,
-        availability: {
-          ...(room.availability ?? {}),
-          isAvailable,
-        },
-      } as OrganisationRoom);
+      await toggleRoomAvailability(room, isAvailable);
       notify('success', {
         title: isAvailable ? 'Room available' : 'Room unavailable',
         text: `${room.name} availability has been updated.`,
