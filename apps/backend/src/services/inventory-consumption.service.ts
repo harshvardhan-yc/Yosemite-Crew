@@ -20,6 +20,7 @@ export type InventoryConsumptionLineInput = {
   sourceLineKey: string;
   inventoryItemId?: string;
   inventoryItemSku?: string;
+  batchId?: string;
   quantity: number;
   metadata?: Prisma.InputJsonValue;
 };
@@ -99,6 +100,8 @@ const consumeInventoryItem = async (
   sourceLineKey: string,
   action: InventoryConsumptionAction,
   idempotencyKey: string,
+  batchId?: string,
+  movementReason?: string,
 ) => {
   const existingEvent = await tx.inventoryConsumptionEvent.findUnique({
     where: { idempotencyKey },
@@ -118,7 +121,7 @@ const consumeInventoryItem = async (
         idempotencyKey,
         inventoryItemId,
         quantity,
-        status: "SKIPPED",
+        status: "APPLIED",
         metadata,
       },
     });
@@ -130,6 +133,7 @@ const consumeInventoryItem = async (
         itemId: inventoryItemId,
         referenceId: sourceId,
         change: { lt: 0 },
+        ...(batchId ? { batchId } : {}),
       },
       orderBy: [{ createdAt: "desc" }],
     });
@@ -161,7 +165,7 @@ const consumeInventoryItem = async (
           itemId: inventoryItemId,
           batchId: movement.batchId ?? undefined,
           change: restore,
-          reason: "PRESCRIPTION_RELEASE",
+          reason: movementReason ?? "PRESCRIPTION_RELEASE",
           referenceId: sourceId,
         },
       });
@@ -234,7 +238,11 @@ const consumeInventoryItem = async (
 
   let remaining = quantity;
   const batches = await tx.inventoryBatch.findMany({
-    where: { itemId: inventoryItemId, organisationId },
+    where: {
+      itemId: inventoryItemId,
+      organisationId,
+      ...(batchId ? { id: batchId } : {}),
+    },
     orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
   });
 
@@ -255,7 +263,7 @@ const consumeInventoryItem = async (
         itemId: inventoryItemId,
         batchId: batch.id,
         change: -consume,
-        reason: "MANUAL_ADJUSTMENT",
+        reason: movementReason ?? "MANUAL_ADJUSTMENT",
         referenceId: sourceId,
       },
     });
@@ -331,10 +339,56 @@ const resolveInventoryItemIdBySku = async (
   return item?.id ?? null;
 };
 
+const resolveInventoryItemIdByBatch = async (
+  tx: Prisma.TransactionClient,
+  organisationId: string,
+  batchSelector: {
+    batchId?: string | null;
+    batchNumber?: string | null;
+    lotNumber?: string | null;
+    expiryDate?: string | Date | null;
+  },
+) => {
+  const batchId = asNonEmptyString(batchSelector.batchId);
+  const batchNumber = asNonEmptyString(batchSelector.batchNumber);
+  const lotNumber = asNonEmptyString(batchSelector.lotNumber);
+  const expiryDate =
+    batchSelector.expiryDate instanceof Date
+      ? batchSelector.expiryDate
+      : typeof batchSelector.expiryDate === "string" &&
+          batchSelector.expiryDate.trim()
+        ? new Date(batchSelector.expiryDate)
+        : undefined;
+
+  if (!batchId && !batchNumber && !lotNumber && !expiryDate) {
+    return null;
+  }
+
+  const batch = await tx.inventoryBatch.findFirst({
+    where: {
+      organisationId,
+      ...(batchId
+        ? { id: batchId }
+        : batchNumber
+          ? { batchNumber }
+          : lotNumber
+            ? { lotNumber }
+            : {}),
+      ...(expiryDate && !Number.isNaN(expiryDate.getTime())
+        ? { expiryDate }
+        : {}),
+    },
+    select: { id: true, itemId: true },
+  });
+
+  return batch ?? null;
+};
+
 const consumeResolvedLines = async (
   tx: Prisma.TransactionClient,
   request: InventoryConsumptionRequest,
   resolvedLines: InventoryConsumptionLineInput[],
+  options?: { movementReason?: string },
 ) => {
   const organisationId = asNonEmptyString(request.organisationId);
   const sourceId = asNonEmptyString(request.sourceId);
@@ -375,6 +429,8 @@ const consumeResolvedLines = async (
       line.sourceLineKey,
       action,
       `${idempotencyBase}:${line.sourceLineKey}:${inventoryItemId}`,
+      line.batchId,
+      options?.movementReason,
     );
     events.push(event);
   }
@@ -412,6 +468,14 @@ const normalizePrescriptionLines = (medications: unknown) => {
         inventoryItemSku:
           asNonEmptyString(record.inventoryItemSku) ??
           asNonEmptyString(record.sku),
+        batchId: asNonEmptyString(record.batchId),
+        batchNumber: asNonEmptyString(record.batchNumber),
+        lotNumber: asNonEmptyString(record.lotNumber),
+        expiryDate:
+          typeof record.expiryDate === "string" ||
+          record.expiryDate instanceof Date
+            ? record.expiryDate
+            : undefined,
         ruleKeys: [
           asNonEmptyString(record.inventoryItemCode),
           asNonEmptyString(record.medicationCode),
@@ -434,12 +498,20 @@ const resolvePrescriptionLines = async (
   const resolved: InventoryConsumptionLineInput[] = [];
 
   for (const line of prescriptionLines) {
+    const batchMatch = await resolveInventoryItemIdByBatch(tx, organisationId, {
+      batchId: line.batchId,
+      batchNumber: line.batchNumber,
+      lotNumber: line.lotNumber,
+      expiryDate: line.expiryDate,
+    });
+
     if (line.inventoryItemId) {
       resolved.push({
         sourceLineKey: line.sourceLineKey,
         inventoryItemId: line.inventoryItemId,
         quantity: line.quantity,
         metadata: line.metadata,
+        batchId: batchMatch?.id ?? line.batchId ?? undefined,
       });
       continue;
     }
@@ -456,9 +528,21 @@ const resolvePrescriptionLines = async (
           inventoryItemId,
           quantity: line.quantity,
           metadata: line.metadata,
+          batchId: batchMatch?.id ?? line.batchId ?? undefined,
         });
         continue;
       }
+    }
+
+    if (batchMatch?.itemId) {
+      resolved.push({
+        sourceLineKey: line.sourceLineKey,
+        inventoryItemId: batchMatch.itemId,
+        quantity: line.quantity,
+        metadata: line.metadata,
+        batchId: batchMatch.id,
+      });
+      continue;
     }
 
     for (const ruleKey of line.ruleKeys) {
@@ -477,6 +561,7 @@ const resolvePrescriptionLines = async (
             Math.round(line.quantity * rule.quantityMultiplier),
           ),
           metadata: line.metadata,
+          batchId: batchMatch?.id ?? line.batchId ?? undefined,
         });
         break;
       }
@@ -595,6 +680,7 @@ export const InventoryConsumptionService = {
           line.sourceLineKey,
           action,
           `${idempotencyBase}:${line.sourceLineKey}:${resolvedInventoryItemId}`,
+          line.batchId,
         );
         events.push(event);
       }
@@ -632,6 +718,45 @@ export const InventoryConsumptionService = {
           sourceType: "PRESCRIPTION",
           sourceId: prescriptionId,
           action: "CONSUME",
+          metadata: params.metadata,
+          lines,
+        },
+        lines,
+        { movementReason: "PRESCRIPTION_DISPENSE" },
+      );
+    });
+  },
+
+  async reservePrescription(params: {
+    organisationId: string;
+    prescriptionId: string;
+    medications: unknown;
+    metadata?: Prisma.InputJsonValue;
+  }) {
+    const organisationId = asNonEmptyString(params.organisationId);
+    const prescriptionId = asNonEmptyString(params.prescriptionId);
+    if (!organisationId || !prescriptionId) {
+      throw new InventoryConsumptionServiceError(
+        "organisationId and prescriptionId are required",
+        400,
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const lines = await resolvePrescriptionLines(
+        tx,
+        organisationId,
+        params.medications,
+      );
+      if (!lines.length) return [];
+
+      return consumeResolvedLines(
+        tx,
+        {
+          organisationId,
+          sourceType: "PRESCRIPTION",
+          sourceId: prescriptionId,
+          action: "RESERVE",
           metadata: params.metadata,
           lines,
         },
@@ -674,6 +799,88 @@ export const InventoryConsumptionService = {
           lines,
         },
         lines,
+        { movementReason: "PRESCRIPTION_RELEASE" },
+      );
+    });
+  },
+
+  async returnPrescription(params: {
+    organisationId: string;
+    prescriptionId: string;
+    medications: unknown;
+    metadata?: Prisma.InputJsonValue;
+  }) {
+    const organisationId = asNonEmptyString(params.organisationId);
+    const prescriptionId = asNonEmptyString(params.prescriptionId);
+    if (!organisationId || !prescriptionId) {
+      throw new InventoryConsumptionServiceError(
+        "organisationId and prescriptionId are required",
+        400,
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const lines = await resolvePrescriptionLines(
+        tx,
+        organisationId,
+        params.medications,
+      );
+      if (!lines.length) return [];
+
+      return consumeResolvedLines(
+        tx,
+        {
+          organisationId,
+          sourceType: "PRESCRIPTION",
+          sourceId: prescriptionId,
+          action: "RELEASE",
+          metadata: params.metadata,
+          lines,
+        },
+        lines,
+        { movementReason: "PRESCRIPTION_RETURN" },
+      );
+    });
+  },
+
+  async voidDispensePrescription(params: {
+    organisationId: string;
+    prescriptionId: string;
+    medications: unknown;
+    metadata?: Prisma.InputJsonValue;
+  }) {
+    const organisationId = asNonEmptyString(params.organisationId);
+    const prescriptionId = asNonEmptyString(params.prescriptionId);
+    if (!organisationId || !prescriptionId) {
+      throw new InventoryConsumptionServiceError(
+        "organisationId and prescriptionId are required",
+        400,
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const lines = await resolvePrescriptionLines(
+        tx,
+        organisationId,
+        params.medications,
+      );
+      if (!lines.length) return [];
+
+      return consumeResolvedLines(
+        tx,
+        {
+          organisationId,
+          sourceType: "PRESCRIPTION",
+          sourceId: prescriptionId,
+          action: "RELEASE",
+          metadata: {
+            voided: true,
+            originalMetadata: params.metadata ?? null,
+          } as Prisma.InputJsonValue,
+          lines,
+        },
+        lines,
+        { movementReason: "PRESCRIPTION_VOID_DISPENSE" },
       );
     });
   },

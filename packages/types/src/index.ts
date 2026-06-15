@@ -135,6 +135,15 @@ export type { Service } from './service';
 export type { Case, CaseStatus } from './case';
 export { fromFHIRCase, toFHIRCase } from './case';
 export type { Admission } from './admission';
+export type {
+  InventoryItemSearchResult,
+  MedicationSearchResult,
+  PrescriptionInventoryAction,
+  PrescriptionInventoryActionResponse,
+  PrescriptionInventoryBatchLike,
+  PrescriptionInventoryEventReceipt,
+  PrescriptionLineItem,
+} from './prescription';
 export type { Encounter, EncounterClass, EncounterStatus } from './encounter';
 export { fromFHIREncounter, toFHIREncounter } from './encounter';
 export type { RoomUnit } from './roomUnit';
