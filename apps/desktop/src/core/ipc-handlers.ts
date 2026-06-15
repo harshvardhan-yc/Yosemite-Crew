@@ -43,6 +43,7 @@ export interface IpcServices {
   activeContents: () => Electron.WebContents | null;
   loadStartUrl: () => void;
   enterTabMode: (url: string) => void;
+  runCommandAction: (id: string) => Promise<void>;
   tabMode: boolean;
   tabManager: {
     create: (url: string) => string;
@@ -184,10 +185,12 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
       services.commandPaletteWindow.close();
     }
 
-    // The command action router is in main.ts — re-importing creates a cycle.
-    // Instead, we handle the most common commands inline and let main.ts
-    // handle the rest via yc:execute-command-notify.
-    return { ok: false };
+    // Run the action via the command router supplied by main.ts. Passing it as a
+    // service (rather than importing main.ts) avoids an import cycle.
+    void services
+      .runCommandAction(id)
+      .catch((error) => services.logger.warn('execute_command_failed', { id, error }));
+    return { ok: true };
   });
 
   registry.handle('yc:get-palette-recents', async () => {

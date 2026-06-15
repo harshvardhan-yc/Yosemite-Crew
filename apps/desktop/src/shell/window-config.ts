@@ -17,7 +17,11 @@ import {
 } from '../core/navigation-policy';
 import { createLogger, type DesktopLogger } from '../utils/logger';
 
-const config = getDesktopConfig();
+// Read the desktop config lazily (and memoize). main.ts applies managed/MDM env
+// during startup, which runs before any of these handlers fire — reading at
+// import time would snapshot the config before that env is applied.
+let _config: ReturnType<typeof getDesktopConfig> | null = null;
+const getConfig = (): ReturnType<typeof getDesktopConfig> => (_config ??= getDesktopConfig());
 const _logger: DesktopLogger = createLogger();
 
 export const DEEP_LINK_SCHEME = 'yosemitecrew';
@@ -93,7 +97,7 @@ export const secureWebPreferences = (
   allowRunningInsecureContent: false,
   experimentalFeatures: false,
   webviewTag: false,
-  partition: config.appPartition,
+  partition: getConfig().appPartition,
   ...(preload ? { preload } : {}),
 });
 
@@ -106,9 +110,9 @@ export const childWindowOptions = (): Electron.BrowserWindowConstructorOptions =
 });
 
 export const handleWindowOpen = (rawUrl: string): WindowOpenHandlerResponse => {
-  const decision = classifyNavigation(rawUrl, config);
+  const decision = classifyNavigation(rawUrl, getConfig());
 
-  if (decision.disposition === 'internal' || isAllowedInAppPopup(rawUrl, config)) {
+  if (decision.disposition === 'internal' || isAllowedInAppPopup(rawUrl, getConfig())) {
     _logger.info('popup_allowed_in_app', { url: decision.url?.href || rawUrl });
     return { action: 'allow', overrideBrowserWindowOptions: childWindowOptions() };
   }
@@ -127,7 +131,7 @@ export const handleMainNavigation = (
   event: Pick<Event, 'preventDefault'>,
   rawUrl: string
 ): void => {
-  const decision = classifyNavigation(rawUrl, config);
+  const decision = classifyNavigation(rawUrl, getConfig());
   if (decision.disposition === 'internal') return;
 
   event.preventDefault();
@@ -146,7 +150,7 @@ export const shouldGrantPermission = (
   webContents: WebContents
 ): boolean => {
   const requestingUrl = details.requestingUrl || webContents.getURL();
-  const decision = classifyNavigation(requestingUrl, config);
+  const decision = classifyNavigation(requestingUrl, getConfig());
   return decision.disposition === 'internal' && permittedPermissions.has(permission);
 };
 
@@ -162,7 +166,7 @@ export const configureSessionPermissions = (ses: Session): void => {
   });
 
   ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
-    const decision = classifyNavigation(requestingOrigin || '', config);
+    const decision = classifyNavigation(requestingOrigin || '', getConfig());
     return decision.disposition === 'internal' && permittedPermissions.has(permission);
   });
 };

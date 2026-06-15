@@ -129,7 +129,7 @@ export const createDualWitnessLog = (deps: DualWitnessDeps): DualWitnessLog => {
         witnessName: tx.witnessName || '',
         witnessPinVerified: true,
         reason: tx.notes || '',
-        csTransactionId: tx.auditEntryId,
+        csTransactionId: tx.id,
       }));
   };
 
@@ -151,7 +151,7 @@ export const createDualWitnessLog = (deps: DualWitnessDeps): DualWitnessLog => {
         witnessName: tx.witnessName || '',
         witnessPinVerified: true,
         reason: tx.notes || '',
-        csTransactionId: tx.auditEntryId,
+        csTransactionId: tx.id,
       }));
   };
 

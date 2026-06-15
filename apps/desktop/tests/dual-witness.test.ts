@@ -117,6 +117,9 @@ describe('createDualWitnessLog', () => {
     const events = dwLog.getWasteEvents('Ketamine');
     expect(events).toHaveLength(1);
     expect(events[0].drugName).toBe('Ketamine');
+    // csTransactionId must reference the CS transaction id, not the audit-entry id.
+    expect(events[0].csTransactionId).toBe(events[0].id);
+    expect(events[0].csTransactionId).toMatch(/^cs-/);
   });
 
   test('getWasteEvents without drugName returns all waste events', async () => {

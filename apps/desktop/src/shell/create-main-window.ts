@@ -61,8 +61,7 @@ export interface CreateMainWindowDeps {
   settingsStore: SettingsStore | null;
   signedInBefore: boolean;
   reloadGuard: { shouldReload: () => boolean; reset: () => void };
-  unreadCount: number;
-  updateUnreadBadge: () => void;
+  clearUnread: () => void;
 
   // Menu actions
   openCommandPalette: () => void;
@@ -325,8 +324,7 @@ export const createMainWindow = async (
   });
 
   mainWindow.on('focus', () => {
-    deps.unreadCount = 0;
-    deps.updateUnreadBadge();
+    deps.clearUnread();
   });
 
   createAppMenu({

@@ -1000,6 +1000,25 @@ const updateUnreadBadge = (): void => {
   }
 };
 
+// Reset the real unread counter (the module-level value that updateUnreadBadge
+// reads) and refresh the dock badge.
+const clearUnread = (): void => {
+  unreadCount = 0;
+  updateUnreadBadge();
+};
+
+// Real-fs deps for the rollback tracker. Without these, readTracker returns a
+// default and recordCrash/resetTracker never persist, so rollback can't work.
+const rollbackFsDeps = {
+  readFileSync: (p: string, enc: string): string => fs.readFileSync(p, enc as BufferEncoding),
+  writeFileSync: (p: string, data: string, enc: string): void =>
+    fs.writeFileSync(p, data, enc as BufferEncoding),
+  mkdirSync: (p: string, options: { recursive: boolean }): void => {
+    fs.mkdirSync(p, options);
+  },
+  pathDirname: (p: string): string => path.dirname(p),
+};
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!gotSingleInstanceLock) {
@@ -1133,6 +1152,7 @@ if (!gotSingleInstanceLock) {
         activeContents,
         loadStartUrl,
         enterTabMode,
+        runCommandAction,
         get tabMode() {
           return tabMode;
         },
@@ -1237,7 +1257,7 @@ if (!gotSingleInstanceLock) {
       {
         const trackerPath = path.join(app.getPath('userData'), ROLLBACK_FILENAME);
         const appVersion = app.getVersion();
-        rollbackTracker = readTracker(trackerPath);
+        rollbackTracker = readTracker(trackerPath, rollbackFsDeps);
         const decision = evaluateRollback(rollbackTracker, appVersion);
         if (decision.shouldRollback) {
           logger.warn('rollback_triggered', { reason: decision.reason, tracker: rollbackTracker });
@@ -1245,9 +1265,9 @@ if (!gotSingleInstanceLock) {
           logger.warn('previous_session_crashed', { crashCount: rollbackTracker.crashCount });
           // Carry forward the crash count so the current session can also
           // contribute if it crashes too.
-          rollbackTracker = recordCrash(trackerPath, appVersion);
+          rollbackTracker = recordCrash(trackerPath, appVersion, rollbackFsDeps);
         } else {
-          rollbackTracker = resetTracker(trackerPath, appVersion);
+          rollbackTracker = resetTracker(trackerPath, appVersion, rollbackFsDeps);
         }
       }
       let pendingTabModeUrl: string | undefined;
@@ -1284,8 +1304,7 @@ if (!gotSingleInstanceLock) {
         settingsStore,
         signedInBefore,
         reloadGuard,
-        unreadCount,
-        updateUnreadBadge,
+        clearUnread,
         openCommandPalette,
         createSettingsWindow,
         newTab,
@@ -1497,8 +1516,7 @@ if (!gotSingleInstanceLock) {
         settingsStore,
         signedInBefore,
         reloadGuard,
-        unreadCount,
-        updateUnreadBadge,
+        clearUnread,
         openCommandPalette,
         createSettingsWindow,
         newTab,
@@ -1555,7 +1573,7 @@ if (!gotSingleInstanceLock) {
     // Reset the rollback tracker on clean exit so the next launch doesn't
     // inherit stale crash counts from a healthy session.
     const trackerPath = path.join(app.getPath('userData'), ROLLBACK_FILENAME);
-    resetTracker(trackerPath, app.getVersion());
+    resetTracker(trackerPath, app.getVersion(), rollbackFsDeps);
   });
 
   app.on('window-all-closed', () => {

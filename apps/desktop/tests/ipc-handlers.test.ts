@@ -73,6 +73,7 @@ const makeServices = (overrides: Partial<IpcServices> = {}): IpcServices => {
     activeContents: () => wc as never,
     loadStartUrl: jest.fn(),
     enterTabMode: jest.fn(),
+    runCommandAction: jest.fn(async () => {}),
     tabMode: true,
     tabManager: {
       create: jest.fn(() => 't2'),
@@ -191,7 +192,8 @@ describe('ipc-handlers — happy paths', () => {
     expect(await call('yc:start-telehealth', { appointmentId: 'x' })).toMatchObject({ ok: true });
     expect(await call('yc:get-settings')).toMatchObject({ ok: true });
     expect(await call('yc:set-settings', { theme: 'dark' })).toMatchObject({ ok: true });
-    expect(await call('yc:execute-command', BUILTIN_ACTIONS[0].id)).toBeDefined();
+    expect(await call('yc:execute-command', BUILTIN_ACTIONS[0].id)).toMatchObject({ ok: true });
+    expect(services.runCommandAction).toHaveBeenCalledWith(BUILTIN_ACTIONS[0].id);
     expect(await call('yc:get-palette-recents')).toMatchObject({ ok: true });
     expect(await call('yc:get-palette-actions')).toMatchObject({ ok: true });
     expect(await call('yc:close-palette')).toEqual({ ok: true });
