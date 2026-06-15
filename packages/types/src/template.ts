@@ -27,6 +27,16 @@ export type TemplateScope =
   | 'INPATIENT'
   | 'OUTPATIENT';
 export type TemplateOwnershipType = 'YC_LIBRARY' | 'ORG_TEMPLATE' | 'USER_TEMPLATE';
+export type TemplateSource = 'YC_LIBRARY' | 'ORGANISATION' | 'USER';
+export type TemplateContractKind =
+  | 'SOAP_NOTE'
+  | 'VITAL_RECORD'
+  | 'DISCHARGE_SUMMARY'
+  | 'PRESCRIPTION'
+  | 'FORM'
+  | 'CONSENT'
+  | 'INPATIENT_SCHEDULE'
+  | 'TASK_ASSIGNMENT';
 export type TemplateKind =
   | 'FORM'
   | 'SOAP_NOTE'
@@ -92,6 +102,16 @@ export interface TemplateSchemaSnapshot {
   sections: TemplateSection[];
 }
 
+export interface TemplateAppliesTo {
+  serviceIds?: string[];
+  packageIds?: string[];
+  species?: string[];
+  encounterModes?: Array<'OUTPATIENT' | 'INPATIENT'>;
+  organisationTypes?: string[];
+  specialityIds?: string[];
+  defaultForKind?: boolean;
+}
+
 export interface TemplateVersionLike {
   id: string;
   version: number;
@@ -120,7 +140,37 @@ export interface TemplateLike {
   createdAt: Date;
   updatedAt: Date;
   catalogItemIds?: string[];
+  source?: TemplateSource;
+  appliesTo?: TemplateAppliesTo | null;
   versions?: TemplateVersionLike[];
+}
+
+export interface TemplateResolveInput {
+  organisationId: string;
+  kind: TemplateContractKind;
+  appointmentId?: string;
+  encounterId?: string;
+  companionId?: string;
+  species?: string;
+  serviceId?: string;
+  packageId?: string;
+  mode?: 'OUTPATIENT' | 'INPATIENT';
+  ownerUserId?: string;
+}
+
+export interface TemplateResolveResponse {
+  templateId: string;
+  templateVersion: number;
+  templateVersionId: string;
+  source: TemplateSource;
+  ownerUserId: string | null;
+  kind: TemplateContractKind;
+  name: string;
+  schemaSnapshot: TemplateSchemaSnapshot;
+  renderConfigSnapshot: Record<string, unknown> | null;
+  validationSnapshot: Record<string, unknown> | null;
+  appliesTo: TemplateAppliesTo | null;
+  reason: string;
 }
 
 export interface TemplateCatalogLink {

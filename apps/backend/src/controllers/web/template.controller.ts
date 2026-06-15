@@ -6,6 +6,7 @@ import {
   createTemplateSchema,
   TemplateService,
   TemplateServiceError,
+  resolveTemplateSchema,
   updateTemplateCatalogLinksSchema,
   updateTemplateInstanceSchema,
   updateTemplateSchema,
@@ -24,6 +25,16 @@ const handleError = (error: unknown, res: Response) => {
     return res.status(error.statusCode).json({ message: error.message });
   }
 
+  if (error instanceof z.ZodError) {
+    return res.status(400).json({
+      message: "Invalid template payload.",
+      issues: error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    });
+  }
+
   return res.status(500).json({ message: "Internal Server Error" });
 };
 
@@ -33,6 +44,22 @@ const resolveUserId = (req: Request) => {
 };
 
 export const TemplateController = {
+  async resolve(req: Request, res: Response) {
+    try {
+      const resolvedUserId = resolveUserId(req);
+      const body = resolveTemplateSchema.parse({
+        ...req.query,
+        ownerUserId:
+          (req.query.ownerUserId as string | undefined) ??
+          (resolvedUserId || undefined),
+      });
+      const template = await TemplateService.resolve(body);
+      return res.json(template);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async create(
     req: Request<ParamsDictionary, unknown, unknown>,
     res: Response,
