@@ -23,9 +23,17 @@ jest.mock("src/config/prisma", () => ({
     },
     taskLibraryDefinition: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
     },
     taskTemplate: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    appointment: {
+      findMany: jest.fn(),
+    },
+    taskSchedule: {
+      findMany: jest.fn(),
     },
     user: {
       findFirst: jest.fn(),
@@ -60,9 +68,17 @@ const mockedPrisma = prisma as unknown as {
   };
   taskLibraryDefinition: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
   };
   taskTemplate: {
     findFirst: jest.Mock;
+    findMany: jest.Mock;
+  };
+  appointment: {
+    findMany: jest.Mock;
+  };
+  taskSchedule: {
+    findMany: jest.Mock;
   };
   user: {
     findFirst: jest.Mock;
@@ -534,6 +550,85 @@ describe("TaskService", () => {
     expect(result).toEqual([{ id: "task-2", _id: "task-2" }]);
   });
 
+  it("lists tasks for an employee with derived schedule, appointment, and kind filters", async () => {
+    mockedPrisma.appointment.findMany.mockResolvedValueOnce([{ id: "appt-1" }]);
+    mockedPrisma.taskSchedule.findMany.mockResolvedValueOnce([
+      { generatedTaskIds: ["task-2"] },
+    ]);
+    mockedPrisma.taskTemplate.findMany.mockResolvedValueOnce([
+      { id: "tmpl-1" },
+    ]);
+    mockedPrisma.taskLibraryDefinition.findMany.mockResolvedValueOnce([
+      { id: "lib-1" },
+    ]);
+    mockedPrisma.task.findMany.mockResolvedValueOnce([{ id: "task-2" }]);
+
+    await TaskService.listForEmployee({
+      organisationId: "org-1",
+      userId: "user-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      scheduleId: "schedule-1",
+      kind: "MEDICATION",
+      status: ["PENDING"],
+      category: "CARE",
+      subcategory: "Medication prep",
+    });
+
+    expect(mockedPrisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { encounterId: "enc-1", organisationId: "org-1" },
+      }),
+    );
+    expect(mockedPrisma.taskSchedule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "schedule-1", organisationId: "org-1" },
+      }),
+    );
+    expect(mockedPrisma.taskTemplate.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organisationId: "org-1", kind: "MEDICATION" },
+      }),
+    );
+    expect(mockedPrisma.taskLibraryDefinition.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { kind: "MEDICATION" },
+      }),
+    );
+
+    const query = mockedPrisma.task.findMany.mock.calls[0]?.[0];
+    expect(query.where).toEqual(
+      expect.objectContaining({
+        AND: expect.arrayContaining([
+          expect.objectContaining({
+            organisationId: "org-1",
+            audience: "EMPLOYEE_TASK",
+            assignedTo: "user-1",
+            category: "CARE",
+            subcategory: "Medication prep",
+            status: { in: ["PENDING"] },
+          }),
+          expect.objectContaining({
+            appointmentId: { in: ["appt-1"] },
+          }),
+          expect.objectContaining({
+            id: { in: ["task-2"] },
+          }),
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({
+                templateId: { in: ["tmpl-1"] },
+              }),
+              expect.objectContaining({
+                libraryTaskId: { in: ["lib-1"] },
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    );
+  });
+
   it("lists tasks for a group", async () => {
     mockedPrisma.task.findMany.mockResolvedValueOnce([{ id: "task-3" }]);
 
@@ -551,6 +646,27 @@ describe("TaskService", () => {
       }),
     );
     expect(result).toEqual([{ id: "task-3", _id: "task-3" }]);
+  });
+
+  it("lists tasks for a companion with includeCompleted enabled", async () => {
+    mockedPrisma.task.findMany.mockResolvedValueOnce([{ id: "task-4" }]);
+
+    await TaskService.listForCompanion({
+      patientId: "comp-1",
+      organisationId: "org-1",
+      companionId: "comp-1",
+      clientId: "comp-1",
+      includeCompleted: true,
+    });
+
+    const query = mockedPrisma.task.findMany.mock.calls[0]?.[0];
+    expect(query.where).toEqual(
+      expect.objectContaining({
+        patientId: "comp-1",
+        organisationId: "org-1",
+      }),
+    );
+    expect(query.where.status).toBeUndefined();
   });
 
   it("links a task to an appointment", async () => {

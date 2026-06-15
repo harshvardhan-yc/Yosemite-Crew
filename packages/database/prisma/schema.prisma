@@ -1923,6 +1923,7 @@ model Task {
   libraryTaskId     String?
   templateId        String?
   category          String
+  subcategory       String?
   name              String
   description       String?
   additionalNotes   String?

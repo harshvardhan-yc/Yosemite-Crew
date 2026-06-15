@@ -21,6 +21,7 @@ interface TaskMongo {
   templateId?: string;
 
   category: string;
+  subcategory?: string;
   name: string;
   description?: string;
   additionalNotes?: string;

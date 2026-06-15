@@ -3,6 +3,7 @@ import type { Bundle, CodeableConcept, Extension, Reference, Task } from '@yosem
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type TaskAudience = 'EMPLOYEE_TASK' | 'PARENT_TASK';
 export type TaskSource = 'YC_LIBRARY' | 'ORG_TEMPLATE' | 'CUSTOM';
+export type TaskKind = 'MEDICATION' | 'OBSERVATION_TOOL' | 'HYGIENE' | 'DIET' | 'CUSTOM';
 export type TaskCategory =
   | 'MEDICATION'
   | 'CARE'
@@ -44,6 +45,7 @@ export interface TaskLike {
   libraryTaskId: string | null;
   templateId: string | null;
   category: string;
+  subcategory: string | null;
   name: string;
   description: string | null;
   additionalNotes: string | null;
@@ -77,6 +79,7 @@ export interface CreateCustomTaskInput {
   libraryTaskId?: string;
   templateId?: string;
   category: string;
+  subcategory?: string;
   name: string;
   description?: string;
   additionalNotes?: string;
@@ -124,6 +127,28 @@ export interface TaskUpdateInput {
     endDate?: Date | null;
     cronExpression?: string | null;
   } | null;
+}
+
+export interface TaskListFilters {
+  organisationId?: string;
+  appointmentId?: string;
+  encounterId?: string;
+  episodeOfCareId?: string;
+  admissionId?: string;
+  companionId?: string;
+  clientId?: string;
+  templateInstanceId?: string;
+  scheduleId?: string;
+  audience?: TaskAudience;
+  assignedTo?: string;
+  assignedRole?: TaskAudience;
+  status?: TaskStatus[];
+  category?: TaskCategory;
+  subcategory?: string;
+  kind?: TaskKind;
+  dueFrom?: Date;
+  dueTo?: Date;
+  includeCompleted?: boolean;
 }
 
 const TASK_AUDIENCE_EXTENSION_URL =

@@ -303,11 +303,13 @@ export {
   type TaskStatus,
   type TaskAudience,
   type TaskCategory,
+  type TaskKind,
   type TaskSource,
   type MedicationDoseInput,
   type MedicationInput,
   type CreateCustomTaskInput,
   type TaskUpdateInput,
+  type TaskListFilters,
 } from './task';
 export type {
   WorkspaceBootstrapAggregate,
