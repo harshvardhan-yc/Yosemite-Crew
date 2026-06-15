@@ -13,6 +13,7 @@ import type {
   TemplateResolveResponse,
   TemplateSource,
 } from "@yosemite-crew/types";
+import { normalizeTemplateKind } from "@yosemite-crew/types";
 import { z } from "zod";
 import { prisma } from "src/config/prisma";
 import { validateClinicalTemplateBlueprint } from "src/services/clinical-template-blueprints";
@@ -94,12 +95,29 @@ export const templateSchemaSnapshotSchema = z.object({
 
 export const templateConfigSchema = z.record(z.unknown()).default({});
 
+const templateContractKindSchema = z.enum([
+  "SOAP_NOTE",
+  "VITAL_RECORD",
+  "DISCHARGE_SUMMARY",
+  "PRESCRIPTION",
+  "FORM",
+  "CONSENT",
+  "INPATIENT_SCHEDULE",
+  "TASK_ASSIGNMENT",
+]);
+
+const templateStorageKindSchema = z.nativeEnum(TemplateKind);
+const templateKindSchema = z.union([
+  templateStorageKindSchema,
+  templateContractKindSchema,
+]);
+
 export const createTemplateSchema = z
   .object({
     organisationId: z.string().trim().min(1).optional(),
     ownerUserId: z.string().trim().min(1).optional(),
     ownership: z.nativeEnum(TemplateOwnershipType).default("ORG_TEMPLATE"),
-    kind: z.nativeEnum(TemplateKind),
+    kind: templateKindSchema,
     name: z.string().trim().min(1),
     description: z.string().trim().min(1).optional(),
     scope: z.nativeEnum(TemplateScope).default("ORGANISATION"),
@@ -195,16 +213,7 @@ export const updateTemplateCatalogLinksSchema = z.object({
 
 export const resolveTemplateSchema = z.object({
   organisationId: z.string().trim().min(1),
-  kind: z.enum([
-    "SOAP_NOTE",
-    "VITAL_RECORD",
-    "DISCHARGE_SUMMARY",
-    "PRESCRIPTION",
-    "FORM",
-    "CONSENT",
-    "INPATIENT_SCHEDULE",
-    "TASK_ASSIGNMENT",
-  ]),
+  kind: templateContractKindSchema,
   appointmentId: z.string().trim().min(1).optional(),
   encounterId: z.string().trim().min(1).optional(),
   companionId: z.string().trim().min(1).optional(),
@@ -316,11 +325,13 @@ const withCatalogItemIds = <
     catalogLinks?: Array<{ catalogItemId: string }>;
     ownership: TemplateOwnershipType;
     rules: unknown;
+    kind: TemplateKind;
   },
 >(
   template: T,
 ) => ({
   ...template,
+  kind: normalizeTemplateKind(template.kind),
   catalogItemIds:
     template.catalogLinks?.map((link) => link.catalogItemId) ?? [],
   source: templateSourceFromOwnership(template.ownership),
@@ -338,6 +349,19 @@ const templateSourceFromOwnership = (
     case "ORG_TEMPLATE":
     default:
       return "ORGANISATION";
+  }
+};
+
+const toStorageTemplateKind = (kind: TemplateContractKind | TemplateKind) => {
+  switch (kind) {
+    case "TASK_ASSIGNMENT":
+      return "TASK_TEMPLATE" as TemplateKind;
+    case "INPATIENT_SCHEDULE":
+      return "CARE_PATHWAY" as TemplateKind;
+    case "CONSENT":
+      return "FORM" as TemplateKind;
+    default:
+      return kind as TemplateKind;
   }
 };
 
@@ -683,7 +707,8 @@ export const TemplateService = {
   async create(input: CreateTemplateInput) {
     const parsed = createTemplateSchema.parse(input);
     const updatedBy = parsed.updatedBy ?? parsed.createdBy;
-    validateTemplateSchemaForKind(parsed.kind, parsed.schemaSnapshot);
+    const storageKind = toStorageTemplateKind(parsed.kind);
+    validateTemplateSchemaForKind(storageKind, parsed.schemaSnapshot);
     const organisationId =
       parsed.ownership === "YC_LIBRARY" ? undefined : parsed.organisationId;
     const ownerUserId =
@@ -695,7 +720,7 @@ export const TemplateService = {
           organisationId,
           ownerUserId,
           ownership: parsed.ownership,
-          kind: parsed.kind,
+          kind: storageKind,
           name: parsed.name,
           description: parsed.description ?? undefined,
           status: "DRAFT",
@@ -980,7 +1005,7 @@ export const TemplateService = {
   async listForOrganisation(
     organisationId: string,
     filters?: {
-      kind?: TemplateKind;
+      kind?: TemplateKind | TemplateContractKind;
       status?: TemplateStatus;
       scope?: TemplateScope;
     },
@@ -989,7 +1014,7 @@ export const TemplateService = {
       where: {
         organisationId: ensureId(organisationId, "organisationId"),
         ownership: "ORG_TEMPLATE",
-        kind: filters?.kind,
+        kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
       },
@@ -1001,14 +1026,14 @@ export const TemplateService = {
   },
 
   async listLibrary(filters?: {
-    kind?: TemplateKind;
+    kind?: TemplateKind | TemplateContractKind;
     status?: TemplateStatus;
     scope?: TemplateScope;
   }) {
     const items = await prisma.template.findMany({
       where: {
         ownership: "YC_LIBRARY",
-        kind: filters?.kind,
+        kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
       },
@@ -1023,7 +1048,7 @@ export const TemplateService = {
     organisationId: string,
     ownerUserId: string,
     filters?: {
-      kind?: TemplateKind;
+      kind?: TemplateKind | TemplateContractKind;
       status?: TemplateStatus;
       scope?: TemplateScope;
     },
@@ -1033,7 +1058,7 @@ export const TemplateService = {
         organisationId: ensureId(organisationId, "organisationId"),
         ownerUserId: ensureId(ownerUserId, "ownerUserId"),
         ownership: "USER_TEMPLATE",
-        kind: filters?.kind,
+        kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
       },
@@ -1281,16 +1306,19 @@ export const TemplateService = {
         | undefined;
 
       if (DOCUMENT_BACKED_TEMPLATE_KINDS.has(instance.template.kind)) {
+        const normalizedTemplateKind = normalizeTemplateKind(
+          instance.template.kind,
+        );
         const renderedDocumentInput: PersistRenderedDocumentInput = {
           title:
-            instance.template.kind === "FORM"
+            normalizedTemplateKind === "FORM"
               ? "Form submission"
-              : instance.template.kind.split("_").join(" "),
+              : normalizedTemplateKind.split("_").join(" "),
           source: {
             sourceKind: "TEMPLATE_INSTANCE",
             sourceId: instance.id,
             organisationId: instance.organisationId,
-            templateKind: instance.template.kind,
+            templateKind: normalizedTemplateKind,
             templateId: instance.templateId,
             templateVersion: instance.templateVersion,
           },

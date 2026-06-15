@@ -37,14 +37,15 @@ export type TemplateContractKind =
   | 'CONSENT'
   | 'INPATIENT_SCHEDULE'
   | 'TASK_ASSIGNMENT';
-export type TemplateKind =
+export type TemplateKind = TemplateContractKind;
+export type TemplateLegacyKind = 'TASK_TEMPLATE' | 'CARE_PATHWAY';
+export type TemplateStorageKind =
   | 'FORM'
   | 'SOAP_NOTE'
   | 'VITAL_RECORD'
   | 'PRESCRIPTION'
   | 'DISCHARGE_SUMMARY'
-  | 'TASK_TEMPLATE'
-  | 'CARE_PATHWAY';
+  | TemplateLegacyKind;
 
 export type TemplateFieldType =
   | 'text'
@@ -257,15 +258,52 @@ const TEMPLATE_INSTANCE_GENERATED_PDF_URL =
 const TEMPLATE_INSTANCE_GENERATED_PDF_EXTENSION_URL =
   'https://yosemitecrew.com/fhir/StructureDefinition/template-instance-generated-pdf';
 
+export const normalizeTemplateKind = (kind: TemplateStorageKind | string): TemplateKind => {
+  switch (kind) {
+    case 'TASK_TEMPLATE':
+      return 'TASK_ASSIGNMENT';
+    case 'CARE_PATHWAY':
+      return 'INPATIENT_SCHEDULE';
+    case 'SOAP_NOTE':
+    case 'VITAL_RECORD':
+    case 'DISCHARGE_SUMMARY':
+    case 'PRESCRIPTION':
+    case 'FORM':
+    case 'CONSENT':
+    case 'INPATIENT_SCHEDULE':
+    case 'TASK_ASSIGNMENT':
+      return kind;
+    default:
+      return kind as TemplateKind;
+  }
+};
+
+export const toLegacyTemplateKind = (kind: TemplateKind): TemplateStorageKind => {
+  switch (kind) {
+    case 'TASK_ASSIGNMENT':
+      return 'TASK_TEMPLATE';
+    case 'INPATIENT_SCHEDULE':
+      return 'CARE_PATHWAY';
+    case 'CONSENT':
+      return 'FORM';
+    default:
+      return kind;
+  }
+};
+
 const QUESTIONNAIRE_TEMPLATE_KINDS = new Set<TemplateKind>([
   'FORM',
+  'CONSENT',
   'SOAP_NOTE',
   'VITAL_RECORD',
   'PRESCRIPTION',
   'DISCHARGE_SUMMARY',
 ]);
 
-const PLAN_DEFINITION_TEMPLATE_KINDS = new Set<TemplateKind>(['TASK_TEMPLATE', 'CARE_PATHWAY']);
+const PLAN_DEFINITION_TEMPLATE_KINDS = new Set<TemplateKind>([
+  'TASK_ASSIGNMENT',
+  'INPATIENT_SCHEDULE',
+]);
 
 const buildExtension = (url: string, value: unknown): Extension | undefined => {
   if (value === undefined || value === null) return undefined;
@@ -413,7 +451,7 @@ const templateToForm = (template: TemplateLike): Form => ({
   _id: template.id,
   orgId: template.organisationId ?? '',
   name: template.name,
-  category: template.kind,
+  category: normalizeTemplateKind(template.kind),
   description: template.description ?? undefined,
   visibilityType: 'Internal',
   status:
@@ -430,8 +468,9 @@ const templateToForm = (template: TemplateLike): Form => ({
 });
 
 const buildTemplateExtensions = (template: TemplateLike): Extension[] => {
+  const kind = normalizeTemplateKind(template.kind);
   const extensions: Extension[] = [
-    { url: TEMPLATE_KIND_EXTENSION_URL, valueString: template.kind },
+    { url: TEMPLATE_KIND_EXTENSION_URL, valueString: kind },
     { url: TEMPLATE_OWNERSHIP_EXTENSION_URL, valueString: template.ownership },
     { url: TEMPLATE_SCOPE_EXTENSION_URL, valueString: template.scope },
     { url: TEMPLATE_LATEST_VERSION_EXTENSION_URL, valueInteger: template.latestVersion },
@@ -696,6 +735,7 @@ const templateToQuestionnaire = (template: TemplateLike): Questionnaire =>
 
 const templateToPlanDefinition = (template: TemplateLike): PlanDefinition => {
   const schema = latestSchemaFromTemplate(template);
+  const kind = normalizeTemplateKind(template.kind);
   const planDefinition: PlanDefinition = {
     resourceType: 'PlanDefinition',
     id: template.id,
@@ -707,11 +747,11 @@ const templateToPlanDefinition = (template: TemplateLike): PlanDefinition => {
       coding: [
         {
           system: 'https://yosemitecrew.com/fhir/CodeSystem/template-kind',
-          code: template.kind,
-          display: template.kind,
+          code: kind,
+          display: kind,
         },
       ],
-      text: template.kind,
+      text: kind,
     } as CodeableConcept,
     extension: [
       ...buildTemplateExtensions(template),
@@ -753,11 +793,12 @@ const questionnaireToTemplateInput = (
   const form = fromFHIRQuestionnaire(questionnaire);
   const kind =
     (getStringExtension(questionnaire.extension, TEMPLATE_KIND_EXTENSION_URL) as
-      | TemplateKind
+      | TemplateStorageKind
       | undefined) ??
-    (questionnaire.code?.[0]?.code as TemplateKind | undefined) ??
+    (questionnaire.code?.[0]?.code as TemplateStorageKind | undefined) ??
     defaults?.kind ??
     'FORM';
+  const normalizedKind = normalizeTemplateKind(kind);
 
   return {
     organisationId:
@@ -772,7 +813,7 @@ const questionnaireToTemplateInput = (
         | undefined) ??
       defaults?.ownership ??
       'ORG_TEMPLATE',
-    kind,
+    kind: normalizedKind,
     name: questionnaire.title ?? questionnaire.name ?? form.name,
     description: questionnaire.description ?? undefined,
     scope:
@@ -808,11 +849,12 @@ const planDefinitionToTemplateInput = (
 ): TemplateUpsertInput => {
   const kind =
     (getStringExtension(planDefinition.extension, TEMPLATE_KIND_EXTENSION_URL) as
-      | TemplateKind
+      | TemplateStorageKind
       | undefined) ??
-    (planDefinition.type?.coding?.[0]?.code as TemplateKind | undefined) ??
+    (planDefinition.type?.coding?.[0]?.code as TemplateStorageKind | undefined) ??
     defaults?.kind ??
-    'TASK_TEMPLATE';
+    'TASK_ASSIGNMENT';
+  const normalizedKind = normalizeTemplateKind(kind);
 
   return {
     organisationId:
@@ -827,7 +869,7 @@ const planDefinitionToTemplateInput = (
         | undefined) ??
       defaults?.ownership ??
       'ORG_TEMPLATE',
-    kind,
+    kind: normalizedKind,
     name: planDefinition.title ?? planDefinition.name ?? 'Untitled workflow template',
     description: planDefinition.description ?? undefined,
     scope:

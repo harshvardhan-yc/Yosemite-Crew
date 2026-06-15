@@ -14,6 +14,10 @@ import type {
   SpecialityCatalogView,
   TemplateKind,
 } from "@yosemite-crew/types";
+import {
+  normalizeTemplateKind,
+  toLegacyTemplateKind,
+} from "@yosemite-crew/types";
 import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 
@@ -1291,7 +1295,7 @@ const resolveSelectionTemplateKinds = (params: {
 
   if (params.productKind === "PACKAGE") {
     if (params.appointmentKinds.includes("INPATIENT")) {
-      pushUnique("CARE_PATHWAY");
+      pushUnique("INPATIENT_SCHEDULE");
       pushUnique("SOAP_NOTE");
       pushUnique("DISCHARGE_SUMMARY");
       return templateKinds;
@@ -1543,7 +1547,7 @@ const loadTemplateBindingsForProduct = async (params: {
       catalogItemId: params.productItemId,
       template: {
         kind: {
-          in: params.templateKinds,
+          in: params.templateKinds.map(toLegacyTemplateKind),
         },
       },
     },
@@ -1560,7 +1564,7 @@ const loadTemplateBindingsForProduct = async (params: {
   });
 
   return links.map<CatalogTemplateBinding>((link) => ({
-    templateKind: link.template.kind,
+    templateKind: normalizeTemplateKind(link.template.kind),
     templateId: link.template.id,
     templateVersion:
       link.template.publishedVersion ?? link.template.latestVersion,

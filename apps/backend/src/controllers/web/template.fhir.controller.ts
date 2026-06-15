@@ -1,10 +1,15 @@
 import { Request, Response } from "express";
-import { TemplateKind, TemplateScope, TemplateStatus } from "@prisma/client";
+import {
+  TemplateKind as PrismaTemplateKind,
+  TemplateScope,
+  TemplateStatus,
+} from "@prisma/client";
 import {
   Questionnaire,
   QuestionnaireResponse,
   PlanDefinition,
 } from "@yosemite-crew/fhir";
+import type { TemplateKind as TemplateContractKind } from "@yosemite-crew/types";
 import { z } from "zod";
 import { AuthenticatedRequest } from "src/middlewares/auth";
 import {
@@ -28,7 +33,21 @@ const questionnaireResponseSchema = z
   .passthrough();
 
 const listQuerySchema = z.object({
-  kind: z.nativeEnum(TemplateKind).optional(),
+  kind: z
+    .union([
+      z.nativeEnum(PrismaTemplateKind),
+      z.enum([
+        "SOAP_NOTE",
+        "VITAL_RECORD",
+        "DISCHARGE_SUMMARY",
+        "PRESCRIPTION",
+        "FORM",
+        "CONSENT",
+        "INPATIENT_SCHEDULE",
+        "TASK_ASSIGNMENT",
+      ]),
+    ])
+    .optional(),
   status: z.nativeEnum(TemplateStatus).optional(),
   scope: z.nativeEnum(TemplateScope).optional(),
 });
@@ -57,23 +76,10 @@ const resolveUserId = (req: Request) => {
   return typeof typed.userId === "string" ? typed.userId : "";
 };
 
-const questionnaireKinds = new Set<TemplateKind>([
-  "FORM",
-  "SOAP_NOTE",
-  "VITAL_RECORD",
-  "PRESCRIPTION",
-  "DISCHARGE_SUMMARY",
-]);
-
-const planDefinitionKinds = new Set<TemplateKind>([
-  "TASK_TEMPLATE",
-  "CARE_PATHWAY",
-]);
-
-const isQuestionnaireTemplate = (kind: TemplateKind) =>
-  questionnaireKinds.has(kind);
-const isPlanDefinitionTemplate = (kind: TemplateKind) =>
-  planDefinitionKinds.has(kind);
+const isQuestionnaireTemplate = (kind: TemplateContractKind) =>
+  templateMapper.isQuestionnaireResourceKind(kind);
+const isPlanDefinitionTemplate = (kind: TemplateContractKind) =>
+  templateMapper.isPlanDefinitionResourceKind(kind);
 
 const filterQuestionnaires = (templates: TemplateLike[]) =>
   templates.filter((template) => isQuestionnaireTemplate(template.kind));

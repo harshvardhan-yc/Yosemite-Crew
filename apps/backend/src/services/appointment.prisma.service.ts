@@ -8,6 +8,8 @@ import {
   AppointmentResponseDTO,
   type CatalogTemplateBinding,
   fromAppointmentRequestDTO,
+  normalizeTemplateKind,
+  toLegacyTemplateKind,
   toAppointmentResponseDTO,
   type TemplateKind,
 } from "@yosemite-crew/types";
@@ -252,7 +254,7 @@ const buildTemplateDefault = (
   source: AppointmentTemplateDefault["source"],
   templateVersion?: number,
 ): AppointmentTemplateDefault => ({
-  templateKind: template.kind,
+  templateKind: normalizeTemplateKind(template.kind),
   templateId: template.id,
   templateVersion:
     templateVersion ?? template.publishedVersion ?? template.latestVersion,
@@ -275,7 +277,7 @@ const resolveTemplateDefaultsForSelection = async (args: {
       const resolvedTemplate = (await args.tx.template.findFirst({
         where: {
           id: binding.templateId,
-          kind: binding.templateKind,
+          kind: toLegacyTemplateKind(binding.templateKind),
         },
       })) as TemplateRow | null;
 
@@ -300,7 +302,7 @@ const resolveTemplateDefaultsForSelection = async (args: {
       ((await args.tx.template.findFirst({
         where: {
           organisationId: args.organisationId,
-          kind: binding.templateKind,
+          kind: toLegacyTemplateKind(binding.templateKind),
           status: "PUBLISHED",
         },
         orderBy: [{ updatedAt: "desc" }],
@@ -308,7 +310,7 @@ const resolveTemplateDefaultsForSelection = async (args: {
       ((await args.tx.template.findFirst({
         where: {
           organisationId: args.organisationId,
-          kind: binding.templateKind,
+          kind: toLegacyTemplateKind(binding.templateKind),
         },
         orderBy: [{ updatedAt: "desc" }],
       })) as TemplateRow | null);
@@ -318,7 +320,7 @@ const resolveTemplateDefaultsForSelection = async (args: {
       : (((await args.tx.template.findFirst({
           where: {
             ownership: "YC_LIBRARY",
-            kind: binding.templateKind,
+            kind: toLegacyTemplateKind(binding.templateKind),
             status: "PUBLISHED",
           },
           orderBy: [{ updatedAt: "desc" }],
@@ -326,7 +328,7 @@ const resolveTemplateDefaultsForSelection = async (args: {
         ((await args.tx.template.findFirst({
           where: {
             ownership: "YC_LIBRARY",
-            kind: binding.templateKind,
+            kind: toLegacyTemplateKind(binding.templateKind),
           },
           orderBy: [{ updatedAt: "desc" }],
         })) as TemplateRow | null));

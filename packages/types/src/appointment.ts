@@ -7,7 +7,7 @@ import type {
 import dayjs from 'dayjs';
 import { SPECIES_SYSTEM_URL } from './companion';
 import type { AppointmentKind } from './catalog';
-import type { TemplateKind } from './template';
+import { normalizeTemplateKind, type TemplateKind } from './template';
 
 export type AppointmentStatus =
   | 'REQUESTED'
@@ -458,7 +458,7 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
         }
 
         return {
-          templateKind,
+          templateKind: normalizeTemplateKind(templateKind),
           templateId,
           templateVersion,
           source,
