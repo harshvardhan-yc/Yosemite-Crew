@@ -34,9 +34,7 @@ export interface ControlledSubstanceLogbook {
   }) => CsTransaction[];
   getByDrug: (drugName: string) => CsTransaction[];
   getByVeterinarian: (veterinarianId: string) => CsTransaction[];
-  getInventory: (
-    drugName?: string
-  ) => {
+  getInventory: (drugName?: string) => {
     drugName: string;
     totalReceived: number;
     totalDispensed: number;
@@ -97,13 +95,17 @@ export const createControlledSubstanceLogbook = (
   const record = (
     input: Omit<CsTransaction, 'id' | 'timestamp' | 'auditEntryId'>
   ): CsTransaction => {
+    // Generate the transaction id up front so it can be signed into the audit
+    // entry's details. Mutating details after append() would invalidate the HMAC
+    // signature and make the record read as tampered.
+    const txId = generateTxId();
     const auditEntry = deps.auditLog.append({
       action: `cs:${input.action}`,
       actor: input.veterinarianId,
       resourceType: 'controlled-substance',
       resourceId: `${input.drugName}:${input.lotNumber}`,
       details: {
-        csTransactionId: '',
+        csTransactionId: txId,
         drugName: input.drugName,
         drugClass: input.drugClass,
         lotNumber: input.lotNumber,
@@ -117,13 +119,10 @@ export const createControlledSubstanceLogbook = (
 
     const tx: CsTransaction = {
       ...input,
-      id: generateTxId(),
+      id: txId,
       timestamp: now(),
       auditEntryId: auditEntry.id,
     };
-
-    // update audit entry with the CS transaction id for cross-reference
-    auditEntry.details.csTransactionId = tx.id;
 
     const entries = load();
     entries.push(tx);

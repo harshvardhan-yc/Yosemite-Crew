@@ -96,6 +96,41 @@ describe('createBackupService', () => {
     expect(result.fileCount).toBe(2);
   });
 
+  test('createBackup recurses into nested subdirectories', async () => {
+    const deps = makeDeps();
+    const svc = createBackupService(deps);
+
+    mockDirs['/data'] = ['settings.json', 'document-vault'];
+    mockDirs['/data/document-vault'] = ['manifest.json', 'doc1.enc'];
+    mockStats['/data'] = { size: 0, isFile: () => false, isDirectory: () => true };
+    mockStats['/data/document-vault'] = { size: 0, isFile: () => false, isDirectory: () => true };
+    mockStats['/data/settings.json'] = { size: 10, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/document-vault/manifest.json'] = {
+      size: 10,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
+    mockStats['/data/document-vault/doc1.enc'] = {
+      size: 10,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
+    mockFs['/data/settings.json'] = '{}';
+    mockFs['/data/document-vault/manifest.json'] = '[]';
+    mockFs['/data/document-vault/doc1.enc'] = 'enc';
+
+    const result = await svc.createBackup({
+      sourcePaths: ['/data'],
+      destinationDir: '/backups',
+      maxBackups: 5,
+    });
+
+    expect(result.success).toBe(true);
+    // settings.json + the two files inside document-vault (the buggy version
+    // skipped the nested directory and would report only 1).
+    expect(result.fileCount).toBe(3);
+  });
+
   test('createBackup returns failure when archive fails', async () => {
     const deps = makeDeps();
     deps.createArchive = jest.fn(async () => {

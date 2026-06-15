@@ -98,6 +98,7 @@ import {
   DEEP_LINK_SCHEME,
   deepLinkFromArgv,
   handleWindowOpen,
+  handleMainNavigation,
   buildContextMenu,
 } from './shell/window-config';
 import { createMainWindow } from './shell/create-main-window';
@@ -1021,6 +1022,13 @@ if (!gotSingleInstanceLock) {
 
   app.on('web-contents-created', (_event, contents) => {
     contents.setWindowOpenHandler(({ url }) => handleWindowOpen(url));
+    // Apply navigation policy to any popup this webContents opens, so an allowed
+    // in-app popup cannot redirect in-place to an external/blocked URL and remain
+    // inside the desktop shell.
+    contents.on('did-create-window', (childWindow) => {
+      childWindow.webContents.on('will-navigate', handleMainNavigation);
+      childWindow.webContents.on('will-redirect', handleMainNavigation);
+    });
     contents.on('will-attach-webview', (event) => {
       logger.warn('webview_attach_blocked');
       event.preventDefault();
@@ -1242,55 +1250,65 @@ if (!gotSingleInstanceLock) {
           rollbackTracker = resetTracker(trackerPath, appVersion);
         }
       }
-      ({ mainWindow, tabManager, tabViewHost, saveSession, coldStartWatchdog } =
-        await createMainWindow({
-          config,
-          logger,
-          productName: PRODUCT_NAME,
-          brandPrefix: BRAND_PREFIX,
-          windowStateStore,
-          tabMode,
-          attachedTabId,
-          splitId,
-          tabOrientation,
-          setTabSearch,
-          setSplitTab,
-          setTabOrientation,
-          activeContents,
-          enterTabMode,
-          layoutTabChrome,
-          loadStartUrl,
-          showOfflinePage,
-          consumePendingDeepLink,
-          trackAuthNavigation,
-          configureDownloads,
-          configureOfflineServe,
-          offlineCache: offlineCache,
-          settingsStore,
-          signedInBefore,
-          reloadGuard,
-          unreadCount,
-          updateUnreadBadge,
-          openCommandPalette,
-          createSettingsWindow,
-          newTab,
-          closeActiveTab,
-          reopenClosedTab,
-          openTabSearch,
-          verifyAuditTrail: statusDlg.verifyAuditTrail,
-          exportCsDailyLog: statusDlg.exportCsDailyLog,
-          showDeaStatus: statusDlg.showDeaStatus,
-          generateDeaReportAction: statusDlg.generateDeaReportAction,
-          showPmpStatus: statusDlg.showPmpStatus,
-          openVaultWindow,
-          showVaultInfo: statusDlg.showVaultInfo,
-          backUpNow: statusDlg.backUpNow,
-          savePageAsPdf: statusDlg.savePageAsPdf,
-          openOnSecondScreen: statusDlg.openOnSecondScreen,
-          showPrintStatus: statusDlg.showPrintStatus,
-          startTelehealth,
-          exportDiagnostics: statusDlg.exportDiagnostics,
-        }));
+      let pendingTabModeUrl: string | undefined;
+      ({
+        mainWindow,
+        tabManager,
+        tabViewHost,
+        saveSession,
+        coldStartWatchdog,
+        enterTabModeUrl: pendingTabModeUrl,
+      } = await createMainWindow({
+        config,
+        logger,
+        productName: PRODUCT_NAME,
+        brandPrefix: BRAND_PREFIX,
+        windowStateStore,
+        tabMode,
+        attachedTabId,
+        splitId,
+        tabOrientation,
+        setTabSearch,
+        setSplitTab,
+        setTabOrientation,
+        activeContents,
+        enterTabMode,
+        layoutTabChrome,
+        loadStartUrl,
+        showOfflinePage,
+        consumePendingDeepLink,
+        trackAuthNavigation,
+        configureDownloads,
+        configureOfflineServe,
+        offlineCache: offlineCache,
+        settingsStore,
+        signedInBefore,
+        reloadGuard,
+        unreadCount,
+        updateUnreadBadge,
+        openCommandPalette,
+        createSettingsWindow,
+        newTab,
+        closeActiveTab,
+        reopenClosedTab,
+        openTabSearch,
+        verifyAuditTrail: statusDlg.verifyAuditTrail,
+        exportCsDailyLog: statusDlg.exportCsDailyLog,
+        showDeaStatus: statusDlg.showDeaStatus,
+        generateDeaReportAction: statusDlg.generateDeaReportAction,
+        showPmpStatus: statusDlg.showPmpStatus,
+        openVaultWindow,
+        showVaultInfo: statusDlg.showVaultInfo,
+        backUpNow: statusDlg.backUpNow,
+        savePageAsPdf: statusDlg.savePageAsPdf,
+        openOnSecondScreen: statusDlg.openOnSecondScreen,
+        showPrintStatus: statusDlg.showPrintStatus,
+        startTelehealth,
+        exportDiagnostics: statusDlg.exportDiagnostics,
+      }));
+      // enterTabMode reads the module window/tab globals assigned just above, so
+      // it must run here (not inside createMainWindow) to actually take effect.
+      if (pendingTabModeUrl) enterTabMode(pendingTabModeUrl);
       tray = setupTray({
         productName: PRODUCT_NAME,
         mainWindow,
@@ -1506,6 +1524,7 @@ if (!gotSingleInstanceLock) {
         tabViewHost = output.tabViewHost;
         saveSession = output.saveSession;
         coldStartWatchdog = output.coldStartWatchdog;
+        if (output.enterTabModeUrl) enterTabMode(output.enterTabModeUrl);
       });
     }
   });

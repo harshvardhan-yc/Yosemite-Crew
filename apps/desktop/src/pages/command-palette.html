@@ -204,8 +204,14 @@
           return { results: scored, isRecents: false };
         }
 
+        function escapeHtml(value) {
+          return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+          });
+        }
+
         function highlightLabel(label, query) {
-          if (!query || !query.trim()) return label;
+          if (!query || !query.trim()) return escapeHtml(label);
           var q = query.toLowerCase();
           var l = label;
           var indices = [];
@@ -216,14 +222,14 @@
               qi++;
             }
           }
-          if (indices.length === 0) return label;
+          if (indices.length === 0) return escapeHtml(label);
           var result = '';
           var lastIdx = 0;
           indices.forEach(function (idx) {
-            result += l.slice(lastIdx, idx) + '<mark>' + l[idx] + '</mark>';
+            result += escapeHtml(l.slice(lastIdx, idx)) + '<mark>' + escapeHtml(l[idx]) + '</mark>';
             lastIdx = idx + 1;
           });
-          result += l.slice(lastIdx);
+          result += escapeHtml(l.slice(lastIdx));
           return result;
         }
 
@@ -246,12 +252,12 @@
                 (results.length - 1) +
                 '">' +
                 '<div class="item-icon recents-clock">' +
-                icon +
+                escapeHtml(icon) +
                 '</div>' +
                 '<div class="item-label">' +
-                a.label +
+                escapeHtml(a.label) +
                 '</div>' +
-                (a.desc ? '<div class="item-desc">' + a.desc + '</div>' : '') +
+                (a.desc ? '<div class="item-desc">' + escapeHtml(a.desc) + '</div>' : '') +
                 '</div>';
             });
             if (results.length === 0) html += '<div id="empty">No recents yet</div>';
@@ -265,18 +271,18 @@
                 i +
                 '">' +
                 '<div class="item-icon">' +
-                icon +
+                escapeHtml(icon) +
                 '</div>' +
                 '<div class="item-label">' +
                 highlightLabel(a.label, query) +
                 '</div>' +
                 '<div class="item-type">' +
-                a.type +
+                escapeHtml(a.type) +
                 '</div>' +
                 '</div>';
             });
           } else if (query.trim()) {
-            html += '<div id="empty">No results for "' + query + '"</div>';
+            html += '<div id="empty">No results for "' + escapeHtml(query) + '"</div>';
           } else {
             html += '<div id="empty">Type to search commands</div>';
           }

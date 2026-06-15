@@ -59,6 +59,30 @@ describe('createControlledSubstanceLogbook', () => {
     expect(auditEntry[0].action).toBe('cs:dispense');
   });
 
+  test('signs the cs transaction id into the audit entry without tampering it', async () => {
+    const deps = makeFsDeps();
+    const auditLog = await createAuditLog(tmpDir, deps);
+    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+
+    const tx = logbook.record({
+      action: 'dispense',
+      drugName: 'Ketamine',
+      drugClass: 'CIII',
+      lotNumber: 'LOT-001',
+      quantity: 10,
+      unit: 'mL',
+      patientId: 'pet-123',
+      patientName: 'Buddy',
+      veterinarianId: 'vet-456',
+      veterinarianName: 'Dr. Smith',
+    });
+
+    const [auditEntry] = auditLog.query({ resourceType: 'controlled-substance' });
+    expect(auditEntry.details.csTransactionId).toBe(tx.id);
+    expect(auditLog.verify(auditEntry)).toBe(true);
+    expect(auditLog.verifyAll()).toEqual({ valid: 1, tampered: 0 });
+  });
+
   test('getTransactions returns all transactions', async () => {
     const deps = makeFsDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);

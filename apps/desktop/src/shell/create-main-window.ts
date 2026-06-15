@@ -92,6 +92,10 @@ export interface CreateMainWindowOutput {
   tabViewHost: ReturnType<typeof createTabViewHost>;
   saveSession: () => void;
   coldStartWatchdog: ColdStartWatchdog;
+  // When set, the caller must call enterTabMode(url) AFTER assigning the module
+  // window/tab globals. Calling it from inside createMainWindow would no-op
+  // because those globals are only wired up once this function resolves.
+  enterTabModeUrl?: string;
 }
 
 export const createMainWindow = async (
@@ -368,6 +372,7 @@ export const createMainWindow = async (
     deps.logger.warn('local_page_failed', { error });
   };
 
+  let enterTabModeUrl: string | undefined;
   if (deps.signedInBefore) {
     const launchSettings = deps.settingsStore?.load() || DEFAULT_SETTINGS;
     const lastVer = launchSettings.lastSeenVersion;
@@ -383,7 +388,9 @@ export const createMainWindow = async (
         .loadFile(desktopLocalPage('loading'))
         .then(ensureVisible)
         .catch(ignoreAborted);
-      deps.enterTabMode(deps.config.startUrl.href);
+      // Defer to the caller: enterTabMode reads module-level window/tab globals
+      // that main.ts only assigns after this function resolves.
+      enterTabModeUrl = deps.config.startUrl.href;
     }
   } else {
     deps.logger.info('welcome_shown');
@@ -399,5 +406,5 @@ export const createMainWindow = async (
   coldStartWatchdog.start();
 
   await initAutoUpdates({ logger: deps.logger });
-  return { mainWindow, tabManager, tabViewHost, saveSession, coldStartWatchdog };
+  return { mainWindow, tabManager, tabViewHost, saveSession, coldStartWatchdog, enterTabModeUrl };
 };

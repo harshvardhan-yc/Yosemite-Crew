@@ -110,22 +110,37 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
 
   const collectFiles = (srcPaths: string[]): { srcPath: string; relativePath: string }[] => {
     const files: { srcPath: string; relativePath: string }[] = [];
+
+    // Recurse into subdirectories so nested stores (e.g. userData/document-vault
+    // and the compliance directories) are included, not just immediate files.
+    const walkDir = (dir: string, prefix: string): void => {
+      let entries: string[];
+      try {
+        entries = readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry);
+        const relativePath = prefix ? path.posix.join(prefix, entry) : entry;
+        try {
+          const s = statSync(fullPath);
+          if (s.isDirectory()) {
+            walkDir(fullPath, relativePath);
+          } else if (s.isFile()) {
+            files.push({ srcPath: fullPath, relativePath });
+          }
+        } catch {
+          // skip broken symlinks, locked files, etc.
+        }
+      }
+    };
+
     for (const srcPath of srcPaths) {
       if (!existsSync(srcPath)) continue;
       const stats = statSync(srcPath);
       if (stats.isDirectory()) {
-        const entries = readdirSync(srcPath);
-        for (const entry of entries) {
-          const fullPath = path.join(srcPath, entry);
-          try {
-            const s = statSync(fullPath);
-            if (s.isFile()) {
-              files.push({ srcPath: fullPath, relativePath: entry });
-            }
-          } catch {
-            // skip broken symlinks, locked files, etc.
-          }
-        }
+        walkDir(srcPath, '');
       } else if (stats.isFile()) {
         files.push({ srcPath, relativePath: path.basename(srcPath) });
       }

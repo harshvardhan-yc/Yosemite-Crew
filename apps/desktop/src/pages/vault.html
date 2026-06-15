@@ -631,14 +631,23 @@
           if (!doc) return;
           previewTitle.textContent = doc.filename;
 
-          var metaHtml = '<dl>';
-          metaHtml += '<dt>Type</dt><dd>' + (doc.mimeType || 'unknown') + '</dd>';
-          metaHtml += '<dt>Size</dt><dd>' + formatBytes(doc.sizeBytes) + '</dd>';
-          metaHtml += '<dt>Added</dt><dd>' + formatDate(doc.createdAt) + '</dd>';
-          if (doc.updatedAt !== doc.createdAt)
-            metaHtml += '<dt>Updated</dt><dd>' + formatDate(doc.updatedAt) + '</dd>';
-          metaHtml += '</dl>';
-          previewMeta.innerHTML = metaHtml;
+          // Build the metadata list with text nodes so persisted fields such as
+          // doc.mimeType cannot inject markup into this file:// page.
+          var dl = document.createElement('dl');
+          var addMetaRow = function (label, value) {
+            var dt = document.createElement('dt');
+            dt.textContent = label;
+            var dd = document.createElement('dd');
+            dd.textContent = value;
+            dl.appendChild(dt);
+            dl.appendChild(dd);
+          };
+          addMetaRow('Type', doc.mimeType || 'unknown');
+          addMetaRow('Size', formatBytes(doc.sizeBytes));
+          addMetaRow('Added', formatDate(doc.createdAt));
+          if (doc.updatedAt !== doc.createdAt) addMetaRow('Updated', formatDate(doc.updatedAt));
+          previewMeta.innerHTML = '';
+          previewMeta.appendChild(dl);
 
           if (isImage(doc.mimeType)) {
             yc.vaultGet(id).then(function (res) {
