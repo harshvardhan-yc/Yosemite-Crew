@@ -46,6 +46,7 @@ overrides:
   '@xmldom/xmldom': 0.8.13
   path-to-regexp@0.1.12: 0.1.13
   brace-expansion@1.1.12: 1.1.13
+  brace-expansion@2.0.2: 5.0.6
   brace-expansion@5.0.4: 5.0.6
   '@babel/plugin-transform-modules-systemjs': 7.29.4
   fast-xml-builder: 1.1.7
@@ -21706,11 +21707,6 @@ packages:
       balanced-match: 1.0.2
       concat-map: 0.0.1
 
-  /brace-expansion@2.0.2:
-    resolution: {integrity: sha512-Jt0vHyM+jmUBqojB7E1NIYadt0vI0Qxjxd2TErW94wDz+E2LAm5vKMXXwg6ZZBTHPuUlDgQHKXvjGBdfcF1ZDQ==}
-    dependencies:
-      balanced-match: 1.0.2
-
   /brace-expansion@5.0.6:
     resolution: {integrity: sha512-kLpxurY4Z4r9sgMsyG0Z9uzsBlgiU/EFKhj/h91/8yHu0edo7XuixOIH3VcJ8kkxs6/jPzoI6U9Vj3WqbMQ94g==}
     engines: {node: 18 || 20 || >=22}
@@ -31017,13 +31013,13 @@ packages:
     resolution: {integrity: sha512-7RN35vit8DeBclkofOVmBY0eDAZZQd1HzmukRdSyz95CRh8FT54eqnbj0krQr3mrHR6sfRyYkyhwBWjoV5uqlQ==}
     engines: {node: '>=10'}
     dependencies:
-      brace-expansion: 2.0.2
+      brace-expansion: 5.0.6
 
   /minimatch@8.0.6:
     resolution: {integrity: sha512-JVNTX5Qc03lB0PuFDuUcVTbi8u5kKchLXDYEnLJrOosZW8cqamFiyItG/7cn0QEt7XmeFHSLJRYg4KujJKuqlw==}
     engines: {node: '>=16 || 14 >=14.17'}
     dependencies:
-      brace-expansion: 2.0.2
+      brace-expansion: 5.0.6
     dev: true
 
   /minimatch@9.0.7:
