@@ -1,10 +1,5 @@
 import React, {useMemo} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Platform,
-} from 'react-native';
+import {View, Text, StyleSheet, Platform} from 'react-native';
 import {useTheme} from '@/hooks';
 import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
 import LiquidGlassButton from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
@@ -41,8 +36,8 @@ export const InviteCard: React.FC<InviteCardProps> = ({
         <Text style={styles.title}>Invite from {businessName}</Text>
 
         <Text style={styles.description}>
-          Hey {companionName}! It seems like you already have an account at {businessName} Organisation. Please
-          confirm if its you or not?
+          Hey {companionName}! It seems like you already have an account at{' '}
+          {businessName} Organisation. Please confirm if its you or not?
         </Text>
 
         <View style={styles.detailsContainer}>
@@ -101,8 +96,7 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     content: {
       gap: theme.spacing['4'],

@@ -1,6 +1,6 @@
 import {createSelector} from '@reduxjs/toolkit';
 import type {RootState} from '@/app/store';
-import type {TaskStatus, TaskCategory} from './types';
+import type {Task, TaskStatus, TaskCategory} from './types';
 
 const normalizeStatus = (status: TaskStatus): string =>
   String(status).toUpperCase();
@@ -49,6 +49,39 @@ const formatLocalDate = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+// Returns true if a task (including recurring) should appear on the given YYYY-MM-DD date string.
+export const taskOccursOnDate = (task: Task, dateStr: string): boolean => {
+  const freq = task.frequency;
+
+  // Unknown or unrecognised frequency shape — fall back to exact start-date match
+  if (
+    !freq ||
+    freq === 'once' ||
+    (freq !== 'daily' && freq !== 'weekly' && freq !== 'monthly')
+  ) {
+    return task.date === dateStr;
+  }
+
+  // Must be on or after the start date
+  if (dateStr < task.date) return false;
+
+  // Must be on or before the end date (if the series has one)
+  if (task.recurrenceEndDate && dateStr > task.recurrenceEndDate) return false;
+
+  if (freq === 'daily') return true;
+
+  if (freq === 'weekly') {
+    const startDay = new Date(task.date + 'T00:00:00').getDay();
+    const targetDay = new Date(dateStr + 'T00:00:00').getDay();
+    return startDay === targetDay;
+  }
+
+  // monthly — same calendar day-of-month as the start date
+  const startDom = new Date(task.date + 'T00:00:00').getDate();
+  const targetDom = new Date(dateStr + 'T00:00:00').getDate();
+  return startDom === targetDom;
+};
+
 // Base selector
 const selectTasksState = (state: RootState) => state.tasks;
 
@@ -73,7 +106,7 @@ export const selectTasksError = createSelector(
 // Select if companion tasks have been hydrated
 export const selectHasHydratedCompanion = (companionId: string | null) =>
   createSelector([selectTasksState], tasks =>
-    companionId ? tasks.hydratedCompanions[companionId] ?? false : false,
+    companionId ? (tasks.hydratedCompanions[companionId] ?? false) : false,
   );
 
 // Select tasks by companion ID
@@ -82,17 +115,14 @@ export const selectTasksByCompanion = (companionId: string | null) =>
     companionId ? tasks.filter(task => task.companionId === companionId) : [],
   );
 
-// Select tasks by companion and date
+// Select tasks by companion and date (respects recurrence patterns)
 export const selectTasksByCompanionAndDate = (
   companionId: string | null,
   date: Date,
 ) =>
   createSelector([selectTasksByCompanion(companionId)], tasks => {
     const dateStr = getDateString(date);
-    return tasks.filter(task => {
-      // task.date is already in YYYY-MM-DD format (ISO date)
-      return task.date === dateStr;
-    });
+    return tasks.filter(task => taskOccursOnDate(task, dateStr));
   });
 
 // Select tasks by companion, date, and category
@@ -101,9 +131,8 @@ export const selectTasksByCompanionDateAndCategory = (
   date: Date,
   category: TaskCategory,
 ) =>
-  createSelector(
-    [selectTasksByCompanionAndDate(companionId, date)],
-    tasks => tasks.filter(task => task.category === category),
+  createSelector([selectTasksByCompanionAndDate(companionId, date)], tasks =>
+    tasks.filter(task => task.category === category),
   );
 
 // Select recent tasks by category (for main screen)
@@ -140,7 +169,11 @@ export const selectAllTasksByCategory = (
       .filter(task => task.category === category)
       .sort((a, b) => {
         const priority = (status: TaskStatus) => {
-          if (isPendingStatus(status) || normalizeStatus(status) === 'IN_PROGRESS' || normalizeStatus(status) === 'OVERDUE') {
+          if (
+            isPendingStatus(status) ||
+            normalizeStatus(status) === 'IN_PROGRESS' ||
+            normalizeStatus(status) === 'OVERDUE'
+          ) {
             return 0; // Pending/active first
           }
           if (isCompletedStatus(status)) return 1; // Completed next
@@ -173,7 +206,9 @@ export const selectTasksByStatus = (
   status: TaskStatus,
 ) =>
   createSelector([selectTasksByCompanion(companionId)], tasks =>
-    tasks.filter(task => normalizeStatus(task.status) === normalizeStatus(status)),
+    tasks.filter(
+      task => normalizeStatus(task.status) === normalizeStatus(status),
+    ),
   );
 
 // Count tasks by category for a specific date
@@ -221,5 +256,5 @@ export const selectUpcomingTasks = (companionId: string | null) =>
 // Select the next upcoming task for companion
 export const selectNextUpcomingTask = (companionId: string | null) =>
   createSelector([selectUpcomingTasks(companionId)], tasks =>
-    tasks.length > 0 ? tasks[0] : null
+    tasks.length > 0 ? tasks[0] : null,
   );

@@ -1,6 +1,9 @@
 import {createAsyncThunk} from '@reduxjs/toolkit';
 import type {RootState} from '@/app/store';
-import {getFreshStoredTokens, isTokenExpired} from '@/features/auth/sessionManager';
+import {
+  getFreshStoredTokens,
+  isTokenExpired,
+} from '@/features/auth/sessionManager';
 import {coParentApi} from './services/coParentService';
 import {normalizeImageUri} from '@/shared/utils/imageUri';
 import type {
@@ -64,12 +67,18 @@ const normalizeCoParent = (
     companionContext?.id ??
     '';
   const parentId =
-    link?.parentId ?? link?.parent?.id ?? link?.parent?._id ?? link?.userId ?? '';
+    link?.parentId ??
+    link?.parent?.id ??
+    link?.parent?._id ??
+    link?.userId ??
+    '';
   const id =
     link?.id ??
     link?._id ??
     link?.linkId ??
-    (parentId ? `${parentId}-${companionId || 'companion'}` : `cp_${Date.now()}`);
+    (parentId
+      ? `${parentId}-${companionId || 'companion'}`
+      : `cp_${Date.now()}`);
 
   const firstName =
     link?.parent?.firstName ??
@@ -77,10 +86,14 @@ const normalizeCoParent = (
     link?.parentFirstName ??
     link?.inviteeName ??
     '';
-  const lastName = link?.parent?.lastName ?? link?.lastName ?? link?.parentLastName ?? '';
+  const lastName =
+    link?.parent?.lastName ?? link?.lastName ?? link?.parentLastName ?? '';
   const email = link?.parent?.email ?? link?.email ?? link?.parentEmail ?? '';
   const phoneNumber =
-    link?.parent?.phoneNumber ?? link?.phoneNumber ?? link?.parentPhone ?? undefined;
+    link?.parent?.phoneNumber ??
+    link?.phoneNumber ??
+    link?.parentPhone ??
+    undefined;
   const rawProfilePicture =
     link?.parent?.profileImageUrl ??
     link?.profileImageUrl ??
@@ -138,7 +151,11 @@ export const fetchCoParents = createAsyncThunk<
     const {companionId, companionName, companionImage} = payload;
     const links = await coParentApi.listByCompanion({companionId, accessToken});
     return (links ?? []).map((link: any) =>
-      normalizeCoParent(link, {id: companionId, name: companionName, photoUrl: companionImage}),
+      normalizeCoParent(link, {
+        id: companionId,
+        name: companionName,
+        photoUrl: companionImage,
+      }),
     );
   } catch (error) {
     return rejectWithValue(
@@ -149,50 +166,58 @@ export const fetchCoParents = createAsyncThunk<
 
 export const addCoParent = createAsyncThunk<
   CoParent,
-  {inviteRequest: CoParentInviteRequest; companionName?: string; companionImage?: string},
+  {
+    inviteRequest: CoParentInviteRequest;
+    companionName?: string;
+    companionImage?: string;
+  },
   {rejectValue: string}
->('coParent/addCoParent', async ({inviteRequest, companionName, companionImage}, {rejectWithValue}) => {
-  try {
-    const accessToken = await ensureAccessToken();
-    const response = await coParentApi.sendInvite({
-      inviteeName: inviteRequest.candidateName,
-      email: inviteRequest.email,
-      companionId: inviteRequest.companionId,
-      phoneNumber: inviteRequest.phoneNumber,
-      accessToken,
-    });
-
-    const now = new Date().toISOString();
-    const nameParts = inviteRequest.candidateName.trim().split(' ');
-    const [firstName, ...rest] = nameParts;
-
-    return normalizeCoParent(
-      {
-        ...response,
+>(
+  'coParent/addCoParent',
+  async ({inviteRequest, companionName, companionImage}, {rejectWithValue}) => {
+    try {
+      const accessToken = await ensureAccessToken();
+      const response = await coParentApi.sendInvite({
+        inviteeName: inviteRequest.candidateName,
+        email: inviteRequest.email,
         companionId: inviteRequest.companionId,
-        parentId: response?.parentId ?? response?.coParentId ?? response?.id,
-        firstName: response?.firstName ?? firstName ?? inviteRequest.candidateName,
-        lastName: response?.lastName ?? rest.join(' '),
-        email: response?.email ?? inviteRequest.email,
-        phoneNumber: response?.phoneNumber ?? inviteRequest.phoneNumber,
-        role: response?.role ?? 'CO-PARENT',
-        status: normalizeStatus(response?.status ?? 'pending'),
-        permissions: normalizePermissions(response?.permissions ?? {}),
-        createdAt: response?.createdAt ?? now,
-        updatedAt: response?.updatedAt ?? now,
-      },
-      {
-        id: inviteRequest.companionId,
-        name: companionName,
-        photoUrl: companionImage,
-      },
-    );
-  } catch (error) {
-    return rejectWithValue(
-      error instanceof Error ? error.message : 'Failed to send invite',
-    );
-  }
-});
+        phoneNumber: inviteRequest.phoneNumber,
+        accessToken,
+      });
+
+      const now = new Date().toISOString();
+      const nameParts = inviteRequest.candidateName.trim().split(' ');
+      const [firstName, ...rest] = nameParts;
+
+      return normalizeCoParent(
+        {
+          ...response,
+          companionId: inviteRequest.companionId,
+          parentId: response?.parentId ?? response?.coParentId ?? response?.id,
+          firstName:
+            response?.firstName ?? firstName ?? inviteRequest.candidateName,
+          lastName: response?.lastName ?? rest.join(' '),
+          email: response?.email ?? inviteRequest.email,
+          phoneNumber: response?.phoneNumber ?? inviteRequest.phoneNumber,
+          role: response?.role ?? 'CO-PARENT',
+          status: normalizeStatus(response?.status ?? 'pending'),
+          permissions: normalizePermissions(response?.permissions ?? {}),
+          createdAt: response?.createdAt ?? now,
+          updatedAt: response?.updatedAt ?? now,
+        },
+        {
+          id: inviteRequest.companionId,
+          name: companionName,
+          photoUrl: companionImage,
+        },
+      );
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to send invite',
+      );
+    }
+  },
+);
 
 export const updateCoParentPermissions = createAsyncThunk<
   CoParent,
@@ -200,7 +225,10 @@ export const updateCoParentPermissions = createAsyncThunk<
   {rejectValue: string; state: RootState}
 >(
   'coParent/updateCoParentPermissions',
-  async ({companionId, coParentId, permissions}, {rejectWithValue, getState}) => {
+  async (
+    {companionId, coParentId, permissions},
+    {rejectWithValue, getState},
+  ) => {
     try {
       const accessToken = await ensureAccessToken();
       const response = await coParentApi.updatePermissions({
@@ -236,32 +264,42 @@ export const deleteCoParent = createAsyncThunk<
   {coParentId: string},
   {companionId: string; coParentId: string},
   {rejectValue: string}
->('coParent/deleteCoParent', async ({companionId, coParentId}, {rejectWithValue}) => {
-  try {
-    const accessToken = await ensureAccessToken();
-    await coParentApi.remove({companionId, coParentId, accessToken});
-    return {coParentId};
-  } catch (error) {
-    return rejectWithValue(
-      error instanceof Error ? error.message : 'Failed to delete co-parent',
-    );
-  }
-});
+>(
+  'coParent/deleteCoParent',
+  async ({companionId, coParentId}, {rejectWithValue}) => {
+    try {
+      const accessToken = await ensureAccessToken();
+      await coParentApi.remove({companionId, coParentId, accessToken});
+      return {coParentId};
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to delete co-parent',
+      );
+    }
+  },
+);
 
 export const promoteCoParentToPrimary = createAsyncThunk<
   void,
   {companionId: string; coParentId: string},
   {rejectValue: string}
->('coParent/promoteCoParentToPrimary', async ({companionId, coParentId}, {rejectWithValue}) => {
-  try {
-    const accessToken = await ensureAccessToken();
-    await coParentApi.promoteToPrimary({companionId, coParentId, accessToken});
-  } catch (error) {
-    return rejectWithValue(
-      error instanceof Error ? error.message : 'Failed to promote co-parent',
-    );
-  }
-});
+>(
+  'coParent/promoteCoParentToPrimary',
+  async ({companionId, coParentId}, {rejectWithValue}) => {
+    try {
+      const accessToken = await ensureAccessToken();
+      await coParentApi.promoteToPrimary({
+        companionId,
+        coParentId,
+        accessToken,
+      });
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to promote co-parent',
+      );
+    }
+  },
+);
 
 export const fetchPendingInvites = createAsyncThunk<
   PendingCoParentInvite[],
@@ -314,54 +352,68 @@ export const fetchParentAccess = createAsyncThunk<
   ParentCompanionAccess[],
   {parentId: string; companionIds?: string[]},
   {rejectValue: string}
->('coParent/fetchParentAccess', async ({parentId, companionIds}, {rejectWithValue}) => {
-  try {
-    const accessToken = await ensureAccessToken();
-    const links = await coParentApi.listByParent({parentId, accessToken});
-    const normalized: ParentCompanionAccess[] = (links ?? []).map((link: any) => ({
-      companionId: link?.companionId ?? link?.companion?.id ?? undefined,
-      parentId: link?.parentId ?? parentId,
-      role: link?.role ?? 'CO-PARENT',
-      status: normalizeStatus(link?.status),
-      permissions: normalizePermissions(link?.permissions),
-    }));
-
-    // If no companionId provided in links, resolve per companion in parallel
-    if (companionIds && companionIds.length > 0) {
-      const companionLinksPromises = companionIds.map(cid =>
-        coParentApi
-          .listByCompanion({companionId: cid, accessToken})
-          .then(linksForCompanion => ({cid, linksForCompanion}))
-          .catch(() => ({cid, linksForCompanion: []})),
+>(
+  'coParent/fetchParentAccess',
+  async ({parentId, companionIds}, {rejectWithValue}) => {
+    try {
+      const accessToken = await ensureAccessToken();
+      const links = await coParentApi.listByParent({parentId, accessToken});
+      const normalized: ParentCompanionAccess[] = (links ?? []).map(
+        (link: any) => ({
+          companionId: link?.companionId ?? link?.companion?.id ?? undefined,
+          parentId: link?.parentId ?? parentId,
+          role: link?.role ?? 'CO-PARENT',
+          status: normalizeStatus(link?.status),
+          permissions: normalizePermissions(link?.permissions),
+        }),
       );
 
-      const companionLinksResults = await Promise.all(companionLinksPromises);
-
-      for (const {cid, linksForCompanion} of companionLinksResults) {
-        const match = (linksForCompanion ?? []).find(
-          (l: any) => (l?.parentId ?? l?.parent?.id) === parentId,
+      // If no companionId provided in links, resolve per companion in parallel
+      if (companionIds && companionIds.length > 0) {
+        const companionLinksPromises = companionIds.map(cid =>
+          coParentApi
+            .listByCompanion({companionId: cid, accessToken})
+            .then(linksForCompanion => ({cid, linksForCompanion}))
+            .catch(() => ({cid, linksForCompanion: []})),
         );
-        if (!match) {
-          continue;
-        }
-        const alreadyMapped = normalized.some(entry => entry.companionId === cid);
-        if (alreadyMapped) {
-          continue;
-        }
-        normalized.push({
-          companionId: cid,
-          parentId,
-          role: match.role ?? 'CO-PARENT',
-          status: normalizeStatus(match.status),
-          permissions: normalizePermissions(match.permissions),
-        });
-      }
-    }
 
-    return normalized;
-  } catch (error) {
-    return rejectWithValue(
-      error instanceof Error ? error.message : 'Failed to fetch permissions',
-    );
-  }
-});
+        const companionLinksResults = await Promise.all(companionLinksPromises);
+
+        const matchByCid = new Map(
+          companionLinksResults.map(({cid, linksForCompanion}) => [
+            cid,
+            (linksForCompanion ?? []).find(
+              (l: any) => (l?.parentId ?? l?.parent?.id) === parentId,
+            ),
+          ]),
+        );
+
+        for (const {cid} of companionLinksResults) {
+          const match = matchByCid.get(cid);
+          if (!match) {
+            continue;
+          }
+          const alreadyMapped = normalized.some(
+            entry => entry.companionId === cid,
+          );
+          if (alreadyMapped) {
+            continue;
+          }
+          normalized.push({
+            companionId: cid,
+            parentId,
+            role: match.role ?? 'CO-PARENT',
+            status: normalizeStatus(match.status),
+            permissions: normalizePermissions(match.permissions),
+          });
+        }
+      }
+
+      return normalized;
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to fetch permissions',
+      );
+    }
+  },
+);

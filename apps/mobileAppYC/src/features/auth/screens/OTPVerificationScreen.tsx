@@ -35,6 +35,7 @@ import {
   PENDING_PROFILE_UPDATED_EVENT,
   AUTH_FEATURE_FLAGS,
 } from '@/config/variables';
+import {storeTokens} from '@/features/auth/services/tokenStorage';
 
 const DEFAULT_OTP_LENGTH = 4;
 const RESEND_SECONDS = 60;
@@ -187,6 +188,12 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       ...createAccountPayload,
       showOtpSuccess: false,
     };
+    await storeTokens({
+      ...tokens,
+      userId: userPayload.id,
+      provider: tokens.provider ?? 'amplify',
+    });
+
     await AsyncStorage.setItem(
       PENDING_PROFILE_STORAGE_KEY,
       JSON.stringify(pendingProfilePayload),
@@ -206,7 +213,8 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
     setIsVerifying(true);
     try {
       const completion = await completePasswordlessSignIn(code.trim());
-      if (cancellationRef.current) {
+      const shouldIgnoreCompletion = cancellationRef.current;
+      if (shouldIgnoreCompletion) {
         return;
       }
       setOtpError('');

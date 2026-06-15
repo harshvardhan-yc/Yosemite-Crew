@@ -1,5 +1,6 @@
 import React from 'react';
 import {mockTheme} from '../setup/mockTheme';
+import {Alert} from 'react-native';
 import {render, fireEvent, waitFor} from '@testing-library/react-native';
 import BrowseBusinessesScreen from '@/features/appointments/screens/BrowseBusinessesScreen';
 import * as reactRedux from 'react-redux';
@@ -10,6 +11,7 @@ import {
   fetchGooglePlacesImage,
 } from '@/features/linkedBusinesses';
 import {useClinicMapDiscovery} from '@/features/appointments/hooks/useClinicMapDiscovery';
+import {usePlacesBusinessSearch} from '@/features/linkedBusinesses/hooks/usePlacesBusinessSearch';
 
 // --- Mocks ---
 jest.mock('@react-navigation/native', () => ({
@@ -117,9 +119,17 @@ jest.mock('@/features/appointments/hooks/useClinicMapDiscovery', () => ({
   useClinicMapDiscovery: jest.fn(),
 }));
 
+jest.mock('@/features/linkedBusinesses/hooks/usePlacesBusinessSearch', () => ({
+  usePlacesBusinessSearch: jest.fn(),
+}));
+
 // Mock Actions
 jest.mock('@/features/appointments/businessesSlice', () => ({
   fetchBusinesses: jest.fn(),
+  upsertBusiness: jest.fn(payload => ({
+    type: 'businesses/upsertBusiness',
+    payload,
+  })),
 }));
 
 jest.mock('@/features/linkedBusinesses', () => ({
@@ -142,6 +152,18 @@ const makeDiscoveryMock = (overrides: any = {}) => ({
   setCategory: jest.fn(),
   setOpenNow: jest.fn(),
   enrichWithDistance: jest.fn().mockReturnValue([]),
+  pinAndSelectClinic: jest.fn(),
+  ...overrides,
+});
+
+const makePlacesSearchMock = (overrides: any = {}) => ({
+  searchQuery: '',
+  setSearchQuery: jest.fn(),
+  searchResults: [],
+  searching: false,
+  handleSearchChange: jest.fn(),
+  handleSelectBusiness: jest.fn(),
+  clearResults: jest.fn(),
   ...overrides,
 });
 
@@ -169,6 +191,9 @@ describe('BrowseBusinessesScreen', () => {
       .mockImplementation(cb => cb(baseState));
 
     (useClinicMapDiscovery as jest.Mock).mockReturnValue(makeDiscoveryMock());
+    (usePlacesBusinessSearch as jest.Mock).mockReturnValue(
+      makePlacesSearchMock(),
+    );
 
     (useRoute as jest.Mock).mockReturnValue({params: {}});
 
@@ -187,6 +212,32 @@ describe('BrowseBusinessesScreen', () => {
 
     expect(getAllByText('All')).toBeTruthy();
     expect(getAllByText('Hospital').length).toBeGreaterThan(0);
+  });
+
+  it('passes initialBusinessId and selectionToken to useClinicMapDiscovery', () => {
+    (useRoute as jest.Mock).mockReturnValue({
+      params: {initialBusinessId: 'org-123', selectionToken: 9999},
+    });
+
+    render(<BrowseBusinessesScreen />);
+
+    expect(useClinicMapDiscovery).toHaveBeenCalledWith(
+      expect.any(String),
+      'org-123',
+      9999,
+    );
+  });
+
+  it('passes undefined for both when params are absent', () => {
+    (useRoute as jest.Mock).mockReturnValue({params: {}});
+
+    render(<BrowseBusinessesScreen />);
+
+    expect(useClinicMapDiscovery).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      undefined,
+    );
   });
 
   it('performs initial search if serviceName param is present', async () => {
@@ -463,5 +514,173 @@ describe('BrowseBusinessesScreen', () => {
     );
 
     render(<BrowseBusinessesScreen />);
+  });
+
+  it('PMS selection from map search calls pinAndSelectClinic and clears results, not navigate', async () => {
+    const pinAndSelectClinic = jest.fn();
+    const clearResults = jest.fn();
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({pinAndSelectClinic}),
+    );
+    (usePlacesBusinessSearch as jest.Mock).mockImplementation(
+      ({onSelectPms}: any) => {
+        // Expose onSelectPms so the test can invoke it
+        (usePlacesBusinessSearch as any)._capturedOnSelectPms = onSelectPms;
+        return makePlacesSearchMock({clearResults});
+      },
+    );
+
+    render(<BrowseBusinessesScreen />);
+
+    const pmsSelection = {
+      placeId: 'gp-1',
+      organisationId: 'org-1',
+      name: 'Test Vet',
+      address: '1 Main St',
+      isPmsOrganisation: true,
+      lat: 37.77,
+      lng: -122.42,
+    };
+
+    await (usePlacesBusinessSearch as any)._capturedOnSelectPms(pmsSelection);
+
+    expect(pinAndSelectClinic).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'org-1', name: 'Test Vet'}),
+    );
+    expect(clearResults).toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('selectedCompanion falls back to null when targetCompanionId has no match in companions', () => {
+    jest.spyOn(reactRedux, 'useSelector').mockImplementation(cb =>
+      cb({
+        ...baseState,
+        companion: {companions: [], selectedCompanionId: 'stale-id'},
+      }),
+    );
+    expect(() => render(<BrowseBusinessesScreen />)).not.toThrow();
+  });
+
+  it('ensureCompanion shows Alert when no companion is available', async () => {
+    jest.spyOn(Alert, 'alert');
+    let capturedOnSelectNonPms: any;
+    (usePlacesBusinessSearch as jest.Mock).mockImplementation(
+      ({onSelectNonPms}: any) => {
+        capturedOnSelectNonPms = onSelectNonPms;
+        return makePlacesSearchMock();
+      },
+    );
+    jest.spyOn(reactRedux, 'useSelector').mockImplementation(cb =>
+      cb({
+        ...baseState,
+        companion: {companions: [], selectedCompanionId: null},
+      }),
+    );
+
+    render(<BrowseBusinessesScreen />);
+
+    await capturedOnSelectNonPms({
+      placeId: 'gp-1',
+      name: 'Test Vet',
+      address: '1 Main',
+      isPmsOrganisation: false,
+    });
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Add a companion',
+      'Add a companion to notify a business.',
+    );
+  });
+
+  it('handleNonPmsSelection navigates to BusinessAdd when companion is available', async () => {
+    const mockParentNavigate = jest.fn();
+    (useNavigation as jest.Mock).mockReturnValue({
+      navigate: navigateMock,
+      goBack: goBackMock,
+      getParent: () => ({navigate: mockParentNavigate}),
+    });
+
+    let capturedOnSelectNonPms: any;
+    (usePlacesBusinessSearch as jest.Mock).mockImplementation(
+      ({onSelectNonPms}: any) => {
+        capturedOnSelectNonPms = onSelectNonPms;
+        return makePlacesSearchMock();
+      },
+    );
+    jest.spyOn(reactRedux, 'useSelector').mockImplementation(cb =>
+      cb({
+        ...baseState,
+        companion: {
+          companions: [
+            {
+              id: 'comp-1',
+              name: 'Buddy',
+              breed: {breedName: 'Labrador'},
+              profileImage: null,
+            },
+          ],
+          selectedCompanionId: 'comp-1',
+        },
+      }),
+    );
+
+    render(<BrowseBusinessesScreen />);
+
+    await capturedOnSelectNonPms({
+      placeId: 'gp-1',
+      name: 'Test Vet',
+      address: '1 Main',
+      isPmsOrganisation: false,
+    });
+
+    expect(mockParentNavigate).toHaveBeenCalledWith(
+      'HomeStack',
+      expect.objectContaining({screen: 'LinkedBusinesses'}),
+    );
+  });
+
+  it('handleSearchError logs error without throwing', () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    let capturedOnError: any;
+    (usePlacesBusinessSearch as jest.Mock).mockImplementation(
+      ({onError}: any) => {
+        capturedOnError = onError;
+        return makePlacesSearchMock();
+      },
+    );
+
+    render(<BrowseBusinessesScreen />);
+
+    expect(() => capturedOnError(new Error('search failed'))).not.toThrow();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[BrowseBusinesses] Places search error',
+      expect.any(Error),
+    );
+
+    consoleSpy.mockRestore();
+  });
+
+  it('handleRegionChange calls setMapRegion via map onRegionChangeComplete', () => {
+    const setMapRegion = jest.fn();
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({setMapRegion}),
+    );
+
+    const {getByTestId} = render(<BrowseBusinessesScreen />);
+    const region = {
+      latitude: 37.7,
+      longitude: -122.4,
+      latitudeDelta: 0.1,
+      longitudeDelta: 0.1,
+    };
+    fireEvent(getByTestId('map-view'), 'regionChangeComplete', region);
+
+    expect(setMapRegion).toHaveBeenCalledWith(region);
+  });
+
+  it('header onBack triggers navigation.goBack', () => {
+    const {getByTestId} = render(<BrowseBusinessesScreen />);
+    getByTestId('header').props.onBack();
+    expect(goBackMock).toHaveBeenCalled();
   });
 });

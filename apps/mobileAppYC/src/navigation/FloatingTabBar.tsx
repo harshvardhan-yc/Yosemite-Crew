@@ -78,7 +78,9 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
   const pillWidth = useRef(new Animated.Value(0)).current;
   const pillScale = useRef(new Animated.Value(1)).current;
   const [tabLayouts, setTabLayouts] = useState<TabLayout[]>([]);
-  const [isReady, setIsReady] = useState(false);
+  const isReady =
+    tabLayouts.length > 0 && tabLayouts.length === state.routes.length;
+  const hasInitializedRef = useRef(false);
 
   // Calculate if tab bar should be hidden based on nested navigation
   const shouldHideTabBar = (() => {
@@ -125,7 +127,7 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
       return;
     }
 
-    if (isReady) {
+    if (hasInitializedRef.current) {
       // Bouncy spring animation with scale wiggle effect
       Animated.parallel([
         // Position and width with extra bounce
@@ -164,12 +166,11 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
       pillLeft.setValue(activeTabLayout.x);
       pillWidth.setValue(activeTabLayout.width);
       pillScale.setValue(1);
-      setIsReady(true);
+      hasInitializedRef.current = true;
     }
   }, [
     state.index,
     tabLayouts,
-    isReady,
     pillLeft,
     pillWidth,
     pillScale,
@@ -323,8 +324,7 @@ const createStyles = (theme: any, isIOS: boolean) =>
       borderRadius: theme.borderRadius.lg,
       backgroundColor: 'transparent',
       overflow: 'visible',
-      ...theme.shadows.sm,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 3px ${theme.colors.neutralShadow}`,
     },
     shadowWrapperSolid: {
       backgroundColor: 'transparent',

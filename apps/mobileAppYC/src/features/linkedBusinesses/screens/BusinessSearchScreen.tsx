@@ -1,5 +1,14 @@
 import React, {useState, useCallback, useMemo, useRef, useEffect} from 'react';
-import {View, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Text, Alert, Pressable} from 'react-native';
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  Text,
+  Alert,
+  Pressable,
+} from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {useDispatch, useSelector} from 'react-redux';
@@ -15,20 +24,25 @@ import {
   acceptBusinessInvite,
   declineBusinessInvite,
   fetchPlaceCoordinates,
-  selectLinkedBusinesses,
   deleteLinkedBusiness,
+} from '../thunks';
+import {selectLinkedBusinesses} from '../selectors';
+import {
   DeleteBusinessBottomSheet,
   type DeleteBusinessBottomSheetRef,
-} from '../index';
+} from '../components/DeleteBusinessBottomSheet';
 import {LinkedBusinessCard} from '../components/LinkedBusinessCard';
 import type {LinkedBusinessStackParamList} from '@/navigation/types';
 import type {LinkedBusiness} from '../types';
 import {CompanionProfileImage} from '../components/CompanionProfileImage';
 import {InviteCard} from '../components/InviteCard';
-import LocationService from '@/shared/services/LocationService';
+import {useLocationStore} from '@/shared/stores/locationStore';
 import {SearchDropdownOverlay} from '@/shared/components/common/SearchDropdownOverlay/SearchDropdownOverlay';
 
-type Props = NativeStackScreenProps<LinkedBusinessStackParamList, 'BusinessSearch'>;
+type Props = NativeStackScreenProps<
+  LinkedBusinessStackParamList,
+  'BusinessSearch'
+>;
 
 export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
   const {companionId, companionName, companionBreed, companionImage, category} =
@@ -40,9 +54,10 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedBusinessForDelete, setSelectedBusinessForDelete] = useState<LinkedBusiness | null>(null);
+  const [selectedBusinessForDelete, setSelectedBusinessForDelete] =
+    useState<LinkedBusiness | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
+  const userLocation = useLocationStore();
   const [searchBarBottom, setSearchBarBottom] = useState<number | null>(null);
   const rootRef = useRef<View | null>(null);
   const searchBarRef = useRef<View | null>(null);
@@ -52,13 +67,19 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
   useEffect(() => {
     const loadLinkedBusinesses = async () => {
       try {
-        console.log('[BusinessSearch] Fetching linked businesses for companion:', companionId, 'category:', category);
-        await dispatch(
-          fetchLinkedBusinesses({companionId, category})
-        ).unwrap();
+        console.log(
+          '[BusinessSearch] Fetching linked businesses for companion:',
+          companionId,
+          'category:',
+          category,
+        );
+        await dispatch(fetchLinkedBusinesses({companionId, category})).unwrap();
         console.log('[BusinessSearch] Linked businesses loaded');
       } catch (error) {
-        console.error('[BusinessSearch] Failed to load linked businesses:', error);
+        console.error(
+          '[BusinessSearch] Failed to load linked businesses:',
+          error,
+        );
         // Errors are handled by Redux state
       }
     };
@@ -68,33 +89,22 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
     }
   }, [companionId, category, dispatch]);
 
-  // Get user's location on screen mount
-  useEffect(() => {
-    const getUserLocation = async () => {
-      try {
-        const location = await LocationService.getCurrentPosition();
-        setUserLocation({
-          latitude: location.latitude,
-          longitude: location.longitude,
-        });
-        console.log('[BusinessSearch] User location obtained:', location.latitude, location.longitude);
-      } catch (error) {
-        console.log('[BusinessSearch] Failed to get user location, proceeding without location bias:', error);
-        // Proceed without location - it's optional for search
-      }
-    };
-    getUserLocation();
-  }, []);
-
   // Log mount/navigation only when params change, not on every render
   useEffect(() => {
-    console.log('[BusinessSearch] Screen navigated with companionId:', companionId, 'category:', category);
+    console.log(
+      '[BusinessSearch] Screen navigated with companionId:',
+      companionId,
+      'category:',
+      category,
+    );
   }, [companionId, category]);
 
   // Reset search state when screen comes into focus and refresh linked businesses
   useFocusEffect(
     useCallback(() => {
-      console.log('[BusinessSearch] Screen focused - resetting search state and refreshing businesses');
+      console.log(
+        '[BusinessSearch] Screen focused - resetting search state and refreshing businesses',
+      );
       setSearchQuery('');
       setSearchResults([]);
       setSelectedBusinessForDelete(null);
@@ -103,11 +113,16 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
       (async () => {
         try {
           await dispatch(
-            fetchLinkedBusinesses({companionId, category})
+            fetchLinkedBusinesses({companionId, category}),
           ).unwrap();
-          console.log('[BusinessSearch] Linked businesses refreshed after focus');
+          console.log(
+            '[BusinessSearch] Linked businesses refreshed after focus',
+          );
         } catch (error) {
-          console.error('[BusinessSearch] Failed to refresh linked businesses:', error);
+          console.error(
+            '[BusinessSearch] Failed to refresh linked businesses:',
+            error,
+          );
         }
       })();
 
@@ -127,11 +142,24 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
     const filtered = allLinkedBusinesses.filter(
       b => b.companionId === companionId && b.category === category,
     );
-    console.log('[BusinessSearch] Redux state all businesses:', allLinkedBusinesses.map(b => ({id: b.id, companionId: b.companionId, category: b.category})));
-    console.log('[BusinessSearch] Filtered for companion:', companionId, 'category:', category, 'result:', filtered.length);
+    console.log(
+      '[BusinessSearch] Redux state all businesses:',
+      allLinkedBusinesses.map(b => ({
+        id: b.id,
+        companionId: b.companionId,
+        category: b.category,
+      })),
+    );
+    console.log(
+      '[BusinessSearch] Filtered for companion:',
+      companionId,
+      'category:',
+      category,
+      'result:',
+      filtered.length,
+    );
     return filtered;
   }, [allLinkedBusinesses, companionId, category]);
-
 
   // Use a ref to manage debounce timer
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -153,7 +181,10 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
       // OPTIMIZATION: Don't make API call if query hasn't changed
       // Prevents duplicate searches when component re-renders
       if (query === lastSearchQueryRef.current) {
-        console.log('[BusinessSearch] Query unchanged, skipping search:', query);
+        console.log(
+          '[BusinessSearch] Query unchanged, skipping search:',
+          query,
+        );
         return;
       }
 
@@ -168,7 +199,9 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
       debounceTimerRef.current = setTimeout(async () => {
         // Double-check the query hasn't changed during the debounce
         if (query === lastSearchQueryRef.current) {
-          console.log('[BusinessSearch] Query unchanged after debounce, skipping API call');
+          console.log(
+            '[BusinessSearch] Query unchanged after debounce, skipping API call',
+          );
           return;
         }
 
@@ -184,13 +217,20 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
             }),
           ).unwrap();
           setSearchResults(result);
-          console.log('[BusinessSearch] Search completed with', result.length, 'results.');
+          console.log(
+            '[BusinessSearch] Search completed with',
+            result.length,
+            'results.',
+          );
         } catch (error: any) {
           // Log error but don't show to user - use fallback results instead
-          const isQuotaError = error?.message?.includes('RESOURCE_EXHAUSTED') ||
-                              error?.message?.includes('Quota exceeded');
+          const isQuotaError =
+            error?.message?.includes('RESOURCE_EXHAUSTED') ||
+            error?.message?.includes('Quota exceeded');
           if (isQuotaError) {
-            console.warn('[BusinessSearch] Quota exceeded, using fallback results');
+            console.warn(
+              '[BusinessSearch] Quota exceeded, using fallback results',
+            );
           } else {
             console.error('Search failed:', error);
           }
@@ -225,7 +265,10 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
           b => b.businessName?.toLowerCase() === business.name.toLowerCase(),
         );
         if (alreadyLinked) {
-          Alert.alert('Already Linked', `${business.name} is already linked to ${companionName}`);
+          Alert.alert(
+            'Already Linked',
+            `${business.name} is already linked to ${companionName}`,
+          );
           return;
         }
 
@@ -234,14 +277,22 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
         let lng = business.lng;
 
         if (!lat || !lng) {
-          console.log('[BusinessSearch] Fetching coordinates for:', business.id);
+          console.log(
+            '[BusinessSearch] Fetching coordinates for:',
+            business.id,
+          );
           try {
-            const coords = await dispatch(fetchPlaceCoordinates(business.id)).unwrap();
+            const coords = await dispatch(
+              fetchPlaceCoordinates(business.id),
+            ).unwrap();
             lat = coords.latitude;
             lng = coords.longitude;
             console.log('[BusinessSearch] Coordinates fetched:', {lat, lng});
           } catch (coordError) {
-            console.log('[BusinessSearch] Failed to fetch coordinates - proceeding to notify without PMS check:', coordError);
+            console.log(
+              '[BusinessSearch] Failed to fetch coordinates - proceeding to notify without PMS check:',
+              coordError,
+            );
             // Navigate directly to BusinessAddScreen without organization check
             navigation.navigate('BusinessAdd', {
               companionId,
@@ -277,11 +328,16 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
             }),
           ).unwrap();
 
-          console.log('[BusinessSearch] Organization check result:', checkResult);
+          console.log(
+            '[BusinessSearch] Organization check result:',
+            checkResult,
+          );
 
           if (checkResult.isPmsOrganisation && checkResult.organisationId) {
             // PMS Business - Navigate to BusinessAddScreen to review and add
-            console.log('[BusinessSearch] PMS business found - navigating to BusinessAddScreen for confirmation');
+            console.log(
+              '[BusinessSearch] PMS business found - navigating to BusinessAddScreen for confirmation',
+            );
 
             navigation.navigate('BusinessAdd', {
               companionId,
@@ -303,7 +359,9 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
             } as any);
           } else {
             // Non-PMS Business - Navigate to BusinessAddScreen to notify
-            console.log('[BusinessSearch] Business is not PMS - navigating to BusinessAddScreen');
+            console.log(
+              '[BusinessSearch] Business is not PMS - navigating to BusinessAddScreen',
+            );
 
             navigation.navigate('BusinessAdd', {
               companionId,
@@ -325,7 +383,10 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
           }
         } catch (checkError: any) {
           // If organization check fails, navigate to BusinessAddScreen
-          console.log('[BusinessSearch] Organization check failed - navigating to BusinessAddScreen:', checkError);
+          console.log(
+            '[BusinessSearch] Organization check failed - navigating to BusinessAddScreen:',
+            checkError,
+          );
 
           navigation.navigate('BusinessAdd', {
             companionId,
@@ -350,12 +411,24 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
         Alert.alert('Error', 'Failed to process business. Please try again.');
       }
     },
-    [companionId, companionName, companionBreed, companionImage, category, linkedBusinesses, dispatch, navigation],
+    [
+      companionId,
+      companionName,
+      companionBreed,
+      companionImage,
+      category,
+      linkedBusinesses,
+      dispatch,
+      navigation,
+    ],
   );
 
-
   const handleDeletePressFromCard = useCallback((business: LinkedBusiness) => {
-    console.log('[BusinessSearch] Delete pressed for:', business.id, business.businessName);
+    console.log(
+      '[BusinessSearch] Delete pressed for:',
+      business.id,
+      business.businessName,
+    );
     setSelectedBusinessForDelete(business);
     deleteBottomSheetRef.current?.open(business.businessName);
   }, []);
@@ -366,10 +439,15 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
     try {
       setDeleteLoading(true);
       console.log('[BusinessSearch] ===== DELETE START =====');
-      console.log('[BusinessSearch] Business to delete:', selectedBusinessForDelete.id, selectedBusinessForDelete.linkId);
+      console.log(
+        '[BusinessSearch] Business to delete:',
+        selectedBusinessForDelete.id,
+        selectedBusinessForDelete.linkId,
+      );
 
       // Use linkId if available, otherwise use id
-      const idToDelete = selectedBusinessForDelete.linkId || selectedBusinessForDelete.id;
+      const idToDelete =
+        selectedBusinessForDelete.linkId || selectedBusinessForDelete.id;
 
       console.log('[BusinessSearch] Dispatching delete for ID:', idToDelete);
       const result = await dispatch(deleteLinkedBusiness(idToDelete)).unwrap();
@@ -400,10 +478,10 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
         Alert.alert('Success', 'Invite accepted!');
         // Refresh the linked businesses list to get the latest state from the API
         // This ensures the accepted invite is properly updated and next invite is shown
-        console.log('[BusinessSearch] Refreshing linked businesses after accept...');
-        await dispatch(
-          fetchLinkedBusinesses({companionId, category})
-        ).unwrap();
+        console.log(
+          '[BusinessSearch] Refreshing linked businesses after accept...',
+        );
+        await dispatch(fetchLinkedBusinesses({companionId, category})).unwrap();
       } catch (error) {
         console.error('[BusinessSearch] Failed to accept invite:', error);
         Alert.alert('Error', 'Failed to accept invite. Please try again.');
@@ -420,10 +498,10 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
         Alert.alert('Success', 'Invite declined!');
         // Refresh the linked businesses list to get the latest state from the API
         // This ensures the declined invite is completely removed
-        console.log('[BusinessSearch] Refreshing linked businesses after decline...');
-        await dispatch(
-          fetchLinkedBusinesses({companionId, category})
-        ).unwrap();
+        console.log(
+          '[BusinessSearch] Refreshing linked businesses after decline...',
+        );
+        await dispatch(fetchLinkedBusinesses({companionId, category})).unwrap();
       } catch (error) {
         console.error('[BusinessSearch] Failed to decline invite:', error);
         Alert.alert('Error', 'Failed to decline invite. Please try again.');
@@ -438,10 +516,11 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
     }
   }, [navigation]);
 
-
   const categoryTitle = category.charAt(0).toUpperCase() + category.slice(1);
-  const dropdownTop = (searchBarBottom ?? theme.spacing['24']) + theme.spacing['2'];
-  const showSearchResults = searchQuery.length >= 2 && searchResults.length > 0 && !searching;
+  const dropdownTop =
+    (searchBarBottom ?? theme.spacing['24']) + theme.spacing['2'];
+  const showSearchResults =
+    searchQuery.length >= 2 && searchResults.length > 0 && !searching;
 
   const updateSearchBarBottom = useCallback(() => {
     if (!rootRef.current || !searchBarRef.current) {
@@ -462,7 +541,10 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
       }}
       onLayout={updateSearchBarBottom}>
       {showSearchResults ? (
-        <Pressable style={styles.searchBackdrop} onPress={handleCloseDropdown} />
+        <Pressable
+          style={styles.searchBackdrop}
+          onPress={handleCloseDropdown}
+        />
       ) : null}
 
       <LiquidGlassHeaderScreen
@@ -497,10 +579,15 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
             style={styles.container}>
             <View style={styles.mainContent}>
               <ScrollView
-                contentContainerStyle={[styles.scrollContent, contentPaddingStyle]}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  contentPaddingStyle,
+                ]}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
-                onScrollBeginDrag={showSearchResults ? handleCloseDropdown : undefined}>
+                onScrollBeginDrag={
+                  showSearchResults ? handleCloseDropdown : undefined
+                }>
                 {/* Companion Profile Header - Always visible */}
                 <View key="profile">
                   <CompanionProfileImage
@@ -512,7 +599,9 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
 
                 {/* Pending Invite Sections - Show only the first pending invite */}
                 {linkedBusinesses
-                  .filter(b => b.inviteStatus === 'pending' && b.state === 'pending')
+                  .filter(
+                    b => b.inviteStatus === 'pending' && b.state === 'pending',
+                  )
                   .slice(0, 1)
                   .map(business => (
                     <InviteCard
@@ -522,19 +611,28 @@ export const BusinessSearchScreen: React.FC<Props> = ({route, navigation}) => {
                       companionName={companionName}
                       email={business.email || business.parentEmail || ''}
                       phone={business.phone || ''}
-                      onAccept={() => handleAcceptInvite(business.linkId || business.id)}
-                      onDecline={() => handleDeclineInvite(business.linkId || business.id)}
+                      onAccept={() =>
+                        handleAcceptInvite(business.linkId || business.id)
+                      }
+                      onDecline={() =>
+                        handleDeclineInvite(business.linkId || business.id)
+                      }
                     />
                   ))}
 
                 {/* Linked Businesses Section - Only show accepted ones */}
-                {linkedBusinesses.some(b => b.inviteStatus === 'accepted' || b.state === 'active') ? (
+                {linkedBusinesses.some(
+                  b => b.inviteStatus === 'accepted' || b.state === 'active',
+                ) ? (
                   <View key="linked" style={styles.linkedSection}>
                     <Text style={styles.sectionTitle}>
                       Linked {categoryTitle.toLowerCase()}s
                     </Text>
                     {linkedBusinesses
-                      .filter(b => b.inviteStatus === 'accepted' || b.state === 'active')
+                      .filter(
+                        b =>
+                          b.inviteStatus === 'accepted' || b.state === 'active',
+                      )
                       .map(business => (
                         <LinkedBusinessCard
                           key={business.linkId || business.id}

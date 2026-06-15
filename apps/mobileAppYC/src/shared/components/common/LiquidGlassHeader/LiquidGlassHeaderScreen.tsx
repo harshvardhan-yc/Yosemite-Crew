@@ -5,6 +5,8 @@ import {useTheme} from '@/hooks';
 import {SafeArea} from '@/shared/components/common';
 import {LiquidGlassHeaderShell} from '@/shared/components/common/LiquidGlassHeader/LiquidGlassHeaderShell';
 
+const EMPTY_EDGES: ReadonlyArray<Edge> = [];
+
 type LiquidGlassHeaderScreenProps = {
   header: React.ReactNode;
   children: (contentPaddingStyle: ViewStyle | null) => React.ReactNode;
@@ -20,13 +22,15 @@ type LiquidGlassHeaderScreenProps = {
   bottomFadeOffset?: number;
 };
 
-export const LiquidGlassHeaderScreen: React.FC<LiquidGlassHeaderScreenProps> = ({
+export const LiquidGlassHeaderScreen: React.FC<
+  LiquidGlassHeaderScreenProps
+> = ({
   header,
   children,
   contentPadding,
   cardGap,
   containerStyle,
-  edges = [],
+  edges = EMPTY_EDGES,
   mode,
   useSafeAreaView = false,
   showBottomFade = false,

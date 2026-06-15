@@ -17,7 +17,10 @@ import type {AppointmentStackParamList} from '@/navigation/types';
 import {useCommonScreenStyles} from '@/shared/utils/screenStyles';
 import {LiquidGlassHeaderScreen} from '@/shared/components/common/LiquidGlassHeader/LiquidGlassHeaderScreen';
 
-type Props = NativeStackScreenProps<AppointmentStackParamList, 'OrganisationDocument'>;
+type Props = NativeStackScreenProps<
+  AppointmentStackParamList,
+  'OrganisationDocument'
+>;
 
 const CATEGORY_TITLES: Record<OrganisationDocumentCategory, string> = {
   TERMS_AND_CONDITIONS: 'Terms & Conditions',
@@ -25,15 +28,17 @@ const CATEGORY_TITLES: Record<OrganisationDocumentCategory, string> = {
   CANCELLATION_POLICY: 'Cancellation Policy',
 };
 
-const toParagraphBlocks = (description?: string | null): LegalContentBlock[] => {
+const toParagraphBlocks = (
+  description?: string | null,
+): LegalContentBlock[] => {
   if (!description) {
     return [];
   }
 
-  const paragraphs = description
-    .split(/\n+/)
-    .map(part => part.trim())
-    .filter(Boolean);
+  const paragraphs = description.split(/\n+/).flatMap(part => {
+    const t = part.trim();
+    return t ? [t] : [];
+  });
 
   if (paragraphs.length === 0) {
     return [];
@@ -64,52 +69,68 @@ const mapDocumentsToSections = (
         : [
             {
               type: 'paragraph',
-              segments: [{text: 'No additional details were provided for this document.'}],
+              segments: [
+                {
+                  text: 'No additional details were provided for this document.',
+                },
+              ],
             },
           ],
     };
   });
 };
 
-export const OrganisationDocumentScreen: React.FC<Props> = ({navigation, route}) => {
+export const OrganisationDocumentScreen: React.FC<Props> = ({
+  navigation,
+  route,
+}) => {
   const {organisationId, organisationName, category} = route.params;
   const {theme} = useTheme();
   const baseStyles = React.useMemo(() => createLegalStyles(theme), [theme]);
   const styles = useCommonScreenStyles(theme);
-  const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [sections, setSections] = React.useState<LegalSection[]>([]);
+  const [sections, setSections] = React.useState<LegalSection[] | null>(null);
+  const [retryCount, setRetryCount] = React.useState(0);
+  const loading = sections === null && error === null;
 
   const baseTitle = CATEGORY_TITLES[category] ?? 'Document';
   const screenTitle = organisationName
     ? `${organisationName} ${baseTitle}`
     : baseTitle;
 
-  const loadDocuments = React.useCallback(async () => {
-    setLoading(true);
+  const handleRetry = React.useCallback(() => {
+    setSections(null);
     setError(null);
-    try {
-      const docs = await organisationDocumentService.fetchDocuments({
-        organisationId,
-        category,
-      });
-      setSections(mapDocumentsToSections(docs, baseTitle));
-    } catch (err) {
-      const message =
-        (err as any)?.message ??
-        'Unable to load this document right now. Please try again.';
-      setError(message);
-      setSections([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [baseTitle, category, organisationId]);
+    setRetryCount(n => n + 1);
+  }, []);
 
   React.useEffect(() => {
-    loadDocuments();
-  }, [loadDocuments]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const docs = await organisationDocumentService.fetchDocuments({
+          organisationId,
+          category,
+        });
+        if (!cancelled) {
+          setSections(mapDocumentsToSections(docs, baseTitle));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message =
+            (err as any)?.message ??
+            'Unable to load this document right now. Please try again.';
+          setError(message);
+          setSections([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [baseTitle, category, organisationId, retryCount]);
 
-  const hasContent = sections.length > 0;
+  const hasContent = sections !== null && sections.length > 0;
 
   let content: React.ReactNode;
 
@@ -117,7 +138,9 @@ export const OrganisationDocumentScreen: React.FC<Props> = ({navigation, route})
     content = (
       <View style={[styles.statusCard, styles.centerContent]}>
         <ActivityIndicator size="small" color={theme.colors.primary} />
-        <Text style={styles.statusTitle}>Loading {baseTitle.toLowerCase()}…</Text>
+        <Text style={styles.statusTitle}>
+          Loading {baseTitle.toLowerCase()}…
+        </Text>
         <Text style={styles.statusText}>
           Fetching the latest {baseTitle.toLowerCase()} from the clinic.
         </Text>
@@ -135,7 +158,7 @@ export const OrganisationDocumentScreen: React.FC<Props> = ({navigation, route})
         <Text style={styles.statusText}>{error}</Text>
         <LiquidGlassButton
           title="Retry"
-          onPress={loadDocuments}
+          onPress={handleRetry}
           height={48}
           borderRadius={16}
           shadowIntensity="medium"
@@ -154,7 +177,8 @@ export const OrganisationDocumentScreen: React.FC<Props> = ({navigation, route})
         fallbackStyle={styles.cardFallback}>
         <Text style={styles.statusTitle}>No content available</Text>
         <Text style={styles.statusText}>
-          {organisationName ?? 'This clinic'} has not shared a {baseTitle.toLowerCase()} yet.
+          {organisationName ?? 'This clinic'} has not shared a{' '}
+          {baseTitle.toLowerCase()} yet.
         </Text>
       </LiquidGlassCard>
     );

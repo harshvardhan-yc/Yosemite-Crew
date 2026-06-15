@@ -22,11 +22,12 @@ import {
   selectNotificationSortBy,
   selectUnreadCountByCategory,
 } from '../../selectors';
-import {fetchNotificationsForCompanion, markNotificationAsRead, archiveNotification} from '../../thunks';
 import {
-  setNotificationFilter,
-  setSortBy,
-} from '../../notificationSlice';
+  fetchNotificationsForCompanion,
+  markNotificationAsRead,
+  archiveNotification,
+} from '../../thunks';
+import {setNotificationFilter, setSortBy} from '../../notificationSlice';
 import {NotificationCard} from '../../components/NotificationCard/NotificationCard';
 import {NotificationFilterPills} from '../../components/NotificationFilterPills/NotificationFilterPills';
 // Removed Clear All button for minimal UI
@@ -71,8 +72,12 @@ export const NotificationsScreen: React.FC = () => {
   const unreadCount = useSelector(selectUnreadCount);
   const filter = useSelector(selectNotificationFilter);
   const sortBy = useSelector(selectNotificationSortBy);
-  const loading = useSelector((state: RootState) => state.notifications.loading);
-  const companions = useSelector((state: RootState) => state.companion.companions);
+  const loading = useSelector(
+    (state: RootState) => state.notifications.loading,
+  );
+  const companions = useSelector(
+    (state: RootState) => state.companion.companions,
+  );
   // Unread counts per category (avoid hooks in nested functions)
   const unreadCounts = {
     all: unreadCount,
@@ -90,7 +95,9 @@ export const NotificationsScreen: React.FC = () => {
     if (!isLoggedIn) {
       return;
     }
-    dispatch(fetchNotificationsForCompanion({companionId: 'default-companion'}));
+    dispatch(
+      fetchNotificationsForCompanion({companionId: 'default-companion'}),
+    );
   }, [dispatch, isLoggedIn]);
 
   // Handle refresh
@@ -108,6 +115,17 @@ export const NotificationsScreen: React.FC = () => {
       setRefreshing(false);
     }
   }, [dispatch, isLoggedIn]);
+
+  const refreshControl = useMemo(
+    () => (
+      <RefreshControl
+        refreshing={refreshing || loading}
+        onRefresh={handleRefresh}
+        tintColor={theme.colors.primary}
+      />
+    ),
+    [refreshing, loading, handleRefresh, theme.colors.primary],
+  );
 
   // Handle filter change
   const handleFilterChange = useCallback(
@@ -160,10 +178,7 @@ export const NotificationsScreen: React.FC = () => {
   );
 
   const tryNavigateByRelatedType = useCallback(
-    (
-      relatedType?: Notification['relatedType'],
-      relatedId?: string | null,
-    ) => {
+    (relatedType?: Notification['relatedType'], relatedId?: string | null) => {
       if (!relatedType || !relatedId) {
         return false;
       }
@@ -197,7 +212,10 @@ export const NotificationsScreen: React.FC = () => {
       );
 
       if (!didNavigateByDeepLink) {
-        tryNavigateByRelatedType(notification.relatedType, notification.relatedId);
+        tryNavigateByRelatedType(
+          notification.relatedType,
+          notification.relatedId,
+        );
       }
     },
     [dispatch, tryNavigateByDeepLink, tryNavigateByRelatedType],
@@ -316,13 +334,7 @@ export const NotificationsScreen: React.FC = () => {
             renderItem={renderNotificationItem}
             keyExtractor={item => item.id}
             ListEmptyComponent={renderEmptyState}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing || loading}
-                onRefresh={handleRefresh}
-                tintColor={theme.colors.primary}
-              />
-            }
+            refreshControl={refreshControl}
             showsVerticalScrollIndicator={false}
             scrollEventThrottle={16}
           />

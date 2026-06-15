@@ -31,11 +31,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
-    shadowColor: '#247AED',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 7,
+    boxShadow: '0px 2px 6px rgba(36,122,237,0.4)',
   },
   label: {
     color: '#FFFFFF',

@@ -1,5 +1,13 @@
 import React, {useState} from 'react';
-import {View, Text, TouchableOpacity, StyleSheet, Image, Animated, Platform} from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  Animated,
+  Platform,
+} from 'react-native';
 import {useTheme} from '@/hooks';
 import {Images} from '@/assets/images';
 import {LiquidGlassButton} from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
@@ -32,7 +40,11 @@ interface SpecialtyItemProps {
   onSelectService: (serviceId: string, specialtyName: string) => void;
 }
 
-const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService, defaultExpanded = false}) => {
+const SpecialtyItem: React.FC<SpecialtyItemProps> = ({
+  specialty,
+  onSelectService,
+  defaultExpanded = false,
+}) => {
   const {theme} = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -55,16 +67,15 @@ const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService
 
   return (
     <View style={styles.specialtyItem}>
-
       <TouchableOpacity
         style={styles.specialtyHeader}
         onPress={toggleExpanded}
-        activeOpacity={0.7}
-      >
+        activeOpacity={0.7}>
         <View style={styles.specialtyHeaderContent}>
           <Text style={styles.specialtyName}>{specialty.name}</Text>
           <Text style={styles.doctorCount}>
-            {specialty.serviceCount} Service{specialty.serviceCount === 1 ? '' : 's'}
+            {specialty.serviceCount} Service
+            {specialty.serviceCount === 1 ? '' : 's'}
           </Text>
         </View>
         <Animated.Image
@@ -77,7 +88,6 @@ const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService
       </TouchableOpacity>
 
       {expanded && (
-        
         <View style={styles.servicesList}>
           {specialty.services.map(service => (
             <LiquidGlassCard
@@ -88,17 +98,25 @@ const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService
               style={styles.serviceCard}
               fallbackStyle={styles.serviceCardFallback}>
               <View style={styles.serviceTopRow}>
-                <Text style={styles.serviceName} numberOfLines={1} ellipsizeMode="tail">
+                <Text
+                  style={styles.serviceName}
+                  numberOfLines={1}
+                  ellipsizeMode="tail">
                   {service.name}
                 </Text>
                 {service.basePrice ? (
                   <View style={styles.priceChip}>
-                    <Text style={styles.priceChipText}>{resolveCurrencySymbol(service?.currency ?? 'USD')}{service.basePrice}</Text>
+                    <Text style={styles.priceChipText}>
+                      {resolveCurrencySymbol(service?.currency ?? 'USD')}
+                      {service.basePrice}
+                    </Text>
                   </View>
                 ) : null}
               </View>
               {service.description ? (
-                <Text style={styles.serviceDescription}>{service.description}</Text>
+                <Text style={styles.serviceDescription}>
+                  {service.description}
+                </Text>
               ) : null}
               <LiquidGlassButton
                 title="Select service"
@@ -177,8 +195,7 @@ const createStyles = (theme: any) =>
       borderRadius: theme.borderRadius.lg,
       borderWidth: 1,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
       overflow: 'hidden',
     },
     specialtyHeader: {
@@ -223,8 +240,7 @@ const createStyles = (theme: any) =>
       borderRadius: theme.borderRadius.lg,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.md,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 4px 6px ${theme.colors.neutralShadow}`,
     },
     serviceTopRow: {
       flexDirection: 'row',

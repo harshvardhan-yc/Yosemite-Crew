@@ -9,7 +9,13 @@
  */
 
 import React from 'react';
-import {View, StyleSheet, Text, TouchableOpacity, Dimensions} from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Dimensions,
+} from 'react-native';
 import {Attachment, useMessageContext} from 'stream-chat-react-native';
 import Video from 'react-native-video';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -41,7 +47,10 @@ export const CustomAttachment: React.FC = () => {
         : undefined;
     return (
       <View style={styles.audioContainer}>
-        <VoiceMessagePlayer audioUrl={attachment.asset_url} duration={duration} />
+        <VoiceMessagePlayer
+          audioUrl={attachment.asset_url}
+          duration={duration}
+        />
       </View>
     );
   }
@@ -73,9 +82,7 @@ export const CustomAttachment: React.FC = () => {
         )}
         <View style={styles.videoInfo}>
           <Icon name="videocam" size={16} color={theme.colors.white} />
-          <Text style={styles.videoText}>
-            {attachment.title || 'Video'}
-          </Text>
+          <Text style={styles.videoText}>{attachment.title || 'Video'}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -97,13 +104,17 @@ export const CustomAttachment: React.FC = () => {
           // Open file (you can add Linking.openURL here)
         }}>
         <View style={styles.fileIcon}>
-          <Icon name="insert-drive-file" size={32} color={theme.colors.primary} />
+          <Icon
+            name="insert-drive-file"
+            size={32}
+            color={theme.colors.primary}
+          />
         </View>
         <View style={styles.fileInfo}>
           <Text style={styles.fileName} numberOfLines={1}>
             {fileName}
           </Text>
-          {fileSize && <Text style={styles.fileSize}>{fileSize}</Text>}
+          {fileSize ? <Text style={styles.fileSize}>{fileSize}</Text> : null}
         </View>
         <Icon name="download" size={24} color={theme.colors.primary} />
       </TouchableOpacity>

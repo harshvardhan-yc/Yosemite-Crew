@@ -32,7 +32,7 @@ jest.mock('@/assets/images', () => ({
 jest.mock('react-native/Libraries/Image/Image', () => ({
   __esModule: true,
   default: (props: any) => {
-    const { ...rest} = props;
+    const {...rest} = props;
     return <MockView testID="mock-image" {...rest} />;
   },
 }));
@@ -52,7 +52,6 @@ jest.mock('@/features/auth/services/passwordlessAuth', () => ({
   requestPasswordlessEmailCode: jest.fn(),
   formatAuthError: jest.fn(error => error.message || String(error)),
 }));
-
 
 jest.mock('@/shared/hooks/useTheme', () => ({
   useTheme: jest.fn(() => ({
@@ -105,33 +104,35 @@ jest.mock('@/shared/components/common', () => {
   };
 });
 
-jest.mock('@/shared/components/common/LiquidGlassButton/LiquidGlassButton', () => {
-  const {TouchableOpacity, Text} = jest.requireActual('react-native');
+jest.mock(
+  '@/shared/components/common/LiquidGlassButton/LiquidGlassButton',
+  () => {
+    const {TouchableOpacity, Text} = jest.requireActual('react-native');
 
-  return {
-    __esModule: true,
-    default: jest.fn(({onPress, title, disabled, loading, customContent}) => {
-      let content;
-      if (loading) {
-        content = <Text>Loading...</Text>;
-      } else if (customContent) {
-        content = customContent;
-      } else {
-        content = <Text>{title}</Text>;
-      }
+    return {
+      __esModule: true,
+      default: jest.fn(({onPress, title, disabled, loading, customContent}) => {
+        let content;
+        if (loading) {
+          content = <Text>Loading...</Text>;
+        } else if (customContent) {
+          content = customContent;
+        } else {
+          content = <Text>{title}</Text>;
+        }
 
-      return (
-        <TouchableOpacity
-          testID={title ? `button-${title}` : 'mock-liquid-button-icon'}
-          onPress={onPress}
-          disabled={disabled}
-        >
-          {content}{' '}
-        </TouchableOpacity>
-      );
-    }),
-  };
-});
+        return (
+          <TouchableOpacity
+            testID={title ? `button-${title}` : 'mock-liquid-button-icon'}
+            onPress={onPress}
+            disabled={disabled}>
+            {content}
+          </TouchableOpacity>
+        );
+      }),
+    };
+  },
+);
 
 jest.mock('@/shared/constants/constants', () => ({
   isValidEmail: jest.fn(),
@@ -354,11 +355,14 @@ describe('SignInScreen', () => {
 
     await waitFor(() => {
       expect(mockedRequestCode).toHaveBeenCalledWith('test@example.com');
-      expect(mockNavigation.navigate).toHaveBeenCalledWith('OTPVerification', expect.objectContaining({
-        email: 'test@example.com',
-        isNewUser: false,
-        challengeType: 'otp',
-      }));
+      expect(mockNavigation.navigate).toHaveBeenCalledWith(
+        'OTPVerification',
+        expect.objectContaining({
+          email: 'test@example.com',
+          isNewUser: false,
+          challengeType: 'otp',
+        }),
+      );
       expect(
         getByText('We sent a login code to test@example.com'),
       ).toBeTruthy();
@@ -482,8 +486,6 @@ describe('SignInScreen', () => {
     expect(errorText).toBeTruthy();
   });
 
-
-
   it('clears errors when social auth starts (onStart callback)', async () => {
     const {getByLabelText, getByText, queryByText} = renderComponent({
       statusMessage: 'Old Status',
@@ -534,15 +536,9 @@ describe('SignInScreen', () => {
     });
   });
 
-
-
   describe('when on Android', () => {
-
-
     beforeEach(() => {
       (Platform.OS as 'ios' | 'android') = 'android';
-
-
 
       currentPlatformSelectImplementation = (spec: any) =>
         spec.android ? spec.android : spec.default;

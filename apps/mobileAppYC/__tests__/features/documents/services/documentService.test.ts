@@ -151,12 +151,6 @@ describe('documentService', () => {
     });
 
     it('should throw if file uri is missing', async () => {
-      // IMPORTANT: We must mock a successful requestUploadUrl response first,
-      // because the service code calls API *before* checking !file.uri
-      (apiClient.post as jest.Mock).mockResolvedValue({
-        data: {uploadUrl: 'http://url', key: 'k'},
-      });
-
       const file = {name: 'test.jpg'} as any; // No uri
       await expect(
         documentApi.uploadAttachment({
@@ -165,6 +159,7 @@ describe('documentService', () => {
           accessToken: mockToken,
         }),
       ).rejects.toThrow('File path missing');
+      expect(apiClient.post).not.toHaveBeenCalled();
     });
 
     it('should perform upload flow and return new file object', async () => {

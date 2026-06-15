@@ -24,6 +24,11 @@ export const CategoryTile: React.FC<CategoryTileProps> = ({
   const {theme} = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
 
+  const rightArrow = React.useMemo(
+    () => <Image source={Images.rightArrow} style={styles.rightArrow} />,
+    [styles],
+  );
+
   return (
     <IconInfoTile
       icon={icon}
@@ -32,22 +37,18 @@ export const CategoryTile: React.FC<CategoryTileProps> = ({
       onPress={onPress}
       isSynced={isSynced}
       syncLabel={'Synced with\nYosemite Crew PMS'}
-      rightAccessory={
-        <Image
-          source={Images.rightArrow}
-          style={styles.rightArrow}
-        />
-      }
+      rightAccessory={rightArrow}
       containerStyle={containerStyle}
     />
   );
 };
 
-const createStyles = (theme: any) => StyleSheet.create({
-  rightArrow: {
-    width: theme.spacing['5'],
-    height: theme.spacing['5'],
-    resizeMode: 'contain',
-    tintColor: theme.colors.textSecondary,
-  },
-});
+const createStyles = (theme: any) =>
+  StyleSheet.create({
+    rightArrow: {
+      width: theme.spacing['5'],
+      height: theme.spacing['5'],
+      resizeMode: 'contain',
+      tintColor: theme.colors.textSecondary,
+    },
+  });

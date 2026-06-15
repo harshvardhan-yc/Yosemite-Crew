@@ -3,7 +3,10 @@ import {NavigationContainer} from '@react-navigation/native';
 import {render, waitFor, fireEvent} from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Alert, Linking} from 'react-native';
-import {AppNavigator} from '../../src/navigation/AppNavigator';
+import {
+  AppNavigator,
+  _resetOnboardingStoreForTesting,
+} from '../../src/navigation/AppNavigator';
 import {GlobalLoaderProvider} from '../../src/context/GlobalLoaderContext';
 import {useAuth} from '../../src/features/auth/context/AuthContext';
 import {useEmergency} from '../../src/features/home/context/EmergencyContext';
@@ -251,6 +254,7 @@ describe('AppNavigator', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    _resetOnboardingStoreForTesting();
     mockPendingInvites = []; // Reset store state mock
     mockLinkedHospitals = [];
     mockRenderNetworkSheetWithRef = true;

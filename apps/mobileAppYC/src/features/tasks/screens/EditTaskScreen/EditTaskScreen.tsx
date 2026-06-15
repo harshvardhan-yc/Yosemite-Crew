@@ -160,33 +160,25 @@ export const EditTaskScreen: React.FC = () => {
   const handleSave = () => {
     if (!validateForm(formData)) return;
     if (!task) return;
-    if (task.frequency !== 'once') {
-      taskSaveSheetRef.current?.open();
-    } else {
+    if (task.frequency === 'once') {
       performSave().catch(error =>
         showErrorAlert('Unable to update task', error),
       );
+    } else {
+      taskSaveSheetRef.current?.open();
     }
   };
 
   const handleDeletePress = () => {
     if (!task) return;
-    if (task.frequency !== 'once') {
-      taskDeleteSheetRef.current?.open();
-    } else {
+    if (task.frequency === 'once') {
       confirmDeleteTask();
+    } else {
+      taskDeleteSheetRef.current?.open();
     }
   };
 
-  const confirmSaveForDay = async () => {
-    try {
-      await performSave();
-    } catch (error) {
-      showErrorAlert('Unable to update task', error);
-    }
-  };
-
-  const confirmSaveAll = async () => {
+  const confirmSave = async () => {
     try {
       await performSave();
     } catch (error) {
@@ -339,8 +331,8 @@ export const EditTaskScreen: React.FC = () => {
 
       <TaskSaveOptionsBottomSheet
         ref={taskSaveSheetRef}
-        onSaveAll={confirmSaveAll}
-        onSaveForDay={confirmSaveForDay}
+        onSaveAll={confirmSave}
+        onSaveForDay={confirmSave}
       />
     </>
   );

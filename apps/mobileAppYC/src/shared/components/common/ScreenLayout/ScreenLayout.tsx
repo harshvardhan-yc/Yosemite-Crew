@@ -4,8 +4,18 @@
  * Eliminates duplication across all screens
  */
 import React, {useState, ReactNode} from 'react';
-import {View, ScrollView, StyleSheet, ViewStyle, ScrollViewProps} from 'react-native';
-import {SafeAreaView, useSafeAreaInsets, Edge} from 'react-native-safe-area-context';
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  ViewStyle,
+  ScrollViewProps,
+} from 'react-native';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+  Edge,
+} from 'react-native-safe-area-context';
 import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
 import {createLiquidGlassHeaderStyles} from '@/shared/utils/screenStyles';
 import {useTheme} from '@/hooks';
@@ -61,6 +71,9 @@ export interface ScreenLayoutProps {
  * </ScreenLayout>
  * ```
  */
+const EMPTY_SCROLL_VIEW_PROPS: Partial<ScrollViewProps> = {};
+const EMPTY_SAFE_AREA_EDGES: Edge[] = [];
+
 export const ScreenLayout: React.FC<ScreenLayoutProps> = ({
   header,
   children,
@@ -68,9 +81,9 @@ export const ScreenLayout: React.FC<ScreenLayoutProps> = ({
   backgroundColor,
   contentPadding,
   cardGap,
-  scrollViewProps = {},
+  scrollViewProps = EMPTY_SCROLL_VIEW_PROPS,
   contentContainerStyle,
-  safeAreaEdges = [],
+  safeAreaEdges = EMPTY_SAFE_AREA_EDGES,
   bottomPadding,
 }) => {
   const {theme} = useTheme();
@@ -98,7 +111,9 @@ export const ScreenLayout: React.FC<ScreenLayoutProps> = ({
     : {};
 
   return (
-    <SafeAreaView style={[styles.safeArea, {backgroundColor: bgColor}]} edges={safeAreaEdges}>
+    <SafeAreaView
+      style={[styles.safeArea, {backgroundColor: bgColor}]}
+      edges={safeAreaEdges}>
       {hasLiquidHeader && (
         <View
           style={headerStyles.topSection}
@@ -122,7 +137,11 @@ export const ScreenLayout: React.FC<ScreenLayoutProps> = ({
       )}
 
       {typeof children === 'function' ? (
-        children({...contentPaddingStyle, ...dynamicContentStyle, ...contentContainerStyle})
+        children({
+          ...contentPaddingStyle,
+          ...dynamicContentStyle,
+          ...contentContainerStyle,
+        })
       ) : (
         <ScrollView
           style={styles.container}

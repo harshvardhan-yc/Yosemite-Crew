@@ -26,7 +26,9 @@ interface UseAddressAutocompleteResult {
   isFetching: boolean;
   error: string | null;
   clearSuggestions: () => void;
-  selectSuggestion: (suggestion: PlaceSuggestion) => Promise<PlaceDetails | null>;
+  selectSuggestion: (
+    suggestion: PlaceSuggestion,
+  ) => Promise<PlaceDetails | null>;
   resetError: () => void;
 }
 
@@ -46,6 +48,39 @@ export const useAddressAutocomplete = ({
 
   const skipNextLookupRef = useRef(false);
   const lastSignatureRef = useRef<string>('');
+
+  const trimmedQuery = query.trim();
+  const isBelowMinLength = trimmedQuery.length < minQueryLength;
+  const locationSignature = location
+    ? `${location.latitude?.toFixed(4) ?? ''},${location.longitude?.toFixed(4) ?? ''}`
+    : 'none';
+  const fetchSignature = isBelowMinLength
+    ? ''
+    : `${trimmedQuery.toLowerCase()}::${locationSignature}`;
+
+  // Inline adjustment 1: when query drops below minQueryLength, immediately reset isFetching.
+  const [prevIsBelowMin, setPrevIsBelowMin] = useState(isBelowMinLength);
+  // Inline adjustment 2: when a new valid signature appears, immediately set isFetching = true.
+  // Initialized to '' so the first above-min query always triggers.
+  const [prevFetchSignature, setPrevFetchSignature] = useState('');
+
+  if (isBelowMinLength !== prevIsBelowMin) {
+    setPrevIsBelowMin(isBelowMinLength);
+    if (isBelowMinLength) {
+      setIsFetching(false);
+      lastSignatureRef.current = '';
+      setPrevFetchSignature('');
+    }
+  }
+
+  if (!isBelowMinLength && fetchSignature !== prevFetchSignature) {
+    setPrevFetchSignature(fetchSignature);
+    if (!skipNextLookupRef.current) {
+      setIsFetching(true);
+    }
+    // When suppressLookup is active: update prevFetchSignature to track the new query
+    // without changing isFetching — the loading state stays as-is.
+  }
 
   const setQueryWithOptions = useCallback(
     (value: string, options?: SetQueryOptions) => {
@@ -71,18 +106,16 @@ export const useAddressAutocomplete = ({
       return;
     }
 
-    const trimmedQuery = query.trim();
-    if (trimmedQuery.length < minQueryLength) {
-      setSuggestions([]);
-      setError(null);
+    const effectTrimmedQuery = query.trim();
+    if (effectTrimmedQuery.length < minQueryLength) {
       lastSignatureRef.current = '';
       return;
     }
 
-    const locationSignature = location
+    const effectLocationSig = location
       ? `${location.latitude?.toFixed(4) ?? ''},${location.longitude?.toFixed(4) ?? ''}`
       : 'none';
-    const signature = `${trimmedQuery.toLowerCase()}::${locationSignature}`;
+    const signature = `${effectTrimmedQuery.toLowerCase()}::${effectLocationSig}`;
 
     if (signature === lastSignatureRef.current) {
       return;
@@ -91,12 +124,11 @@ export const useAddressAutocomplete = ({
     lastSignatureRef.current = signature;
 
     let isActive = true;
-    setIsFetching(true);
 
     const timeoutId = setTimeout(async () => {
       try {
         const nextSuggestions = await fetchPlaceSuggestions({
-          query: trimmedQuery,
+          query: effectTrimmedQuery,
           location,
         });
         if (!isActive) {
@@ -109,7 +141,9 @@ export const useAddressAutocomplete = ({
           return;
         }
         if (fetchError instanceof MissingApiKeyError) {
-          setError('Address autocomplete is unavailable. Please enter your address manually.');
+          setError(
+            'Address autocomplete is unavailable. Please enter your address manually.',
+          );
         } else {
           setError('Unable to fetch address suggestions.');
         }
@@ -144,7 +178,9 @@ export const useAddressAutocomplete = ({
         };
       } catch (fetchError) {
         if (fetchError instanceof MissingApiKeyError) {
-          setError('Address autocomplete is unavailable. Please enter your address manually.');
+          setError(
+            'Address autocomplete is unavailable. Please enter your address manually.',
+          );
         } else {
           setError('Unable to fetch the selected address details.');
         }
@@ -159,9 +195,9 @@ export const useAddressAutocomplete = ({
   return {
     query,
     setQuery: setQueryWithOptions,
-    suggestions,
+    suggestions: isBelowMinLength ? [] : suggestions,
     isFetching,
-    error,
+    error: isBelowMinLength ? null : error,
     clearSuggestions,
     selectSuggestion,
     resetError,

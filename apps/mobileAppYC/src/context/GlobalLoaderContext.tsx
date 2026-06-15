@@ -1,4 +1,10 @@
-import React, {createContext, useContext, useState, useCallback, useMemo} from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useMemo,
+} from 'react';
 import {StyleSheet, View, Modal} from 'react-native';
 import {useTheme} from '@/hooks';
 import {GifLoader} from '@/shared/components/common/GifLoader/GifLoader';
@@ -16,30 +22,30 @@ const GlobalLoaderContext = createContext<GlobalLoaderContextType | undefined>(
 export const GlobalLoaderProvider: React.FC<{children: React.ReactNode}> = ({
   children,
 }) => {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoaderVisible, setIsLoaderVisible] = useState(false);
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const showLoader = useCallback(() => {
-    setIsLoading(true);
+    setIsLoaderVisible(true);
   }, []);
 
   const hideLoader = useCallback(() => {
-    setIsLoading(false);
+    setIsLoaderVisible(false);
   }, []);
 
   const value = useMemo(
-    () => ({showLoader, hideLoader, isLoading}),
-    [showLoader, hideLoader, isLoading],
+    () => ({showLoader, hideLoader, isLoading: isLoaderVisible}),
+    [showLoader, hideLoader, isLoaderVisible],
   );
 
   return (
     <GlobalLoaderContext.Provider value={value}>
       {children}
-      {isLoading && (
+      {isLoaderVisible && (
         <Modal
           transparent
-          visible={isLoading}
+          visible={isLoaderVisible}
           animationType="fade"
           statusBarTranslucent>
           <View style={styles.loaderOverlay}>

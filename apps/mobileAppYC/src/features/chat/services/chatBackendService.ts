@@ -37,9 +37,13 @@ const extractChatToken = (data: any): string | null => {
 export const fetchChatToken = async (): Promise<string> => {
   try {
     const headers = await buildHeaders();
-    const response = await apiClient.post(`${CHAT_BASE_PATH}/token`, undefined, {
-      headers,
-    });
+    const response = await apiClient.post(
+      `${CHAT_BASE_PATH}/token`,
+      undefined,
+      {
+        headers,
+      },
+    );
 
     const token = extractChatToken(response.data);
 
@@ -159,22 +163,22 @@ const extractChannelType = (data: any): string => {
 };
 
 const extractMembers = (data: any): string[] | undefined => {
-  const members = data?.members ?? data?.channel?.members ?? data?.session?.members;
+  const members =
+    data?.members ?? data?.channel?.members ?? data?.session?.members;
   if (!Array.isArray(members)) {
     return undefined;
   }
 
-  const normalized = members
-    .map((member: any) => {
-      if (typeof member === 'string') {
-        return member;
-      }
-      if (member?.user?.id) {
-        return member.user.id;
-      }
-      return member?.user_id ?? member?.id ?? null;
-    })
-    .filter(Boolean);
+  const normalized = members.flatMap((member: any) => {
+    if (typeof member === 'string') {
+      return [member];
+    }
+    if (member?.user?.id) {
+      return [member.user.id];
+    }
+    const id = member?.user_id ?? member?.id;
+    return id ? [id] : [];
+  });
 
   return normalized.length ? normalized : undefined;
 };

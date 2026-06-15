@@ -8,10 +8,10 @@ import {HomeStackNavigator} from './HomeStackNavigator';
 import {DocumentStackNavigator} from './DocumentStackNavigator';
 import {TaskStackNavigator} from './TaskStackNavigator';
 import {FloatingTabBar} from './FloatingTabBar';
-import {useTheme} from '../hooks';
+import {useTheme} from '@/shared/hooks/useTheme';
 import {StackActions} from '@react-navigation/native';
 import {useSelector} from 'react-redux';
-import {selectSelectedCompanionId} from '@/features/companion';
+import {selectSelectedCompanionId} from '@/features/companion/selectors';
 import type {RootState} from '@/app/store';
 import {
   type CoParentPermissions,
@@ -20,7 +20,7 @@ import {
 type NestedNavState = {
   key?: string;
   index?: number;
-  routes: Array<{ name: string }>;
+  routes: Array<{name: string}>;
 };
 
 const isNestedState = (s: unknown): s is NestedNavState =>
@@ -43,13 +43,19 @@ const createTabPressListener = (
       return;
     }
     const state = navigation.getState();
-    const targetIndex = state.routes.findIndex((r: any) => r.name === route.name);
+    const targetIndex = state.routes.findIndex(
+      (r: any) => r.name === route.name,
+    );
     const isFocused = state.index === targetIndex;
     const tabRoute = state.routes[targetIndex];
     const nestedState = tabRoute && 'state' in tabRoute ? tabRoute.state : null;
 
     // Only intercept when the tab is already focused; otherwise let it switch normally
-    if (isFocused && isNestedState(nestedState) && nestedState.routes.length > 1) {
+    if (
+      isFocused &&
+      isNestedState(nestedState) &&
+      nestedState.routes.length > 1
+    ) {
       e.preventDefault();
       // Pop to top of the nested stack (target that stack specifically)
       const targetKey = nestedState.key;
@@ -59,16 +65,18 @@ const createTabPressListener = (
           target: targetKey,
         });
       } else {
-        navigation.dispatch(
-          StackActions.popToTop()
-        );
+        navigation.dispatch(StackActions.popToTop());
       }
       return;
     }
 
     // If nested stack has exactly 1 route but it's not the initial screen,
     // navigate to the known initial route for that tab.
-    if (isFocused && isNestedState(nestedState) && nestedState.routes.length === 1) {
+    if (
+      isFocused &&
+      isNestedState(nestedState) &&
+      nestedState.routes.length === 1
+    ) {
       const currentRouteName = nestedState.routes[nestedState.index || 0]?.name;
       // Map of tab name -> initial screen name of its stack
       const initialByTab: Partial<Record<keyof TabParamList, string>> = {
@@ -76,7 +84,11 @@ const createTabPressListener = (
         Appointments: 'MyAppointments',
       };
       const expectedInitial = initialByTab[route.name];
-      if (expectedInitial && currentRouteName && currentRouteName !== expectedInitial) {
+      if (
+        expectedInitial &&
+        currentRouteName &&
+        currentRouteName !== expectedInitial
+      ) {
         e.preventDefault();
         navigation.navigate(route.name, {screen: expectedInitial});
       }
@@ -93,18 +105,28 @@ const TabNavigatorInner: React.FC = () => {
     (state: RootState) => (state.companion?.companions?.length ?? 0) > 0,
   );
   const accessMap = useSelector(
-    (state: RootState) => state.coParent?.accessByCompanionId ?? EMPTY_ACCESS_MAP,
+    (state: RootState) =>
+      state.coParent?.accessByCompanionId ?? EMPTY_ACCESS_MAP,
   );
-  const defaultAccess = useSelector((state: RootState) => state.coParent?.defaultAccess ?? null);
-  const globalRole = useSelector((state: RootState) => state.coParent?.lastFetchedRole);
+  const defaultAccess = useSelector(
+    (state: RootState) => state.coParent?.defaultAccess ?? null,
+  );
+  const globalRole = useSelector(
+    (state: RootState) => state.coParent?.lastFetchedRole,
+  );
   const globalPermissions = useSelector(
     (state: RootState) => state.coParent?.lastFetchedPermissions,
   );
   const accessForCompanion =
     selectedCompanionId && accessMap
-      ? accessMap[selectedCompanionId] ?? null
+      ? (accessMap[selectedCompanionId] ?? null)
       : null;
-  const role = (accessForCompanion?.role ?? defaultAccess?.role ?? globalRole ?? '').toUpperCase();
+  const role = (
+    accessForCompanion?.role ??
+    defaultAccess?.role ??
+    globalRole ??
+    ''
+  ).toUpperCase();
   const isPrimaryParent = role.includes('PRIMARY');
   const canAccessFeature = React.useCallback(
     (permission: keyof CoParentPermissions) => {
@@ -112,7 +134,9 @@ const TabNavigatorInner: React.FC = () => {
         return true;
       }
       const permissions =
-        accessForCompanion?.permissions ?? defaultAccess?.permissions ?? globalPermissions;
+        accessForCompanion?.permissions ??
+        defaultAccess?.permissions ??
+        globalPermissions;
       if (!permissions) {
         return false;
       }
@@ -193,11 +217,14 @@ const TabNavigatorInner: React.FC = () => {
           component={TaskStackNavigator}
           options={{headerShown: false, popToTopOnBlur: true}}
           listeners={({navigation, route}) =>
-            createTabPressListener(navigation, route, guardTab('tasks', 'tasks'))
+            createTabPressListener(
+              navigation,
+              route,
+              guardTab('tasks', 'tasks'),
+            )
           }
         />
       </Tab.Navigator>
-
     </View>
   );
 };

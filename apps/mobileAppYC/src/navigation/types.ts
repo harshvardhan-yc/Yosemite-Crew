@@ -99,7 +99,12 @@ export type AppointmentStackParamList = {
   MyAppointmentsEmpty: undefined;
   MyAppointments: {resetKey?: number} | undefined;
   BrowseBusinesses:
-    | {serviceName?: string; autoFocusSearch?: boolean}
+    | {
+        serviceName?: string;
+        autoFocusSearch?: boolean;
+        initialBusinessId?: string;
+        selectionToken?: number;
+      }
     | undefined;
   BusinessDetails: {
     businessId: string;

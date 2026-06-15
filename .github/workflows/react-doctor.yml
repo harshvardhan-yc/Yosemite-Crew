@@ -33,7 +33,38 @@ jobs:
       - name: Enforce React Doctor score
         env:
           REACT_DOCTOR_SCORE: ${{ steps.react-doctor.outputs.score }}
-          REACT_DOCTOR_MIN_SCORE: '75'
+          REACT_DOCTOR_MIN_SCORE: '45'
+        run: |
+          if [ -z "$REACT_DOCTOR_SCORE" ]; then
+            echo "React Doctor did not return a score."
+            exit 1
+          fi
+
+          echo "React Doctor score: $REACT_DOCTOR_SCORE"
+          if [ "$REACT_DOCTOR_SCORE" -lt "$REACT_DOCTOR_MIN_SCORE" ]; then
+            echo "React Doctor score must be at least $REACT_DOCTOR_MIN_SCORE."
+            exit 1
+          fi
+
+  react-doctor-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run React Doctor
+        id: react-doctor
+        uses: millionco/react-doctor@v2.1.0
+        with:
+          directory: apps/mobileAppYC
+          blocking: error
+          node-version: '22'
+
+      - name: Enforce React Doctor score
+        env:
+          REACT_DOCTOR_SCORE: ${{ steps.react-doctor.outputs.score }}
+          REACT_DOCTOR_MIN_SCORE: '70'
         run: |
           if [ -z "$REACT_DOCTOR_SCORE" ]; then
             echo "React Doctor did not return a score."

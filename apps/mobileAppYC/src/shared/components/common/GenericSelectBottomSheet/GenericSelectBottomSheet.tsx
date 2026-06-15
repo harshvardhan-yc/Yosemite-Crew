@@ -4,6 +4,7 @@ import React, {
   useImperativeHandle,
   useRef,
   useMemo,
+  useCallback,
 } from 'react';
 import {
   View,
@@ -15,6 +16,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
 } from 'react-native';
+import type {ListRenderItemInfo} from 'react-native';
 import CustomBottomSheet from '@/shared/components/common/BottomSheet/BottomSheet';
 import type {BottomSheetRef} from '@/shared/components/common/BottomSheet/BottomSheet';
 import {BottomSheetHeader} from '@/shared/components/common/BottomSheetHeader/BottomSheetHeader';
@@ -22,6 +24,54 @@ import {Input} from '@/shared/components/common/Input/Input';
 import {BottomSheetActions} from '@/shared/components/common/BottomSheetActions/BottomSheetActions';
 import {useTheme, useKeyboardVisible} from '@/hooks';
 import {Images} from '@/assets/images';
+
+type SelectDefaultItemProps = {
+  item: SelectItem;
+  isSelected: boolean;
+  onPress: (item: SelectItem) => void;
+  styles: ReturnType<typeof createStyles>;
+};
+
+const SelectDefaultItem = React.memo(
+  ({item, isSelected, onPress, styles}: SelectDefaultItemProps) => (
+    <TouchableOpacity
+      style={[styles.item, isSelected && styles.itemSelected]}
+      onPress={() => onPress(item)}
+      activeOpacity={0.7}>
+      <Text style={styles.itemLabel}>{item.label}</Text>
+      {isSelected && (
+        <View style={styles.checkmark}>
+          <Text style={styles.checkmarkText}>✓</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  ),
+);
+
+type SelectCustomItemProps = {
+  item: SelectItem;
+  isSelected: boolean;
+  onPress: (item: SelectItem) => void;
+  renderContent: (item: SelectItem, isSelected: boolean) => React.ReactElement;
+  styles: ReturnType<typeof createStyles>;
+};
+
+const SelectCustomItem = React.memo(
+  ({
+    item,
+    isSelected,
+    onPress,
+    renderContent,
+    styles,
+  }: SelectCustomItemProps) => (
+    <TouchableOpacity
+      style={styles.touchableItem}
+      onPress={() => onPress(item)}
+      activeOpacity={0.7}>
+      {renderContent(item, isSelected)}
+    </TouchableOpacity>
+  ),
+);
 
 export interface GenericSelectBottomSheetRef {
   open: () => void;
@@ -109,42 +159,19 @@ export const GenericSelectBottomSheet = forwardRef<
       </View>
     );
 
-    const handleItemPress = (item: SelectItem) => {
-      // Dismiss keyboard when selecting an item
-      Keyboard.dismiss();
-
-      if (mode === 'select') {
-        // Auto-select mode: immediately save and close
-        onSave(item);
-        bottomSheetRef.current?.close();
-      } else {
-        // Confirm mode: just update temp selection
-        setTempItem(item);
-        // Notify parent of intermediate selection
-        onItemSelect?.(item);
-      }
-    };
-
-    const defaultRenderItem = ({item}: {item: SelectItem}) => {
-      const isSelected =
-        mode === 'select'
-          ? selectedItem?.id === item.id
-          : tempItem?.id === item.id;
-
-      return (
-        <TouchableOpacity
-          style={[styles.item, isSelected && styles.itemSelected]}
-          onPress={() => handleItemPress(item)}
-          activeOpacity={0.7}>
-          <Text style={styles.itemLabel}>{item.label}</Text>
-          {isSelected && (
-            <View style={styles.checkmark}>
-              <Text style={styles.checkmarkText}>✓</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      );
-    };
+    const handleItemPress = useCallback(
+      (item: SelectItem) => {
+        Keyboard.dismiss();
+        if (mode === 'select') {
+          onSave(item);
+          bottomSheetRef.current?.close();
+        } else {
+          setTempItem(item);
+          onItemSelect?.(item);
+        }
+      },
+      [mode, onSave, onItemSelect],
+    );
 
     useImperativeHandle(ref, () => ({
       open: () => {
@@ -254,25 +281,43 @@ export const GenericSelectBottomSheet = forwardRef<
               <FlatList
                 data={filteredItems}
                 keyExtractor={item => item.id}
-                renderItem={({item}) => {
-                  const isSelected =
-                    mode === 'select'
-                      ? selectedItem?.id === item.id
-                      : tempItem?.id === item.id;
+                renderItem={useCallback(
+                  ({item}: ListRenderItemInfo<SelectItem>) => {
+                    const isSelected =
+                      mode === 'select'
+                        ? selectedItem?.id === item.id
+                        : tempItem?.id === item.id;
 
-                  if (renderItem) {
+                    if (renderItem) {
+                      return (
+                        <SelectCustomItem
+                          item={item}
+                          isSelected={isSelected}
+                          onPress={handleItemPress}
+                          renderContent={renderItem}
+                          styles={styles}
+                        />
+                      );
+                    }
+
                     return (
-                      <TouchableOpacity
-                        style={styles.touchableItem}
-                        onPress={() => handleItemPress(item)}
-                        activeOpacity={0.7}>
-                        {renderItem(item, isSelected)}
-                      </TouchableOpacity>
+                      <SelectDefaultItem
+                        item={item}
+                        isSelected={isSelected}
+                        onPress={handleItemPress}
+                        styles={styles}
+                      />
                     );
-                  }
-
-                  return defaultRenderItem({item});
-                }}
+                  },
+                  [
+                    mode,
+                    selectedItem,
+                    tempItem,
+                    renderItem,
+                    handleItemPress,
+                    styles,
+                  ],
+                )}
                 showsVerticalScrollIndicator
                 contentContainerStyle={styles.listContent}
                 nestedScrollEnabled

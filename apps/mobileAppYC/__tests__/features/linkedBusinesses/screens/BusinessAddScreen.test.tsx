@@ -8,7 +8,7 @@ import {
 } from '@testing-library/react-native';
 import {BusinessAddScreen} from '../../../../src/features/linkedBusinesses/screens/BusinessAddScreen';
 import * as Redux from 'react-redux';
-import * as LinkedBusinessActions from '../../../../src/features/linkedBusinesses/index';
+import * as LinkedBusinessActions from '../../../../src/features/linkedBusinesses/thunks';
 import {Alert} from 'react-native';
 
 // --- Mocks ---
@@ -38,7 +38,7 @@ const createProps = (params: any = {}) => ({
       isPMSRecord: true, // Default to PMS record
       rating: 4.5,
       distance: 1.2,
-      placeId: 'place-123',
+      placeId: undefined,
       companionName: 'Buddy',
       ...params,
     },
@@ -50,15 +50,13 @@ const mockDispatch = jest.fn(action => action);
 jest.spyOn(Redux, 'useDispatch').mockReturnValue(mockDispatch);
 jest.spyOn(Redux, 'useSelector').mockReturnValue(false); // Default loading state
 
-// 3. Mock Thunks from index
-// FIX: Added missing thunks to avoid "is not a function" errors
-jest.mock('../../../../src/features/linkedBusinesses/index', () => ({
+// 3. Mock direct thunk imports used by BusinessAddScreen
+jest.mock('../../../../src/features/linkedBusinesses/thunks', () => ({
   addLinkedBusiness: jest.fn(),
   fetchBusinessDetails: jest.fn(),
   fetchGooglePlacesImage: jest.fn(),
   inviteBusiness: jest.fn(),
   linkBusiness: jest.fn(),
-  selectLinkedBusinessesLoading: jest.fn(),
 }));
 
 // 4. Mock Hooks & Assets
@@ -194,10 +192,13 @@ jest.mock(
 jest.spyOn(Alert, 'alert');
 
 describe('BusinessAddScreen', () => {
+  let consoleLogSpy: jest.SpyInstance;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
 
-    // FIX: Setup default thunk implementations to return promises with .unwrap()
+    // Setup default thunk implementations to return promises with .unwrap().
     const successResult = {unwrap: () => Promise.resolve({})};
     const imageResult = {
       unwrap: () => Promise.resolve({photoUrl: 'mock-photo'}),
@@ -220,8 +221,12 @@ describe('BusinessAddScreen', () => {
     ).mockReturnValue(successResult);
   });
 
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
+  });
+
   it('renders correctly for a PMS record', async () => {
-    const props = createProps({isPMSRecord: true});
+    const props = createProps({isPMSRecord: true, placeId: 'place-123'});
     render(<BusinessAddScreen {...props} />);
 
     // Wait for useEffect to fire
@@ -240,7 +245,7 @@ describe('BusinessAddScreen', () => {
   });
 
   it('renders correctly for a non-PMS record', async () => {
-    const props = createProps({isPMSRecord: false});
+    const props = createProps({isPMSRecord: false, placeId: 'place-123'});
     render(<BusinessAddScreen {...props} />);
 
     // Wait for details fetch
@@ -310,26 +315,35 @@ describe('BusinessAddScreen', () => {
   });
 
   it('handles "Add" button press failure', async () => {
-    const mockUnwrap = jest.fn().mockRejectedValue(new Error('Add failed'));
-    (
-      LinkedBusinessActions.linkBusiness as unknown as jest.Mock
-    ).mockReturnValue({
-      unwrap: mockUnwrap,
-    });
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    try {
+      const mockUnwrap = jest.fn().mockRejectedValue(new Error('Add failed'));
+      (
+        LinkedBusinessActions.linkBusiness as unknown as jest.Mock
+      ).mockReturnValue({
+        unwrap: mockUnwrap,
+      });
 
-    const props = createProps({isPMSRecord: true, organisationId: 'org-1'});
-    render(<BusinessAddScreen {...props} />);
+      const props = createProps({isPMSRecord: true, organisationId: 'org-1'});
+      render(<BusinessAddScreen {...props} />);
 
-    fireEvent.press(screen.getByTestId('btn-Add'));
+      fireEvent.press(screen.getByTestId('btn-Add'));
 
-    await waitFor(() => {
-      expect(Alert.alert).toHaveBeenCalledWith(
-        'Error',
-        expect.stringContaining('Failed to add business'),
+      await waitFor(() => {
+        expect(Alert.alert).toHaveBeenCalledWith(
+          'Error',
+          expect.stringContaining('Failed to add business'),
+        );
+      });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Failed to add business:',
+        expect.any(Error),
       );
-    });
-
-    expect(mockAddSheetOpen).not.toHaveBeenCalled();
+      expect(mockAddSheetOpen).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it('handles closing the Add Business sheet', () => {
@@ -347,11 +361,6 @@ describe('BusinessAddScreen', () => {
   it('handles "Notify Business" button press', async () => {
     const props = createProps({isPMSRecord: false});
     render(<BusinessAddScreen {...props} />);
-
-    // Wait for initial fetch to complete so button is enabled
-    await waitFor(() => {
-      expect(LinkedBusinessActions.fetchBusinessDetails).toHaveBeenCalled();
-    });
 
     fireEvent.press(screen.getByTestId('btn-Notify Business'));
 
@@ -389,5 +398,178 @@ describe('BusinessAddScreen', () => {
 
     fireEvent.press(screen.getByTestId('header-back'));
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+  it('does not fetch details when placeId is missing', () => {
+    const props = createProps({placeId: undefined});
+    render(<BusinessAddScreen {...props} />);
+
+    expect(LinkedBusinessActions.fetchBusinessDetails).not.toHaveBeenCalled();
+    expect(LinkedBusinessActions.fetchGooglePlacesImage).not.toHaveBeenCalled();
+  });
+
+  it('handles PMS image fetch failure gracefully', async () => {
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+    (
+      LinkedBusinessActions.fetchGooglePlacesImage as unknown as jest.Mock
+    ).mockReturnValue({
+      unwrap: () => Promise.reject(new Error('image failed')),
+    });
+
+    const props = createProps({isPMSRecord: true, placeId: 'place-err'});
+    render(<BusinessAddScreen {...props} />);
+
+    await waitFor(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        '[BusinessAddScreen] Failed to fetch Places image:',
+        expect.any(Error),
+      );
+    });
+
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('handles non-PMS details fetch failure gracefully', async () => {
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+    (
+      LinkedBusinessActions.fetchBusinessDetails as unknown as jest.Mock
+    ).mockReturnValue({
+      unwrap: () => Promise.reject(new Error('details failed')),
+    });
+
+    const props = createProps({isPMSRecord: false, placeId: 'place-err'});
+    render(<BusinessAddScreen {...props} />);
+
+    await waitFor(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        '[BusinessAddScreen] Failed to fetch details:',
+        expect.any(Error),
+      );
+    });
+
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('uses addLinkedBusiness for non-PMS Add flow when organisationId is missing', async () => {
+    const mockUnwrap = jest.fn().mockResolvedValue({});
+
+    (
+      LinkedBusinessActions.addLinkedBusiness as unknown as jest.Mock
+    ).mockReturnValue({
+      unwrap: mockUnwrap,
+    });
+
+    const props = createProps({
+      isPMSRecord: true,
+      organisationId: undefined,
+    });
+
+    render(<BusinessAddScreen {...props} />);
+
+    fireEvent.press(screen.getByTestId('btn-Add'));
+
+    await waitFor(() => {
+      expect(LinkedBusinessActions.addLinkedBusiness).toHaveBeenCalledWith(
+        expect.objectContaining({
+          companionId: 'comp-123',
+          businessId: 'biz-123',
+          businessName: 'Test Vet Clinic',
+        }),
+      );
+      expect(mockAddSheetOpen).toHaveBeenCalled();
+    });
+  });
+
+  it('handles Notify Business failure', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+    (
+      LinkedBusinessActions.inviteBusiness as unknown as jest.Mock
+    ).mockReturnValue({
+      unwrap: () => Promise.reject(new Error('invite failed')),
+    });
+
+    const props = createProps({isPMSRecord: false});
+    render(<BusinessAddScreen {...props} />);
+
+    fireEvent.press(screen.getByTestId('btn-Notify Business'));
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        'Error',
+        'Failed to send invite. Please try again.',
+      );
+    });
+
+    expect(mockNotifySheetOpen).not.toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('navigates to returnTo tab when closing Add sheet', () => {
+    const mockParentNavigate = jest.fn();
+
+    const props = createProps({
+      returnTo: {tab: 'HomeTab', screen: 'LinkedBusinesses'},
+    });
+
+    props.navigation.getParent = jest.fn(() => ({
+      navigate: mockParentNavigate,
+    }));
+
+    render(<BusinessAddScreen {...props} />);
+
+    fireEvent.press(screen.getByTestId('add-sheet-confirm'));
+
+    expect(mockAddSheetClose).toHaveBeenCalled();
+    expect(mockParentNavigate).toHaveBeenCalledWith('HomeTab', {
+      screen: 'LinkedBusinesses',
+    });
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it('navigates to returnTo tab when pressing header back', () => {
+    const mockParentNavigate = jest.fn();
+
+    const props = createProps({
+      returnTo: {tab: 'AppointmentsTab'},
+    });
+
+    props.navigation.getParent = jest.fn(() => ({
+      navigate: mockParentNavigate,
+    }));
+
+    render(<BusinessAddScreen {...props} />);
+
+    fireEvent.press(screen.getByTestId('header-back'));
+
+    expect(mockParentNavigate).toHaveBeenCalledWith(
+      'AppointmentsTab',
+      undefined,
+    );
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it('navigates to returnTo tab when closing Notify sheet', () => {
+    const mockParentNavigate = jest.fn();
+
+    const props = createProps({
+      isPMSRecord: false,
+      returnTo: {tab: 'CareTab', screen: 'CareHome'},
+    });
+
+    props.navigation.getParent = jest.fn(() => ({
+      navigate: mockParentNavigate,
+    }));
+
+    render(<BusinessAddScreen {...props} />);
+
+    fireEvent.press(screen.getByTestId('notify-sheet-confirm'));
+
+    expect(mockNotifySheetClose).toHaveBeenCalled();
+    expect(mockParentNavigate).toHaveBeenCalledWith('CareTab', {
+      screen: 'CareHome',
+    });
   });
 });

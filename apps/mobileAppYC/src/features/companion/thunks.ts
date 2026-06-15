@@ -3,7 +3,10 @@ import {createAsyncThunk} from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {AddCompanionPayload, Companion} from './types';
 import {companionApi} from './services/companionService';
-import {getFreshStoredTokens, isTokenExpired} from '@/features/auth/sessionManager';
+import {
+  getFreshStoredTokens,
+  isTokenExpired,
+} from '@/features/auth/sessionManager';
 
 const buildStorageKey = (parentId: string) => `companions_${parentId}`;
 
@@ -23,7 +26,9 @@ const normalizeCompanion = (companion: any): Companion => {
   } as Companion;
 };
 
-const readCompanionsFromStorage = async (parentId: string): Promise<Companion[]> => {
+const readCompanionsFromStorage = async (
+  parentId: string,
+): Promise<Companion[]> => {
   const key = buildStorageKey(parentId);
   const stored = await AsyncStorage.getItem(key);
 
@@ -81,7 +86,10 @@ export const fetchCompanions = createAsyncThunk<
     await writeCompanionsToStorage(parentId, normalized);
     return normalized;
   } catch (error) {
-    console.warn('[Companion] Remote fetch failed, attempting cached data', error);
+    console.warn(
+      '[Companion] Remote fetch failed, attempting cached data',
+      error,
+    );
     try {
       const cached = await readCompanionsFromStorage(parentId);
       if (cached.length > 0) {
@@ -123,53 +131,64 @@ export const updateCompanionProfile = createAsyncThunk<
   Companion,
   {parentId: string; updatedCompanion: Companion},
   {rejectValue: string}
->('companion/updateCompanion', async ({parentId, updatedCompanion}, {rejectWithValue}) => {
-  try {
-    const accessToken = await ensureAccessToken();
-    const updated = normalizeCompanion(await companionApi.update({
-      companion: updatedCompanion,
-      accessToken,
-    }));
+>(
+  'companion/updateCompanion',
+  async ({parentId, updatedCompanion}, {rejectWithValue}) => {
+    try {
+      const accessToken = await ensureAccessToken();
+      const updated = normalizeCompanion(
+        await companionApi.update({
+          companion: updatedCompanion,
+          accessToken,
+        }),
+      );
 
-    const companions = await readCompanionsFromStorage(parentId);
-    const index = companions.findIndex(c => c.id === updated.id);
+      const companions = await readCompanionsFromStorage(parentId);
+      const index = companions.findIndex(c => c.id === updated.id);
 
-    if (index === -1) {
-      companions.push(updated);
-    } else {
-      companions[index] = updated;
+      if (index === -1) {
+        companions.push(updated);
+      } else {
+        companions[index] = updated;
+      }
+
+      await writeCompanionsToStorage(parentId, companions);
+      return updated;
+    } catch (error) {
+      console.error('[Companion] updateCompanionProfile failed', error);
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to update companion',
+      );
     }
-
-    await writeCompanionsToStorage(parentId, companions);
-    return updated;
-  } catch (error) {
-    console.error('[Companion] updateCompanionProfile failed', error);
-    return rejectWithValue(
-      error instanceof Error ? error.message : 'Failed to update companion',
-    );
-  }
-});
+  },
+);
 
 export const deleteCompanion = createAsyncThunk<
   string,
   {parentId: string; companionId: string},
   {rejectValue: string}
->('companion/deleteCompanion', async ({parentId, companionId}, {rejectWithValue}) => {
-  try {
-    const accessToken = await ensureAccessToken();
-    await companionApi.remove({companionId, accessToken});
-    const companions = await readCompanionsFromStorage(parentId);
-    const next = companions.filter(c => c.id !== companionId);
+>(
+  'companion/deleteCompanion',
+  async ({parentId, companionId}, {rejectWithValue}) => {
+    try {
+      const [, companions] = await Promise.all([
+        ensureAccessToken().then(token =>
+          companionApi.remove({companionId, accessToken: token}),
+        ),
+        readCompanionsFromStorage(parentId),
+      ]);
+      const next = companions.filter(c => c.id !== companionId);
 
-    if (next.length === companions.length) {
-      return rejectWithValue('Companion not found.');
+      if (next.length === companions.length) {
+        return rejectWithValue('Companion not found.');
+      }
+
+      await writeCompanionsToStorage(parentId, next);
+      return companionId;
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to delete companion',
+      );
     }
-
-    await writeCompanionsToStorage(parentId, next);
-    return companionId;
-  } catch (error) {
-    return rejectWithValue(
-      error instanceof Error ? error.message : 'Failed to delete companion',
-    );
-  }
-});
+  },
+);

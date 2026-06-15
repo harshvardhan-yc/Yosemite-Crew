@@ -4,7 +4,10 @@ import {Provider} from 'react-redux';
 
 import {store} from '@/app/store';
 
-import {AppNavigator} from '@/navigation/AppNavigator';
+import {
+  AppNavigator,
+  _resetOnboardingStoreForTesting,
+} from '@/navigation/AppNavigator';
 import {useAuth} from '@/features/auth/context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {DeviceEventEmitter} from 'react-native';
@@ -25,16 +28,21 @@ jest.mock('@/context/GlobalLoaderContext', () => {
 jest.mock('@/features/home/components/EmergencyBottomSheet', () => {
   const ReactModule = require('react');
   const {View, Text} = require('react-native');
-  const EmergencyBottomSheet = ReactModule.forwardRef((_props: any, ref: any) => {
-    ReactModule.useImperativeHandle(ref, () => ({ open: jest.fn(), close: jest.fn() }));
-    return ReactModule.createElement(
-      View,
-      {testID: 'mock-emergency-bottom-sheet'},
-      ReactModule.createElement(Text, null, 'Emergency'),
-    );
-  });
+  const EmergencyBottomSheet = ReactModule.forwardRef(
+    (_props: any, ref: any) => {
+      ReactModule.useImperativeHandle(ref, () => ({
+        open: jest.fn(),
+        close: jest.fn(),
+      }));
+      return ReactModule.createElement(
+        View,
+        {testID: 'mock-emergency-bottom-sheet'},
+        ReactModule.createElement(Text, null, 'Emergency'),
+      );
+    },
+  );
   EmergencyBottomSheet.displayName = 'MockEmergencyBottomSheet';
-  return { __esModule: true, EmergencyBottomSheet };
+  return {__esModule: true, EmergencyBottomSheet};
 });
 
 jest.mock('@react-navigation/native-stack', () => {
@@ -110,7 +118,9 @@ jest.mock('@/features/auth/context/AuthContext', () => ({
 
 const mockedUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
 
-const createAuthValue = (overrides: Partial<ReturnType<typeof useAuth>> = {}) => ({
+const createAuthValue = (
+  overrides: Partial<ReturnType<typeof useAuth>> = {},
+) => ({
   isLoggedIn: false,
   isLoading: false,
   user: null,
@@ -141,6 +151,7 @@ describe('AppNavigator integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    _resetOnboardingStoreForTesting();
     addListenerSpy = jest
       .spyOn(DeviceEventEmitter, 'addListener')
       .mockReturnValue({remove: jest.fn()} as any);
@@ -156,15 +167,17 @@ describe('AppNavigator integration', () => {
 
   it('shows onboarding when onboarding has not been completed', async () => {
     mockedUseAuth.mockReturnValue(createAuthValue());
-    const getItemSpy = jest.spyOn(AsyncStorage, 'getItem').mockImplementation(async key => {
-      if (key === '@onboarding_completed') {
+    const getItemSpy = jest
+      .spyOn(AsyncStorage, 'getItem')
+      .mockImplementation(async key => {
+        if (key === '@onboarding_completed') {
+          return null;
+        }
+        if (key === PENDING_PROFILE_STORAGE_KEY) {
+          return null;
+        }
         return null;
-      }
-      if (key === PENDING_PROFILE_STORAGE_KEY) {
-        return null;
-      }
-      return null;
-    });
+      });
 
     await renderNavigator();
     expect(mockOnboardingScreen).toHaveBeenCalled();
@@ -175,21 +188,25 @@ describe('AppNavigator integration', () => {
 
   it('renders auth navigator when onboarding completed and user not logged in', async () => {
     mockedUseAuth.mockReturnValue(createAuthValue());
-    const getItemSpy = jest.spyOn(AsyncStorage, 'getItem').mockImplementation(async key => {
-      if (key === '@onboarding_completed') {
-        return 'true';
-      }
-      if (key === PENDING_PROFILE_STORAGE_KEY) {
+    const getItemSpy = jest
+      .spyOn(AsyncStorage, 'getItem')
+      .mockImplementation(async key => {
+        if (key === '@onboarding_completed') {
+          return 'true';
+        }
+        if (key === PENDING_PROFILE_STORAGE_KEY) {
+          return null;
+        }
         return null;
-      }
-      return null;
-    });
+      });
 
     const renderer = await renderNavigator();
     const node = renderer.root.findByProps({testID: 'auth-navigator'});
-    expect(Array.isArray(node.props.children) ? node.props.children.join('') : node.props.children).toBe(
-      'AuthNavigator:SignUp',
-    );
+    expect(
+      Array.isArray(node.props.children)
+        ? node.props.children.join('')
+        : node.props.children,
+    ).toBe('AuthNavigator:SignUp');
     expect(mockAuthNavigator).toHaveBeenCalledWith(
       expect.objectContaining({initialRouteName: 'SignUp'}),
     );
@@ -211,15 +228,17 @@ describe('AppNavigator integration', () => {
         },
       }),
     );
-    const getItemSpy = jest.spyOn(AsyncStorage, 'getItem').mockImplementation(async key => {
-      if (key === '@onboarding_completed') {
-        return 'true';
-      }
-      if (key === PENDING_PROFILE_STORAGE_KEY) {
+    const getItemSpy = jest
+      .spyOn(AsyncStorage, 'getItem')
+      .mockImplementation(async key => {
+        if (key === '@onboarding_completed') {
+          return 'true';
+        }
+        if (key === PENDING_PROFILE_STORAGE_KEY) {
+          return null;
+        }
         return null;
-      }
-      return null;
-    });
+      });
 
     const renderer = await renderNavigator();
     renderer.root.findByProps({testID: 'main-navigator'});
@@ -250,21 +269,25 @@ describe('AppNavigator integration', () => {
       }),
     );
 
-    const getItemSpy = jest.spyOn(AsyncStorage, 'getItem').mockImplementation(async key => {
-      if (key === '@onboarding_completed') {
-        return 'true';
-      }
-      if (key === PENDING_PROFILE_STORAGE_KEY) {
-        return JSON.stringify(pendingPayload);
-      }
-      return null;
-    });
+    const getItemSpy = jest
+      .spyOn(AsyncStorage, 'getItem')
+      .mockImplementation(async key => {
+        if (key === '@onboarding_completed') {
+          return 'true';
+        }
+        if (key === PENDING_PROFILE_STORAGE_KEY) {
+          return JSON.stringify(pendingPayload);
+        }
+        return null;
+      });
 
     const renderer = await renderNavigator();
     const node = renderer.root.findByProps({testID: 'auth-navigator'});
-    expect(Array.isArray(node.props.children) ? node.props.children.join('') : node.props.children).toBe(
-      'AuthNavigator:CreateAccount',
-    );
+    expect(
+      Array.isArray(node.props.children)
+        ? node.props.children.join('')
+        : node.props.children,
+    ).toBe('AuthNavigator:CreateAccount');
     expect(mockAuthNavigator).toHaveBeenCalledWith(
       expect.objectContaining({
         initialRouteName: 'CreateAccount',

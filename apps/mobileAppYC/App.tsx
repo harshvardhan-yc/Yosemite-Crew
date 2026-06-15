@@ -5,7 +5,13 @@
  *
  * @format
  */
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import {StatusBar, LogBox, Linking} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
@@ -17,8 +23,8 @@ import {
   type NavigationContainerRef,
 } from '@react-navigation/native';
 import {store, persistor} from '@/app/store';
-import {AppNavigator} from './src/navigation';
-import {useTheme} from './src/hooks';
+import {AppNavigator} from './src/navigation/AppNavigator';
+import {useTheme} from './src/shared/hooks/useTheme';
 import CustomSplashScreen from './src/shared/components/common/customSplashScreen/customSplash';
 import './src/localization';
 import devOutputs from './devamplify_outputs.json';
@@ -142,18 +148,67 @@ const applyMockAppUpdateFlow = (
 const OPTIONAL_UPDATE_LAST_PROMPTED_AT_KEY =
   '@app_update_optional_last_prompted_at';
 
+type MobileConfigState = {
+  mobileConfig: MobileConfig | null;
+  appUpdatePrompt: AppUpdatePrompt | null;
+  isConfigLoading: boolean;
+};
+
+type MobileConfigAction =
+  | {
+      type: 'CONFIG_LOADED';
+      config: MobileConfig;
+      prompt: AppUpdatePrompt | null;
+    }
+  | {type: 'CONFIG_DONE'}
+  | {type: 'CLEAR_OPTIONAL_PROMPT'};
+
+const initialMobileConfigState: MobileConfigState = {
+  mobileConfig: null,
+  appUpdatePrompt: null,
+  isConfigLoading: true,
+};
+
+function mobileConfigReducer(
+  state: MobileConfigState,
+  action: MobileConfigAction,
+): MobileConfigState {
+  switch (action.type) {
+    case 'CONFIG_LOADED':
+      return {
+        ...state,
+        mobileConfig: action.config,
+        appUpdatePrompt: action.prompt,
+      };
+    case 'CONFIG_DONE':
+      return {...state, isConfigLoading: false};
+    case 'CLEAR_OPTIONAL_PROMPT':
+      return {
+        ...state,
+        appUpdatePrompt:
+          state.appUpdatePrompt?.kind === 'optional'
+            ? null
+            : state.appUpdatePrompt,
+      };
+    default:
+      return state;
+  }
+}
+
 // const noop = () => {};
 // console.log = noop;
 // console.info = noop;
 // console.debug = noop;
 // console.trace = noop;
 
+const PERSIST_GATE_LOADING = <CustomSplashScreen onAnimationEnd={() => {}} />;
+
 function App(): React.JSX.Element {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
-  const [mobileConfig, setMobileConfig] = useState<MobileConfig | null>(null);
-  const [appUpdatePrompt, setAppUpdatePrompt] =
-    useState<AppUpdatePrompt | null>(null);
-  const [isConfigLoading, setIsConfigLoading] = useState(true);
+  const [
+    {mobileConfig, appUpdatePrompt, isConfigLoading},
+    dispatchMobileConfig,
+  ] = useReducer(mobileConfigReducer, initialMobileConfigState);
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const pendingIntentRef = useRef<NotificationNavigationIntent | null>(null);
   const currentRouteNameRef = useRef<string | null>(null);
@@ -280,8 +335,6 @@ function App(): React.JSX.Element {
           //   stripeKeyPresent: Boolean(config.stripePublishableKey),
           // });
 
-          setMobileConfig(config);
-
           const {currentVersion, currentBuildNumber, bundleId} =
             getCurrentAppIdentity();
           const evaluatedPrompt = evaluateAppUpdatePrompt(
@@ -298,6 +351,7 @@ function App(): React.JSX.Element {
             evaluatedPrompt,
           });
 
+          let finalPrompt: AppUpdatePrompt | null;
           if (evaluatedPrompt?.kind === 'optional') {
             const lastPromptedAt = await AsyncStorage.getItem(
               OPTIONAL_UPDATE_LAST_PROMPTED_AT_KEY,
@@ -316,10 +370,15 @@ function App(): React.JSX.Element {
               shouldBypassDeferral,
               shouldShow,
             });
-            setAppUpdatePrompt(shouldShow ? evaluatedPrompt : null);
+            finalPrompt = shouldShow ? evaluatedPrompt : null;
           } else {
-            setAppUpdatePrompt(evaluatedPrompt);
+            finalPrompt = evaluatedPrompt;
           }
+          dispatchMobileConfig({
+            type: 'CONFIG_LOADED',
+            config,
+            prompt: finalPrompt,
+          });
         }
       } catch (error) {
         if (mounted) {
@@ -327,7 +386,7 @@ function App(): React.JSX.Element {
         }
       } finally {
         if (mounted) {
-          setIsConfigLoading(false);
+          dispatchMobileConfig({type: 'CONFIG_DONE'});
         }
       }
     };
@@ -350,9 +409,9 @@ function App(): React.JSX.Element {
     }
   }, [isConfigLoading, resolvedPublishableKey]);
 
-  const handleSplashAnimationEnd = () => {
+  const handleSplashAnimationEnd = useCallback(() => {
     setIsSplashVisible(false);
-  };
+  }, []);
 
   const handleNotificationNavigation = useCallback(
     (intent: NotificationNavigationIntent) => {
@@ -403,9 +462,7 @@ function App(): React.JSX.Element {
         error,
       );
     } finally {
-      setAppUpdatePrompt(currentPrompt =>
-        currentPrompt?.kind === 'optional' ? null : currentPrompt,
-      );
+      dispatchMobileConfig({type: 'CLEAR_OPTIONAL_PROMPT'});
     }
   }, []);
 
@@ -419,9 +476,7 @@ function App(): React.JSX.Element {
 
   return (
     <Provider store={store}>
-      <PersistGate
-        loading={<CustomSplashScreen onAnimationEnd={() => {}} />}
-        persistor={persistor}>
+      <PersistGate loading={PERSIST_GATE_LOADING} persistor={persistor}>
         <GestureHandlerRootView style={{flex: 1}}>
           <SafeAreaProvider>
             <AuthProvider>

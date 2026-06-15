@@ -1,12 +1,12 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {useDispatch} from 'react-redux';
 import type {AppDispatch} from '@/app/store';
-import LocationService from '@/shared/services/LocationService';
+import {useLocationStore} from '@/shared/stores/locationStore';
 import {
   checkOrganisation,
   fetchPlaceCoordinates,
   searchBusinessesByLocation,
-} from '../index';
+} from '../thunks';
 import type {BusinessSearchResult} from '../types';
 
 export interface ResolvedBusinessSelection extends BusinessSearchResult {
@@ -44,35 +44,20 @@ export const usePlacesBusinessSearch = ({
     [],
   );
   const [searching, setSearching] = useState(false);
-  const [userLocation, setUserLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  const userLocation = useLocationStore();
+  const userLocationRef = useRef(userLocation);
+  userLocationRef.current = userLocation;
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSearchQueryRef = useRef('');
 
-  useEffect(() => {
-    const getUserLocation = async () => {
-      try {
-        const location = await LocationService.getCurrentPosition();
-        setUserLocation({
-          latitude: location.latitude,
-          longitude: location.longitude,
-        });
-      } catch (error) {
-        // Location is optional - proceed without it
-        console.log('[usePlacesBusinessSearch] Location unavailable:', error);
-      }
-    };
-
-    getUserLocation();
-
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
+  const clearDebounceTimer = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
   }, []);
+
+  useEffect(() => clearDebounceTimer, [clearDebounceTimer]);
 
   const clearResults = useCallback(() => {
     setSearchResults([]);
@@ -110,7 +95,7 @@ export const usePlacesBusinessSearch = ({
           const result = await dispatch(
             searchBusinessesByLocation({
               query,
-              location: userLocation,
+              location: userLocationRef.current,
             }),
           ).unwrap();
           setSearchResults(result);
@@ -122,7 +107,7 @@ export const usePlacesBusinessSearch = ({
         }
       }, debounceMs);
     },
-    [debounceMs, dispatch, minCharacters, onError, userLocation],
+    [debounceMs, dispatch, minCharacters, onError],
   );
 
   const handleSelectBusiness = useCallback(

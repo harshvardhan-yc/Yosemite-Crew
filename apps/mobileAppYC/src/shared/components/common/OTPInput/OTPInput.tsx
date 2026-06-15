@@ -1,13 +1,7 @@
 // src/components/common/OTPInput/OTPInput.tsx
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  TextInput,
-  StyleSheet,
-  Text,
-  Platform,
-} from 'react-native';
-import { useTheme } from '@/hooks';
+import React, {useState, useRef, useEffect} from 'react';
+import {View, TextInput, StyleSheet, Text, Platform} from 'react-native';
+import {useTheme} from '@/hooks';
 import {generateId} from '@/shared/utils/helpers';
 
 interface OTPInputProps {
@@ -23,27 +17,35 @@ export const OTPInput: React.FC<OTPInputProps> = ({
   error,
   autoFocus = true,
 }) => {
-  const { theme } = useTheme();
+  const {theme} = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
-  const [otp, setOtp] = useState<string[]>(() => Array.from({ length }, () => ''));
+  const [otp, setOtp] = useState<string[]>(() =>
+    Array.from({length}, () => ''),
+  );
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRefs = useRef<(TextInput | null)[]>(new Array(length).fill(null));
-  const inputKeys = useRef<string[]>(Array.from({ length }, () => generateId()));
+  const inputKeys = useRef<string[]>(Array.from({length}, () => generateId()));
 
-  useEffect(() => {
+  const [prevLength, setPrevLength] = useState(length);
+  if (length !== prevLength) {
+    setPrevLength(length);
     if (inputKeys.current.length !== length) {
-      inputKeys.current = Array.from({ length }, (_unused, index) => inputKeys.current[index] ?? generateId());
+      inputKeys.current = Array.from(
+        {length},
+        (_unused, index) => inputKeys.current[index] ?? generateId(),
+      );
     }
-    setOtp(prev => Array.from({ length }, (_unused, index) => prev[index] ?? ''));
     inputRefs.current = new Array(length).fill(null);
     setActiveIndex(0);
-  }, [length]);
+    setOtp(prev => Array.from({length}, (_unused, index) => prev[index] ?? ''));
+  }
 
   useEffect(() => {
     if (autoFocus && inputRefs.current[0]) {
-      setTimeout(() => {
+      const id = setTimeout(() => {
         inputRefs.current[0]?.focus();
       }, 100);
+      return () => clearTimeout(id);
     }
   }, [autoFocus]);
 
@@ -92,9 +94,9 @@ export const OTPInput: React.FC<OTPInputProps> = ({
   const handleTextInputSelection = (index: number) => {
     // Select all text when input is focused for better UX
     if (otp[index]) {
-      return { start: 0, end: 1 };
+      return {start: 0, end: 1};
     }
-    return { start: 0, end: 0 };
+    return {start: 0, end: 0};
   };
 
   return (
@@ -103,45 +105,46 @@ export const OTPInput: React.FC<OTPInputProps> = ({
         {inputKeys.current.map((key, index) => {
           const digit = otp[index] ?? '';
           return (
-          <TextInput
-            key={key}
-            ref={(ref) => {
-              inputRefs.current[index] = ref;
-            }}
-            style={[
-              styles.input,
-              {
-                borderColor: (() => {
-                  if (error) {
-                    return theme.colors.error;
-                  }
-                  if (activeIndex === index) {
-                    return theme.colors.primary;
-                  }
-                  return theme.colors.border;
-                })(),
-                backgroundColor: theme.colors.backgroundSecondary || theme.colors.background,
-                color: theme.colors.text,
-              },
-            ]}
-            value={digit}
-            onChangeText={(value) => handleChange(value, index)}
-            onKeyPress={(e) => handleKeyPress(e, index)}
-            onFocus={() => handleFocus(index)}
-            keyboardType="numeric"
-            maxLength={1}
-            selectTextOnFocus
-            selection={handleTextInputSelection(index)}
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="oneTimeCode"
-            returnKeyType="done"
-          />
+            <TextInput
+              key={key}
+              ref={ref => {
+                inputRefs.current[index] = ref;
+              }}
+              style={[
+                styles.input,
+                {
+                  borderColor: (() => {
+                    if (error) {
+                      return theme.colors.error;
+                    }
+                    if (activeIndex === index) {
+                      return theme.colors.primary;
+                    }
+                    return theme.colors.border;
+                  })(),
+                  backgroundColor:
+                    theme.colors.backgroundSecondary || theme.colors.background,
+                  color: theme.colors.text,
+                },
+              ]}
+              value={digit}
+              onChangeText={value => handleChange(value, index)}
+              onKeyPress={e => handleKeyPress(e, index)}
+              onFocus={() => handleFocus(index)}
+              keyboardType="numeric"
+              maxLength={1}
+              selectTextOnFocus
+              selection={handleTextInputSelection(index)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="oneTimeCode"
+              returnKeyType="done"
+            />
           );
         })}
       </View>
       {error && (
-        <Text style={[styles.errorText, { color: theme.colors.error }]}>
+        <Text style={[styles.errorText, {color: theme.colors.error}]}>
           {error}
         </Text>
       )}
@@ -169,11 +172,11 @@ const createStyles = (theme: any) =>
       textAlign: 'center',
       ...theme.typography.h4,
       fontWeight: 'bold',
-      lineHeight: theme.typography.h4.fontSize+3,
+      lineHeight: theme.typography.h4.fontSize + 3,
       marginHorizontal: theme.spacing['2'],
       ...(Platform.OS === 'android'
-        ? { textAlignVertical: 'center', includeFontPadding: false }
-        : { includeFontPadding: false }),
+        ? {textAlignVertical: 'center', includeFontPadding: false}
+        : {includeFontPadding: false}),
     },
     errorText: {
       marginTop: theme.spacing['3'],
