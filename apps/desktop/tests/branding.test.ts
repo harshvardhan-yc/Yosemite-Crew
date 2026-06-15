@@ -29,6 +29,6 @@ describe('HELP_LINKS', () => {
   test('include support and issue-reporting destinations', () => {
     const urls = HELP_LINKS.map((l) => l.url);
     expect(urls).toContain(`${branding.WEBSITE}/contact-us`);
-    expect(urls.some((u) => u.includes('github.com'))).toBe(true);
+    expect(urls).toContain('https://github.com/YosemiteCrew/Yosemite-Crew/issues');
   });
 });
