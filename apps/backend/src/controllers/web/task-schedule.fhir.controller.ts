@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { Parameters } from "@yosemite-crew/fhir";
+import { Bundle, Parameters } from "@yosemite-crew/fhir";
 import { z } from "zod";
 import { AuthenticatedRequest } from "src/middlewares/auth";
 import {
@@ -48,7 +48,28 @@ const parseParameters = (body: unknown) => {
   return parametersSchema.parse(body) as unknown as Parameters;
 };
 
+const buildScheduleBundle = (schedules: TaskScheduleLike[]): Bundle => ({
+  resourceType: "Bundle",
+  type: "searchset",
+  total: schedules.length,
+  entry: schedules.map((schedule) => ({
+    resource: taskScheduleFhirMapper.toTask(schedule),
+  })),
+});
+
 export const TaskScheduleFhirController = {
+  async listEncounterSchedules(req: Request, res: Response) {
+    try {
+      const schedules = await TaskWorkflowService.listSchedulesForEncounter(
+        req.params.organisationId,
+        req.params.encounterId,
+      );
+      return res.status(200).json(buildScheduleBundle(schedules));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async apply(req: Request, res: Response) {
     try {
       const parameters = parseParameters(req.body);

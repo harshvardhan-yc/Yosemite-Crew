@@ -402,6 +402,32 @@ const loadScheduleByInstanceId = async (
 };
 
 export const TaskWorkflowService = {
+  async listSchedulesForEncounter(
+    organisationId: string,
+    encounterId: string,
+  ): Promise<TaskScheduleLike[]> {
+    const trimmedOrganisationId = organisationId.trim();
+    const trimmedEncounterId = encounterId.trim();
+
+    if (!trimmedOrganisationId) {
+      throw new TaskWorkflowServiceError("Invalid organisationId", 400);
+    }
+
+    if (!trimmedEncounterId) {
+      throw new TaskWorkflowServiceError("Invalid encounterId", 400);
+    }
+
+    const schedules = await prisma.taskSchedule.findMany({
+      where: {
+        organisationId: trimmedOrganisationId,
+        encounterId: trimmedEncounterId,
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    });
+
+    return schedules.map(toTaskScheduleLike);
+  },
+
   async launchFromTemplateInstance(
     instanceId: string,
     organisationId?: string,
