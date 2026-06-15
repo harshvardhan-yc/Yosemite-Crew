@@ -47,7 +47,7 @@ ALTER TABLE "Patient" RENAME CONSTRAINT "Companion_pkey" TO "Patient_pkey";
 ALTER TABLE "PatientOrganisation" RENAME CONSTRAINT "CompanionOrganisation_pkey" TO "PatientOrganisation_pkey";
 ALTER TABLE "PatientOrganisation" RENAME CONSTRAINT "CompanionOrganisation_companionId_fkey" TO "PatientOrganisation_patientId_fkey";
 ALTER TABLE "ParentPatient" RENAME CONSTRAINT "ParentCompanion_pkey" TO "ParentPatient_pkey";
-ALTER TABLE "ParentPatient" RENAME CONSTRAINT "ParentCompanion_parentId_companionId_key" TO "ParentPatient_parentId_patientId_key";
+ALTER INDEX "ParentCompanion_parentId_companionId_key" RENAME TO "ParentPatient_parentId_patientId_key";
 ALTER TABLE "ParentPatient" RENAME CONSTRAINT "ParentCompanion_companionId_fkey" TO "ParentPatient_patientId_fkey";
 ALTER TABLE "Document" RENAME CONSTRAINT "Document_companionId_fkey" TO "Document_patientId_fkey";
 
