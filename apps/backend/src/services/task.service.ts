@@ -5,6 +5,7 @@ import {
   TaskKind as PrismaTaskKind,
   TaskStatus as PrismaTaskStatus,
 } from "@prisma/client";
+import { isTaskCategory } from "@yosemite-crew/types";
 import { prisma } from "src/config/prisma";
 import { AuditTrailService } from "./audit-trail.service";
 import type { TaskWorkflowSeed } from "./task-workflow-materializer";
@@ -57,19 +58,6 @@ const TASK_STATUSES = new Set<TaskStatus>([
   "CANCELLED",
 ]);
 
-const TASK_CATEGORIES = new Set([
-  "MEDICATION",
-  "CARE",
-  "DIET",
-  "PROCEDURE",
-  "DIAGNOSTIC",
-  "COMMUNICATION",
-  "BILLING",
-  "RECORD",
-  "ADMIN",
-  "CUSTOM",
-]);
-
 type TaskRow = Prisma.TaskGetPayload<Record<string, never>>;
 type TaskCompletionRow = Prisma.TaskCompletionGetPayload<Record<string, never>>;
 
@@ -113,7 +101,7 @@ const sanitizeStatusList = (value: unknown): TaskStatus[] | undefined => {
 };
 
 const sanitizeTaskCategory = (value: unknown): string | undefined =>
-  typeof value === "string" && TASK_CATEGORIES.has(value) ? value : undefined;
+  typeof value === "string" && isTaskCategory(value) ? value : undefined;
 
 const asStringArray = (value: unknown): string[] =>
   Array.isArray(value)

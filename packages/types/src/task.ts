@@ -16,6 +16,33 @@ export type TaskCategory =
   | 'ADMIN'
   | 'CUSTOM';
 
+export const TASK_KIND_TAXONOMY: readonly TaskKind[] = [
+  'MEDICATION',
+  'OBSERVATION_TOOL',
+  'HYGIENE',
+  'DIET',
+  'CUSTOM',
+] as const;
+
+export const TASK_CATEGORY_TAXONOMY: readonly TaskCategory[] = [
+  'MEDICATION',
+  'CARE',
+  'DIET',
+  'PROCEDURE',
+  'DIAGNOSTIC',
+  'COMMUNICATION',
+  'BILLING',
+  'RECORD',
+  'ADMIN',
+  'CUSTOM',
+] as const;
+
+export const isTaskCategory = (value: string): value is TaskCategory =>
+  TASK_CATEGORY_TAXONOMY.includes(value as TaskCategory);
+
+export const isTaskKind = (value: string): value is TaskKind =>
+  TASK_KIND_TAXONOMY.includes(value as TaskKind);
+
 export interface MedicationDoseInput {
   time?: string;
   dosage?: string;

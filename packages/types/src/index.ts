@@ -308,6 +308,10 @@ export {
 } from './template';
 export {
   taskFhirMapper,
+  TASK_CATEGORY_TAXONOMY,
+  TASK_KIND_TAXONOMY,
+  isTaskCategory,
+  isTaskKind,
   type TaskLike,
   type TaskStatus,
   type TaskAudience,

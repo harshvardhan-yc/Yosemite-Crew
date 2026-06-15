@@ -4,7 +4,11 @@ import { ParamsDictionary } from "express-serve-static-core";
 import { AuthenticatedRequest } from "src/middlewares/auth";
 import type { OrgRequest } from "src/middlewares/rbac";
 import { AuthUserMobileService } from "src/services/authUserMobile.service";
-import type { TaskCategory } from "@yosemite-crew/types";
+import {
+  isTaskCategory,
+  isTaskKind,
+  type TaskCategory,
+} from "@yosemite-crew/types";
 import {
   CompleteTaskInput,
   CreateCustomTaskInput,
@@ -56,19 +60,6 @@ const TASK_STATUSES = new Set<TaskStatus>([
   "COMPLETED",
   "CANCELLED",
 ]);
-const TASK_CATEGORIES = new Set<TaskCategory>([
-  "MEDICATION",
-  "CARE",
-  "DIET",
-  "PROCEDURE",
-  "DIAGNOSTIC",
-  "COMMUNICATION",
-  "BILLING",
-  "RECORD",
-  "ADMIN",
-  "CUSTOM",
-]);
-
 const pickFirstQueryValue = (value?: string | string[]): string | undefined =>
   Array.isArray(value) ? value[0] : value;
 
@@ -124,13 +115,7 @@ const parseAudience = (
 const parseTaskKind = (kind?: string | string[]): TaskKind | undefined => {
   if (!kind) return undefined;
   const value = Array.isArray(kind) ? kind[0] : kind;
-  return value === "MEDICATION" ||
-    value === "OBSERVATION_TOOL" ||
-    value === "HYGIENE" ||
-    value === "DIET" ||
-    value === "CUSTOM"
-    ? value
-    : undefined;
+  return typeof value === "string" && isTaskKind(value) ? value : undefined;
 };
 
 const parseTaskCategory = (
@@ -138,9 +123,7 @@ const parseTaskCategory = (
 ): TaskCategory | undefined => {
   if (!category) return undefined;
   const value = pickFirstQueryValue(category);
-  return value && TASK_CATEGORIES.has(value as TaskCategory)
-    ? (value as TaskCategory)
-    : undefined;
+  return value && isTaskCategory(value) ? value : undefined;
 };
 
 type TaskListQuery = {
