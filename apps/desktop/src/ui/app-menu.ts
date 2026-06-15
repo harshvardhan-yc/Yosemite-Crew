@@ -15,11 +15,13 @@ export interface MenuActions {
   loadStartUrl: () => void;
   activeContents: () => Electron.WebContents | null;
   setTabOrientation: (mode: 'horizontal' | 'vertical') => void;
-  tabOrientation: 'horizontal' | 'vertical';
-  splitId: string | null;
+  // Live getters: the menu is built once but tab state mutates afterwards, so
+  // these are read at click/build time rather than captured as snapshots.
+  tabOrientation: () => 'horizontal' | 'vertical';
+  splitId: () => string | null;
   setSplitTab: (id: string | null) => void;
-  tabMode: boolean;
-  attachedTabId: string | null;
+  tabMode: () => boolean;
+  attachedTabId: () => string | null;
   tabManager: { getState: () => { tabs: Array<{ id: string }> } } | null;
   verifyAuditTrail: () => void;
   exportCsDailyLog: () => void;
@@ -213,18 +215,19 @@ export const createAppMenu = (actions: MenuActions): void => {
           accelerator: 'CmdOrCtrl+Shift+E',
           click: () =>
             actions.setTabOrientation(
-              actions.tabOrientation === 'vertical' ? 'horizontal' : 'vertical'
+              actions.tabOrientation() === 'vertical' ? 'horizontal' : 'vertical'
             ),
         },
         {
-          label: actions.splitId ? 'Close Split View' : 'Split View',
+          label: actions.splitId() ? 'Close Split View' : 'Split View',
           accelerator: 'CmdOrCtrl+Shift+\\',
           click: () => {
-            if (actions.splitId) {
+            if (actions.splitId()) {
               actions.setSplitTab(null);
-            } else if (actions.tabMode && actions.attachedTabId && actions.tabManager) {
+            } else if (actions.tabMode() && actions.attachedTabId() && actions.tabManager) {
               const state = actions.tabManager.getState();
-              const other = state.tabs.find((t) => t.id !== actions.attachedTabId);
+              const attached = actions.attachedTabId();
+              const other = state.tabs.find((t) => t.id !== attached);
               if (other) actions.setSplitTab(other.id);
             }
           },

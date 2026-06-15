@@ -194,7 +194,15 @@ export const createTabManager = (initial?: TabSummary[]): TabManager => {
       meta: Partial<
         Pick<
           TabSummary,
-          'title' | 'favicon' | 'loading' | 'error' | 'offline' | 'zoom' | 'audible' | 'muted'
+          | 'url'
+          | 'title'
+          | 'favicon'
+          | 'loading'
+          | 'error'
+          | 'offline'
+          | 'zoom'
+          | 'audible'
+          | 'muted'
         >
       >
     ): boolean {

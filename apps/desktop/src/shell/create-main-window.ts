@@ -34,11 +34,12 @@ export interface CreateMainWindowDeps {
   brandPrefix: string;
   windowStateStore: WindowStateStore | null;
 
-  // Tab system (pass initial values + action functions; tabManager/tabViewHost created inside)
-  tabMode: boolean;
-  attachedTabId: string | null;
-  splitId: string | null;
-  tabOrientation: 'horizontal' | 'vertical';
+  // Tab system. Live getters (not snapshots) so the app menu, which is built
+  // once, always reads the current tab state at click time.
+  tabMode: () => boolean;
+  attachedTabId: () => string | null;
+  splitId: () => string | null;
+  tabOrientation: () => 'horizontal' | 'vertical';
   setTabSearch: (open: boolean) => void;
   setSplitTab: (id: string | null) => void;
   setTabOrientation: (mode: 'horizontal' | 'vertical') => void;

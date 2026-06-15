@@ -52,11 +52,11 @@ const makeActions = (overrides: Partial<MenuActions> = {}): MenuActions => {
     loadStartUrl: jest.fn(),
     activeContents: jest.fn(() => wc as never),
     setTabOrientation: jest.fn(),
-    tabOrientation: 'horizontal',
-    splitId: null,
+    tabOrientation: () => 'horizontal',
+    splitId: () => null,
     setSplitTab: jest.fn(),
-    tabMode: true,
-    attachedTabId: 'a',
+    tabMode: () => true,
+    attachedTabId: () => 'a',
     tabManager: { getState: () => ({ tabs: [{ id: 'a' }, { id: 'b' }] }) },
     verifyAuditTrail: jest.fn(),
     exportCsDailyLog: jest.fn(),
@@ -115,11 +115,11 @@ describe('createAppMenu', () => {
   });
 
   test('split-view toggles on when no split, and the close branch when active', () => {
-    const withSplit = run('darwin', { splitId: 'b' });
+    const withSplit = run('darwin', { splitId: () => 'b' });
     clickAll();
     expect(withSplit.setSplitTab).toHaveBeenCalledWith(null);
 
-    const noSplit = run('darwin', { splitId: null });
+    const noSplit = run('darwin', { splitId: () => null });
     clickAll();
     expect(noSplit.setSplitTab).toHaveBeenCalledWith('b');
   });

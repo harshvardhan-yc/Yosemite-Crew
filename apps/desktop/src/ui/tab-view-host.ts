@@ -5,6 +5,7 @@ import type { DesktopLogger } from '../utils/logger';
 import type { BrowserWindowConstructorOptions, WindowOpenHandlerResponse } from 'electron';
 
 interface TabMetaUpdate {
+  url?: string;
   title?: string;
   favicon?: string;
   loading?: boolean;
@@ -74,6 +75,19 @@ export const createTabViewHost = (deps: TabViewHostDeps): TabViewHost => {
         const favicon = favicons?.[0] || '';
         deps.logger.debug('tab_favicon_updated', { id, favicon });
         deps.onUpdate?.(id, { favicon });
+      });
+
+      // Keep the stored URL (and the TabManager) in sync as the user navigates,
+      // so duplicate/reopen/session-restore reopen the current page, not the
+      // page the tab was created with.
+      const syncUrl = (navUrl: string): void => {
+        const entry = views.get(id);
+        if (entry) entry.url = navUrl;
+        deps.onUpdate?.(id, { url: navUrl });
+      };
+      view.webContents.on('did-navigate', (_event, navUrl) => syncUrl(navUrl));
+      view.webContents.on('did-navigate-in-page', (_event, navUrl, isMainFrame) => {
+        if (isMainFrame) syncUrl(navUrl);
       });
 
       view.webContents.on('did-start-loading', () => {

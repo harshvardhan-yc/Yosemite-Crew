@@ -16,6 +16,8 @@ const pageAssets = [
   'welcome.html',
   'settings.html',
   'command-palette.html',
+  'vault.html',
+  'whats-new.html',
   'tokens.css',
   'tabbar.html',
   'tabbar.css',

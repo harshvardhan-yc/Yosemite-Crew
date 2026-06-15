@@ -176,18 +176,29 @@ let attachedTabId: string | null = null;
 let splitId: string | null = null;
 let saveSession = (): void => {};
 
-let statusDlg: StatusDialogService = {
-  verifyAuditTrail: (): void => {},
-  exportCsDailyLog: (): void => {},
-  showDeaStatus: (): void => {},
-  generateDeaReportAction: (): void => {},
-  showPmpStatus: (): void => {},
-  showVaultInfo: (): void => {},
-  backUpNow: async (): Promise<void> => {},
-  savePageAsPdf: async (): Promise<void> => {},
-  openOnSecondScreen: (): void => {},
-  showPrintStatus: (): void => {},
-  exportDiagnostics: async (): Promise<void> => {},
+// The app menu captures these references before the real status-dialog service
+// is created (it's built after compliance/vault setup to avoid blocking cold
+// start). Keep statusDlg a stable facade that delegates to statusImpl once set,
+// so the menu's Compliance/Data/Tools actions work on the first window too.
+let statusImpl: StatusDialogService | null = null;
+const statusDlg: StatusDialogService = {
+  verifyAuditTrail: () => statusImpl?.verifyAuditTrail(),
+  exportCsDailyLog: () => statusImpl?.exportCsDailyLog(),
+  showDeaStatus: () => statusImpl?.showDeaStatus(),
+  generateDeaReportAction: () => statusImpl?.generateDeaReportAction(),
+  showPmpStatus: () => statusImpl?.showPmpStatus(),
+  showVaultInfo: () => statusImpl?.showVaultInfo(),
+  backUpNow: async () => {
+    await statusImpl?.backUpNow();
+  },
+  savePageAsPdf: async () => {
+    await statusImpl?.savePageAsPdf();
+  },
+  openOnSecondScreen: () => statusImpl?.openOnSecondScreen(),
+  showPrintStatus: () => statusImpl?.showPrintStatus(),
+  exportDiagnostics: async (window) => {
+    await statusImpl?.exportDiagnostics(window);
+  },
 };
 
 const authHintPath = (): string => path.join(app.getPath('userData'), 'auth-hint.json');
@@ -1089,7 +1100,12 @@ if (!gotSingleInstanceLock) {
       notificationManager = createNotificationManager(
         () => {
           const s = settingsStore?.load() || DEFAULT_SETTINGS;
-          return { enabled: s.notificationsEnabled, start: s.dndStart, end: s.dndEnd };
+          return {
+            enabled: true,
+            start: s.dndStart,
+            end: s.dndEnd,
+            notificationsEnabled: s.notificationsEnabled,
+          };
         },
         {
           isSupported: () => Notification.isSupported(),
@@ -1284,10 +1300,10 @@ if (!gotSingleInstanceLock) {
         productName: PRODUCT_NAME,
         brandPrefix: BRAND_PREFIX,
         windowStateStore,
-        tabMode,
-        attachedTabId,
-        splitId,
-        tabOrientation,
+        tabMode: () => tabMode,
+        attachedTabId: () => attachedTabId,
+        splitId: () => splitId,
+        tabOrientation: () => tabOrientation,
         setTabSearch,
         setSplitTab,
         setTabOrientation,
@@ -1356,7 +1372,7 @@ if (!gotSingleInstanceLock) {
       backupService = vault.backupService;
       backupTimer = vault.backupTimer;
 
-      statusDlg = createStatusDialogService({
+      statusImpl = createStatusDialogService({
         logger,
         dialog,
         safeStorage,
@@ -1496,10 +1512,10 @@ if (!gotSingleInstanceLock) {
         productName: PRODUCT_NAME,
         brandPrefix: BRAND_PREFIX,
         windowStateStore,
-        tabMode,
-        attachedTabId,
-        splitId,
-        tabOrientation,
+        tabMode: () => tabMode,
+        attachedTabId: () => attachedTabId,
+        splitId: () => splitId,
+        tabOrientation: () => tabOrientation,
         setTabSearch,
         setSplitTab,
         setTabOrientation,

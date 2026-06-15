@@ -46,6 +46,16 @@ describe('createNotificationManager', () => {
     expect(mgr.show({ title: 'Test', body: 'Hello' })).toBe(true);
   });
 
+  test('show returns false when notifications are disabled (master toggle)', () => {
+    const mgr = createNotificationManager(() => ({
+      enabled: false,
+      start: '22:00',
+      end: '07:00',
+      notificationsEnabled: false,
+    }));
+    expect(mgr.show({ title: 'Test', body: 'Hello' })).toBe(false);
+  });
+
   test('show returns false when DND is active', () => {
     const mgr = createNotificationManager(dndOn, { now: () => '23:30' });
     expect(mgr.show({ title: 'Test', body: 'Hello', silent: true })).toBe(false);

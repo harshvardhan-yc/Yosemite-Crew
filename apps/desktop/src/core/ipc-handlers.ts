@@ -447,7 +447,13 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     const tempDir = app.getPath('temp');
     const revealDir = path.join(tempDir, 'yc-vault-reveal');
     fs.mkdirSync(revealDir, { recursive: true });
-    const revealPath = path.join(revealDir, result.doc.filename);
+    // Sanitize the stored filename: strip any directory components and refuse
+    // anything that would escape the reveal directory (path traversal).
+    const safeName = path.basename(result.doc.filename);
+    const revealPath = path.join(revealDir, safeName);
+    if (path.dirname(revealPath) !== revealDir) {
+      return { ok: false, error: 'invalid-filename' };
+    }
     try {
       fs.writeFileSync(revealPath, result.content);
       shell.showItemInFolder(revealPath);
@@ -479,8 +485,10 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     const rawName = args[1];
     if (typeof patientId !== 'string') return { ok: false, error: 'invalid-patient-id' };
     const windowTitle = typeof rawName === 'string' ? rawName : `Patient ${patientId}`;
+    // The app routes a specific companion (patient) to /companions?companionId=<id>;
+    // there is no /patients route.
     const url = deepLinkToUrl(
-      `yosemitecrew://patients/${encodeURIComponent(patientId)}`,
+      `yosemitecrew://companions?companionId=${encodeURIComponent(patientId)}`,
       services.config
     );
     if (!url) return { ok: false, error: 'invalid-url' };

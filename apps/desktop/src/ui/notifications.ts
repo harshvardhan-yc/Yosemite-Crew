@@ -11,6 +11,9 @@ export interface DndSchedule {
   enabled: boolean;
   start: string;
   end: string;
+  // Master toggle. When false, no notifications are shown at all (separate from
+  // the DND quiet-hours window). Defaults to true when omitted.
+  notificationsEnabled?: boolean;
 }
 
 export interface NotificationManager {
@@ -68,6 +71,8 @@ export const createNotificationManager = (
 
   const show = (options: NotificationOptions): boolean => {
     const schedule = dndSchedule();
+    // Master toggle: when desktop notifications are disabled, never show.
+    if (schedule.notificationsEnabled === false) return false;
     if (schedule.enabled && isInDndWindow(schedule.start, schedule.end, deps.now?.())) {
       return false;
     }
