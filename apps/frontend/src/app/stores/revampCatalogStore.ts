@@ -252,14 +252,21 @@ export const useRevampCatalogStore = create<RevampCatalogState>()((set, get) => 
 
   addPackage: async (draft) => {
     const pkg = await catalogApi.createPackage(draft);
-    set((state) => ({ packages: replaceById(state.packages, pkg) }));
-    return pkg;
+    const packageWithBreakdown = { ...pkg, breakdown: draft.breakdown };
+    set((state) => ({ packages: replaceById(state.packages, packageWithBreakdown) }));
+    return packageWithBreakdown;
   },
 
   updatePackage: async (id, patch) => {
     const pkg = findPackage(get().packages, id);
     const updated = await catalogApi.updatePackage(id, patch, pkg);
-    set((state) => ({ packages: replaceById(state.packages, { ...pkg, ...updated }) }));
+    set((state) => ({
+      packages: replaceById(state.packages, {
+        ...pkg,
+        ...updated,
+        breakdown: patch.breakdown ?? updated.breakdown ?? pkg.breakdown,
+      }),
+    }));
   },
 
   archivePackage: async (id) => {

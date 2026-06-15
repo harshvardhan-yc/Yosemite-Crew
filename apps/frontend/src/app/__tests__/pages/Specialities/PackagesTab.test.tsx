@@ -241,6 +241,15 @@ describe('PackagesTab', () => {
     expect(screen.getByTestId('edit-draft-pkg-1')).toBeInTheDocument();
   });
 
+  it('hydrates package detail when viewing an empty breakdown', () => {
+    render(<PackagesTab specialityId="spec-1" organisationId="org-1" />);
+    const viewButtons = screen.getAllByRole('button', {
+      name: /View breakdown of Wellness Package/i,
+    });
+    fireEvent.click(viewButtons[0]);
+    expect(mockHydratePackageDetail).toHaveBeenCalledWith('pkg-1');
+  });
+
   it('closes edit draft when Close Draft is clicked', () => {
     render(<PackagesTab specialityId="spec-1" organisationId="org-1" />);
     const editButtons = screen.getAllByRole('button', { name: /Edit Wellness Package/i });

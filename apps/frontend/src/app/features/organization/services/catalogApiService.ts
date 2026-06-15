@@ -69,6 +69,19 @@ const appointmentModesFromFlags = (isBookable: boolean, isInpatientPreferred: bo
   supportsInpatient: isInpatientPreferred,
 });
 
+const bookableFromFlags = (
+  durationMinutes: number,
+  isBookable: boolean,
+  isInpatientPreferred: boolean
+) => {
+  const bookable = appointmentModesFromFlags(isBookable, isInpatientPreferred);
+  if (!bookable.supportsOutpatient && !bookable.supportsInpatient) return null;
+  return {
+    durationMinutes,
+    ...bookable,
+  };
+};
+
 const formatDurationText = (minutes: number | null | undefined): string =>
   minutes ? `Approx. ${minutes} mins` : 'Approx. 30 mins';
 
@@ -274,10 +287,11 @@ const catalogPayloadFromService = (
       defaultDiscountPercent: service.defaultDiscount,
       maxDiscountPercent: service.maxDiscount,
     },
-    bookable: {
-      durationMinutes: service.durationMinutes,
-      ...appointmentModesFromFlags(service.isBookable, service.isInpatientPreferred),
-    },
+    bookable: bookableFromFlags(
+      service.durationMinutes,
+      service.isBookable,
+      service.isInpatientPreferred
+    ),
   });
 
 const catalogPayloadFromPackage = (
@@ -301,10 +315,11 @@ const catalogPayloadFromPackage = (
       defaultDiscountPercent: 0,
       maxDiscountPercent: 100,
     },
-    bookable: {
-      durationMinutes: parseDurationMinutes(pkg.durationText),
-      ...appointmentModesFromFlags(pkg.isBookable, pkg.isInpatientPreferred),
-    },
+    bookable: bookableFromFlags(
+      parseDurationMinutes(pkg.durationText),
+      pkg.isBookable,
+      pkg.isInpatientPreferred
+    ),
     package: {
       leadCount: pkg.leadCount,
       supportCount: pkg.supportCount,

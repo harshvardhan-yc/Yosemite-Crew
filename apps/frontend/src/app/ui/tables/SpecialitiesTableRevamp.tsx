@@ -82,20 +82,21 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
       key: 'Head',
       width: '28%',
       render: (item: SpecialityWeb) => {
-        if (!item.headName) return <ProfileTitle>{'—'}</ProfileTitle>;
         const headTeam = teams?.find((t) => t.practionerId === item.headUserId);
+        const headName = item.headName ?? headTeam?.name;
+        if (!headName) return <ProfileTitle>{'—'}</ProfileTitle>;
         const picUrl = headTeam?.image ?? item.headProfilePicUrl;
         return (
           <div className="appointment-profile">
             <Image
               src={getSafeImageUrl(picUrl, 'person')}
-              alt={item.headName}
+              alt={headName}
               width={36}
               height={36}
               className="size-9 rounded-full object-cover shrink-0"
             />
             <div className="appointment-profile-two min-w-0">
-              <div className="appointment-profile-title truncate">{item.headName}</div>
+              <div className="appointment-profile-title truncate">{headName}</div>
             </div>
           </div>
         );

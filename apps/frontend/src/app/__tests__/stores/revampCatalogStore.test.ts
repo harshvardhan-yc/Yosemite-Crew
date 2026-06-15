@@ -81,6 +81,22 @@ const pkg = {
   createdAt: '2026-01-01T00:00:00Z',
 };
 
+const packageBreakdown = [
+  {
+    id: 'breakdown-1',
+    childItemId: 'svc-1',
+    code: 'CS-0001',
+    type: 'CONSULTATION' as const,
+    name: 'Consult',
+    unitPrice: 100,
+    quantity: 1,
+    discount: 0,
+    maxDiscount: 10,
+    isBookable: true,
+    isInpatientPreferred: false,
+  },
+];
+
 describe('revampCatalogStore', () => {
   beforeEach(reset);
 
@@ -164,6 +180,25 @@ describe('revampCatalogStore', () => {
     expect(getStore().packages[0].status).toBe('ACTIVE');
     await getStore().deletePackage('pkg-1');
     expect(getStore().packages).toHaveLength(0);
+  });
+
+  it('preserves submitted package breakdown after create and update responses', async () => {
+    mockCatalogApi.createPackage.mockResolvedValue(pkg);
+    mockCatalogApi.updatePackage.mockResolvedValue({ ...pkg, name: 'Updated', breakdown: [] });
+
+    const created = await getStore().addPackage({ ...pkg, breakdown: packageBreakdown });
+    expect(created.breakdown).toEqual(packageBreakdown);
+    expect(getStore().packages[0].breakdown).toEqual(packageBreakdown);
+
+    await getStore().updatePackage('pkg-1', {
+      name: 'Updated',
+      breakdown: [{ ...packageBreakdown[0], quantity: 2 }],
+    });
+
+    expect(getStore().packages[0]).toMatchObject({
+      name: 'Updated',
+      breakdown: [{ quantity: 2 }],
+    });
   });
 
   it('keeps local breakdown helper actions synchronous', async () => {

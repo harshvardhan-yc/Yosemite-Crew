@@ -38,16 +38,25 @@ const PackageCard = ({
   index,
   onEdit,
   onArchive,
+  onViewBreakdown,
 }: {
   pkg: PackageRevamp;
   index: number;
   onEdit: () => void;
   onArchive: () => void;
+  onViewBreakdown: () => void;
 }) => {
-  const [showBreakdown, setShowBreakdown] = useState(index === 0);
+  const [showBreakdown, setShowBreakdown] = useState(index === 0 && pkg.breakdown.length > 0);
   const { totalCost } = computePackageTotals(pkg);
   const orgCurrency = useCurrencyForPrimaryOrg();
   const currency = pkg.currency ?? orgCurrency;
+  const handleToggleBreakdown = () => {
+    const next = !showBreakdown;
+    if (next && pkg.breakdown.length === 0) {
+      onViewBreakdown();
+    }
+    setShowBreakdown(next);
+  };
 
   return (
     <div className="flex items-start gap-3">
@@ -82,7 +91,7 @@ const PackageCard = ({
             <CircleIconButton
               label={`${showBreakdown ? 'Hide' : 'View'} breakdown of ${pkg.name}`}
               tooltip={showBreakdown ? 'Hide breakdown' : 'View breakdown'}
-              onClick={() => setShowBreakdown((p) => !p)}
+              onClick={handleToggleBreakdown}
               variant="dark"
               icon={
                 <IoChevronDown
@@ -197,7 +206,7 @@ const PackageCard = ({
               <CircleIconButton
                 label={`${showBreakdown ? 'Hide' : 'View'} breakdown of ${pkg.name}`}
                 tooltip={showBreakdown ? 'Hide breakdown' : 'View breakdown'}
-                onClick={() => setShowBreakdown((p) => !p)}
+                onClick={handleToggleBreakdown}
                 variant="dark"
                 icon={
                   <IoChevronDown
@@ -356,6 +365,9 @@ function PackagesTab({ specialityId, organisationId, ref }: PackagesTabProps) {
             onArchive={() => {
               setActivePackage(pkg);
               setActionMode('archive');
+            }}
+            onViewBreakdown={() => {
+              Promise.resolve(hydratePackageDetail(pkg.id)).catch(() => undefined);
             }}
           />
         )
