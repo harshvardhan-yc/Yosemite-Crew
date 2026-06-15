@@ -11,6 +11,10 @@ const WorkspaceController = {
   getEncounterDocuments: jest.fn(),
   getCompanionDocuments: jest.fn(),
   getCompanionMedicalRecords: jest.fn(),
+  getEncounterTreatmentItems: jest.fn(),
+  createEncounterTreatmentItem: jest.fn(),
+  updateTreatmentItem: jest.fn(),
+  deleteTreatmentItem: jest.fn(),
   createDocumentPacket: jest.fn(),
   getDocumentPacket: jest.fn(),
   signDocumentPacket: jest.fn(),
@@ -77,6 +81,22 @@ describe("workspace.router", () => {
       "/organisations/:organisationId/companions/:companionId/medical-records",
       "get",
     );
+    const treatmentItemsRoute = findRoute(
+      "/organisations/:organisationId/encounters/:encounterId/treatment-items",
+      "get",
+    );
+    const treatmentItemsCreateRoute = findRoute(
+      "/organisations/:organisationId/encounters/:encounterId/treatment-items",
+      "post",
+    );
+    const treatmentItemsUpdateRoute = findRoute(
+      "/organisations/:organisationId/treatment-items/:itemId",
+      "patch",
+    );
+    const treatmentItemsDeleteRoute = findRoute(
+      "/organisations/:organisationId/treatment-items/:itemId",
+      "delete",
+    );
     const packetCreateRoute = findRoute(
       "/organisations/:organisationId/encounters/:encounterId/document-packet",
       "post",
@@ -108,6 +128,18 @@ describe("workspace.router", () => {
     expect(companionMedicalRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
+    expect(treatmentItemsRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(
+      treatmentItemsCreateRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognito);
+    expect(
+      treatmentItemsUpdateRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognito);
+    expect(
+      treatmentItemsDeleteRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognito);
     expect(packetCreateRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
@@ -117,7 +149,7 @@ describe("workspace.router", () => {
     expect(packetSignRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
-    expect(withOrgPermissions).toHaveBeenCalledTimes(9);
+    expect(withOrgPermissions).toHaveBeenCalledTimes(13);
     expect(requirePermission).toHaveBeenCalled();
     expect(WorkspaceController.getAppointmentBootstrap).toHaveBeenCalledTimes(
       0,

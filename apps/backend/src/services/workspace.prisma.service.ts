@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { ClinicalArtifactService } from "./clinical-artifact.service";
 import { FormAssignmentService } from "./form-assignment.service";
@@ -15,6 +16,8 @@ import type {
   WorkspacePrimaryAction,
   WorkspaceSummaryItem,
   WorkspaceTreatmentItem,
+  WorkspaceTreatmentItemCreateInput,
+  WorkspaceTreatmentItemUpdateInput,
 } from "@yosemite-crew/types";
 
 export class WorkspaceServiceError extends Error {
@@ -315,7 +318,64 @@ const buildDiagnosticQueue = (
   return [...orderItems, ...resultItems];
 };
 
-const buildTreatmentItems = (
+type TreatmentItemRow = {
+  id: string;
+  organisationId: string;
+  appointmentId: string | null;
+  encounterId: string;
+  productId: string;
+  productVersion: number | null;
+  productSnapshot: unknown;
+  servicePackageKind: string;
+  quantity: number;
+  priceSnapshot: unknown;
+  billingStatus: string;
+  invoiceRowId: string | null;
+  lockState: unknown;
+  prescriptionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const mapTreatmentItemRow = (
+  row: TreatmentItemRow,
+): WorkspaceTreatmentItem => ({
+  id: row.id,
+  organisationId: row.organisationId,
+  appointmentId: row.appointmentId,
+  encounterId: row.encounterId,
+  productId: row.productId,
+  productVersion: row.productVersion,
+  productSnapshot:
+    typeof row.productSnapshot === "object" &&
+    row.productSnapshot !== null &&
+    !Array.isArray(row.productSnapshot)
+      ? (row.productSnapshot as Record<string, unknown>)
+      : {},
+  servicePackageKind: row.servicePackageKind,
+  quantity: row.quantity,
+  priceSnapshot:
+    typeof row.priceSnapshot === "object" &&
+    row.priceSnapshot !== null &&
+    !Array.isArray(row.priceSnapshot)
+      ? (row.priceSnapshot as Record<string, unknown>)
+      : {},
+  billingStatus: row.billingStatus,
+  invoiceRowId: row.invoiceRowId,
+  lockState:
+    typeof row.lockState === "string"
+      ? row.lockState
+      : typeof row.lockState === "object" &&
+          row.lockState !== null &&
+          !Array.isArray(row.lockState)
+        ? (row.lockState as Record<string, unknown>)
+        : null,
+  prescriptionId: row.prescriptionId,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+const buildTreatmentItemsFromPrescriptions = (
   prescriptions: Array<{
     artifact: { id: string; status: string; createdAt: Date; updatedAt: Date };
     prescription: { medications: unknown };
@@ -325,8 +385,43 @@ const buildTreatmentItems = (
     const medications = Array.isArray(record.prescription.medications)
       ? record.prescription.medications
       : [];
+    const firstMedication = medications.find((entry) => isRecord(entry)) as
+      | Record<string, unknown>
+      | undefined;
+    const productId =
+      (firstMedication &&
+        typeof firstMedication.inventoryItemId === "string" &&
+        firstMedication.inventoryItemId) ||
+      (firstMedication &&
+        typeof firstMedication.inventoryItemSku === "string" &&
+        firstMedication.inventoryItemSku) ||
+      record.artifact.id;
     return {
       id: record.artifact.id,
+      organisationId: "",
+      appointmentId: null,
+      encounterId: "",
+      productId,
+      productVersion: null,
+      productSnapshot: {
+        prescriptionId: record.artifact.id,
+        medications,
+      },
+      servicePackageKind: "PRESCRIPTION",
+      quantity: (() => {
+        let total = 0;
+        for (const medication of medications) {
+          if (!isRecord(medication)) continue;
+          const amount =
+            typeof medication.quantity === "number" ? medication.quantity : 1;
+          total += amount;
+        }
+        return total;
+      })(),
+      priceSnapshot: {},
+      billingStatus: "UNBILLED",
+      invoiceRowId: null,
+      lockState: { locked: false },
       prescriptionId: record.artifact.id,
       name: medications.length ? "Treatment items" : "Prescription",
       medicationCount: medications.length,
@@ -577,6 +672,30 @@ const loadClinicalArtifacts = async (params: {
   };
 };
 
+const loadTreatmentItems = async (params: {
+  organisationId: string;
+  appointmentId?: string;
+  encounterId?: string;
+}) =>
+  (await prisma.workspaceTreatmentItem.findMany({
+    where: {
+      organisationId: params.organisationId,
+      ...(params.appointmentId || params.encounterId
+        ? {
+            OR: [
+              ...(params.appointmentId
+                ? [{ appointmentId: params.appointmentId }]
+                : []),
+              ...(params.encounterId
+                ? [{ encounterId: params.encounterId }]
+                : []),
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+  })) as TreatmentItemRow[];
+
 const loadTasks = async (params: {
   organisationId: string;
   appointmentId?: string;
@@ -818,6 +937,7 @@ const buildBootstrapAggregate = async (
   const [
     forms,
     clinical,
+    treatmentItems,
     tasks,
     schedules,
     templateInstances,
@@ -826,6 +946,11 @@ const buildBootstrapAggregate = async (
   ] = await Promise.all([
     loadForms(input.organisationId, appointmentId),
     loadClinicalArtifacts({
+      organisationId: input.organisationId,
+      appointmentId,
+      encounterId,
+    }),
+    loadTreatmentItems({
       organisationId: input.organisationId,
       appointmentId,
       encounterId,
@@ -906,7 +1031,17 @@ const buildBootstrapAggregate = async (
     clinicalArtifacts: clinical.clinicalArtifacts,
     vitals: clinical.vitalRecords,
     prescriptions: clinical.prescriptions,
-    treatmentItems: buildTreatmentItems(clinical.prescriptions as never),
+    treatmentItems: [
+      ...buildTreatmentItemsFromPrescriptions(
+        clinical.prescriptions as never,
+      ).map((item) => ({
+        ...item,
+        organisationId: input.organisationId,
+        appointmentId: appointmentId ?? null,
+        encounterId: encounterId ?? appointmentId ?? "",
+      })),
+      ...treatmentItems.map(mapTreatmentItemRow),
+    ],
     diagnosticQueue: buildDiagnosticQueue(
       ordersAndResults.orders as never,
       ordersAndResults.results as never,
@@ -979,6 +1114,116 @@ export const WorkspaceService = {
   ): Promise<WorkspaceDocumentRow[]> {
     return (await WorkspaceService.getEncounterBootstrap(input, permissions))
       .documents;
+  },
+
+  async getEncounterTreatmentItems(
+    input: WorkspaceBootstrapInput,
+  ): Promise<WorkspaceTreatmentItem[]> {
+    const encounterId = input.encounterId?.trim();
+    if (!encounterId) {
+      throw new WorkspaceServiceError("Encounter is required", 400);
+    }
+
+    const items = (await prisma.workspaceTreatmentItem.findMany({
+      where: {
+        organisationId: input.organisationId,
+        encounterId,
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    })) as TreatmentItemRow[];
+
+    return items.map(mapTreatmentItemRow);
+  },
+
+  async createEncounterTreatmentItem(
+    input: WorkspaceTreatmentItemCreateInput,
+  ): Promise<WorkspaceTreatmentItem> {
+    const encounterId = input.encounterId?.trim();
+    if (!encounterId) {
+      throw new WorkspaceServiceError("Encounter is required", 400);
+    }
+
+    const created = (await prisma.workspaceTreatmentItem.create({
+      data: {
+        organisationId: input.organisationId,
+        appointmentId: input.appointmentId ?? undefined,
+        encounterId,
+        productId: input.productId,
+        productVersion: input.productVersion ?? undefined,
+        productSnapshot: input.productSnapshot as Prisma.InputJsonValue,
+        servicePackageKind: input.servicePackageKind,
+        quantity: input.quantity,
+        priceSnapshot: input.priceSnapshot as Prisma.InputJsonValue,
+        billingStatus: input.billingStatus ?? "UNBILLED",
+        invoiceRowId: input.invoiceRowId ?? undefined,
+        lockState:
+          input.lockState === undefined
+            ? undefined
+            : (input.lockState as Prisma.InputJsonValue),
+      },
+    })) as TreatmentItemRow;
+
+    return mapTreatmentItemRow(created);
+  },
+
+  async updateTreatmentItem(
+    itemId: string,
+    organisationId: string,
+    input: WorkspaceTreatmentItemUpdateInput,
+  ): Promise<WorkspaceTreatmentItem> {
+    const existing = (await prisma.workspaceTreatmentItem.findFirst({
+      where: { id: itemId, organisationId },
+    })) as TreatmentItemRow | null;
+
+    if (!existing) {
+      throw new WorkspaceServiceError("Treatment item not found", 404);
+    }
+
+    const updated = (await prisma.workspaceTreatmentItem.update({
+      where: { id: itemId },
+      data: {
+        appointmentId:
+          input.appointmentId === undefined ? undefined : input.appointmentId,
+        productId: input.productId ?? undefined,
+        productVersion:
+          input.productVersion === undefined ? undefined : input.productVersion,
+        productSnapshot:
+          input.productSnapshot === undefined
+            ? undefined
+            : (input.productSnapshot as Prisma.InputJsonValue),
+        servicePackageKind: input.servicePackageKind ?? undefined,
+        quantity: input.quantity ?? undefined,
+        priceSnapshot:
+          input.priceSnapshot === undefined
+            ? undefined
+            : (input.priceSnapshot as Prisma.InputJsonValue),
+        billingStatus: input.billingStatus ?? undefined,
+        invoiceRowId:
+          input.invoiceRowId === undefined ? undefined : input.invoiceRowId,
+        lockState:
+          input.lockState === undefined
+            ? undefined
+            : (input.lockState as Prisma.InputJsonValue),
+      },
+    })) as TreatmentItemRow;
+
+    return mapTreatmentItemRow(updated);
+  },
+
+  async deleteTreatmentItem(
+    itemId: string,
+    organisationId: string,
+  ): Promise<void> {
+    const existing = await prisma.workspaceTreatmentItem.findFirst({
+      where: { id: itemId, organisationId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new WorkspaceServiceError("Treatment item not found", 404);
+    }
+
+    await prisma.workspaceTreatmentItem.delete({ where: { id: itemId } });
   },
 
   async getCompanionDocuments(input: {

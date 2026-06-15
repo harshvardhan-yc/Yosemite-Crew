@@ -348,6 +348,8 @@ export type {
   WorkspaceFormRow,
   WorkspaceSummaryItem,
   WorkspaceTreatmentItem,
+  WorkspaceTreatmentItemCreateInput,
+  WorkspaceTreatmentItemUpdateInput,
 } from './workspace';
 export {
   clinicalArtifactFhirMapper,

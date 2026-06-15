@@ -38,6 +38,38 @@ router.get(
 );
 
 router.get(
+  "/organisations/:organisationId/encounters/:encounterId/treatment-items",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("billing:view:any"),
+  (req, res) => WorkspaceController.getEncounterTreatmentItems(req, res),
+);
+
+router.post(
+  "/organisations/:organisationId/encounters/:encounterId/treatment-items",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("billing:edit:any"),
+  (req, res) => WorkspaceController.createEncounterTreatmentItem(req, res),
+);
+
+router.patch(
+  "/organisations/:organisationId/treatment-items/:itemId",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("billing:edit:any"),
+  (req, res) => WorkspaceController.updateTreatmentItem(req, res),
+);
+
+router.delete(
+  "/organisations/:organisationId/treatment-items/:itemId",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("billing:edit:any"),
+  (req, res) => WorkspaceController.deleteTreatmentItem(req, res),
+);
+
+router.get(
   "/organisations/:organisationId/companions/:companionId/documents",
   authorizeCognito,
   withOrgPermissions(),

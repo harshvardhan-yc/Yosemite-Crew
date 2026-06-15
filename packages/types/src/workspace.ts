@@ -100,12 +100,52 @@ export interface WorkspaceDiagnosticQueueItem {
 
 export interface WorkspaceTreatmentItem {
   id: string;
-  prescriptionId: string;
-  name: string;
-  medicationCount: number;
-  status: string;
+  organisationId: string;
+  appointmentId: string | null;
+  encounterId: string;
+  productId: string;
+  productVersion: number | null;
+  productSnapshot: Record<string, unknown>;
+  servicePackageKind: string;
+  quantity: number;
+  priceSnapshot: Record<string, unknown>;
+  billingStatus: string;
+  invoiceRowId: string | null;
+  lockState: Record<string, unknown> | string | null;
+  prescriptionId?: string | null;
+  name?: string;
+  medicationCount?: number;
+  status?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface WorkspaceTreatmentItemCreateInput {
+  organisationId: string;
+  appointmentId?: string | null;
+  encounterId: string;
+  productId: string;
+  productVersion?: number | null;
+  productSnapshot: Record<string, unknown>;
+  servicePackageKind: string;
+  quantity: number;
+  priceSnapshot: Record<string, unknown>;
+  billingStatus?: string;
+  invoiceRowId?: string | null;
+  lockState?: Record<string, unknown> | string | null;
+}
+
+export interface WorkspaceTreatmentItemUpdateInput {
+  appointmentId?: string | null;
+  productId?: string;
+  productVersion?: number | null;
+  productSnapshot?: Record<string, unknown>;
+  servicePackageKind?: string;
+  quantity?: number;
+  priceSnapshot?: Record<string, unknown>;
+  billingStatus?: string;
+  invoiceRowId?: string | null;
+  lockState?: Record<string, unknown> | string | null;
 }
 
 export interface WorkspaceBootstrapResponse {

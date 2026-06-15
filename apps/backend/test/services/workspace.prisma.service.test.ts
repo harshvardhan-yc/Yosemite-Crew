@@ -18,6 +18,13 @@ jest.mock("src/config/prisma", () => ({
     templateInstance: { findMany: jest.fn() },
     document: { findMany: jest.fn() },
     renderedDocument: { findMany: jest.fn() },
+    workspaceTreatmentItem: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
     labOrder: { findMany: jest.fn() },
     labResult: { findMany: jest.fn() },
   },
@@ -54,6 +61,13 @@ describe("WorkspaceService", () => {
     templateInstance: { findMany: jest.Mock };
     document: { findMany: jest.Mock };
     renderedDocument: { findMany: jest.Mock };
+    workspaceTreatmentItem: {
+      findMany: jest.Mock;
+      create: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      delete: jest.Mock;
+    };
     labOrder: { findMany: jest.Mock };
     labResult: { findMany: jest.Mock };
   };
@@ -84,6 +98,8 @@ describe("WorkspaceService", () => {
     mockedPrisma.templateInstance.findMany.mockResolvedValue([]);
     mockedPrisma.document.findMany.mockResolvedValue([]);
     mockedPrisma.renderedDocument.findMany.mockResolvedValue([]);
+    mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([]);
+    mockedPrisma.workspaceTreatmentItem.findFirst.mockResolvedValue(null);
     mockedPrisma.encounter.findMany.mockResolvedValue([]);
     mockedPrisma.labOrder.findMany.mockResolvedValue([]);
     mockedPrisma.labResult.findMany.mockResolvedValue([]);
@@ -255,6 +271,102 @@ describe("WorkspaceService", () => {
       "org-1",
       "appt-1",
     );
+  });
+
+  it("manages persisted treatment items", async () => {
+    mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([
+      {
+        id: "ti-1",
+        organisationId: "org-1",
+        appointmentId: "appt-1",
+        encounterId: "enc-1",
+        productId: "prod-1",
+        productVersion: 2,
+        productSnapshot: { name: "Medication" },
+        servicePackageKind: "PRESCRIPTION",
+        quantity: 1,
+        priceSnapshot: { totalAmount: 25 },
+        billingStatus: "UNBILLED",
+        invoiceRowId: null,
+        lockState: { locked: false },
+        prescriptionId: null,
+        createdAt: new Date("2026-06-15T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T00:00:00.000Z"),
+      },
+    ]);
+    mockedPrisma.workspaceTreatmentItem.create.mockResolvedValue({
+      id: "ti-2",
+      organisationId: "org-1",
+      appointmentId: null,
+      encounterId: "enc-1",
+      productId: "prod-2",
+      productVersion: null,
+      productSnapshot: { name: "Procedure" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 2,
+      priceSnapshot: { totalAmount: 40 },
+      billingStatus: "UNBILLED",
+      invoiceRowId: null,
+      lockState: null,
+      prescriptionId: null,
+      createdAt: new Date("2026-06-15T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T00:00:00.000Z"),
+    });
+    mockedPrisma.workspaceTreatmentItem.findFirst.mockResolvedValue({
+      id: "ti-2",
+    });
+    mockedPrisma.workspaceTreatmentItem.update.mockResolvedValue({
+      id: "ti-2",
+      organisationId: "org-1",
+      appointmentId: null,
+      encounterId: "enc-1",
+      productId: "prod-2",
+      productVersion: null,
+      productSnapshot: { name: "Procedure" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 3,
+      priceSnapshot: { totalAmount: 45 },
+      billingStatus: "BILLED",
+      invoiceRowId: "invoice-row-1",
+      lockState: { locked: true },
+      prescriptionId: null,
+      createdAt: new Date("2026-06-15T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T01:00:00.000Z"),
+    });
+
+    const items = await WorkspaceService.getEncounterTreatmentItems({
+      organisationId: "org-1",
+      encounterId: "enc-1",
+    });
+    expect(items).toHaveLength(1);
+
+    const created = await WorkspaceService.createEncounterTreatmentItem({
+      organisationId: "org-1",
+      encounterId: "enc-1",
+      productId: "prod-2",
+      productSnapshot: { name: "Procedure" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 2,
+      priceSnapshot: { totalAmount: 40 },
+    });
+    expect(created.productId).toBe("prod-2");
+
+    const updated = await WorkspaceService.updateTreatmentItem(
+      "ti-2",
+      "org-1",
+      {
+        quantity: 3,
+        billingStatus: "BILLED",
+        invoiceRowId: "invoice-row-1",
+        lockState: { locked: true },
+      },
+    );
+    expect(updated.billingStatus).toBe("BILLED");
+
+    await WorkspaceService.deleteTreatmentItem("ti-2", "org-1");
+    expect(mockedPrisma.workspaceTreatmentItem.delete).toHaveBeenCalledWith({
+      where: { id: "ti-2" },
+    });
   });
 
   it("builds the encounter bootstrap even when no linked appointment is resolved", async () => {

@@ -1765,6 +1765,31 @@ model WorkspaceDocumentPacket {
   @@index([organisationId, companionId])
 }
 
+model WorkspaceTreatmentItem {
+  id                 String   @id @default(uuid())
+  organisationId     String
+  appointmentId      String?
+  encounterId        String
+  productId          String
+  productVersion     Int?
+  productSnapshot    Json
+  servicePackageKind String
+  quantity           Int      @default(1)
+  priceSnapshot      Json
+  billingStatus      String   @default("UNBILLED")
+  invoiceRowId       String?
+  lockState          Json?
+  prescriptionId     String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([organisationId, encounterId])
+  @@index([organisationId, appointmentId])
+  @@index([organisationId, billingStatus])
+  @@index([invoiceRowId])
+  @@index([prescriptionId])
+}
+
 model DocumentSignature {
   id                 String                   @id @default(uuid())
   renderedDocumentId String                   @unique

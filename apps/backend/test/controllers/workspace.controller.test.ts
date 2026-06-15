@@ -12,6 +12,10 @@ jest.mock("src/services/workspace.prisma.service", () => ({
     getEncounterDocuments: jest.fn(),
     getCompanionDocuments: jest.fn(),
     getCompanionMedicalRecords: jest.fn(),
+    getEncounterTreatmentItems: jest.fn(),
+    createEncounterTreatmentItem: jest.fn(),
+    updateTreatmentItem: jest.fn(),
+    deleteTreatmentItem: jest.fn(),
   },
   WorkspaceServiceError: class WorkspaceServiceError extends Error {
     constructor(
@@ -212,5 +216,76 @@ describe("WorkspaceController", () => {
 
     expect(status).toHaveBeenCalledWith(401);
     expect(WorkspaceDocumentPacketService.sign).not.toHaveBeenCalled();
+  });
+
+  it("manages treatment items", async () => {
+    req.params = {
+      organisationId: "org-5",
+      encounterId: "enc-5",
+      itemId: "item-5",
+    };
+    (
+      WorkspaceService.getEncounterTreatmentItems as jest.Mock
+    ).mockResolvedValue([{ id: "item-5" }]);
+    (
+      WorkspaceService.createEncounterTreatmentItem as jest.Mock
+    ).mockResolvedValue({ id: "item-6" });
+    (WorkspaceService.updateTreatmentItem as jest.Mock).mockResolvedValue({
+      id: "item-5",
+    });
+    (WorkspaceService.deleteTreatmentItem as jest.Mock).mockResolvedValue(
+      undefined,
+    );
+
+    await WorkspaceController.getEncounterTreatmentItems(
+      req as Request,
+      res as Response,
+    );
+    await WorkspaceController.createEncounterTreatmentItem(
+      {
+        ...req,
+        body: {
+          productId: "prod-1",
+          productSnapshot: { name: "Procedure" },
+          servicePackageKind: "PROCEDURE",
+          quantity: 1,
+          priceSnapshot: { totalAmount: 10 },
+        },
+      } as Request,
+      res as Response,
+    );
+    await WorkspaceController.updateTreatmentItem(
+      {
+        ...req,
+        body: { quantity: 2 },
+      } as Request,
+      res as Response,
+    );
+    await WorkspaceController.deleteTreatmentItem(
+      req as Request,
+      res as Response,
+    );
+
+    expect(WorkspaceService.getEncounterTreatmentItems).toHaveBeenCalledWith({
+      organisationId: "org-5",
+      encounterId: "enc-5",
+    });
+    expect(WorkspaceService.createEncounterTreatmentItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId: "org-5",
+        encounterId: "enc-5",
+        productId: "prod-1",
+      }),
+    );
+    expect(WorkspaceService.updateTreatmentItem).toHaveBeenCalledWith(
+      "item-5",
+      "org-5",
+      { quantity: 2 },
+    );
+    expect(WorkspaceService.deleteTreatmentItem).toHaveBeenCalledWith(
+      "item-5",
+      "org-5",
+    );
+    expect(status).toHaveBeenCalledWith(204);
   });
 });

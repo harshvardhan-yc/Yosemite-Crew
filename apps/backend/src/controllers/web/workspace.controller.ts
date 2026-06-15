@@ -29,8 +29,42 @@ const packetParamsSchema = z.object({
   packetId: z.string().min(1),
 });
 
+const treatmentItemEncounterParamsSchema = z.object({
+  organisationId: z.string().min(1),
+  encounterId: z.string().min(1),
+});
+
+const treatmentItemParamsSchema = z.object({
+  organisationId: z.string().min(1),
+  itemId: z.string().min(1),
+});
+
 const signPacketBodySchema = z.object({
   signerName: z.string().trim().min(1).optional(),
+});
+
+const treatmentItemBodySchema = z.object({
+  appointmentId: z.string().trim().min(1).nullable().optional(),
+  productId: z.string().trim().min(1).optional(),
+  productVersion: z.number().int().nullable().optional(),
+  productSnapshot: z.record(z.unknown()).optional(),
+  servicePackageKind: z.string().trim().min(1).optional(),
+  quantity: z.number().int().positive().optional(),
+  priceSnapshot: z.record(z.unknown()).optional(),
+  billingStatus: z.string().trim().min(1).optional(),
+  invoiceRowId: z.string().trim().min(1).nullable().optional(),
+  lockState: z
+    .union([z.record(z.unknown()), z.string()])
+    .nullable()
+    .optional(),
+});
+
+const treatmentItemCreateBodySchema = treatmentItemBodySchema.extend({
+  productId: z.string().trim().min(1),
+  productSnapshot: z.record(z.unknown()),
+  servicePackageKind: z.string().trim().min(1),
+  quantity: z.number().int().positive(),
+  priceSnapshot: z.record(z.unknown()),
 });
 
 const handleError = (error: unknown, res: Response) => {
@@ -171,6 +205,68 @@ export const WorkspaceController = {
         signerName: body.signerName,
       });
       return res.status(200).json(data);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async getEncounterTreatmentItems(req: Request, res: Response) {
+    try {
+      const params = treatmentItemEncounterParamsSchema.parse(req.params);
+      const data = await WorkspaceService.getEncounterTreatmentItems(params);
+      return res.status(200).json(data);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async createEncounterTreatmentItem(req: Request, res: Response) {
+    try {
+      const params = treatmentItemEncounterParamsSchema.parse(req.params);
+      const body = treatmentItemCreateBodySchema.parse(req.body ?? {});
+      const data = await WorkspaceService.createEncounterTreatmentItem({
+        organisationId: params.organisationId,
+        encounterId: params.encounterId,
+        appointmentId: body.appointmentId ?? null,
+        productId: body.productId,
+        productVersion: body.productVersion ?? null,
+        productSnapshot: body.productSnapshot,
+        servicePackageKind: body.servicePackageKind,
+        quantity: body.quantity,
+        priceSnapshot: body.priceSnapshot,
+        billingStatus: body.billingStatus,
+        invoiceRowId: body.invoiceRowId ?? null,
+        lockState: body.lockState ?? null,
+      });
+      return res.status(201).json(data);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async updateTreatmentItem(req: Request, res: Response) {
+    try {
+      const params = treatmentItemParamsSchema.parse(req.params);
+      const body = treatmentItemBodySchema.partial().parse(req.body ?? {});
+      const data = await WorkspaceService.updateTreatmentItem(
+        params.itemId,
+        params.organisationId,
+        body,
+      );
+      return res.status(200).json(data);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async deleteTreatmentItem(req: Request, res: Response) {
+    try {
+      const params = treatmentItemParamsSchema.parse(req.params);
+      await WorkspaceService.deleteTreatmentItem(
+        params.itemId,
+        params.organisationId,
+      );
+      return res.status(204).send();
     } catch (error) {
       return handleError(error, res);
     }
