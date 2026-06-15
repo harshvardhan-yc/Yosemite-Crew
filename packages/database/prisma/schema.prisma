@@ -404,6 +404,7 @@ model Patient {
   physicalAttribute Json?
   breedingInfo     Json?
   medicalRecords   Json?
+  alerts           Json?
   isProfileComplete Boolean      @default(false)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
@@ -653,6 +654,7 @@ model Parent {
   linkedUserId     String?
   createdFrom      ParentCreatedFrom
   address          ParentAddress?
+  alerts           Json?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 

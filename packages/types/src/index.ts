@@ -18,6 +18,7 @@ export type {
 
 export { toFHIRUserOrganization, fromFHIRUserOrganization } from './userOrganization';
 export { toFHIRRelatedPerson } from './parent';
+export type { AlertSummary as ParentAlertSummary } from './parent';
 export {
   toFHIROrganisation,
   fromFHIROrganisation,
@@ -65,6 +66,7 @@ export type { ParentRequestDTO, ParentResponseDTO } from './dto/parent.dto';
 export { fromParentRequestDTO, toParentResponseDTO } from './dto/parent.dto';
 export type { CompanionRequestDTO, CompanionResponseDTO } from './dto/companion.dto';
 export { fromCompanionRequestDTO, toCompanionResponseDTO } from './dto/companion.dto';
+export type { AlertSummary as CompanionAlertSummary } from './companion';
 export type { Companion, CompanionType, Gender, SourceType, RecordStatus } from './companion';
 export { toFHIRCompanion, fromFHIRCompanion } from './companion';
 export type {
