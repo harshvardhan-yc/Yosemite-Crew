@@ -46,14 +46,14 @@ export const ParentCompanionController = {
 
   getLinksForCompanion: async (req: Request, res: Response) => {
     try {
-      const { companionId } = req.params;
+      const { patientId } = req.params;
 
-      if (!Types.ObjectId.isValid(companionId)) {
+      if (!Types.ObjectId.isValid(patientId)) {
         return res.status(400).json({ message: "Invalid companion ID." });
       }
 
       const links = await ParentCompanionService.getLinksForCompanion(
-        new Types.ObjectId(companionId),
+        new Types.ObjectId(patientId),
       );
       return res.status(200).json({ links });
     } catch (error) {
@@ -68,7 +68,7 @@ export const ParentCompanionController = {
       const requestingParent = await ParentService.findByLinkedUserId(
         authUserId!,
       );
-      const { companionId, targetParentId } = req.params;
+      const { patientId, targetParentId } = req.params;
       const updates = (
         typeof req.body === "object" && req.body ? req.body : {}
       ) as Partial<ParentCompanionPermissions>;
@@ -80,7 +80,7 @@ export const ParentCompanionController = {
       }
 
       if (
-        !Types.ObjectId.isValid(companionId) ||
+        !Types.ObjectId.isValid(patientId) ||
         !Types.ObjectId.isValid(targetParentId)
       ) {
         return res
@@ -91,7 +91,7 @@ export const ParentCompanionController = {
       const updated = await ParentCompanionService.updatePermissions(
         new Types.ObjectId(resolveParentId(requestingParent)),
         new Types.ObjectId(targetParentId),
-        new Types.ObjectId(companionId),
+        new Types.ObjectId(patientId),
         updates,
       );
 
@@ -111,7 +111,7 @@ export const ParentCompanionController = {
       const requestingParent = await ParentService.findByLinkedUserId(
         authUserId!,
       );
-      const { companionId, targetParentId } = req.params;
+      const { patientId, targetParentId } = req.params;
 
       if (!requestingParent) {
         return res
@@ -120,7 +120,7 @@ export const ParentCompanionController = {
       }
 
       if (
-        !Types.ObjectId.isValid(companionId) ||
+        !Types.ObjectId.isValid(patientId) ||
         !Types.ObjectId.isValid(targetParentId)
       ) {
         return res
@@ -130,7 +130,7 @@ export const ParentCompanionController = {
 
       const updated = await ParentCompanionService.promoteToPrimary(
         new Types.ObjectId(resolveParentId(requestingParent)),
-        new Types.ObjectId(companionId),
+        new Types.ObjectId(patientId),
         new Types.ObjectId(targetParentId),
       );
 
@@ -150,7 +150,7 @@ export const ParentCompanionController = {
       const requestingParent = await ParentService.findByLinkedUserId(
         authUserId!,
       );
-      const { companionId, coParentId } = req.params;
+      const { patientId, coParentId } = req.params;
 
       if (!requestingParent) {
         return res
@@ -159,7 +159,7 @@ export const ParentCompanionController = {
       }
 
       if (
-        !Types.ObjectId.isValid(companionId) ||
+        !Types.ObjectId.isValid(patientId) ||
         !Types.ObjectId.isValid(coParentId)
       ) {
         return res
@@ -170,7 +170,7 @@ export const ParentCompanionController = {
       await ParentCompanionService.removeCoParent(
         new Types.ObjectId(resolveParentId(requestingParent)),
         new Types.ObjectId(coParentId),
-        new Types.ObjectId(companionId),
+        new Types.ObjectId(patientId),
         false,
       );
 

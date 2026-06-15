@@ -73,7 +73,7 @@ type HistoryEntryLink = {
     | "invoice";
   id: string;
   appointmentId?: string;
-  companionId: string;
+  patientId: string;
 };
 
 type HistoryEntry = {
@@ -304,13 +304,13 @@ const resolveAnswersPreview = (answers?: Record<string, unknown>) => {
 
 const ensureCompanionVisible = async (
   organisationId: string,
-  companionId: string,
+  patientId: string,
 ) => {
   if (isReadFromPostgres()) {
-    const link = await prisma.companionOrganisation.findFirst({
+    const link = await prisma.patientOrganisation.findFirst({
       where: {
         organisationId,
-        companionId,
+        patientId: patientId,
         status: { in: ["ACTIVE", "PENDING"] },
       },
       select: { id: true },
@@ -321,13 +321,13 @@ const ensureCompanionVisible = async (
   if (!Types.ObjectId.isValid(organisationId)) {
     throw new CompanionHistoryServiceError("Invalid organisationId", 400);
   }
-  if (!Types.ObjectId.isValid(companionId)) {
-    throw new CompanionHistoryServiceError("Invalid companionId", 400);
+  if (!Types.ObjectId.isValid(patientId)) {
+    throw new CompanionHistoryServiceError("Invalid patientId", 400);
   }
 
   const link = await CompanionOrganisationModel.findOne({
     organisationId: new Types.ObjectId(organisationId),
-    companionId: new Types.ObjectId(companionId),
+    patientId: new Types.ObjectId(patientId),
     status: { $in: ["ACTIVE", "PENDING"] },
   })
     .select({ _id: 1 })
@@ -339,7 +339,7 @@ const ensureCompanionVisible = async (
 export const CompanionHistoryService = {
   async listForCompanion(params: {
     organisationId: string;
-    companionId: string;
+    patientId: string;
     limit?: number;
     cursor?: string;
     types?: HistoryEntryType[];
@@ -348,7 +348,7 @@ export const CompanionHistoryService = {
       params.organisationId,
       "organisationId",
     );
-    const companionId = ensureSafeString(params.companionId, "companionId");
+    const patientId = ensureSafeString(params.patientId, "patientId");
     const limit = resolveLimit(params.limit);
     const cursor = parseCursor(params.cursor);
 
@@ -358,12 +358,12 @@ export const CompanionHistoryService = {
       throw new CompanionHistoryServiceError("Invalid types filter", 400);
     }
 
-    const companion = await CompanionService.getById(companionId);
+    const companion = await CompanionService.getById(patientId);
     if (!companion?.response) {
       throw new CompanionHistoryServiceError("Companion not found", 404);
     }
 
-    const isVisible = await ensureCompanionVisible(organisationId, companionId);
+    const isVisible = await ensureCompanionVisible(organisationId, patientId);
     if (!isVisible) {
       throw new CompanionHistoryServiceError("Companion not found", 404);
     }
@@ -375,7 +375,7 @@ export const CompanionHistoryService = {
       if (appointmentIdSet) return appointmentIdSet;
       const appointments =
         await AppointmentService.getAppointmentsForCompanionByOrganisation(
-          companionId,
+          patientId,
           organisationId,
         );
       appointmentIdSet = new Set(
@@ -390,7 +390,7 @@ export const CompanionHistoryService = {
       try {
         const appointments =
           await AppointmentService.getAppointmentsForCompanionByOrganisation(
-            companionId,
+            patientId,
             organisationId,
           );
         appointmentIdSet = new Set(
@@ -430,7 +430,7 @@ export const CompanionHistoryService = {
             link: {
               kind: "appointment",
               id: appointmentId,
-              companionId,
+              patientId,
             },
             source: "APPOINTMENT",
             payload: {
@@ -451,14 +451,14 @@ export const CompanionHistoryService = {
         logger.warn("Companion history appointments failed", {
           error,
           organisationId,
-          companionId,
+          patientId,
         });
       }
     }
 
     if (types.includes("TASK")) {
       try {
-        const tasks = await TaskService.listForCompanion({ companionId });
+        const tasks = await TaskService.listForCompanion({ patientId });
         tasks
           .filter((task) => task.organisationId === organisationId)
           .forEach((task) => {
@@ -485,7 +485,7 @@ export const CompanionHistoryService = {
               link: {
                 kind: "task",
                 id: taskId,
-                companionId,
+                patientId,
                 appointmentId: task.appointmentId ?? undefined,
               },
               source: "TASK",
@@ -504,7 +504,7 @@ export const CompanionHistoryService = {
         logger.warn("Companion history tasks failed", {
           error,
           organisationId,
-          companionId,
+          patientId,
         });
       }
     }
@@ -514,7 +514,7 @@ export const CompanionHistoryService = {
         const submissions =
           await FormService.listSubmissionsForCompanionInOrganisation({
             organisationId,
-            companionId,
+            patientId,
           });
 
         submissions.forEach((submission) => {
@@ -542,7 +542,7 @@ export const CompanionHistoryService = {
             link: {
               kind: "form_submission",
               id: submission.id,
-              companionId,
+              patientId,
               appointmentId: submission.appointmentId ?? undefined,
             },
             source: "FORM",
@@ -562,7 +562,7 @@ export const CompanionHistoryService = {
         logger.warn("Companion history form submissions failed", {
           error,
           organisationId,
-          companionId,
+          patientId,
         });
       }
     }
@@ -570,7 +570,7 @@ export const CompanionHistoryService = {
     if (types.includes("DOCUMENT")) {
       try {
         const documents = await DocumentService.listForPms({
-          companionId,
+          patientId,
           organisationId,
         });
         const appointmentIds =
@@ -604,7 +604,7 @@ export const CompanionHistoryService = {
             link: {
               kind: "document",
               id: doc.id,
-              companionId,
+              patientId,
               appointmentId: doc.appointmentId ?? undefined,
             },
             source: "DOCUMENT",
@@ -624,7 +624,7 @@ export const CompanionHistoryService = {
         logger.warn("Companion history documents failed", {
           error,
           organisationId,
-          companionId,
+          patientId,
         });
       }
     }
@@ -634,12 +634,12 @@ export const CompanionHistoryService = {
         const results = (await LabResultService.list({
           organisationId,
           provider: "IDEXX",
-          companionId,
+          patientId,
         })) as LabResultMongo[];
 
         const orders = (await LabOrderService.listOrders({
           organisationId,
-          companionId,
+          patientId,
           provider: "IDEXX",
         })) as LabOrderSummary[];
         const orderMap = new Map<string, LabOrderSummary>();
@@ -668,7 +668,7 @@ export const CompanionHistoryService = {
             link: {
               kind: "lab_result",
               id: result.resultId,
-              companionId,
+              patientId,
               appointmentId: order?.appointmentId?.toString(),
             },
             source: "LAB",
@@ -686,14 +686,14 @@ export const CompanionHistoryService = {
         logger.warn("Companion history lab results failed", {
           error,
           organisationId,
-          companionId,
+          patientId,
         });
       }
     }
 
     if (types.includes("INVOICE")) {
       try {
-        const invoices = await InvoiceService.listForCompanion(companionId);
+        const invoices = await InvoiceService.listForCompanion(patientId);
         invoices
           .map((invoice) => fromFHIRInvoice(invoice))
           .filter((invoice) => invoice.organisationId === organisationId)
@@ -714,7 +714,7 @@ export const CompanionHistoryService = {
               link: {
                 kind: "invoice",
                 id: invoice.id ?? "",
-                companionId,
+                patientId,
                 appointmentId: invoice.appointmentId ?? undefined,
               },
               source: "INVOICE",
@@ -733,7 +733,7 @@ export const CompanionHistoryService = {
         logger.warn("Companion history invoices failed", {
           error,
           organisationId,
-          companionId,
+          patientId,
         });
       }
     }

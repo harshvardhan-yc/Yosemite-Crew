@@ -208,7 +208,7 @@ export const LabCensusController = {
 
     try {
       const body = req.body as {
-        companionId?: string;
+        patientId?: string;
         parentId?: string;
         veterinarian?: string;
         ivls?: Array<{ serialNumber: string }>;
@@ -218,7 +218,7 @@ export const LabCensusController = {
         base.provider,
         base.organisationId,
         {
-          companionId: body.companionId ?? "",
+          patientId: body.patientId ?? "",
           parentId: body.parentId ?? undefined,
           veterinarian: body.veterinarian ?? null,
           ivls: body.ivls,

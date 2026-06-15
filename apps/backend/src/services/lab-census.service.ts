@@ -66,14 +66,14 @@ const resolveDocId = (doc: { id?: string; _id?: { toString(): string } }) => {
 
 const buildCensusPayload = async (input: {
   organisationId: string;
-  companionId: IdLike;
+  patientId: IdLike;
   parentId: IdLike;
   veterinarian?: string | null;
   ivls?: Array<{ serialNumber: string }>;
 }) => {
   const safeCompanionIdString = ensureObjectIdString(
-    input.companionId,
-    "companionId",
+    input.patientId,
+    "patientId",
   );
   const safeParentIdString = ensureObjectIdString(input.parentId, "parentId");
   const safeCompanionId = new Types.ObjectId(safeCompanionIdString);
@@ -81,18 +81,18 @@ const buildCensusPayload = async (input: {
 
   if (isReadFromPostgres()) {
     const [companionOrgLink, parentCompanionLink] = await Promise.all([
-      prisma.companionOrganisation.findFirst({
+      prisma.patientOrganisation.findFirst({
         where: {
           organisationId: input.organisationId,
-          companionId: safeCompanionId.toString(),
+          patientId: safeCompanionId.toString(),
           status: { in: ["ACTIVE", "PENDING"] },
         },
         select: { id: true },
       }),
-      prisma.parentCompanion.findFirst({
+      prisma.parentPatient.findFirst({
         where: {
           parentId: safeParentId.toString(),
-          companionId: safeCompanionId.toString(),
+          patientId: safeCompanionId.toString(),
           status: { in: ["ACTIVE", "PENDING"] },
         },
         select: { id: true },
@@ -113,7 +113,7 @@ const buildCensusPayload = async (input: {
 
     const companionOrgLink = (await CompanionOrganisationModel.findOne({
       organisationId: { $eq: safeOrganisationIdString },
-      companionId: { $eq: safeCompanionIdString },
+      patientId: { $eq: safeCompanionIdString },
       status: { $in: ["ACTIVE", "PENDING"] },
     })
       .setOptions({ sanitizeFilter: true })
@@ -122,7 +122,7 @@ const buildCensusPayload = async (input: {
       .exec()) as unknown as { _id: unknown } | null;
     const parentCompanionLink = (await ParentCompanionModel.findOne({
       parentId: { $eq: safeParentIdString },
-      companionId: { $eq: safeCompanionIdString },
+      patientId: { $eq: safeCompanionIdString },
       status: { $in: ["ACTIVE", "PENDING"] },
     })
       .setOptions({ sanitizeFilter: true })
@@ -139,7 +139,7 @@ const buildCensusPayload = async (input: {
   }
 
   const companion = isReadFromPostgres()
-    ? await prisma.companion.findUnique({
+    ? await prisma.patient.findUnique({
         where: { id: safeCompanionId.toString() },
       })
     : await CompanionModel.findById(safeCompanionId)
@@ -312,7 +312,7 @@ export const LabCensusService = {
     providerInput: string,
     organisationId: string,
     input: {
-      companionId: string;
+      patientId: string;
       parentId?: string;
       veterinarian?: string | null;
       ivls?: Array<{ serialNumber: string } | string>;
@@ -330,7 +330,7 @@ export const LabCensusService = {
 
     const payload = await buildCensusPayload({
       organisationId,
-      companionId: input.companionId,
+      patientId: input.patientId,
       parentId: input.parentId,
       veterinarian: input.veterinarian ?? undefined,
       ivls: normalizedIvls,

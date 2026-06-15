@@ -119,7 +119,7 @@ type TaskAssignmentEmailTask = {
   assignedGroupId?: string | null;
   assignedBy?: string | null;
   createdBy: string;
-  companionId?: string | null;
+  patientId?: string | null;
   dueAt: Date;
   name: string;
   additionalNotes?: string | null;
@@ -140,9 +140,9 @@ const sendTaskAssignmentEmail = async (task: TaskAssignmentEmailTask) => {
         where: { userId: task.assignedBy ?? task.createdBy },
         select: { firstName: true, lastName: true },
       }),
-      task.companionId
-        ? prisma.companion.findFirst({
-            where: { id: task.companionId },
+      task.patientId
+        ? prisma.patient.findFirst({
+            where: { id: task.patientId },
             select: { name: true },
           })
         : Promise.resolve(null),
@@ -174,19 +174,19 @@ const sendTaskAssignmentEmail = async (task: TaskAssignmentEmailTask) => {
 
 const recordTaskAudit = async (params: {
   organisationId?: string | null;
-  companionId?: string | null;
+  patientId?: string | null;
   eventType: "TASK_CREATED" | "TASK_REASSIGNED" | "TASK_STATUS_CHANGED";
   actorId?: string | null;
   entityId: string;
   metadata?: Record<string, unknown>;
 }) => {
-  if (!params.organisationId || !params.companionId) {
+  if (!params.organisationId || !params.patientId) {
     return;
   }
 
   await AuditTrailService.recordSafely({
     organisationId: params.organisationId,
-    companionId: params.companionId,
+    patientId: params.patientId,
     actorType: params.actorId ? "PMS_USER" : "SYSTEM",
     actorId: params.actorId ?? undefined,
     eventType: params.eventType,
@@ -254,7 +254,7 @@ const sanitizeMedication = (input?: MedicationInput | null) => {
 
 const assertCompanionRequirement = (input: {
   audience: TaskAudience;
-  companionId?: string;
+  patientId?: string;
   medication?: MedicationInput;
   observationToolId?: string;
 }) => {
@@ -263,9 +263,9 @@ const assertCompanionRequirement = (input: {
     !!input.observationToolId ||
     !!sanitizeMedication(input.medication);
 
-  if (requiresCompanion && !input.companionId) {
+  if (requiresCompanion && !input.patientId) {
     throw new TaskServiceError(
-      "companionId is required for parent, medication, or observation tool tasks",
+      "patientId is required for parent, medication, or observation tool tasks",
       400,
     );
   }
@@ -361,7 +361,7 @@ const buildReminder = (
 const buildCreateTaskData = (input: {
   organisationId?: string;
   appointmentId?: string;
-  companionId?: string;
+  patientId?: string;
   createdBy: string;
   assignedBy?: string;
   assignedTo: string;
@@ -395,7 +395,7 @@ const buildCreateTaskData = (input: {
 }) => ({
   organisationId: input.organisationId ?? undefined,
   appointmentId: input.appointmentId ?? undefined,
-  companionId: input.companionId ?? undefined,
+  patientId: input.patientId ?? undefined,
   createdBy: input.createdBy,
   assignedBy: input.assignedBy ?? input.createdBy,
   assignedTo: input.assignedTo,
@@ -516,7 +516,7 @@ const updateTaskRow = async (
 export interface BaseTaskCreateInput {
   organisationId?: string;
   appointmentId?: string;
-  companionId?: string;
+  patientId?: string;
   createdBy: string;
   assignedBy?: string;
   assignedTo: string;
@@ -610,7 +610,7 @@ export const TaskService = {
 
     assertCompanionRequirement({
       audience: input.audience,
-      companionId: input.companionId,
+      patientId: input.patientId,
       medication: input.medication,
       observationToolId: input.observationToolId,
     });
@@ -619,7 +619,7 @@ export const TaskService = {
       data: buildCreateTaskData({
         organisationId: input.organisationId,
         appointmentId: input.appointmentId,
-        companionId: input.companionId,
+        patientId: input.patientId,
         createdBy: input.createdBy,
         assignedBy: input.assignedBy,
         assignedTo: input.assignedTo,
@@ -645,7 +645,7 @@ export const TaskService = {
     const mapped = toTaskLike(doc);
     await recordTaskAudit({
       organisationId: mapped.organisationId,
-      companionId: mapped.companionId,
+      patientId: mapped.patientId,
       actorId: mapped.createdBy,
       eventType: "TASK_CREATED",
       entityId: mapped.id,
@@ -687,7 +687,7 @@ export const TaskService = {
 
     assertCompanionRequirement({
       audience,
-      companionId: input.companionId,
+      patientId: input.patientId,
       medication: input.medication ?? templateMedication,
       observationToolId:
         input.observationToolId ??
@@ -739,7 +739,7 @@ export const TaskService = {
       data: buildCreateTaskData({
         organisationId: input.organisationId,
         appointmentId: input.appointmentId,
-        companionId: input.companionId,
+        patientId: input.patientId,
         createdBy: input.createdBy,
         assignedBy: input.assignedBy,
         assignedTo: input.assignedTo,
@@ -769,7 +769,7 @@ export const TaskService = {
     const mapped = toTaskLike(doc);
     await recordTaskAudit({
       organisationId: mapped.organisationId,
-      companionId: mapped.companionId,
+      patientId: mapped.patientId,
       actorId: mapped.createdBy,
       eventType: "TASK_CREATED",
       entityId: mapped.id,
@@ -792,7 +792,7 @@ export const TaskService = {
 
     assertCompanionRequirement({
       audience: input.audience,
-      companionId: input.companionId,
+      patientId: input.patientId,
       medication: input.medication,
       observationToolId: input.observationToolId,
     });
@@ -801,7 +801,7 @@ export const TaskService = {
       data: buildCreateTaskData({
         organisationId: input.organisationId,
         appointmentId: input.appointmentId,
-        companionId: input.companionId,
+        patientId: input.patientId,
         createdBy: input.createdBy,
         assignedBy: input.assignedBy,
         assignedTo: input.assignedTo,
@@ -826,7 +826,7 @@ export const TaskService = {
     const mapped = toTaskLike(doc);
     await recordTaskAudit({
       organisationId: mapped.organisationId,
-      companionId: mapped.companionId,
+      patientId: mapped.patientId,
       actorId: mapped.createdBy,
       eventType: "TASK_CREATED",
       entityId: mapped.id,
@@ -848,7 +848,7 @@ export const TaskService = {
   ): Promise<TaskLike> {
     assertCompanionRequirement({
       audience: input.audience,
-      companionId: input.companionId,
+      patientId: input.patientId,
       medication: input.medication,
       observationToolId: input.observationToolId,
     });
@@ -856,7 +856,7 @@ export const TaskService = {
     const mapped = await createTaskRow(options?.client ?? prisma, {
       organisationId: input.organisationId,
       appointmentId: input.appointmentId,
-      companionId: input.companionId,
+      patientId: input.patientId,
       createdBy: input.createdBy,
       assignedBy: input.assignedBy,
       assignedTo: input.assignedTo,
@@ -890,7 +890,7 @@ export const TaskService = {
 
     await recordTaskAudit({
       organisationId: mapped.organisationId,
-      companionId: mapped.companionId,
+      patientId: mapped.patientId,
       actorId: mapped.createdBy,
       eventType: "TASK_CREATED",
       entityId: mapped.id,
@@ -961,7 +961,7 @@ export const TaskService = {
     ) {
       await recordTaskAudit({
         organisationId: mapped.organisationId,
-        companionId: mapped.companionId,
+        patientId: mapped.patientId,
         actorId,
         eventType: "TASK_REASSIGNED",
         entityId: mapped.id,
@@ -1016,7 +1016,7 @@ export const TaskService = {
     let completionDoc: TaskCompletionLike | undefined;
 
     if (newStatus === "COMPLETED" && completion?.answers) {
-      if (!task.companionId) {
+      if (!task.patientId) {
         throw new TaskServiceError(
           "Companion is required for completion.",
           400,
@@ -1025,7 +1025,7 @@ export const TaskService = {
       const created = await prisma.taskCompletion.create({
         data: {
           taskId: task.id,
-          companionId: task.companionId,
+          patientId: task.patientId,
           filledBy: completion.filledBy ?? actorId,
           answers: completion.answers as unknown as Prisma.InputJsonValue,
           score: completion.score ?? undefined,
@@ -1051,7 +1051,7 @@ export const TaskService = {
 
     await recordTaskAudit({
       organisationId: updated.organisationId,
-      companionId: updated.companionId,
+      patientId: updated.patientId,
       actorId,
       eventType: "TASK_STATUS_CHANGED",
       entityId: updated.id,
@@ -1074,7 +1074,7 @@ export const TaskService = {
 
   async listForParent(params: {
     parentId: string;
-    companionId?: string;
+    patientId?: string;
     fromDueAt?: Date;
     toDueAt?: Date;
     status?: TaskStatus[];
@@ -1089,8 +1089,8 @@ export const TaskService = {
       OR: [{ assignedTo: parentId }, { createdBy: parentId }],
     };
 
-    const companionId = asNonEmptyString(params.companionId);
-    if (companionId) where.companionId = companionId;
+    const patientId = asNonEmptyString(params.patientId);
+    if (patientId) where.patientId = patientId;
 
     const status = sanitizeStatusList(params.status);
     if (status) where.status = { in: status };
@@ -1115,7 +1115,7 @@ export const TaskService = {
   async listForEmployee(params: {
     organisationId: string;
     userId?: string;
-    companionId?: string;
+    patientId?: string;
     fromDueAt?: Date;
     toDueAt?: Date;
     status?: TaskStatus[];
@@ -1133,8 +1133,8 @@ export const TaskService = {
     const userId = asNonEmptyString(params.userId);
     if (userId) where.assignedTo = userId;
 
-    const companionId = asNonEmptyString(params.companionId);
-    if (companionId) where.companionId = companionId;
+    const patientId = asNonEmptyString(params.patientId);
+    if (patientId) where.patientId = patientId;
 
     const status = sanitizeStatusList(params.status);
     if (status) where.status = { in: status };
@@ -1159,7 +1159,7 @@ export const TaskService = {
   async listForGroup(params: {
     organisationId: string;
     groupId: string;
-    companionId?: string;
+    patientId?: string;
     fromDueAt?: Date;
     toDueAt?: Date;
     status?: TaskStatus[];
@@ -1179,8 +1179,8 @@ export const TaskService = {
       assignedGroupId: groupId,
     };
 
-    const companionId = asNonEmptyString(params.companionId);
-    if (companionId) where.companionId = companionId;
+    const patientId = asNonEmptyString(params.patientId);
+    if (patientId) where.patientId = patientId;
 
     const status = sanitizeStatusList(params.status);
     if (status) where.status = { in: status };
@@ -1203,20 +1203,20 @@ export const TaskService = {
   },
 
   async listForCompanion(params: {
-    companionId: string;
+    patientId: string;
     organisationId?: string;
     audience?: TaskAudience;
     fromDueAt?: Date;
     toDueAt?: Date;
     status?: TaskStatus[];
   }): Promise<TaskLike[]> {
-    const companionId = asNonEmptyString(params.companionId);
-    if (!companionId) {
-      throw new TaskServiceError("Invalid companionId");
+    const patientId = asNonEmptyString(params.patientId);
+    if (!patientId) {
+      throw new TaskServiceError("Invalid patientId");
     }
 
     const where: Prisma.TaskWhereInput = {
-      companionId,
+      patientId,
     };
 
     const organisationId = asNonEmptyString(params.organisationId);

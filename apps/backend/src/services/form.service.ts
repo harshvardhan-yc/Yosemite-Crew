@@ -64,7 +64,7 @@ type CompanionFormSubmission = {
   formId: string;
   formVersion: number;
   appointmentId?: string;
-  companionId?: string;
+  patientId?: string;
   submittedBy?: string;
   submittedAt: Date;
   answers: Record<string, unknown>;
@@ -443,7 +443,7 @@ const loadLatestSubmissions = async (
           _id: submission.id,
           formId: submission.formId,
           parentId: submission.parentId ?? undefined,
-          companionId: submission.companionId ?? undefined,
+          patientId: submission.patientId ?? undefined,
           appointmentId: submission.appointmentId ?? undefined,
           submittedBy: submission.submittedBy ?? undefined,
           answers:
@@ -515,7 +515,7 @@ const buildQuestionnaireResponse = async (
       formId: submission.formId.toString(),
       formVersion: submission.formVersion,
       appointmentId: submission.appointmentId,
-      companionId: submission.companionId,
+      patientId: submission.patientId,
       parentId: submission.parentId,
       submittedBy: submission.submittedBy,
       answers: submission.answers,
@@ -589,7 +589,7 @@ const pushAppointmentFormIdInMongo = async (
 };
 
 const recordFormSubmittedAuditTrailInPostgres = async (params: {
-  companionId: string;
+  patientId: string;
   parentId?: string;
   appointmentId?: string;
   formId: string;
@@ -604,7 +604,7 @@ const recordFormSubmittedAuditTrailInPostgres = async (params: {
 
   await AuditTrailService.recordSafely({
     organisationId: form.orgId,
-    companionId: params.companionId,
+    patientId: params.patientId,
     eventType: "FORM_SUBMITTED",
     actorType: params.parentId ? "PARENT" : "SYSTEM",
     actorId: params.parentId ?? null,
@@ -619,7 +619,7 @@ const recordFormSubmittedAuditTrailInPostgres = async (params: {
 };
 
 const recordFormSubmittedAuditTrailInMongo = async (params: {
-  companionId: string;
+  patientId: string;
   parentId?: string;
   appointmentId?: string;
   formId: string;
@@ -633,7 +633,7 @@ const recordFormSubmittedAuditTrailInMongo = async (params: {
 
   await AuditTrailService.recordSafely({
     organisationId: form.orgId.toString(),
-    companionId: params.companionId,
+    patientId: params.patientId,
     eventType: "FORM_SUBMITTED",
     actorType: params.parentId ? "PARENT" : "SYSTEM",
     actorId: params.parentId ?? null,
@@ -885,7 +885,7 @@ const buildAppointmentFormItems = async (params: {
 const resolveAppointmentParentId = (
   appointment: { companion?: unknown } | null | undefined,
 ) => {
-  const companion = appointment?.companion;
+  const companion = appointment?.patient;
   if (!companion || typeof companion !== "object") return undefined;
 
   const parent = (companion as { parent?: unknown }).parent;
@@ -1509,7 +1509,7 @@ export const FormService = {
           formId: formIdString,
           formVersion: submission.formVersion,
           appointmentId: submission.appointmentId ?? undefined,
-          companionId: submission.companionId ?? undefined,
+          patientId: submission.patientId ?? undefined,
           parentId: submission.parentId ?? undefined,
           submittedBy: submission.submittedBy ?? undefined,
           answers: submission.answers as unknown as Prisma.InputJsonValue,
@@ -1525,9 +1525,9 @@ export const FormService = {
         );
       }
 
-      if (submission.companionId) {
+      if (submission.patientId) {
         await recordFormSubmittedAuditTrailInPostgres({
-          companionId: submission.companionId,
+          patientId: submission.patientId,
           parentId: submission.parentId,
           appointmentId: submission.appointmentId,
           formId: formIdString,
@@ -1545,7 +1545,7 @@ export const FormService = {
       formId: submission.formId,
       formVersion: submission.formVersion,
       appointmentId: submission.appointmentId,
-      companionId: submission.companionId,
+      patientId: submission.patientId,
       parentId: submission.parentId,
       submittedBy: submission.submittedBy,
       answers: submission.answers,
@@ -1561,7 +1561,7 @@ export const FormService = {
             formId: formIdString,
             formVersion: submission.formVersion,
             appointmentId: submission.appointmentId ?? undefined,
-            companionId: submission.companionId ?? undefined,
+            patientId: submission.patientId ?? undefined,
             parentId: submission.parentId ?? undefined,
             submittedBy: submission.submittedBy ?? undefined,
             answers: submission.answers as unknown as Prisma.InputJsonValue,
@@ -1594,9 +1594,9 @@ export const FormService = {
       }
     }
 
-    if (submission.companionId) {
+    if (submission.patientId) {
       await recordFormSubmittedAuditTrailInMongo({
-        companionId: submission.companionId,
+        patientId: submission.patientId,
         parentId: submission.parentId,
         appointmentId: submission.appointmentId,
         formId: formIdString,
@@ -1628,7 +1628,7 @@ export const FormService = {
         formId: sub.formId,
         formVersion: sub.formVersion,
         appointmentId: sub.appointmentId ?? undefined,
-        companionId: sub.companionId ?? undefined,
+        patientId: sub.patientId ?? undefined,
         parentId: sub.parentId ?? undefined,
         submittedBy: sub.submittedBy ?? undefined,
         answers: sub.answers as Record<string, unknown>,
@@ -1660,7 +1660,7 @@ export const FormService = {
       formId,
       formVersion: sub.formVersion,
       appointmentId: sub.appointmentId,
-      companionId: sub.companionId,
+      patientId: sub.patientId,
       parentId: sub.parentId,
       submittedBy: sub.submittedBy,
       answers: sub.answers,
@@ -1687,17 +1687,17 @@ export const FormService = {
 
   async listSubmissionsForCompanionInOrganisation(params: {
     organisationId: string;
-    companionId: string;
+    patientId: string;
   }): Promise<CompanionFormSubmission[]> {
     const organisationId = ensureNonEmptyString(
       params.organisationId,
       "organisationId",
     );
-    const companionId = ensureNonEmptyString(params.companionId, "companionId");
+    const patientId = ensureNonEmptyString(params.patientId, "patientId");
 
     if (isReadFromPostgres()) {
       const submissions = await prisma.formSubmission.findMany({
-        where: { companionId },
+        where: { patientId },
         orderBy: { submittedAt: "desc" },
       });
 
@@ -1752,7 +1752,7 @@ export const FormService = {
             formId: submission.formId,
             formVersion: submission.formVersion,
             appointmentId: submission.appointmentId ?? undefined,
-            companionId: submission.companionId ?? undefined,
+            patientId: submission.patientId ?? undefined,
             submittedBy: submission.submittedBy ?? undefined,
             submittedAt: submission.submittedAt,
             answers: (submission.answers ?? {}) as Record<string, unknown>,
@@ -1765,14 +1765,14 @@ export const FormService = {
         });
     }
 
-    const submissions = (await FormSubmissionModel.find({ companionId })
+    const submissions = (await FormSubmissionModel.find({ patientId })
       .sort({ submittedAt: -1 })
       .lean()) as unknown as Array<{
       _id: Types.ObjectId;
       formId: NormalizableObjectId;
       formVersion: number;
       appointmentId?: string | null;
-      companionId?: string | null;
+      patientId?: string | null;
       submittedBy?: string | null;
       submittedAt: Date;
       answers?: unknown;
@@ -1846,7 +1846,7 @@ export const FormService = {
           formId: formId ?? "",
           formVersion: submission.formVersion,
           appointmentId: submission.appointmentId ?? undefined,
-          companionId: submission.companionId ?? undefined,
+          patientId: submission.patientId ?? undefined,
           submittedBy: submission.submittedBy ?? undefined,
           submittedAt: submission.submittedAt,
           answers: (submission.answers ?? {}) as Record<string, unknown>,

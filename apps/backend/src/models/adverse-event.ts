@@ -33,7 +33,7 @@ const ReporterSchema = new Schema(
 
 const CompanionSchema = new Schema(
   {
-    companionId: { type: String },
+    patientId: { type: String },
     name: { type: String, required: true },
     breed: { type: String },
     dateOfBirth: { type: String },

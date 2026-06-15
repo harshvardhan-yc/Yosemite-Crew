@@ -149,7 +149,7 @@ export const CompanionController = {
           pmsUserId: authUser,
           organisationId: orgId,
           organisationType: organisation.type,
-          companionId: response.id!,
+          patientId: response.id!,
         });
       }
 

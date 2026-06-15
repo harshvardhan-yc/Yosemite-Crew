@@ -28,7 +28,7 @@ router.post(
 );
 
 router.get(
-  "/mobile/companion/:companionId",
+  "/mobile/companion/:patientId",
   authorizeCognitoMobile,
   AppointmentController.listByCompanion,
 );
@@ -81,7 +81,7 @@ router.get(
 
 // List appointments for a companion within an organisation
 router.get(
-  "/pms/organisation/:organisationId/companion/:companionId",
+  "/pms/organisation/:organisationId/companion/:patientId",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:view:any"),

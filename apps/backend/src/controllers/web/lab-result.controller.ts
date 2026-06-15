@@ -76,16 +76,13 @@ export const LabResultController = {
       const organisationId = orgReq.organisationId ?? req.params.organisationId;
       const provider = req.params.provider;
 
-      const { orderId, companionId, limit } = req.query as Record<
-        string,
-        string
-      >;
+      const { orderId, patientId, limit } = req.query as Record<string, string>;
 
       const results = await LabResultService.list({
         organisationId,
         provider,
         orderId,
-        companionId,
+        patientId,
         limit: limit ? Number(limit) : undefined,
       });
 
@@ -219,10 +216,7 @@ export const LabResultController = {
     try {
       const organisationId = resolveOrganisationId(req);
       const provider = req.params.provider;
-      const { orderId, companionId, limit } = req.query as Record<
-        string,
-        string
-      >;
+      const { orderId, patientId, limit } = req.query as Record<string, string>;
       if (!ensureOrganisationId(res, organisationId)) {
         return;
       }
@@ -238,7 +232,7 @@ export const LabResultController = {
         organisationId,
         provider,
         orderId,
-        companionId,
+        patientId,
         limit: limit ? Number(limit) : undefined,
       });
 

@@ -14,8 +14,8 @@ import { prisma } from "src/config/prisma";
 import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
 import {
   Prisma,
-  ParentCompanionRole as PrismaParentCompanionRole,
-  ParentCompanionStatus as PrismaParentCompanionStatus,
+  ParentPatientRole as PrismaParentPatientRole,
+  ParentPatientStatus as PrismaParentPatientStatus,
 } from "@prisma/client";
 import { isReadFromPostgres } from "src/config/read-switch";
 
@@ -81,9 +81,9 @@ const toPrismaParentCompanionData = (doc: ParentCompanionDocument) => {
   return {
     id: obj._id.toString(),
     parentId: obj.parentId.toString(),
-    companionId: obj.companionId.toString(),
-    role: obj.role as PrismaParentCompanionRole,
-    status: obj.status as PrismaParentCompanionStatus,
+    patientId: obj.patientId.toString(),
+    role: obj.role as PrismaParentPatientRole,
+    status: obj.status as PrismaParentPatientStatus,
     permissions: obj.permissions as unknown as Prisma.InputJsonValue,
     invitedByParentId: obj.invitedByParentId?.toString() ?? undefined,
     acceptedAt: obj.acceptedAt ?? undefined,
@@ -96,13 +96,13 @@ const syncParentCompanionToPostgres = async (doc: ParentCompanionDocument) => {
   if (!shouldDualWrite) return;
   try {
     const data = toPrismaParentCompanionData(doc);
-    await prisma.parentCompanion.upsert({
+    await prisma.parentPatient.upsert({
       where: { id: data.id },
       create: data,
       update: data,
     });
   } catch (err) {
-    handleDualWriteError("ParentCompanion", err);
+    handleDualWriteError("ParentPatient", err);
   }
 };
 
@@ -110,8 +110,8 @@ const toCompanionParentLinkFromPrisma = (
   doc: {
     id: string;
     parentId: string;
-    role: PrismaParentCompanionRole;
-    status: PrismaParentCompanionStatus;
+    role: PrismaParentPatientRole;
+    status: PrismaParentPatientStatus;
     permissions: Prisma.JsonValue;
     invitedByParentId: string | null;
     acceptedAt: Date | null;
@@ -149,7 +149,7 @@ const toCompanionParentLinkFromPrisma = (
 
 interface LinkParentInput {
   parentId: Types.ObjectId;
-  companionId: Types.ObjectId;
+  patientId: Types.ObjectId;
   role?: ParentCompanionRole;
   permissionsOverride?: Partial<ParentCompanionPermissions>;
   invitedByParentId?: Types.ObjectId;
@@ -161,11 +161,11 @@ const promoteDocumentToPrimary = async (
   document: ParentCompanionDocument,
   overrides?: Partial<ParentCompanionPermissions>,
 ): Promise<ParentCompanionDocument> => {
-  const { companionId } = document;
+  const { patientId } = document;
 
   // Demote existing primary (if it's not the same link)
   const existingPrimary = await ParentCompanionModel.findOne({
-    companionId,
+    patientId,
     role: "PRIMARY",
     status: "ACTIVE",
     _id: { $ne: document._id },
@@ -216,13 +216,13 @@ export const ParentCompanionService = {
    */
   async linkParent({
     parentId,
-    companionId,
+    patientId,
     role = "PRIMARY",
     permissionsOverride,
     invitedByParentId,
     status,
   }: LinkParentInput): Promise<ParentCompanionDocument> {
-    if (!parentId || !companionId) {
+    if (!parentId || !patientId) {
       throw new ParentCompanionServiceError(
         "Parent and companion identifiers are required.",
         400,
@@ -236,7 +236,7 @@ export const ParentCompanionService = {
 
     const payload: ParentCompanionMongo = {
       parentId,
-      companionId,
+      patientId,
       role,
       status: effectiveStatus,
       permissions,
@@ -266,10 +266,10 @@ export const ParentCompanionService = {
    */
   async activateLink(
     parentId: Types.ObjectId,
-    companionId: Types.ObjectId,
+    patientId: Types.ObjectId,
   ): Promise<ParentCompanionDocument | null> {
     const document = await ParentCompanionModel.findOneAndUpdate(
-      { parentId, companionId, status: "PENDING" },
+      { parentId, patientId, status: "PENDING" },
       { $set: { status: "ACTIVE", acceptedAt: new Date() } },
       { new: true, sanitizeFilter: true },
     );
@@ -313,18 +313,18 @@ export const ParentCompanionService = {
   async updatePermissions(
     requestingParentId: Types.ObjectId,
     targetParentId: Types.ObjectId,
-    companionId: Types.ObjectId,
+    patientId: Types.ObjectId,
     updates: Partial<ParentCompanionPermissions>,
   ): Promise<CompanionParentLink> {
     // 1. Ensure requester is current PRIMARY
     await ParentCompanionService.ensurePrimaryOwnership(
       requestingParentId,
-      companionId,
+      patientId,
     );
 
     // 2. Load the target link
     const document = await ParentCompanionModel.findOne(
-      { parentId: targetParentId, companionId },
+      { parentId: targetParentId, patientId },
       null,
       { sanitizeFilter: true },
     );
@@ -371,20 +371,20 @@ export const ParentCompanionService = {
 
   async promoteToPrimary(
     requestingParentId: Types.ObjectId,
-    companionId: Types.ObjectId,
+    patientId: Types.ObjectId,
     targetParentId: Types.ObjectId,
     permissionsOverride?: Partial<ParentCompanionPermissions>,
   ): Promise<CompanionParentLink> {
     // Only current primary can promote someone else
     await ParentCompanionService.ensurePrimaryOwnership(
       requestingParentId,
-      companionId,
+      patientId,
     );
 
     const document = await ParentCompanionModel.findOne(
       {
         parentId: targetParentId,
-        companionId,
+        patientId,
         status: "ACTIVE",
       },
       null,
@@ -405,20 +405,20 @@ export const ParentCompanionService = {
   async removeCoParent(
     requestingParentId: Types.ObjectId,
     coParentId: Types.ObjectId,
-    companionId: Types.ObjectId,
+    patientId: Types.ObjectId,
     soft: boolean,
   ): Promise<void> {
     // Ensure the requesting parent is the active PRIMARY
     await ParentCompanionService.ensurePrimaryOwnership(
       requestingParentId,
-      companionId,
+      patientId,
     );
 
     if (soft) {
       const doc = await ParentCompanionModel.findOneAndUpdate(
         {
           parentId: coParentId,
-          companionId,
+          patientId,
           role: "CO_PARENT",
         },
         { $set: { status: "REVOKED" } },
@@ -434,7 +434,7 @@ export const ParentCompanionService = {
 
     const result = await ParentCompanionModel.deleteOne({
       parentId: coParentId,
-      companionId,
+      patientId,
       role: "CO_PARENT",
     });
 
@@ -444,14 +444,14 @@ export const ParentCompanionService = {
 
     if (shouldDualWrite) {
       try {
-        await prisma.parentCompanion.deleteMany({
+        await prisma.parentPatient.deleteMany({
           where: {
             parentId: coParentId.toString(),
-            companionId: companionId.toString(),
+            patientId: patientId.toString(),
           },
         });
       } catch (err) {
-        handleDualWriteError("ParentCompanion removeCoParent", err);
+        handleDualWriteError("ParentPatient removeCoParent", err);
       }
     }
   },
@@ -460,11 +460,11 @@ export const ParentCompanionService = {
    * Get all parent links for a given companion.
    */
   async getLinksForCompanion(
-    companionId: Types.ObjectId,
+    patientId: Types.ObjectId,
   ): Promise<CompanionParentLink[]> {
     if (isReadFromPostgres()) {
-      const links = await prisma.parentCompanion.findMany({
-        where: { companionId: companionId.toString() },
+      const links = await prisma.parentPatient.findMany({
+        where: { patientId: patientId.toString() },
       });
       const parentIds = Array.from(new Set(links.map((l) => l.parentId)));
       const parents = await prisma.parent.findMany({
@@ -483,7 +483,7 @@ export const ParentCompanionService = {
         toCompanionParentLinkFromPrisma(link, parentMap.get(link.parentId)),
       );
     }
-    const documents = await ParentCompanionModel.find({ companionId }, null, {
+    const documents = await ParentCompanionModel.find({ patientId }, null, {
       sanitizeFilter: true,
     }).populate(
       "parentId",
@@ -500,7 +500,7 @@ export const ParentCompanionService = {
     parentId: Types.ObjectId,
   ): Promise<CompanionParentLink[]> {
     if (isReadFromPostgres()) {
-      const links = await prisma.parentCompanion.findMany({
+      const links = await prisma.parentPatient.findMany({
         where: { parentId: parentId.toString() },
       });
       return links.map((link) => toCompanionParentLinkFromPrisma(link));
@@ -521,21 +521,21 @@ export const ParentCompanionService = {
     parentId: Types.ObjectId,
   ): Promise<Types.ObjectId[]> {
     if (isReadFromPostgres()) {
-      const links = await prisma.parentCompanion.findMany({
+      const links = await prisma.parentPatient.findMany({
         where: {
           parentId: parentId.toString(),
           status: { in: ["ACTIVE", "PENDING"] },
         },
-        select: { companionId: true },
+        select: { patientId: true },
       });
-      return links.map((link) => new Types.ObjectId(String(link.companionId)));
+      return links.map((link) => new Types.ObjectId(String(link.patientId)));
     }
     const documents = await ParentCompanionModel.find(
       { parentId, status: { $in: ["ACTIVE", "PENDING"] } },
-      { companionId: 1 },
+      { patientId: 1 },
     );
 
-    return documents.map((doc) => doc.companionId);
+    return documents.map((doc) => doc.patientId);
   },
 
   /**
@@ -544,7 +544,7 @@ export const ParentCompanionService = {
    */
   async hasAnyLinks(parentId: Types.ObjectId): Promise<boolean> {
     if (isReadFromPostgres()) {
-      const count = await prisma.parentCompanion.count({
+      const count = await prisma.parentPatient.count({
         where: { parentId: parentId.toString() },
       });
       return count > 0;
@@ -557,16 +557,16 @@ export const ParentCompanionService = {
    * Hard delete all links for a companion.
    * Use when the companion itself is being deleted.
    */
-  async deleteLinksForCompanion(companionId: Types.ObjectId): Promise<number> {
-    const result = await ParentCompanionModel.deleteMany({ companionId });
+  async deleteLinksForCompanion(patientId: Types.ObjectId): Promise<number> {
+    const result = await ParentCompanionModel.deleteMany({ patientId });
 
     if (shouldDualWrite) {
       try {
-        await prisma.parentCompanion.deleteMany({
-          where: { companionId: companionId.toString() },
+        await prisma.parentPatient.deleteMany({
+          where: { patientId: patientId.toString() },
         });
       } catch (err) {
-        handleDualWriteError("ParentCompanion deleteLinksForCompanion", err);
+        handleDualWriteError("ParentPatient deleteLinksForCompanion", err);
       }
     }
     return result.deletedCount ?? 0;
@@ -581,11 +581,11 @@ export const ParentCompanionService = {
 
     if (shouldDualWrite) {
       try {
-        await prisma.parentCompanion.deleteMany({
+        await prisma.parentPatient.deleteMany({
           where: { parentId: parentId.toString() },
         });
       } catch (err) {
-        handleDualWriteError("ParentCompanion deleteLinksForParent", err);
+        handleDualWriteError("ParentPatient deleteLinksForParent", err);
       }
     }
     return result.deletedCount ?? 0;
@@ -598,13 +598,13 @@ export const ParentCompanionService = {
    */
   async ensurePrimaryOwnership(
     parentId: Types.ObjectId,
-    companionId: Types.ObjectId,
+    patientId: Types.ObjectId,
   ): Promise<void> {
     if (isReadFromPostgres()) {
-      const link = await prisma.parentCompanion.findFirst({
+      const link = await prisma.parentPatient.findFirst({
         where: {
           parentId: parentId.toString(),
-          companionId: companionId.toString(),
+          patientId: patientId.toString(),
           role: "PRIMARY",
           status: "ACTIVE",
         },
@@ -619,7 +619,7 @@ export const ParentCompanionService = {
       return;
     }
     const link = await ParentCompanionModel.findOne(
-      { parentId, companionId, role: "PRIMARY", status: "ACTIVE" },
+      { parentId, patientId, role: "PRIMARY", status: "ACTIVE" },
       null,
       { sanitizeFilter: true },
     ).exec();

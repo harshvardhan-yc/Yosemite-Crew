@@ -22,7 +22,8 @@ export interface TaskLike {
   id: string;
   organisationId: string | null;
   appointmentId: string | null;
-  companionId: string | null;
+  patientId: string | null;
+  companionId?: string | null;
   createdBy: string;
   assignedBy: string | null;
   assignedTo: string;
@@ -54,6 +55,7 @@ export interface TaskLike {
 export interface CreateCustomTaskInput {
   organisationId: string;
   appointmentId?: string;
+  patientId?: string;
   companionId?: string;
   createdBy: string;
   assignedBy?: string;
@@ -265,10 +267,12 @@ const taskExtensions = (task: TaskLike): Extension[] => {
     });
   }
 
-  if (task.companionId) {
+  const patientId = task.patientId ?? task.companionId;
+
+  if (patientId) {
     extensions.push({
       url: TASK_COMPANION_EXTENSION_URL,
-      valueString: task.companionId,
+      valueString: patientId,
     });
   }
 
@@ -338,31 +342,35 @@ const taskExtensions = (task: TaskLike): Extension[] => {
   return extensions;
 };
 
-const taskToFhir = (task: TaskLike): Task => ({
-  resourceType: 'Task',
-  id: task.id,
-  status: statusToFhir(task.status),
-  intent: 'order',
-  description: task.description ?? task.name,
-  focus: task.templateId ? { reference: `PlanDefinition/${task.templateId}` } : undefined,
-  for: task.companionId ? { reference: `Patient/${task.companionId}` } : undefined,
-  owner: { reference: `Practitioner/${task.assignedTo}` },
-  authoredOn: task.createdAt.toISOString(),
-  lastModified: task.updatedAt.toISOString(),
-  executionPeriod: { start: task.dueAt.toISOString() },
-  basedOn: task.appointmentId ? [{ reference: `Appointment/${task.appointmentId}` }] : undefined,
-  code: {
-    coding: [
-      {
-        system: 'https://yosemitecrew.com/fhir/CodeSystem/task-category',
-        code: task.category,
-        display: task.category,
-      },
-    ],
-    text: task.category,
-  },
-  extension: taskExtensions(task),
-});
+const taskToFhir = (task: TaskLike): Task => {
+  const patientId = task.patientId ?? task.companionId;
+
+  return {
+    resourceType: 'Task',
+    id: task.id,
+    status: statusToFhir(task.status),
+    intent: 'order',
+    description: task.description ?? task.name,
+    focus: task.templateId ? { reference: `PlanDefinition/${task.templateId}` } : undefined,
+    for: patientId ? { reference: `Patient/${patientId}` } : undefined,
+    owner: { reference: `Practitioner/${task.assignedTo}` },
+    authoredOn: task.createdAt.toISOString(),
+    lastModified: task.updatedAt.toISOString(),
+    executionPeriod: { start: task.dueAt.toISOString() },
+    basedOn: task.appointmentId ? [{ reference: `Appointment/${task.appointmentId}` }] : undefined,
+    code: {
+      coding: [
+        {
+          system: 'https://yosemitecrew.com/fhir/CodeSystem/task-category',
+          code: task.category,
+          display: task.category,
+        },
+      ],
+      text: task.category,
+    },
+    extension: taskExtensions(task),
+  };
+};
 
 const taskFromFhir = (
   task: Task,
@@ -389,6 +397,7 @@ const taskFromFhir = (
       defaults?.organisationId ??
       '',
     appointmentId: getStringExtension(extensions, TASK_APPOINTMENT_EXTENSION_URL) ?? undefined,
+    patientId: getStringExtension(extensions, TASK_COMPANION_EXTENSION_URL) ?? undefined,
     companionId: getStringExtension(extensions, TASK_COMPANION_EXTENSION_URL) ?? undefined,
     createdBy:
       getStringExtension(extensions, TASK_CREATED_BY_EXTENSION_URL) ?? defaults?.createdBy ?? '',

@@ -87,7 +87,7 @@ export const TaskFhirController = {
     try {
       const query = listQuerySchema.parse(req.query);
       const tasks = await TaskService.listForCompanion({
-        companionId: req.params.companionId,
+        patientId: req.params.patientId,
         organisationId: req.query.organisationId as string | undefined,
         audience: parseAudience(query.audience),
         status: parseStatusList(query.status),

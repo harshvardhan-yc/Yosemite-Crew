@@ -16,7 +16,7 @@ import {
 } from "@yosemite-crew/types";
 import {
   Prisma,
-  CompanionType as PrismaCompanionType,
+  PatientType as PrismaPatientType,
   Gender as PrismaGender,
   SourceType as PrismaSourceType,
   RecordStatus as PrismaRecordStatus,
@@ -94,7 +94,7 @@ const toPrismaCompanionData = (doc: CompanionDocument) => {
   return {
     id: plain._id.toString(),
     name: plain.name,
-    type: plain.type as PrismaCompanionType,
+    type: plain.type as PrismaPatientType,
     breed: plain.breed ?? "",
     speciesCode: plain.speciesCode ?? undefined,
     breedCode: plain.breedCode ?? undefined,
@@ -131,7 +131,7 @@ const syncCompanionToPostgres = async (doc: CompanionDocument) => {
   if (!shouldDualWriteCompanions) return;
   try {
     const data = toPrismaCompanionData(doc);
-    await prisma.companion.upsert({
+    await prisma.patient.upsert({
       where: { id: data.id },
       create: data,
       update: data,
@@ -191,7 +191,7 @@ export const toFHIR = (doc: CompanionDocument) => {
 export const toFHIRFromPrisma = (doc: {
   id: string;
   name: string;
-  type: PrismaCompanionType;
+  type: PrismaPatientType;
   breed: string;
   dateOfBirth: Date;
   gender: PrismaGender;
@@ -318,7 +318,7 @@ type CompanionCreateContext = {
 
 const createDefaultTasks = async (input: {
   organisationId?: string;
-  companionId: string;
+  patientId: string;
   parentId: string;
   species: string;
 }) => {
@@ -361,7 +361,7 @@ const createDefaultTasks = async (input: {
       // 3️⃣ Create task using EXISTING METHOD
       await TaskService.createFromLibrary({
         organisationId: input.organisationId,
-        companionId: input.companionId,
+        patientId: input.patientId,
         createdBy: input.parentId,
         assignedTo: input.parentId,
         audience: "PARENT_TASK",
@@ -426,7 +426,7 @@ export const CompanionService = {
 
       await ParentCompanionService.linkParent({
         parentId: parentMongoId,
-        companionId: document._id,
+        patientId: document._id,
         role: "PRIMARY",
       });
 
@@ -444,7 +444,7 @@ export const CompanionService = {
       // Create default tasks based on companion type
       void createDefaultTasks({
         organisationId: context.parentMongoId?.toString(),
-        companionId: document._id.toString(),
+        patientId: document._id.toString(),
         parentId: parentMongoId.toString(),
         species: persistable.type,
       });
@@ -466,13 +466,13 @@ export const CompanionService = {
 
   async listByParent(parentId: string) {
     if (isReadFromPostgres()) {
-      const links = await prisma.parentCompanion.findMany({
+      const links = await prisma.parentPatient.findMany({
         where: { parentId, status: { in: ["ACTIVE", "PENDING"] } },
-        select: { companionId: true },
+        select: { patientId: true },
       });
-      const ids = links.map((link) => link.companionId);
+      const ids = links.map((link) => link.patientId);
       if (!ids.length) return { responses: [] };
-      const docs = await prisma.companion.findMany({
+      const docs = await prisma.patient.findMany({
         where: { id: { in: ids } },
       });
       return { responses: docs.map(toFHIRFromPrisma) };
@@ -498,25 +498,25 @@ export const CompanionService = {
     organisationId: string,
   ) {
     if (isReadFromPostgres()) {
-      const parentLinks = await prisma.parentCompanion.findMany({
+      const parentLinks = await prisma.parentPatient.findMany({
         where: { parentId, status: { in: ["ACTIVE", "PENDING"] } },
-        select: { companionId: true },
+        select: { patientId: true },
       });
-      const companionIds = parentLinks.map((link) => link.companionId);
+      const companionIds = parentLinks.map((link) => link.patientId);
       if (!companionIds.length) return { responses: [] };
 
-      const linked = await prisma.companionOrganisation.findMany({
+      const linked = await prisma.patientOrganisation.findMany({
         where: {
           organisationId,
-          companionId: { in: companionIds },
+          patientId: { in: companionIds },
         },
-        select: { companionId: true },
+        select: { patientId: true },
       });
-      const linkedIds = new Set(linked.map((entry) => entry.companionId));
+      const linkedIds = new Set(linked.map((entry) => entry.patientId));
       const unlinkedIds = companionIds.filter((id) => !linkedIds.has(id));
       if (!unlinkedIds.length) return { responses: [] };
 
-      const documents = await prisma.companion.findMany({
+      const documents = await prisma.patient.findMany({
         where: { id: { in: unlinkedIds } },
       });
       return { responses: documents.map(toFHIRFromPrisma) };
@@ -545,13 +545,13 @@ export const CompanionService = {
     const linkedCompanions = (await CompanionOrganisationModel.find(
       {
         organisationId: organisationDocId,
-        companionId: { $in: parentCompanionIds },
+        patientId: { $in: parentCompanionIds },
       },
-      { companionId: 1 },
-    ).lean()) as unknown as Array<{ companionId: Types.ObjectId }>;
+      { patientId: 1 },
+    ).lean()) as unknown as Array<{ patientId: Types.ObjectId }>;
 
     const linkedCompanionIdSet = new Set(
-      linkedCompanions.map((c) => c.companionId.toString()),
+      linkedCompanions.map((c) => c.patientId.toString()),
     );
 
     // 3️⃣ Filter out linked companions
@@ -566,7 +566,7 @@ export const CompanionService = {
     // 4️⃣ Fetch companion documents
     if (isReadFromPostgres()) {
       const ids = unlinkedCompanionIds.map((id) => id.toString());
-      const documents = await prisma.companion.findMany({
+      const documents = await prisma.patient.findMany({
         where: { id: { in: ids } },
       });
       return { responses: documents.map(toFHIRFromPrisma) };
@@ -581,7 +581,7 @@ export const CompanionService = {
 
   async getById(id: string) {
     if (isReadFromPostgres()) {
-      const doc = await prisma.companion.findUnique({ where: { id } });
+      const doc = await prisma.patient.findUnique({ where: { id } });
       if (!doc) return null;
       return { response: toFHIRFromPrisma(doc) };
     }
@@ -606,7 +606,7 @@ export const CompanionService = {
     const searchRegex = new RegExp(safe);
 
     if (isReadFromPostgres()) {
-      const documents = await prisma.companion.findMany({
+      const documents = await prisma.patient.findMany({
         where: { name: { contains: name.trim(), mode: "insensitive" } },
       });
       return { responses: documents.map(toFHIRFromPrisma) };
@@ -630,11 +630,11 @@ export const CompanionService = {
     persistable.isProfileComplete = computeIsProfileComplete(persistable);
 
     if (isReadFromPostgres()) {
-      const doc = await prisma.companion.update({
+      const doc = await prisma.patient.update({
         where: { id },
         data: {
           name: persistable.name,
-          type: persistable.type as PrismaCompanionType,
+          type: persistable.type as PrismaPatientType,
           breed: persistable.breed ?? "",
           speciesCode: persistable.speciesCode ?? undefined,
           breedCode: persistable.breedCode ?? undefined,
@@ -710,10 +710,10 @@ export const CompanionService = {
       if (!parentId) {
         throw new CompanionServiceError("Parent identifier is invalid.", 400);
       }
-      const link = await prisma.parentCompanion.findFirst({
+      const link = await prisma.parentPatient.findFirst({
         where: {
           parentId,
-          companionId: id,
+          patientId: id,
           role: "PRIMARY",
           status: "ACTIVE",
         },
@@ -726,10 +726,10 @@ export const CompanionService = {
         );
       }
 
-      await prisma.parentCompanion.deleteMany({
-        where: { companionId: id },
+      await prisma.parentPatient.deleteMany({
+        where: { patientId: id },
       });
-      await prisma.companion.deleteMany({ where: { id } });
+      await prisma.patient.deleteMany({ where: { id } });
       return;
     }
 
@@ -759,7 +759,7 @@ export const CompanionService = {
 
       if (shouldDualWriteCompanions) {
         try {
-          await prisma.companion.deleteMany({ where: { id } });
+          await prisma.patient.deleteMany({ where: { id } });
         } catch (err) {
           logger.error(`Companion dual-write delete failed: ${String(err)}`);
           if (process.env.DUAL_WRITE_STRICT === "true") {

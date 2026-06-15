@@ -19,8 +19,8 @@ import { AuditTrailService } from "./audit-trail.service";
 import { prisma } from "src/config/prisma";
 import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
 import {
-  CompanionOrganisationRole,
-  CompanionOrganisationStatus,
+  PatientOrganisationRole as PrismaPatientOrganisationRole,
+  PatientOrganisationStatus as PrismaPatientOrganisationStatus,
   OrganisationType,
 } from "@prisma/client";
 import { isReadFromPostgres } from "src/config/read-switch";
@@ -71,7 +71,7 @@ const toPrismaCompanionOrganisationData = (
 
   return {
     id: obj._id.toString(),
-    companionId: obj.companionId.toString(),
+    patientId: obj.patientId.toString(),
     organisationId: obj.organisationId
       ? obj.organisationId.toString()
       : undefined,
@@ -80,8 +80,8 @@ const toPrismaCompanionOrganisationData = (
       : undefined,
     linkedByPmsUserId: obj.linkedByPmsUserId ?? undefined,
     organisationType: obj.organisationType as OrganisationType,
-    role: obj.role as CompanionOrganisationRole,
-    status: obj.status as CompanionOrganisationStatus,
+    role: obj.role as PrismaPatientOrganisationRole,
+    status: obj.status as PrismaPatientOrganisationStatus,
     invitedViaEmail: obj.invitedViaEmail ?? undefined,
     organisationName: obj.organisationName ?? undefined,
     organisationPlacesId: obj.organisationPlacesId ?? undefined,
@@ -99,35 +99,35 @@ const syncCompanionOrganisationToPostgres = async (
   if (!shouldDualWrite) return;
   try {
     const data = toPrismaCompanionOrganisationData(doc);
-    await prisma.companionOrganisation.upsert({
+    await prisma.patientOrganisation.upsert({
       where: { id: data.id },
       create: data,
       update: data,
     });
   } catch (err) {
-    handleDualWriteError("CompanionOrganisation", err);
+    handleDualWriteError("PatientOrganisation", err);
   }
 };
 
 export const CompanionOrganisationService = {
   async linkByParent({
     parentId,
-    companionId,
+    patientId,
     organisationId,
     organisationType,
   }: {
     parentId: Types.ObjectId | string;
-    companionId: Types.ObjectId | string;
+    patientId: Types.ObjectId | string;
     organisationId: Types.ObjectId | string;
     organisationType: BusinessType;
   }): Promise<CompanionOrganisationDocument> {
     const parent = ensureObjectId(parentId, "parentId");
-    const companion = ensureObjectId(companionId, "companionId");
+    const companion = ensureObjectId(patientId, "patientId");
     const org = ensureObjectId(organisationId, "organisationId");
 
     // Prevent duplicate active links
     const existing = await CompanionOrganisationModel.findOne({
-      companionId: companion,
+      patientId: companion,
       organisationId: org,
       status: { $in: ["ACTIVE", "PENDING"] },
     });
@@ -135,7 +135,7 @@ export const CompanionOrganisationService = {
     if (existing) return existing;
 
     const link = await CompanionOrganisationModel.create({
-      companionId: companion,
+      patientId: companion,
       organisationId: org,
       linkedByParentId: parent,
       organisationType,
@@ -147,11 +147,11 @@ export const CompanionOrganisationService = {
 
     await AuditTrailService.recordSafely({
       organisationId: org.toString(),
-      companionId: companion.toString(),
-      eventType: "COMPANION_ORG_LINK_CREATED",
+      patientId: companion.toString(),
+      eventType: "PATIENT_ORG_LINK_CREATED",
       actorType: "PARENT",
       actorId: parent.toString(),
-      entityType: "COMPANION_ORGANISATION",
+      entityType: "PATIENT_ORGANISATION",
       entityId: link._id.toString(),
       metadata: {
         organisationType,
@@ -164,20 +164,20 @@ export const CompanionOrganisationService = {
 
   async linkByPmsUser({
     pmsUserId,
-    companionId,
+    patientId,
     organisationId,
     organisationType,
   }: {
     pmsUserId: string;
-    companionId: Types.ObjectId | string;
+    patientId: Types.ObjectId | string;
     organisationId: Types.ObjectId | string;
     organisationType: BusinessType;
   }): Promise<CompanionOrganisationDocument> {
-    const companion = ensureObjectId(companionId, "companionId");
+    const companion = ensureObjectId(patientId, "patientId");
     const org = ensureObjectId(organisationId, "organisationId");
 
     const existing = await CompanionOrganisationModel.findOne({
-      companionId: companion,
+      patientId: companion,
       organisationId: org,
       status: { $in: ["ACTIVE", "PENDING"] },
     });
@@ -185,7 +185,7 @@ export const CompanionOrganisationService = {
     if (existing) return existing;
 
     const link = await CompanionOrganisationModel.create({
-      companionId: companion,
+      patientId: companion,
       organisationId: org,
       linkedByPmsUserId: pmsUserId,
       organisationType,
@@ -197,11 +197,11 @@ export const CompanionOrganisationService = {
 
     await AuditTrailService.recordSafely({
       organisationId: org.toString(),
-      companionId: companion.toString(),
-      eventType: "COMPANION_ORG_LINK_REQUESTED",
+      patientId: companion.toString(),
+      eventType: "PATIENT_ORG_LINK_REQUESTED",
       actorType: "PMS_USER",
       actorId: pmsUserId,
-      entityType: "COMPANION_ORGANISATION",
+      entityType: "PATIENT_ORGANISATION",
       entityId: link._id.toString(),
       metadata: {
         organisationType,
@@ -214,14 +214,14 @@ export const CompanionOrganisationService = {
 
   async sendInvite({
     parentId,
-    companionId,
+    patientId,
     organisationType,
     email,
     name,
     placesId,
   }: {
     parentId: Types.ObjectId | string;
-    companionId: Types.ObjectId | string;
+    patientId: Types.ObjectId | string;
     organisationType: BusinessType;
     email?: string | null;
     name?: string | null;
@@ -235,12 +235,12 @@ export const CompanionOrganisationService = {
     }
 
     const parent = ensureObjectId(parentId, "parentId");
-    const companion = ensureObjectId(companionId, "companionId");
+    const companion = ensureObjectId(patientId, "patientId");
 
     const token = randomUUID();
 
     const link = await CompanionOrganisationModel.create({
-      companionId: companion,
+      patientId: companion,
       linkedByParentId: parent,
       invitedViaEmail: email,
       organisationName: name,
@@ -262,7 +262,7 @@ export const CompanionOrganisationService = {
       throw new CompanionOrganisationServiceError("Invite token missing", 400);
 
     if (isReadFromPostgres()) {
-      const invite = await prisma.companionOrganisation.findFirst({
+      const invite = await prisma.patientOrganisation.findFirst({
         where: {
           inviteToken: token,
           status: "PENDING",
@@ -320,10 +320,10 @@ export const CompanionOrganisationService = {
 
     await AuditTrailService.recordSafely({
       organisationId: org.toString(),
-      companionId: invite.companionId.toString(),
-      eventType: "COMPANION_ORG_INVITE_ACCEPTED",
+      patientId: invite.patientId.toString(),
+      eventType: "PATIENT_ORG_INVITE_ACCEPTED",
       actorType: "SYSTEM",
-      entityType: "COMPANION_ORGANISATION",
+      entityType: "PATIENT_ORGANISATION",
       entityId: invite._id.toString(),
       metadata: {
         organisationType: invite.organisationType,
@@ -362,10 +362,10 @@ export const CompanionOrganisationService = {
 
     await AuditTrailService.recordSafely({
       organisationId: org.toString(),
-      companionId: invite.companionId.toString(),
-      eventType: "COMPANION_ORG_INVITE_REJECTED",
+      patientId: invite.patientId.toString(),
+      eventType: "PATIENT_ORG_INVITE_REJECTED",
       actorType: "SYSTEM",
-      entityType: "COMPANION_ORGANISATION",
+      entityType: "PATIENT_ORGANISATION",
       entityId: invite._id.toString(),
       metadata: {
         organisationType: invite.organisationType,
@@ -375,38 +375,38 @@ export const CompanionOrganisationService = {
   },
 
   async linkOnCompanionCreatedByPms({
-    companionId,
+    patientId,
     organisationId,
     pmsUserId,
     organisationType,
   }: {
-    companionId: string | Types.ObjectId;
+    patientId: string | Types.ObjectId;
     organisationId: string | Types.ObjectId;
     pmsUserId: string;
     organisationType: BusinessType;
   }) {
     return this.linkByPmsUser({
       pmsUserId,
-      companionId,
+      patientId,
       organisationId,
       organisationType,
     });
   },
 
   async linkOnAppointmentBooked({
-    companionId,
+    patientId,
     organisationId,
     organisationType,
   }: {
-    companionId: string | Types.ObjectId;
+    patientId: string | Types.ObjectId;
     organisationId: string | Types.ObjectId;
     organisationType: "HOSPITAL" | "BREEDER" | "BOARDER" | "GROOMER";
   }) {
-    const companion = ensureObjectId(companionId, "companionId");
+    const companion = ensureObjectId(patientId, "patientId");
     const org = ensureObjectId(organisationId, "organisationId");
 
     const existing = await CompanionOrganisationModel.findOne({
-      companionId: companion,
+      patientId: companion,
       organisationId: org,
       status: { $in: ["ACTIVE", "PENDING"] },
     });
@@ -414,7 +414,7 @@ export const CompanionOrganisationService = {
     if (existing) return existing;
 
     const link = await CompanionOrganisationModel.create({
-      companionId: companion,
+      patientId: companion,
       organisationId: org,
       organisationType,
       status: "ACTIVE",
@@ -425,10 +425,10 @@ export const CompanionOrganisationService = {
 
     await AuditTrailService.recordSafely({
       organisationId: org.toString(),
-      companionId: companion.toString(),
-      eventType: "COMPANION_ORG_LINK_AUTO",
+      patientId: companion.toString(),
+      eventType: "PATIENT_ORG_LINK_AUTO",
       actorType: "SYSTEM",
-      entityType: "COMPANION_ORGANISATION",
+      entityType: "PATIENT_ORGANISATION",
       entityId: link._id.toString(),
       metadata: {
         organisationType,
@@ -449,20 +449,20 @@ export const CompanionOrganisationService = {
 
     if (shouldDualWrite) {
       try {
-        await prisma.companionOrganisation.deleteMany({
+        await prisma.patientOrganisation.deleteMany({
           where: { id: link._id.toString() },
         });
       } catch (err) {
-        handleDualWriteError("CompanionOrganisation delete", err);
+        handleDualWriteError("PatientOrganisation delete", err);
       }
     }
 
     await AuditTrailService.recordSafely({
       organisationId: link.organisationId?.toString() ?? "",
-      companionId: link.companionId.toString(),
-      eventType: "COMPANION_ORG_LINK_REVOKED",
+      patientId: link.patientId.toString(),
+      eventType: "PATIENT_ORG_LINK_REVOKED",
       actorType: "SYSTEM",
-      entityType: "COMPANION_ORGANISATION",
+      entityType: "PATIENT_ORGANISATION",
       entityId: link._id.toString(),
       metadata: {
         organisationType: link.organisationType,
@@ -499,11 +499,11 @@ export const CompanionOrganisationService = {
 
     await AuditTrailService.recordSafely({
       organisationId: link.organisationId?.toString() ?? "",
-      companionId: link.companionId.toString(),
-      eventType: "COMPANION_ORG_LINK_APPROVED",
+      patientId: link.patientId.toString(),
+      eventType: "PATIENT_ORG_LINK_APPROVED",
       actorType: "PARENT",
       actorId: parentId.toString(),
-      entityType: "COMPANION_ORGANISATION",
+      entityType: "PATIENT_ORGANISATION",
       entityId: link._id.toString(),
       metadata: {
         organisationType: link.organisationType,
@@ -539,11 +539,11 @@ export const CompanionOrganisationService = {
 
     await AuditTrailService.recordSafely({
       organisationId: link.organisationId?.toString() ?? "",
-      companionId: link.companionId.toString(),
-      eventType: "COMPANION_ORG_LINK_REJECTED",
+      patientId: link.patientId.toString(),
+      eventType: "PATIENT_ORG_LINK_REJECTED",
       actorType: "PARENT",
       actorId: parentId.toString(),
-      entityType: "COMPANION_ORGANISATION",
+      entityType: "PATIENT_ORGANISATION",
       entityId: link._id.toString(),
       metadata: {
         organisationType: link.organisationType,
@@ -554,27 +554,27 @@ export const CompanionOrganisationService = {
     return link;
   },
 
-  async getLinksForCompanion(companionId: string | Types.ObjectId) {
-    const id = ensureObjectId(companionId, "companionId");
+  async getLinksForCompanion(patientId: string | Types.ObjectId) {
+    const id = ensureObjectId(patientId, "patientId");
     if (isReadFromPostgres()) {
-      const links = await prisma.companionOrganisation.findMany({
-        where: { companionId: id.toString() },
+      const links = await prisma.patientOrganisation.findMany({
+        where: { patientId: id.toString() },
       });
       return links.map((link) => ({ ...link, _id: link.id }));
     }
-    return CompanionOrganisationModel.find({ companionId: id });
+    return CompanionOrganisationModel.find({ patientId: id });
   },
 
   async getLinksForCompanionByOrganisationTye(
-    companionId: string | Types.ObjectId,
+    patientId: string | Types.ObjectId,
     type: "HOSPITAL" | "BREEDER" | "BOARDER" | "GROOMER",
   ) {
-    companionId = assertSafeString(companionId, "companionId");
-    const id = ensureObjectId(companionId, "companionId");
+    patientId = assertSafeString(patientId, "patientId");
+    const id = ensureObjectId(patientId, "patientId");
     if (isReadFromPostgres()) {
-      const links = await prisma.companionOrganisation.findMany({
+      const links = await prisma.patientOrganisation.findMany({
         where: {
-          companionId: id.toString(),
+          patientId: id.toString(),
           organisationType: type,
           OR: [
             { status: "ACTIVE" },
@@ -583,11 +583,11 @@ export const CompanionOrganisationService = {
         },
       });
 
-      const parentLink = await prisma.parentCompanion.findFirst({
-        where: { companionId: id.toString(), role: "PRIMARY" },
+      const parentLink = await prisma.parentPatient.findFirst({
+        where: { patientId: id.toString(), role: "PRIMARY" },
       });
 
-      const companion = await prisma.companion.findUnique({
+      const companion = await prisma.patient.findUnique({
         where: { id: id.toString() },
       });
 
@@ -609,7 +609,7 @@ export const CompanionOrganisationService = {
     }
 
     const links = await CompanionOrganisationModel.find({
-      companionId: id,
+      patientId: id,
       organisationType: type,
       $or: [
         { status: "ACTIVE" },
@@ -624,7 +624,7 @@ export const CompanionOrganisationService = {
     );
 
     const parentComapnionLink = await ParentCompanionModel.findOne({
-      companionId: id,
+      patientId: id,
       role: "PRIMARY",
     }).exec();
 
@@ -644,22 +644,22 @@ export const CompanionOrganisationService = {
     const id = ensureObjectId(organisationId, "organisationId");
 
     if (isReadFromPostgres()) {
-      const links = await prisma.companionOrganisation.findMany({
+      const links = await prisma.patientOrganisation.findMany({
         where: {
           organisationId: id.toString(),
           status: { in: ["ACTIVE", "PENDING"] },
         },
       });
 
-      const companionIds = Array.from(new Set(links.map((l) => l.companionId)));
-      const companions = await prisma.companion.findMany({
+      const companionIds = Array.from(new Set(links.map((l) => l.patientId)));
+      const companions = await prisma.patient.findMany({
         where: { id: { in: companionIds } },
       });
       const companionMap = new Map(companions.map((c) => [c.id, c]));
 
-      const parentLinks = await prisma.parentCompanion.findMany({
+      const parentLinks = await prisma.parentPatient.findMany({
         where: {
-          companionId: { in: companionIds },
+          patientId: { in: companionIds },
           role: "PRIMARY",
           status: "ACTIVE",
         },
@@ -670,12 +670,12 @@ export const CompanionOrganisationService = {
       });
       const parentMap = new Map(parents.map((p) => [p.id, p]));
       const parentByCompanion = new Map(
-        parentLinks.map((l) => [l.companionId, l.parentId]),
+        parentLinks.map((l) => [l.patientId, l.parentId]),
       );
 
       const results = links.map((link) => {
-        const companion = companionMap.get(link.companionId);
-        const parentId = parentByCompanion.get(link.companionId);
+        const companion = companionMap.get(link.patientId);
+        const parentId = parentByCompanion.get(link.patientId);
         const parent = parentId ? parentMap.get(parentId) : null;
 
         return {
@@ -699,7 +699,7 @@ export const CompanionOrganisationService = {
     const results = await Promise.all(
       links.map(async (link) => {
         // 1️⃣ Fetch companion
-        const companion = await CompanionModel.findById(link.companionId);
+        const companion = await CompanionModel.findById(link.patientId);
         if (!companion) {
           // orphaned link → skip
           return null;
@@ -707,7 +707,7 @@ export const CompanionOrganisationService = {
 
         // 2️⃣ Fetch primary parent
         const parentLink = await ParentCompanionModel.findOne({
-          companionId: companion._id,
+          patientId: companion._id,
           role: "PRIMARY",
           status: "ACTIVE",
         });

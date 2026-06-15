@@ -375,6 +375,7 @@ export {
 } from './form';
 export type {
   AdverseEventReporterType,
+  AdverseEventPatientInfo,
   AdverseEventCompanionInfo,
   AdverseEventConsent,
   AdverseEventDestinations,

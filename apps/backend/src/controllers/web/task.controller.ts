@@ -342,7 +342,7 @@ export const TaskController = {
       unknown,
       unknown,
       {
-        companionId?: string;
+        patientId?: string;
         fromDueAt?: string;
         toDueAt?: string;
         status?: string;
@@ -361,7 +361,7 @@ export const TaskController = {
 
       const tasks = await TaskService.listForParent({
         parentId,
-        companionId: req.query.companionId,
+        patientId: req.query.patientId,
         fromDueAt: parseDateQuery(req.query.fromDueAt),
         toDueAt: parseDateQuery(req.query.toDueAt),
         status: parseStatusList(req.query.status),
@@ -381,7 +381,7 @@ export const TaskController = {
       unknown,
       {
         userId?: string;
-        companionId?: string;
+        patientId?: string;
         fromDueAt?: string;
         toDueAt?: string;
         status?: string;
@@ -397,7 +397,7 @@ export const TaskController = {
       const tasks = await TaskService.listForEmployee({
         organisationId,
         userId,
-        companionId: req.query.companionId,
+        patientId: req.query.patientId,
         fromDueAt: parseDateQuery(req.query.fromDueAt),
         toDueAt: parseDateQuery(req.query.toDueAt),
         status: parseStatusList(req.query.status),
@@ -412,7 +412,7 @@ export const TaskController = {
   // Companion Task List
   listForCompanion: async (
     req: Request<
-      { companionId: string },
+      { patientId: string },
       unknown,
       unknown,
       {
@@ -427,7 +427,7 @@ export const TaskController = {
     try {
       const organisationId = (req as OrgRequest).organisationId;
       const tasks = await TaskService.listForCompanion({
-        companionId: req.params.companionId,
+        patientId: req.params.patientId,
         organisationId,
         audience: parseAudience(req.query.audience),
         fromDueAt: parseDateQuery(req.query.fromDueAt),

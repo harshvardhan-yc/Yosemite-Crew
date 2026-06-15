@@ -135,15 +135,15 @@ const validateTestCodes = async (tests: string[]) => {
 };
 
 const loadCompanionAndParent = async (input: {
-  companionId: IdLike;
+  patientId: IdLike;
   parentId: IdLike;
   parentLastNameError: string;
 }) => {
   const companion = isReadFromPostgres()
-    ? await prisma.companion.findFirst({
-        where: { id: toIdString(input.companionId) },
+    ? await prisma.patient.findFirst({
+        where: { id: toIdString(input.patientId) },
       })
-    : await CompanionModel.findById(input.companionId).lean();
+    : await CompanionModel.findById(input.patientId).lean();
   if (!companion) {
     throw new LabOrderServiceError("Companion not found.", 404);
   }
@@ -197,25 +197,23 @@ const buildPatientPayload = async (input: {
   } & { id?: string; _id?: { toString(): string } };
 }) => {
   const speciesCode = await lookupIdexxMapping(
-    input.companion.speciesCode as string,
+    input.patient.speciesCode as string,
   );
-  const breedCode = await lookupIdexxMapping(
-    input.companion.breedCode as string,
-  );
+  const breedCode = await lookupIdexxMapping(input.patient.breedCode as string);
   const genderCode = resolveGenderCode(
-    input.companion.gender as string,
-    input.companion.isNeutered ?? undefined,
+    input.patient.gender as string,
+    input.patient.isNeutered ?? undefined,
   );
 
   return {
-    patientId: resolveDocId(input.companion),
-    name: input.companion.name,
-    microchip: input.companion.microchipNumber ?? undefined,
+    patientId: resolveDocId(input.patient),
+    name: input.patient.name,
+    microchip: input.patient.microchipNumber ?? undefined,
     speciesCode,
     breedCode,
     genderCode,
-    birthdate: input.companion.dateOfBirth
-      ? input.companion.dateOfBirth.toISOString().split("T")[0]
+    birthdate: input.patient.dateOfBirth
+      ? input.patient.dateOfBirth.toISOString().split("T")[0]
       : undefined,
     client: {
       id: resolveDocId(input.parent),
@@ -253,7 +251,7 @@ const buildOrderResult = (
 };
 
 const buildOrderPayload = async (input: {
-  companionId: IdLike;
+  patientId: IdLike;
   parentId: IdLike;
   tests: string[];
   modality?: "IN_HOUSE" | "REFERENCE_LAB";
@@ -264,7 +262,7 @@ const buildOrderPayload = async (input: {
   specimenCollectionDate?: string | null;
 }): Promise<Record<string, unknown>> => {
   const { companion, parent } = await loadCompanionAndParent({
-    companionId: input.companionId,
+    patientId: input.patientId,
     parentId: input.parentId,
     parentLastNameError: "Parent last name is required for IDEXX orders.",
   });
@@ -295,13 +293,13 @@ const buildOrderPayload = async (input: {
 };
 
 const buildCensusPayload = async (input: {
-  companionId: IdLike;
+  patientId: IdLike;
   parentId: IdLike;
   veterinarian?: string | null;
   ivls?: Array<{ serialNumber: string }>;
 }) => {
   const { companion, parent } = await loadCompanionAndParent({
-    companionId: input.companionId,
+    patientId: input.patientId,
     parentId: input.parentId,
     parentLastNameError: "Parent last name is required for IDEXX census.",
   });
@@ -317,9 +315,9 @@ const buildCensusPayload = async (input: {
 
 export class IdexxOrderAdapter implements LabOrderAdapter {
   async createOrder(input: LabOrderCreateInput): Promise<LabOrderCreateResult> {
-    const companionId = isReadFromPostgres()
-      ? input.companionId
-      : new Types.ObjectId(input.companionId);
+    const patientId = isReadFromPostgres()
+      ? input.patientId
+      : new Types.ObjectId(input.patientId);
     let parentId = input.parentId
       ? isReadFromPostgres()
         ? input.parentId
@@ -328,15 +326,15 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
 
     if (!parentId) {
       const parentLink = isReadFromPostgres()
-        ? await prisma.parentCompanion.findFirst({
+        ? await prisma.parentPatient.findFirst({
             where: {
-              companionId: toIdString(companionId),
+              patientId: toIdString(patientId),
               role: "PRIMARY",
               status: "ACTIVE",
             },
           })
         : await ParentCompanionModel.findOne({
-            companionId,
+            patientId,
             role: "PRIMARY",
             status: "ACTIVE",
           }).lean();
@@ -352,7 +350,7 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
     }
 
     const payload = await buildOrderPayload({
-      companionId,
+      patientId,
       parentId,
       tests: input.tests,
       modality: input.modality,
@@ -367,13 +365,13 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
 
     if (input.modality === "IN_HOUSE") {
       const censusPayload = await buildCensusPayload({
-        companionId,
+        patientId,
         parentId,
         veterinarian: input.veterinarian,
         ivls: input.ivls,
       });
 
-      const patientId = toIdString(companionId);
+      const patientId = toIdString(patientId);
       try {
         await client.getCensusPatient(patientId);
       } catch (error) {
@@ -415,9 +413,9 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
     idexxOrderId: string,
     input: LabOrderCreateInput,
   ): Promise<LabOrderCreateResult> {
-    const companionId = isReadFromPostgres()
-      ? input.companionId
-      : new Types.ObjectId(input.companionId);
+    const patientId = isReadFromPostgres()
+      ? input.patientId
+      : new Types.ObjectId(input.patientId);
     const parentId = input.parentId
       ? isReadFromPostgres()
         ? input.parentId
@@ -432,7 +430,7 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
     }
 
     const payload = await buildOrderPayload({
-      companionId,
+      patientId,
       parentId,
       tests: input.tests,
       modality: input.modality,

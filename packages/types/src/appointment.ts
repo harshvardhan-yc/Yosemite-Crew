@@ -41,6 +41,7 @@ export type Appointment = {
       name: string;
     };
   };
+  patient?: Appointment['companion'];
   lead?: {
     id: string;
     name: string;
@@ -112,20 +113,21 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
   const normalizedLeadId = appointment.lead?.id?.trim();
   const hasValidLeadId =
     Boolean(normalizedLeadId) && normalizedLeadId !== 'undefined' && normalizedLeadId !== 'null';
+  const patient = appointment.patient ?? appointment.companion;
 
   // Companion participant
   participants.push(
     {
       actor: {
-        reference: `Patient/${appointment.companion.id}`,
-        display: appointment.companion.name,
+        reference: `Patient/${patient?.id ?? ''}`,
+        display: patient?.name,
       },
       status: 'accepted',
     },
     {
       actor: {
-        reference: `RelatedPerson/${appointment.companion.parent.id}`,
-        display: appointment.companion.parent.name,
+        reference: `RelatedPerson/${patient?.parent.id ?? ''}`,
+        display: patient?.parent.name,
       },
       status: 'accepted',
     },
@@ -246,12 +248,12 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
     {
       id: 'species',
       url: SPECIES_SYSTEM_URL,
-      valueString: appointment.companion.species,
+      valueString: patient?.species,
     },
     {
       id: 'breed',
       url: BREED_SYSTEM_URL,
-      valueString: appointment.companion.breed,
+      valueString: patient?.breed,
     }
   );
 
@@ -476,7 +478,7 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
     caseId: caseId || undefined,
     encounterId: encounterId || undefined,
     organisationId: orgParticipant?.actor?.reference?.split('/')[1] ?? 'unknown-org',
-    companion: {
+    patient: {
       id: companionParticipant?.actor?.reference?.split('/')[1] ?? 'unknown-pet',
       name: companionParticipant?.actor?.display ?? '',
       species: speciesExtesnion?.valueString || '',

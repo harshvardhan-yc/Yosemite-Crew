@@ -104,15 +104,15 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 const assertParentCanAccessCompanion = async (
   parentId: string | Types.ObjectId,
-  companionId: Types.ObjectId,
+  patientId: Types.ObjectId,
 ): Promise<void> => {
   const _parentId = ensureObjectId(parentId, "parentId");
 
   if (isReadFromPostgres()) {
-    const link = await prisma.parentCompanion.findFirst({
+    const link = await prisma.parentPatient.findFirst({
       where: {
         parentId: _parentId.toString(),
-        companionId: companionId.toString(),
+        patientId: patientId.toString(),
         status: { in: ["ACTIVE", "PENDING"] },
       },
       select: { id: true },
@@ -127,7 +127,7 @@ const assertParentCanAccessCompanion = async (
   const link = await ParentCompanionModel.findOne(
     {
       parentId: _parentId,
-      companionId,
+      patientId,
       status: { $in: ["ACTIVE", "PENDING"] },
     },
     { _id: 1 },
@@ -143,15 +143,15 @@ const assertParentCanAccessCompanion = async (
 
 const assertPmsCanAccessCompanion = async (
   organisationId: string,
-  companionId: Types.ObjectId,
+  patientId: Types.ObjectId,
 ): Promise<void> => {
   assertSafeString(organisationId, "organisationId");
 
   if (isReadFromPostgres()) {
-    const link = await prisma.companionOrganisation.findFirst({
+    const link = await prisma.patientOrganisation.findFirst({
       where: {
         organisationId,
-        companionId: companionId.toString(),
+        patientId: patientId.toString(),
         status: { in: ["ACTIVE", "PENDING"] },
       },
       select: { id: true },
@@ -168,7 +168,7 @@ const assertPmsCanAccessCompanion = async (
   const link = await CompanionOrganisationModel.findOne(
     {
       organisationId: safeOrganisationId,
-      companionId,
+      patientId,
       status: { $in: ["ACTIVE", "PENDING"] },
     },
     { _id: 1 },
@@ -188,15 +188,15 @@ const getParentAccessibleCompanionIds = async (
   const _parentId = ensureObjectId(parentId, "parentId");
 
   if (isReadFromPostgres()) {
-    const links = await prisma.parentCompanion.findMany({
+    const links = await prisma.parentPatient.findMany({
       where: {
         parentId: _parentId.toString(),
         status: { in: ["ACTIVE", "PENDING"] },
       },
-      select: { companionId: true },
+      select: { patientId: true },
     });
 
-    return links.map((link) => ensureObjectId(link.companionId, "companionId"));
+    return links.map((link) => ensureObjectId(link.patientId, "patientId"));
   }
 
   const links = (await ParentCompanionModel.find(
@@ -204,13 +204,13 @@ const getParentAccessibleCompanionIds = async (
       parentId: _parentId,
       status: { $in: ["ACTIVE", "PENDING"] },
     },
-    { companionId: 1 },
+    { patientId: 1 },
     { sanitizeFilter: false },
   )
     .lean()
-    .exec()) as unknown as Array<{ companionId: Types.ObjectId | string }>;
+    .exec()) as unknown as Array<{ patientId: Types.ObjectId | string }>;
 
-  return links.map((link) => ensureObjectId(link.companionId, "companionId"));
+  return links.map((link) => ensureObjectId(link.patientId, "patientId"));
 };
 
 const getOrganisationAccessibleCompanionIds = async (
@@ -219,15 +219,15 @@ const getOrganisationAccessibleCompanionIds = async (
   assertSafeString(organisationId, "organisationId");
 
   if (isReadFromPostgres()) {
-    const links = await prisma.companionOrganisation.findMany({
+    const links = await prisma.patientOrganisation.findMany({
       where: {
         organisationId,
         status: { in: ["ACTIVE", "PENDING"] },
       },
-      select: { companionId: true },
+      select: { patientId: true },
     });
 
-    return links.map((link) => ensureObjectId(link.companionId, "companionId"));
+    return links.map((link) => ensureObjectId(link.patientId, "patientId"));
   }
 
   const safeOrganisationId = ensureObjectId(organisationId, "organisationId");
@@ -237,13 +237,13 @@ const getOrganisationAccessibleCompanionIds = async (
       organisationId: safeOrganisationId,
       status: { $in: ["ACTIVE", "PENDING"] },
     },
-    { companionId: 1 },
+    { patientId: 1 },
     { sanitizeFilter: false },
   )
     .lean()
-    .exec()) as unknown as Array<{ companionId: Types.ObjectId | string }>;
+    .exec()) as unknown as Array<{ patientId: Types.ObjectId | string }>;
 
-  return links.map((link) => ensureObjectId(link.companionId, "companionId"));
+  return links.map((link) => ensureObjectId(link.patientId, "patientId"));
 };
 
 const getDocumentForParentAccess = async (
@@ -264,7 +264,7 @@ const getDocumentForParentAccess = async (
 
     await assertParentCanAccessCompanion(
       parentId,
-      ensureObjectId(doc.companionId, "companionId"),
+      ensureObjectId(doc.patientId, "patientId"),
     );
     return mapDocumentToDtoFromPrisma(doc);
   }
@@ -274,7 +274,7 @@ const getDocumentForParentAccess = async (
     return null;
   }
 
-  await assertParentCanAccessCompanion(parentId, doc.companionId);
+  await assertParentCanAccessCompanion(parentId, doc.patientId);
   return mapDocumentToDto(doc);
 };
 
@@ -297,7 +297,7 @@ const getDocumentForPmsAccess = async (
 
     await assertPmsCanAccessCompanion(
       organisationId,
-      ensureObjectId(doc.companionId, "companionId"),
+      ensureObjectId(doc.patientId, "patientId"),
     );
     return mapDocumentToDtoFromPrisma(doc);
   }
@@ -307,7 +307,7 @@ const getDocumentForPmsAccess = async (
     return null;
   }
 
-  await assertPmsCanAccessCompanion(organisationId, doc.companionId);
+  await assertPmsCanAccessCompanion(organisationId, doc.patientId);
   return mapDocumentToDto(doc);
 };
 
@@ -407,7 +407,7 @@ export interface DocumentAttachmentInput {
 }
 
 export interface CreateDocumentInput {
-  companionId: string | Types.ObjectId;
+  patientId: string | Types.ObjectId;
   appointmentId?: string | Types.ObjectId | null;
 
   category: string;
@@ -429,7 +429,7 @@ export type DocumentCreateContext = {
 
 export interface DocumentDto {
   id: string;
-  companionId: string;
+  patientId: string;
   appointmentId: string | null;
 
   category: string;
@@ -465,7 +465,7 @@ const mapDocumentToDto = (doc: DocumentDocument): DocumentDto => {
 
   return {
     id: obj._id.toString(),
-    companionId: obj.companionId.toString(),
+    patientId: obj.patientId.toString(),
     appointmentId: obj.appointmentId ? obj.appointmentId.toString() : null,
 
     category: obj.category,
@@ -499,7 +499,7 @@ const mapDocumentToDto = (doc: DocumentDocument): DocumentDto => {
 
 const mapDocumentToDtoFromPrisma = (doc: {
   id: string;
-  companionId: string;
+  patientId: string;
   appointmentId: string | null;
   category: string;
   subcategory: string | null;
@@ -520,7 +520,7 @@ const mapDocumentToDtoFromPrisma = (doc: {
   }>;
 }): DocumentDto => ({
   id: doc.id,
-  companionId: doc.companionId,
+  patientId: doc.patientId,
   appointmentId: doc.appointmentId ?? null,
   category: doc.category,
   subcategory: doc.subcategory ?? null,
@@ -550,7 +550,7 @@ const toPrismaDocumentData = (doc: DocumentDocument) => {
 
   return {
     id: obj._id.toString(),
-    companionId: obj.companionId.toString(),
+    patientId: obj.patientId.toString(),
     appointmentId: obj.appointmentId ? obj.appointmentId.toString() : undefined,
     category: obj.category,
     subcategory: obj.subcategory ?? undefined,
@@ -623,7 +623,7 @@ const buildPersistableDocument = (
     throw new DocumentServiceError("At least one attachment is required.", 400);
   }
 
-  const companionId = ensureObjectId(input.companionId, "companionId");
+  const patientId = ensureObjectId(input.patientId, "patientId");
   const appointmentId =
     input.appointmentId != null && input.appointmentId !== ""
       ? ensureObjectId(input.appointmentId, "appointmentId")
@@ -669,7 +669,7 @@ const buildPersistableDocument = (
   }));
 
   const persistable: DocumentMongo = {
-    companionId,
+    patientId,
     appointmentId,
 
     category,
@@ -707,7 +707,7 @@ export const DocumentService = {
     if (context.organisationId) {
       await AuditTrailService.recordSafely({
         organisationId: context.organisationId,
-        companionId: doc.companionId.toString(),
+        patientId: doc.patientId.toString(),
         eventType: "DOCUMENT_ADDED",
         actorType: context.pmsUserId ? "PMS_USER" : "SYSTEM",
         actorId: context.pmsUserId ?? null,
@@ -726,16 +726,16 @@ export const DocumentService = {
   },
 
   async listForParent(params: {
-    companionId: string | Types.ObjectId;
+    patientId: string | Types.ObjectId;
     parentId: string | Types.ObjectId;
     category?: string;
     subcategory?: string;
   }): Promise<DocumentDto[]> {
-    const companionId = ensureObjectId(params.companionId, "companionId");
-    await assertParentCanAccessCompanion(params.parentId, companionId);
+    const patientId = ensureObjectId(params.patientId, "patientId");
+    await assertParentCanAccessCompanion(params.parentId, patientId);
 
     const filter: Record<string, unknown> = {
-      companionId,
+      patientId,
     };
 
     if (params.category) {
@@ -749,7 +749,7 @@ export const DocumentService = {
     if (isReadFromPostgres()) {
       const docs = await prisma.document.findMany({
         where: {
-          companionId: companionId.toString(),
+          patientId: patientId.toString(),
           category: params.category
             ? String(params.category).toUpperCase()
             : undefined,
@@ -771,17 +771,17 @@ export const DocumentService = {
   },
 
   async listForPms(params: {
-    companionId: string | Types.ObjectId;
+    patientId: string | Types.ObjectId;
     organisationId: string;
     category?: string;
     subcategory?: string;
     appointmentId?: string | Types.ObjectId;
   }): Promise<DocumentDto[]> {
-    const companionId = ensureObjectId(params.companionId, "companionId");
-    await assertPmsCanAccessCompanion(params.organisationId, companionId);
+    const patientId = ensureObjectId(params.patientId, "patientId");
+    await assertPmsCanAccessCompanion(params.organisationId, patientId);
 
     const filter: Record<string, unknown> = {
-      companionId,
+      patientId,
       pmsVisible: true,
     };
 
@@ -803,7 +803,7 @@ export const DocumentService = {
     if (isReadFromPostgres()) {
       const docs = await prisma.document.findMany({
         where: {
-          companionId: companionId.toString(),
+          patientId: patientId.toString(),
           pmsVisible: true,
           category: params.category
             ? String(params.category).toUpperCase()
@@ -898,7 +898,7 @@ export const DocumentService = {
       const docs = await prisma.document.findMany({
         where: {
           appointmentId: appointmentId.toString(),
-          companionId: { in: companionIds.map((id) => id.toString()) },
+          patientId: { in: companionIds.map((id) => id.toString()) },
         },
         orderBy: { createdAt: "desc" },
         include: { attachments: true },
@@ -908,7 +908,7 @@ export const DocumentService = {
 
     const docs = await DocumentModel.find({
       appointmentId,
-      companionId: { $in: companionIds },
+      patientId: { $in: companionIds },
     })
       .sort({ createdAt: -1 })
       .exec();
@@ -920,14 +920,14 @@ export const DocumentService = {
   async listForAppointmentPms(params: {
     appointmentId: string | Types.ObjectId;
     organisationId: string;
-    companionId?: string | Types.ObjectId;
+    patientId?: string | Types.ObjectId;
   }): Promise<DocumentDto[]> {
     const appointmentId = ensureObjectId(params.appointmentId, "appointmentId");
-    const companionIds = params.companionId
-      ? [ensureObjectId(params.companionId, "companionId")]
+    const companionIds = params.patientId
+      ? [ensureObjectId(params.patientId, "patientId")]
       : await getOrganisationAccessibleCompanionIds(params.organisationId);
 
-    if (params.companionId) {
+    if (params.patientId) {
       await assertPmsCanAccessCompanion(params.organisationId, companionIds[0]);
     }
 
@@ -938,7 +938,7 @@ export const DocumentService = {
     if (isReadFromPostgres()) {
       const docs = await prisma.document.findMany({
         where: {
-          companionId: { in: companionIds.map((id) => id.toString()) },
+          patientId: { in: companionIds.map((id) => id.toString()) },
           appointmentId: appointmentId.toString(),
           pmsVisible: true,
         },
@@ -949,7 +949,7 @@ export const DocumentService = {
     }
 
     const docs = await DocumentModel.find({
-      companionId: { $in: companionIds },
+      patientId: { $in: companionIds },
       appointmentId,
       pmsVisible: true,
     })
@@ -974,16 +974,13 @@ export const DocumentService = {
     }
 
     if (context.parentId) {
-      await assertParentCanAccessCompanion(context.parentId, doc.companionId);
+      await assertParentCanAccessCompanion(context.parentId, doc.patientId);
     }
     if (context.pmsUserId) {
       if (!context.organisationId) {
         throw new DocumentServiceError("organisationId is required.", 400);
       }
-      await assertPmsCanAccessCompanion(
-        context.organisationId,
-        doc.companionId,
-      );
+      await assertPmsCanAccessCompanion(context.organisationId, doc.patientId);
     }
 
     // 2. Permission check
@@ -1006,7 +1003,7 @@ export const DocumentService = {
     if (context.organisationId) {
       await AuditTrailService.recordSafely({
         organisationId: context.organisationId,
-        companionId: doc.companionId.toString(),
+        patientId: doc.patientId.toString(),
         eventType: "DOCUMENT_UPDATED",
         actorType: context.pmsUserId ? "PMS_USER" : "SYSTEM",
         actorId: context.pmsUserId ?? null,
@@ -1126,9 +1123,9 @@ export const DocumentService = {
     }
 
     if (params.parentId) {
-      await assertParentCanAccessCompanion(params.parentId, doc.companionId);
+      await assertParentCanAccessCompanion(params.parentId, doc.patientId);
     } else if (params.organisationId) {
-      await assertPmsCanAccessCompanion(params.organisationId, doc.companionId);
+      await assertPmsCanAccessCompanion(params.organisationId, doc.patientId);
     } else {
       throw new DocumentServiceError("User not authorized.", 401);
     }
@@ -1137,12 +1134,12 @@ export const DocumentService = {
   },
 
   async searchByTitleForParent(params: {
-    companionId: string | Types.ObjectId;
+    patientId: string | Types.ObjectId;
     parentId: string | Types.ObjectId;
     title: string;
   }): Promise<DocumentDto[]> {
-    const companionId = ensureObjectId(params.companionId, "companionId");
-    await assertParentCanAccessCompanion(params.parentId, companionId);
+    const patientId = ensureObjectId(params.patientId, "patientId");
+    await assertParentCanAccessCompanion(params.parentId, patientId);
 
     if (!params.title || typeof params.title !== "string") {
       throw new DocumentServiceError("Search title is required.", 400);
@@ -1154,7 +1151,7 @@ export const DocumentService = {
     if (isReadFromPostgres()) {
       const docs = await prisma.document.findMany({
         where: {
-          companionId: companionId.toString(),
+          patientId: patientId.toString(),
           title: { contains: params.title.trim(), mode: "insensitive" },
         },
         orderBy: { createdAt: "desc" },
@@ -1164,7 +1161,7 @@ export const DocumentService = {
     }
 
     const docs = await DocumentModel.find({
-      companionId,
+      patientId,
       title: { $regex: regex },
     })
       .sort({ createdAt: -1 })
