@@ -1,6 +1,6 @@
 import { prisma } from "src/config/prisma";
 import { ClinicalArtifactService } from "./clinical-artifact.service";
-import { FormService } from "./form.service";
+import { FormAssignmentService } from "./form-assignment.service";
 import type {
   Case,
   Encounter,
@@ -11,6 +11,7 @@ import type {
   WorkspaceLabSummary,
   WorkspaceLockState,
   WorkspacePermissionSnapshot,
+  WorkspaceFormRow,
   WorkspacePrimaryAction,
   WorkspaceSummaryItem,
   WorkspaceTreatmentItem,
@@ -397,6 +398,18 @@ const buildContext = async (
         })) as AppointmentRow | null)
       : null;
 
+  const encounterAppointment =
+    appointment == null && input.encounterId != null
+      ? ((await prisma.appointment.findFirst({
+          where: {
+            encounterId: input.encounterId,
+            organisationId: input.organisationId,
+          },
+        })) as AppointmentRow | null)
+      : null;
+
+  const resolvedAppointment = appointment ?? encounterAppointment;
+
   const encounterRow =
     input.encounterId != null
       ? ((await prisma.encounter.findFirst({
@@ -416,7 +429,7 @@ const buildContext = async (
 
   const encounter = encounterRow != null ? mapEncounterRow(encounterRow) : null;
 
-  const caseId = encounter?.caseId ?? appointment?.caseId ?? undefined;
+  const caseId = encounter?.caseId ?? resolvedAppointment?.caseId ?? undefined;
   const caseRow = caseId
     ? ((await prisma.case.findFirst({
         where: {
@@ -429,12 +442,12 @@ const buildContext = async (
 
   const companionId =
     encounter?.patientId ??
-    getPatientIdFromAppointment(appointment?.patient) ??
+    getPatientIdFromAppointment(resolvedAppointment?.patient) ??
     undefined;
 
   const parentId =
     encounter?.parentId ??
-    getParentIdFromAppointment(appointment?.patient) ??
+    getParentIdFromAppointment(resolvedAppointment?.patient) ??
     episodeOfCare?.parentId ??
     undefined;
 
@@ -454,7 +467,7 @@ const buildContext = async (
   ]);
 
   return {
-    appointment,
+    appointment: resolvedAppointment,
     encounter,
     episodeOfCare,
     companion,
@@ -462,18 +475,26 @@ const buildContext = async (
   };
 };
 
-const loadForms = async (appointmentId: string | undefined) => {
+const loadForms = async (
+  organisationId: string,
+  appointmentId: string | undefined,
+) => {
   if (!appointmentId) {
     return {
       appointmentId: undefined,
-      items: [] as Array<{ status: "completed" | "pending" }>,
+      items: [] as WorkspaceFormRow[],
     };
   }
 
-  return FormService.getFormsForAppointment({
+  const items = await FormAssignmentService.listAppointmentFormSummaries(
+    organisationId,
     appointmentId,
-    isPMS: true,
-  });
+  );
+
+  return {
+    appointmentId,
+    items,
+  };
 };
 
 const loadClinicalArtifacts = async (params: {
@@ -784,7 +805,7 @@ const buildBootstrapAggregate = async (
     documents,
     ordersAndResults,
   ] = await Promise.all([
-    loadForms(appointmentId),
+    loadForms(input.organisationId, appointmentId),
     loadClinicalArtifacts({
       organisationId: input.organisationId,
       appointmentId,

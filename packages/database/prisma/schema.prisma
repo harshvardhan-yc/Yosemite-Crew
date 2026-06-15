@@ -410,6 +410,7 @@ model Patient {
   updatedAt        DateTime      @updatedAt
 
   documents         Document[]
+  formAssignments   FormAssignment[]
   organisations     PatientOrganisation[]
   parentLinks       ParentPatient[]
 
@@ -529,6 +530,7 @@ model Appointment {
 
   caseRecord        Case?             @relation("CaseAppointments", fields: [caseId], references: [id], onDelete: SetNull)
   encounter         Encounter?        @relation("EncounterAppointments", fields: [encounterId], references: [id], onDelete: SetNull)
+  formAssignments   FormAssignment[]
 
   @@index([organisationId, appointmentDate])
   @@index([organisationId])
@@ -1184,6 +1186,16 @@ enum FormStatus {
   archived
 }
 
+enum FormAssignmentStatus {
+  DRAFT
+  SENT
+  VIEWED
+  SUBMITTED
+  SIGNED
+  EXPIRED
+  CANCELLED
+}
+
 enum TemplateKind {
   FORM
   SOAP_NOTE
@@ -1565,6 +1577,42 @@ model FormSubmission {
   @@index([submittedAt])
 }
 
+model FormAssignment {
+  id              String               @id @default(uuid())
+  organisationId  String
+  templateId      String
+  templateVersion Int
+  appointmentId   String?
+  encounterId     String?
+  companionId     String?
+  signerUserId    String?
+  signerName      String?
+  signerEmail     String?
+  signerRole      String?
+  mobileVisible   Boolean              @default(true)
+  signingRequired Boolean              @default(true)
+  status          FormAssignmentStatus @default(SENT)
+  sentAt          DateTime?
+  viewedAt        DateTime?
+  submittedAt     DateTime?
+  signedAt        DateTime?
+  expiredAt       DateTime?
+  cancelledAt     DateTime?
+  createdBy       String
+  updatedBy       String
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  template        Template             @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  appointment     Appointment?         @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  companion       Patient?             @relation(fields: [companionId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, appointmentId])
+  @@index([organisationId, companionId])
+  @@index([organisationId, status])
+  @@index([templateId, templateVersion])
+}
+
 model Template {
   id                 String               @id @default(uuid())
   organisationId     String?
@@ -1585,6 +1633,7 @@ model Template {
 
   versions           TemplateVersion[]
   instances          TemplateInstance[]
+  formAssignments   FormAssignment[]
   catalogLinks       TemplateCatalogLink[]
 
   @@index([organisationId, ownership, kind, status])

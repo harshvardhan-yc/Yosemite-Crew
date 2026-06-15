@@ -1,6 +1,7 @@
 import type { Case } from './case';
 import type { Encounter } from './encounter';
 import type { ClinicalArtifactRecordLike } from './clinical-artifact';
+import type { FormAssignmentLike } from './form-assignment';
 import type { TaskCategory, TaskLike, TaskStatus } from './task';
 import type { TemplateInstanceLike } from './template';
 import type { TaskScheduleLike } from './task-schedule';
@@ -58,6 +59,13 @@ export interface WorkspacePrimaryAction {
   detail: string;
 }
 
+export interface WorkspaceFormRow extends Omit<FormAssignmentLike, 'status'> {
+  status: 'completed' | 'pending';
+  assignmentStatus: FormAssignmentLike['status'];
+  questionnaireResponse?: unknown;
+  questionnaire?: unknown;
+}
+
 export interface WorkspaceLabSummary {
   orders: unknown[];
   results: unknown[];
@@ -99,12 +107,7 @@ export interface WorkspaceBootstrapAggregate {
   labSummary: WorkspaceLabSummary;
   tasks: TaskLike[];
   schedules: TaskScheduleLike[];
-  forms: Array<{
-    formId?: string;
-    status: 'completed' | 'pending';
-    questionnaireResponse?: unknown;
-    questionnaire?: unknown;
-  }>;
+  forms: WorkspaceFormRow[];
   documents: WorkspaceDocumentRow[];
   locks: WorkspaceLockState;
   permissions: WorkspacePermissionSnapshot;

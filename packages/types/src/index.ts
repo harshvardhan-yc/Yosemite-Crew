@@ -320,6 +320,7 @@ export type {
   WorkspaceLockState,
   WorkspacePermissionSnapshot,
   WorkspacePrimaryAction,
+  WorkspaceFormRow,
   WorkspaceSummaryItem,
   WorkspaceTreatmentItem,
 } from './workspace';
@@ -390,6 +391,12 @@ export {
   toFHIRQuestionnaireResponse,
   fromFHIRQuestionnaireResponse,
 } from './form';
+export type {
+  FormAssignmentLike,
+  FormAssignmentStatus,
+  FormSignerIdentity,
+  FormAssignmentCreateInput,
+} from './form-assignment';
 export type {
   AdverseEventReporterType,
   AdverseEventPatientInfo,

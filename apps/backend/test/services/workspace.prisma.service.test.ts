@@ -1,5 +1,5 @@
 import { prisma } from "src/config/prisma";
-import { FormService } from "src/services/form.service";
+import { FormAssignmentService } from "src/services/form-assignment.service";
 import { ClinicalArtifactService } from "src/services/clinical-artifact.service";
 import {
   WorkspaceService,
@@ -23,9 +23,9 @@ jest.mock("src/config/prisma", () => ({
   },
 }));
 
-jest.mock("src/services/form.service", () => ({
-  FormService: {
-    getFormsForAppointment: jest.fn(),
+jest.mock("src/services/form-assignment.service", () => ({
+  FormAssignmentService: {
+    listAppointmentFormSummaries: jest.fn(),
   },
 }));
 
@@ -57,8 +57,8 @@ describe("WorkspaceService", () => {
     labOrder: { findMany: jest.Mock };
     labResult: { findMany: jest.Mock };
   };
-  const mockedFormService = FormService as unknown as {
-    getFormsForAppointment: jest.Mock;
+  const mockedFormService = FormAssignmentService as unknown as {
+    listAppointmentFormSummaries: jest.Mock;
   };
   const mockedClinicalArtifactService = ClinicalArtifactService as unknown as {
     listSoapNotesForAppointment: jest.Mock;
@@ -87,10 +87,37 @@ describe("WorkspaceService", () => {
     mockedPrisma.labOrder.findMany.mockResolvedValue([]);
     mockedPrisma.labResult.findMany.mockResolvedValue([]);
 
-    mockedFormService.getFormsForAppointment.mockResolvedValue({
-      appointmentId: "appt-1",
-      items: [{ status: "pending" }],
-    });
+    mockedFormService.listAppointmentFormSummaries.mockResolvedValue([
+      {
+        assignmentId: "assignment-1",
+        id: "assignment-1",
+        organisationId: "org-1",
+        templateId: "template-1",
+        templateVersion: 1,
+        appointmentId: "appt-1",
+        encounterId: "enc-1",
+        companionId: "patient-1",
+        signerUserId: null,
+        signerName: null,
+        signerEmail: null,
+        signerRole: null,
+        mobileVisible: true,
+        signingRequired: true,
+        status: "pending",
+        assignmentStatus: "SENT",
+        sentAt: new Date("2026-06-14T10:00:00.000Z"),
+        viewedAt: null,
+        submittedAt: null,
+        signedAt: null,
+        expiredAt: null,
+        cancelledAt: null,
+        signerIdentity: null,
+        createdBy: "user-1",
+        updatedBy: "user-1",
+        createdAt: new Date("2026-06-14T10:00:00.000Z"),
+        updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+      },
+    ]);
 
     mockedClinicalArtifactService.listSoapNotesForAppointment.mockResolvedValue(
       [],
@@ -212,15 +239,21 @@ describe("WorkspaceService", () => {
     expect(result.client?.id).toBe("parent-1");
     expect(result.permissions.canViewAppointments).toBe(true);
     expect(result.permissions.canViewTasks).toBe(true);
-    expect(result.forms).toEqual([{ status: "pending" }]);
+    expect(result.forms).toEqual([
+      expect.objectContaining({
+        assignmentId: "assignment-1",
+        status: "pending",
+        assignmentStatus: "SENT",
+      }),
+    ]);
     expect(result.primaryAction.kind).toBe("COMPLETE_FORMS");
     expect(result.treatmentItems).toHaveLength(1);
     expect(result.diagnosticQueue).toHaveLength(2);
     expect(result.labSummary.pendingCount).toBe(1);
-    expect(mockedFormService.getFormsForAppointment).toHaveBeenCalledWith({
-      appointmentId: "appt-1",
-      isPMS: true,
-    });
+    expect(mockedFormService.listAppointmentFormSummaries).toHaveBeenCalledWith(
+      "org-1",
+      "appt-1",
+    );
   });
 
   it("builds the encounter bootstrap even when no linked appointment is resolved", async () => {
@@ -273,6 +306,73 @@ describe("WorkspaceService", () => {
     expect(result.appointment).toBeNull();
     expect(result.forms).toEqual([]);
     expect(result.primaryAction.kind).toBe("VIEW_SUMMARY");
+  });
+
+  it("resolves the linked appointment when bootstrapping from an encounter", async () => {
+    mockedPrisma.appointment.findFirst.mockResolvedValue({
+      id: "appt-enc-1",
+      organisationId: "org-2",
+      status: "UPCOMING",
+      appointmentKind: "INPATIENT",
+      concern: "Linked appointment",
+      encounterId: "enc-2",
+      caseId: "case-2",
+      patient: { id: "patient-2", parent: { id: "parent-2" } },
+      startTime: new Date("2026-06-14T10:00:00.000Z"),
+      endTime: new Date("2026-06-14T11:00:00.000Z"),
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.encounter.findFirst.mockResolvedValue({
+      id: "enc-2",
+      organisationId: "org-2",
+      caseId: "case-2",
+      patientId: "patient-2",
+      parentId: null,
+      status: "in-progress",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      title: "Inpatient stay",
+      reason: "Admit",
+      periodStart: null,
+      periodEnd: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.case.findFirst.mockResolvedValue({
+      id: "case-2",
+      organisationId: "org-2",
+      patientId: "patient-2",
+      parentId: null,
+      status: "active",
+      appointmentKind: "INPATIENT",
+      title: "Episode",
+      description: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.patient.findFirst.mockResolvedValue({
+      id: "patient-2",
+      name: "Milo",
+      type: "PET",
+      status: "ACTIVE",
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+
+    const result = await WorkspaceService.getEncounterBootstrap(
+      {
+        organisationId: "org-2",
+        encounterId: "enc-2",
+      },
+      ["forms:view:any"],
+    );
+
+    expect(result.appointment?.id).toBe("appt-enc-1");
+    expect(mockedFormService.listAppointmentFormSummaries).toHaveBeenCalledWith(
+      "org-2",
+      "appt-enc-1",
+    );
   });
 
   it("throws a not found error when the appointment is missing", async () => {
