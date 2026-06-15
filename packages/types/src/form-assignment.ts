@@ -1,11 +1,11 @@
 export type FormAssignmentStatus =
-  | 'DRAFT'
-  | 'SENT'
-  | 'VIEWED'
-  | 'SUBMITTED'
-  | 'SIGNED'
-  | 'EXPIRED'
-  | 'CANCELLED';
+  | 'draft'
+  | 'sent'
+  | 'viewed'
+  | 'submitted'
+  | 'signed'
+  | 'expired'
+  | 'cancelled';
 
 export interface FormSignerIdentity {
   userId?: string | null;

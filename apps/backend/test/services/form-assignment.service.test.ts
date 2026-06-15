@@ -140,7 +140,7 @@ describe("FormAssignmentService", () => {
       }),
     );
     expect(assignment.assignmentId).toBe("assignment-1");
-    expect(assignment.status).toBe("SENT");
+    expect(assignment.status).toBe("sent");
     expect(assignment.signerIdentity).toEqual({
       userId: "user-1",
       name: "Alex Nurse",
@@ -216,7 +216,7 @@ describe("FormAssignmentService", () => {
     );
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe("SENT");
+    expect(rows[0].status).toBe("sent");
     expect(rows[0].signerIdentity).toBeNull();
   });
 
@@ -321,6 +321,6 @@ describe("FormAssignmentService", () => {
         }),
       }),
     );
-    expect(assignment.status).toBe("CANCELLED");
+    expect(assignment.status).toBe("cancelled");
   });
 });

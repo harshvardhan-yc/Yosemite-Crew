@@ -104,7 +104,7 @@ describe("WorkspaceService", () => {
         mobileVisible: true,
         signingRequired: true,
         status: "pending",
-        assignmentStatus: "SENT",
+        assignmentStatus: "sent",
         sentAt: new Date("2026-06-14T10:00:00.000Z"),
         viewedAt: null,
         submittedAt: null,
@@ -243,7 +243,7 @@ describe("WorkspaceService", () => {
       expect.objectContaining({
         assignmentId: "assignment-1",
         status: "pending",
-        assignmentStatus: "SENT",
+        assignmentStatus: "sent",
       }),
     ]);
     expect(result.primaryAction.kind).toBe("COMPLETE_FORMS");

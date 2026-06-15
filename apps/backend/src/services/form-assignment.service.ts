@@ -49,6 +49,7 @@ type AppointmentRow = {
 };
 
 type FormAssignmentRow = Prisma.FormAssignmentGetPayload<Record<string, never>>;
+type FormAssignmentDbStatus = FormAssignmentRow["status"];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -94,6 +95,34 @@ const toSignerIdentity = (
   };
 };
 
+const normalizeAssignmentStatus = (
+  status: FormAssignmentDbStatus | FormAssignmentLike["status"],
+): FormAssignmentLike["status"] => {
+  switch (status) {
+    case "DRAFT":
+    case "draft":
+      return "draft";
+    case "SENT":
+    case "sent":
+      return "sent";
+    case "VIEWED":
+    case "viewed":
+      return "viewed";
+    case "SUBMITTED":
+    case "submitted":
+      return "submitted";
+    case "SIGNED":
+    case "signed":
+      return "signed";
+    case "EXPIRED":
+    case "expired":
+      return "expired";
+    case "CANCELLED":
+    case "cancelled":
+      return "cancelled";
+  }
+};
+
 const toAssignmentLike = (row: FormAssignmentRow): FormAssignmentLike => ({
   assignmentId: row.id,
   id: row.id,
@@ -109,7 +138,7 @@ const toAssignmentLike = (row: FormAssignmentRow): FormAssignmentLike => ({
   signerRole: row.signerRole,
   mobileVisible: row.mobileVisible,
   signingRequired: row.signingRequired,
-  status: row.status as FormAssignmentLike["status"],
+  status: normalizeAssignmentStatus(row.status),
   sentAt: row.sentAt,
   viewedAt: row.viewedAt,
   submittedAt: row.submittedAt,
@@ -211,8 +240,15 @@ const ensureAssignment = async (
   return assignment;
 };
 
-const ensureResendable = (status: FormAssignmentLike["status"]) => {
-  if (status === "CANCELLED" || status === "SIGNED" || status === "EXPIRED") {
+const ensureResendable = (
+  status: FormAssignmentDbStatus | FormAssignmentLike["status"],
+) => {
+  const normalized = normalizeAssignmentStatus(status);
+  if (
+    normalized === "cancelled" ||
+    normalized === "signed" ||
+    normalized === "expired"
+  ) {
     throw new FormAssignmentServiceError(
       "Assignment can no longer be resent",
       409,
@@ -220,8 +256,11 @@ const ensureResendable = (status: FormAssignmentLike["status"]) => {
   }
 };
 
-const ensureCancellable = (status: FormAssignmentLike["status"]) => {
-  if (status === "SIGNED" || status === "EXPIRED") {
+const ensureCancellable = (
+  status: FormAssignmentDbStatus | FormAssignmentLike["status"],
+) => {
+  const normalized = normalizeAssignmentStatus(status);
+  if (normalized === "signed" || normalized === "expired") {
     throw new FormAssignmentServiceError(
       "Assignment can no longer be cancelled",
       409,
@@ -325,10 +364,10 @@ export const FormAssignmentService = {
     updatedBy: string,
   ) {
     const assignment = await ensureAssignment(assignmentId, organisationId);
-    if (assignment.status === "CANCELLED") {
+    if (normalizeAssignmentStatus(assignment.status) === "cancelled") {
       return toAssignmentLike(assignment);
     }
-    ensureCancellable(assignment.status);
+    ensureCancellable(normalizeAssignmentStatus(assignment.status));
 
     const now = new Date();
     const row = await prisma.formAssignment.update({
@@ -362,7 +401,7 @@ export const FormAssignmentService = {
 };
 
 const isCompleted = (assignment: FormAssignmentLike) =>
-  assignment.status === "SIGNED" ||
-  assignment.status === "CANCELLED" ||
-  assignment.status === "EXPIRED" ||
-  (!assignment.signingRequired && assignment.status === "SUBMITTED");
+  assignment.status === "signed" ||
+  assignment.status === "cancelled" ||
+  assignment.status === "expired" ||
+  (!assignment.signingRequired && assignment.status === "submitted");
