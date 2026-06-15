@@ -68,6 +68,13 @@ export interface WorkspacePermissionSnapshot {
   canViewForms: boolean;
   canViewPrescriptions: boolean;
   canViewLabs: boolean;
+  canEditSoap: boolean;
+  canPrescribe: boolean;
+  canSignDocuments: boolean;
+  canDischarge: boolean;
+  canAssignTasks: boolean;
+  canResumeSchedules: boolean;
+  canCancelSchedules: boolean;
 }
 
 export interface WorkspacePrimaryAction {

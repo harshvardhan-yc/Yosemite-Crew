@@ -184,6 +184,17 @@ const buildPermissionSnapshot = (
   const resolved = [
     ...new Set((permissions ?? []).filter((permission) => permission.trim())),
   ];
+  const canEditSoap = resolved.includes("forms:edit:any");
+  const canPrescribe = resolved.includes("prescription:edit:any");
+  const canSignDocuments =
+    resolved.includes("document:edit:any") ||
+    resolved.includes("forms:edit:any") ||
+    resolved.includes("prescription:edit:any");
+  const canDischarge = resolved.includes("forms:edit:any");
+  const canAssignTasks =
+    resolved.includes("tasks:edit:any") || resolved.includes("tasks:edit:own");
+  const canResumeSchedules = canAssignTasks;
+  const canCancelSchedules = canAssignTasks;
   return {
     permissions: resolved,
     canViewAppointments:
@@ -198,6 +209,13 @@ const buildPermissionSnapshot = (
       resolved.includes("prescription:view:any") ||
       resolved.includes("prescription:view:own"),
     canViewLabs: resolved.includes("labs:view:any"),
+    canEditSoap,
+    canPrescribe,
+    canSignDocuments,
+    canDischarge,
+    canAssignTasks,
+    canResumeSchedules,
+    canCancelSchedules,
   };
 };
 

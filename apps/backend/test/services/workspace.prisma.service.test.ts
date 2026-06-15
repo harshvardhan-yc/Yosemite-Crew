@@ -308,6 +308,13 @@ describe("WorkspaceService", () => {
     expect(result.client?.id).toBe("parent-1");
     expect(result.permissions.canViewAppointments).toBe(true);
     expect(result.permissions.canViewTasks).toBe(true);
+    expect(result.permissions.canEditSoap).toBe(false);
+    expect(result.permissions.canPrescribe).toBe(false);
+    expect(result.permissions.canSignDocuments).toBe(false);
+    expect(result.permissions.canDischarge).toBe(false);
+    expect(result.permissions.canAssignTasks).toBe(false);
+    expect(result.permissions.canResumeSchedules).toBe(false);
+    expect(result.permissions.canCancelSchedules).toBe(false);
     expect(result.forms).toEqual([
       expect.objectContaining({
         assignmentId: "assignment-1",
@@ -489,6 +496,13 @@ describe("WorkspaceService", () => {
     expect(result.appointment).toBeNull();
     expect(result.forms).toEqual([]);
     expect(result.primaryAction.kind).toBe("VIEW_SUMMARY");
+    expect(result.permissions.canEditSoap).toBe(false);
+    expect(result.permissions.canPrescribe).toBe(false);
+    expect(result.permissions.canSignDocuments).toBe(false);
+    expect(result.permissions.canDischarge).toBe(false);
+    expect(result.permissions.canAssignTasks).toBe(false);
+    expect(result.permissions.canResumeSchedules).toBe(false);
+    expect(result.permissions.canCancelSchedules).toBe(false);
   });
 
   it("resolves the linked appointment when bootstrapping from an encounter", async () => {
