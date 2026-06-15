@@ -104,20 +104,20 @@ describe('deepLinkToUrl', () => {
 
   test('maps a yosemitecrew:// deep link to the matching PIMS page', () => {
     expect(deepLinkToUrl('yosemitecrew://appointments/123', config)).toBe(
-      'https://yosemitecrew.com/appointments/123'
+      'https://www.yosemitecrew.com/appointments/123'
     );
     expect(deepLinkToUrl('yosemitecrew://inbox?tab=unread', config)).toBe(
-      'https://yosemitecrew.com/inbox?tab=unread'
+      'https://www.yosemitecrew.com/inbox?tab=unread'
     );
   });
 
   test('maps the bare scheme to the start origin root', () => {
-    expect(deepLinkToUrl('yosemitecrew://', config)).toBe('https://yosemitecrew.com/');
+    expect(deepLinkToUrl('yosemitecrew://', config)).toBe('https://www.yosemitecrew.com/');
   });
 
   test('preserves hash fragments in deep links', () => {
     expect(deepLinkToUrl('yosemitecrew://records#vitals', config)).toBe(
-      'https://yosemitecrew.com/records#vitals'
+      'https://www.yosemitecrew.com/records#vitals'
     );
   });
 

@@ -140,7 +140,7 @@ describe('handleDeepLink', () => {
       activeContents: () => wc as never,
       focusMainWindow: focus,
     });
-    expect(wc.loadURL).toHaveBeenCalledWith('https://yosemitecrew.com/appointments/1');
+    expect(wc.loadURL).toHaveBeenCalledWith('https://www.yosemitecrew.com/appointments/1');
     expect(focus).toHaveBeenCalled();
     expect(result).toBeNull();
   });
@@ -154,7 +154,7 @@ describe('handleDeepLink', () => {
       activeContents: () => null,
       focusMainWindow: focus,
     });
-    expect(result).toBe('https://yosemitecrew.com/inbox');
+    expect(result).toBe('https://www.yosemitecrew.com/inbox');
   });
 
   test('rejects an invalid deep link', () => {

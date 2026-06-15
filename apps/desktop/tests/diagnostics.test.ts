@@ -78,7 +78,7 @@ describe('collectDiagnosticData', () => {
 
   test('captures config fields', () => {
     const data = collectDiagnosticData(BASE_CTX);
-    expect(data.config.startUrl).toBe('https://yosemitecrew.com/signin');
+    expect(data.config.startUrl).toBe('https://www.yosemitecrew.com/signin');
     expect(data.config.allowedOrigins).toContain('https://yosemitecrew.com');
     expect(data.config.appPartition).toBe('persist:yosemitecrew-pims');
   });

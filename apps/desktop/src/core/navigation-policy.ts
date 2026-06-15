@@ -1,10 +1,15 @@
 'use strict';
 
-export const DEFAULT_START_URL = 'https://yosemitecrew.com/signin';
-// Production default only. Non-production environments (e.g. the dev site) are
-// opted in at runtime via YC_DESKTOP_ALLOWED_ORIGINS / YC_DESKTOP_START_URL so
-// internal infrastructure is not hardcoded in the public source.
+// Canonical production host is www; the apex redirects to it, so start on www
+// to avoid a cross-origin redirect that would be treated as external.
+export const DEFAULT_START_URL = 'https://www.yosemitecrew.com/signin';
+// Production defaults only. Both apex and www are allowed because the site
+// redirects between them; treating either as external breaks in-app sign-in.
+// Non-production environments (e.g. the dev site) are opted in at runtime via
+// YC_DESKTOP_ALLOWED_ORIGINS / YC_DESKTOP_START_URL so internal infrastructure
+// is not hardcoded in the public source.
 export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = Object.freeze([
+  'https://www.yosemitecrew.com',
   'https://yosemitecrew.com',
 ]);
 // Public CDN / integration endpoints the web app opens documents and embeds
