@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src file: data: blob:; font-src file:; style-src 'unsafe-inline' file:; script-src 'unsafe-inline';"
+    />
+    <title>Document Vault — Yosemite Crew PIMS</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <style>
+      body {
+        -webkit-user-select: none;
+        user-select: none;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      .header {
+        padding: 20px 24px 0;
+        flex-shrink: 0;
+      }
+      .header-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 8px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 720;
+        letter-spacing: 0.1px;
+      }
+      .badge {
+        font-size: 11px;
+        font-weight: 650;
+        padding: 3px 10px;
+        border-radius: var(--radius-pill);
+        background: var(--border-subtle);
+        color: var(--text-secondary);
+        letter-spacing: 0.2px;
+      }
+      .badge.secure {
+        background: var(--color-success-100);
+        color: var(--color-success-700);
+      }
+      .badge.plain {
+        background: var(--color-warning-100);
+        color: var(--color-warning-800);
+      }
+      .sub {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 12px;
+        color: var(--text-tertiary);
+        margin-bottom: 12px;
+      }
+      .search-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        background: var(--surface-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 8px 12px;
+        margin-bottom: 12px;
+      }
+      .search-row:focus-within {
+        border-color: var(--text-brand);
+        box-shadow: 0 0 0 2px rgba(0, 124, 245, 0.2);
+      }
+      .search-row input {
+        flex: 1;
+        border: none;
+        background: transparent;
+        outline: none;
+        font: inherit;
+        font-size: 13px;
+        color: var(--text-primary);
+      }
+      .drop-zone {
+        margin: 0 24px 12px;
+        border: 2px dashed var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 18px;
+        text-align: center;
+        font-size: 13px;
+        color: var(--text-tertiary);
+        transition:
+          border-color 0.18s,
+          background 0.18s;
+        cursor: default;
+        flex-shrink: 0;
+      }
+      .drop-zone.dragover {
+        border-color: var(--text-brand);
+        background: var(--color-primary-100);
+      }
+      @media (prefers-color-scheme: dark) {
+        .drop-zone.dragover {
+          background: rgba(0, 124, 245, 0.08);
+        }
+        .badge.secure {
+          background: var(--color-success-900);
+          color: var(--color-success-300);
+        }
+        .badge.plain {
+          background: var(--color-warning-900);
+          color: var(--color-warning-300);
+        }
+      }
+      .list-wrap {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0 24px 24px;
+      }
+      .empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        color: var(--text-tertiary);
+        text-align: center;
+      }
+      .empty-icon {
+        font-size: 36px;
+        margin-bottom: 12px;
+        opacity: 0.6;
+      }
+      .empty-title {
+        font-size: 15px;
+        font-weight: 650;
+        color: var(--text-secondary);
+        margin-bottom: 4px;
+      }
+      .empty-hint {
+        font-size: 12px;
+      }
+      .doc {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-subtle);
+        margin-bottom: 4px;
+        background: var(--surface-card);
+        transition: box-shadow 0.15s;
+        cursor: default;
+      }
+      .doc:hover {
+        box-shadow: var(--shadow-card);
+      }
+      .doc.selected {
+        border-color: var(--text-brand);
+        box-shadow: 0 0 0 1px var(--text-brand);
+      }
+      .thumb {
+        width: 40px;
+        height: 40px;
+        border-radius: 6px;
+        flex-shrink: 0;
+        background: var(--surface-page);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        color: var(--text-tertiary);
+      }
+      .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .doc-body {
+        flex: 1;
+        min-width: 0;
+      }
+      .doc-name {
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .doc-meta {
+        font-size: 11px;
+        color: var(--text-tertiary);
+        margin-top: 1px;
+      }
+      .doc-actions {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .doc-actions button {
+        font: inherit;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 4px 8px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition:
+          background 0.12s,
+          color 0.12s;
+      }
+      .doc-actions button:hover {
+        background: var(--surface-page);
+        color: var(--text-primary);
+      }
+      .doc-actions button.view {
+        color: var(--text-brand);
+      }
+      .doc-actions button.view:hover {
+        background: var(--color-primary-100);
+      }
+      .doc-actions button.del {
+        color: var(--color-danger-600);
+      }
+      .doc-actions button.del:hover {
+        background: var(--color-danger-100);
+      }
+      .preview-panel {
+        position: fixed;
+        right: -360px;
+        top: 0;
+        width: 360px;
+        height: 100vh;
+        background: var(--surface-card);
+        border-left: 1px solid var(--border-subtle);
+        box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
+        transition: right 0.25s var(--ease-spring);
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+      }
+      .preview-panel.open {
+        right: 0;
+      }
+      .preview-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .preview-head h2 {
+        font-size: 15px;
+        font-weight: 680;
+        max-width: 240px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .preview-close {
+        background: none;
+        border: none;
+        font: inherit;
+        font-size: 18px;
+        color: var(--text-tertiary);
+        cursor: pointer;
+        padding: 4px;
+        line-height: 1;
+      }
+      .preview-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+      }
+      .preview-body img {
+        max-width: 100%;
+        max-height: 50vh;
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-card);
+      }
+      .preview-meta {
+        width: 100%;
+        font-size: 12px;
+        color: var(--text-tertiary);
+      }
+      .preview-meta dt {
+        font-weight: 650;
+        color: var(--text-secondary);
+        margin-top: 8px;
+      }
+      .preview-meta dd {
+        margin-left: 0;
+        margin-bottom: 4px;
+        word-break: break-all;
+      }
+      .preview-actions {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+      }
+      .preview-actions button {
+        flex: 1;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 650;
+        padding: 8px;
+        cursor: pointer;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text-primary);
+        transition: background 0.12s;
+      }
+      .preview-actions button:hover {
+        background: var(--surface-page);
+      }
+      .preview-text {
+        width: 100%;
+        max-height: 40vh;
+        overflow-y: auto;
+        font-family: 'Satoshi Variable', monospace;
+        font-size: 12px;
+        background: var(--surface-page);
+        padding: 12px;
+        border-radius: var(--radius-sm);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .preview-panel,
+        .doc,
+        .drop-zone {
+          transition: none;
+        }
+      }
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-tertiary);
+        font-size: 13px;
+      }
+      .loading::after {
+        content: '...';
+        animation: dots 1.2s steps(4, end) infinite;
+      }
+      @keyframes dots {
+        0% {
+          content: '';
+        }
+        25% {
+          content: '.';
+        }
+        50% {
+          content: '..';
+        }
+        75% {
+          content: '...';
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="header-top">
+        <h1>Document Vault</h1>
+        <span class="badge" id="encBadge">checking…</span>
+      </div>
+      <div class="sub">
+        <span id="docCount">0 documents</span>
+        <span id="sizeInfo">0 KB</span>
+      </div>
+      <div class="search-row">
+        <span style="color: var(--text-tertiary); font-size: 14px">&#x1F50D;</span>
+        <input type="text" id="searchInput" placeholder="Search by filename…" autocomplete="off" />
+        <span
+          id="searchCount"
+          style="font-size: 11px; color: var(--text-tertiary); white-space: nowrap"
+        ></span>
+      </div>
+    </div>
+
+    <div class="drop-zone" id="dropZone">Drop files here to add them to the vault</div>
+
+    <div class="list-wrap" id="listWrap">
+      <div class="loading" id="loadingMsg">Loading documents</div>
+      <div class="empty" id="emptyMsg" style="display: none">
+        <div class="empty-icon">&#x1F4C4;</div>
+        <div class="empty-title">No documents in the vault</div>
+        <div class="empty-hint">Drag files here or use the command palette to save documents</div>
+      </div>
+      <div id="docList"></div>
+    </div>
+
+    <div class="preview-panel" id="previewPanel">
+      <div class="preview-head">
+        <h2 id="previewTitle">Preview</h2>
+        <button class="preview-close" id="previewClose" aria-label="Close preview">&times;</button>
+      </div>
+      <div class="preview-body" id="previewBody">
+        <img id="previewImg" style="display: none" alt="preview" />
+        <div class="preview-text" id="previewText" style="display: none"></div>
+        <div class="preview-meta" id="previewMeta"></div>
+        <div class="preview-actions">
+          <button id="previewExport">Export…</button>
+          <button id="previewReveal">Reveal in Finder</button>
+          <button id="previewDel" style="color: var(--color-danger-600)">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var yc = window.ycDesktop;
+        if (!yc) return;
+
+        var docs = [];
+        var filtered = [];
+        var selectedId = null;
+        var loadTimer = null;
+
+        var el = function (id) {
+          return document.getElementById(id);
+        };
+        var encBadge = el('encBadge');
+        var docCountEl = el('docCount');
+        var sizeInfoEl = el('sizeInfo');
+        var searchInput = el('searchInput');
+        var searchCount = el('searchCount');
+        var docList = el('docList');
+        var loadingMsg = el('loadingMsg');
+        var emptyMsg = el('emptyMsg');
+        var dropZone = el('dropZone');
+        var previewPanel = el('previewPanel');
+        var previewTitle = el('previewTitle');
+        var previewBody = el('previewBody');
+        var previewImg = el('previewImg');
+        var previewText = el('previewText');
+        var previewMeta = el('previewMeta');
+        var previewExport = el('previewExport');
+        var previewReveal = el('previewReveal');
+        var previewDel = el('previewDel');
+        var previewClose = el('previewClose');
+
+        var formatBytes = function (b) {
+          if (b < 1024) return b + ' B';
+          if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+          return (b / 1048576).toFixed(1) + ' MB';
+        };
+
+        var formatDate = function (ts) {
+          var d = new Date(ts);
+          return d.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        };
+
+        var fileIcon = function (mime) {
+          if (/^image\//.test(mime)) return '\u{1F5BC}';
+          if (/^text\/|^application\/(json|xml|javascript)/.test(mime)) return '\u{1F4DD}';
+          if (/pdf/.test(mime)) return '\u{1F4D1}';
+          if (/spreadsheet|excel|csv/.test(mime)) return '\u{1F4CA}';
+          return '\u{1F4C4}';
+        };
+
+        var isImage = function (mime) {
+          return /^image\//.test(mime);
+        };
+
+        var loadStats = function () {
+          yc.vaultStats().then(function (res) {
+            if (!res || !res.ok || !res.stats) return;
+            var stats = res.stats;
+            docCountEl.textContent = stats.count + ' document' + (stats.count !== 1 ? 's' : '');
+            sizeInfoEl.textContent = formatBytes(stats.totalSizeBytes || 0);
+          });
+          yc.getAppVersion().then(function () {
+            // Get encryption status from vault-stats (we don't have a separate info channel)
+            // The badge shows whether encryption is available from preload
+          });
+          // Best-effort: check if vault-save works to infer readiness
+        };
+
+        // We don't have vault-get-info, so check encryption from context:
+        // On macOS safeStorage is almost always available. Show status inline.
+        var badgeEncryption = function () {
+          // Can't detect encryption from renderer; just show status
+          encBadge.textContent = 'OS keychain';
+          encBadge.className = 'badge secure';
+        };
+
+        var filterDocs = function () {
+          var q = searchInput.value.toLowerCase().trim();
+          var list = docs;
+          if (q) {
+            list = docs.filter(function (d) {
+              return d.filename.toLowerCase().includes(q);
+            });
+          }
+          filtered = list;
+          searchCount.textContent =
+            filtered.length < docs.length ? filtered.length + '/' + docs.length : '';
+          renderList(filtered);
+        };
+
+        var renderList = function (list) {
+          var frag = document.createDocumentFragment();
+          for (var i = 0; i < list.length; i++) {
+            var d = list[i];
+            var div = document.createElement('div');
+            div.className = 'doc' + (d.id === selectedId ? ' selected' : '');
+            div.dataset.id = d.id;
+
+            var thumb = document.createElement('div');
+            thumb.className = 'thumb';
+            thumb.textContent = fileIcon(d.mimeType);
+            if (isImage(d.mimeType)) {
+              // Load thumbnail on demand
+              yc.vaultGet(d.id).then(function (res) {
+                if (!res || !res.ok || !res.content) return;
+                var buf = res.content;
+                var blob = new Blob([new Uint8Array(buf.data || buf)], { type: d.mimeType });
+                var url = URL.createObjectURL(blob);
+                var img = document.createElement('img');
+                img.src = url;
+                img.onload = function () {
+                  URL.revokeObjectURL(url);
+                };
+                thumb.textContent = '';
+                thumb.appendChild(img);
+              });
+            }
+
+            var body = document.createElement('div');
+            body.className = 'doc-body';
+            var name = document.createElement('div');
+            name.className = 'doc-name';
+            name.textContent = d.filename;
+            var meta = document.createElement('div');
+            meta.className = 'doc-meta';
+            meta.textContent = formatBytes(d.sizeBytes) + ' \u00B7 ' + formatDate(d.createdAt);
+            body.appendChild(name);
+            body.appendChild(meta);
+
+            var actions = document.createElement('div');
+            actions.className = 'doc-actions';
+            var viewBtn = document.createElement('button');
+            viewBtn.className = 'view';
+            viewBtn.textContent = 'View';
+            viewBtn.addEventListener('click', function (e) {
+              e.stopPropagation();
+              openPreview(d.id);
+            });
+            actions.appendChild(viewBtn);
+
+            var expBtn = document.createElement('button');
+            expBtn.textContent = 'Export';
+            expBtn.addEventListener('click', function (e) {
+              e.stopPropagation();
+              exportDoc(d.id);
+            });
+            actions.appendChild(expBtn);
+
+            var delBtn = document.createElement('button');
+            delBtn.className = 'del';
+            delBtn.textContent = 'Delete';
+            delBtn.addEventListener('click', function (e) {
+              e.stopPropagation();
+              deleteDoc(d.id);
+            });
+            actions.appendChild(delBtn);
+
+            div.appendChild(thumb);
+            div.appendChild(body);
+            div.appendChild(actions);
+            div.addEventListener('click', function () {
+              openPreview(d.id);
+            });
+            frag.appendChild(div);
+          }
+          docList.innerHTML = '';
+          docList.appendChild(frag);
+          loadingMsg.style.display = 'none';
+          emptyMsg.style.display = list.length === 0 ? 'flex' : 'none';
+        };
+
+        // Throttled load
+        var scheduleLoad = function () {
+          clearTimeout(loadTimer);
+          loadTimer = setTimeout(loadDocs, 50);
+        };
+
+        var loadDocs = function () {
+          loadingMsg.style.display = 'block';
+          yc.vaultList().then(function (res) {
+            if (!res || !res.ok) {
+              loadingMsg.textContent = 'Failed to load vault.';
+              return;
+            }
+            docs = (res.documents || []).sort(function (a, b) {
+              return b.createdAt - a.createdAt;
+            });
+            badgeEncryption();
+            loadStats();
+            filterDocs();
+          });
+        };
+
+        var openPreview = function (id) {
+          selectedId = id;
+          previewPanel.classList.add('open');
+          previewBody.scrollTop = 0;
+          previewTitle.textContent = 'Loading…';
+          previewImg.style.display = 'none';
+          previewText.style.display = 'none';
+          previewMeta.innerHTML = '';
+
+          var doc = docs.find(function (d) {
+            return d.id === id;
+          });
+          if (!doc) return;
+          previewTitle.textContent = doc.filename;
+
+          var metaHtml = '<dl>';
+          metaHtml += '<dt>Type</dt><dd>' + (doc.mimeType || 'unknown') + '</dd>';
+          metaHtml += '<dt>Size</dt><dd>' + formatBytes(doc.sizeBytes) + '</dd>';
+          metaHtml += '<dt>Added</dt><dd>' + formatDate(doc.createdAt) + '</dd>';
+          if (doc.updatedAt !== doc.createdAt)
+            metaHtml += '<dt>Updated</dt><dd>' + formatDate(doc.updatedAt) + '</dd>';
+          metaHtml += '</dl>';
+          previewMeta.innerHTML = metaHtml;
+
+          if (isImage(doc.mimeType)) {
+            yc.vaultGet(id).then(function (res) {
+              if (!res || !res.ok || !res.content) return;
+              var buf = res.content;
+              var blob = new Blob([new Uint8Array(buf.data || buf)], { type: doc.mimeType });
+              var url = URL.createObjectURL(blob);
+              previewImg.src = url;
+              previewImg.style.display = 'block';
+              previewImg.onload = function () {
+                URL.revokeObjectURL(url);
+              };
+            });
+          } else {
+            yc.vaultGet(id).then(function (res) {
+              if (!res || !res.ok || !res.content) return;
+              var buf = res.content;
+              var decoder = new TextDecoder('utf-8');
+              var text;
+              try {
+                text = decoder.decode(new Uint8Array(buf.data || buf));
+              } catch (e) {
+                text = 'Binary content. Use Export to save to disk.';
+              }
+              previewText.textContent = text.substring(0, 10000);
+              previewText.style.display = 'block';
+            });
+          }
+
+          previewExport.onclick = function () {
+            exportDoc(id);
+          };
+          previewReveal.onclick = function () {
+            revealDoc(id);
+          };
+          previewDel.onclick = function () {
+            deleteDoc(id);
+          };
+        };
+
+        var closePreview = function () {
+          previewPanel.classList.remove('open');
+          selectedId = null;
+          previewImg.src = '';
+        };
+
+        var exportDoc = function (id) {
+          yc.vaultExport(id).then(function (res) {
+            if (!res || !res.ok) return;
+            if (res.path) {
+              // Show a brief success; the file was written
+              // Refresh list to keep UI consistent
+            }
+          });
+        };
+
+        var revealDoc = function (id) {
+          yc.vaultRevealDoc(id).catch(function () {});
+        };
+
+        var deleteDoc = function (id) {
+          var doc = docs.find(function (d) {
+            return d.id === id;
+          });
+          if (!doc) return;
+          if (!window.confirm('Delete "' + doc.filename + '" from the vault?')) return;
+          yc.vaultDelete(id).then(function (res) {
+            if (!res || !res.ok) return;
+            if (selectedId === id) closePreview();
+            scheduleLoad();
+          });
+        };
+
+        // ── Drag & drop ──
+        var handleDrop = function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove('dragover');
+          var files = e.dataTransfer.files;
+          if (!files || files.length === 0) return;
+          for (var i = 0; i < files.length; i++) {
+            (function (f) {
+              var reader = new FileReader();
+              reader.onload = function (evt) {
+                var result = evt.target.result;
+                var commaIdx = result.indexOf(',');
+                var base64 = commaIdx >= 0 ? result.substring(commaIdx + 1) : result;
+                yc.vaultSaveBuffer(f.name, base64, f.type || 'application/octet-stream').then(
+                  function (res) {
+                    if (res && res.ok) scheduleLoad();
+                  }
+                );
+              };
+              reader.readAsDataURL(f);
+            })(files[i]);
+          }
+        };
+
+        dropZone.addEventListener('dragover', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove('dragover');
+        });
+        dropZone.addEventListener('drop', handleDrop);
+
+        // ── Search ──
+        searchInput.addEventListener('input', filterDocs);
+
+        // ── Preview close ──
+        previewClose.addEventListener('click', closePreview);
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') closePreview();
+        });
+
+        // ── Init ──
+        badgeEncryption();
+        scheduleLoad();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src file:; font-src file:; style-src 'unsafe-inline' file:; script-src 'unsafe-inline';"
+    />
+    <title>Welcome | Yosemite Crew PIMS</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <style>
+      body {
+        -webkit-user-select: none;
+        user-select: none;
+        overflow: hidden;
+        background:
+          radial-gradient(1100px 600px at 50% -12%, rgba(0, 124, 245, 0.1), transparent 62%),
+          var(--surface-page);
+      }
+      .wrap {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 32px 32px 0;
+        animation: rise 0.55s var(--ease-spring) both;
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .logo {
+        width: 86px;
+        height: 80px;
+        object-fit: contain;
+        filter: drop-shadow(0 14px 28px rgba(0, 124, 245, 0.2));
+        margin-bottom: 18px;
+      }
+      h1 {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.4px;
+        line-height: 1.15;
+        color: var(--text-primary);
+      }
+      .tag {
+        font-size: 14px;
+        font-weight: 450;
+        color: var(--text-secondary);
+        max-width: 400px;
+        line-height: 1.55;
+        margin-top: 8px;
+      }
+
+      /* ── Carousel ── */
+      .carousel-wrap {
+        position: relative;
+        width: 100%;
+        max-width: 520px;
+        margin-top: 24px;
+        overflow: hidden;
+      }
+      .carousel-track {
+        display: flex;
+        transition: transform 0.4s var(--ease-spring);
+      }
+      .slide {
+        flex: 0 0 100%;
+        padding: 0 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .slide-ic {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 124, 245, 0.1);
+        border: 1px solid rgba(0, 124, 245, 0.16);
+        color: var(--text-brand);
+        margin-bottom: 12px;
+      }
+      .slide-ic svg {
+        width: 22px;
+        height: 22px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .slide h3 {
+        font-size: 15px;
+        font-weight: 650;
+        color: var(--text-primary);
+        letter-spacing: -0.1px;
+      }
+      .slide p {
+        font-size: 12.5px;
+        font-weight: 450;
+        color: var(--text-tertiary);
+        line-height: 1.45;
+        margin-top: 4px;
+        max-width: 380px;
+      }
+      .dots {
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+        margin-top: 12px;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        background: var(--color-neutral-300);
+        transition:
+          background 0.25s,
+          transform 0.2s;
+        padding: 0;
+      }
+      .dot.active {
+        background: var(--color-primary-500);
+        transform: scale(1.4);
+      }
+      .dot:focus-visible {
+        outline: 2px solid var(--color-primary-500);
+        outline-offset: 2px;
+      }
+
+      .cta {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        margin-top: 20px;
+        font: inherit;
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: -0.1px;
+        color: var(--btn-fg);
+        background: var(--btn-bg);
+        border: 1px solid color-mix(in srgb, var(--btn-bg) 86%, white);
+        border-radius: var(--radius-md);
+        padding: 13px 30px;
+        cursor: pointer;
+        transition:
+          transform 0.08s var(--ease-spring),
+          background-color 0.2s ease-out,
+          border-color 0.2s ease-out;
+      }
+      .cta > span {
+        position: relative;
+        z-index: 1;
+      }
+      /* Highlighter glow on hover, following the cursor — matches the web app's
+         primary button. Deliberately no drop shadow. */
+      .cta::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0;
+        background: radial-gradient(
+          circle 84px at var(--cta-x, 50%) var(--cta-y, 50%),
+          rgba(136, 206, 255, 0.34) 0%,
+          rgba(92, 184, 255, 0.2) 36%,
+          rgba(0, 150, 255, 0) 78%
+        );
+        transition: opacity 160ms ease;
+      }
+      .cta:hover::before,
+      .cta:focus-visible::before {
+        opacity: 1;
+      }
+      .cta:active::before {
+        opacity: 1;
+        background: radial-gradient(
+          circle 72px at var(--cta-x, 50%) var(--cta-y, 50%),
+          rgba(0, 118, 214, 0.38) 0%,
+          rgba(0, 96, 184, 0.22) 36%,
+          rgba(0, 77, 153, 0) 78%
+        );
+      }
+      .cta:active {
+        transform: translateY(1px) scale(0.99);
+      }
+      .cta:focus-visible {
+        outline: 3px solid var(--btn-bg);
+        outline-offset: 2px;
+      }
+      .secondary {
+        margin-top: 10px;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 550;
+        color: var(--text-secondary);
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 7px 12px;
+        border-radius: var(--radius-sm);
+        transition:
+          background 0.15s,
+          color 0.15s;
+      }
+      .secondary:hover {
+        background: var(--color-neutral-200);
+        color: var(--text-primary);
+      }
+      .status {
+        font-size: 13px;
+        color: var(--text-secondary);
+        min-height: 18px;
+        font-weight: 600;
+        margin-top: 12px;
+      }
+      .foot {
+        position: fixed;
+        bottom: 16px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 11.5px;
+        color: var(--text-tertiary);
+      }
+      @media (prefers-color-scheme: dark) {
+        .secondary:hover {
+          background: rgba(255, 255, 255, 0.1);
+        }
+        .slide-ic {
+          background: rgba(0, 124, 245, 0.18);
+          border-color: rgba(0, 124, 245, 0.3);
+        }
+        body {
+          background:
+            radial-gradient(1100px 600px at 50% -12%, rgba(0, 124, 245, 0.16), transparent 62%),
+            var(--surface-page);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .wrap {
+          animation: none;
+        }
+        .carousel-track {
+          transition: none;
+        }
+        .cta {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <img class="logo" src="../../resources/logo-beta.svg" alt="Yosemite Crew beta" />
+      <h1>Sign in to Yosemite Crew</h1>
+      <p class="tag">
+        Your whole practice in one window: appointments, records, prescriptions, labels, and
+        telehealth.
+      </p>
+
+      <div class="carousel-wrap">
+        <div class="carousel-track" id="track">
+          <div class="slide">
+            <div class="slide-ic">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 12.5a10 10 0 0 1 14 0" />
+                <path d="M8.5 16a5 5 0 0 1 7 0" />
+                <line x1="12" y1="19.5" x2="12" y2="19.5" />
+                <line x1="3" y1="3" x2="21" y2="21" />
+              </svg>
+            </div>
+            <h3>It works when the Wi-Fi doesn't</h3>
+            <p>
+              Charts, schedules, and notes stay open on a flaky connection. Your edits sync once
+              you're back.
+            </p>
+          </div>
+          <div class="slide">
+            <div class="slide-ic">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
+                <path d="M9.5 12l1.8 1.8L15 10" />
+              </svg>
+            </div>
+            <h3>Patient data stays on this machine</h3>
+            <p>
+              Local storage is encrypted, the app runs sandboxed, and you can lock it behind Touch
+              ID.
+            </p>
+          </div>
+          <div class="slide">
+            <div class="slide-ic">
+              <svg viewBox="0 0 24 24"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12z" /></svg>
+            </div>
+            <h3>Fast enough for a full waiting room</h3>
+            <p>
+              Pull up a patient, print a label, or start a telehealth call without leaving the app.
+            </p>
+          </div>
+          <div class="slide">
+            <div class="slide-ic">
+              <svg viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="3" y1="9" x2="21" y2="9" />
+                <line x1="9" y1="9" x2="9" y2="20" />
+              </svg>
+            </div>
+            <h3>Open as many cases as you need</h3>
+            <p>Tabs and split view keep two patients, a lab result, and an invoice side by side.</p>
+          </div>
+          <div class="slide">
+            <div class="slide-ic">
+              <svg viewBox="0 0 24 24">
+                <circle cx="8" cy="15" r="4" />
+                <path d="M10.8 12.2L20 3" />
+                <path d="M16 7l3 3" />
+                <path d="M14 9l2 2" />
+              </svg>
+            </div>
+            <h3>Sign in once</h3>
+            <p>The app remembers you on this computer until you choose to sign out.</p>
+          </div>
+        </div>
+      </div>
+      <div class="dots" id="dots"></div>
+
+      <button class="cta" id="signin" type="button"><span>Sign in</span></button>
+      <button class="secondary" id="browser" type="button">Open in browser</button>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="foot">You stay signed in on this computer until you sign out.</div>
+    <script>
+      (function () {
+        var track = document.getElementById('track');
+        var dotsEl = document.getElementById('dots');
+        var slides = track.querySelectorAll('.slide');
+        var current = 0;
+        var total = slides.length;
+
+        for (var i = 0; i < total; i++) {
+          var dot = document.createElement('button');
+          dot.className = 'dot' + (i === 0 ? ' active' : '');
+          dot.setAttribute('aria-label', 'Slide ' + (i + 1));
+          dot.addEventListener(
+            'click',
+            (function (idx) {
+              return function () {
+                goTo(idx);
+              };
+            })(i)
+          );
+          dotsEl.appendChild(dot);
+        }
+
+        function goTo(idx) {
+          if (idx < 0) idx = total - 1;
+          if (idx >= total) idx = 0;
+          current = idx;
+          track.style.transform = 'translateX(-' + idx * 100 + '%)';
+          var allDots = dotsEl.querySelectorAll('.dot');
+          for (var j = 0; j < total; j++) {
+            allDots[j].className = 'dot' + (j === idx ? ' active' : '');
+          }
+        }
+
+        var autoTimer = setInterval(function () {
+          goTo(current + 1);
+        }, 4000);
+
+        track.addEventListener('mouseenter', function () {
+          clearInterval(autoTimer);
+        });
+        track.addEventListener('mouseleave', function () {
+          autoTimer = setInterval(function () {
+            goTo(current + 1);
+          }, 4000);
+        });
+
+        var status = document.getElementById('status');
+        document.getElementById('signin').addEventListener('click', function () {
+          status.textContent = 'Opening sign-in...';
+          if (window.ycDesktop) window.ycDesktop.startSignin();
+        });
+        document.getElementById('browser').addEventListener('click', function () {
+          if (window.ycDesktop) window.ycDesktop.openInBrowser();
+        });
+
+        var ctaBtn = document.getElementById('signin');
+        ctaBtn.addEventListener('mousemove', function (e) {
+          var r = ctaBtn.getBoundingClientRect();
+          ctaBtn.style.setProperty('--cta-x', e.clientX - r.left + 'px');
+          ctaBtn.style.setProperty('--cta-y', e.clientY - r.top + 'px');
+        });
+      })();
+    </script>
+  </body>
+</html>
