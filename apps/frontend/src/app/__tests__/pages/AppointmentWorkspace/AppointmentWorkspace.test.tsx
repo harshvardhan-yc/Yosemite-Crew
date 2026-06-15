@@ -6,6 +6,11 @@ import AppointmentWorkspace from '@/app/features/appointments/pages/AppointmentW
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import { useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
+import {
+  markEncounterReadyForDischarge,
+  undoEncounterReadyForDischarge,
+} from '@/app/features/appointments/services/appointmentService';
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
@@ -83,6 +88,12 @@ jest.mock('@/app/hooks/useRooms', () => ({
   useRoomsForPrimaryOrg: jest.fn(),
 }));
 
+jest.mock('@/app/features/appointments/services/appointmentService', () => ({
+  assignEncounterUnit: jest.fn().mockResolvedValue(undefined),
+  markEncounterReadyForDischarge: jest.fn().mockResolvedValue(undefined),
+  undoEncounterReadyForDischarge: jest.fn().mockResolvedValue(undefined),
+}));
+
 const makeAppointment = (startTime: Date, inpatient = false): Appointment => ({
   id: 'appt-workspace',
   companion: {
@@ -111,8 +122,19 @@ const resetStore = () => {
   });
   mockReplace.mockClear();
   mockPush.mockClear();
+  (markEncounterReadyForDischarge as jest.Mock).mockClear();
+  (undoEncounterReadyForDischarge as jest.Mock).mockClear();
   mockStepParam = null;
   (useRoomsForPrimaryOrg as jest.Mock).mockReturnValue([]);
+  (markEncounterReadyForDischarge as jest.Mock).mockResolvedValue(undefined);
+  (undoEncounterReadyForDischarge as jest.Mock).mockResolvedValue(undefined);
+  useOrganisationRoomStore.setState({
+    roomUnitsById: {},
+    roomUnitIdsByRoomId: {},
+    roomUnitIdsByGroupId: {},
+    roomUnitGroupsById: {},
+    roomUnitGroupIdsByRoomId: {},
+  });
 };
 
 describe('AppointmentWorkspace container', () => {
@@ -162,9 +184,24 @@ describe('AppointmentWorkspace container', () => {
 
   it('uses loaded room units for inpatient room and unit selection', async () => {
     (useRoomsForPrimaryOrg as jest.Mock).mockReturnValue([
-      { id: 'room-1', name: 'Ward A', unitCount: 2 },
-      { id: 'room-2', name: 'Ward B', units: [{ id: 'unit-b', name: 'B', occupied: false }] },
+      { id: 'room-1', name: 'Ward A' },
+      { id: 'room-2', name: 'Ward B' },
     ]);
+    useOrganisationRoomStore.setState({
+      roomUnitsById: {
+        'unit-b': {
+          id: 'unit-b',
+          organisationId: 'org-1',
+          roomId: 'room-2',
+          code: 'B',
+          displayName: 'B',
+          isActive: true,
+        },
+      },
+      roomUnitIdsByRoomId: {
+        'room-2': ['unit-b'],
+      },
+    });
     render(<AppointmentWorkspace appointment={makeAppointment(new Date(), true)} />);
 
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
@@ -177,6 +214,40 @@ describe('AppointmentWorkspace container', () => {
     const encounter = useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace');
     expect(encounter?.roomId).toBe('room-2');
     expect(encounter?.unitId).toBe('unit-b');
+  });
+
+  it('persists ready-for-discharge toggle and undo for encounters', async () => {
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(new Date(), true),
+            encounterId: 'enc-1',
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /ready for discharge/i }));
+
+    await waitFor(() => {
+      expect(markEncounterReadyForDischarge).toHaveBeenCalledWith('enc-1');
+    });
+    expect(
+      useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForDischarge
+        .value
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /ready for discharge/i }));
+
+    await waitFor(() => {
+      expect(undoEncounterReadyForDischarge).toHaveBeenCalledWith('enc-1');
+    });
+    expect(
+      useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForDischarge
+        .value
+    ).toBe(false);
   });
 
   it('wires active step callbacks from Diagnostics through Invoice', async () => {

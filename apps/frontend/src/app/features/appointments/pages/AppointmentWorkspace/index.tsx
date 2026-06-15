@@ -10,17 +10,14 @@ import {
   resolveEncounterMode,
   resolveLandingStep,
 } from '@/app/lib/appointmentWorkspace';
-import {
-  type RoomUnit,
-  WORKSPACE_STEPS,
-  type WorkspaceStep,
-} from '@/app/features/appointments/types/workspace';
+import { WORKSPACE_STEPS, type WorkspaceStep } from '@/app/features/appointments/types/workspace';
 import { resolveLockHours } from '@/app/lib/appointmentLockWindow';
 import { normalizeAppointmentStatus } from '@/app/lib/appointments';
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
 import { useLoadCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
 import { useCompanionStore } from '@/app/stores/companionStore';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import { buildCompanionDetails } from '@/app/lib/companionWorkspaceDetails';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
 import WorkspaceHeader from '@/app/features/appointments/pages/AppointmentWorkspace/WorkspaceHeader';
@@ -36,6 +33,11 @@ import SummaryStep from '@/app/features/appointments/pages/AppointmentWorkspace/
 import QuickActionsModal from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/QuickActionsModal';
 import HospitalizationModal from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/HospitalizationModal';
 import { getNextStep } from '@/app/lib/appointmentWorkspace';
+import {
+  assignEncounterUnit,
+  markEncounterReadyForDischarge,
+  undoEncounterReadyForDischarge,
+} from '@/app/features/appointments/services/appointmentService';
 
 type AppointmentWorkspaceProps = {
   appointment: Appointment;
@@ -44,21 +46,17 @@ type AppointmentWorkspaceProps = {
 type WorkspaceRoom = {
   id: string;
   name: string;
-  unitCount?: number;
-  units?: RoomUnit[];
 };
 
-const buildGeneratedUnits = (count: number): RoomUnit[] =>
-  Array.from({ length: Math.max(0, count) }, (_, index) => ({
-    id: `unit-${index + 1}`,
-    name: `${index + 1}`,
-    occupied: false,
-  }));
-
-const getRoomUnits = (room?: WorkspaceRoom): RoomUnit[] => {
-  if (!room) return [];
-  if (room.units?.length) return room.units;
-  return buildGeneratedUnits(room.unitCount ?? 0);
+const getRoomUnits = (
+  roomId: string | undefined,
+  roomUnitsById: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitsById'],
+  roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId']
+) => {
+  if (!roomId) return [];
+  return (roomUnitIdsByRoomId[roomId] ?? [])
+    .map((unitId) => roomUnitsById[unitId])
+    .filter((unit) => unit?.isActive !== false);
 };
 
 const isValidStep = (value: string | null): value is WorkspaceStep =>
@@ -86,6 +84,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   useLoadRoomsForPrimaryOrg();
   useLoadCompanionsForPrimaryOrg();
   const rooms = useRoomsForPrimaryOrg() as WorkspaceRoom[];
+  const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
+  const roomUnitIdsByRoomId = useOrganisationRoomStore((s) => s.roomUnitIdsByRoomId);
   const companionRecord = useCompanionStore((s) => s.companionsById[appointment.companion.id]);
 
   const appointmentId = appointment.id ?? '';
@@ -199,6 +199,10 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     () => rooms.find((room) => room.id === effectiveEncounter?.roomId),
     [effectiveEncounter?.roomId, rooms]
   );
+  const selectedRoomUnits = useMemo(
+    () => getRoomUnits(selectedRoom?.id, roomUnitsById, roomUnitIdsByRoomId),
+    [roomUnitIdsByRoomId, roomUnitsById, selectedRoom?.id]
+  );
   const roomOptions = useMemo(() => {
     if (rooms.length) return rooms.map((room) => ({ label: room.name, value: room.id }));
     return effectiveEncounter?.roomId
@@ -206,10 +210,16 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       : [];
   }, [effectiveEncounter?.roomId, rooms]);
   const unitOptions = useMemo(() => {
-    const units = getRoomUnits(selectedRoom);
-    if (units.length) return units.map((unit) => ({ label: unit.name, value: unit.id }));
-    return effectiveEncounter?.unitId ? [{ label: '24', value: effectiveEncounter.unitId }] : [];
-  }, [effectiveEncounter?.unitId, selectedRoom]);
+    if (selectedRoomUnits.length) {
+      return selectedRoomUnits.map((unit) => ({
+        label: unit.displayName || unit.code,
+        value: unit.id,
+      }));
+    }
+    return effectiveEncounter?.unitId
+      ? [{ label: effectiveEncounter.unitId, value: effectiveEncounter.unitId }]
+      : [];
+  }, [effectiveEncounter?.unitId, selectedRoomUnits]);
   const supportOptions = useMemo(() => {
     const seen = new Set<string>();
     const options: { label: string; value: string }[] = [];
@@ -236,6 +246,71 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     const next = getNextStep(activeStep);
     if (next) handleStepChange(next);
   }, [activeStep, handleStepChange]);
+
+  const persistUnitAssignment = useCallback(
+    async (unitId?: string) => {
+      if (!appointment.encounterId || !unitId) return;
+      try {
+        await assignEncounterUnit({
+          encounterId: appointment.encounterId,
+          unitId,
+          assignedBy: actor.name,
+          reason: 'Workspace room assignment',
+        });
+      } catch (error) {
+        console.error('Unable to persist encounter unit assignment:', error);
+      }
+    },
+    [actor.name, appointment.encounterId]
+  );
+
+  const handleRoomSelect = useCallback(
+    async (option: { value: string }) => {
+      const nextUnit = getRoomUnits(option.value, roomUnitsById, roomUnitIdsByRoomId)[0]?.id;
+      setRoomUnit(appointmentId, option.value, nextUnit);
+      await persistUnitAssignment(nextUnit);
+    },
+    [appointmentId, persistUnitAssignment, roomUnitIdsByRoomId, roomUnitsById, setRoomUnit]
+  );
+
+  const handleUnitSelect = useCallback(
+    async (option: { value: string }) => {
+      setRoomUnit(appointmentId, effectiveEncounter?.roomId, option.value);
+      await persistUnitAssignment(option.value);
+    },
+    [appointmentId, effectiveEncounter?.roomId, persistUnitAssignment, setRoomUnit]
+  );
+
+  const handleReadyForDischargeToggle = useCallback(async () => {
+    const nextReady = !(encounter?.readyForDischarge.value ?? false);
+    if (appointment.encounterId) {
+      if (nextReady) {
+        await markEncounterReadyForDischarge(appointment.encounterId);
+      } else {
+        await undoEncounterReadyForDischarge(appointment.encounterId);
+      }
+    }
+    toggleReadyForDischarge(appointmentId, actor);
+  }, [
+    actor,
+    appointment.encounterId,
+    appointmentId,
+    encounter?.readyForDischarge.value,
+    toggleReadyForDischarge,
+  ]);
+
+  useEffect(() => {
+    if (!appointmentId || !encounter || encounter.roomId || !appointment.room?.id) return;
+    const firstUnit = getRoomUnits(appointment.room.id, roomUnitsById, roomUnitIdsByRoomId)[0]?.id;
+    setRoomUnit(appointmentId, appointment.room.id, firstUnit);
+  }, [
+    appointment.room?.id,
+    appointmentId,
+    encounter,
+    roomUnitIdsByRoomId,
+    roomUnitsById,
+    setRoomUnit,
+  ]);
 
   useEffect(() => {
     // Reset to the very top of the page on appointment/step change. The colored
@@ -295,15 +370,11 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         activeStep={activeStep}
         roomOptions={roomOptions}
         unitOptions={unitOptions}
-        onSelectRoom={(o) => {
-          const nextRoom = rooms.find((room) => room.id === o.value);
-          const nextUnit = getRoomUnits(nextRoom)[0]?.id;
-          setRoomUnit(appointmentId, o.value, nextUnit);
-        }}
-        onSelectUnit={(o) => setRoomUnit(appointmentId, effectiveEncounter.roomId, o.value)}
+        onSelectRoom={handleRoomSelect}
+        onSelectUnit={handleUnitSelect}
         onSaveAndNext={handleSaveAndNext}
         onToggleReadyForBilling={() => toggleReadyForBilling(appointmentId, actor)}
-        onToggleReadyForDischarge={() => toggleReadyForDischarge(appointmentId, actor)}
+        onToggleReadyForDischarge={handleReadyForDischargeToggle}
         billingTogglesLocked={encounter?.viewOnly ?? false}
         dischargeTogglesLocked={(encounter?.viewOnly ?? false) || lockedByWindow}
         primaryCta={treatmentPrimaryCta}
@@ -380,7 +451,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           setEncounterMode(appointmentId, 'INPATIENT');
           if (payload.roomId) {
             setRoomUnit(appointmentId, payload.roomId, payload.unitId);
+            return persistUnitAssignment(payload.unitId);
           }
+          return undefined;
         }}
       />
     </div>

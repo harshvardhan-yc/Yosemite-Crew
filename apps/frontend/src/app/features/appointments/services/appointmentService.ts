@@ -464,6 +464,72 @@ export const updateAppointmentPaymentStatus = async (
   } as Appointment);
 };
 
+export const assignEncounterUnit = async ({
+  encounterId,
+  unitId,
+  assignedBy,
+  reason,
+}: {
+  encounterId?: string;
+  unitId?: string;
+  assignedBy?: string;
+  reason?: string;
+}) => {
+  if (!encounterId || !unitId) return;
+  type EncounterParameter = { name: string; valueString?: string; valueDateTime?: string };
+  const parameters: EncounterParameter[] = [
+    { name: 'unitId', valueString: unitId },
+    { name: 'assignedAt', valueDateTime: new Date().toISOString() },
+  ];
+  if (assignedBy) parameters.push({ name: 'assignedBy', valueString: assignedBy });
+  if (reason) parameters.push({ name: 'reason', valueString: reason });
+
+  try {
+    await postData(`/fhir/v1/encounter/${encounterId}/$assign-unit`, {
+      resourceType: 'Parameters',
+      parameter: parameters,
+    });
+  } catch (err) {
+    console.error('Failed to assign encounter unit:', err);
+    throw err;
+  }
+};
+
+const postEncounterLifecycleOperation = async ({
+  encounterId,
+  operation,
+  logLabel,
+}: {
+  encounterId?: string;
+  operation: '$ready-for-discharge' | '$undo-ready-for-discharge';
+  logLabel: string;
+}) => {
+  if (!encounterId) return;
+  try {
+    await postData(`/fhir/v1/encounter/${encounterId}/${operation}`, {
+      resourceType: 'Parameters',
+      parameter: [{ name: 'actedAt', valueDateTime: new Date().toISOString() }],
+    });
+  } catch (err) {
+    console.error(`Failed to ${logLabel}:`, err);
+    throw err;
+  }
+};
+
+export const markEncounterReadyForDischarge = (encounterId?: string) =>
+  postEncounterLifecycleOperation({
+    encounterId,
+    operation: '$ready-for-discharge',
+    logLabel: 'mark encounter ready for discharge',
+  });
+
+export const undoEncounterReadyForDischarge = (encounterId?: string) =>
+  postEncounterLifecycleOperation({
+    encounterId,
+    operation: '$undo-ready-for-discharge',
+    logLabel: 'undo encounter ready for discharge',
+  });
+
 export const consumeInventory = async (inventory: InventoryConsumeRequest) => {
   const { primaryOrgId } = useOrgStore.getState();
   if (!primaryOrgId) {

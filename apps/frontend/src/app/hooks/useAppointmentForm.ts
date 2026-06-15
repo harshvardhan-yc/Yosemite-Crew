@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Appointment } from '@yosemite-crew/types';
+import { Appointment, Service } from '@yosemite-crew/types';
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import { useSpecialitiesForPrimaryOrg } from '@/app/hooks/useSpecialities';
 import { useServiceStore } from '@/app/stores/serviceStore';
+import { useOrgStore } from '@/app/stores/orgStore';
+import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { Slot } from '@/app/features/appointments/types/appointments';
 import {
   CalendarPrefillSlotMatch,
@@ -28,6 +30,7 @@ import { loadInvoicesForOrgPrimaryOrg } from '@/app/features/billing/services/in
 import { EMPTY_APPOINTMENT } from '@/app/features/appointments/constants/emptyAppointment';
 import { AppointmentDraftPrefill } from '@/app/features/appointments/types/calendar';
 import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
+import { ServiceRevamp } from '@/app/features/organization/types/revamp';
 
 export type AppointmentFormErrors = {
   companionId?: string;
@@ -55,6 +58,34 @@ type SlotScopedMatch = {
 };
 
 type LeadOption = { value: string; label: string };
+type AppointmentCatalogService = Pick<
+  Service,
+  'id' | 'name' | 'description' | 'durationMinutes' | 'cost' | 'maxDiscount' | 'specialityId'
+>;
+
+const mapRevampServiceForAppointment = (service: ServiceRevamp): AppointmentCatalogService => ({
+  id: service.id,
+  name: service.name,
+  description: service.description,
+  durationMinutes: service.durationMinutes,
+  cost: service.grossAmount,
+  maxDiscount: service.maxDiscount,
+  specialityId: service.specialityId,
+});
+
+const mergeServicesById = (
+  primary: AppointmentCatalogService[],
+  fallback: AppointmentCatalogService[]
+): AppointmentCatalogService[] => {
+  const byId = new Map<string, AppointmentCatalogService>();
+  fallback.forEach((service) => {
+    if (service.id) byId.set(service.id, service);
+  });
+  primary.forEach((service) => {
+    if (service.id) byId.set(service.id, service);
+  });
+  return Array.from(byId.values());
+};
 
 const validateSlotSelection = (
   selectedSlot: Slot | null,
@@ -300,6 +331,9 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
   const teams = useTeamForPrimaryOrg();
   const currency = useCurrencyForPrimaryOrg();
   const specialities = useSpecialitiesForPrimaryOrg();
+  const primaryOrgId = useOrgStore((state) => state.primaryOrgId);
+  const revampServices = useRevampCatalogStore((state) => state.services);
+  const loadSpecialityCatalog = useRevampCatalogStore((state) => state.loadSpecialityCatalog);
   const { canMore, reason } = useCanMoreForPrimaryOrg('appointments');
   const getServicesBySpecialityId = useMemo(
     () => useServiceStore.getState().getServicesBySpecialityId,
@@ -342,6 +376,22 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
     const matchingSlot = availableSlots.find((slot) => slot.startTime === previousSlot.startTime);
     return matchingSlot ?? (preserveExistingSelection ? null : (availableSlots[0] ?? null));
   };
+
+  const getAppointmentServicesBySpecialityId = useCallback(
+    (specialityId: string): AppointmentCatalogService[] => {
+      const currentCatalogServices = revampServices
+        .filter(
+          (service) =>
+            service.specialityId === specialityId &&
+            service.status === 'ACTIVE' &&
+            service.organisationId === primaryOrgId
+        )
+        .map(mapRevampServiceForAppointment);
+      const legacyServices = getServicesBySpecialityId(specialityId);
+      return mergeServicesById(currentCatalogServices, legacyServices);
+    },
+    [getServicesBySpecialityId, primaryOrgId, revampServices]
+  );
 
   const ServiceFields = useMemo(
     () => [
@@ -508,6 +558,26 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
   }, [initialPrefill, normalizeId]);
 
   useEffect(() => {
+    const specialityId = formData.appointmentType?.speciality.id;
+    if (!primaryOrgId || !specialityId) return;
+    loadSpecialityCatalog(primaryOrgId, specialityId).catch((error: unknown) => {
+      console.error('Failed to load services for speciality:', error);
+    });
+  }, [formData.appointmentType?.speciality.id, loadSpecialityCatalog, primaryOrgId]);
+
+  useEffect(() => {
+    if (!calendarSlotFlow || !pendingPrefill || !primaryOrgId || !specialities.length) return;
+    const specialityIds = specialities
+      .map((speciality) => String(speciality._id ?? '').trim())
+      .filter(Boolean);
+    Promise.all(
+      specialityIds.map((specialityId) => loadSpecialityCatalog(primaryOrgId, specialityId))
+    ).catch((error: unknown) => {
+      console.error('Failed to load calendar slot services:', error);
+    });
+  }, [calendarSlotFlow, loadSpecialityCatalog, pendingPrefill, primaryOrgId, specialities]);
+
+  useEffect(() => {
     if (!calendarSlotFlow) return;
     if (!pendingPrefill) return;
     if (!specialities.length) return;
@@ -517,7 +587,7 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
     const serviceCandidates = specialities.flatMap((speciality) => {
       const specialityId = String(speciality._id ?? '').trim();
       if (!specialityId) return [];
-      const servicesForSpeciality = getServicesBySpecialityId(specialityId);
+      const servicesForSpeciality = getAppointmentServicesBySpecialityId(specialityId);
       return servicesForSpeciality.map((service) => ({
         specialityId,
         serviceId: String(service.id ?? '').trim(),
@@ -634,8 +704,8 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
     };
   }, [
     calendarSlotFlow,
+    getAppointmentServicesBySpecialityId,
     getLeadOptionsForSlot,
-    getServicesBySpecialityId,
     normalizeId,
     pendingPrefill,
     specialities,
@@ -879,8 +949,8 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
     if (!specialityId) {
       return [];
     }
-    return getServicesBySpecialityId(specialityId);
-  }, [formData.appointmentType?.speciality, getServicesBySpecialityId]);
+    return getAppointmentServicesBySpecialityId(specialityId);
+  }, [formData.appointmentType?.speciality.id, getAppointmentServicesBySpecialityId]);
 
   const ServicesOptions = useMemo(() => {
     if (calendarSlotFlow) {

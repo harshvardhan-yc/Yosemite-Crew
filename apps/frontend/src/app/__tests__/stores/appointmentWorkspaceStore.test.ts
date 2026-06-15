@@ -27,11 +27,11 @@ describe('appointmentWorkspaceStore', () => {
     expect(getStore().getEncounter(APPT)?.mode).toBe('OUTPATIENT');
   });
 
-  it('seeds inpatient schedule and room for inpatient mode', () => {
+  it('seeds inpatient schedule for inpatient mode without assigning a placeholder room', () => {
     seed('INPATIENT');
     const enc = getStore().getEncounter(APPT);
     expect(enc?.schedule.length).toBeGreaterThan(0);
-    expect(enc?.roomId).toBeTruthy();
+    expect(enc?.roomId).toBeUndefined();
   });
 
   it('temporarily switches encounter mode without clearing clinical workspace data', () => {
@@ -43,7 +43,7 @@ describe('appointmentWorkspaceStore', () => {
     expect(enc.mode).toBe('INPATIENT');
     expect(enc.consultationType).toBe('Inpatient');
     expect(enc.schedule.length).toBeGreaterThan(0);
-    expect(enc.roomId).toBeTruthy();
+    expect(enc.roomId).toBeUndefined();
     expect(enc.soap[0].subjective).toBe('<p>preserved</p>');
 
     getStore().setEncounterMode(APPT, 'OUTPATIENT');

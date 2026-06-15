@@ -12,6 +12,8 @@ import {
   rejectAppointment,
   changeAppointmentStatus,
   updateAppointmentPaymentStatus,
+  markEncounterReadyForDischarge,
+  undoEncounterReadyForDischarge,
   consumeInventory,
   consumeBulkInventory,
 } from '@/app/features/appointments/services/appointmentService';
@@ -566,6 +568,57 @@ describe('Appointment Service', () => {
       });
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('encounter lifecycle operations', () => {
+    it('marks an encounter ready for discharge', async () => {
+      mockedPostData.mockResolvedValue({});
+
+      await markEncounterReadyForDischarge('enc-1');
+
+      expect(mockedPostData).toHaveBeenCalledWith(
+        '/fhir/v1/encounter/enc-1/$ready-for-discharge',
+        expect.objectContaining({
+          resourceType: 'Parameters',
+          parameter: [expect.objectContaining({ name: 'actedAt' })],
+        })
+      );
+    });
+
+    it('undoes ready for discharge against the planned backend endpoint', async () => {
+      mockedPostData.mockResolvedValue({});
+
+      await undoEncounterReadyForDischarge('enc-1');
+
+      expect(mockedPostData).toHaveBeenCalledWith(
+        '/fhir/v1/encounter/enc-1/$undo-ready-for-discharge',
+        expect.objectContaining({
+          resourceType: 'Parameters',
+          parameter: [expect.objectContaining({ name: 'actedAt' })],
+        })
+      );
+    });
+
+    it('skips encounter lifecycle calls without an encounter id', async () => {
+      await markEncounterReadyForDischarge();
+      await undoEncounterReadyForDischarge();
+
+      expect(mockedPostData).not.toHaveBeenCalled();
+    });
+
+    it('logs and rethrows encounter lifecycle errors', async () => {
+      const error = new Error('Lifecycle failed');
+      mockedPostData.mockRejectedValue(error);
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      await expect(markEncounterReadyForDischarge('enc-1')).rejects.toThrow('Lifecycle failed');
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Failed to mark encounter ready for discharge:',
+        error
+      );
+      consoleSpy.mockRestore();
     });
   });
 
