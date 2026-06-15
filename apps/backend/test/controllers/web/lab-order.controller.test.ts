@@ -59,7 +59,7 @@ describe("LabOrderController", () => {
     it("lists orders without reading query/body filters", async () => {
       req.query = {
         appointmentId: "67f001122334455667788990",
-        companionId: "67f001122334455667788991",
+        patientId: "67f001122334455667788991",
         status: "SUBMITTED",
         limit: "25",
       };
@@ -78,7 +78,7 @@ describe("LabOrderController", () => {
     it("ignores body filters", async () => {
       req.body = {
         appointmentId: "body-appointment",
-        companionId: "body-companion",
+        patientId: "body-patient",
         status: "CREATED",
         limit: 100,
       };
@@ -123,7 +123,7 @@ describe("LabOrderController", () => {
     it("passes search filters from the request body", async () => {
       req.body = {
         appointmentId: "67f001122334455667788990",
-        companionId: "67f001122334455667788991",
+        patientId: "67f001122334455667788991",
         status: "SUBMITTED",
         limit: 25,
       };
@@ -134,7 +134,7 @@ describe("LabOrderController", () => {
       expect(mockedLabOrderService.listOrders).toHaveBeenCalledWith({
         organisationId: "org-1",
         appointmentId: "67f001122334455667788990",
-        companionId: "67f001122334455667788991",
+        patientId: "67f001122334455667788991",
         provider: "idexx",
         status: "SUBMITTED",
         limit: 25,
@@ -186,7 +186,7 @@ describe("LabOrderController", () => {
   describe("createIdexxOrder", () => {
     it("creates an order with normalized defaults", async () => {
       req.body = {
-        companionId: "comp-1",
+        patientId: "patient-1",
         appointmentId: "appt-1",
         tests: ["T1"],
         notes: "urgent",
@@ -199,7 +199,7 @@ describe("LabOrderController", () => {
 
       expect(mockedLabOrderService.createOrder).toHaveBeenCalledWith("idexx", {
         organisationId: "org-1",
-        companionId: "comp-1",
+        patientId: "patient-1",
         appointmentId: "appt-1",
         createdByUserId: undefined,
         tests: ["T1"],

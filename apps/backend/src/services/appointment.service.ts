@@ -298,7 +298,7 @@ const requireBaseAppointmentInput = (
   input: AppointmentRequestInput,
   messages: {
     organisation: string;
-    companion: string;
+    patient: string;
     timing: string;
   },
 ) => {
@@ -316,7 +316,7 @@ const requireBaseAppointmentInput = (
 const validateRequestedFromMobileInput = (input: AppointmentRequestInput) => {
   requireBaseAppointmentInput(input, {
     organisation: "organisationId is required",
-    companion: "Companion and parent details are required",
+    patient: "Companion and parent details are required",
     timing: "startTime, endTime, durationMinutes required",
   });
 };
@@ -324,7 +324,7 @@ const validateRequestedFromMobileInput = (input: AppointmentRequestInput) => {
 const validateAppointmentFromPmsInput = (input: AppointmentRequestInput) => {
   requireBaseAppointmentInput(input, {
     organisation: "organisationId is required.",
-    companion: "Companion and parent information is required.",
+    patient: "Companion and parent information is required.",
     timing: "startTime, endTime and durationMinutes are required.",
   });
   if (!input.lead?.id) {
@@ -1479,7 +1479,8 @@ const releaseAppointmentUsage = async (reservation: {
 
 const buildAppointmentDomain = (input: {
   id?: string;
-  companion: Appointment["companion"];
+  patient: Appointment["patient"];
+  companion?: Appointment["companion"];
   lead?: Appointment["lead"];
   supportStaff?: Appointment["supportStaff"];
   room?: Appointment["room"];
@@ -1499,7 +1500,8 @@ const buildAppointmentDomain = (input: {
   formIds?: string[];
 }): Appointment => ({
   id: input.id,
-  companion: input.patient,
+  patient: input.patient,
+  companion: input.companion ?? input.patient,
   lead: input.lead ?? undefined,
   supportStaff: input.supportStaff ?? [],
   room: input.room ?? undefined,
@@ -1526,7 +1528,7 @@ const toDomain = (doc: AppointmentDocument): Appointment => {
 
   return buildAppointmentDomain({
     id: obj._id.toString(),
-    companion: obj.patient,
+    patient: obj.companion,
     lead: obj.lead ?? undefined,
     supportStaff: obj.supportStaff ?? [],
     room: obj.room ?? undefined,
@@ -1549,7 +1551,7 @@ const toDomain = (doc: AppointmentDocument): Appointment => {
 
 const toDomainFromPrisma = (row: {
   id: string;
-  companion: unknown;
+  patient: unknown;
   lead: unknown;
   supportStaff: unknown;
   room: unknown;
@@ -1570,7 +1572,7 @@ const toDomainFromPrisma = (row: {
 }): Appointment =>
   buildAppointmentDomain({
     id: row.id,
-    companion: row.patient as Appointment["companion"],
+    patient: row.patient as Appointment["patient"],
     lead: (row.lead ?? undefined) as Appointment["lead"] | undefined,
     supportStaff: (row.supportStaff ?? []) as Appointment["supportStaff"],
     room: (row.room ?? undefined) as Appointment["room"] | undefined,
@@ -1606,7 +1608,7 @@ const toDomainLean = (
 
   return buildAppointmentDomain({
     id,
-    companion: obj.patient,
+    patient: obj.companion,
     lead: obj.lead ?? undefined,
     supportStaff: obj.supportStaff ?? [],
     room: obj.room ?? undefined,
@@ -1634,6 +1636,7 @@ const buildAppointmentFromInput = (
 ): Appointment => ({
   id: undefined,
   organisationId: input.organisationId,
+  patient: input.patient,
   companion: input.patient,
   appointmentType: input.appointmentType,
   appointmentDate: input.startTime,
@@ -1731,7 +1734,7 @@ const toAppointmentResponseDTOWithPaymentStatus = async (
 
 const toAppointmentResponseDTOWithPaymentStatusFromPrisma = async (row: {
   id: string;
-  companion: Prisma.JsonValue;
+  patient: Prisma.JsonValue;
   lead: Prisma.JsonValue | null;
   supportStaff: Prisma.JsonValue | null;
   room: Prisma.JsonValue | null;
@@ -1756,6 +1759,7 @@ const toAppointmentResponseDTOWithPaymentStatusFromPrisma = async (row: {
 };
 
 const toPersistable = (appointment: Appointment): AppointmentMongo => ({
+  patient: appointment.patient,
   companion: appointment.patient,
   lead: appointment.lead,
   supportStaff: appointment.supportStaff ?? [],
@@ -1789,7 +1793,7 @@ const toPrismaAppointmentData = (
 
   return {
     id: obj._id.toString(),
-    companion: obj.patient,
+    patient: obj.patient,
     lead: obj.lead ?? undefined,
     supportStaff: obj.supportStaff ?? [],
     room: obj.room ?? undefined,
@@ -1924,7 +1928,7 @@ export const AppointmentService = {
       try {
         created = await prisma.appointment.create({
           data: {
-            companion: appointment.patient as unknown as Prisma.InputJsonValue,
+            patient: appointment.patient as unknown as Prisma.InputJsonValue,
             lead: appointment.lead as unknown as Prisma.InputJsonValue,
             supportStaff: (appointment.supportStaff ??
               []) as unknown as Prisma.InputJsonValue,
@@ -2229,7 +2233,7 @@ export const AppointmentService = {
 
           const created = await tx.appointment.create({
             data: {
-              companion: appointment.patient,
+              patient: appointment.patient,
               lead: appointment.lead,
               supportStaff: appointment.supportStaff ?? [],
               room: appointment.room,
@@ -3848,7 +3852,7 @@ export const AppointmentService = {
     if (isReadFromPostgres()) {
       const rows = await prisma.appointment.findMany({
         where: {
-          companion: { path: ["id"], equals: patientId },
+          patient: { path: ["id"], equals: patientId },
         },
         orderBy: { startTime: "desc" },
       });
@@ -3987,7 +3991,7 @@ export const AppointmentService = {
       const rows = await prisma.appointment.findMany({
         where: {
           organisationId,
-          companion: { path: ["id"], equals: patientId },
+          patient: { path: ["id"], equals: patientId },
         },
         orderBy: { startTime: "desc" },
       });
@@ -4039,7 +4043,7 @@ export const AppointmentService = {
     if (isReadFromPostgres()) {
       const rows = await prisma.appointment.findMany({
         where: {
-          companion: { path: ["parent", "id"], equals: parentId },
+          patient: { path: ["parent", "id"], equals: parentId },
         },
         orderBy: { startTime: "desc" },
       });
@@ -4256,12 +4260,12 @@ export const AppointmentService = {
       }
       if (filter.patientId) {
         andFilters.push({
-          companion: { path: ["id"], equals: filter.patientId },
+          patient: { path: ["id"], equals: filter.patientId },
         });
       }
       if (filter.parentId) {
         andFilters.push({
-          companion: { path: ["parent", "id"], equals: filter.parentId },
+          patient: { path: ["parent", "id"], equals: filter.parentId },
         });
       }
       if (filter.leadId) {

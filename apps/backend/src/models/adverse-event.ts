@@ -94,6 +94,7 @@ export interface AdverseEventReportMongo {
   appointmentId?: string | null;
   reporter: AdverseEventReporterInfo;
   companion: AdverseEventCompanionInfo;
+  patient?: AdverseEventCompanionInfo;
   product: AdverseEventProductInfo;
   destinations: AdverseEventDestinations;
   consent: AdverseEventConsent;

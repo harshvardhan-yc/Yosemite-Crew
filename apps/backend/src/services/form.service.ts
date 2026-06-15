@@ -651,7 +651,7 @@ const loadAppointmentForForms = async (appointmentId: string) => {
   if (isReadFromPostgres()) {
     return prisma.appointment.findUnique({
       where: { id: appointmentId },
-      select: { organisationId: true, companion: true },
+      select: { organisationId: true, patient: true },
     });
   }
 
@@ -661,7 +661,7 @@ const loadAppointmentForForms = async (appointmentId: string) => {
 };
 
 const assertSoapAppointmentAccess = (params: {
-  appointment: { organisationId: string; companion?: unknown };
+  appointment: { organisationId: string; patient?: unknown };
   requesterOrgId?: string;
   requesterParentId?: string;
 }) => {
@@ -883,7 +883,7 @@ const buildAppointmentFormItems = async (params: {
 };
 
 const resolveAppointmentParentId = (
-  appointment: { companion?: unknown } | null | undefined,
+  appointment: { patient?: unknown } | null | undefined,
 ) => {
   const companion = appointment?.patient;
   if (!companion || typeof companion !== "object") return undefined;
@@ -2155,7 +2155,7 @@ export const FormService = {
     const appointment = isReadFromPostgres()
       ? await prisma.appointment.findUnique({
           where: { id: appointmentId },
-          select: { organisationId: true, formIds: true, companion: true },
+          select: { organisationId: true, formIds: true, patient: true },
         })
       : await AppointmentModel.findById(appointmentId).lean();
     if (!appointment) {

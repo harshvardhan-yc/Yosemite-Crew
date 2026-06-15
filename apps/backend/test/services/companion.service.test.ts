@@ -23,7 +23,26 @@ jest.mock("src/config/prisma", () => ({
       findFirst: jest.fn(),
       deleteMany: jest.fn(),
     },
+    parentPatient: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      deleteMany: jest.fn(),
+      count: jest.fn(),
+    },
+    patientOrganisation: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      deleteMany: jest.fn(),
+      count: jest.fn(),
+    },
     companion: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      deleteMany: jest.fn(),
+      upsert: jest.fn(),
+    },
+    patient: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -140,7 +159,7 @@ describe("CompanionService", () => {
       expect(CompanionModel.create).toHaveBeenCalled();
       expect(ParentCompanionService.linkParent).toHaveBeenCalledWith({
         parentId: validParentId,
-        companionId: mockDoc._id,
+        patientId: mockDoc._id,
         role: "PRIMARY",
       });
       expect(result.response.name).toBe("Buddy");
@@ -243,10 +262,10 @@ describe("CompanionService", () => {
 
     it("uses prisma when READ_FROM_POSTGRES is true", async () => {
       process.env.READ_FROM_POSTGRES = "true";
-      (prisma.parentCompanion.findMany as jest.Mock).mockResolvedValue([
-        { companionId: validCompanionId },
+      (prisma.parentPatient.findMany as jest.Mock).mockResolvedValue([
+        { patientId: validCompanionId },
       ]);
-      (prisma.companion.findMany as jest.Mock).mockResolvedValue([
+      (prisma.patient.findMany as jest.Mock).mockResolvedValue([
         {
           id: validCompanionId,
           name: "Buddy",
@@ -320,7 +339,7 @@ describe("CompanionService", () => {
 
       // Mock finding existing links
       (CompanionOrganisationModel.find as jest.Mock).mockReturnValue({
-        lean: jest.fn().mockResolvedValue([{ companionId: c1 }]),
+        lean: jest.fn().mockResolvedValue([{ patientId: c1 }]),
       });
 
       (CompanionModel.find as jest.Mock).mockResolvedValue([
@@ -343,7 +362,7 @@ describe("CompanionService", () => {
         ParentCompanionService.getActiveCompanionIdsForParent as jest.Mock
       ).mockResolvedValue([c1]);
       (CompanionOrganisationModel.find as jest.Mock).mockReturnValue({
-        lean: jest.fn().mockResolvedValue([{ companionId: c1 }]),
+        lean: jest.fn().mockResolvedValue([{ patientId: c1 }]),
       });
 
       const res = await CompanionService.listByParentNotInOrganisation(
@@ -355,14 +374,14 @@ describe("CompanionService", () => {
 
     it("uses prisma when READ_FROM_POSTGRES is true", async () => {
       process.env.READ_FROM_POSTGRES = "true";
-      (prisma.parentCompanion.findMany as jest.Mock).mockResolvedValue([
-        { companionId: "c1" },
-        { companionId: "c2" },
+      (prisma.parentPatient.findMany as jest.Mock).mockResolvedValue([
+        { patientId: "c1" },
+        { patientId: "c2" },
       ]);
-      (prisma.companionOrganisation.findMany as jest.Mock).mockResolvedValue([
-        { companionId: "c1" },
+      (prisma.patientOrganisation.findMany as jest.Mock).mockResolvedValue([
+        { patientId: "c1" },
       ]);
-      (prisma.companion.findMany as jest.Mock).mockResolvedValue([
+      (prisma.patient.findMany as jest.Mock).mockResolvedValue([
         {
           id: "c2",
           name: "Unlinked",
@@ -421,7 +440,7 @@ describe("CompanionService", () => {
 
     it("uses prisma when READ_FROM_POSTGRES is true", async () => {
       process.env.READ_FROM_POSTGRES = "true";
-      (prisma.companion.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.patient.findUnique as jest.Mock).mockResolvedValue({
         id: validCompanionId,
         name: "Buddy",
         type: "DOG",
@@ -470,7 +489,7 @@ describe("CompanionService", () => {
 
     it("uses prisma when READ_FROM_POSTGRES is true", async () => {
       process.env.READ_FROM_POSTGRES = "true";
-      (prisma.companion.findMany as jest.Mock).mockResolvedValue([
+      (prisma.patient.findMany as jest.Mock).mockResolvedValue([
         {
           id: validCompanionId,
           name: "Buddy",
@@ -503,7 +522,7 @@ describe("CompanionService", () => {
 
       const res = await CompanionService.getByName("Buddy");
       expect(res.responses).toHaveLength(1);
-      expect(prisma.companion.findMany).toHaveBeenCalledWith(
+      expect(prisma.patient.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { name: { contains: "Buddy", mode: "insensitive" } },
         }),
@@ -556,7 +575,7 @@ describe("CompanionService", () => {
 
       await CompanionServiceIsolated.getById(validCompanionId);
 
-      expect(prismaIsolated.companion.upsert).toHaveBeenCalledWith(
+      expect(prismaIsolated.patient.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: doc._id.toString() },
           create: expect.objectContaining({
@@ -616,7 +635,7 @@ describe("CompanionService", () => {
         ...mockPersistableBase,
         name: "Updated",
       });
-      (prisma.companion.update as jest.Mock).mockResolvedValue({
+      (prisma.patient.update as jest.Mock).mockResolvedValue({
         id: validCompanionId,
         name: "Updated",
         type: "DOG",
@@ -647,7 +666,7 @@ describe("CompanionService", () => {
 
       const res = await CompanionService.update(validCompanionId, payload);
       expect(res?.response.name).toBe("Updated");
-      expect(prisma.companion.update).toHaveBeenCalledWith(
+      expect(prisma.patient.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: validCompanionId } }),
       );
     });
@@ -741,22 +760,22 @@ describe("CompanionService", () => {
       (ParentService.findByLinkedUserId as jest.Mock).mockResolvedValue({
         id: validParentId,
       });
-      (prisma.parentCompanion.findFirst as jest.Mock).mockResolvedValue({
+      (prisma.parentPatient.findFirst as jest.Mock).mockResolvedValue({
         id: "link-1",
       });
-      (prisma.parentCompanion.deleteMany as jest.Mock).mockResolvedValue({
+      (prisma.parentPatient.deleteMany as jest.Mock).mockResolvedValue({
         count: 1,
       });
-      (prisma.companion.deleteMany as jest.Mock).mockResolvedValue({
+      (prisma.patient.deleteMany as jest.Mock).mockResolvedValue({
         count: 1,
       });
 
       await CompanionService.delete(validCompanionId, context);
 
-      expect(prisma.parentCompanion.deleteMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { companionId: validCompanionId } }),
+      expect(prisma.parentPatient.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { patientId: validCompanionId } }),
       );
-      expect(prisma.companion.deleteMany).toHaveBeenCalledWith(
+      expect(prisma.patient.deleteMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: validCompanionId } }),
       );
     });
@@ -766,7 +785,7 @@ describe("CompanionService", () => {
       (ParentService.findByLinkedUserId as jest.Mock).mockResolvedValue({
         id: validParentId,
       });
-      (prisma.parentCompanion.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.parentPatient.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(
         CompanionService.delete(validCompanionId, context),

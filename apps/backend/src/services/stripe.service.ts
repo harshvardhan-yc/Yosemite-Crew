@@ -51,6 +51,12 @@ const extractCompanionRefs = (
   return { patientId, parentId };
 };
 
+const extractAppointmentPatientRefs = (appointment: {
+  patient?: Prisma.JsonValue | null;
+  companion?: Prisma.JsonValue | null;
+}) =>
+  extractCompanionRefs(appointment.patient ?? appointment.companion ?? null);
+
 type OrgBillingDoc = {
   _id?: IdLike;
   orgId: IdLike;
@@ -797,7 +803,7 @@ export const StripeService = {
           status: true,
           organisationId: true,
           appointmentType: true,
-          companion: true,
+          patient: true,
         },
       });
       if (!appointment) throw new Error("Appointment not found");
@@ -822,7 +828,8 @@ export const StripeService = {
       if (!organisation?.stripeAccountId)
         throw new Error("Organisation has no Stripe account");
 
-      const { parentId, patientId } = extractCompanionRefs(appointment.patient);
+      const { parentId, patientId } =
+        extractAppointmentPatientRefs(appointment);
 
       const amount = toStripeAmount(service.cost);
       const currency = await getOrgBillingCurrency(appointment.organisationId);
@@ -836,6 +843,7 @@ export const StripeService = {
           organisationId: appointment.organisationId,
           parentId: parentId ?? "",
           patientId: patientId ?? "",
+          companionId: patientId ?? "",
         },
         transfer_data: { destination: organisation.stripeAccountId },
       });
@@ -872,6 +880,8 @@ export const StripeService = {
     const amount = toStripeAmount(service.cost);
     const currency = await getOrgBillingCurrency(appointment.organisationId);
 
+    const { parentId, patientId } = extractAppointmentPatientRefs(appointment);
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency,
@@ -879,8 +889,8 @@ export const StripeService = {
         type: "APPOINTMENT_BOOKING",
         appointmentId,
         organisationId: appointment.organisationId,
-        parentId: appointment.patient.parent.id,
-        patientId: appointment.patient.id,
+        parentId: parentId ?? "",
+        patientId: patientId ?? "",
       },
       transfer_data: { destination: organisation.stripeAccountId },
     });
@@ -1736,7 +1746,7 @@ export const StripeService = {
           id: true,
           appointmentType: true,
           organisationId: true,
-          companion: true,
+          patient: true,
         },
       });
       if (!appointment) return;
@@ -1799,7 +1809,8 @@ export const StripeService = {
       });
       if (!service) return;
 
-      const { parentId, patientId } = extractCompanionRefs(appointment.patient);
+      const { parentId, patientId } =
+        extractAppointmentPatientRefs(appointment);
 
       await prisma.invoice.create({
         data: {
@@ -1807,6 +1818,7 @@ export const StripeService = {
           organisationId: appointment.organisationId,
           parentId: parentId ?? undefined,
           patientId: patientId ?? undefined,
+          companionId: patientId ?? undefined,
           currency: pi.currency ?? "usd",
           status: "PAID",
           items: [
@@ -1910,8 +1922,12 @@ export const StripeService = {
     const invoice = await InvoiceModel.create({
       appointmentId,
       organisationId: appointment.organisationId,
-      parentId: appointment.patient.parent.id,
-      patientId: appointment.patient.id,
+      parentId:
+        extractAppointmentPatientRefs(appointment).parentId ??
+        appointment.patient?.parent?.id,
+      patientId:
+        extractAppointmentPatientRefs(appointment).patientId ??
+        appointment.patient?.id,
       currency: pi.currency,
 
       status: "PAID",
@@ -1940,8 +1956,12 @@ export const StripeService = {
             id: invoice._id.toString(),
             appointmentId,
             organisationId: appointment.organisationId,
-            parentId: appointment.patient.parent.id,
-            patientId: appointment.patient.id,
+            parentId:
+              extractAppointmentPatientRefs(appointment).parentId ??
+              appointment.patient?.parent?.id,
+            patientId:
+              extractAppointmentPatientRefs(appointment).patientId ??
+              appointment.patient?.id,
             currency: pi.currency,
             status: "PAID",
             items: invoice.items as unknown as Prisma.InputJsonValue,

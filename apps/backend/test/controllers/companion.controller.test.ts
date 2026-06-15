@@ -261,7 +261,7 @@ describe("CompanionController", () => {
         pmsUserId: "auth_user_123",
         organisationId: validObjectId,
         organisationType: "HOSPITAL",
-        companionId: "c1",
+        patientId: "c1",
       });
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({ id: "c1" });

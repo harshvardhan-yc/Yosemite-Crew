@@ -73,7 +73,7 @@ describe("ExpenseService", () => {
   // 1. createExpense
   describe("createExpense", () => {
     const input: any = {
-      companionId: validCompanionId,
+      patientId: validCompanionId,
       parentId: validObjectId,
       category: "Food",
       expenseName: "Dog Food",
@@ -82,10 +82,10 @@ describe("ExpenseService", () => {
       date: new Date(),
     };
 
-    it("should throw if companionId is missing", async () => {
+    it("should throw if patientId is missing", async () => {
       await expect(
-        ExpenseService.createExpense({ ...input, companionId: "" }),
-      ).rejects.toThrow("companionId is required");
+        ExpenseService.createExpense({ ...input, patientId: "" }),
+      ).rejects.toThrow("patientId is required");
     });
 
     it("should throw if parentId is missing", async () => {
@@ -180,9 +180,9 @@ describe("ExpenseService", () => {
 
   // 2. getExpensesByCompanion (Unified List)
   describe("getExpensesByCompanion", () => {
-    it("should throw if companionId is missing", async () => {
+    it("should throw if patientId is missing", async () => {
       await expect(ExpenseService.getExpensesByCompanion("")).rejects.toThrow(
-        "companionId is required",
+        "patientId is required",
       );
     });
 
@@ -571,7 +571,7 @@ describe("ExpenseService", () => {
     it("handles dual-write update errors", async () => {
       const mockDoc = {
         _id: new Types.ObjectId(validObjectId),
-        companionId: new Types.ObjectId(validCompanionId),
+        patientId: new Types.ObjectId(validCompanionId),
         parentId: new Types.ObjectId(validObjectId),
         category: "Food",
         expenseName: "Updated",
@@ -624,7 +624,7 @@ describe("ExpenseService", () => {
         await ExpenseService.getTotalExpenseForCompanion(validCompanionId);
 
       expect(res).toEqual({
-        companionId: validCompanionId,
+        patientId: validCompanionId,
         invoiceTotal: 100,
         externalTotal: 50,
         totalExpense: 150,
@@ -654,7 +654,7 @@ describe("ExpenseService", () => {
         await ExpenseService.getTotalExpenseForCompanion(validCompanionId);
 
       expect(res).toEqual({
-        companionId: validCompanionId,
+        patientId: validCompanionId,
         invoiceTotal: 120,
         externalTotal: 30,
         totalExpense: 150,

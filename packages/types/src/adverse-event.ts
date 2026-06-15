@@ -81,8 +81,8 @@ export interface AdverseEventReport {
   appointmentId?: string | null;
 
   reporter: AdverseEventReporterInfo;
-  companion: AdverseEventPatientInfo;
-  patient?: AdverseEventPatientInfo;
+  patient: AdverseEventPatientInfo;
+  companion?: AdverseEventPatientInfo;
   product: AdverseEventProductInfo;
 
   destinations: AdverseEventDestinations;

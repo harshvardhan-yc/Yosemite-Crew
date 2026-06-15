@@ -29,7 +29,8 @@ const toDomain = (doc: AdverseEventReportDocument): AdverseEventReport => ({
   organisationId: doc.organisationId,
   appointmentId: doc.appointmentId ?? null,
   reporter: doc.reporter,
-  companion: doc.patient,
+  patient: doc.patient ?? doc.companion,
+  companion: doc.companion,
   product: doc.product,
   destinations: doc.destinations,
   consent: doc.consent,
@@ -43,7 +44,8 @@ const toDomainFromPrisma = (row: {
   organisationId: string | null;
   appointmentId: string | null;
   reporter: Prisma.JsonValue;
-  companion: Prisma.JsonValue;
+  patient: Prisma.JsonValue;
+  companion?: Prisma.JsonValue;
   product: Prisma.JsonValue;
   destinations: Prisma.JsonValue;
   consent: Prisma.JsonValue;
@@ -55,7 +57,9 @@ const toDomainFromPrisma = (row: {
   organisationId: row.organisationId ?? undefined,
   appointmentId: row.appointmentId ?? null,
   reporter: row.reporter as unknown as AdverseEventReport["reporter"],
-  companion: row.patient as unknown as AdverseEventReport["companion"],
+  patient: row.patient as unknown as AdverseEventReport["patient"],
+  companion: (row.companion ??
+    row.patient) as unknown as AdverseEventReport["companion"],
   product: row.product as unknown as AdverseEventReport["product"],
   destinations:
     row.destinations as unknown as AdverseEventReport["destinations"],
@@ -88,7 +92,7 @@ export const AdverseEventService = {
           organisationId: input.organisationId ?? undefined,
           appointmentId: input.appointmentId ?? undefined,
           reporter: toInputJsonObject(input.reporter),
-          companion: toInputJsonObject(input.patient),
+          patient: toInputJsonObject(input.patient),
           product: toInputJsonObject(input.product),
           destinations: toInputJsonObject(input.destinations),
           consent: {
@@ -101,6 +105,7 @@ export const AdverseEventService = {
       return toDomainFromPrisma({
         ...doc,
         reporter: doc.reporter,
+        patient: doc.patient,
         companion: doc.patient,
         product: doc.product,
         destinations: doc.destinations,
@@ -130,7 +135,7 @@ export const AdverseEventService = {
             organisationId: input.organisationId ?? undefined,
             appointmentId: input.appointmentId ?? undefined,
             reporter: toInputJsonObject(input.reporter),
-            companion: toInputJsonObject(input.patient),
+            patient: toInputJsonObject(input.patient),
             product: toInputJsonObject(input.product),
             destinations: toInputJsonObject(input.destinations),
             consent: {
@@ -157,6 +162,7 @@ export const AdverseEventService = {
         ? toDomainFromPrisma({
             ...row,
             reporter: row.reporter,
+            patient: row.patient,
             companion: row.patient,
             product: row.product,
             destinations: row.destinations,
@@ -191,6 +197,7 @@ export const AdverseEventService = {
         toDomainFromPrisma({
           ...row,
           reporter: row.reporter,
+          patient: row.patient,
           companion: row.patient,
           product: row.product,
           destinations: row.destinations,
@@ -214,6 +221,7 @@ export const AdverseEventService = {
       return toDomainFromPrisma({
         ...row,
         reporter: row.reporter,
+        patient: row.patient,
         companion: row.patient,
         product: row.product,
         destinations: row.destinations,

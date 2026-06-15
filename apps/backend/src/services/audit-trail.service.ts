@@ -261,15 +261,15 @@ export const AuditTrailService = {
         organisationId: filters.organisationId as string,
       };
       if (filters.patientId) where.patientId = filters.patientId as string;
-      if (filters.eventType)
+      if (params.eventTypes?.length)
         where.eventType = {
-          in: (filters.eventType as AuditEventType[]).map(
+          in: params.eventTypes.map(
             (value) => toPrismaAuditEventType(value) ?? value,
           ),
         };
-      if (filters.entityType)
+      if (params.entityTypes?.length)
         where.entityType = {
-          in: (filters.entityType as AuditEntityType[]).map(
+          in: params.entityTypes.map(
             (value) => toPrismaAuditEntityType(value) ?? value,
           ),
         };

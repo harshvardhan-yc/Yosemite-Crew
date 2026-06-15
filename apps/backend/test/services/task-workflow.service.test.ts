@@ -202,7 +202,7 @@ describe("TaskWorkflowService", () => {
       taskSchedule: null,
     });
     mockedPrisma.appointment.findFirst.mockResolvedValueOnce({
-      companion: { parent: { id: "parent-1" } },
+      patient: { parent: { id: "parent-1" } },
       lead: { id: "lead-1" },
       supportStaff: [{ id: "staff-1" }],
       startTime: new Date("2026-01-01T08:00:00.000Z"),

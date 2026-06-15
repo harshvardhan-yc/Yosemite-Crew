@@ -197,23 +197,25 @@ const buildPatientPayload = async (input: {
   } & { id?: string; _id?: { toString(): string } };
 }) => {
   const speciesCode = await lookupIdexxMapping(
-    input.patient.speciesCode as string,
+    input.companion.speciesCode as string,
   );
-  const breedCode = await lookupIdexxMapping(input.patient.breedCode as string);
+  const breedCode = await lookupIdexxMapping(
+    input.companion.breedCode as string,
+  );
   const genderCode = resolveGenderCode(
-    input.patient.gender as string,
-    input.patient.isNeutered ?? undefined,
+    input.companion.gender as string,
+    input.companion.isNeutered ?? undefined,
   );
 
   return {
-    patientId: resolveDocId(input.patient),
-    name: input.patient.name,
-    microchip: input.patient.microchipNumber ?? undefined,
+    patientId: resolveDocId(input.companion),
+    name: input.companion.name,
+    microchip: input.companion.microchipNumber ?? undefined,
     speciesCode,
     breedCode,
     genderCode,
-    birthdate: input.patient.dateOfBirth
-      ? input.patient.dateOfBirth.toISOString().split("T")[0]
+    birthdate: input.companion.dateOfBirth
+      ? input.companion.dateOfBirth.toISOString().split("T")[0]
       : undefined,
     client: {
       id: resolveDocId(input.parent),
@@ -371,9 +373,9 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
         ivls: input.ivls,
       });
 
-      const patientId = toIdString(patientId);
+      const patientIdString = toIdString(patientId);
       try {
-        await client.getCensusPatient(patientId);
+        await client.getCensusPatient(patientIdString);
       } catch (error) {
         const status = (error as { response?: { status?: number } })?.response
           ?.status;

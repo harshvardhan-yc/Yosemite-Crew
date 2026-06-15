@@ -82,7 +82,7 @@ describe("LabResultController", () => {
     it("lists results using query params", async () => {
       req.query = {
         orderId: "order-1",
-        companionId: "comp-1",
+        patientId: "comp-1",
         limit: "10",
       };
       mockedLabResultService.list.mockResolvedValue([{ id: "res-1" }] as any);
@@ -93,7 +93,7 @@ describe("LabResultController", () => {
         organisationId: "org-1",
         provider: "IDEXX",
         orderId: "order-1",
-        companionId: "comp-1",
+        patientId: "comp-1",
         limit: 10,
       });
       expect(statusMock).toHaveBeenCalledWith(200);
@@ -281,7 +281,7 @@ describe("LabResultController", () => {
     it("returns results for IDEXX searches", async () => {
       req.query = {
         orderId: "order-1",
-        companionId: "comp-1",
+        patientId: "comp-1",
         limit: "5",
       };
       mockedLabResultService.list.mockResolvedValue([{ id: "res-1" }] as any);
@@ -292,7 +292,7 @@ describe("LabResultController", () => {
         organisationId: "org-1",
         provider: "IDEXX",
         orderId: "order-1",
-        companionId: "comp-1",
+        patientId: "comp-1",
         limit: 5,
       });
       expect(statusMock).toHaveBeenCalledWith(200);

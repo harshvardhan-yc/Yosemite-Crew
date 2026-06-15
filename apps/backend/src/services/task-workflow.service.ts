@@ -111,7 +111,7 @@ const loadAppointmentContext = async (
     ? await client.appointment.findFirst({
         where: { id: templateInstance.appointmentId },
         select: {
-          companion: true,
+          patient: true,
           lead: true,
           supportStaff: true,
           startTime: true,

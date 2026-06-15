@@ -18,7 +18,7 @@ type AppointmentStatus = AppointmentDomain["status"];
 
 type AppointmentRow = {
   id: string;
-  companion: Prisma.JsonValue;
+  patient: Prisma.JsonValue;
   lead: Prisma.JsonValue | null;
   supportStaff: Prisma.JsonValue | null;
   room: Prisma.JsonValue | null;
@@ -363,16 +363,15 @@ const attachTemplateDefaults = (
   };
 };
 
-const getCompanionId = (
-  companion: AppointmentDomain["companion"] | Prisma.JsonValue,
-): string => ((companion as { id?: string } | null)?.id ?? "").trim();
+const getPatientId = (
+  patient: AppointmentDomain["patient"] | Prisma.JsonValue,
+): string => ((patient as { id?: string } | null)?.id ?? "").trim();
 
-const getParentIdFromCompanion = (
-  companion: AppointmentDomain["companion"] | Prisma.JsonValue,
+const getParentIdFromPatient = (
+  patient: AppointmentDomain["patient"] | Prisma.JsonValue,
 ): string | undefined =>
-  (
-    (companion as { parent?: { id?: string } } | null)?.parent?.id ?? ""
-  ).trim() || undefined;
+  ((patient as { parent?: { id?: string } } | null)?.parent?.id ?? "").trim() ||
+  undefined;
 
 const resolveCaseContext = async (args: {
   tx: TransactionClient;
@@ -482,7 +481,7 @@ const ensureEncounterOnCheckIn = async (args: {
     return args.current.encounterId;
   }
 
-  const patientId = getCompanionId(args.current.patient);
+  const patientId = getPatientId(args.current.patient);
   const caseId =
     normalizeOptionalString(args.current.caseId) ??
     (await resolveCaseContext({
@@ -490,7 +489,7 @@ const ensureEncounterOnCheckIn = async (args: {
       appointmentKind: normalizeAppointmentKind(args.current.appointmentKind),
       organisationId: args.current.organisationId,
       patientId,
-      parentId: getParentIdFromCompanion(args.current.patient),
+      parentId: getParentIdFromPatient(args.current.patient),
       concern: args.current.concern ?? undefined,
     }));
 
@@ -506,7 +505,7 @@ const ensureEncounterOnCheckIn = async (args: {
       caseId,
       organisationId: args.current.organisationId,
       patientId,
-      parentId: getParentIdFromCompanion(args.current.patient) ?? null,
+      parentId: getParentIdFromPatient(args.current.patient) ?? null,
       status: "arrived",
       encounterClass:
         normalizeAppointmentKind(args.current.appointmentKind) === "INPATIENT"
@@ -648,7 +647,7 @@ const buildWhereFromFilters = (
 
   if (filters.patientId) {
     and.push({
-      companion: {
+      patient: {
         path: ["id"],
         equals: filters.patientId,
       } as never,
@@ -657,7 +656,7 @@ const buildWhereFromFilters = (
 
   if (filters.parentId) {
     and.push({
-      companion: {
+      patient: {
         path: ["parent", "id"],
         equals: filters.parentId,
       } as never,
@@ -745,7 +744,8 @@ const toDomain = (
     id: row.id,
     caseId: row.caseId ?? undefined,
     encounterId: row.encounterId ?? undefined,
-    companion: row.patient as AppointmentDomain["companion"],
+    patient: row.patient as AppointmentDomain["patient"],
+    companion: row.patient as AppointmentDomain["patient"],
     lead: (row.lead as AppointmentDomain["lead"]) ?? undefined,
     supportStaff:
       (row.supportStaff as AppointmentDomain["supportStaff"]) ?? undefined,
@@ -821,7 +821,7 @@ const createAppointment = async (
   assertSelectionSupportsAppointmentKind(selection, appointmentKind);
 
   const created = await prisma.$transaction(async (tx) => {
-    const patientId = getCompanionId(input.patient);
+    const patientId = getPatientId(input.patient);
     const resolvedCaseId = await resolveCaseContext({
       tx,
       appointmentKind,
@@ -852,7 +852,7 @@ const createAppointment = async (
 
     const appointment = await tx.appointment.create({
       data: {
-        companion: toJsonValue(input.patient),
+        patient: toJsonValue(input.patient),
         lead: input.lead ? toJsonValue(input.lead) : Prisma.JsonNull,
         supportStaff: input.supportStaff ? toJsonValue(input.supportStaff) : [],
         room: input.room ? toJsonValue(input.room) : Prisma.JsonNull,
@@ -913,7 +913,7 @@ const applyDtoPatch = (
       input.encounterId === undefined
         ? normalizeOptionalString(current.encounterId)
         : (normalizeOptionalString(input.encounterId) ?? null),
-    companion: toJsonValue(input.patient),
+    patient: toJsonValue(input.patient),
     lead:
       input.lead === undefined
         ? toNullableJsonValue(current.lead)
@@ -995,7 +995,7 @@ export const AppointmentPrismaService = {
 
     const patch = applyDtoPatch(row, dto, "UPCOMING");
     const updated = await prisma.$transaction(async (tx) => {
-      const patientId = getCompanionId(input.patient);
+      const patientId = getPatientId(input.patient);
       const resolvedCaseId = await resolveCaseContext({
         tx,
         appointmentKind: patch.appointmentKind,
@@ -1275,7 +1275,7 @@ export const AppointmentPrismaService = {
     assertSelectionSupportsAppointmentKind(selection, appointmentKind);
     const patch = applyDtoPatch(row, dto, row.status);
     const updated = await prisma.$transaction(async (tx) => {
-      const patientId = getCompanionId(input.patient);
+      const patientId = getPatientId(input.patient);
       const resolvedCaseId = await resolveCaseContext({
         tx,
         appointmentKind,
@@ -1454,7 +1454,7 @@ export const AppointmentPrismaService = {
 
     const rows = (await prisma.appointment.findMany({
       where: {
-        companion: { path: ["id"], equals: patientId } as never,
+        patient: { path: ["id"], equals: patientId } as never,
       },
       orderBy: { startTime: "desc" },
     })) as AppointmentRow[];
@@ -1479,7 +1479,7 @@ export const AppointmentPrismaService = {
     const rows = (await prisma.appointment.findMany({
       where: {
         organisationId,
-        companion: { path: ["id"], equals: patientId } as never,
+        patient: { path: ["id"], equals: patientId } as never,
       },
       orderBy: { startTime: "desc" },
     })) as AppointmentRow[];
@@ -1496,7 +1496,7 @@ export const AppointmentPrismaService = {
 
     const rows = (await prisma.appointment.findMany({
       where: {
-        companion: { path: ["parent", "id"], equals: parentId } as never,
+        patient: { path: ["parent", "id"], equals: parentId } as never,
       },
       orderBy: { startTime: "desc" },
     })) as AppointmentRow[];

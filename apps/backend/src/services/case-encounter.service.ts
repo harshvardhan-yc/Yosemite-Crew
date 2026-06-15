@@ -44,7 +44,7 @@ type AppointmentLinkRow = {
   caseId: string | null;
   encounterId: string | null;
   organisationId: string;
-  companion: unknown;
+  patient: unknown;
 };
 
 type AdmissionRow = {
@@ -629,7 +629,7 @@ export const CaseEncounterService = {
             caseId: true,
             encounterId: true,
             organisationId: true,
-            companion: true,
+            patient: true,
           },
         })) as AppointmentLinkRow | null;
 
@@ -744,7 +744,7 @@ export const CaseEncounterService = {
           caseId: true,
           encounterId: true,
           organisationId: true,
-          companion: true,
+          patient: true,
         },
       })) as AppointmentLinkRow | null;
 
@@ -774,7 +774,7 @@ export const CaseEncounterService = {
               caseId: true,
               encounterId: true,
               organisationId: true,
-              companion: true,
+              patient: true,
             },
           })) as AppointmentLinkRow | null;
 
@@ -977,7 +977,7 @@ export const CaseEncounterService = {
         tx as unknown as {
           companion: CompanionDelegate;
         }
-      ).patient;
+      ).companion;
       const assignmentDelegate = (
         tx as unknown as { roomUnitAssignment: RoomUnitAssignmentDelegate }
       ).roomUnitAssignment;

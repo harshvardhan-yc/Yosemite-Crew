@@ -30,7 +30,7 @@ jest.mock("src/config/prisma", () => ({
     user: {
       findFirst: jest.fn(),
     },
-    companion: {
+    patient: {
       findFirst: jest.fn(),
     },
   },
@@ -67,7 +67,7 @@ const mockedPrisma = prisma as unknown as {
   user: {
     findFirst: jest.Mock;
   };
-  companion: {
+  patient: {
     findFirst: jest.Mock;
   };
 };
@@ -90,7 +90,7 @@ describe("TaskService", () => {
       assignedTo: "user-2",
       assignedBy: "user-1",
       createdBy: "user-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       dueAt,
       name: "Check vitals",
       additionalNotes: "Take before lunch",
@@ -105,7 +105,7 @@ describe("TaskService", () => {
         firstName: "John",
         lastName: "Smith",
       });
-    mockedPrisma.companion.findFirst.mockResolvedValueOnce({ name: "Milo" });
+    mockedPrisma.patient.findFirst.mockResolvedValueOnce({ name: "Milo" });
 
     const result = await TaskService.createCustom({
       category: "Care",
@@ -115,7 +115,7 @@ describe("TaskService", () => {
       assignedTo: "user-2",
       dueAt,
       audience: "EMPLOYEE_TASK",
-      companionId: "comp-1",
+      patientId: "comp-1",
       additionalNotes: "Take before lunch",
     });
 
@@ -155,7 +155,7 @@ describe("TaskService", () => {
       assignedGroupId: "group-1",
       assignedBy: "user-1",
       createdBy: "user-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       dueAt,
       name: "Check vitals",
       additionalNotes: "Take before lunch",
@@ -170,7 +170,7 @@ describe("TaskService", () => {
       assignedGroupId: "group-1",
       dueAt,
       audience: "EMPLOYEE_TASK",
-      companionId: "comp-1",
+      patientId: "comp-1",
       additionalNotes: "Take before lunch",
     });
 
@@ -203,7 +203,7 @@ describe("TaskService", () => {
     mockedPrisma.task.create.mockResolvedValueOnce({
       id: "task-2",
       organisationId: "org-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       audience: "EMPLOYEE_TASK",
       createdBy: "user-1",
       assignedTo: "user-2",
@@ -263,7 +263,7 @@ describe("TaskService", () => {
     mockedPrisma.task.create.mockResolvedValueOnce({
       id: "task-3",
       organisationId: "org-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       audience: "PARENT_TASK",
       createdBy: "user-1",
       assignedTo: "user-3",
@@ -277,7 +277,7 @@ describe("TaskService", () => {
       createdBy: "user-1",
       assignedTo: "user-3",
       dueAt,
-      companionId: "comp-1",
+      patientId: "comp-1",
     });
 
     expect(mockedPrisma.task.create).toHaveBeenCalledWith(
@@ -303,7 +303,7 @@ describe("TaskService", () => {
     mockedPrisma.task.create.mockResolvedValueOnce({
       id: "task-4",
       organisationId: "org-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       audience: "PARENT_TASK",
       createdBy: "user-1",
       assignedTo: "parent-1",
@@ -319,7 +319,7 @@ describe("TaskService", () => {
         assignedBy: "user-1",
         assignedTo: "parent-1",
         audience: "PARENT_TASK",
-        companionId: "comp-1",
+        patientId: "comp-1",
         category: "Discharge",
         name: "Discharge follow-up",
         medication: {
@@ -369,7 +369,7 @@ describe("TaskService", () => {
         { notify: false },
       ),
     ).rejects.toThrow(
-      "companionId is required for parent, medication, or observation tool tasks",
+      "patientId is required for parent, medication, or observation tool tasks",
     );
   });
 
@@ -395,7 +395,7 @@ describe("TaskService", () => {
     mockedPrisma.task.findFirst.mockResolvedValueOnce({
       id: "task-1",
       organisationId: "org-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       createdBy: "user-1",
       assignedTo: "user-2",
       assignedGroupId: null,
@@ -408,7 +408,7 @@ describe("TaskService", () => {
     mockedPrisma.task.update.mockResolvedValueOnce({
       id: "task-1",
       organisationId: "org-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       assignedGroupId: "group-1",
       assignedBy: "user-1",
     });
@@ -443,7 +443,7 @@ describe("TaskService", () => {
       organisationId: "org-1",
       createdBy: "user-1",
       assignedTo: "user-2",
-      companionId: "comp-1",
+      patientId: "comp-1",
       status: "PENDING",
       completedAt: null,
       completedBy: null,
@@ -451,7 +451,7 @@ describe("TaskService", () => {
     mockedPrisma.taskCompletion.create.mockResolvedValueOnce({
       id: "completion-1",
       taskId: "task-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       filledBy: "user-2",
       answers: { ok: true },
       score: null,
@@ -461,7 +461,7 @@ describe("TaskService", () => {
     mockedPrisma.task.update.mockResolvedValueOnce({
       id: "task-1",
       organisationId: "org-1",
-      companionId: "comp-1",
+      patientId: "comp-1",
       status: "COMPLETED",
     });
 
@@ -479,7 +479,7 @@ describe("TaskService", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           taskId: "task-1",
-          companionId: "comp-1",
+          patientId: "comp-1",
         }),
       }),
     );

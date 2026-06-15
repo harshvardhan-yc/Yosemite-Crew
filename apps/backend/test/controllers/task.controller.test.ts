@@ -341,7 +341,7 @@ describe("Task Controllers", () => {
       it("should list with full filters", async () => {
         (req as any).userId = "u1";
         req.query = {
-          companionId: "c1",
+          patientId: "c1",
           fromDueAt: "2023-01-01",
           toDueAt: "2023-01-31",
           status: "PENDING,IN_PROGRESS",
@@ -356,7 +356,7 @@ describe("Task Controllers", () => {
         await TaskController.listParentTasks(req as any, res as Response);
         expect(mockedTaskService.listForParent).toHaveBeenCalledWith({
           parentId: "p1",
-          companionId: "c1",
+          patientId: "c1",
           fromDueAt: new Date("2023-01-01"),
           toDueAt: new Date("2023-01-31"),
           status: ["PENDING", "IN_PROGRESS"],
@@ -415,7 +415,7 @@ describe("Task Controllers", () => {
 
     describe("listForCompanion", () => {
       it("should list with filters", async () => {
-        req.params = { companionId: "c1" };
+        req.params = { patientId: "c1" };
         (req as any).organisationId = "org-1";
         req.query = { audience: "EMPLOYEE_TASK" };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -424,7 +424,7 @@ describe("Task Controllers", () => {
         await TaskController.listForCompanion(req as any, res as Response);
         expect(mockedTaskService.listForCompanion).toHaveBeenCalledWith(
           expect.objectContaining({
-            companionId: "c1",
+            patientId: "c1",
             organisationId: "org-1",
             audience: "EMPLOYEE_TASK",
           }),
@@ -432,7 +432,7 @@ describe("Task Controllers", () => {
       });
 
       it("should handle invalid audience/status filters", async () => {
-        req.params = { companionId: "c1" };
+        req.params = { patientId: "c1" };
         (req as any).organisationId = "org-1";
         req.query = { audience: "INVALID", status: "INVALID" };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -449,7 +449,7 @@ describe("Task Controllers", () => {
       });
 
       it("should handle array inputs for query params", async () => {
-        req.params = { companionId: "c1" };
+        req.params = { patientId: "c1" };
         (req as any).organisationId = "org-1";
         req.query = {
           audience: ["PARENT_TASK"] as any,

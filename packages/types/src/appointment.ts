@@ -31,7 +31,7 @@ export type Appointment = {
   id?: string;
   caseId?: string;
   encounterId?: string;
-  companion: {
+  patient: {
     id: string;
     name: string;
     species: string;
@@ -41,7 +41,7 @@ export type Appointment = {
       name: string;
     };
   };
-  patient?: Appointment['companion'];
+  companion?: Appointment['patient'];
   lead?: {
     id: string;
     name: string;

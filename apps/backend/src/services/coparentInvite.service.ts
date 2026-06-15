@@ -243,6 +243,11 @@ export const CoParentInviteService = {
           name: companion.name,
           photoUrl: companion.photoUrl || null,
         },
+        patient: {
+          id: companion.id,
+          name: companion.name,
+          photoUrl: companion.photoUrl || null,
+        },
       };
     }
 
@@ -299,6 +304,11 @@ export const CoParentInviteService = {
       },
 
       companion: {
+        id: companion._id.toString(),
+        name: companion.name,
+        photoUrl: companion.photoUrl || null,
+      },
+      patient: {
         id: companion._id.toString(),
         name: companion.name,
         photoUrl: companion.photoUrl || null,

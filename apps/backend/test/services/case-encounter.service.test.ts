@@ -54,7 +54,7 @@ const mockedPrisma = prisma as any;
 const baseCaseRow = {
   id: "case_1",
   organisationId: "org_1",
-  companionId: "comp_1",
+  patientId: "comp_1",
   parentId: "parent_1",
   status: "active",
   appointmentKind: "INPATIENT" as const,
@@ -68,7 +68,7 @@ const baseEncounterRow = {
   id: "enc_1",
   caseId: "case_1",
   organisationId: "org_1",
-  companionId: "comp_1",
+  patientId: "comp_1",
   parentId: "parent_1",
   status: "planned",
   encounterClass: "IMP",
@@ -101,7 +101,7 @@ describe("CaseEncounterService", () => {
 
     const result = await CaseEncounterService.createCase({
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
       parentId: "parent_1",
       status: "active",
       appointmentKind: "INPATIENT",
@@ -112,7 +112,7 @@ describe("CaseEncounterService", () => {
     expect(mockedPrisma.case.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         status: "active",
         appointmentKind: "INPATIENT",
       }),
@@ -127,7 +127,7 @@ describe("CaseEncounterService", () => {
       caseId: null,
       encounterId: null,
       organisationId: "org_1",
-      companion: { id: "comp_1" },
+      patient: { id: "comp_1" },
     } as never);
     mockedPrisma.encounter.create.mockResolvedValue(baseEncounterRow as never);
     mockedPrisma.appointment.update.mockResolvedValue({
@@ -138,7 +138,7 @@ describe("CaseEncounterService", () => {
       caseId: "case_1",
       appointmentId: "appt_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
       parentId: "parent_1",
       status: "planned",
       encounterClass: "IMP",
@@ -167,7 +167,7 @@ describe("CaseEncounterService", () => {
       caseId: null,
       encounterId: null,
       organisationId: "org_1",
-      companion: { id: "comp_2" },
+      patient: { id: "comp_2" },
     } as never);
 
     await expect(
@@ -175,7 +175,7 @@ describe("CaseEncounterService", () => {
         caseId: "case_1",
         appointmentId: "appt_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         status: "planned",
         encounterClass: "IMP",
         appointmentKind: "INPATIENT",
@@ -195,14 +195,14 @@ describe("CaseEncounterService", () => {
       caseId: "case_1",
       encounterId: "enc_1",
       organisationId: "org_1",
-      companion: { id: "comp_1" },
+      patient: { id: "comp_1" },
     } as never);
     mockedPrisma.appointment.findUnique.mockResolvedValue({
       id: "appt_new",
       caseId: "case_1",
       encounterId: null,
       organisationId: "org_1",
-      companion: { id: "comp_1" },
+      patient: { id: "comp_1" },
     } as never);
     mockedPrisma.encounter.update.mockResolvedValue({
       ...baseEncounterRow,
@@ -243,7 +243,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         bedUnitId: null,
         expectedStayDays: null,
         admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -286,7 +286,7 @@ describe("CaseEncounterService", () => {
     mockedPrisma.admission.findUnique.mockResolvedValue({
       encounterId: "enc_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
       bedUnitId: null,
       expectedStayDays: null,
       admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -324,7 +324,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         bedUnitId: null,
         expectedStayDays: null,
         admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -371,7 +371,7 @@ describe("CaseEncounterService", () => {
     mockedPrisma.admission.findUnique.mockResolvedValue({
       encounterId: "enc_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
       unitId: null,
       expectedStayDays: null,
       admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -410,7 +410,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         unitId: "unit_1",
         expectedStayDays: null,
         admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -453,7 +453,7 @@ describe("CaseEncounterService", () => {
     mockedPrisma.admission.findUnique.mockResolvedValue({
       encounterId: "enc_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
       unitId: null,
       expectedStayDays: null,
       admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -497,7 +497,7 @@ describe("CaseEncounterService", () => {
     mockedPrisma.admission.findUnique.mockResolvedValue({
       encounterId: "enc_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
       unitId: null,
       expectedStayDays: null,
       admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -554,7 +554,7 @@ describe("CaseEncounterService", () => {
     mockedPrisma.admission.findUnique.mockResolvedValue({
       encounterId: "enc_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
       unitId: null,
       expectedStayDays: null,
       admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -648,7 +648,7 @@ describe("CaseEncounterService", () => {
     mockedPrisma.admission.findUnique.mockResolvedValue({
       encounterId: "enc_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
       unitId: "unit_1",
       expectedStayDays: null,
       admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -703,7 +703,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         unitId: "unit_1",
         expectedStayDays: null,
         admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -743,7 +743,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         unitId: "unit_1",
         expectedStayDays: null,
         admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -810,7 +810,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         unitId: "unit_1",
         expectedStayDays: null,
         admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -821,7 +821,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_2",
         organisationId: "org_1",
-        companionId: "comp_2",
+        patientId: "comp_2",
         unitId: "unit_2",
         expectedStayDays: 3,
         admittedAt: new Date("2026-06-11T11:00:00.000Z"),
@@ -852,7 +852,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         unitId: "unit_1",
         expectedStayDays: null,
         admittedAt: new Date("2026-06-11T10:30:00.000Z"),
@@ -863,7 +863,7 @@ describe("CaseEncounterService", () => {
       {
         encounterId: "enc_2",
         organisationId: "org_1",
-        companionId: "comp_2",
+        patientId: "comp_2",
         unitId: "unit_2",
         expectedStayDays: 3,
         admittedAt: new Date("2026-06-11T11:00:00.000Z"),

@@ -74,7 +74,11 @@ jest.mock("../../src/models/parent", () => ({
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
-    companionOrganisation: {
+    patientOrganisation: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    parentPatient: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
     },
@@ -83,6 +87,10 @@ jest.mock("src/config/prisma", () => ({
       findMany: jest.fn(),
     },
     companion: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+    },
+    patient: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
     },
@@ -106,7 +114,7 @@ const createMockDoc = (overrides = {}) => {
   const baseId = new Types.ObjectId();
   const data = {
     _id: baseId,
-    companionId: new Types.ObjectId(),
+    patientId: new Types.ObjectId(),
     organisationId: new Types.ObjectId(),
     status: "PENDING",
     organisationType: "HOSPITAL",
@@ -134,12 +142,12 @@ describe("CompanionOrganisationService", () => {
 
     beforeEach(() => {
       process.env.READ_FROM_POSTGRES = "true";
-      (prisma.companionOrganisation.findFirst as jest.Mock).mockReset();
-      (prisma.companionOrganisation.findMany as jest.Mock).mockReset();
-      (prisma.parentCompanion.findFirst as jest.Mock).mockReset();
-      (prisma.parentCompanion.findMany as jest.Mock).mockReset();
-      (prisma.companion.findUnique as jest.Mock).mockReset();
-      (prisma.companion.findMany as jest.Mock).mockReset();
+      (prisma.patientOrganisation.findFirst as jest.Mock).mockReset();
+      (prisma.patientOrganisation.findMany as jest.Mock).mockReset();
+      (prisma.parentPatient.findFirst as jest.Mock).mockReset();
+      (prisma.parentPatient.findMany as jest.Mock).mockReset();
+      (prisma.patient.findUnique as jest.Mock).mockReset();
+      (prisma.patient.findMany as jest.Mock).mockReset();
       (prisma.parent.findUnique as jest.Mock).mockReset();
       (prisma.parent.findMany as jest.Mock).mockReset();
     });
@@ -149,22 +157,22 @@ describe("CompanionOrganisationService", () => {
     });
 
     it("validateInvite returns invite when valid", async () => {
-      (
-        prisma.companionOrganisation.findFirst as jest.Mock
-      ).mockResolvedValueOnce({
-        id: validIdStr,
-        inviteToken: "token",
-        status: "PENDING",
-      });
+      (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValueOnce(
+        {
+          id: validIdStr,
+          inviteToken: "token",
+          status: "PENDING",
+        },
+      );
 
       const res = await CompanionOrganisationService.validateInvite("token");
       expect(res).toEqual(expect.objectContaining({ _id: validIdStr }));
     });
 
     it("getLinksForCompanion returns mapped links", async () => {
-      (
-        prisma.companionOrganisation.findMany as jest.Mock
-      ).mockResolvedValueOnce([{ id: "link-1", companionId: validIdStr }]);
+      (prisma.patientOrganisation.findMany as jest.Mock).mockResolvedValueOnce([
+        { id: "link-1", patientId: validIdStr },
+      ]);
 
       const res =
         await CompanionOrganisationService.getLinksForCompanion(validIdStr);
@@ -173,20 +181,18 @@ describe("CompanionOrganisationService", () => {
     });
 
     it("getLinksForCompanionByOrganisationTye returns metadata", async () => {
-      (
-        prisma.companionOrganisation.findMany as jest.Mock
-      ).mockResolvedValueOnce([
+      (prisma.patientOrganisation.findMany as jest.Mock).mockResolvedValueOnce([
         {
           id: "link-1",
-          companionId: validIdStr,
+          patientId: validIdStr,
           organisationType: "HOSPITAL",
           status: "ACTIVE",
         },
       ]);
-      (prisma.parentCompanion.findFirst as jest.Mock).mockResolvedValueOnce({
+      (prisma.parentPatient.findFirst as jest.Mock).mockResolvedValueOnce({
         parentId: "parent-1",
       });
-      (prisma.companion.findUnique as jest.Mock).mockResolvedValueOnce({
+      (prisma.patient.findUnique as jest.Mock).mockResolvedValueOnce({
         id: validIdStr,
         name: "Buddy",
       });
@@ -210,22 +216,20 @@ describe("CompanionOrganisationService", () => {
     });
 
     it("getLinksForOrganisation returns mapped results", async () => {
-      (
-        prisma.companionOrganisation.findMany as jest.Mock
-      ).mockResolvedValueOnce([
+      (prisma.patientOrganisation.findMany as jest.Mock).mockResolvedValueOnce([
         {
           id: "link-1",
-          companionId: "comp-1",
+          patientId: "pat-1",
           organisationId: "org-1",
           organisationType: "HOSPITAL",
           status: "ACTIVE",
         },
       ]);
-      (prisma.companion.findMany as jest.Mock).mockResolvedValueOnce([
-        { id: "comp-1", name: "Buddy" },
+      (prisma.patient.findMany as jest.Mock).mockResolvedValueOnce([
+        { id: "pat-1", name: "Buddy" },
       ]);
-      (prisma.parentCompanion.findMany as jest.Mock).mockResolvedValueOnce([
-        { companionId: "comp-1", parentId: "parent-1" },
+      (prisma.parentPatient.findMany as jest.Mock).mockResolvedValueOnce([
+        { patientId: "pat-1", parentId: "parent-1" },
       ]);
       (prisma.parent.findMany as jest.Mock).mockResolvedValueOnce([
         { id: "parent-1", firstName: "Jane", lastName: "Doe" },
@@ -251,7 +255,7 @@ describe("CompanionOrganisationService", () => {
       await expect(
         CompanionOrganisationService.linkByParent({
           parentId: 123 as any,
-          companionId: validIdStr,
+          patientId: validIdStr,
           organisationId: validIdStr,
           organisationType: "HOSPITAL",
         }),
@@ -264,7 +268,7 @@ describe("CompanionOrganisationService", () => {
       await expect(
         CompanionOrganisationService.linkByParent({
           parentId: "invalid$id",
-          companionId: validIdStr,
+          patientId: validIdStr,
           organisationId: validIdStr,
           organisationType: "HOSPITAL",
         }),
@@ -275,7 +279,7 @@ describe("CompanionOrganisationService", () => {
       await expect(
         CompanionOrganisationService.linkByParent({
           parentId: "invalid.id",
-          companionId: validIdStr,
+          patientId: validIdStr,
           organisationId: validIdStr,
           organisationType: "HOSPITAL",
         }),
@@ -288,7 +292,7 @@ describe("CompanionOrganisationService", () => {
       await expect(
         CompanionOrganisationService.linkByParent({
           parentId: "abc123",
-          companionId: validIdStr,
+          patientId: validIdStr,
           organisationId: validIdStr,
           organisationType: "HOSPITAL",
         }),
@@ -301,7 +305,7 @@ describe("CompanionOrganisationService", () => {
       (CompanionOrganisationModel.findOne as jest.Mock).mockResolvedValue(true); // Return existing immediately
       await CompanionOrganisationService.linkByParent({
         parentId: validObjId,
-        companionId: validObjId,
+        patientId: validObjId,
         organisationId: validObjId,
         organisationType: "HOSPITAL",
       });
@@ -318,7 +322,7 @@ describe("CompanionOrganisationService", () => {
 
       const res = await CompanionOrganisationService.linkByParent({
         parentId: validIdStr,
-        companionId: validIdStr,
+        patientId: validIdStr,
         organisationId: validIdStr,
         organisationType: "HOSPITAL",
       });
@@ -335,14 +339,14 @@ describe("CompanionOrganisationService", () => {
 
       const res = await CompanionOrganisationService.linkByParent({
         parentId: validIdStr,
-        companionId: validIdStr,
+        patientId: validIdStr,
         organisationId: validIdStr,
         organisationType: "HOSPITAL",
       });
 
       expect(CompanionOrganisationModel.create).toHaveBeenCalled();
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: "COMPANION_ORG_LINK_CREATED" }),
+        expect.objectContaining({ eventType: "PATIENT_ORG_LINK_CREATED" }),
       );
       expect(res._id).toBeDefined();
     });
@@ -355,7 +359,7 @@ describe("CompanionOrganisationService", () => {
       });
       const res = await CompanionOrganisationService.linkByPmsUser({
         pmsUserId: "u1",
-        companionId: validIdStr,
+        patientId: validIdStr,
         organisationId: validIdStr,
         organisationType: "HOSPITAL",
       });
@@ -370,13 +374,13 @@ describe("CompanionOrganisationService", () => {
 
       const res = await CompanionOrganisationService.linkByPmsUser({
         pmsUserId: "u1",
-        companionId: validIdStr,
+        patientId: validIdStr,
         organisationId: validIdStr,
         organisationType: "HOSPITAL",
       });
 
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: "COMPANION_ORG_LINK_REQUESTED" }),
+        expect.objectContaining({ eventType: "PATIENT_ORG_LINK_REQUESTED" }),
       );
       expect(res.status).toBe("PENDING");
     });
@@ -388,7 +392,7 @@ describe("CompanionOrganisationService", () => {
       const res =
         await CompanionOrganisationService.linkOnCompanionCreatedByPms({
           pmsUserId: "u1",
-          companionId: validIdStr,
+          patientId: validIdStr,
           organisationId: validIdStr,
           organisationType: "HOSPITAL",
         });
@@ -402,7 +406,7 @@ describe("CompanionOrganisationService", () => {
         _id: validObjId,
       });
       const res = await CompanionOrganisationService.linkOnAppointmentBooked({
-        companionId: validIdStr,
+        patientId: validIdStr,
         organisationId: validIdStr,
         organisationType: "HOSPITAL",
       });
@@ -416,13 +420,13 @@ describe("CompanionOrganisationService", () => {
       );
 
       const res = await CompanionOrganisationService.linkOnAppointmentBooked({
-        companionId: validIdStr,
+        patientId: validIdStr,
         organisationId: validIdStr,
         organisationType: "HOSPITAL",
       });
 
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: "COMPANION_ORG_LINK_AUTO" }),
+        expect.objectContaining({ eventType: "PATIENT_ORG_LINK_AUTO" }),
       );
       expect(res.status).toBe("ACTIVE");
     });
@@ -433,7 +437,7 @@ describe("CompanionOrganisationService", () => {
       await expect(
         CompanionOrganisationService.sendInvite({
           parentId: validIdStr,
-          companionId: validIdStr,
+          patientId: validIdStr,
           organisationType: "HOSPITAL",
         }),
       ).rejects.toThrow(
@@ -448,7 +452,7 @@ describe("CompanionOrganisationService", () => {
 
       const res = await CompanionOrganisationService.sendInvite({
         parentId: validIdStr,
-        companionId: validIdStr,
+        patientId: validIdStr,
         organisationType: "HOSPITAL",
         email: "test@test.com",
       });
@@ -519,7 +523,7 @@ describe("CompanionOrganisationService", () => {
       expect(mockDoc.inviteToken).toBeNull();
       expect(mockDoc.save).toHaveBeenCalled();
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: "COMPANION_ORG_INVITE_ACCEPTED" }),
+        expect.objectContaining({ eventType: "PATIENT_ORG_INVITE_ACCEPTED" }),
       );
       expect(res.status).toBe("ACTIVE");
     });
@@ -553,7 +557,7 @@ describe("CompanionOrganisationService", () => {
       expect(mockDoc.inviteToken).toBeNull();
       expect(mockDoc.save).toHaveBeenCalled();
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: "COMPANION_ORG_INVITE_REJECTED" }),
+        expect.objectContaining({ eventType: "PATIENT_ORG_INVITE_REJECTED" }),
       );
     });
   });
@@ -581,7 +585,7 @@ describe("CompanionOrganisationService", () => {
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
         expect.objectContaining({
           organisationId: "", // Proves fallback worked without throwing undefined error
-          eventType: "COMPANION_ORG_LINK_REVOKED",
+          eventType: "PATIENT_ORG_LINK_REVOKED",
         }),
       );
       expect(res._id).toBeDefined();
@@ -612,7 +616,7 @@ describe("CompanionOrganisationService", () => {
       expect(mockDoc.status).toBe("ACTIVE");
       expect(mockDoc.save).toHaveBeenCalled();
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: "COMPANION_ORG_LINK_APPROVED" }),
+        expect.objectContaining({ eventType: "PATIENT_ORG_LINK_APPROVED" }),
       );
     });
 
@@ -638,7 +642,7 @@ describe("CompanionOrganisationService", () => {
       expect(mockDoc.status).toBe("REVOKED");
       expect(mockDoc.save).toHaveBeenCalled();
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: "COMPANION_ORG_LINK_REJECTED" }),
+        expect.objectContaining({ eventType: "PATIENT_ORG_LINK_REJECTED" }),
       );
     });
   });

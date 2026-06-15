@@ -350,7 +350,7 @@ describe("CompanionController", () => {
         pmsUserId: "pmsUser",
         organisationId: oid.toHexString(),
         organisationType: "HOSPITAL",
-        companionId: "c1",
+        patientId: "c1",
       });
       expect(statusMock).toHaveBeenCalledWith(201);
     });

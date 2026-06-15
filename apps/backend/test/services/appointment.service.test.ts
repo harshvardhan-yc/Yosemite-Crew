@@ -28,7 +28,10 @@ import logger from "src/utils/logger";
 
 jest.mock("@yosemite-crew/types", () => ({
   ...jest.requireActual("@yosemite-crew/types"),
-  fromAppointmentRequestDTO: jest.fn((dto) => dto),
+  fromAppointmentRequestDTO: jest.fn((dto) => ({
+    ...dto,
+    patient: dto.patient ?? dto.companion,
+  })),
   toAppointmentResponseDTO: jest.fn((obj) => obj),
 }));
 
@@ -251,6 +254,11 @@ const createMockDoc = (overrides = {}) => {
       parent: { id: baseId.toString() },
       name: "Pet",
     },
+    patient: {
+      id: baseId.toString(),
+      parent: { id: baseId.toString() },
+      name: "Pet",
+    },
     lead: { id: baseId.toString(), name: "Vet" },
     supportStaff: [],
     room: { id: baseId.toString(), name: "Room 1" },
@@ -273,6 +281,7 @@ const createMockDoc = (overrides = {}) => {
 const createPrismaAppointment = (overrides: Partial<any> = {}) => ({
   id: "appt_1",
   companion: { id: "comp_1", parent: { id: "parent_1" }, name: "Pet" },
+  patient: { id: "comp_1", parent: { id: "parent_1" }, name: "Pet" },
   lead: { id: "vet_1", name: "Vet" },
   supportStaff: [],
   room: null,
@@ -1645,7 +1654,10 @@ describe("AppointmentService", () => {
     });
 
     it("should throw 403 if parentId mismatches", async () => {
-      const mockDoc = createMockDoc({ companion: { parent: { id: "other" } } });
+      const mockDoc = createMockDoc({
+        companion: { parent: { id: "other" } },
+        patient: { parent: { id: "other" } },
+      });
       (AppointmentModel.findById as jest.Mock).mockResolvedValue(mockDoc);
       await expect(
         AppointmentService.cancelAppointmentFromParent(validId, validId, "r"),
@@ -1657,6 +1669,7 @@ describe("AppointmentService", () => {
     it("should throw 400 if status is not cancellable", async () => {
       const mockDoc = createMockDoc({
         companion: { parent: { id: validId } },
+        patient: { parent: { id: validId } },
         status: "COMPLETED",
       });
       (AppointmentModel.findById as jest.Mock).mockResolvedValue(mockDoc);
@@ -1673,6 +1686,7 @@ describe("AppointmentService", () => {
     it("should throw 400 if invoice cancellation fails", async () => {
       const mockDoc = createMockDoc({
         companion: { parent: { id: validId } },
+        patient: { parent: { id: validId } },
         status: "UPCOMING",
       });
       (AppointmentModel.findById as jest.Mock).mockResolvedValue(mockDoc);
@@ -1689,6 +1703,7 @@ describe("AppointmentService", () => {
     it("should successfully cancel appointment", async () => {
       const mockDoc = createMockDoc({
         companion: { parent: { id: validId } },
+        patient: { parent: { id: validId } },
         status: "UPCOMING",
       });
       (AppointmentModel.findById as jest.Mock).mockResolvedValue(mockDoc);
@@ -1930,7 +1945,10 @@ describe("AppointmentService", () => {
 
   describe("checkInAppointment & checkInAppointmentParent", () => {
     it("checkInAppointmentParent: should throw if mismatch or invalid state", async () => {
-      const mockDoc = createMockDoc({ companion: { parent: { id: "other" } } });
+      const mockDoc = createMockDoc({
+        companion: { parent: { id: "other" } },
+        patient: { parent: { id: "other" } },
+      });
       (AppointmentModel.findById as jest.Mock).mockResolvedValue(mockDoc);
       await expect(
         AppointmentService.checkInAppointmentParent(validId, validId),
@@ -1938,6 +1956,7 @@ describe("AppointmentService", () => {
 
       const mockDoc2 = createMockDoc({
         companion: { parent: { id: validId } },
+        patient: { parent: { id: validId } },
         status: "COMPLETED",
       });
       (AppointmentModel.findById as jest.Mock).mockResolvedValue(mockDoc2);
@@ -1950,6 +1969,7 @@ describe("AppointmentService", () => {
       const mockDoc = createMockDoc({
         status: "UPCOMING",
         companion: { parent: { id: validId } },
+        patient: { parent: { id: validId } },
       });
       (AppointmentModel.findById as jest.Mock).mockResolvedValue(mockDoc);
       await AppointmentService.checkInAppointmentParent(validId, validId);
@@ -2003,6 +2023,7 @@ describe("AppointmentService", () => {
       const mockDoc: any = createMockDoc({
         status: "UPCOMING",
         companion: { parent: { id: validId } },
+        patient: { parent: { id: validId } },
       });
       (AppointmentModel.findById as jest.Mock).mockReturnValue(
         createQueryChain(mockDoc),
@@ -2098,7 +2119,7 @@ describe("AppointmentService", () => {
       await expect(
         AppointmentService.getAppointmentsForCompanionByOrganisation("", "org"),
       ).rejects.toThrow(
-        new AppointmentServiceError("companionId is required", 400),
+        new AppointmentServiceError("patientId is required", 400),
       );
       await expect(
         AppointmentService.getAppointmentsForCompanionByOrganisation(
@@ -2352,6 +2373,7 @@ describe("AppointmentService", () => {
         createPrismaAppointment({
           status: "UPCOMING",
           companion: { id: "comp_1", parent: { id: "other" }, name: "Pet" },
+          patient: { id: "comp_1", parent: { id: "other" }, name: "Pet" },
         }),
       );
       await expect(
@@ -2448,7 +2470,7 @@ describe("AppointmentService", () => {
       const res = await AppointmentService.searchAppointments({
         organisationId: "org_1",
         status: ["UPCOMING"],
-        companionId: "comp_1",
+        patientId: "comp_1",
         parentId: "parent_1",
         leadId: "vet_1",
         staffId: "staff_1",
