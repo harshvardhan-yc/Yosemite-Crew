@@ -7,6 +7,13 @@ const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const WorkspaceController = {
   getAppointmentBootstrap: jest.fn(),
   getEncounterBootstrap: jest.fn(),
+  getAppointmentDocuments: jest.fn(),
+  getEncounterDocuments: jest.fn(),
+  getCompanionDocuments: jest.fn(),
+  getCompanionMedicalRecords: jest.fn(),
+  createDocumentPacket: jest.fn(),
+  getDocumentPacket: jest.fn(),
+  signDocumentPacket: jest.fn(),
 };
 
 jest.mock("src/middlewares/auth", () => ({
@@ -45,24 +52,73 @@ const findRoute = (path: string, method: string) => {
 };
 
 describe("workspace.router", () => {
-  it("registers the appointment and encounter bootstrap routes", () => {
+  it("registers the workspace document and packet routes", () => {
     const appointmentRoute = findRoute(
       "/organisations/:organisationId/appointments/:appointmentId",
+      "get",
+    );
+    const appointmentDocumentsRoute = findRoute(
+      "/organisations/:organisationId/appointments/:appointmentId/documents",
       "get",
     );
     const encounterRoute = findRoute(
       "/organisations/:organisationId/encounters/:encounterId",
       "get",
     );
+    const encounterDocumentsRoute = findRoute(
+      "/organisations/:organisationId/encounters/:encounterId/documents",
+      "get",
+    );
+    const companionDocumentsRoute = findRoute(
+      "/organisations/:organisationId/companions/:companionId/documents",
+      "get",
+    );
+    const companionMedicalRoute = findRoute(
+      "/organisations/:organisationId/companions/:companionId/medical-records",
+      "get",
+    );
+    const packetCreateRoute = findRoute(
+      "/organisations/:organisationId/encounters/:encounterId/document-packet",
+      "post",
+    );
+    const packetGetRoute = findRoute(
+      "/organisations/:organisationId/document-packets/:packetId",
+      "get",
+    );
+    const packetSignRoute = findRoute(
+      "/organisations/:organisationId/document-packets/:packetId/sign",
+      "post",
+    );
 
     expect(appointmentRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
+    expect(
+      appointmentDocumentsRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognito);
     expect(encounterRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
-    expect(withOrgPermissions).toHaveBeenCalledTimes(2);
-    expect(requirePermission).toHaveBeenCalledTimes(2);
+    expect(
+      encounterDocumentsRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognito);
+    expect(
+      companionDocumentsRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognito);
+    expect(companionMedicalRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(packetCreateRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(packetGetRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(packetSignRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(withOrgPermissions).toHaveBeenCalledTimes(9);
+    expect(requirePermission).toHaveBeenCalled();
     expect(WorkspaceController.getAppointmentBootstrap).toHaveBeenCalledTimes(
       0,
     );

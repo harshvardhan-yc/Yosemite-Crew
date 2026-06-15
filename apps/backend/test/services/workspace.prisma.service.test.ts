@@ -9,7 +9,7 @@ import {
 jest.mock("src/config/prisma", () => ({
   prisma: {
     appointment: { findFirst: jest.fn() },
-    encounter: { findFirst: jest.fn() },
+    encounter: { findFirst: jest.fn(), findMany: jest.fn() },
     case: { findFirst: jest.fn() },
     patient: { findFirst: jest.fn() },
     parent: { findFirst: jest.fn() },
@@ -45,7 +45,7 @@ jest.mock("src/services/clinical-artifact.service", () => ({
 describe("WorkspaceService", () => {
   const mockedPrisma = prisma as unknown as {
     appointment: { findFirst: jest.Mock };
-    encounter: { findFirst: jest.Mock };
+    encounter: { findFirst: jest.Mock; findMany: jest.Mock };
     case: { findFirst: jest.Mock };
     patient: { findFirst: jest.Mock };
     parent: { findFirst: jest.Mock };
@@ -84,6 +84,7 @@ describe("WorkspaceService", () => {
     mockedPrisma.templateInstance.findMany.mockResolvedValue([]);
     mockedPrisma.document.findMany.mockResolvedValue([]);
     mockedPrisma.renderedDocument.findMany.mockResolvedValue([]);
+    mockedPrisma.encounter.findMany.mockResolvedValue([]);
     mockedPrisma.labOrder.findMany.mockResolvedValue([]);
     mockedPrisma.labResult.findMany.mockResolvedValue([]);
 
@@ -385,5 +386,164 @@ describe("WorkspaceService", () => {
         [],
       ),
     ).rejects.toBeInstanceOf(WorkspaceServiceError);
+  });
+
+  it("returns encounter documents from the resolved bootstrap", async () => {
+    mockedPrisma.encounter.findFirst.mockResolvedValue({
+      id: "enc-doc-1",
+      organisationId: "org-doc",
+      caseId: "case-doc",
+      patientId: "patient-doc",
+      parentId: null,
+      status: "in-progress",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      title: "Docs",
+      reason: null,
+      periodStart: null,
+      periodEnd: null,
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.case.findFirst.mockResolvedValue({
+      id: "case-doc",
+      organisationId: "org-doc",
+      patientId: "patient-doc",
+      parentId: null,
+      status: "active",
+      appointmentKind: "INPATIENT",
+      title: "Episode",
+      description: null,
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.patient.findFirst.mockResolvedValue({
+      id: "patient-doc",
+      name: "Nova",
+      type: "PET",
+      status: "ACTIVE",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.document.findMany.mockResolvedValue([
+      {
+        id: "doc-1",
+        patientId: "patient-doc",
+        appointmentId: null,
+        category: "LAB",
+        subcategory: null,
+        visitType: null,
+        title: "Uploaded result",
+        issuingBusinessName: null,
+        issueDate: null,
+        uploadedByParentId: null,
+        uploadedByPmsUserId: null,
+        pmsVisible: true,
+        syncedFromPms: false,
+        createdAt: new Date("2026-06-15T10:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+      },
+    ]);
+
+    const result = await WorkspaceService.getEncounterDocuments({
+      organisationId: "org-doc",
+      encounterId: "enc-doc-1",
+    });
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentId: "doc-1",
+          sourceKind: "FORM_SUBMISSION",
+        }),
+      ]),
+    );
+  });
+
+  it("returns companion medical records only", async () => {
+    mockedPrisma.patient.findFirst.mockResolvedValue({
+      id: "patient-med",
+      name: "Milo",
+      type: "PET",
+      status: "ACTIVE",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.encounter.findMany.mockResolvedValue([{ id: "enc-med-1" }]);
+    mockedPrisma.encounter.findFirst.mockResolvedValue({
+      id: "enc-med-1",
+      organisationId: "org-med",
+      caseId: "case-med",
+      patientId: "patient-med",
+      parentId: null,
+      status: "in-progress",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      title: "Inpatient stay",
+      reason: null,
+      periodStart: null,
+      periodEnd: null,
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.case.findFirst.mockResolvedValue({
+      id: "case-med",
+      organisationId: "org-med",
+      patientId: "patient-med",
+      parentId: null,
+      status: "active",
+      appointmentKind: "INPATIENT",
+      title: "Episode",
+      description: null,
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.document.findMany.mockResolvedValue([]);
+    mockedPrisma.renderedDocument.findMany.mockResolvedValue([
+      {
+        id: "rd-1",
+        sourceKind: "CLINICAL_ARTIFACT",
+        sourceId: "artifact-1",
+        templateId: "tpl-1",
+        templateVersion: 1,
+        kind: "SOAP_NOTE",
+        title: "SOAP note",
+        status: "SIGNED",
+        pdfUrl: null,
+        signing: { status: "SIGNED" },
+        createdAt: new Date("2026-06-15T10:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+        templateInstance: null,
+        clinicalArtifact: { appointmentId: null, encounterId: "enc-med-1" },
+      },
+      {
+        id: "rd-2",
+        sourceKind: "FORM_SUBMISSION",
+        sourceId: "form-1",
+        templateId: "tpl-2",
+        templateVersion: 1,
+        kind: "FORM",
+        title: "Form",
+        status: "SIGNED",
+        pdfUrl: null,
+        signing: { status: "SIGNED" },
+        createdAt: new Date("2026-06-15T10:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+        templateInstance: { appointmentId: null, encounterId: "enc-med-1" },
+        clinicalArtifact: null,
+      },
+    ]);
+
+    const result = await WorkspaceService.getCompanionMedicalRecords({
+      organisationId: "org-med",
+      companionId: "patient-med",
+    });
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        documentId: "rd-1",
+        kind: "SOAP_NOTE",
+      }),
+    ]);
   });
 });

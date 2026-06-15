@@ -33,6 +33,23 @@ export interface WorkspaceDocumentRow {
   updatedAt: Date;
 }
 
+export type WorkspaceDocumentPacketStatus = 'DRAFT' | 'FINAL';
+
+export interface WorkspaceDocumentPacketRow {
+  packetId: string;
+  organisationId: string;
+  appointmentId: string | null;
+  encounterId: string;
+  companionId: string | null;
+  documents: WorkspaceDocumentRow[];
+  status: WorkspaceDocumentPacketStatus;
+  signedBy: string | null;
+  signedByName: string | null;
+  signedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface WorkspaceLockState {
   appointment: boolean;
   encounter: boolean;

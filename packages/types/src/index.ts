@@ -330,6 +330,8 @@ export type {
   WorkspaceBootstrapInput,
   WorkspaceDiagnosticQueueItem,
   WorkspaceDocumentRow,
+  WorkspaceDocumentPacketRow,
+  WorkspaceDocumentPacketStatus,
   WorkspaceLabSummary,
   WorkspaceLockState,
   WorkspacePermissionSnapshot,

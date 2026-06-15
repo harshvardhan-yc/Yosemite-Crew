@@ -385,6 +385,25 @@ const mapRenderedDocumentRow = (
   updatedAt: document.updatedAt,
 });
 
+const dedupeDocumentRows = (
+  rows: WorkspaceDocumentRow[],
+): WorkspaceDocumentRow[] => {
+  const seen = new Map<string, WorkspaceDocumentRow>();
+  for (const row of rows) {
+    if (!seen.has(row.documentId)) {
+      seen.set(row.documentId, row);
+    }
+  }
+  return [...seen.values()];
+};
+
+const MEDICAL_RECORD_KINDS = new Set([
+  "SOAP_NOTE",
+  "PRESCRIPTION",
+  "DISCHARGE_SUMMARY",
+  "VITAL_RECORD",
+]);
+
 const buildContext = async (
   input: WorkspaceBootstrapInput,
 ): Promise<WorkspaceContext> => {
@@ -943,6 +962,73 @@ export const WorkspaceService = {
         encounterId: context.encounter.id,
       },
       permissions,
+    );
+  },
+
+  async getAppointmentDocuments(
+    input: WorkspaceBootstrapInput,
+    permissions?: string[],
+  ): Promise<WorkspaceDocumentRow[]> {
+    return (await WorkspaceService.getAppointmentBootstrap(input, permissions))
+      .documents;
+  },
+
+  async getEncounterDocuments(
+    input: WorkspaceBootstrapInput,
+    permissions?: string[],
+  ): Promise<WorkspaceDocumentRow[]> {
+    return (await WorkspaceService.getEncounterBootstrap(input, permissions))
+      .documents;
+  },
+
+  async getCompanionDocuments(input: {
+    organisationId: string;
+    companionId: string;
+  }): Promise<WorkspaceDocumentRow[]> {
+    const companion = await prisma.patient.findFirst({
+      where: { id: input.companionId },
+    });
+
+    if (!companion) {
+      throw new WorkspaceServiceError("Companion not found", 404);
+    }
+
+    const encounters = await prisma.encounter.findMany({
+      where: {
+        organisationId: input.organisationId,
+        patientId: input.companionId,
+      },
+      select: { id: true },
+    });
+
+    const encounterDocuments = await Promise.all(
+      encounters.map(async (encounter) =>
+        WorkspaceService.getEncounterDocuments({
+          organisationId: input.organisationId,
+          encounterId: encounter.id,
+        }),
+      ),
+    );
+
+    const directDocuments = await loadDocuments({
+      organisationId: input.organisationId,
+      companionId: input.companionId,
+    });
+
+    return dedupeDocumentRows([
+      ...encounterDocuments.flat(),
+      ...directDocuments,
+    ]);
+  },
+
+  async getCompanionMedicalRecords(input: {
+    organisationId: string;
+    companionId: string;
+  }): Promise<WorkspaceDocumentRow[]> {
+    const documents = await WorkspaceService.getCompanionDocuments(input);
+
+    return documents.filter((document) =>
+      MEDICAL_RECORD_KINDS.has(document.kind),
     );
   },
 };

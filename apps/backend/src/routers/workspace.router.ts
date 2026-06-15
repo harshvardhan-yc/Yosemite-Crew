@@ -14,11 +14,67 @@ router.get(
 );
 
 router.get(
+  "/organisations/:organisationId/appointments/:appointmentId/documents",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("document:view:any"),
+  (req, res) => WorkspaceController.getAppointmentDocuments(req, res),
+);
+
+router.get(
   "/organisations/:organisationId/encounters/:encounterId",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["appointments:view:any", "appointments:view:own"]),
   (req, res) => WorkspaceController.getEncounterBootstrap(req, res),
+);
+
+router.get(
+  "/organisations/:organisationId/encounters/:encounterId/documents",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("document:view:any"),
+  (req, res) => WorkspaceController.getEncounterDocuments(req, res),
+);
+
+router.get(
+  "/organisations/:organisationId/companions/:companionId/documents",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("document:view:any"),
+  (req, res) => WorkspaceController.getCompanionDocuments(req, res),
+);
+
+router.get(
+  "/organisations/:organisationId/companions/:companionId/medical-records",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("document:view:any"),
+  (req, res) => WorkspaceController.getCompanionMedicalRecords(req, res),
+);
+
+router.post(
+  "/organisations/:organisationId/encounters/:encounterId/document-packet",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("document:edit:any"),
+  (req, res) => WorkspaceController.createDocumentPacket(req, res),
+);
+
+router.get(
+  "/organisations/:organisationId/document-packets/:packetId",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("document:view:any"),
+  (req, res) => WorkspaceController.getDocumentPacket(req, res),
+);
+
+router.post(
+  "/organisations/:organisationId/document-packets/:packetId/sign",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("document:edit:any"),
+  (req, res) => WorkspaceController.signDocumentPacket(req, res),
 );
 
 export default router;

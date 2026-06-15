@@ -1235,6 +1235,11 @@ enum TemplateOwnershipType {
   USER_TEMPLATE
 }
 
+enum WorkspaceDocumentPacketStatus {
+  DRAFT
+  FINAL
+}
+
 enum TemplateScope {
   ORGANISATION
   SPECIALITY
@@ -1738,6 +1743,26 @@ model RenderedDocument {
   @@index([sourceKind, sourceId])
   @@index([templateId, templateVersion])
   @@index([templateVersionId])
+}
+
+model WorkspaceDocumentPacket {
+  id             String                     @id @default(uuid())
+  organisationId String
+  appointmentId  String?
+  encounterId    String
+  companionId    String?
+  status         WorkspaceDocumentPacketStatus @default(DRAFT)
+  documents      Json
+  signedBy       String?
+  signedByName   String?
+  signedAt       DateTime?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@index([organisationId])
+  @@index([organisationId, encounterId])
+  @@index([organisationId, appointmentId])
+  @@index([organisationId, companionId])
 }
 
 model DocumentSignature {
