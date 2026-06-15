@@ -321,6 +321,7 @@ export {
   type TaskListFilters,
 } from './task';
 export type {
+  WorkspaceBootstrapResponse,
   WorkspaceBootstrapAggregate,
   WorkspaceBootstrapInput,
   WorkspaceDiagnosticQueueItem,

@@ -91,7 +91,7 @@ export interface WorkspaceTreatmentItem {
   updatedAt: Date;
 }
 
-export interface WorkspaceBootstrapAggregate {
+export interface WorkspaceBootstrapResponse {
   organisationId: string;
   appointment: WorkspaceSummaryItem | null;
   encounter: Encounter | null;
@@ -113,6 +113,8 @@ export interface WorkspaceBootstrapAggregate {
   permissions: WorkspacePermissionSnapshot;
   primaryAction: WorkspacePrimaryAction;
 }
+
+export type WorkspaceBootstrapAggregate = WorkspaceBootstrapResponse;
 
 export interface WorkspaceBootstrapInput {
   organisationId: string;

@@ -4,8 +4,8 @@ import { FormAssignmentService } from "./form-assignment.service";
 import type {
   Case,
   Encounter,
-  WorkspaceBootstrapAggregate,
   WorkspaceBootstrapInput,
+  WorkspaceBootstrapResponse,
   WorkspaceDiagnosticQueueItem,
   WorkspaceDocumentRow,
   WorkspaceLabSummary,
@@ -784,7 +784,7 @@ const buildBootstrapAggregate = async (
   input: WorkspaceBootstrapInput,
   permissions?: string[],
   options?: { requireAppointment?: boolean },
-): Promise<WorkspaceBootstrapAggregate> => {
+): Promise<WorkspaceBootstrapResponse> => {
   const context = await buildContext(input);
 
   if (options?.requireAppointment && !context.appointment) {
@@ -917,7 +917,7 @@ export const WorkspaceService = {
   async getAppointmentBootstrap(
     input: WorkspaceBootstrapInput,
     permissions?: string[],
-  ): Promise<WorkspaceBootstrapAggregate> {
+  ): Promise<WorkspaceBootstrapResponse> {
     return buildBootstrapAggregate(input, permissions, {
       requireAppointment: true,
     });
@@ -926,7 +926,7 @@ export const WorkspaceService = {
   async getEncounterBootstrap(
     input: WorkspaceBootstrapInput,
     permissions?: string[],
-  ): Promise<WorkspaceBootstrapAggregate> {
+  ): Promise<WorkspaceBootstrapResponse> {
     const context = await buildContext({
       organisationId: input.organisationId,
       encounterId: input.encounterId,
