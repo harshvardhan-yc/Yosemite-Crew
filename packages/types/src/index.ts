@@ -302,12 +302,25 @@ export {
   type TaskLike,
   type TaskStatus,
   type TaskAudience,
+  type TaskCategory,
   type TaskSource,
   type MedicationDoseInput,
   type MedicationInput,
   type CreateCustomTaskInput,
   type TaskUpdateInput,
 } from './task';
+export type {
+  WorkspaceBootstrapAggregate,
+  WorkspaceBootstrapInput,
+  WorkspaceDiagnosticQueueItem,
+  WorkspaceDocumentRow,
+  WorkspaceLabSummary,
+  WorkspaceLockState,
+  WorkspacePermissionSnapshot,
+  WorkspacePrimaryAction,
+  WorkspaceSummaryItem,
+  WorkspaceTreatmentItem,
+} from './workspace';
 export {
   clinicalArtifactFhirMapper,
   type ClinicalArtifactKind,

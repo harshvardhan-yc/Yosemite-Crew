@@ -36,6 +36,7 @@ import adverseEventRouter from "./adverse-event.router";
 import taskRouter from "./task.router";
 import taskFhirRouter from "./task.fhir.router";
 import taskScheduleFhirRouter from "./task-schedule.fhir.router";
+import workspaceRouter from "./workspace.router";
 import inventoryRoter from "./inventory.router";
 import observationToolRouter from "./observationTool.routes";
 import dashboardRouter from "./dashboard.router";
@@ -89,6 +90,7 @@ export function registerRoutes(app: Express) {
   app.use(`/fhir/v1/clinical-artifact`, clinicalArtifactFhirRouter);
   app.use(`/fhir/v1/task-schedule`, taskScheduleFhirRouter);
   app.use(`/v1/templates`, templateRouter);
+  app.use(`/v1/workspace`, workspaceRouter);
   app.use(`/v1/expense`, expenseRouter);
   app.use(`/v1/device-token`, deviceTokenRouter);
   app.use(`/v1/chat`, chatRouter);

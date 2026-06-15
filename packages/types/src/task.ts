@@ -3,6 +3,17 @@ import type { Bundle, CodeableConcept, Extension, Reference, Task } from '@yosem
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type TaskAudience = 'EMPLOYEE_TASK' | 'PARENT_TASK';
 export type TaskSource = 'YC_LIBRARY' | 'ORG_TEMPLATE' | 'CUSTOM';
+export type TaskCategory =
+  | 'MEDICATION'
+  | 'CARE'
+  | 'DIET'
+  | 'PROCEDURE'
+  | 'DIAGNOSTIC'
+  | 'COMMUNICATION'
+  | 'BILLING'
+  | 'RECORD'
+  | 'ADMIN'
+  | 'CUSTOM';
 
 export interface MedicationDoseInput {
   time?: string;
