@@ -73,7 +73,17 @@ const handleLabOrderError = (
   responseMessage: string,
 ) => {
   if (error instanceof LabOrderServiceError) {
-    return res.status(error.statusCode).json({ message: error.message });
+    return res.status(error.statusCode).json({
+      message: error.message,
+      ...(error.code || error.details
+        ? {
+            error: {
+              ...(error.code ? { code: error.code } : {}),
+              ...(error.details ? { details: error.details } : {}),
+            },
+          }
+        : {}),
+    });
   }
   logger.error(logMessage, error);
   return res.status(500).json({ message: responseMessage });

@@ -11,7 +11,10 @@ import { LabOrderServiceError } from "src/services/lab-order.service";
 import { prisma } from "src/config/prisma";
 import { isReadFromPostgres } from "src/config/read-switch";
 
-const lookupIdexxMapping = async (yosemiteCode: string) => {
+const lookupIdexxMapping = async (
+  yosemiteCode: string,
+  field: "species" | "breed" | "providerCode" = "providerCode",
+) => {
   const mapping = isReadFromPostgres()
     ? await prisma.codeMapping.findFirst({
         where: {
@@ -32,6 +35,18 @@ const lookupIdexxMapping = async (yosemiteCode: string) => {
     throw new LabOrderServiceError(
       `Missing IDEXX mapping for code ${yosemiteCode}.`,
       400,
+      field === "species"
+        ? "DIAGNOSTIC_SPECIES_MAPPING_UNSUPPORTED"
+        : field === "breed"
+          ? "DIAGNOSTIC_BREED_MAPPING_UNSUPPORTED"
+          : "DIAGNOSTIC_PROVIDER_CODE_MAPPING_UNSUPPORTED",
+      {
+        provider: "IDEXX",
+        field,
+        code: yosemiteCode,
+        sourceSystem: "YOSEMITECODE",
+        targetSystem: "IDEXX",
+      },
     );
   }
 
@@ -175,8 +190,11 @@ const buildCensusPayload = async (input: {
     );
   }
 
-  const speciesCode = await lookupIdexxMapping(companion.speciesCode);
-  const breedCode = await lookupIdexxMapping(companion.breedCode);
+  const speciesCode = await lookupIdexxMapping(
+    companion.speciesCode,
+    "species",
+  );
+  const breedCode = await lookupIdexxMapping(companion.breedCode, "breed");
   const genderCode = resolveGenderCode(
     companion.gender,
     companion.isNeutered ?? undefined,

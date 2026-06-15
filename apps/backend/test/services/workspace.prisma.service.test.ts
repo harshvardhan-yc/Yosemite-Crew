@@ -18,6 +18,7 @@ jest.mock("src/config/prisma", () => ({
     templateInstance: { findMany: jest.fn() },
     document: { findMany: jest.fn() },
     renderedDocument: { findMany: jest.fn() },
+    productItem: { findMany: jest.fn() },
     workspaceTreatmentItem: {
       findMany: jest.fn(),
       create: jest.fn(),
@@ -61,6 +62,7 @@ describe("WorkspaceService", () => {
     templateInstance: { findMany: jest.Mock };
     document: { findMany: jest.Mock };
     renderedDocument: { findMany: jest.Mock };
+    productItem: { findMany: jest.Mock };
     workspaceTreatmentItem: {
       findMany: jest.Mock;
       create: jest.Mock;
@@ -98,6 +100,7 @@ describe("WorkspaceService", () => {
     mockedPrisma.templateInstance.findMany.mockResolvedValue([]);
     mockedPrisma.document.findMany.mockResolvedValue([]);
     mockedPrisma.renderedDocument.findMany.mockResolvedValue([]);
+    mockedPrisma.productItem.findMany.mockResolvedValue([]);
     mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([]);
     mockedPrisma.workspaceTreatmentItem.findFirst.mockResolvedValue(null);
     mockedPrisma.encounter.findMany.mockResolvedValue([]);
@@ -226,6 +229,7 @@ describe("WorkspaceService", () => {
     mockedPrisma.labOrder.findMany.mockResolvedValue([
       {
         id: "order-1",
+        provider: "IDEXX",
         status: "SUBMITTED",
         idexxOrderId: "idexx-1",
         tests: ["CBC"],
@@ -236,9 +240,57 @@ describe("WorkspaceService", () => {
     mockedPrisma.labResult.findMany.mockResolvedValue([
       {
         id: "result-1",
+        provider: "IDEXX",
         status: "COMPLETE",
         createdAt: new Date("2026-06-14T10:00:00.000Z"),
         updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+      },
+    ]);
+    mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([
+      {
+        id: "ti-dx-1",
+        organisationId: "org-1",
+        appointmentId: "appt-1",
+        encounterId: "enc-1",
+        productId: "pkg-1",
+        productVersion: 1,
+        productSnapshot: { name: "Lab Package" },
+        servicePackageKind: "PACKAGE",
+        quantity: 1,
+        priceSnapshot: { totalAmount: 120 },
+        billingStatus: "UNBILLED",
+        invoiceRowId: null,
+        lockState: null,
+        prescriptionId: null,
+        createdAt: new Date("2026-06-14T11:00:00.000Z"),
+        updatedAt: new Date("2026-06-14T11:00:00.000Z"),
+      },
+    ]);
+    mockedPrisma.productItem.findMany.mockResolvedValue([
+      {
+        id: "pkg-1",
+        organisationId: "org-1",
+        name: "Lab Package",
+        code: "PKG-LAB",
+        kind: "PACKAGE",
+        createdAt: new Date("2026-06-14T11:00:00.000Z"),
+        updatedAt: new Date("2026-06-14T11:00:00.000Z"),
+        package: {
+          items: [
+            {
+              id: "pkg-item-1",
+              sortOrder: 0,
+              childProductItem: {
+                id: "lab-test-1",
+                name: "CBC",
+                code: "IDEXX-CBC",
+                kind: "LAB_TEST",
+                createdAt: new Date("2026-06-14T11:00:00.000Z"),
+                updatedAt: new Date("2026-06-14T11:00:00.000Z"),
+              },
+            },
+          ],
+        },
       },
     ]);
 
@@ -264,9 +316,27 @@ describe("WorkspaceService", () => {
       }),
     ]);
     expect(result.primaryAction.kind).toBe("COMPLETE_FORMS");
-    expect(result.treatmentItems).toHaveLength(1);
-    expect(result.diagnosticQueue).toHaveLength(2);
+    expect(result.treatmentItems).toHaveLength(2);
+    expect(result.diagnosticQueue).toHaveLength(3);
     expect(result.labSummary.pendingCount).toBe(1);
+    expect(result.labSummary.hasLabs).toBe(true);
+    expect(result.labSummary.resultedCount).toBe(1);
+    expect(result.labSummary.failedCount).toBe(0);
+    expect(result.labSummary.requiredPendingCount).toBe(1);
+    expect(result.labSummary.providers).toEqual(["IDEXX"]);
+    expect(result.labSummary.latestStatus).toBe("PARTIAL");
+    expect(result.labSummary.blockingFinalization).toBe(true);
+    expect(result.diagnosticQueue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "PROVIDER_TEST",
+          provider: "IDEXX",
+          providerTestCode: "IDEXX-CBC",
+          sourceKind: "PACKAGE_ITEM",
+          sourcePackageId: "pkg-1",
+        }),
+      ]),
+    );
     expect(mockedFormService.listAppointmentFormSummaries).toHaveBeenCalledWith(
       "org-1",
       "appt-1",

@@ -27,7 +27,10 @@ const resolveDocId = (doc: { id?: string; _id?: { toString(): string } }) => {
   throw new LabOrderServiceError("Missing document id.", 500);
 };
 
-const lookupIdexxMapping = async (yosemiteCode: string) => {
+const lookupIdexxMapping = async (
+  yosemiteCode: string,
+  field: "species" | "breed" | "providerCode" = "providerCode",
+) => {
   const mapping = isReadFromPostgres()
     ? await prisma.codeMapping.findFirst({
         where: {
@@ -48,6 +51,18 @@ const lookupIdexxMapping = async (yosemiteCode: string) => {
     throw new LabOrderServiceError(
       `Missing IDEXX mapping for code ${yosemiteCode}.`,
       400,
+      field === "species"
+        ? "DIAGNOSTIC_SPECIES_MAPPING_UNSUPPORTED"
+        : field === "breed"
+          ? "DIAGNOSTIC_BREED_MAPPING_UNSUPPORTED"
+          : "DIAGNOSTIC_PROVIDER_CODE_MAPPING_UNSUPPORTED",
+      {
+        provider: "IDEXX",
+        field,
+        code: yosemiteCode,
+        sourceSystem: "YOSEMITECODE",
+        targetSystem: "IDEXX",
+      },
     );
   }
 
@@ -198,9 +213,11 @@ const buildPatientPayload = async (input: {
 }) => {
   const speciesCode = await lookupIdexxMapping(
     input.companion.speciesCode as string,
+    "species",
   );
   const breedCode = await lookupIdexxMapping(
     input.companion.breedCode as string,
+    "breed",
   );
   const genderCode = resolveGenderCode(
     input.companion.gender as string,

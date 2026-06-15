@@ -84,16 +84,29 @@ export interface WorkspaceFormRow extends Omit<FormAssignmentLike, 'status'> {
 }
 
 export interface WorkspaceLabSummary {
+  hasLabs: boolean;
   orders: unknown[];
   results: unknown[];
   pendingCount: number;
+  resultedCount: number;
+  failedCount: number;
+  requiredPendingCount: number;
+  providers: string[];
+  latestStatus: 'NONE' | 'QUEUED' | 'ORDERED' | 'PARTIAL' | 'RESULTED' | 'FAILED';
+  blockingFinalization: boolean;
 }
 
 export interface WorkspaceDiagnosticQueueItem {
   id: string;
-  kind: 'LAB_ORDER' | 'LAB_RESULT';
+  kind: 'LAB_ORDER' | 'LAB_RESULT' | 'PROVIDER_TEST';
+  provider: string | null;
+  providerTestCode: string | null;
   status: string | null;
   label: string;
+  sourceKind: 'LAB_ORDER' | 'LAB_RESULT' | 'PRODUCT_ITEM' | 'PACKAGE_ITEM';
+  sourceId: string | null;
+  sourceProductId: string | null;
+  sourcePackageId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

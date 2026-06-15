@@ -265,31 +265,119 @@ const buildPrimaryAction = (input: {
   };
 };
 
+const OPEN_LAB_ORDER_STATUSES = new Set([
+  "CREATED",
+  "SUBMITTED",
+  "AT_THE_LAB",
+  "PARTIAL",
+  "RUNNING",
+]);
+
+const RESULTED_LAB_STATUSES = new Set(["RESULTED", "COMPLETE", "FINAL"]);
+
+const FAILED_LAB_STATUSES = new Set(["FAILED", "ERROR", "CANCELLED"]);
+
 const buildLabSummary = (
-  orders: unknown[],
-  results: unknown[],
-): WorkspaceLabSummary => ({
-  orders,
-  results,
-  pendingCount: orders.filter(
-    (order) =>
-      isRecord(order) &&
-      typeof order.status === "string" &&
-      order.status !== "COMPLETE",
-  ).length,
-});
+  orders: Array<{
+    provider?: string | null;
+    status?: string | null;
+    updatedAt?: Date;
+  }>,
+  results: Array<{
+    provider?: string | null;
+    status?: string | null;
+    updatedAt?: Date;
+  }>,
+): WorkspaceLabSummary => {
+  const providers = [
+    ...new Set(
+      [...orders, ...results]
+        .map((item) => item.provider?.trim())
+        .filter((provider): provider is string => Boolean(provider)),
+    ),
+  ];
+
+  const pendingCount = orders.filter((order) =>
+    OPEN_LAB_ORDER_STATUSES.has((order.status ?? "").toUpperCase()),
+  ).length;
+  const resultedCount = results.filter((result) =>
+    RESULTED_LAB_STATUSES.has((result.status ?? "").toUpperCase()),
+  ).length;
+  const failedCount =
+    orders.filter((order) =>
+      FAILED_LAB_STATUSES.has((order.status ?? "").toUpperCase()),
+    ).length +
+    results.filter((result) =>
+      FAILED_LAB_STATUSES.has((result.status ?? "").toUpperCase()),
+    ).length;
+
+  const latestEvent = [...orders, ...results]
+    .filter((item) => item.updatedAt instanceof Date)
+    .sort(
+      (left, right) =>
+        (right.updatedAt?.getTime() ?? 0) - (left.updatedAt?.getTime() ?? 0),
+    )[0];
+
+  const latestStatus =
+    !orders.length && !results.length
+      ? "NONE"
+      : latestEvent && typeof latestEvent.status === "string"
+        ? FAILED_LAB_STATUSES.has(latestEvent.status.toUpperCase())
+          ? "FAILED"
+          : RESULTED_LAB_STATUSES.has(latestEvent.status.toUpperCase())
+            ? "RESULTED"
+            : latestEvent.status.toUpperCase() === "CREATED"
+              ? "QUEUED"
+              : pendingCount > 0 && resultedCount > 0
+                ? "PARTIAL"
+                : "ORDERED"
+        : pendingCount > 0 && resultedCount > 0
+          ? "PARTIAL"
+          : resultedCount > 0
+            ? "RESULTED"
+            : pendingCount > 0
+              ? "ORDERED"
+              : "NONE";
+
+  return {
+    hasLabs: orders.length > 0 || results.length > 0,
+    orders,
+    results,
+    pendingCount,
+    resultedCount,
+    failedCount,
+    requiredPendingCount: pendingCount,
+    providers,
+    latestStatus,
+    blockingFinalization: pendingCount > 0 || failedCount > 0,
+  };
+};
 
 const buildDiagnosticQueue = (
   orders: Array<{
     id: string;
+    provider: string;
     status: string;
+    tests?: unknown;
     createdAt: Date;
     updatedAt: Date;
-    tests?: unknown;
   }>,
   results: Array<{
     id: string;
+    provider: string;
     status?: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>,
+  preloadedTests: Array<{
+    id: string;
+    provider: string;
+    providerTestCode: string;
+    label: string;
+    sourceKind: "PRODUCT_ITEM" | "PACKAGE_ITEM";
+    sourceId: string;
+    sourceProductId: string;
+    sourcePackageId: string | null;
     createdAt: Date;
     updatedAt: Date;
   }>,
@@ -297,11 +385,17 @@ const buildDiagnosticQueue = (
   const orderItems = orders.map((order) => ({
     id: order.id,
     kind: "LAB_ORDER" as const,
+    provider: order.provider,
+    providerTestCode: null,
     status: order.status,
     label:
       Array.isArray(order.tests) && order.tests.length > 0
         ? "Lab order with tests"
         : "Lab order",
+    sourceKind: "LAB_ORDER" as const,
+    sourceId: order.id,
+    sourceProductId: null,
+    sourcePackageId: null,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   }));
@@ -309,13 +403,47 @@ const buildDiagnosticQueue = (
   const resultItems = results.map((result) => ({
     id: result.id,
     kind: "LAB_RESULT" as const,
+    provider: result.provider,
+    providerTestCode: null,
     status: result.status ?? null,
     label: "Lab result",
+    sourceKind: "LAB_RESULT" as const,
+    sourceId: result.id,
+    sourceProductId: null,
+    sourcePackageId: null,
     createdAt: result.createdAt,
     updatedAt: result.updatedAt,
   }));
 
-  return [...orderItems, ...resultItems];
+  const preloadItems = preloadedTests.map((test) => ({
+    id: test.id,
+    kind: "PROVIDER_TEST" as const,
+    provider: test.provider,
+    providerTestCode: test.providerTestCode,
+    status: "AVAILABLE" as const,
+    label: test.label,
+    sourceKind: test.sourceKind,
+    sourceId: test.sourceId,
+    sourceProductId: test.sourceProductId,
+    sourcePackageId: test.sourcePackageId,
+    createdAt: test.createdAt,
+    updatedAt: test.updatedAt,
+  }));
+
+  const seen = new Set<string>();
+  return [...orderItems, ...resultItems, ...preloadItems].filter((item) => {
+    const key = [
+      item.kind,
+      item.provider ?? "",
+      item.providerTestCode ?? "",
+      item.sourceId,
+      item.sourceProductId ?? "",
+      item.sourcePackageId ?? "",
+    ].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 type TreatmentItemRow = {
@@ -335,6 +463,30 @@ type TreatmentItemRow = {
   prescriptionId: string | null;
   createdAt: Date;
   updatedAt: Date;
+};
+
+type ProductItemRow = {
+  id: string;
+  organisationId: string;
+  name: string;
+  code: string | null;
+  kind: string;
+  createdAt: Date;
+  updatedAt: Date;
+  package: {
+    items: Array<{
+      id: string;
+      sortOrder: number;
+      childProductItem: {
+        id: string;
+        name: string;
+        code: string | null;
+        kind: string;
+        createdAt: Date;
+        updatedAt: Date;
+      };
+    }>;
+  } | null;
 };
 
 const mapTreatmentItemRow = (
@@ -430,6 +582,80 @@ const buildTreatmentItemsFromPrescriptions = (
       updatedAt: record.artifact.updatedAt,
     };
   });
+
+const buildDiagnosticPreloadItems = (
+  products: ProductItemRow[],
+): Array<{
+  id: string;
+  provider: string;
+  providerTestCode: string;
+  label: string;
+  sourceKind: "PRODUCT_ITEM" | "PACKAGE_ITEM";
+  sourceId: string;
+  sourceProductId: string;
+  sourcePackageId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}> => {
+  const items: Array<{
+    id: string;
+    provider: string;
+    providerTestCode: string;
+    label: string;
+    sourceKind: "PRODUCT_ITEM" | "PACKAGE_ITEM";
+    sourceId: string;
+    sourceProductId: string;
+    sourcePackageId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }> = [];
+
+  for (const product of products) {
+    if (product.kind === "DIAGNOSTIC" || product.kind === "LAB_TEST") {
+      if (!product.code) continue;
+      items.push({
+        id: `provider-test:${product.id}`,
+        provider: "IDEXX",
+        providerTestCode: product.code,
+        label: product.name,
+        sourceKind: "PRODUCT_ITEM",
+        sourceId: product.id,
+        sourceProductId: product.id,
+        sourcePackageId: null,
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt,
+      });
+      continue;
+    }
+
+    if (product.kind !== "PACKAGE" || !product.package?.items?.length) {
+      continue;
+    }
+
+    for (const item of product.package.items) {
+      const child = item.childProductItem;
+      if (child.kind !== "DIAGNOSTIC" && child.kind !== "LAB_TEST") {
+        continue;
+      }
+      if (!child.code) continue;
+
+      items.push({
+        id: `provider-test:${product.id}:${item.id}`,
+        provider: "IDEXX",
+        providerTestCode: child.code,
+        label: child.name,
+        sourceKind: "PACKAGE_ITEM",
+        sourceId: item.id,
+        sourceProductId: child.id,
+        sourcePackageId: product.id,
+        createdAt: child.createdAt,
+        updatedAt: child.updatedAt,
+      });
+    }
+  }
+
+  return items;
+};
 
 const mapDocumentRow = (input: {
   documentId: string;
@@ -695,6 +921,52 @@ const loadTreatmentItems = async (params: {
     },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
   })) as TreatmentItemRow[];
+
+const loadDiagnosticPreloads = async (params: {
+  organisationId: string;
+  treatmentItems: TreatmentItemRow[];
+}) => {
+  const productIds = [
+    ...new Set(
+      params.treatmentItems.map((item) => item.productId).filter(Boolean),
+    ),
+  ];
+
+  if (!productIds.length) {
+    return [];
+  }
+
+  const products = (await prisma.productItem.findMany({
+    where: {
+      organisationId: params.organisationId,
+      id: { in: productIds },
+    },
+    include: {
+      package: {
+        include: {
+          items: {
+            include: {
+              childProductItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                  kind: true,
+                  createdAt: true,
+                  updatedAt: true,
+                },
+              },
+            },
+            orderBy: { sortOrder: "asc" },
+          },
+        },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+  })) as ProductItemRow[];
+
+  return buildDiagnosticPreloadItems(products);
+};
 
 const loadTasks = async (params: {
   organisationId: string;
@@ -985,6 +1257,11 @@ const buildBootstrapAggregate = async (
     }),
   ]);
 
+  const diagnosticPreloads = await loadDiagnosticPreloads({
+    organisationId: input.organisationId,
+    treatmentItems,
+  });
+
   const labSummary = buildLabSummary(
     ordersAndResults.orders,
     ordersAndResults.results,
@@ -1045,6 +1322,7 @@ const buildBootstrapAggregate = async (
     diagnosticQueue: buildDiagnosticQueue(
       ordersAndResults.orders as never,
       ordersAndResults.results as never,
+      diagnosticPreloads,
     ),
     labSummary,
     tasks,

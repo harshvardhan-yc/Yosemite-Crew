@@ -97,13 +97,32 @@ describe("LabOrderController", () => {
 
     it("handles service errors", async () => {
       mockedLabOrderService.listOrders.mockRejectedValue(
-        new LabOrderServiceError("Invalid status.", 400),
+        new LabOrderServiceError(
+          "Invalid status.",
+          400,
+          "DIAGNOSTIC_PROVIDER_CODE_MAPPING_UNSUPPORTED",
+          {
+            provider: "IDEXX",
+            field: "providerCode",
+            code: "TEST-001",
+          },
+        ),
       );
 
       await LabOrderController.listOrders(req as Request, res);
 
       expect(statusMock).toHaveBeenCalledWith(400);
-      expect(jsonMock).toHaveBeenCalledWith({ message: "Invalid status." });
+      expect(jsonMock).toHaveBeenCalledWith({
+        message: "Invalid status.",
+        error: {
+          code: "DIAGNOSTIC_PROVIDER_CODE_MAPPING_UNSUPPORTED",
+          details: {
+            provider: "IDEXX",
+            field: "providerCode",
+            code: "TEST-001",
+          },
+        },
+      });
     });
 
     it("handles unexpected errors", async () => {

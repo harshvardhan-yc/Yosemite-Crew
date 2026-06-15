@@ -261,7 +261,7 @@ describe("CatalogService", () => {
 
     expect(resolved.appointmentKinds).toEqual(["OUTPATIENT", "INPATIENT"]);
     expect(resolved.templateKinds).toEqual([
-      "CARE_PATHWAY",
+      "INPATIENT_SCHEDULE",
       "SOAP_NOTE",
       "DISCHARGE_SUMMARY",
     ]);
@@ -595,7 +595,7 @@ describe("CatalogService", () => {
           name: "Exam",
           description: null,
           code: "CS-0002",
-          kind: "CONSULTATION",
+          kind: "DIAGNOSTIC",
           specialityId: "spec_1",
           legacyServiceId: null,
           isActive: true,
@@ -642,7 +642,7 @@ describe("CatalogService", () => {
               id: "prod_exam",
               version: 1,
               name: "Exam",
-              kind: "CONSULTATION",
+              kind: "DIAGNOSTIC",
               isActive: true,
               prices: [],
             },
