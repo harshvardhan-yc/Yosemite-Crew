@@ -291,7 +291,7 @@ describe("InvoiceService", () => {
       (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
         id: validId,
         organisationId: "org_1",
-        companion: { id: "comp_1" },
+        patient: { id: "comp_1", parent: { id: "parent_1" } },
       });
       (prisma.organizationBilling.findUnique as jest.Mock).mockResolvedValue({
         currency: "usd",
@@ -337,39 +337,27 @@ describe("InvoiceService", () => {
       ).rejects.toThrow(new InvoiceServiceError("Appointment not found", 404));
     });
 
-    it("should allow missing companion data and omit patientId", async () => {
+    it("should throw when patient links are missing", async () => {
       (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
         id: validId,
         organisationId: "org_1",
-        companion: "invalid",
-      });
-      (prisma.organizationBilling.findUnique as jest.Mock).mockResolvedValue({
-        currency: "usd",
-      });
-      (prisma.invoice.create as jest.Mock).mockResolvedValue({
-        id: "inv_2",
-        organisationId: "org_1",
-        patientId: null,
-        status: "AWAITING_PAYMENT",
-        totalAmount: 120,
-        currency: "usd",
+        patient: "invalid",
       });
 
-      await InvoiceService.createDraftForAppointment({
-        appointmentId: validId,
-        parentId: "parent_1",
-        organisationId: "org_1",
-        patientId: "comp_1",
-        items: [{ description: "Consult", quantity: 1, unitPrice: 120 }],
-        paymentCollectionMethod: "PAYMENT_LINK",
-      });
-
-      expect(prisma.invoice.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            patientId: undefined,
-          }),
+      await expect(
+        InvoiceService.createDraftForAppointment({
+          appointmentId: validId,
+          parentId: "parent_1",
+          organisationId: "org_1",
+          patientId: "comp_1",
+          items: [{ description: "Consult", quantity: 1, unitPrice: 120 }],
+          paymentCollectionMethod: "PAYMENT_LINK",
         }),
+      ).rejects.toThrow(
+        new InvoiceServiceError(
+          "Appointment missing parent or patient links",
+          500,
+        ),
       );
     });
   });

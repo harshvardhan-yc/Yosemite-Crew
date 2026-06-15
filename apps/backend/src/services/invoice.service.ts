@@ -1,6 +1,8 @@
 import mongoose, { Types } from "mongoose";
 import InvoiceModel, { InvoiceDocument, InvoiceMongo } from "../models/invoice";
-import AppointmentModel from "src/models/appointment";
+import AppointmentModel, {
+  type AppointmentMongo,
+} from "src/models/appointment";
 import ServiceModel from "src/models/service";
 import {
   Invoice,
@@ -88,7 +90,12 @@ const assertAppointmentInOrganisation = async (
   }
 };
 
-const resolveAuditTargetsForInvoice = async (invoice: InvoiceDocument) => {
+const resolveAuditTargetsForInvoice = async (
+  invoice: InvoiceDocument,
+): Promise<{
+  organisationId?: string;
+  patientId?: string;
+}> => {
   if (invoice.organisationId && invoice.patientId) {
     return {
       organisationId: invoice.organisationId,
@@ -97,18 +104,10 @@ const resolveAuditTargetsForInvoice = async (invoice: InvoiceDocument) => {
   }
 
   if (invoice.appointmentId) {
-    const query = AppointmentModel.findById(invoice.appointmentId, {
+    const appointment = await AppointmentModel.findById(invoice.appointmentId, {
       organisationId: 1,
       patient: 1,
-      companion: 1,
-    }) as {
-      lean?: () => Promise<{
-        organisationId?: string;
-        patient?: Prisma.JsonValue | null;
-        companion?: Prisma.JsonValue | null;
-      } | null>;
-    };
-    const appointment = query.lean ? await query.lean() : await query;
+    }).lean<Pick<AppointmentMongo, "organisationId" | "patient">>();
 
     if (appointment?.organisationId) {
       const { patientId } = getAppointmentPatientLink(appointment);
@@ -596,7 +595,7 @@ const resolveAuditTargetsForInvoiceRow = async (row: {
   if (row.appointmentId) {
     const appointment = (await prisma.appointment.findUnique({
       where: { id: row.appointmentId },
-      select: { organisationId: true, patient: true, companion: true },
+      select: { organisationId: true, patient: true },
     })) as {
       organisationId?: string | null;
       patient?: Prisma.JsonValue | null;
@@ -723,7 +722,6 @@ export const InvoiceService = {
           id: true,
           organisationId: true,
           patient: true,
-          companion: true,
         },
       });
 
@@ -740,6 +738,13 @@ export const InvoiceService = {
       const totals = resolveInvoiceTotals(itemsDetailed, 0);
       const currency = await getOrgBillingCurrency(input.organisationId);
       const patientId = coerceAppointmentCompanionId(appointment);
+      const parentId = coerceAppointmentParentId(appointment);
+      if (!patientId || !parentId) {
+        throw new InvoiceServiceError(
+          "Appointment missing parent or patient links",
+          500,
+        );
+      }
 
       const createdInvoice = await prisma.invoice.create({
         data: {
@@ -914,7 +919,6 @@ export const InvoiceService = {
           id: true,
           organisationId: true,
           patient: true,
-          companion: true,
         },
       });
       if (!appointment) {
@@ -995,6 +999,12 @@ export const InvoiceService = {
 
     const currency = await getOrgBillingCurrency(appointment.organisationId);
     const { patientId, parentId } = getAppointmentPatientLink(appointment);
+    if (!patientId || !parentId) {
+      throw new InvoiceServiceError(
+        "Appointment missing parent or patient links",
+        500,
+      );
+    }
     const invoice = new InvoiceModel({
       appointmentId: appointment._id,
       parentId,
@@ -1451,7 +1461,6 @@ export const InvoiceService = {
           id: true,
           organisationId: true,
           patient: true,
-          companion: true,
           appointmentType: true,
           productItemId: true,
           concern: true,
@@ -1594,6 +1603,12 @@ export const InvoiceService = {
     }
 
     const { patientId, parentId } = getAppointmentPatientLink(appointment);
+    if (!patientId || !parentId) {
+      throw new InvoiceServiceError(
+        "Appointment missing parent or patient links",
+        500,
+      );
+    }
 
     return this.createDraftForAppointment({
       appointmentId,

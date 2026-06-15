@@ -1818,7 +1818,6 @@ export const StripeService = {
           organisationId: appointment.organisationId,
           parentId: parentId ?? undefined,
           patientId: patientId ?? undefined,
-          companionId: patientId ?? undefined,
           currency: pi.currency ?? "usd",
           status: "PAID",
           items: [
