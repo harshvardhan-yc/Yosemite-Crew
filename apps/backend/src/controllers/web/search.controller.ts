@@ -1,16 +1,31 @@
 import { Request, Response } from "express";
 import { z } from "zod";
+import { prisma } from "src/config/prisma";
+import {
+  CatalogService,
+  CatalogServiceError,
+} from "src/services/catalog.service";
 import {
   InventoryService,
   InventoryServiceError,
 } from "src/services/inventory.service";
 import logger from "src/utils/logger";
+import type {
+  ScopedSearchItem,
+  ScopedSearchResponse,
+} from "@yosemite-crew/types";
 
 const searchQuerySchema = z.object({
   search: z.string().trim().optional(),
   category: z.string().trim().optional(),
   subCategory: z.string().trim().optional(),
   status: z.enum(["ACTIVE", "HIDDEN", "DELETED"]).optional(),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().optional(),
+});
+
+const scopedSearchQuerySchema = z.object({
+  q: z.string().trim().optional(),
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().optional(),
 });
@@ -53,6 +68,41 @@ const toSearchResult = (item: Record<string, unknown>) => ({
     : [],
 });
 
+const buildPagedResponse = (
+  items: ScopedSearchItem[],
+  query: string | null,
+  page: number,
+  pageSize: number,
+): ScopedSearchResponse => {
+  const total = items.length;
+  const start = (page - 1) * pageSize;
+  return {
+    query,
+    page,
+    pageSize,
+    total,
+    items: items.slice(start, start + pageSize),
+  };
+};
+
+const toScopedItem = (input: {
+  id: string;
+  scope: ScopedSearchItem["scope"];
+  label: string;
+  description?: string | null;
+  kind?: string | null;
+  updatedAt: Date;
+  metadata?: Record<string, unknown>;
+}): ScopedSearchItem => ({
+  id: input.id,
+  scope: input.scope,
+  label: input.label,
+  description: input.description ?? null,
+  kind: input.kind ?? null,
+  updatedAt: input.updatedAt,
+  metadata: input.metadata,
+});
+
 const isMedicationItem = (item: Record<string, unknown>) =>
   item.itemType === "MEDICAL" ||
   Boolean(item.prescriptionRequired) ||
@@ -60,6 +110,10 @@ const isMedicationItem = (item: Record<string, unknown>) =>
 
 const handleError = (error: unknown, res: Response) => {
   if (error instanceof InventoryServiceError) {
+    return res.status(error.statusCode).json({ message: error.message });
+  }
+
+  if (error instanceof CatalogServiceError) {
     return res.status(error.statusCode).json({ message: error.message });
   }
 
@@ -109,6 +163,189 @@ const runSearch = async (
   };
 };
 
+const searchTemplates = async (
+  organisationId: string,
+  query: string | null,
+) => {
+  const templates = await prisma.template.findMany({
+    where: {
+      organisationId,
+      ownership: { in: ["ORG_TEMPLATE", "USER_TEMPLATE"] },
+      ...(query
+        ? {
+            OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { description: { contains: query, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ updatedAt: "desc" }],
+  });
+
+  return templates.map((template) =>
+    toScopedItem({
+      id: template.id,
+      scope: "TEMPLATE",
+      label: template.name,
+      description: template.description,
+      kind: template.kind,
+      updatedAt: template.updatedAt,
+      metadata: {
+        ownership: template.ownership,
+        status: template.status,
+        scope: template.scope,
+        latestVersion: template.latestVersion,
+      },
+    }),
+  );
+};
+
+const searchTasks = async (organisationId: string, query: string | null) => {
+  const tasks = await prisma.task.findMany({
+    where: {
+      organisationId,
+      ...(query
+        ? {
+            OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { description: { contains: query, mode: "insensitive" } },
+              { additionalNotes: { contains: query, mode: "insensitive" } },
+              { category: { contains: query, mode: "insensitive" } },
+              { subcategory: { contains: query, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ updatedAt: "desc" }],
+  });
+
+  return tasks.map((task) =>
+    toScopedItem({
+      id: task.id,
+      scope: "TASK",
+      label: task.name,
+      description: task.description ?? task.additionalNotes ?? null,
+      kind: task.category,
+      updatedAt: task.updatedAt,
+      metadata: {
+        status: task.status,
+        audience: task.audience,
+        source: task.source,
+      },
+    }),
+  );
+};
+
+const searchDocuments = async (
+  organisationId: string,
+  query: string | null,
+) => {
+  const patientLinks = await prisma.patientOrganisation.findMany({
+    where: {
+      organisationId,
+      status: { in: ["ACTIVE", "PENDING"] },
+    },
+    select: { patientId: true },
+  });
+  const patientIds = [...new Set(patientLinks.map((link) => link.patientId))];
+
+  if (!patientIds.length) {
+    return [];
+  }
+
+  const documents = await prisma.document.findMany({
+    where: {
+      patientId: { in: patientIds },
+      ...(query
+        ? {
+            OR: [
+              { title: { contains: query, mode: "insensitive" } },
+              { category: { contains: query, mode: "insensitive" } },
+              { subcategory: { contains: query, mode: "insensitive" } },
+              { visitType: { contains: query, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ updatedAt: "desc" }],
+  });
+
+  return documents.map((document) =>
+    toScopedItem({
+      id: document.id,
+      scope: "DOCUMENT",
+      label: document.title,
+      description: document.category,
+      kind: document.subcategory ?? document.visitType ?? null,
+      updatedAt: document.updatedAt,
+      metadata: {
+        appointmentId: document.appointmentId,
+        patientId: document.patientId,
+        pmsVisible: document.pmsVisible,
+      },
+    }),
+  );
+};
+
+const searchServices = async (organisationId: string, query: string | null) => {
+  const result = await CatalogService.searchItems({
+    organisationId,
+    q: query ?? undefined,
+    kinds: ["CONSULTATION", "PROCEDURE", "LAB"],
+    includeArchived: false,
+    page: 1,
+    pageSize: 200,
+  });
+
+  return result.items
+    .filter((item) => item.kind !== "PACKAGE")
+    .map((item) =>
+      toScopedItem({
+        id: item.id,
+        scope: "SERVICE",
+        label: item.name,
+        description: item.description,
+        kind: item.kind,
+        updatedAt: new Date(),
+        metadata: {
+          source: item.source,
+          status: item.status,
+          totalAmount: item.totalAmount,
+          currency: item.currency,
+        },
+      }),
+    );
+};
+
+const searchPackages = async (organisationId: string, query: string | null) => {
+  const result = await CatalogService.searchItems({
+    organisationId,
+    q: query ?? undefined,
+    kinds: ["PACKAGE"],
+    includeArchived: false,
+    page: 1,
+    pageSize: 200,
+  });
+
+  return result.items.map((item) =>
+    toScopedItem({
+      id: item.id,
+      scope: "PACKAGE",
+      label: item.name,
+      description: item.description,
+      kind: item.kind,
+      updatedAt: new Date(),
+      metadata: {
+        source: item.source,
+        status: item.status,
+        totalAmount: item.totalAmount,
+        currency: item.currency,
+      },
+    }),
+  );
+};
+
 export const SearchController = {
   async searchMedications(req: Request, res: Response) {
     try {
@@ -125,6 +362,116 @@ export const SearchController = {
       const query = searchQuerySchema.parse(req.query);
       const result = await runSearch(req.params.organisationId, query, false);
       return res.status(200).json(result);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async searchTemplates(req: Request, res: Response) {
+    try {
+      const query = scopedSearchQuerySchema.parse(req.query);
+      const items = await searchTemplates(
+        req.params.organisationId,
+        query.q ?? null,
+      );
+      return res
+        .status(200)
+        .json(
+          buildPagedResponse(
+            items,
+            query.q ?? null,
+            query.page ?? 1,
+            query.pageSize ?? 25,
+          ),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async searchTasks(req: Request, res: Response) {
+    try {
+      const query = scopedSearchQuerySchema.parse(req.query);
+      const items = await searchTasks(
+        req.params.organisationId,
+        query.q ?? null,
+      );
+      return res
+        .status(200)
+        .json(
+          buildPagedResponse(
+            items,
+            query.q ?? null,
+            query.page ?? 1,
+            query.pageSize ?? 25,
+          ),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async searchDocuments(req: Request, res: Response) {
+    try {
+      const query = scopedSearchQuerySchema.parse(req.query);
+      const items = await searchDocuments(
+        req.params.organisationId,
+        query.q ?? null,
+      );
+      return res
+        .status(200)
+        .json(
+          buildPagedResponse(
+            items,
+            query.q ?? null,
+            query.page ?? 1,
+            query.pageSize ?? 25,
+          ),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async searchServices(req: Request, res: Response) {
+    try {
+      const query = scopedSearchQuerySchema.parse(req.query);
+      const items = await searchServices(
+        req.params.organisationId,
+        query.q ?? null,
+      );
+      return res
+        .status(200)
+        .json(
+          buildPagedResponse(
+            items,
+            query.q ?? null,
+            query.page ?? 1,
+            query.pageSize ?? 25,
+          ),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async searchPackages(req: Request, res: Response) {
+    try {
+      const query = scopedSearchQuerySchema.parse(req.query);
+      const items = await searchPackages(
+        req.params.organisationId,
+        query.q ?? null,
+      );
+      return res
+        .status(200)
+        .json(
+          buildPagedResponse(
+            items,
+            query.q ?? null,
+            query.page ?? 1,
+            query.pageSize ?? 25,
+          ),
+        );
     } catch (error) {
       return handleError(error, res);
     }

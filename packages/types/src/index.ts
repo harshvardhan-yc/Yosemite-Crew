@@ -88,6 +88,7 @@ export {
 export type { UserOrganization, ToFHIRUserOrganizationOptions } from './userOrganization';
 export type { Speciality } from './speciality';
 export { toFHIRSpeciality, fromFHIRSpeciality, toFHIRSpecialityBundle } from './speciality';
+export type { ScopedSearchItem, ScopedSearchResponse, ScopedSearchScope } from './scoped-search';
 
 export type { AdminDepartmentItem, AdminFHIRHealthcareService } from './models/admin-department';
 export type {

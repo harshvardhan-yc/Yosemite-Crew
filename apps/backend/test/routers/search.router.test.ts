@@ -7,6 +7,11 @@ const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const SearchController = {
   searchMedications: jest.fn(),
   searchInventoryItems: jest.fn(),
+  searchTemplates: jest.fn(),
+  searchTasks: jest.fn(),
+  searchDocuments: jest.fn(),
+  searchServices: jest.fn(),
+  searchPackages: jest.fn(),
 };
 
 jest.mock("../../src/middlewares/auth", () => ({
@@ -42,12 +47,27 @@ const findRoute = (path: string, method: string) => {
 };
 
 describe("search.router", () => {
-  it("exposes medication and inventory item search routes", () => {
+  it("exposes the scoped search routes", () => {
     expect(
       findRoute("/organisations/:organisationId/medications", "get"),
     ).toBeDefined();
     expect(
       findRoute("/organisations/:organisationId/inventory-items", "get"),
+    ).toBeDefined();
+    expect(
+      findRoute("/organisations/:organisationId/templates", "get"),
+    ).toBeDefined();
+    expect(
+      findRoute("/organisations/:organisationId/tasks", "get"),
+    ).toBeDefined();
+    expect(
+      findRoute("/organisations/:organisationId/documents", "get"),
+    ).toBeDefined();
+    expect(
+      findRoute("/organisations/:organisationId/services", "get"),
+    ).toBeDefined();
+    expect(
+      findRoute("/organisations/:organisationId/packages", "get"),
     ).toBeDefined();
   });
 
@@ -63,5 +83,11 @@ describe("search.router", () => {
       "inventory:view:any",
       "prescription:view:any",
     ]);
+  });
+
+  it("applies scoped permissions to the new search routes", () => {
+    expect(requirePermission).toHaveBeenCalledWith("specialities:view:any");
+    expect(requirePermission).toHaveBeenCalledWith("tasks:view:any");
+    expect(requirePermission).toHaveBeenCalledWith("document:view:any");
   });
 });
