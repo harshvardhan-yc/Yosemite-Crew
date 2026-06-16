@@ -76,4 +76,17 @@ module.exports = [
       },
     },
   },
+  {
+    // Browser/renderer scripts for the local file:// pages (externalized from
+    // their HTML to keep a strict CSP without 'unsafe-inline').
+    files: ['src/pages/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+      },
+    },
+    rules: {
+      'no-unused-vars': 'off',
+    },
+  },
 ];
