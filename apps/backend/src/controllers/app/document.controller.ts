@@ -11,7 +11,11 @@ import { AuthUserMobileService } from "src/services/authUserMobile.service";
 import { OrgRequest } from "src/middlewares/rbac";
 import { resolveUserIdFromRequest } from "src/utils/request";
 
-type UploadUrlBody = { patientId?: string; mimeType?: string };
+type MobileUploadUrlBody = {
+  patientId?: string;
+  companionId?: string;
+  mimeType?: string;
+};
 
 type DocumentRequestBody = {
   title?: string;
@@ -55,22 +59,25 @@ const getFirstQueryValue = (value: unknown): string | undefined => {
 export const DocumentController = {
   // Generate Pre-signed URL for document upload
   getUploadUrl: async (
-    req: Request<unknown, unknown, UploadUrlBody>,
+    req: Request<unknown, unknown, MobileUploadUrlBody>,
     res: Response,
   ) => {
     try {
-      const { patientId, mimeType } = req.body;
+      const { patientId, companionId, mimeType } = req.body;
+      const resolvedPatientId = patientId ?? companionId;
 
-      if (!patientId || !mimeType) {
+      if (!resolvedPatientId || !mimeType) {
         return res
           .status(400)
-          .json({ message: "patientId and mimeType are required." });
+          .json({
+            message: "patientId/companionId and mimeType are required.",
+          });
       }
 
       const { url, key } = await generatePresignedUrl(
         mimeType,
         "companion",
-        patientId,
+        resolvedPatientId,
       );
 
       return res.status(200).json({ url, key });
@@ -595,5 +602,9 @@ export const DocumentController = {
       logger.error("Failed to search documents (parent)", error);
       return res.status(500).json({ message: "Unable to search documents." });
     }
+  },
+
+  searchDocumentMobile: async (req: Request, res: Response) => {
+    return DocumentController.searchDocument(req, res);
   },
 };

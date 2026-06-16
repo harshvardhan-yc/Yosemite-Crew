@@ -15,6 +15,12 @@ router.post(
   DocumentController.getUploadUrl,
 );
 
+router.get(
+  "/mobile/search/:patientId",
+  authorizeCognitoMobile,
+  DocumentController.searchDocumentMobile,
+);
+
 router.post(
   "/mobile/:patientId",
   authorizeCognitoMobile,
