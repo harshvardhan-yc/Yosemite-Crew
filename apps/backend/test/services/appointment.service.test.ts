@@ -19,7 +19,10 @@ import { OrgBilling } from "src/models/organization.billing";
 import { OrgUsageCounters } from "src/models/organisation.usage.counter";
 import { sendEmailTemplate } from "src/utils/email";
 import { AuditTrailService } from "../../src/services/audit-trail.service";
-import { CatalogService } from "../../src/services/catalog.service";
+import {
+  CatalogService,
+  CatalogServiceError,
+} from "../../src/services/catalog.service";
 import { FormModel } from "src/models/form";
 import { prisma } from "src/config/prisma";
 import logger from "src/utils/logger";
@@ -387,6 +390,46 @@ describe("AppointmentService", () => {
       ).rejects.toThrow(
         new AppointmentServiceError("Invalid service selected", 404),
       );
+    });
+
+    it("should fall back to the legacy service when catalog lookup returns 404", async () => {
+      (CatalogService.resolveSelection as jest.Mock).mockRejectedValueOnce(
+        new CatalogServiceError("Not found", 404),
+      );
+      (ServiceModel.findOne as jest.Mock).mockResolvedValue({
+        serviceType: "STANDARD",
+      });
+      (OrgUsageCounters.findOneAndUpdate as jest.Mock).mockResolvedValue({
+        _id: validId,
+        appointmentsUsed: 1,
+      });
+      (OrgBilling.findOne as jest.Mock).mockReturnValue(
+        createQueryChain({ plan: "pro" }),
+      );
+      (FormService.getConsentFormForParent as jest.Mock).mockResolvedValue(
+        null,
+      );
+      (AppointmentModel.create as jest.Mock).mockResolvedValue(
+        createMockDoc({ status: "NO_PAYMENT" }),
+      );
+      (
+        InvoiceService.getOrCreateDraftForAppointment as jest.Mock
+      ).mockResolvedValue({ id: "inv_legacy" });
+      (
+        StripeService.createPaymentIntentForInvoice as jest.Mock
+      ).mockResolvedValue("pi_legacy");
+
+      const result = await AppointmentService.createRequestedFromMobile(
+        baseDto as any,
+      );
+
+      expect(ServiceModel.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _id: expect.any(Types.ObjectId),
+          isActive: true,
+        }),
+      );
+      expect(result.paymentIntent).toBe("pi_legacy");
     });
 
     it("should throw 403 if free plan limit reached", async () => {
@@ -1853,6 +1896,23 @@ describe("AppointmentService", () => {
           }),
         }),
       );
+    });
+
+    it("should not record audit trail for a no-op PMS update", async () => {
+      const mockDoc: any = createMockDoc({
+        status: "UPCOMING",
+        lead: { id: "vet_1", name: "Vet" },
+      });
+
+      (AppointmentModel.findById as jest.Mock).mockResolvedValue(mockDoc);
+
+      await AppointmentService.updateAppointmentPMS(validId, {
+        lead: { id: "vet_1", name: "Vet" },
+      } as any);
+
+      expect(AuditTrailService.recordSafely).not.toHaveBeenCalled();
+      expect(OccupancyModel.deleteMany).not.toHaveBeenCalled();
+      expect(OccupancyModel.create).not.toHaveBeenCalled();
     });
   });
 

@@ -184,6 +184,7 @@ export const ServiceController = {
 
       let lat: number | null = null;
       let lng: number | null = null;
+      let locationQuery: string | undefined = query;
 
       // --- 1. If lat/lng are provided by user, validate & use them ---
       if (latString && lngString) {
@@ -198,7 +199,7 @@ export const ServiceController = {
       }
 
       // --- 2. Otherwise get location from authenticated user's address ---
-      if (!lat || !lng) {
+      if (lat === null || lng === null) {
         const authUserId = resolveUserIdFromRequest(req);
 
         if (!authUserId) {
@@ -216,10 +217,10 @@ export const ServiceController = {
           });
         }
 
-        const query = `${parentAddress.city} ${parentAddress.postalCode}`;
+        locationQuery = `${parentAddress.city} ${parentAddress.postalCode}`;
 
         // 2a. Geocode city + pincode → lat/lng
-        const geo = await helpers.getGeoLocation(query);
+        const geo = await helpers.getGeoLocation(locationQuery);
 
         const geoRecord =
           geo && typeof geo === "object"
@@ -245,7 +246,7 @@ export const ServiceController = {
           serviceName,
           lat,
           lng,
-          query,
+          locationQuery,
         );
       return res.status(200).json(results);
     } catch (error: unknown) {

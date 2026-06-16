@@ -237,6 +237,23 @@ describe("Inventory service", () => {
     expect(result).toHaveLength(1);
   });
 
+  it("rejects invalid inventory filters and honors empty status lists", async () => {
+    await expect(
+      InventoryService.listItems({
+        organisationId: "org-1",
+        status: "BROKEN" as never,
+      } as never),
+    ).rejects.toBeInstanceOf(InventoryServiceError);
+
+    const emptyResult = await InventoryService.listItems({
+      organisationId: "org-1",
+      status: [],
+    } as never);
+
+    expect(emptyResult).toEqual([]);
+    expect(prisma.inventoryItem.findMany).not.toHaveBeenCalled();
+  });
+
   it("returns categories from the seed catalog when the database is empty", async () => {
     const categories = await InventoryService.getCategories();
     expect(categories).toEqual([]);

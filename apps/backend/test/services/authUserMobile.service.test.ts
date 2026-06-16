@@ -145,6 +145,51 @@ describe("AuthUserMobileService", () => {
     expect(result.parentId).toBe("parent-1");
   });
 
+  it("relinks a parent and clears previous mappings", async () => {
+    mockedPrisma.authUserMobile.findFirst
+      .mockResolvedValueOnce({
+        id: "auth-1",
+        authProvider: "firebase",
+        providerUserId: "provider-1",
+        email: "user@example.com",
+        parentId: "parent-old",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .mockResolvedValueOnce({
+        id: "auth-1",
+        authProvider: "firebase",
+        providerUserId: "provider-1",
+        email: "user@example.com",
+        parentId: "parent-new",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    mockedPrisma.parent.findUnique.mockResolvedValueOnce({
+      id: "parent-new",
+      linkedUserId: "auth-old",
+    });
+    mockedPrisma.parent.updateMany.mockResolvedValueOnce({});
+    mockedPrisma.authUserMobile.updateMany.mockResolvedValueOnce({});
+    mockedPrisma.authUserMobile.update.mockResolvedValueOnce({});
+    mockedPrisma.parent.update.mockResolvedValueOnce({});
+
+    const result = await AuthUserMobileService.linkParent(
+      "provider-1",
+      "parent-new",
+    );
+
+    expect(mockedPrisma.parent.updateMany).toHaveBeenCalledWith({
+      where: { id: "parent-old" },
+      data: { linkedUserId: null },
+    });
+    expect(mockedPrisma.authUserMobile.updateMany).toHaveBeenCalledWith({
+      where: { id: "auth-old" },
+      data: { parentId: null },
+    });
+    expect(result.parentId).toBe("parent-new");
+  });
+
   it("auto-links parent by email", async () => {
     mockedPrisma.parent.findFirst.mockResolvedValueOnce({
       id: "parent-1",
@@ -173,6 +218,23 @@ describe("AuthUserMobileService", () => {
     });
   });
 
+  it("returns null when no parent matches the email for auto-linking", async () => {
+    mockedPrisma.parent.findFirst.mockResolvedValueOnce(null);
+
+    const result = await AuthUserMobileService.autoLinkParentByEmail({
+      id: "auth-1",
+      authProvider: "firebase",
+      providerUserId: "provider-1",
+      email: "user@example.com",
+      parentId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    expect(result).toBeNull();
+    expect(mockedPrisma.authUserMobile.updateMany).not.toHaveBeenCalled();
+  });
+
   it("warns and returns null when auth user id lookup misses", async () => {
     mockedPrisma.authUserMobile.findFirst.mockResolvedValueOnce(null);
 
@@ -183,5 +245,17 @@ describe("AuthUserMobileService", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       "AuthUserMobile not found for providerUserId: missing",
     );
+  });
+
+  it("returns an auth user id when lookup succeeds", async () => {
+    mockedPrisma.authUserMobile.findFirst.mockResolvedValueOnce({
+      id: "auth-3",
+    });
+
+    const result =
+      await AuthUserMobileService.getAuthUserMobileIdByProviderId("provider-3");
+
+    expect(result).toBe("auth-3");
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

@@ -120,6 +120,36 @@ describe("CaseEncounterService", () => {
     expect(result.id).toBe("case_1");
   });
 
+  it("rejects invalid case and encounter status values", async () => {
+    await expect(
+      CaseEncounterService.createCase({
+        organisationId: "org_1",
+        patientId: "comp_1",
+        parentId: "parent_1",
+        status: "bogus" as never,
+        appointmentKind: "INPATIENT",
+      } as never),
+    ).rejects.toMatchObject({
+      message: "Invalid case status.",
+      statusCode: 400,
+    } satisfies Partial<CaseEncounterServiceError>);
+
+    mockedPrisma.case.findUnique.mockResolvedValue(baseCaseRow as never);
+    await expect(
+      CaseEncounterService.createEncounter({
+        caseId: "case_1",
+        organisationId: "org_1",
+        patientId: "comp_1",
+        status: "planned",
+        encounterClass: "bogus" as never,
+        appointmentKind: "INPATIENT",
+      } as never),
+    ).rejects.toMatchObject({
+      message: "Invalid encounter class.",
+      statusCode: 400,
+    } satisfies Partial<CaseEncounterServiceError>);
+  });
+
   it("creates an encounter and links the appointment", async () => {
     mockedPrisma.case.findUnique.mockResolvedValue(baseCaseRow as never);
     mockedPrisma.appointment.findUnique.mockResolvedValue({
@@ -279,6 +309,18 @@ describe("CaseEncounterService", () => {
     expect(results[1]?.appointmentId).toBe("appt_2");
   });
 
+  it("returns an empty list without loading appointments when no encounters exist", async () => {
+    mockedPrisma.encounter.findMany.mockResolvedValue([] as never);
+
+    const results = await CaseEncounterService.listEncounters({
+      organisationId: "org_1",
+    });
+
+    expect(results).toEqual([]);
+    expect(mockedPrisma.appointment.findMany).not.toHaveBeenCalled();
+    expect(mockedPrisma.admission.findMany).not.toHaveBeenCalled();
+  });
+
   it("discharges an inpatient encounter and closes admission", async () => {
     mockedPrisma.encounter.findUnique.mockResolvedValue(
       baseEncounterRow as never,
@@ -362,6 +404,20 @@ describe("CaseEncounterService", () => {
     expect(result.admission?.dischargedAt?.toISOString()).toBe(
       "2026-06-11T12:00:00.000Z",
     );
+  });
+
+  it("rejects closing a finished encounter when marking ready for discharge", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "finished",
+    } as never);
+
+    await expect(
+      CaseEncounterService.markEncounterReadyForDischarge("enc_1"),
+    ).rejects.toMatchObject({
+      message: "Cannot mark ready for discharge a closed encounter.",
+      statusCode: 409,
+    } satisfies Partial<CaseEncounterServiceError>);
   });
 
   it("assigns a unit to an active admission", async () => {

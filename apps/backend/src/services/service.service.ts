@@ -63,6 +63,43 @@ type ServiceSchedulingContext = {
   vetIds: string[];
 };
 
+type ServiceRecord = {
+  id: string;
+  organisationId: string;
+  name: string;
+  description: string | null;
+  durationMinutes: number;
+  cost: number;
+  maxDiscount: number | null;
+  specialityId: string | null;
+  serviceType: ServiceType;
+  observationToolId: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type OrganisationRecord = {
+  id: string;
+  name: string;
+  imageURL?: string | null;
+  imageUrl?: string | null;
+  phoneNo?: string | null;
+  type: string;
+  appointmentCheckInBufferMinutes?: number | null;
+  appointmentCheckInRadiusMeters?: number | null;
+  address?: {
+    addressLine?: string | null;
+    country?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    location?: unknown;
+  } | null;
+};
+
 type PreferredTimeZoneClock = {
   minutes: number;
   dayOffset: number;
@@ -112,21 +149,7 @@ const requireSafeString = (value: string, field: string) => {
   return trimmed;
 };
 
-const buildServiceDomain = (service: {
-  id: string;
-  organisationId: string;
-  name: string;
-  description: string | null;
-  durationMinutes: number;
-  cost: number;
-  maxDiscount: number | null;
-  specialityId: string | null;
-  serviceType: ServiceType;
-  observationToolId: string | null;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}): Service => ({
+const mapServiceRecordToDomain = (service: ServiceRecord): Service => ({
   id: service.id,
   organisationId: service.organisationId,
   name: service.name,
@@ -141,22 +164,6 @@ const buildServiceDomain = (service: {
   createdAt: service.createdAt,
   updatedAt: service.updatedAt,
 });
-
-const mapPrismaToDomain = (service: {
-  id: string;
-  organisationId: string;
-  name: string;
-  description: string | null;
-  durationMinutes: number;
-  cost: number;
-  maxDiscount: number | null;
-  specialityId: string | null;
-  serviceType: ServiceType;
-  observationToolId: string | null;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}): Service => buildServiceDomain(service);
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
 
@@ -179,27 +186,10 @@ const calculateDistanceMeters = (
   return earthRadiusMeters * c;
 };
 
-const mapOrganisationWithAddress = (org: {
-  id: string;
-  name: string;
-  imageUrl: string | null;
-  phoneNo: string;
-  type: string;
-  appointmentCheckInBufferMinutes?: number | null;
-  appointmentCheckInRadiusMeters?: number | null;
-  address: {
-    addressLine: string | null;
-    country: string | null;
-    city: string | null;
-    state: string | null;
-    postalCode: string | null;
-    latitude: number | null;
-    longitude: number | null;
-  } | null;
-}) => ({
+const mapOrganisationWithAddress = (org: OrganisationRecord) => ({
   id: org.id,
   name: org.name,
-  imageURL: org.imageUrl ?? undefined,
+  imageURL: org.imageURL ?? org.imageUrl ?? undefined,
   phoneNo: org.phoneNo ?? undefined,
   type: org.type,
   appointmentCheckInBufferMinutes: org.appointmentCheckInBufferMinutes ?? 5,
@@ -527,7 +517,7 @@ const buildBookableWindowsForVets = async (params: {
 const mapDocToDomain = (doc: ServiceDocument): Service => {
   const o = doc.toObject() as ServiceMongo & { _id: Types.ObjectId };
 
-  return buildServiceDomain({
+  return mapServiceRecordToDomain({
     id: o._id.toString(),
     organisationId: o.organisationId.toString(),
     name: o.name,
@@ -699,7 +689,7 @@ export const ServiceService = {
         where: { id: safeId },
       });
       if (!service) return null;
-      return toServiceResponseDTO(mapPrismaToDomain(service));
+      return toServiceResponseDTO(mapServiceRecordToDomain(service));
     }
 
     const oid = ensureObjectId(id, "serviceId");
@@ -715,7 +705,7 @@ export const ServiceService = {
         where: { organisationId: safeOrgId, isActive: true },
       });
       return services.map((service) =>
-        toServiceResponseDTO(mapPrismaToDomain(service)),
+        toServiceResponseDTO(mapServiceRecordToDomain(service)),
       );
     }
 
@@ -834,7 +824,7 @@ export const ServiceService = {
         take: 50,
       });
       return services.map((service) =>
-        toServiceResponseDTO(mapPrismaToDomain(service)),
+        toServiceResponseDTO(mapServiceRecordToDomain(service)),
       );
     }
 
@@ -858,7 +848,7 @@ export const ServiceService = {
         where: { specialityId: safeSpecId, isActive: true },
       });
       return services.map((service) =>
-        toServiceResponseDTO(mapPrismaToDomain(service)),
+        toServiceResponseDTO(mapServiceRecordToDomain(service)),
       );
     }
 
@@ -917,16 +907,18 @@ export const ServiceService = {
       .lean()
       .exec()) as Array<OrganizationMongo & { _id: Types.ObjectId }>;
 
-    return organisations.map((org) => ({
-      id: org._id.toString(),
-      name: org.name,
-      imageURL: org.imageURL,
-      phoneNo: org.phoneNo,
-      type: org.type,
-      appointmentCheckInBufferMinutes: org.appointmentCheckInBufferMinutes ?? 5,
-      appointmentCheckInRadiusMeters: org.appointmentCheckInRadiusMeters ?? 200,
-      address: org.address,
-    }));
+    return organisations.map((org) =>
+      mapOrganisationWithAddress({
+        id: org._id.toString(),
+        name: org.name,
+        imageURL: org.imageURL,
+        phoneNo: org.phoneNo,
+        type: org.type,
+        appointmentCheckInBufferMinutes: org.appointmentCheckInBufferMinutes,
+        appointmentCheckInRadiusMeters: org.appointmentCheckInRadiusMeters,
+        address: org.address,
+      }),
+    );
   },
 
   async getBookableSlotsService(
@@ -1249,16 +1241,16 @@ export const ServiceService = {
       });
 
       return {
-        id: org._id.toString(),
-        name: org.name,
-        imageURL: org.imageURL,
-        phoneNo: org.phoneNo,
-        type: org.type,
-        appointmentCheckInBufferMinutes:
-          org.appointmentCheckInBufferMinutes ?? 5,
-        appointmentCheckInRadiusMeters:
-          org.appointmentCheckInRadiusMeters ?? 200,
-        address: org.address,
+        ...mapOrganisationWithAddress({
+          id: org._id.toString(),
+          name: org.name,
+          imageURL: org.imageURL,
+          phoneNo: org.phoneNo,
+          type: org.type,
+          appointmentCheckInBufferMinutes: org.appointmentCheckInBufferMinutes,
+          appointmentCheckInRadiusMeters: org.appointmentCheckInRadiusMeters,
+          address: org.address,
+        }),
         specialities: specialitiesWithServices,
       };
     });

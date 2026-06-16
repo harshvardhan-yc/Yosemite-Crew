@@ -5,7 +5,6 @@ import {
 import { AuthUserMobileService } from "../../src/services/authUserMobile.service";
 import { prisma } from "src/config/prisma";
 import { moveFile } from "../../src/middlewares/upload";
-import logger from "../../src/utils/logger";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -41,11 +40,6 @@ jest.mock("../../src/services/authUserMobile.service", () => ({
 jest.mock("../../src/middlewares/upload", () => ({
   buildS3Key: jest.fn(() => "parent/image-key"),
   moveFile: jest.fn(),
-}));
-
-jest.mock("../../src/utils/logger", () => ({
-  __esModule: true,
-  default: { warn: jest.fn() },
 }));
 
 jest.mock("@yosemite-crew/types", () => ({
@@ -171,6 +165,89 @@ describe("ParentService", () => {
     expect((result.response as any).mapped).toBe(true);
   });
 
+  it("rejects invalid parent timezone values", async () => {
+    await expect(
+      ParentService.create(
+        {
+          firstName: "Jane",
+          email: "jane@example.com",
+          timezone: "Mars/Phobos",
+        } as any,
+        { source: "pms" },
+      ),
+    ).rejects.toMatchObject({
+      message: "Timezone must be a valid IANA timezone or UTC offset.",
+      statusCode: 400,
+    } satisfies Partial<ParentServiceError>);
+  });
+
+  it("rejects duplicate linked users when creating parents", async () => {
+    (
+      AuthUserMobileService.getAuthUserMobileIdByProviderId as jest.Mock
+    ).mockResolvedValueOnce("auth-1");
+    mockedPrisma.authUserMobile.findFirst.mockResolvedValueOnce({
+      id: "auth-1",
+      parentId: null,
+    });
+    mockedPrisma.parent.findFirst.mockResolvedValueOnce({
+      id: "parent-existing",
+    });
+
+    await expect(
+      ParentService.create(
+        {
+          firstName: "Jane",
+          email: "jane@example.com",
+        } as any,
+        { source: "mobile", authUserId: "provider-1" },
+      ),
+    ).rejects.toMatchObject({
+      message: "Parent already exists for this user.",
+      statusCode: 409,
+    } satisfies Partial<ParentServiceError>);
+  });
+
+  it("logs profile image move failures but still creates the parent", async () => {
+    mockedPrisma.parent.findFirst.mockResolvedValueOnce(null);
+    mockedPrisma.parent.create.mockResolvedValueOnce({
+      ...mockParent,
+      isProfileComplete: false,
+      address: null,
+      profileImageUrl: null,
+      linkedUserId: null,
+    });
+    mockedPrisma.parent.findUnique.mockResolvedValueOnce({
+      ...mockParent,
+      isProfileComplete: false,
+      address: null,
+      profileImageUrl: null,
+      linkedUserId: null,
+    });
+    mockedPrisma.parent.findUnique.mockResolvedValueOnce({
+      ...mockParent,
+      isProfileComplete: false,
+      address: null,
+      profileImageUrl: null,
+      linkedUserId: null,
+    });
+    (moveFile as jest.Mock).mockRejectedValueOnce(new Error("bad key"));
+
+    const result = await ParentService.create(
+      {
+        firstName: "Jane",
+        email: "jane@example.com",
+        profileImageUrl: "https://cdn.example.com/original.jpg",
+      } as any,
+      { source: "pms" },
+    );
+
+    expect(moveFile).toHaveBeenCalledWith(
+      "https://cdn.example.com/original.jpg",
+      "parent/image-key",
+    );
+    expect(result.response.id).toBe("parent-1");
+  });
+
   it("throws when mobile create is missing auth user", async () => {
     await expect(
       ParentService.create(
@@ -243,6 +320,61 @@ describe("ParentService", () => {
     const result = await ParentService.findByLinkedUserId("provider-1");
 
     expect(result).toBeNull();
+  });
+
+  it("rejects invalid auth ids and empty search names", async () => {
+    await expect(ParentService.findByLinkedUserId("")).rejects.toMatchObject({
+      message: "Invalid AuthUser ID.",
+      statusCode: 400,
+    } satisfies Partial<ParentServiceError>);
+
+    await expect(ParentService.getByName("   ")).rejects.toMatchObject({
+      message: "Name is required for searching.",
+      statusCode: 400,
+    } satisfies Partial<ParentServiceError>);
+  });
+
+  it("returns null when a mobile-authenticated caller asks for a different parent", async () => {
+    mockedPrisma.authUserMobile.findFirst.mockResolvedValueOnce({
+      parentId: "other-parent",
+    });
+
+    const result = await ParentService.get("parent-1", {
+      source: "mobile",
+      authUserId: "provider-1",
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when a mobile-authenticated update targets another parent", async () => {
+    mockedPrisma.authUserMobile.findFirst.mockResolvedValueOnce({
+      parentId: "other-parent",
+    });
+
+    const result = await ParentService.update(
+      "parent-1",
+      {
+        firstName: "Jane",
+        email: "jane@example.com",
+      } as any,
+      {
+        source: "mobile",
+        authUserId: "provider-1",
+      },
+    );
+
+    expect(result).toBeNull();
+    expect(mockedPrisma.parent.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects mobile deletes without an authenticated user", async () => {
+    await expect(
+      ParentService.delete("parent-1", { source: "mobile" }),
+    ).rejects.toMatchObject({
+      message: "Authenticated user ID required.",
+      statusCode: 401,
+    } satisfies Partial<ParentServiceError>);
   });
 
   it("returns parents by name", async () => {
