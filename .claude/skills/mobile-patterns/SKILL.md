@@ -1,3 +1,8 @@
+---
+name: mobile-patterns
+description: Use when working in apps/mobileAppYC. Covers React Native architecture, navigation, Redux Toolkit state management, and mobile-specific conventions.
+---
+
 # Mobile App Patterns — Yosemite Crew
 
 ## Description

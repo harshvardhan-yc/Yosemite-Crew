@@ -1,3 +1,8 @@
+---
+name: code-review
+description: Use when reviewing code, auditing a PR, or doing an adversarial review of a change. Runs quality, security, accessibility, and convention checks specific to this codebase.
+---
+
 # Code Review — Yosemite Crew
 
 ## Description

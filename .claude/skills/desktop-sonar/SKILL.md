@@ -1,3 +1,8 @@
+---
+name: desktop-sonar
+description: Use when fixing SonarCloud issues in apps/desktop or writing Sonar-clean Electron and renderer code. Covers the enforced rule categories, the accepted role=dialog deferral, CSP and page-asset rules, and links the live SonarCloud project.
+---
+
 # Desktop SonarQube Rules — Yosemite Crew
 
 ## Description

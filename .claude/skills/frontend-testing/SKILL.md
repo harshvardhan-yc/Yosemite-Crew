@@ -1,3 +1,8 @@
+---
+name: frontend-testing
+description: Use when writing or fixing tests in apps/frontend. Covers Jest and React Testing Library conventions, targeted test runs, the coverage mandate, Zustand mocking, and common pitfalls.
+---
+
 # Frontend Testing — Yosemite Crew
 
 ## Description

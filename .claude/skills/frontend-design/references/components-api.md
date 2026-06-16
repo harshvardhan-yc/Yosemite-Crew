@@ -10,7 +10,7 @@ type ButtonSize = 'default' | 'large';
 
 <Button
   text="Label" // required
-  href="#" // required (polymorphic — use "#" for click-only)
+  href="/path" // optional — when set, renders a Next.js Link (<a>). OMIT for click/submit/reset actions so it stays a real <button>.
   variant="primary" // optional, default: primary
   size="default" // optional, default: default
   onClick={handler} // optional
@@ -37,7 +37,7 @@ type CardVariant = 'default' | 'bordered' | 'subtle';
 ```tsx
 import { Badge } from '@/app/ui';
 
-<Badge label="Active" color="green" />;
+<Badge tone="success">Active</Badge>; // tone: neutral | brand | success | warning | danger (default neutral); content via children
 ```
 
 ## Stack

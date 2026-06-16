@@ -1,3 +1,8 @@
+---
+name: frontend-sonar
+description: Use when fixing SonarQube issues in apps/frontend or writing Sonar-clean code. Contains the full enforced rule set with examples and quick fixes.
+---
+
 # Frontend SonarQube Rules — Yosemite Crew
 
 ## Description

@@ -1,3 +1,8 @@
+---
+name: frontend-design
+description: Use when building or changing UI in apps/frontend. Covers the custom design system, component library (Button, Card, Badge, and more), design tokens, and styling conventions so UI stays consistent and on-brand.
+---
+
 # Frontend Design System — Yosemite Crew
 
 ## Description
