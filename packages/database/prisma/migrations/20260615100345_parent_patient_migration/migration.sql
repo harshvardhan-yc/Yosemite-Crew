@@ -6,5 +6,24 @@
 
 */
 -- AlterTable
-ALTER TABLE "AdverseEventReport" DROP COLUMN "companion",
-ADD COLUMN     "patient" JSONB NOT NULL;
+ALTER TABLE "AdverseEventReport"
+ADD COLUMN IF NOT EXISTS "patient" JSONB;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'AdverseEventReport'
+      AND column_name = 'companion'
+  ) THEN
+    EXECUTE 'UPDATE "AdverseEventReport" SET "patient" = COALESCE("patient", "companion") WHERE "patient" IS NULL';
+  END IF;
+END $$;
+
+ALTER TABLE "AdverseEventReport"
+ALTER COLUMN "patient" SET NOT NULL;
+
+ALTER TABLE "AdverseEventReport"
+DROP COLUMN IF EXISTS "companion";
