@@ -4,10 +4,7 @@ import {
   ServiceService,
   ServiceServiceError,
 } from "../../src/services/service.service";
-import {
-  CatalogService,
-  CatalogServiceError,
-} from "../../src/services/catalog.service";
+import { CatalogService } from "../../src/services/catalog.service";
 import { AuthUserMobileService } from "../../src/services/authUserMobile.service";
 import { ParentModel } from "../../src/models/parent";
 import helpers from "../../src/utils/helper";
@@ -108,14 +105,14 @@ describe("ServiceController", () => {
       expect(res.json).toHaveBeenCalledWith({ message: "Custom Error" });
     });
 
-    it("handles CatalogServiceError properly", async () => {
+    it("handles ServiceServiceError properly", async () => {
       req = mockRequest({
         query: { serviceName: "Vet", lat: "40.7", lng: "-74.1" },
         headers: { "x-user-id": "header-user" },
       });
-      const customError = new CatalogServiceError("Custom Error", 409);
+      const customError = new ServiceServiceError("Custom Error", 409);
       (
-        CatalogService.listOrganisationsProvidingServiceNearby as jest.Mock
+        ServiceService.listOrganisationsProvidingServiceNearby as jest.Mock
       ).mockRejectedValueOnce(customError);
 
       await ServiceController.listOrganisationByServiceName(req, res);
@@ -298,14 +295,14 @@ describe("ServiceController", () => {
         query: { serviceName: "Vet", lat: "40.7", lng: "-74.1" },
       }); // Changed to non-zero fractions
       (
-        CatalogService.listOrganisationsProvidingServiceNearby as jest.Mock
+        ServiceService.listOrganisationsProvidingServiceNearby as jest.Mock
       ).mockResolvedValueOnce(["org1"]);
 
       await ServiceController.listOrganisationByServiceName(req, res);
 
       expect(
-        CatalogService.listOrganisationsProvidingServiceNearby,
-      ).toHaveBeenCalledWith("Vet", 40.7, -74.1);
+        ServiceService.listOrganisationsProvidingServiceNearby,
+      ).toHaveBeenCalledWith("Vet", 40.7, -74.1, undefined);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(["org1"]);
     });
@@ -368,15 +365,15 @@ describe("ServiceController", () => {
         lng: -74.1,
       }); // Changed to non-zero fractions
       (
-        CatalogService.listOrganisationsProvidingServiceNearby as jest.Mock
+        ServiceService.listOrganisationsProvidingServiceNearby as jest.Mock
       ).mockResolvedValueOnce(["org2"]);
 
       await ServiceController.listOrganisationByServiceName(req, res);
 
       expect(helpers.getGeoLocation).toHaveBeenCalledWith("NY 10001");
       expect(
-        CatalogService.listOrganisationsProvidingServiceNearby,
-      ).toHaveBeenCalledWith("Vet", 40.7, -74.1);
+        ServiceService.listOrganisationsProvidingServiceNearby,
+      ).toHaveBeenCalledWith("Vet", 40.7, -74.1, "NY 10001");
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(["org2"]);
     });
@@ -387,7 +384,7 @@ describe("ServiceController", () => {
         query: { serviceName: "Vet", lat: "40.5", lng: "-73.5" },
       });
       (
-        CatalogService.listOrganisationsProvidingServiceNearby as jest.Mock
+        ServiceService.listOrganisationsProvidingServiceNearby as jest.Mock
       ).mockRejectedValueOnce(new Error("Fail"));
 
       await ServiceController.listOrganisationByServiceName(req, res);

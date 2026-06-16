@@ -5,7 +5,6 @@ import {
 } from "../../src/services/catalog.service";
 import { AvailabilityService } from "../../src/services/availability.service";
 import { prisma } from "../../src/config/prisma";
-import helpers from "../../src/utils/helper";
 
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
@@ -75,13 +74,6 @@ jest.mock("../../src/services/availability.service", () => ({
   },
 }));
 
-jest.mock("../../src/utils/helper", () => ({
-  __esModule: true,
-  default: {
-    getGeoLocation: jest.fn(),
-  },
-}));
-
 describe("CatalogService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -99,10 +91,6 @@ describe("CatalogService", () => {
     (prisma.templateCatalogLink.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.organization.findMany as jest.Mock).mockResolvedValue([]);
-    (helpers.getGeoLocation as jest.Mock).mockResolvedValue({
-      lat: 0,
-      lng: 0,
-    });
     (
       AvailabilityService.getBookableSlotsForDate as jest.Mock
     ).mockResolvedValue({ windows: [] });
@@ -1651,22 +1639,68 @@ describe("CatalogService", () => {
       );
     });
 
-    it("lists nearby organisations for bookable catalog items", async () => {
-      (prisma.productItem.findMany as jest.Mock)
-        .mockResolvedValueOnce([{ organisationId: "org_1" }])
+    it("falls back to all organisations when no nearby organisations are found", async () => {
+      (prisma.organization.findMany as jest.Mock)
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
           {
-            id: "prod_1",
-            name: "Checkup",
-            specialityId: "spec_1",
-            organisationId: "org_1",
-            prices: [{ unitPrice: 50 }],
+            id: "org_1",
+            name: "Org",
+            imageUrl: null,
+            phoneNo: "12345",
+            type: "CLINIC",
+            appointmentCheckInBufferMinutes: null,
+            appointmentCheckInRadiusMeters: null,
+            address: {
+              addressLine: "1 Main St",
+              country: "US",
+              city: "Austin",
+              state: "TX",
+              postalCode: "73301",
+              latitude: 40,
+              longitude: -74,
+            },
           },
         ]);
-      (helpers.getGeoLocation as jest.Mock).mockResolvedValueOnce({
-        lat: 40,
-        lng: -74,
-      });
+      (prisma.speciality.findMany as jest.Mock).mockResolvedValueOnce([
+        { id: "spec_1", name: "General", organisationId: "org_1" },
+      ]);
+      (prisma.productItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: "prod_1",
+          name: "Checkup",
+          specialityId: "spec_1",
+          organisationId: "org_1",
+          prices: [{ unitPrice: 50 }],
+        },
+      ]);
+
+      const result =
+        await CatalogService.listOrganisationsProvidingServiceNearby(40, -74);
+
+      expect(prisma.organization.findMany).toHaveBeenCalledTimes(2);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          id: "org_1",
+          name: "Org",
+          specialities: [
+            expect.objectContaining({
+              id: "spec_1",
+              services: [
+                expect.objectContaining({
+                  id: "prod_1",
+                  name: "Checkup",
+                  cost: 50,
+                }),
+              ],
+            }),
+          ],
+        }),
+      );
+    });
+
+    it("lists nearby organisations with their active services", async () => {
       (prisma.organization.findMany as jest.Mock).mockResolvedValueOnce([
         {
           id: "org_1",
@@ -1690,16 +1724,19 @@ describe("CatalogService", () => {
       (prisma.speciality.findMany as jest.Mock).mockResolvedValueOnce([
         { id: "spec_1", name: "General", organisationId: "org_1" },
       ]);
+      (prisma.productItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: "prod_1",
+          name: "Checkup",
+          specialityId: "spec_1",
+          organisationId: "org_1",
+          prices: [{ unitPrice: 50 }],
+        },
+      ]);
 
       const result =
-        await CatalogService.listOrganisationsProvidingServiceNearby(
-          "Checkup",
-          0,
-          0,
-          "Austin",
-        );
+        await CatalogService.listOrganisationsProvidingServiceNearby(40, -74);
 
-      expect(helpers.getGeoLocation).toHaveBeenCalledWith("Austin");
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual(
         expect.objectContaining({

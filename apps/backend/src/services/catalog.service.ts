@@ -24,7 +24,6 @@ import { Prisma } from "@prisma/client";
 import { AvailabilitySlotMongo } from "src/models/base-availability";
 import { prisma } from "src/config/prisma";
 import { AvailabilityService } from "./availability.service";
-import helpers from "src/utils/helper";
 import {
   addCachedPromise,
   type CachedPromise,
@@ -2655,46 +2654,18 @@ export const CatalogService = {
   },
 
   async listOrganisationsProvidingServiceNearby(
-    serviceName: string,
     lat: number,
     lng: number,
-    query?: string,
     radius = 5000,
   ) {
-    const safeName = serviceName.trim();
-    if (!safeName) return [];
-
-    const matchedProducts = await prisma.productItem.findMany({
-      where: {
-        name: { contains: safeName, mode: "insensitive" },
-        isActive: true,
-        bookable: {
-          isNot: null,
-        },
-      },
-      select: { organisationId: true },
-    });
-
-    if (!matchedProducts.length) return [];
-
-    const orgIds = [...new Set(matchedProducts.map((s) => s.organisationId))];
-
-    if (!lat && !lng) {
-      const result = (await helpers.getGeoLocation(query!)) as {
-        lat: number;
-        lng: number;
-      };
-      lat = result.lat;
-      lng = result.lng;
-    }
-
     const metersPerDegreeLat = 111000;
     const latDelta = radius / metersPerDegreeLat;
     const lngDelta = radius / (metersPerDegreeLat * Math.cos(toRadians(lat)));
 
     const organisations = await prisma.organization.findMany({
       where: {
-        id: { in: orgIds },
+        isVerified: true,
+        isActive: true,
         address: {
           is: {
             latitude: { gte: lat - latDelta, lte: lat + latDelta },
@@ -2717,6 +2688,19 @@ export const CatalogService = {
       );
       return distance <= radius;
     });
+
+    const candidateOrgs =
+      nearbyOrgs.length > 0
+        ? nearbyOrgs
+        : await prisma.organization.findMany({
+            include: { address: true },
+          });
+
+    if (!candidateOrgs.length) {
+      return [];
+    }
+
+    const orgIds = candidateOrgs.map((org) => org.id);
 
     const allSpecialities = await prisma.speciality.findMany({
       where: { organisationId: { in: orgIds } },
@@ -2746,37 +2730,41 @@ export const CatalogService = {
       },
     });
 
-    return nearbyOrgs.map((org) => {
-      const orgSpecialities = allSpecialities.filter(
-        (s) => s.organisationId === org.id,
-      );
-
-      const orgServices = allProductsForOrgs
-        .filter((s) => s.organisationId === org.id)
-        .map((product) => ({
-          id: product.id,
-          name: product.name,
-          cost: product.prices[0]?.unitPrice ?? 0,
-          specialityId: product.specialityId,
-          organisationId: product.organisationId,
-        }));
-
-      const specialitiesWithServices = orgSpecialities.map((spec) => {
-        const specServices = orgServices.filter(
-          (srv) => srv.specialityId === spec.id,
+    return candidateOrgs
+      .map((org) => {
+        const orgSpecialities = allSpecialities.filter(
+          (s) => s.organisationId === org.id,
         );
 
-        return {
-          ...spec,
-          services: specServices,
-        };
-      });
+        const orgServices = allProductsForOrgs
+          .filter((s) => s.organisationId === org.id)
+          .map((product) => ({
+            id: product.id,
+            name: product.name,
+            cost: product.prices[0]?.unitPrice ?? 0,
+            specialityId: product.specialityId,
+            organisationId: product.organisationId,
+          }));
 
-      return {
-        ...mapOrganisationWithAddress(org),
-        specialities: specialitiesWithServices,
-      };
-    });
+        const specialitiesWithServices = orgSpecialities
+          .map((spec) => {
+            const specServices = orgServices.filter(
+              (srv) => srv.specialityId === spec.id,
+            );
+
+            return {
+              ...spec,
+              services: specServices,
+            };
+          })
+          .filter((spec) => spec.services.length > 0);
+
+        return {
+          ...mapOrganisationWithAddress(org),
+          specialities: specialitiesWithServices,
+        };
+      })
+      .filter((org) => org.specialities.length > 0);
   },
 
   async getOrganisationSummary(

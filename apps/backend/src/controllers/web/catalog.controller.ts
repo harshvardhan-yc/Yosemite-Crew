@@ -193,10 +193,8 @@ const itemSearchQuerySchema = z.object({
 });
 
 const catalogNearbySearchQuerySchema = z.object({
-  serviceName: z.string().trim().min(1),
-  lat: z.coerce.number().optional(),
-  lng: z.coerce.number().optional(),
-  query: z.string().trim().optional(),
+  lat: z.coerce.number(),
+  lng: z.coerce.number(),
   radius: z.coerce.number().positive().optional(),
 });
 
@@ -1152,10 +1150,8 @@ export const CatalogController = {
 
       const result =
         await CatalogService.listOrganisationsProvidingServiceNearby(
-          parsed.data.serviceName,
-          parsed.data.lat ?? 0,
-          parsed.data.lng ?? 0,
-          parsed.data.query,
+          parsed.data.lat,
+          parsed.data.lng,
           parsed.data.radius ?? 5000,
         );
 

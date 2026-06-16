@@ -224,7 +224,7 @@ describe("CatalogController", () => {
 
     const req = {
       params: { organisationId: "org_1" },
-      query: { serviceName: "Checkup", lat: "12.97", lng: "77.59" },
+      query: { lat: "12.97", lng: "77.59" },
     };
     const res = createResponse();
 
@@ -235,9 +235,31 @@ describe("CatalogController", () => {
 
     expect(
       CatalogService.listOrganisationsProvidingServiceNearby,
-    ).toHaveBeenCalledWith("Checkup", 12.97, 77.59, undefined, 5000);
+    ).toHaveBeenCalledWith(12.97, 77.59, 5000);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith([{ id: "org_1", name: "Clinic" }]);
+  });
+
+  it("rejects nearby organisation requests without coordinates", async () => {
+    const req = {
+      params: { organisationId: "org_1" },
+      query: {},
+    };
+    const res = createResponse();
+
+    await CatalogController.getCatalogNearbyOrganisations(
+      req as never,
+      res as never,
+    );
+
+    expect(
+      CatalogService.listOrganisationsProvidingServiceNearby,
+    ).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: "Invalid catalog nearby search query.",
+      errors: expect.any(Object),
+    });
   });
 
   it("returns catalog bookable slots", async () => {

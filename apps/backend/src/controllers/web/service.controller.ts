@@ -174,6 +174,7 @@ export const ServiceController = {
       const serviceName = req.query.serviceName as string;
       const latString = req.query.lat as string | undefined;
       const lngString = req.query.lng as string | undefined;
+      const query = req.query.query as string | undefined;
 
       if (!serviceName) {
         return res
@@ -240,10 +241,11 @@ export const ServiceController = {
       }
 
       const results =
-        await CatalogService.listOrganisationsProvidingServiceNearby(
+        await ServiceService.listOrganisationsProvidingServiceNearby(
           serviceName,
           lat,
           lng,
+          query,
         );
       return res.status(200).json(results);
     } catch (error: unknown) {
