@@ -27,7 +27,11 @@ export const PUBLIC_PATH_PREFIXES: readonly string[] = Object.freeze([
 
 export const isAuthenticatedPath = (pathname: string): boolean => {
   if (!pathname || pathname === '/') return false;
-  const p = pathname.toLowerCase().replace(/\/+$/, '') || '/';
+  // Strip trailing slashes without a regex; `/\/+$/` is flagged as ReDoS-prone.
+  const lower = pathname.toLowerCase();
+  let end = lower.length;
+  while (end > 0 && lower[end - 1] === '/') end--;
+  const p = lower.slice(0, end) || '/';
   if (p === '/') return false;
   return !PUBLIC_PATH_PREFIXES.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
 };

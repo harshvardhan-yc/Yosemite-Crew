@@ -411,10 +411,10 @@
         var status = document.getElementById('status');
         document.getElementById('signin').addEventListener('click', function () {
           status.textContent = 'Opening sign-in...';
-          if (window.ycDesktop) window.ycDesktop.startSignin();
+          if (globalThis.ycDesktop) globalThis.ycDesktop.startSignin();
         });
         document.getElementById('browser').addEventListener('click', function () {
-          if (window.ycDesktop) window.ycDesktop.openInBrowser();
+          if (globalThis.ycDesktop) globalThis.ycDesktop.openInBrowser();
         });
 
         var ctaBtn = document.getElementById('signin');

@@ -58,7 +58,7 @@ export const quoteIdent = (id: string): string => {
   if (typeof id !== 'string' || id.length === 0 || id.indexOf(NUL) !== -1) {
     throw new Error('Invalid SQL identifier');
   }
-  return `"${id.replace(/"/g, '""')}"`;
+  return `"${id.replaceAll('"', '""')}"`;
 };
 
 export const createOfflineStore = async (deps: StoreDeps = {}): Promise<OfflineStore> => {

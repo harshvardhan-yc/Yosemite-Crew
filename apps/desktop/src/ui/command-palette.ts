@@ -266,7 +266,7 @@ export const createRecentsStore = (dirPath: string, deps: StoreDeps = {}): Recen
 
   const load = (): RecentEntry[] => {
     try {
-      const raw = readFileSync(filePath, 'utf8') as string;
+      const raw = readFileSync(filePath, 'utf8');
       const entries: RecentEntry[] = JSON.parse(raw);
       if (!Array.isArray(entries)) return [];
       return entries.filter(

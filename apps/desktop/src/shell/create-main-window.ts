@@ -217,7 +217,7 @@ export const createMainWindow = async (
   mainWindow.on('page-title-updated', (event, title) => {
     event.preventDefault();
     const trimmed = (title || '').trim();
-    const prefixPattern = deps.brandPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const prefixPattern = deps.brandPrefix.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
     const hasBrand = new RegExp(prefixPattern, 'i').test(trimmed);
     if (hasBrand) {
       mainWindow?.setTitle(trimmed);
@@ -402,7 +402,8 @@ export const createMainWindow = async (
   });
 
   const ignoreAborted = (error: { message?: string } | string) => {
-    if (String((error as { message?: string })?.message || error).includes('ERR_ABORTED')) return;
+    const message = typeof error === 'string' ? error : (error?.message ?? String(error));
+    if (message.includes('ERR_ABORTED')) return;
     deps.logger.warn('local_page_failed', { error });
   };
 

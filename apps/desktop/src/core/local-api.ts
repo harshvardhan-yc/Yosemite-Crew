@@ -98,7 +98,7 @@ export const createLocalApiServer = (deps: LocalApiDeps): LocalApiServer => {
       }
 
       if (url === '/api/status' && method === 'GET') {
-        respond(res, 200, { ...(deps.getStatus?.() || {}), uptime: process.uptime() });
+        respond(res, 200, { ...deps.getStatus?.(), uptime: process.uptime() });
         return;
       }
 

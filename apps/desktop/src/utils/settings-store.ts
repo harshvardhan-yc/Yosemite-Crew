@@ -69,63 +69,67 @@ export const isThemeMode = (value: unknown): value is ThemeMode =>
 export const isTelehealthProviderSetting = (value: unknown): value is TelehealthProviderSetting =>
   value === 'getstream';
 
+const isBool = (value: unknown): value is boolean => typeof value === 'boolean';
+const isHourMinute = (value: unknown): value is string =>
+  typeof value === 'string' && /^\d{2}:\d{2}$/.test(value);
+
+type SettingsValidator = (value: unknown, settings: DesktopSettings) => void;
+
+// One validator per persisted key. Each ignores values that fail validation so
+// a corrupt or partial settings file falls back to the default for that field.
+const SETTINGS_VALIDATORS: Partial<Record<keyof DesktopSettings, SettingsValidator>> = {
+  updateChannel: (v, s) => {
+    if (isUpdateChannel(v)) s.updateChannel = v;
+  },
+  idleLockMinutes: (v, s) => {
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) {
+      s.idleLockMinutes = Math.min(1440, Math.round(v));
+    }
+  },
+  telemetryOptIn: (v, s) => {
+    if (isBool(v)) s.telemetryOptIn = v;
+  },
+  theme: (v, s) => {
+    if (isThemeMode(v)) s.theme = v;
+  },
+  openAtLogin: (v, s) => {
+    if (isBool(v)) s.openAtLogin = v;
+  },
+  notificationsEnabled: (v, s) => {
+    if (isBool(v)) s.notificationsEnabled = v;
+  },
+  dndStart: (v, s) => {
+    if (isHourMinute(v)) s.dndStart = v;
+  },
+  dndEnd: (v, s) => {
+    if (isHourMinute(v)) s.dndEnd = v;
+  },
+  biometricLockEnabled: (v, s) => {
+    if (isBool(v)) s.biometricLockEnabled = v;
+  },
+  accentColor: (v, s) => {
+    if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) s.accentColor = v;
+  },
+  fontScale: (v, s) => {
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0.5 && v <= 2) {
+      s.fontScale = Math.round(v * 4) / 4;
+    }
+  },
+  telehealthProvider: (v, s) => {
+    if (isTelehealthProviderSetting(v)) s.telehealthProvider = v;
+  },
+  lastSeenVersion: (v, s) => {
+    if (typeof v === 'string') s.lastSeenVersion = v;
+  },
+};
+
 export const normalizeSettings = (raw: unknown): DesktopSettings => {
   if (!isRecord(raw)) return { ...DEFAULT_SETTINGS };
 
   const settings: DesktopSettings = { ...DEFAULT_SETTINGS };
-
   for (const key of SETTINGS_KEYS) {
-    if (!(key in raw)) continue;
-    const value = raw[key];
-
-    switch (key) {
-      case 'updateChannel':
-        if (isUpdateChannel(value)) settings.updateChannel = value;
-        break;
-      case 'idleLockMinutes':
-        if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-          settings.idleLockMinutes = Math.min(1440, Math.round(value));
-        }
-        break;
-      case 'telemetryOptIn':
-        if (typeof value === 'boolean') settings.telemetryOptIn = value;
-        break;
-      case 'theme':
-        if (isThemeMode(value)) settings.theme = value;
-        break;
-      case 'openAtLogin':
-        if (typeof value === 'boolean') settings.openAtLogin = value;
-        break;
-      case 'notificationsEnabled':
-        if (typeof value === 'boolean') settings.notificationsEnabled = value;
-        break;
-      case 'dndStart':
-        if (typeof value === 'string' && /^\d{2}:\d{2}$/.test(value)) settings.dndStart = value;
-        break;
-      case 'dndEnd':
-        if (typeof value === 'string' && /^\d{2}:\d{2}$/.test(value)) settings.dndEnd = value;
-        break;
-      case 'biometricLockEnabled':
-        if (typeof value === 'boolean') settings.biometricLockEnabled = value;
-        break;
-      case 'accentColor':
-        if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))
-          settings.accentColor = value;
-        break;
-      case 'fontScale':
-        if (typeof value === 'number' && Number.isFinite(value) && value >= 0.5 && value <= 2) {
-          settings.fontScale = Math.round(value * 4) / 4;
-        }
-        break;
-      case 'telehealthProvider':
-        if (isTelehealthProviderSetting(value)) settings.telehealthProvider = value;
-        break;
-      case 'lastSeenVersion':
-        if (typeof value === 'string') settings.lastSeenVersion = value;
-        break;
-    }
+    if (key in raw) SETTINGS_VALIDATORS[key]?.(raw[key], settings);
   }
-
   return settings;
 };
 
@@ -160,8 +164,8 @@ export const createSettingsStore = (filePath: string, deps: StoreDeps = {}): Set
 
   const save = (partial: Partial<DesktopSettings>): DesktopSettings => {
     if (!cached) cached = load();
-    const merged = { ...cached, ...partial } as Partial<DesktopSettings>;
-    cached = normalizeSettings(merged as DesktopSettings);
+    const merged = { ...cached, ...partial };
+    cached = normalizeSettings(merged);
     try {
       mkdirSync(path.dirname(filePath), { recursive: true });
       writeFileSync(filePath, JSON.stringify(cached, null, 2), 'utf8');

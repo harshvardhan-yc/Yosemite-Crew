@@ -20,6 +20,9 @@ OPENCODE-TASKS.md
 docs/POLISH-BACKLOG.md
 docs/desktop-feature-plan.md
 
+# Local-only Sonar pipeline runner (carries an analysis token — never commit)
+sonar-local.sh
+
 # Local dev launchers (contain machine-specific absolute paths) and their logs
 *.command
 .setup.log

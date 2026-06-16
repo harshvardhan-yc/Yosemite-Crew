@@ -1,14 +1,8 @@
 'use strict';
 
-import {
-  app,
-  Menu,
-  Tray,
-  nativeImage,
-  type MenuItemConstructorOptions,
-  type BrowserWindow,
-} from 'electron';
-import type * as Electron from 'electron';
+import * as Electron from 'electron';
+
+const { app, Menu, Tray, nativeImage } = Electron;
 import { createTrayMenuTemplate, type TrayQuickAction } from '../ui/tray';
 import { createTelemetryClient, type TelemetryClient } from '../utils/telemetry';
 import { createTelemetryHttpSink } from '../utils/telemetry-sink';
@@ -16,15 +10,15 @@ import type { DesktopLogger } from '../utils/logger';
 
 export interface TrayDeps {
   productName: string;
-  mainWindow: BrowserWindow | null;
+  mainWindow: Electron.BrowserWindow | null;
   logger: DesktopLogger;
   iconPath: string;
   runCommandAction: (id: string) => Promise<void>;
   checkForUpdatesManually: (deps: { logger: DesktopLogger }) => Promise<unknown>;
 }
 
-export const setupTray = (deps: TrayDeps): Tray => {
-  let tray: Tray;
+export const setupTray = (deps: TrayDeps): Electron.Tray => {
+  let tray: Electron.Tray;
   try {
     const image = nativeImage.createFromPath(deps.iconPath).resize({ width: 18, height: 18 });
     tray = new Tray(image);
@@ -63,7 +57,9 @@ export const setupTray = (deps: TrayDeps): Tray => {
         quit: () => app.quit(),
         quickActions: buildQuickActions(),
       });
-      tray?.setContextMenu(Menu.buildFromTemplate(template as MenuItemConstructorOptions[]));
+      tray?.setContextMenu(
+        Menu.buildFromTemplate(template as Electron.MenuItemConstructorOptions[])
+      );
     };
     rebuild();
     deps.mainWindow?.on('show', rebuild);
@@ -252,7 +248,6 @@ export const setupVaultAndBackup = (deps: VaultDeps): VaultServices => {
 
 import { createOfflineStore, type OfflineStore } from '../sync/offline-store';
 import { createSyncEngine, type SyncEngine } from '../sync/sync-engine';
-import type { Net } from 'electron';
 
 export interface OfflineSyncServices {
   offlineStore: OfflineStore | null;
@@ -262,7 +257,7 @@ export interface OfflineSyncServices {
 
 export interface OfflineSyncDeps {
   logger: DesktopLogger;
-  net: Net;
+  net: Electron.Net;
   endpoint: string | undefined;
 }
 
@@ -351,7 +346,7 @@ export interface NativeSurfacesDeps {
     preload: string
   ) => Electron.BrowserWindowConstructorOptions['webPreferences'];
   logger: DesktopLogger;
-  mainWindow: BrowserWindow | null;
+  mainWindow: Electron.BrowserWindow | null;
   focusMainWindow: () => void;
   activeContents: () => Electron.WebContents | null;
   checkForUpdatesManually: (deps: { logger: DesktopLogger }) => Promise<unknown>;

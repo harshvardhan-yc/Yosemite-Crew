@@ -74,7 +74,7 @@ export const createControlledSubstanceLogbook = (
   const load = (): CsTransaction[] => {
     try {
       if (!existsSync(filePath)) return [];
-      const raw = readFileSync(filePath, 'utf8') as string;
+      const raw = readFileSync(filePath, 'utf8');
       const entries: CsTransaction[] = JSON.parse(raw);
       if (!Array.isArray(entries)) return [];
       return entries.filter((e) => typeof e.id === 'string' && typeof e.drugName === 'string');

@@ -13,13 +13,16 @@ import {
   type TelehealthLaunchIntent,
 } from '../utils/telehealth';
 import { BUILTIN_ACTIONS } from '../ui/command-palette';
-import { DEFAULT_SETTINGS, type DesktopSettings } from '../utils/settings-store';
+import {
+  DEFAULT_SETTINGS,
+  type DesktopSettings,
+  type SettingsStore,
+} from '../utils/settings-store';
 import type { AuditLog } from '../compliance/audit-log';
 import type { ControlledSubstanceLogbook } from '../compliance/controlled-substance';
 import type { DeaRegistrationTracker } from '../compliance/dea-registration';
 import type { IpcMain as IpcMainType } from 'electron';
 import type { DesktopLogger } from '../utils/logger';
-import type { SettingsStore } from '../utils/settings-store';
 import type { OfflineCache } from '../sync/offline-cache';
 import type { NotificationManager } from '../ui/notifications';
 import type { BiometricLock } from '../lifecycle/biometric-lock';
@@ -146,8 +149,8 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
   });
   registry.handle('yc:start-signin', async () => {
     services.logger.info('signin_started');
-    if (!services.tabMode) services.enterTabMode(services.config.startUrl.href);
-    else services.loadStartUrl();
+    if (services.tabMode) services.loadStartUrl();
+    else services.enterTabMode(services.config.startUrl.href);
     return { ok: true };
   });
 
@@ -238,7 +241,8 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
       title: e.headers?.['x-yc-title'] || '',
       cachedAt: e.cachedAt,
     }));
-    return { ok: true, urls: entries.sort((a, b) => b.cachedAt - a.cachedAt) };
+    entries.sort((a, b) => b.cachedAt - a.cachedAt);
+    return { ok: true, urls: entries };
   });
 
   registry.handle('yc:get-cached-content', async (_event, args) => {
@@ -870,10 +874,10 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
   registry.handle('yc:dismiss-whats-new', async () => {
     services.settingsStore?.save({ lastSeenVersion: app.getVersion() });
     if (services.mainWindow && !services.mainWindow.isDestroyed()) {
-      if (!services.tabMode) {
-        services.enterTabMode(services.config.startUrl.href);
-      } else {
+      if (services.tabMode) {
         services.loadStartUrl();
+      } else {
+        services.enterTabMode(services.config.startUrl.href);
       }
     }
     return { ok: true };

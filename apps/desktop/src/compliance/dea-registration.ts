@@ -50,25 +50,26 @@ export const createDeaRegistrationTracker = (deps: TrackerDeps = {}): DeaRegistr
   const existsSync = deps.existsSync || fs.existsSync;
   const registrations = new Map<string, DeaRegistration>();
 
-  let filePath: string | null = null;
-  if (deps.storageDir) {
-    filePath = path.join(deps.storageDir, REGISTRATION_FILENAME);
-    // Load existing data on construction
+  const loadExisting = (source: string): void => {
     try {
-      if (existsSync(filePath)) {
-        const raw = readFileSync(filePath, 'utf8') as string;
-        const entries: DeaRegistration[] = JSON.parse(raw);
-        if (Array.isArray(entries)) {
-          for (const reg of entries) {
-            if (reg.deaNumber && reg.registrantName && reg.expirationDate) {
-              registrations.set(reg.deaNumber, reg);
-            }
-          }
+      if (!existsSync(source)) return;
+      const raw = readFileSync(source, 'utf8') as string;
+      const entries: DeaRegistration[] = JSON.parse(raw);
+      if (!Array.isArray(entries)) return;
+      for (const reg of entries) {
+        if (reg.deaNumber && reg.registrantName && reg.expirationDate) {
+          registrations.set(reg.deaNumber, reg);
         }
       }
     } catch {
       // corrupt file starts fresh
     }
+  };
+
+  let filePath: string | null = null;
+  if (deps.storageDir) {
+    filePath = path.join(deps.storageDir, REGISTRATION_FILENAME);
+    loadExisting(filePath);
   }
 
   const save = (): void => {

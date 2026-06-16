@@ -32,9 +32,9 @@ interface ManagerDeps {
 const parseTime = (time: string): number | null => {
   const parts = time.split(':');
   if (parts.length !== 2) return null;
-  const h = parseInt(parts[0] || '', 10);
-  const m = parseInt(parts[1] || '', 10);
-  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+  const h = Number.parseInt(parts[0] || '', 10);
+  const m = Number.parseInt(parts[1] || '', 10);
+  if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
   return h * 60 + m;
 };
 

@@ -109,7 +109,7 @@ import { createMainWindow } from './shell/create-main-window';
 try {
   const managedEnv = managedConfigToEnv(readManagedConfig());
   for (const [k, v] of Object.entries(managedEnv)) {
-    if (process.env[k] === undefined) process.env[k] = v;
+    process.env[k] ??= v;
   }
 } catch {
   // managed config is optional; ignore read/parse failures
@@ -282,71 +282,95 @@ const activeContents = (): WebContents | null => {
   return mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
 };
 
-const layoutTabChrome = (): void => {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const b = mainWindow.getContentBounds();
-  const isVertical = tabOrientation === 'vertical';
-  if (tabChromeView) {
-    if (isVertical) {
-      tabChromeView.setBounds({ x: 0, y: 0, width: VERTICAL_TAB_WIDTH, height: b.height });
-    } else {
-      tabChromeView.setBounds({
-        x: 0,
-        y: 0,
-        width: b.width,
-        height: tabSearchOpen ? b.height : CHROME_STRIP_HEIGHT,
-      });
-    }
+type TabBounds = { width: number; height: number };
+
+const tabContentPaneWidth = (
+  pane: 'full' | 'left' | 'right',
+  full: number,
+  half: number
+): number => {
+  if (pane === 'full') return full;
+  if (pane === 'left') return half;
+  return full - half;
+};
+
+const setTabViewBounds = (
+  tvh: NonNullable<typeof tabViewHost>,
+  id: string,
+  pane: 'full' | 'left' | 'right',
+  b: TabBounds,
+  isVertical: boolean
+): void => {
+  if (isVertical) {
+    const cw = Math.max(0, b.width - VERTICAL_TAB_WIDTH);
+    const half = Math.floor(cw / 2);
+    tvh.setBounds(id, {
+      x: VERTICAL_TAB_WIDTH + (pane === 'right' ? half : 0),
+      y: 0,
+      width: tabContentPaneWidth(pane, cw, half),
+      height: b.height,
+    });
+    return;
   }
+  const ch = Math.max(0, b.height - CHROME_STRIP_HEIGHT);
+  const half = Math.floor(b.width / 2);
+  tvh.setBounds(id, {
+    x: pane === 'right' ? half : 0,
+    y: CHROME_STRIP_HEIGHT,
+    width: tabContentPaneWidth(pane, b.width, half),
+    height: ch,
+  });
+};
+
+const layoutChromeStrip = (b: TabBounds, isVertical: boolean): void => {
+  if (!tabChromeView) return;
+  if (isVertical) {
+    tabChromeView.setBounds({ x: 0, y: 0, width: VERTICAL_TAB_WIDTH, height: b.height });
+    return;
+  }
+  tabChromeView.setBounds({
+    x: 0,
+    y: 0,
+    width: b.width,
+    height: tabSearchOpen ? b.height : CHROME_STRIP_HEIGHT,
+  });
+};
+
+const layoutContentPanes = (b: TabBounds, isVertical: boolean): void => {
   const tvh = tabViewHost;
-  if (attachedTabId && tvh) {
-    const hasSplit = Boolean(splitId && tvh.get(splitId) && splitId !== attachedTabId);
-    const paneWidth = (pane: 'full' | 'left' | 'right', full: number, half: number): number => {
-      if (pane === 'full') return full;
-      if (pane === 'left') return half;
-      return full - half;
-    };
-    const setViewBounds = (id: string, pane: 'full' | 'left' | 'right'): void => {
-      if (isVertical) {
-        const cw = Math.max(0, b.width - VERTICAL_TAB_WIDTH);
-        const half = Math.floor(cw / 2);
-        tvh.setBounds(id, {
-          x: VERTICAL_TAB_WIDTH + (pane === 'right' ? half : 0),
-          y: 0,
-          width: paneWidth(pane, cw, half),
-          height: b.height,
-        });
-      } else {
-        const ch = Math.max(0, b.height - CHROME_STRIP_HEIGHT);
-        const half = Math.floor(b.width / 2);
-        tvh.setBounds(id, {
-          x: pane === 'right' ? half : 0,
-          y: CHROME_STRIP_HEIGHT,
-          width: paneWidth(pane, b.width, half),
-          height: ch,
-        });
-      }
-    };
-    // In split view the primary tab takes the LEFT half (not the full width) so
-    // the two views sit side by side instead of the split overlaying the primary.
-    setViewBounds(attachedTabId, hasSplit ? 'left' : 'full');
-    if (hasSplit) {
-      setViewBounds(splitId!, 'right');
-      const av = tvh.get(attachedTabId);
-      const sv = tvh.get(splitId!);
-      if (av) mainWindow.contentView.addChildView(av);
-      if (sv) mainWindow.contentView.addChildView(sv);
-    }
-  }
-  // Always keep the tab-bar chrome view topmost in z-order. Input is routed to
-  // the topmost sibling WebContentsView, so any content view added above (on
-  // attach, split, or detach) steals the clicks/hover meant for the tab bar
-  // controls. A bare addChildView on an already-attached view does not reliably
-  // re-order it, so remove then re-add to force the 40px chrome strip to the top.
+  if (!attachedTabId || !tvh || !mainWindow) return;
+  const hasSplit = Boolean(splitId && tvh.get(splitId) && splitId !== attachedTabId);
+  // In split view the primary tab takes the LEFT half (not the full width) so
+  // the two views sit side by side instead of the split overlaying the primary.
+  setTabViewBounds(tvh, attachedTabId, hasSplit ? 'left' : 'full', b, isVertical);
+  if (!hasSplit) return;
+  setTabViewBounds(tvh, splitId!, 'right', b, isVertical);
+  const av = tvh.get(attachedTabId);
+  const sv = tvh.get(splitId!);
+  if (av) mainWindow.contentView.addChildView(av);
+  if (sv) mainWindow.contentView.addChildView(sv);
+};
+
+// Always keep the tab-bar chrome view topmost in z-order. Input is routed to
+// the topmost sibling WebContentsView, so any content view added above (on
+// attach, split, or detach) steals the clicks/hover meant for the tab bar
+// controls. A bare addChildView on an already-attached view does not reliably
+// re-order it, so remove then re-add to force the 40px chrome strip to the top.
+const raiseTabChrome = (): void => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   if (tabChromeView && !tabChromeView.webContents.isDestroyed()) {
     mainWindow.contentView.removeChildView(tabChromeView);
     mainWindow.contentView.addChildView(tabChromeView);
   }
+};
+
+const layoutTabChrome = (): void => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const b = mainWindow.getContentBounds();
+  const isVertical = tabOrientation === 'vertical';
+  layoutChromeStrip(b, isVertical);
+  layoutContentPanes(b, isVertical);
+  raiseTabChrome();
 };
 
 // Switch the window into multi-tab mode: mount the tab-bar chrome view and the
@@ -395,25 +419,23 @@ const enterTabMode = (initialUrl: string): void => {
 };
 
 // Make `id` the active tab: swap the content view and re-layout.
-const switchToTab = (id: string): void => {
+const detachContentView = (id: string): void => {
   if (!tabViewHost || !mainWindow || mainWindow.isDestroyed()) return;
-  // If switching to the split tab, swap them so the split becomes primary
-  if (splitId && splitId !== id) {
-    // Remove old primary, keep split view if still valid
-    if (attachedTabId && attachedTabId !== id) {
-      if (!splitId || attachedTabId !== splitId) {
-        const old = tabViewHost.get(attachedTabId);
-        if (old) mainWindow.contentView.removeChildView(old);
-      }
-    }
-  } else {
-    if (attachedTabId && attachedTabId !== id) {
-      const old = tabViewHost.get(attachedTabId);
-      if (old) mainWindow.contentView.removeChildView(old);
-    }
+  const old = tabViewHost.get(id);
+  if (old) mainWindow.contentView.removeChildView(old);
+};
+
+const switchToTab = (id: string): void => {
+  const win = mainWindow;
+  if (!tabViewHost || !win || win.isDestroyed()) return;
+  // Detach the outgoing primary view, but keep an active split view mounted
+  // when switching to a different (non-split) tab so it stays side by side.
+  const keepSplit = Boolean(splitId && splitId !== id);
+  if (attachedTabId && attachedTabId !== id && !(keepSplit && attachedTabId === splitId)) {
+    detachContentView(attachedTabId);
   }
   const view = tabViewHost.get(id);
-  if (view) mainWindow.contentView.addChildView(view);
+  if (view) win.contentView.addChildView(view);
   attachedTabId = id;
   tabManager?.activate(id);
   layoutTabChrome();
@@ -954,6 +976,49 @@ const navigateToDeepLink = (ycUrl: string): void => {
 // Single source of truth for executing a command-palette action by id. Used by
 // the palette (IPC), the tray quick actions, and any other trigger so they all
 // use the correct routes and the in-page action injection.
+const runTabCommand = (id: string): void => {
+  switch (id) {
+    case 'tab:new':
+      newTab();
+      break;
+    case 'tab:close':
+      closeActiveTab();
+      break;
+    case 'tab:reopen':
+      reopenClosedTab();
+      break;
+    case 'tab:search':
+      openTabSearch();
+      break;
+    case 'tab:toggle-vertical':
+      setTabOrientation(tabOrientation === 'vertical' ? 'horizontal' : 'vertical');
+      break;
+    case 'tab:toggle-split':
+      setSplitTab(splitId ? null : attachedTabId || null);
+      break;
+  }
+};
+
+const runUrlCommand = async (
+  action: (typeof BUILTIN_ACTIONS)[number],
+  wc: WebContents
+): Promise<void> => {
+  if (!action.url) return;
+  const href = deepLinkToUrl(action.url, config);
+  if (!href) {
+    logger.warn('command_action_route_unresolved', { id: action.id, url: action.url });
+    return;
+  }
+  await wc.loadURL(href);
+  focusMainWindow();
+  const trigger = PAGE_ACTION_TRIGGERS[action.id];
+  if (trigger) {
+    void wc
+      .executeJavaScript(buildPageActionScript(trigger), true)
+      .catch((error) => logger.warn('page_action_inject_failed', { id: action.id, error }));
+  }
+};
+
 const runCommandAction = async (id: string): Promise<void> => {
   const action = BUILTIN_ACTIONS.find((a) => a.id === id);
   if (!action) {
@@ -967,45 +1032,13 @@ const runCommandAction = async (id: string): Promise<void> => {
     createSettingsWindow();
     return;
   }
-  // Tab actions
   if (id.startsWith('tab:')) {
-    switch (id) {
-      case 'tab:new':
-        newTab();
-        break;
-      case 'tab:close':
-        closeActiveTab();
-        break;
-      case 'tab:reopen':
-        reopenClosedTab();
-        break;
-      case 'tab:search':
-        openTabSearch();
-        break;
-      case 'tab:toggle-vertical':
-        setTabOrientation(tabOrientation === 'vertical' ? 'horizontal' : 'vertical');
-        break;
-      case 'tab:toggle-split':
-        setSplitTab(splitId ? null : attachedTabId || null);
-        break;
-    }
+    runTabCommand(id);
     return;
   }
   const wc = activeContents();
   if (action.url && wc) {
-    const href = deepLinkToUrl(action.url, config);
-    if (!href) {
-      logger.warn('command_action_route_unresolved', { id, url: action.url });
-      return;
-    }
-    await wc.loadURL(href);
-    focusMainWindow();
-    const trigger = PAGE_ACTION_TRIGGERS[action.id];
-    if (trigger) {
-      void wc
-        .executeJavaScript(buildPageActionScript(trigger), true)
-        .catch((error) => logger.warn('page_action_inject_failed', { id: action.id, error }));
-    }
+    await runUrlCommand(action, wc);
   }
 };
 
@@ -1134,11 +1167,139 @@ const rollbackFsDeps = {
   pathDirname: (p: string): string => path.dirname(p),
 };
 
+const offlineCacheCrypto = (): {
+  encryptString?: (plain: string) => Buffer;
+  decryptString?: (encrypted: Buffer) => string;
+} => ({
+  encryptString: safeStorage.isEncryptionAvailable()
+    ? (plain: string) => safeStorage.encryptString(plain)
+    : undefined,
+  decryptString: safeStorage.isEncryptionAvailable()
+    ? (encrypted: Buffer) => safeStorage.decryptString(encrypted)
+    : undefined,
+});
+
+const notificationRuntimeConfig = (): {
+  enabled: boolean;
+  start: string;
+  end: string;
+  notificationsEnabled: boolean;
+} => {
+  const s = settingsStore?.load() || DEFAULT_SETTINGS;
+  return {
+    enabled: true,
+    start: s.dndStart,
+    end: s.dndEnd,
+    notificationsEnabled: s.notificationsEnabled,
+  };
+};
+
+const showDesktopNotification = (
+  title: string,
+  body: string,
+  opts?: { silent?: boolean }
+): boolean => {
+  try {
+    const n = new Notification({ title, body, silent: opts?.silent ?? false });
+    n.on('click', () => {
+      focusMainWindow();
+    });
+    n.show();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const canPromptTouchID = (): boolean => {
+  try {
+    return systemPreferences.canPromptTouchID();
+  } catch {
+    return false;
+  }
+};
+
+const promptTouchID = async (reason: string): Promise<boolean> => {
+  try {
+    await systemPreferences.promptTouchID(reason);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const moveMainWindowBy = (dx: number, dy: number): void => {
+  const win = mainWindow;
+  if (!win || win.isDestroyed() || win.isMaximized() || win.isFullScreen()) return;
+  const [x = 0, y = 0] = win.getPosition();
+  win.setPosition(Math.round(x + dx), Math.round(y + dy));
+};
+
+// Auto-rollback: read the tracker left by the previous session. A non-zero
+// crash count means the previous session didn't cleanly exit (crashed /
+// force-killed). If the threshold is met within the time window, trigger a
+// rollback to the previous known-good version channel.
+const applyRollbackDecision = (): void => {
+  const trackerPath = path.join(app.getPath('userData'), ROLLBACK_FILENAME);
+  const appVersion = app.getVersion();
+  rollbackTracker = readTracker(trackerPath, rollbackFsDeps);
+  const decision = evaluateRollback(rollbackTracker, appVersion);
+  if (decision.shouldRollback) {
+    logger.warn('rollback_triggered', { reason: decision.reason, tracker: rollbackTracker });
+  } else if (rollbackTracker.crashCount > 0) {
+    logger.warn('previous_session_crashed', { crashCount: rollbackTracker.crashCount });
+    // Carry forward the crash count so the current session can also
+    // contribute if it crashes too.
+    rollbackTracker = recordCrash(trackerPath, appVersion, rollbackFsDeps);
+  } else {
+    rollbackTracker = resetTracker(trackerPath, appVersion, rollbackFsDeps);
+  }
+};
+
+// Off by default. Opt in with YC_DESKTOP_LOCAL_API=1. When enabled the
+// server binds loopback only, validates the Host header, and requires a
+// bearer token written to userData/local-api-token (mode 0600).
+const maybeStartLocalApi = (): void => {
+  if (process.env.YC_DESKTOP_LOCAL_API !== '1') return;
+  localApi = createLocalApiServer({
+    port: 18799,
+    logger,
+    getSettings: () => (settingsStore?.load() || {}) as Record<string, unknown>,
+    handleNavigate: (url: string) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      const href = deepLinkToUrl(url, config);
+      if (href)
+        mainWindow.loadURL(href).catch((err) => {
+          logger.warn('navigate_deep_link_failed', { error: String(err) });
+        });
+    },
+  });
+  const startedApi = localApi;
+  startedApi
+    .start()
+    .then(() => {
+      try {
+        fs.writeFileSync(
+          path.join(app.getPath('userData'), 'local-api-token'),
+          startedApi.getToken(),
+          { mode: 0o600 }
+        );
+      } catch (error) {
+        logger.warn('local_api_token_write_failed', { error });
+      }
+    })
+    .catch((err) => {
+      logger.warn('local_api_start_failed', { error: String(err) });
+    });
+};
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!gotSingleInstanceLock) {
   app.quit();
-} else {
+}
+
+if (gotSingleInstanceLock) {
   app.setAppUserModelId('com.yosemitecrew.pims');
   app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
 
@@ -1193,55 +1354,11 @@ if (!gotSingleInstanceLock) {
       );
       settingsStore = createSettingsStore(path.join(app.getPath('userData'), 'settings.json'));
       recentsStore = createRecentsStore(app.getPath('userData'));
-      offlineCache = createOfflineCache(app.getPath('userData'), {
-        encryptString: safeStorage.isEncryptionAvailable()
-          ? (plain: string) => safeStorage.encryptString(plain)
-          : undefined,
-        decryptString: safeStorage.isEncryptionAvailable()
-          ? (encrypted: Buffer) => safeStorage.decryptString(encrypted)
-          : undefined,
+      offlineCache = createOfflineCache(app.getPath('userData'), offlineCacheCrypto());
+      notificationManager = createNotificationManager(notificationRuntimeConfig, {
+        isSupported: () => Notification.isSupported(),
+        showNotification: showDesktopNotification,
       });
-      notificationManager = createNotificationManager(
-        () => {
-          const s = settingsStore?.load() || DEFAULT_SETTINGS;
-          return {
-            enabled: true,
-            start: s.dndStart,
-            end: s.dndEnd,
-            notificationsEnabled: s.notificationsEnabled,
-          };
-        },
-        {
-          isSupported: () => Notification.isSupported(),
-          showNotification: (title: string, body: string, opts?: { silent?: boolean }) => {
-            try {
-              const n = new Notification({ title, body, silent: opts?.silent ?? false });
-              n.on('click', () => {
-                focusMainWindow();
-              });
-              n.show();
-              return true;
-            } catch {
-              return false;
-            }
-          },
-        }
-      );
-      const canPromptTouchID = (): boolean => {
-        try {
-          return systemPreferences.canPromptTouchID();
-        } catch {
-          return false;
-        }
-      };
-      const promptTouchID = async (reason: string): Promise<boolean> => {
-        try {
-          await systemPreferences.promptTouchID(reason);
-          return true;
-        } catch {
-          return false;
-        }
-      };
       biometricLock = createBiometricLock({ canPromptTouchID, promptTouchID });
       const initialSettings = settingsStore.load();
       applySettings(initialSettings);
@@ -1370,33 +1487,9 @@ if (!gotSingleInstanceLock) {
         },
         updateUnreadBadge,
         startTelehealth,
-        moveWindowBy: (dx, dy) => {
-          const win = mainWindow;
-          if (!win || win.isDestroyed() || win.isMaximized() || win.isFullScreen()) return;
-          const [x = 0, y = 0] = win.getPosition();
-          win.setPosition(Math.round(x + dx), Math.round(y + dy));
-        },
+        moveWindowBy: moveMainWindowBy,
       });
-      // Auto-rollback: read the tracker left by the previous session. A non-zero
-      // crash count means the previous session didn't cleanly exit (crashed /
-      // force-killed). If the threshold is met within the time window, trigger a
-      // rollback to the previous known-good version channel.
-      {
-        const trackerPath = path.join(app.getPath('userData'), ROLLBACK_FILENAME);
-        const appVersion = app.getVersion();
-        rollbackTracker = readTracker(trackerPath, rollbackFsDeps);
-        const decision = evaluateRollback(rollbackTracker, appVersion);
-        if (decision.shouldRollback) {
-          logger.warn('rollback_triggered', { reason: decision.reason, tracker: rollbackTracker });
-        } else if (rollbackTracker.crashCount > 0) {
-          logger.warn('previous_session_crashed', { crashCount: rollbackTracker.crashCount });
-          // Carry forward the crash count so the current session can also
-          // contribute if it crashes too.
-          rollbackTracker = recordCrash(trackerPath, appVersion, rollbackFsDeps);
-        } else {
-          rollbackTracker = resetTracker(trackerPath, appVersion, rollbackFsDeps);
-        }
-      }
+      applyRollbackDecision();
       let pendingTabModeUrl: string | undefined;
       ({
         mainWindow,
@@ -1559,44 +1652,7 @@ if (!gotSingleInstanceLock) {
         });
         syncDaemon.start();
       }
-      // Off by default. Opt in with YC_DESKTOP_LOCAL_API=1. When enabled the
-      // server binds loopback only, validates the Host header, and requires a
-      // bearer token written to userData/local-api-token (mode 0600).
-      if (process.env.YC_DESKTOP_LOCAL_API === '1') {
-        localApi = createLocalApiServer({
-          port: 18799,
-          logger,
-          getSettings: () => (settingsStore?.load() || {}) as Record<string, unknown>,
-          handleNavigate: (url: string) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              const href = deepLinkToUrl(url, config);
-              if (href)
-                mainWindow.loadURL(href).catch((err) => {
-                  logger.warn('navigate_deep_link_failed', { error: String(err) });
-                });
-            }
-          },
-        });
-        const startedApi = localApi;
-        startedApi
-          .start()
-          .then(() => {
-            try {
-              fs.writeFileSync(
-                path.join(app.getPath('userData'), 'local-api-token'),
-                startedApi.getToken(),
-                {
-                  mode: 0o600,
-                }
-              );
-            } catch (error) {
-              logger.warn('local_api_token_write_failed', { error });
-            }
-          })
-          .catch((err) => {
-            logger.warn('local_api_start_failed', { error: String(err) });
-          });
-      }
+      maybeStartLocalApi();
       keyboardShortcutManager = createKeyboardShortcutManager({
         globalShortcut,
         focusedWebContents: () => mainWindow?.webContents ?? null,

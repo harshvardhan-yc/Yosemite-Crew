@@ -12,6 +12,8 @@ const pagesDir = path.join(buildDir, 'pages');
 fs.mkdirSync(pagesDir, { recursive: true });
 const pageAssets = [
   'loading.html',
+  'loading.css',
+  'loading.js',
   'offline.html',
   'welcome.html',
   'settings.html',

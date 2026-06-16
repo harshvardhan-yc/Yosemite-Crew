@@ -1,8 +1,13 @@
 'use strict';
 
-import { WebContentsView, type Rectangle, type WebContents } from 'electron';
+import {
+  WebContentsView,
+  type Rectangle,
+  type WebContents,
+  type BrowserWindowConstructorOptions,
+  type WindowOpenHandlerResponse,
+} from 'electron';
 import type { DesktopLogger } from '../utils/logger';
-import type { BrowserWindowConstructorOptions, WindowOpenHandlerResponse } from 'electron';
 
 interface TabMetaUpdate {
   url?: string;

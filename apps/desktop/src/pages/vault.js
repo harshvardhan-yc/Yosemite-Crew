@@ -1,44 +1,44 @@
 'use strict';
 (function () {
-  var yc = window.ycDesktop;
+  const yc = window.ycDesktop;
   if (!yc) return;
 
-  var docs = [];
-  var filtered = [];
-  var selectedId = null;
-  var loadTimer = null;
+  let docs = [];
+  let filtered = [];
+  let selectedId = null;
+  let loadTimer = null;
 
-  var el = function (id) {
+  const el = function (id) {
     return document.getElementById(id);
   };
-  var encBadge = el('encBadge');
-  var docCountEl = el('docCount');
-  var sizeInfoEl = el('sizeInfo');
-  var searchInput = el('searchInput');
-  var searchCount = el('searchCount');
-  var docList = el('docList');
-  var loadingMsg = el('loadingMsg');
-  var emptyMsg = el('emptyMsg');
-  var dropZone = el('dropZone');
-  var previewPanel = el('previewPanel');
-  var previewTitle = el('previewTitle');
-  var previewBody = el('previewBody');
-  var previewImg = el('previewImg');
-  var previewText = el('previewText');
-  var previewMeta = el('previewMeta');
-  var previewExport = el('previewExport');
-  var previewReveal = el('previewReveal');
-  var previewDel = el('previewDel');
-  var previewClose = el('previewClose');
+  const encBadge = el('encBadge');
+  const docCountEl = el('docCount');
+  const sizeInfoEl = el('sizeInfo');
+  const searchInput = el('searchInput');
+  const searchCount = el('searchCount');
+  const docList = el('docList');
+  const loadingMsg = el('loadingMsg');
+  const emptyMsg = el('emptyMsg');
+  const dropZone = el('dropZone');
+  const previewPanel = el('previewPanel');
+  const previewTitle = el('previewTitle');
+  const previewBody = el('previewBody');
+  const previewImg = el('previewImg');
+  const previewText = el('previewText');
+  const previewMeta = el('previewMeta');
+  const previewExport = el('previewExport');
+  const previewReveal = el('previewReveal');
+  const previewDel = el('previewDel');
+  const previewClose = el('previewClose');
 
-  var formatBytes = function (b) {
+  const formatBytes = function (b) {
     if (b < 1024) return b + ' B';
     if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
     return (b / 1048576).toFixed(1) + ' MB';
   };
 
-  var formatDate = function (ts) {
-    var d = new Date(ts);
+  const formatDate = function (ts) {
+    const d = new Date(ts);
     return d.toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
@@ -48,7 +48,7 @@
     });
   };
 
-  var fileIcon = function (mime) {
+  const fileIcon = function (mime) {
     if (/^image\//.test(mime)) return '\u{1F5BC}';
     if (/^text\/|^application\/(json|xml|javascript)/.test(mime)) return '\u{1F4DD}';
     if (/pdf/.test(mime)) return '\u{1F4D1}';
@@ -56,14 +56,14 @@
     return '\u{1F4C4}';
   };
 
-  var isImage = function (mime) {
+  const isImage = function (mime) {
     return /^image\//.test(mime);
   };
 
-  var loadStats = function () {
+  const loadStats = function () {
     yc.vaultStats().then(function (res) {
       if (!res || !res.ok || !res.stats) return;
-      var stats = res.stats;
+      const stats = res.stats;
       docCountEl.textContent = stats.count + ' document' + (stats.count !== 1 ? 's' : '');
       sizeInfoEl.textContent = formatBytes(stats.totalSizeBytes || 0);
     });
@@ -76,15 +76,15 @@
 
   // We don't have vault-get-info, so check encryption from context:
   // On macOS safeStorage is almost always available. Show status inline.
-  var badgeEncryption = function () {
+  const badgeEncryption = function () {
     // Can't detect encryption from renderer; just show status
     encBadge.textContent = 'OS keychain';
     encBadge.className = 'badge secure';
   };
 
-  var filterDocs = function () {
-    var q = searchInput.value.toLowerCase().trim();
-    var list = docs;
+  const filterDocs = function () {
+    const q = searchInput.value.toLowerCase().trim();
+    let list = docs;
     if (q) {
       list = docs.filter(function (d) {
         return d.filename.toLowerCase().includes(q);
@@ -96,24 +96,24 @@
     renderList(filtered);
   };
 
-  var renderList = function (list) {
-    var frag = document.createDocumentFragment();
+  const renderList = function (list) {
+    const frag = document.createDocumentFragment();
     for (const d of list) {
-      var div = document.createElement('div');
+      const div = document.createElement('div');
       div.className = 'doc' + (d.id === selectedId ? ' selected' : '');
       div.dataset.id = d.id;
 
-      var thumb = document.createElement('div');
+      const thumb = document.createElement('div');
       thumb.className = 'thumb';
       thumb.textContent = fileIcon(d.mimeType);
       if (isImage(d.mimeType)) {
         // Load thumbnail on demand
         yc.vaultGet(d.id).then(function (res) {
           if (!res || !res.ok || !res.content) return;
-          var buf = res.content;
-          var blob = new Blob([new Uint8Array(buf.data || buf)], { type: d.mimeType });
-          var url = URL.createObjectURL(blob);
-          var img = document.createElement('img');
+          const buf = res.content;
+          const blob = new Blob([new Uint8Array(buf.data || buf)], { type: d.mimeType });
+          const url = URL.createObjectURL(blob);
+          const img = document.createElement('img');
           img.src = url;
           img.onload = function () {
             URL.revokeObjectURL(url);
@@ -123,20 +123,20 @@
         });
       }
 
-      var body = document.createElement('div');
+      const body = document.createElement('div');
       body.className = 'doc-body';
-      var name = document.createElement('div');
+      const name = document.createElement('div');
       name.className = 'doc-name';
       name.textContent = d.filename;
-      var meta = document.createElement('div');
+      const meta = document.createElement('div');
       meta.className = 'doc-meta';
       meta.textContent = formatBytes(d.sizeBytes) + ' \u00B7 ' + formatDate(d.createdAt);
       body.appendChild(name);
       body.appendChild(meta);
 
-      var actions = document.createElement('div');
+      const actions = document.createElement('div');
       actions.className = 'doc-actions';
-      var viewBtn = document.createElement('button');
+      const viewBtn = document.createElement('button');
       viewBtn.className = 'view';
       viewBtn.textContent = 'View';
       viewBtn.addEventListener('click', function (e) {
@@ -145,7 +145,7 @@
       });
       actions.appendChild(viewBtn);
 
-      var expBtn = document.createElement('button');
+      const expBtn = document.createElement('button');
       expBtn.textContent = 'Export';
       expBtn.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -153,7 +153,7 @@
       });
       actions.appendChild(expBtn);
 
-      var delBtn = document.createElement('button');
+      const delBtn = document.createElement('button');
       delBtn.className = 'del';
       delBtn.textContent = 'Delete';
       delBtn.addEventListener('click', function (e) {
@@ -177,12 +177,12 @@
   };
 
   // Throttled load
-  var scheduleLoad = function () {
+  const scheduleLoad = function () {
     clearTimeout(loadTimer);
     loadTimer = setTimeout(loadDocs, 50);
   };
 
-  var loadDocs = function () {
+  const loadDocs = function () {
     loadingMsg.style.display = 'block';
     yc.vaultList().then(function (res) {
       if (!res || !res.ok) {
@@ -198,7 +198,7 @@
     });
   };
 
-  var openPreview = function (id) {
+  const openPreview = function (id) {
     selectedId = id;
     previewPanel.classList.add('open');
     previewBody.scrollTop = 0;
@@ -207,7 +207,7 @@
     previewText.style.display = 'none';
     previewMeta.innerHTML = '';
 
-    var doc = docs.find(function (d) {
+    const doc = docs.find(function (d) {
       return d.id === id;
     });
     if (!doc) return;
@@ -215,11 +215,11 @@
 
     // Build the metadata list with text nodes so persisted fields such as
     // doc.mimeType cannot inject markup into this file:// page.
-    var dl = document.createElement('dl');
-    var addMetaRow = function (label, value) {
-      var dt = document.createElement('dt');
+    const dl = document.createElement('dl');
+    const addMetaRow = function (label, value) {
+      const dt = document.createElement('dt');
       dt.textContent = label;
-      var dd = document.createElement('dd');
+      const dd = document.createElement('dd');
       dd.textContent = value;
       dl.appendChild(dt);
       dl.appendChild(dd);
@@ -234,9 +234,9 @@
     if (isImage(doc.mimeType)) {
       yc.vaultGet(id).then(function (res) {
         if (!res || !res.ok || !res.content) return;
-        var buf = res.content;
-        var blob = new Blob([new Uint8Array(buf.data || buf)], { type: doc.mimeType });
-        var url = URL.createObjectURL(blob);
+        const buf = res.content;
+        const blob = new Blob([new Uint8Array(buf.data || buf)], { type: doc.mimeType });
+        const url = URL.createObjectURL(blob);
         previewImg.src = url;
         previewImg.style.display = 'block';
         previewImg.onload = function () {
@@ -246,9 +246,9 @@
     } else {
       yc.vaultGet(id).then(function (res) {
         if (!res || !res.ok || !res.content) return;
-        var buf = res.content;
-        var decoder = new TextDecoder('utf-8');
-        var text;
+        const buf = res.content;
+        const decoder = new TextDecoder('utf-8');
+        let text;
         try {
           text = decoder.decode(new Uint8Array(buf.data || buf));
         } catch (e) {
@@ -270,13 +270,13 @@
     };
   };
 
-  var closePreview = function () {
+  const closePreview = function () {
     previewPanel.classList.remove('open');
     selectedId = null;
     previewImg.src = '';
   };
 
-  var exportDoc = function (id) {
+  const exportDoc = function (id) {
     yc.vaultExport(id).then(function (res) {
       if (!res || !res.ok) return;
       if (res.path) {
@@ -286,12 +286,12 @@
     });
   };
 
-  var revealDoc = function (id) {
+  const revealDoc = function (id) {
     yc.vaultRevealDoc(id).catch(function () {});
   };
 
-  var deleteDoc = function (id) {
-    var doc = docs.find(function (d) {
+  const deleteDoc = function (id) {
+    const doc = docs.find(function (d) {
       return d.id === id;
     });
     if (!doc) return;
@@ -304,21 +304,21 @@
   };
 
   // ── Drag & drop ──
-  var handleDrop = function (e) {
+  const handleDrop = function (e) {
     e.preventDefault();
     e.stopPropagation();
     dropZone.classList.remove('dragover');
-    var files = e.dataTransfer.files;
+    const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
     for (const f of files) {
-      var reader = new FileReader();
+      const reader = new FileReader();
       reader.onload = function (evt) {
-        var result = evt.target.result;
-        var commaIdx = result.indexOf(',');
-        var base64 = commaIdx >= 0 ? result.substring(commaIdx + 1) : result;
+        const result = evt.target.result;
+        const commaIdx = result.indexOf(',');
+        const base64 = commaIdx >= 0 ? result.substring(commaIdx + 1) : result;
         yc.vaultSaveBuffer(f.name, base64, f.type || 'application/octet-stream').then(
           function (res) {
-            if (res && res.ok) scheduleLoad();
+            if (res?.ok) scheduleLoad();
           }
         );
       };

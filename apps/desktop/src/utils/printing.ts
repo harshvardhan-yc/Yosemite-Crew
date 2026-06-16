@@ -1,5 +1,7 @@
 'use strict';
 
+import { randomBytes } from 'node:crypto';
+
 export interface PrintJob {
   id: string;
   template: string;
@@ -112,7 +114,8 @@ export const createLabelPrintService = (
   const printLabels = async (labels: LabelSpec[]): Promise<LabelPrintResult[]> => {
     const results: LabelPrintResult[] = [];
     for (const label of labels) {
-      const id = `label-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // Cryptographically-random suffix (Math.random is flagged as weak crypto).
+      const id = `label-${Date.now()}-${randomBytes(4).toString('hex')}`;
       results.push({
         id,
         label,

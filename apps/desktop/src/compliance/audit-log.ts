@@ -102,26 +102,36 @@ export const createAuditLog = async (dirPath: string, deps: AuditDeps = {}): Pro
 
   const secureStore = await resolveSecureStore(deps);
 
-  const loadOrCreateKey = (): string => {
+  // Parse a stored key file wrapper. Returns the recovered key, or null when the
+  // wrapper is present but unusable (caller then generates a fresh key).
+  const decodeStoredKey = (stored: string): string | null => {
     try {
-      if (existsSync(keyPath)) {
-        const stored = (readFileSync(keyPath, 'utf8') as string).trim();
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored) as { enc?: boolean; data?: string; key?: string };
-            if (parsed.enc && parsed.data && secureStore) {
-              return secureStore.decryptString(Buffer.from(parsed.data, 'base64'));
-            }
-            if (!parsed.enc && typeof parsed.key === 'string') return parsed.key;
-          } catch {
-            // legacy plaintext-hex key file
-            return stored;
-          }
-        }
+      const parsed = JSON.parse(stored) as { enc?: boolean; data?: string; key?: string };
+      if (parsed.enc && parsed.data && secureStore) {
+        return secureStore.decryptString(Buffer.from(parsed.data, 'base64'));
       }
+      if (!parsed.enc && typeof parsed.key === 'string') return parsed.key;
+      return null;
+    } catch {
+      // legacy plaintext-hex key file
+      return stored;
+    }
+  };
+
+  const readExistingKey = (): string | null => {
+    try {
+      if (!existsSync(keyPath)) return null;
+      const stored = readFileSync(keyPath, 'utf8').trim();
+      return stored ? decodeStoredKey(stored) : null;
     } catch {
       // fall through and create a new key
+      return null;
     }
+  };
+
+  const loadOrCreateKey = (): string => {
+    const existing = readExistingKey();
+    if (existing !== null) return existing;
     const key = crypto.randomBytes(32).toString('hex');
     try {
       mkdirSync(dirPath, { recursive: true });

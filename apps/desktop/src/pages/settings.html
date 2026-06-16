@@ -357,7 +357,7 @@
 
     <script>
       (function () {
-        var yc = window.ycDesktop;
+        var yc = globalThis.ycDesktop;
         if (!yc) return;
 
         var statusEl = document.getElementById('status');
@@ -432,12 +432,12 @@
         };
 
         var saveSettings = function () {
-          var fontScaleVal = parseInt(getValue('fontScale'), 10) || 100;
+          var fontScaleVal = Number.parseInt(getValue('fontScale'), 10) || 100;
           var settings = {
             theme: getValue('theme'),
             fontScale: Math.round(fontScaleVal) / 100,
             updateChannel: getValue('updateChannel'),
-            idleLockMinutes: parseInt(getValue('idleLockMinutes'), 10) || 0,
+            idleLockMinutes: Number.parseInt(getValue('idleLockMinutes'), 10) || 0,
             notificationsEnabled: getChecked('notificationsEnabled'),
             dndStart: getValue('dndStart'),
             dndEnd: getValue('dndEnd'),
@@ -489,7 +489,7 @@
         });
 
         document.getElementById('fontScale').addEventListener('input', function () {
-          var pct = parseInt(this.value, 10) || 100;
+          var pct = Number.parseInt(this.value, 10) || 100;
           setFontScale(pct);
           saveSettings();
         });
@@ -509,7 +509,7 @@
         var clearLocalData = document.getElementById('clearLocalData');
         if (clearLocalData) {
           clearLocalData.addEventListener('click', function () {
-            if (!window.confirm('Clear local desktop data? You will need to sign in again.'))
+            if (!globalThis.confirm('Clear local desktop data? You will need to sign in again.'))
               return;
             clearLocalData.disabled = true;
             yc.clearLocalData()
