@@ -108,7 +108,7 @@ export const generateDeaReport = (deps: DeaDeps): DeaInventoryReport => {
       transferIn,
       transferOut,
       endingInventory,
-      transactions: txs.sort((a, b) => a.timestamp - b.timestamp),
+      transactions: [...txs].sort((a, b) => a.timestamp - b.timestamp),
     });
   }
 

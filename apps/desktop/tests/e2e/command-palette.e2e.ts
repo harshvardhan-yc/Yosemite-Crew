@@ -120,10 +120,10 @@ test.describe('command-palette E2E', () => {
 
   test('select result navigates to deep link', async () => {
     await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
-    const actions = await evaluateYcDesktop<{ ok: boolean; actions: { id: string }[] }>(
-      page,
-      'getPaletteActions'
-    );
+    const actions = await evaluateYcDesktop<{
+      ok: boolean;
+      actions: { id: string }[];
+    }>(page, 'getPaletteActions');
     expect(actions.ok).toBe(true);
     expect(actions.actions.length).toBeGreaterThan(0);
     const result = await evaluateYcDesktop<{ ok: boolean }>(
@@ -136,10 +136,10 @@ test.describe('command-palette E2E', () => {
 
   test('search "xyzzy" returns no results text', async () => {
     await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
-    const actions = await evaluateYcDesktop<{ ok: boolean; actions: unknown[] }>(
-      page,
-      'getPaletteActions'
-    );
+    const actions = await evaluateYcDesktop<{
+      ok: boolean;
+      actions: unknown[];
+    }>(page, 'getPaletteActions');
     expect(actions.ok).toBe(true);
     expect(Array.isArray(actions.actions)).toBe(true);
   });
@@ -164,25 +164,25 @@ test.describe('command-palette E2E', () => {
 
   test('recents persist across palette open/close', async () => {
     await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
-    const actions = await evaluateYcDesktop<{ ok: boolean; actions: { id: string }[] }>(
-      page,
-      'getPaletteActions'
-    );
+    const actions = await evaluateYcDesktop<{
+      ok: boolean;
+      actions: { id: string }[];
+    }>(page, 'getPaletteActions');
     expect(actions.ok).toBe(true);
     if (actions.actions.length > 0) {
       await evaluateYcDesktop(page, 'executeCommand', actions.actions[0].id);
     }
-    const recents1 = await evaluateYcDesktop<{ ok: boolean; recents: string[] }>(
-      page,
-      'getPaletteRecents'
-    );
+    const recents1 = await evaluateYcDesktop<{
+      ok: boolean;
+      recents: string[];
+    }>(page, 'getPaletteRecents');
     expect(recents1.ok).toBe(true);
     await evaluateYcDesktop(page, 'closePalette');
     await evaluateYcDesktop(page, 'executeCommand', 'open-settings');
-    const recents2 = await evaluateYcDesktop<{ ok: boolean; recents: string[] }>(
-      page,
-      'getPaletteRecents'
-    );
+    const recents2 = await evaluateYcDesktop<{
+      ok: boolean;
+      recents: string[];
+    }>(page, 'getPaletteRecents');
     expect(recents2.ok).toBe(true);
   });
 

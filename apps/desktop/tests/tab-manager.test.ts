@@ -190,7 +190,11 @@ describe('TabManager', () => {
   describe('updateMeta', () => {
     it('updates tab metadata', () => {
       const id = tm.create('https://example.com');
-      tm.updateMeta(id, { title: 'New Title', loading: false, favicon: 'https://fav.icon' });
+      tm.updateMeta(id, {
+        title: 'New Title',
+        loading: false,
+        favicon: 'https://fav.icon',
+      });
       const tab = tm.getState().tabs[0];
       expect(tab.title).toBe('New Title');
       expect(tab.loading).toBe(false);

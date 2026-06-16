@@ -99,14 +99,22 @@ export const createSyncEngine = (deps: EngineDeps): SyncEngine => {
     return results;
   };
 
-  const getLastSyncTimestamps = (): Record<string, number> => ({ ...lastSyncAt });
+  const getLastSyncTimestamps = (): Record<string, number> => ({
+    ...lastSyncAt,
+  });
   const setLastSyncTimestamps = (timestamps: Record<string, number>): void => {
     for (const [key, val] of Object.entries(timestamps)) {
       lastSyncAt[key] = val;
     }
   };
 
-  return { pushDirtyRows, pullChanges, fullSync, getLastSyncTimestamps, setLastSyncTimestamps };
+  return {
+    pushDirtyRows,
+    pullChanges,
+    fullSync,
+    getLastSyncTimestamps,
+    setLastSyncTimestamps,
+  };
 };
 
 const META_FIELDS = new Set(['_dirty', '_synced_at']);

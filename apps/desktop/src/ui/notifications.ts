@@ -80,7 +80,9 @@ export const createNotificationManager = (
     if (!isSupported()) return false;
 
     if (showNotification) {
-      return showNotification(options.title, options.body, { silent: options.silent });
+      return showNotification(options.title, options.body, {
+        silent: options.silent,
+      });
     }
 
     return true;

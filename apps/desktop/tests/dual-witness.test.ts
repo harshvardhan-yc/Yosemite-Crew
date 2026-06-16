@@ -32,7 +32,10 @@ describe('createDualWitnessLog', () => {
   test('setWitnessPin and verifyWitnessPin work', async () => {
     const deps = makeDeps();
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
     const dwLog = createDualWitnessLog({ logbook, ...deps });
 
     dwLog.setWitnessPin('witness-1', 'Nurse Jane', '1234');
@@ -44,8 +47,15 @@ describe('createDualWitnessLog', () => {
   test('recordWaste creates waste event with pin verification', async () => {
     const deps = makeDeps();
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
-    const dwLog = createDualWitnessLog({ logbook, now: deps.now, generateId: () => 'waste-1' });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
+    const dwLog = createDualWitnessLog({
+      logbook,
+      now: deps.now,
+      generateId: () => 'waste-1',
+    });
 
     dwLog.setWitnessPin('witness-1', 'Nurse Jane', '1234');
 
@@ -71,7 +81,10 @@ describe('createDualWitnessLog', () => {
   test('recordWaste logs pin verification failure', async () => {
     const deps = makeDeps();
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
     const dwLog = createDualWitnessLog({ logbook, now: deps.now });
 
     dwLog.setWitnessPin('witness-1', 'Nurse Jane', '1234');
@@ -96,8 +109,15 @@ describe('createDualWitnessLog', () => {
   test('getWasteEvents returns waste transactions', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
-    const dwLog = createDualWitnessLog({ logbook, now: deps.now, generateId: () => 'waste-1' });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
+    const dwLog = createDualWitnessLog({
+      logbook,
+      now: deps.now,
+      generateId: () => 'waste-1',
+    });
 
     dwLog.setWitnessPin('witness-1', 'Nurse Jane', '1234');
     dwLog.recordWaste({
@@ -125,8 +145,15 @@ describe('createDualWitnessLog', () => {
   test('getWasteEvents without drugName returns all waste events', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
-    const dwLog = createDualWitnessLog({ logbook, now: deps.now, generateId: () => 'waste-1' });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
+    const dwLog = createDualWitnessLog({
+      logbook,
+      now: deps.now,
+      generateId: () => 'waste-1',
+    });
 
     dwLog.setWitnessPin('witness-1', 'Nurse Jane', '1234');
     dwLog.recordWaste({
@@ -163,8 +190,15 @@ describe('createDualWitnessLog', () => {
   test('getWasteByWitness returns events for specific witness', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
-    const dwLog = createDualWitnessLog({ logbook, now: deps.now, generateId: () => 'waste-1' });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
+    const dwLog = createDualWitnessLog({
+      logbook,
+      now: deps.now,
+      generateId: () => 'waste-1',
+    });
 
     dwLog.setWitnessPin('witness-1', 'Nurse Jane', '1234');
     dwLog.setWitnessPin('witness-2', 'Nurse Bob', '5678');
@@ -207,8 +241,15 @@ describe('createDualWitnessLog', () => {
   test('getWasteByWitness returns empty for unknown witness', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
-    const dwLog = createDualWitnessLog({ logbook, now: deps.now, generateId: () => 'waste-1' });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
+    const dwLog = createDualWitnessLog({
+      logbook,
+      now: deps.now,
+      generateId: () => 'waste-1',
+    });
 
     const events = dwLog.getWasteByWitness('unknown');
     expect(events).toHaveLength(0);
@@ -217,7 +258,10 @@ describe('createDualWitnessLog', () => {
   test('uses default generateId when not provided', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
     const dwLog = createDualWitnessLog({ logbook, now: deps.now });
 
     dwLog.setWitnessPin('witness-1', 'Nurse Jane', '1234');
@@ -241,8 +285,15 @@ describe('createDualWitnessLog', () => {
   test('getWasteEvents falls back to empty strings for missing witness fields', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
-    const dwLog = createDualWitnessLog({ logbook, now: deps.now, generateId: () => 'waste-fb' });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
+    const dwLog = createDualWitnessLog({
+      logbook,
+      now: deps.now,
+      generateId: () => 'waste-fb',
+    });
 
     logbook.record({
       action: 'waste',
@@ -267,8 +318,15 @@ describe('createDualWitnessLog', () => {
   test('getWasteByWitness falls back to empty strings for missing witness fields', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
-    const dwLog = createDualWitnessLog({ logbook, now: deps.now, generateId: () => 'waste-fb' });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
+    const dwLog = createDualWitnessLog({
+      logbook,
+      now: deps.now,
+      generateId: () => 'waste-fb',
+    });
 
     // Record with explicit empty strings to exercise || '' fallback in mapping
     logbook.record({

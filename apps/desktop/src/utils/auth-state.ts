@@ -51,5 +51,8 @@ export const reduceAuth = (
   rawUrl: string
 ): { state: AuthState; justSignedIn: boolean } => {
   const state = authStateForUrl(rawUrl);
-  return { state, justSignedIn: prev === 'signed-out' && state === 'signed-in' };
+  return {
+    state,
+    justSignedIn: prev === 'signed-out' && state === 'signed-in',
+  };
 };

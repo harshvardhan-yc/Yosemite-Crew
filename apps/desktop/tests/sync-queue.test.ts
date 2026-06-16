@@ -52,8 +52,18 @@ describe('createSyncQueue', () => {
     const deps = makeDeps();
     const queue = createSyncQueue(tmpDir, deps);
 
-    queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} });
-    queue.push({ type: 'update', entityType: 'patient', entityId: 'p2', data: {} });
+    queue.push({
+      type: 'create',
+      entityType: 'patient',
+      entityId: 'p1',
+      data: {},
+    });
+    queue.push({
+      type: 'update',
+      entityType: 'patient',
+      entityId: 'p2',
+      data: {},
+    });
 
     const batch = queue.peek(1);
     expect(batch).toHaveLength(1);
@@ -64,7 +74,12 @@ describe('createSyncQueue', () => {
     const deps = makeDeps();
     const queue = createSyncQueue(tmpDir, deps);
 
-    const m = queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} });
+    const m = queue.push({
+      type: 'create',
+      entityType: 'patient',
+      entityId: 'p1',
+      data: {},
+    });
     expect(queue.pop(m.id)).toBe(true);
     expect(queue.size()).toBe(0);
   });
@@ -79,7 +94,12 @@ describe('createSyncQueue', () => {
     const deps = makeDeps();
     const queue = createSyncQueue(tmpDir, deps);
 
-    const m = queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} });
+    const m = queue.push({
+      type: 'create',
+      entityType: 'patient',
+      entityId: 'p1',
+      data: {},
+    });
     const marked = queue.markFailed(m.id);
 
     expect(marked).not.toBeNull();
@@ -90,7 +110,12 @@ describe('createSyncQueue', () => {
     const deps = makeDeps();
     const queue = createSyncQueue(tmpDir, deps);
 
-    const m = queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} });
+    const m = queue.push({
+      type: 'create',
+      entityType: 'patient',
+      entityId: 'p1',
+      data: {},
+    });
     for (let i = 0; i < 6; i++) {
       queue.markFailed(m.id);
     }
@@ -104,8 +129,18 @@ describe('createSyncQueue', () => {
     const deps = makeDeps();
     const queue = createSyncQueue(tmpDir, deps);
 
-    queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} });
-    queue.push({ type: 'create', entityType: 'appointment', entityId: 'a1', data: {} });
+    queue.push({
+      type: 'create',
+      entityType: 'patient',
+      entityId: 'p1',
+      data: {},
+    });
+    queue.push({
+      type: 'create',
+      entityType: 'appointment',
+      entityId: 'a1',
+      data: {},
+    });
 
     queue.clear();
     expect(queue.size()).toBe(0);
@@ -115,7 +150,12 @@ describe('createSyncQueue', () => {
     const deps = makeDeps();
     const queue = createSyncQueue(tmpDir, deps);
 
-    const m = queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} });
+    const m = queue.push({
+      type: 'create',
+      entityType: 'patient',
+      entityId: 'p1',
+      data: {},
+    });
     for (let i = 0; i < 6; i++) {
       queue.markFailed(m.id);
     }
@@ -129,7 +169,12 @@ describe('createSyncQueue', () => {
     const deps = makeDeps();
     const queue = createSyncQueue(tmpDir, deps);
 
-    const m = queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} });
+    const m = queue.push({
+      type: 'create',
+      entityType: 'patient',
+      entityId: 'p1',
+      data: {},
+    });
     queue.markFailed(m.id); // retryCount becomes 1
 
     expect(queue.getFailed()).toHaveLength(0);
@@ -140,8 +185,18 @@ describe('createSyncQueue', () => {
     const deps = makeDeps();
     const queue = createSyncQueue(tmpDir, deps);
 
-    queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} });
-    queue.push({ type: 'update', entityType: 'patient', entityId: 'p2', data: {} });
+    queue.push({
+      type: 'create',
+      entityType: 'patient',
+      entityId: 'p1',
+      data: {},
+    });
+    queue.push({
+      type: 'update',
+      entityType: 'patient',
+      entityId: 'p2',
+      data: {},
+    });
 
     expect(queue.getAll()).toHaveLength(2);
   });
@@ -160,7 +215,12 @@ describe('createSyncQueue', () => {
     });
     const queue = createSyncQueue(tmpDir, deps);
     expect(() =>
-      queue.push({ type: 'create', entityType: 'patient', entityId: 'p1', data: {} })
+      queue.push({
+        type: 'create',
+        entityType: 'patient',
+        entityId: 'p1',
+        data: {},
+      })
     ).not.toThrow();
     expect(queue.getAll()).toHaveLength(0); // write failed so data not persisted
   });

@@ -51,7 +51,10 @@ jest.mock('electron', () => {
       }
       show() {}
     },
-    dialog: { showErrorBox() {}, showMessageBox: () => Promise.resolve({ response: 1 }) },
+    dialog: {
+      showErrorBox() {},
+      showMessageBox: () => Promise.resolve({ response: 1 }),
+    },
     shell: {
       openExternal: async (url: string) => {
         mockOpened.push(url);
@@ -169,7 +172,13 @@ describe('buildContextMenu', () => {
   test('offers paste and spellcheck suggestions in editable fields', () => {
     const menu = buildContextMenu(
       {
-        editFlags: { canUndo: true, canRedo: false, canCut: true, canCopy: true, canPaste: true },
+        editFlags: {
+          canUndo: true,
+          canRedo: false,
+          canCut: true,
+          canCopy: true,
+          canPaste: true,
+        },
         isEditable: true,
         selectionText: 'patient',
         dictionarySuggestions: ['patient'],

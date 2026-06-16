@@ -65,7 +65,10 @@ describe('readManagedConfig', () => {
     const config = readManagedConfig({
       existsSync: () => true,
       readFileSync: () =>
-        JSON.stringify({ startUrl: 'https://mdm.example.com', idleLockMinutes: 60 }),
+        JSON.stringify({
+          startUrl: 'https://mdm.example.com',
+          idleLockMinutes: 60,
+        }),
     });
     expect(config.startUrl).toBe('https://mdm.example.com');
     expect(config.idleLockMinutes).toBe(60);
@@ -96,7 +99,11 @@ describe('readManagedConfig', () => {
 describe('applyManagedConfig', () => {
   test('overrides values from managed config', () => {
     const result = applyManagedConfig(
-      { startUrl: 'https://mdm.example.com', idleLockMinutes: 30, disableUpdates: true },
+      {
+        startUrl: 'https://mdm.example.com',
+        idleLockMinutes: 30,
+        disableUpdates: true,
+      },
       { startUrl: 'https://default.example.com', idleLockMinutes: 0 }
     );
     expect(result.startUrl).toBe('https://mdm.example.com');

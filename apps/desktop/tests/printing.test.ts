@@ -25,7 +25,11 @@ describe('createPrintService', () => {
 
   test('queuePrint adds a job and returns its id', () => {
     const svc = createPrintService(mockPdfGen, makeDeps());
-    const job: PrintJob = { id: '', template: '{{name}}', data: { name: 'Buddy' } };
+    const job: PrintJob = {
+      id: '',
+      template: '{{name}}',
+      data: { name: 'Buddy' },
+    };
     const id = svc.queuePrint(job);
     expect(id).toBe('job-1');
     expect(svc.getPendingJobs()).toHaveLength(1);
@@ -100,7 +104,9 @@ describe('createLabelPrintService', () => {
   });
 
   test('getStatus returns printer availability', () => {
-    const svc = createLabelPrintService({ getPrinters: () => ['Zebra_Label_Printer'] });
+    const svc = createLabelPrintService({
+      getPrinters: () => ['Zebra_Label_Printer'],
+    });
     const status = svc.getStatus();
     expect(status.printerAvailable).toBe(true);
     expect(status.printerName).toBe('Zebra_Label_Printer');

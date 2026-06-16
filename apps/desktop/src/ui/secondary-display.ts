@@ -22,7 +22,11 @@ export interface SecondaryDisplayManager {
   closeDisplay: (id: string) => boolean;
   closeAll: () => void;
   getDisplayIds: () => string[];
-  getDisplays: () => { id: string; config: DisplayConfig; status: 'open' | 'closed' }[];
+  getDisplays: () => {
+    id: string;
+    config: DisplayConfig;
+    status: 'open' | 'closed';
+  }[];
 }
 
 interface DisplayDeps {
@@ -72,12 +76,9 @@ export const generateWhiteboardHtml = (
 ): string => {
   const cards = patients
     .map((p) => {
-      const statusClass =
-        p.status === 'checked-in'
-          ? 'checked-in'
-          : p.status === 'in-treatment'
-            ? 'in-treatment'
-            : 'waiting';
+      let statusClass = 'waiting';
+      if (p.status === 'checked-in') statusClass = 'checked-in';
+      else if (p.status === 'in-treatment') statusClass = 'in-treatment';
       return `<div class="patient-card ${statusClass}">
       <p class="patient-name">${escapeHtml(p.name)}</p>
       ${p.owner ? `<p class="patient-info">Owner: ${escapeHtml(p.owner)}</p>` : ''}
@@ -148,8 +149,17 @@ export const createSecondaryDisplayManager = (deps: DisplayDeps = {}): Secondary
 
   const getDisplayIds = (): string[] => [...openDisplays.keys()];
 
-  const getDisplaysState = (): { id: string; config: DisplayConfig; status: 'open' | 'closed' }[] =>
-    Array.from(openDisplays.entries()).map(([id, state]) => ({ id, ...state }));
+  const getDisplaysState = (): {
+    id: string;
+    config: DisplayConfig;
+    status: 'open' | 'closed';
+  }[] => Array.from(openDisplays.entries()).map(([id, state]) => ({ id, ...state }));
 
-  return { openDisplay, closeDisplay, closeAll, getDisplayIds, getDisplays: getDisplaysState };
+  return {
+    openDisplay,
+    closeDisplay,
+    closeAll,
+    getDisplayIds,
+    getDisplays: getDisplaysState,
+  };
 };

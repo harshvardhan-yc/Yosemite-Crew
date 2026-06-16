@@ -72,9 +72,8 @@ const TRUSTED_DESKTOP_PROTOCOL = 'yosemitecrew-desktop:';
 const TRUSTED_DESKTOP_HOSTS = new Set(['loading', 'offline', 'welcome']);
 
 // A handler may return a value or a promise; `unknown` already covers both
-// (a bare `Promise<unknown> | unknown` collapses to `unknown` and Sonar flags it).
-type IpcHandlerResult = unknown;
-type IpcHandler = (event: IpcMainInvokeEvent, args: readonly unknown[]) => IpcHandlerResult;
+// (a bare `Promise<unknown> | unknown` collapses to `unknown`).
+type IpcHandler = (event: IpcMainInvokeEvent, args: readonly unknown[]) => unknown;
 
 interface IpcRegistryDeps {
   ipcMain: Pick<IpcMain, 'handle'>;

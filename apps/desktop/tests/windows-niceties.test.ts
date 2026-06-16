@@ -5,7 +5,10 @@ describe('createJumpList', () => {
     const jumpList = createJumpList('Yosemite Crew PIMS.exe');
 
     expect(jumpList[0].items).toHaveLength(2);
-    expect(jumpList[0].items[0]).toMatchObject({ title: 'Open Yosemite Crew PIMS', args: '' });
+    expect(jumpList[0].items[0]).toMatchObject({
+      title: 'Open Yosemite Crew PIMS',
+      args: '',
+    });
     expect(jumpList[0].items[1]).toMatchObject({
       title: 'Check for Updates',
       args: '--check-for-updates',
@@ -15,7 +18,9 @@ describe('createJumpList', () => {
 
 describe('createWindowsNiceties', () => {
   test('getWindowsVersion returns provided version', () => {
-    const niceties = createWindowsNiceties({ getWindowsVersion: () => '10.0.22621' });
+    const niceties = createWindowsNiceties({
+      getWindowsVersion: () => '10.0.22621',
+    });
     expect(niceties.getWindowsVersion()).toBe('10.0.22621');
   });
 

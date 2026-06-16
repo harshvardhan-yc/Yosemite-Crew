@@ -1,4 +1,10 @@
-type Item = { label?: string; role?: string; type?: string; click?: () => void; submenu?: Item[] };
+type Item = {
+  label?: string;
+  role?: string;
+  type?: string;
+  click?: () => void;
+  submenu?: Item[];
+};
 
 let lastTemplate: Item[] = [];
 
@@ -76,7 +82,12 @@ const makeActions = (overrides: Partial<MenuActions> = {}): MenuActions => {
     helpLinks: [{ label: 'Docs', url: 'https://docs.example.com' }],
     productName: 'Yosemite Crew PIMS',
     startUrl: 'https://yosemitecrew.com/signin',
-    logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    logger: {
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    },
     ...overrides,
   };
 };

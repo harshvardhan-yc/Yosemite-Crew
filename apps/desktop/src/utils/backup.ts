@@ -77,7 +77,9 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
       const archiverFn = archiverMod.default || archiverMod;
       return new Promise<void>((resolve, reject) => {
         const output = fs.createWriteStream(zipPath);
-        const archive = archiverFn('zip', { zlib: { level: compressionLevel } });
+        const archive = archiverFn('zip', {
+          zlib: { level: compressionLevel },
+        });
         output.on('close', resolve);
         archive.on('error', reject);
         archive.pipe(output);
@@ -229,7 +231,7 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
     for (const backup of toRemove) {
       if (deleteBackup(backup.path)) removed++;
     }
-    const remaining = loadMeta(destinationDir).filter((b) => !toRemove.find((r) => r.id === b.id));
+    const remaining = loadMeta(destinationDir).filter((b) => !toRemove.some((r) => r.id === b.id));
     saveMeta(destinationDir, remaining);
     return removed;
   };
@@ -240,5 +242,12 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
     schedule = { ...s, nextRun: s.enabled ? now() + s.intervalMs : undefined };
   };
 
-  return { createBackup, listBackups, deleteBackup, pruneOldBackups, getSchedule, setSchedule };
+  return {
+    createBackup,
+    listBackups,
+    deleteBackup,
+    pruneOldBackups,
+    getSchedule,
+    setSchedule,
+  };
 };

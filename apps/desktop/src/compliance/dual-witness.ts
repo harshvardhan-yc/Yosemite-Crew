@@ -49,9 +49,8 @@ const defaultId = (): string => `waste-${Date.now()}-${++dwCounter}`;
 const hashPin = (pin: string): string => {
   let hash = 0;
   for (let i = 0; i < pin.length; i++) {
-    const chr = pin.charCodeAt(i);
-    hash = (hash << 5) - hash + chr;
-    hash |= 0;
+    const chr = pin.codePointAt(i) ?? 0;
+    hash = Math.trunc((hash << 5) - hash + chr);
   }
   return hash.toString(16);
 };
@@ -62,7 +61,11 @@ export const createDualWitnessLog = (deps: DualWitnessDeps): DualWitnessLog => {
   const witnesses = new Map<string, WitnessAccount>();
 
   const setWitnessPin = (witnessId: string, witnessName: string, pin: string): void => {
-    witnesses.set(witnessId, { id: witnessId, name: witnessName, pinHash: hashPin(pin) });
+    witnesses.set(witnessId, {
+      id: witnessId,
+      name: witnessName,
+      pinHash: hashPin(pin),
+    });
   };
 
   const verifyWitnessPin = (witnessId: string, pin: string): boolean => {
@@ -155,5 +158,11 @@ export const createDualWitnessLog = (deps: DualWitnessDeps): DualWitnessLog => {
       }));
   };
 
-  return { recordWaste, verifyWitnessPin, getWasteEvents, getWasteByWitness, setWitnessPin };
+  return {
+    recordWaste,
+    verifyWitnessPin,
+    getWasteEvents,
+    getWasteByWitness,
+    setWitnessPin,
+  };
 };

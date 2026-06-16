@@ -27,7 +27,11 @@ export const createDockMenuTemplate = (deps: {
   newWindow?: () => void;
 }): DockMenuItem[] => [
   { id: 'show', label: 'Show Yosemite Crew PIMS', click: deps.show },
-  { id: 'check-for-updates', label: 'Check for Updates...', click: deps.checkForUpdates },
+  {
+    id: 'check-for-updates',
+    label: 'Check for Updates...',
+    click: deps.checkForUpdates,
+  },
   ...(deps.newWindow ? [{ id: 'new-window', label: 'New Window', click: deps.newWindow }] : []),
 ];
 

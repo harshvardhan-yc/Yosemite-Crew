@@ -35,7 +35,7 @@ const sanitize = (value: unknown, depth = 0): unknown => {
       stack: value.stack,
     };
   }
-  if (value === null || typeof value === 'undefined') return value;
+  if (value === null || value === undefined) return value;
   if (typeof value === 'string') return value.length > 1000 ? `${value.slice(0, 1000)}...` : value;
   if (typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map((entry) => sanitize(entry, depth + 1));
@@ -84,8 +84,9 @@ export const createLogger = (options: LoggerOptions = {}): DesktopLogger => {
     }
 
     if (stdout) {
-      const writer =
-        level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+      let writer = console.log;
+      if (level === 'error') writer = console.error;
+      else if (level === 'warn') writer = console.warn;
       writer(util.format('%s %s', level.toUpperCase(), line.trim()));
     }
   };

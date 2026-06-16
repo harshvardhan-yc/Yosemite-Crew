@@ -28,7 +28,10 @@ export interface NavigationDeps {
 }
 
 export const loadStartUrl = (
-  deps: NavigationDeps & { tabMode: boolean; activeContents: () => Electron.WebContents | null }
+  deps: NavigationDeps & {
+    tabMode: boolean;
+    activeContents: () => Electron.WebContents | null;
+  }
 ): void => {
   const wc = deps.activeContents();
   if (wc) {

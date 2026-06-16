@@ -433,6 +433,41 @@ describe('createOfflineCache', () => {
     expect(cache.has('https://example.com/old')).toBe(true);
   });
 
+  test('legacy 5-byte magic whose first HMAC byte is 0x01 still loads', () => {
+    const dir = freshDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const encryptString = (plain: string) => Buffer.from(`enc:${plain}`);
+    const decryptString = (buf: Buffer) => buf.toString('utf8').replace(/^enc:/, '');
+    const HMAC_KEY = Buffer.from('yc-offline-cache-integrity-key', 'utf8');
+    const oldMagic = Buffer.from('YCENC', 'utf8');
+
+    // Deterministically construct the worst-case collision: a legacy file whose
+    // first integrity byte is 0x01, so its first six bytes equal the v1 magic
+    // "YCENC\x01". The loader must still recover it via the legacy header.
+    let encrypted: Buffer | null = null;
+    let hash: Buffer | null = null;
+    let matchedUrl = '';
+    for (let i = 0; i < 20000 && hash === null; i++) {
+      const url = `https://example.com/legacy-${i}`;
+      const enc = encryptString(JSON.stringify([createCacheEntry(url, 'data', 'text/html')]));
+      const h = crypto.createHmac('sha256', HMAC_KEY).update(enc).digest();
+      if (h[0] === 0x01) {
+        encrypted = enc;
+        hash = h;
+        matchedUrl = url;
+      }
+    }
+    expect(hash).not.toBeNull();
+
+    fs.writeFileSync(
+      path.join(dir, 'offline-cache-v1.json'),
+      Buffer.concat([oldMagic, hash as Buffer, encrypted as Buffer])
+    );
+
+    const cache = createOfflineCache(dir, { encryptString, decryptString });
+    expect(cache.has(matchedUrl)).toBe(true);
+  });
+
   test('get with special characters in URL', () => {
     const cache = createOfflineCache(freshDir());
     const urls = [
@@ -473,9 +508,17 @@ describe('createOfflineCache', () => {
     const encryptString = jest.fn((plain: string) => Buffer.from(`enc:${plain}`));
     const decryptString = jest.fn((buf: Buffer) => buf.toString('utf8').replace(/^enc:/, ''));
     const valid = createCacheEntry('https://example.com/valid', 'ok', 'text/html');
-    const nullBody = { ...valid, url: 'https://example.com/null-body', body: null };
+    const nullBody = {
+      ...valid,
+      url: 'https://example.com/null-body',
+      body: null,
+    };
     const numBody = { ...valid, url: 'https://example.com/num-body', body: 42 };
-    const strBody = { ...valid, url: 'https://example.com/str-body', body: 'aGVsbG8=' };
+    const strBody = {
+      ...valid,
+      url: 'https://example.com/str-body',
+      body: 'aGVsbG8=',
+    };
     fs.writeFileSync(
       path.join(dir, 'offline-cache-v1.json'),
       JSON.stringify([valid, nullBody, numBody, strBody]),

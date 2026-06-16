@@ -64,7 +64,7 @@ const generateCsv = (
       r.witnessName || '',
       r.notes || '',
     ]
-      .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+      .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
       .join(',');
   });
   return [header, ...lines].join('\n');
@@ -137,5 +137,11 @@ export const createCsDailyExport = (deps: ExportDeps): CsDailyExportService => {
   };
   const getExportHistory = (): CsExportRecord[] => [...history];
 
-  return { exportDailyLog, exportRange, getExportDir, setExportDir, getExportHistory };
+  return {
+    exportDailyLog,
+    exportRange,
+    getExportDir,
+    setExportDir,
+    getExportHistory,
+  };
 };

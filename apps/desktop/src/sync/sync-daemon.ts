@@ -8,7 +8,11 @@ export type OnlineStatus = 'online' | 'offline';
 export interface SyncDaemon {
   start: () => void;
   stop: () => void;
-  getStatus: () => { running: boolean; online: OnlineStatus; pendingCount: number };
+  getStatus: () => {
+    running: boolean;
+    online: OnlineStatus;
+    pendingCount: number;
+  };
 }
 
 export interface SyncTransport {
@@ -56,7 +60,10 @@ export const createSyncDaemon = (deps: SyncDaemonDeps): SyncDaemon => {
           deps.logger.debug('sync_mutation_success', { id: mutation.id });
         } else {
           deps.queue.markFailed(mutation.id);
-          deps.logger.warn('sync_mutation_failed', { id: mutation.id, error: result.error });
+          deps.logger.warn('sync_mutation_failed', {
+            id: mutation.id,
+            error: result.error,
+          });
         }
       } catch (error) {
         deps.queue.markFailed(mutation.id);
@@ -100,7 +107,11 @@ export const createSyncDaemon = (deps: SyncDaemonDeps): SyncDaemon => {
     deps.logger.info('sync_daemon_stopped');
   };
 
-  const getStatus = (): { running: boolean; online: OnlineStatus; pendingCount: number } => ({
+  const getStatus = (): {
+    running: boolean;
+    online: OnlineStatus;
+    pendingCount: number;
+  } => ({
     running,
     online: currentStatus,
     pendingCount: deps.queue.size(),

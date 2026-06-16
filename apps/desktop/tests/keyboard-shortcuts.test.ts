@@ -102,7 +102,10 @@ describe('createKeyboardShortcutManager', () => {
     });
 
     it('sends shortcut to webContents when focused and not destroyed', () => {
-      const wc = { send: jest.fn(), isDestroyed: jest.fn().mockReturnValue(false) };
+      const wc = {
+        send: jest.fn(),
+        isDestroyed: jest.fn().mockReturnValue(false),
+      };
       const deps = makeDeps({ focusedWebContents: jest.fn(() => wc) });
       const mgr = createKeyboardShortcutManager(deps);
       mgr.register();
@@ -116,7 +119,10 @@ describe('createKeyboardShortcutManager', () => {
     });
 
     it('does not send when focused webContents is destroyed', () => {
-      const wc = { send: jest.fn(), isDestroyed: jest.fn().mockReturnValue(true) };
+      const wc = {
+        send: jest.fn(),
+        isDestroyed: jest.fn().mockReturnValue(true),
+      };
       const deps = makeDeps({ focusedWebContents: jest.fn(() => wc) });
       const mgr = createKeyboardShortcutManager(deps);
       mgr.register();

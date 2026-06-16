@@ -34,7 +34,10 @@ export const aboutPanelOptions = (
 export const HELP_LINKS: readonly HelpLink[] = Object.freeze([
   { label: 'Yosemite Crew Website', url: WEBSITE },
   { label: 'Contact Support', url: `${WEBSITE}/contact-us` },
-  { label: 'Report an Issue', url: 'https://github.com/YosemiteCrew/Yosemite-Crew/issues' },
+  {
+    label: 'Report an Issue',
+    url: 'https://github.com/YosemiteCrew/Yosemite-Crew/issues',
+  },
 ]);
 
 export const branding = {

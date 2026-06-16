@@ -18,7 +18,10 @@ jest.mock('electron', () => ({
   BrowserWindow: BrowserWindowMock,
   dialog: {
     showSaveDialog: jest.fn(() =>
-      Promise.resolve({ canceled: false, filePath: path.join(tmp, 'export.bin') })
+      Promise.resolve({
+        canceled: false,
+        filePath: path.join(tmp, 'export.bin'),
+      })
     ),
     showMessageBox: jest.fn(() => Promise.resolve({ response: 0 })),
   },
@@ -59,7 +62,12 @@ const makeServices = (overrides: Partial<IpcServices> = {}): IpcServices => {
   const view = {};
   return {
     config: getDesktopConfig({}),
-    logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() } as never,
+    logger: {
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    } as never,
     localFileRoot: tmp,
     brandPrefix: 'Yosemite Crew',
     productName: 'Yosemite Crew PIMS',
@@ -111,14 +119,20 @@ const makeServices = (overrides: Partial<IpcServices> = {}): IpcServices => {
     tabOrientation: 'horizontal',
     splitId: null,
     tabChromeView: {
-      webContents: { isDestroyed: () => false, executeJavaScript: () => Promise.resolve() },
+      webContents: {
+        isDestroyed: () => false,
+        executeJavaScript: () => Promise.resolve(),
+      },
     } as never,
     layoutTabChrome: jest.fn(),
     setTabSearch: jest.fn(),
     setSplitTab: jest.fn(),
     setTabOrientation: jest.fn(),
     saveSession: jest.fn(),
-    commandPaletteWindow: { isDestroyed: () => false, close: jest.fn() } as never,
+    commandPaletteWindow: {
+      isDestroyed: () => false,
+      close: jest.fn(),
+    } as never,
     settingsWindow: null,
     openVaultWindow: jest.fn(),
     navigateToDeepLink: jest.fn(),
@@ -132,15 +146,27 @@ const makeServices = (overrides: Partial<IpcServices> = {}): IpcServices => {
       getStats: () => ({ count: 1 }),
       clear: jest.fn(),
       entries: () => [
-        { url: 'https://yosemitecrew.com/a', headers: { 'x-yc-title': 'A' }, cachedAt: 2 },
+        {
+          url: 'https://yosemitecrew.com/a',
+          headers: { 'x-yc-title': 'A' },
+          cachedAt: 2,
+        },
       ],
       get: (u: string) =>
         u === 'https://hit'
-          ? { body: Buffer.from('x'), contentType: 'text/html', headers: {}, cachedAt: 1 }
+          ? {
+              body: Buffer.from('x'),
+              contentType: 'text/html',
+              headers: {},
+              cachedAt: 1,
+            }
           : undefined,
     } as never,
     notificationManager: { show: () => true } as never,
-    biometricLock: { isAvailable: () => true, authenticate: () => Promise.resolve(true) } as never,
+    biometricLock: {
+      isAvailable: () => true,
+      authenticate: () => Promise.resolve(true),
+    } as never,
     documentVault: {
       saveDocument: () => ({ id: 'd' }),
       listDocuments: () => [],
@@ -154,8 +180,12 @@ const makeServices = (overrides: Partial<IpcServices> = {}): IpcServices => {
     offlineStore: {} as never,
     keyboardShortcutManager: {} as never,
     auditLog: { append: () => ({ id: 'a', action: 'act' }) } as never,
-    controlledSubstanceLog: { record: () => ({ id: 't', drugName: 'd' }) } as never,
-    csExport: { exportDailyLog: () => ({ rowCount: 1, filePath: '/x' }) } as never,
+    controlledSubstanceLog: {
+      record: () => ({ id: 't', drugName: 'd' }),
+    } as never,
+    csExport: {
+      exportDailyLog: () => ({ rowCount: 1, filePath: '/x' }),
+    } as never,
     deaTracker: {
       register: jest.fn(),
       getAllRegistrations: () => [],
@@ -199,7 +229,9 @@ describe('ipc-handlers — happy paths', () => {
     expect(await call('yc:start-signin')).toEqual({ ok: true });
     expect(await call('yc:start-telehealth', { appointmentId: 'x' })).toMatchObject({ ok: true });
     expect(await call('yc:get-settings')).toMatchObject({ ok: true });
-    expect(await call('yc:set-settings', { theme: 'dark' })).toMatchObject({ ok: true });
+    expect(await call('yc:set-settings', { theme: 'dark' })).toMatchObject({
+      ok: true,
+    });
     expect(await call('yc:execute-command', BUILTIN_ACTIONS[0].id)).toMatchObject({ ok: true });
     expect(services.runCommandAction).toHaveBeenCalledWith(BUILTIN_ACTIONS[0].id);
     expect(await call('yc:get-palette-recents')).toMatchObject({ ok: true });
@@ -208,7 +240,9 @@ describe('ipc-handlers — happy paths', () => {
     expect(await call('yc:get-cache-status')).toMatchObject({ ok: true });
     expect(await call('yc:clear-cache')).toEqual({ ok: true });
     expect(await call('yc:get-cached-urls')).toMatchObject({ ok: true });
-    expect(await call('yc:get-cached-content', 'https://hit')).toMatchObject({ ok: true });
+    expect(await call('yc:get-cached-content', 'https://hit')).toMatchObject({
+      ok: true,
+    });
   });
 
   test('sync, notifications, biometric, theme, compliance, vault', async () => {
@@ -222,12 +256,22 @@ describe('ipc-handlers — happy paths', () => {
       shown: true,
     });
     expect(await call('yc:clear-notification-badge')).toEqual({ ok: true });
-    expect(await call('yc:authenticate-biometric', 'why')).toMatchObject({ ok: true });
+    expect(await call('yc:authenticate-biometric', 'why')).toMatchObject({
+      ok: true,
+    });
     expect(await call('yc:apply-theme')).toEqual({ ok: true });
-    expect(await call('yc:cs-record', { drug: 'x' })).toMatchObject({ ok: true });
-    expect(await call('yc:cs-export', '2026-01-01')).toMatchObject({ ok: true });
-    expect(await call('yc:audit-append', { action: 'a' })).toMatchObject({ ok: true });
-    expect(await call('yc:vault-save', 'f.txt', 'data')).toMatchObject({ ok: true });
+    expect(await call('yc:cs-record', { drug: 'x' })).toMatchObject({
+      ok: true,
+    });
+    expect(await call('yc:cs-export', '2026-01-01')).toMatchObject({
+      ok: true,
+    });
+    expect(await call('yc:audit-append', { action: 'a' })).toMatchObject({
+      ok: true,
+    });
+    expect(await call('yc:vault-save', 'f.txt', 'data')).toMatchObject({
+      ok: true,
+    });
     expect(await call('yc:vault-list')).toMatchObject({ ok: true });
     expect(await call('yc:vault-get', 'd')).toMatchObject({ ok: true });
     expect(await call('yc:vault-stats')).toMatchObject({ ok: true });
@@ -238,13 +282,17 @@ describe('ipc-handlers — happy paths', () => {
     expect(await call('yc:vault-reveal-doc', 'd')).toMatchObject({ ok: true });
     expect(await call('yc:vault-open')).toEqual({ ok: true });
     expect(await call('yc:vault-delete', 'd')).toMatchObject({ ok: true });
-    expect(await call('yc:dea-register', { deaNumber: 'AB1' })).toMatchObject({ ok: true });
+    expect(await call('yc:dea-register', { deaNumber: 'AB1' })).toMatchObject({
+      ok: true,
+    });
   });
 
   test('tab + window + misc handlers', async () => {
     const services = makeServices();
     const call = register(services);
-    expect(await call('yc:open-patient-window', 'p1', 'Rex')).toMatchObject({ ok: true });
+    expect(await call('yc:open-patient-window', 'p1', 'Rex')).toMatchObject({
+      ok: true,
+    });
     expect(await call('yc:tabs-get')).toMatchObject({ ok: true });
     expect(await call('yc:tab-new', 'https://yosemitecrew.com/x')).toMatchObject({ ok: true });
     expect(await call('yc:tab-activate', 't1')).toMatchObject({ ok: true });
@@ -253,18 +301,26 @@ describe('ipc-handlers — happy paths', () => {
     expect(await call('yc:tab-duplicate', 't1')).toMatchObject({ ok: true });
     expect(await call('yc:tab-reopen-closed')).toMatchObject({ ok: true });
     expect(await call('yc:tab-search', true)).toEqual({ ok: true });
-    expect(await call('yc:tab-set-zoom', 't1', 1.2)).toMatchObject({ ok: true });
-    expect(await call('yc:find-in-page', { text: 'x' })).toMatchObject({ ok: true });
+    expect(await call('yc:tab-set-zoom', 't1', 1.2)).toMatchObject({
+      ok: true,
+    });
+    expect(await call('yc:find-in-page', { text: 'x' })).toMatchObject({
+      ok: true,
+    });
     expect(await call('yc:stop-find-in-page')).toMatchObject({ ok: true });
     expect(await call('yc:open-devtools')).toMatchObject({ ok: true });
     expect(await call('yc:close-devtools')).toMatchObject({ ok: true });
     expect(await call('yc:tab-toggle-mute', 't1')).toMatchObject({ ok: true });
     expect(await call('yc:tab-get-preview', 't1')).toMatchObject({ ok: true });
-    expect(await call('yc:tab-set-orientation', 'vertical')).toEqual({ ok: true });
+    expect(await call('yc:tab-set-orientation', 'vertical')).toEqual({
+      ok: true,
+    });
     expect(await call('yc:show-cheatsheet')).toEqual({ ok: true });
     expect(await call('yc:get-app-version')).toBe('1.0.0');
     expect(await call('yc:get-last-seen-version')).toBe('');
-    expect(await call('yc:set-last-seen-version', '1.0.0')).toMatchObject({ ok: true });
+    expect(await call('yc:set-last-seen-version', '1.0.0')).toMatchObject({
+      ok: true,
+    });
     expect(await call('yc:dismiss-whats-new')).toBeDefined();
     expect(await call('yc:tab-close', 't2')).toMatchObject({ ok: true });
   });
@@ -317,8 +373,12 @@ describe('ipc-handlers — not-ready / invalid branches', () => {
     expect(await call('yc:get-settings')).toMatchObject({ ok: false });
     expect(await call('yc:set-settings', [])).toMatchObject({ ok: false });
     expect(await call('yc:get-cache-status')).toMatchObject({ ok: false });
-    expect(await call('yc:show-notification', { title: 1 })).toMatchObject({ ok: false });
-    expect(await call('yc:authenticate-biometric')).toMatchObject({ ok: false });
+    expect(await call('yc:show-notification', { title: 1 })).toMatchObject({
+      ok: false,
+    });
+    expect(await call('yc:authenticate-biometric')).toMatchObject({
+      ok: false,
+    });
     expect(await call('yc:cs-record', null)).toMatchObject({ ok: false });
     expect(await call('yc:vault-get', 123)).toMatchObject({ ok: false });
     expect(await call('yc:dea-register', null)).toMatchObject({ ok: false });
@@ -339,7 +399,10 @@ describe('ipc-handlers — not-ready / invalid branches', () => {
       ok: false,
       error: 'url-not-allowed',
     });
-    expect(await call('yc:tab-close', 123)).toMatchObject({ ok: false, error: 'invalid-id' });
+    expect(await call('yc:tab-close', 123)).toMatchObject({
+      ok: false,
+      error: 'invalid-id',
+    });
     expect(await call('yc:tab-move', 't1', 'x')).toMatchObject({
       ok: false,
       error: 'invalid-args',
@@ -348,8 +411,14 @@ describe('ipc-handlers — not-ready / invalid branches', () => {
       ok: false,
       error: 'invalid-args',
     });
-    expect(await call('yc:tab-pin', 't1', 'x')).toMatchObject({ ok: false, error: 'invalid-args' });
-    expect(await call('yc:tab-duplicate', 999)).toMatchObject({ ok: false, error: 'invalid-id' });
+    expect(await call('yc:tab-pin', 't1', 'x')).toMatchObject({
+      ok: false,
+      error: 'invalid-args',
+    });
+    expect(await call('yc:tab-duplicate', 999)).toMatchObject({
+      ok: false,
+      error: 'invalid-id',
+    });
     expect(await call('yc:tab-set-zoom', 't1', 'x')).toMatchObject({
       ok: false,
       error: 'invalid-args',
@@ -389,12 +458,18 @@ describe('ipc-handlers — not-ready / invalid branches', () => {
 
   test('vault handlers report not-found, cancellation and invalid args', async () => {
     const call = register(makeServices());
-    expect(await call('yc:vault-save', 1, 2)).toMatchObject({ ok: false, error: 'invalid-args' });
+    expect(await call('yc:vault-save', 1, 2)).toMatchObject({
+      ok: false,
+      error: 'invalid-args',
+    });
     expect(await call('yc:vault-delete', 'missing')).toMatchObject({
       ok: false,
       error: 'not-found',
     });
-    expect(await call('yc:vault-get', 'missing')).toMatchObject({ ok: false, error: 'not-found' });
+    expect(await call('yc:vault-get', 'missing')).toMatchObject({
+      ok: false,
+      error: 'not-found',
+    });
     expect(await call('yc:vault-export', 'missing')).toMatchObject({
       ok: false,
       error: 'not-found',
@@ -407,7 +482,10 @@ describe('ipc-handlers — not-ready / invalid branches', () => {
 
   test('notification, biometric and theme guards', async () => {
     expect(
-      await register(makeServices())('yc:show-notification', { title: 'T', body: 1 })
+      await register(makeServices())('yc:show-notification', {
+        title: 'T',
+        body: 1,
+      })
     ).toMatchObject({ ok: false });
     expect(
       await register(

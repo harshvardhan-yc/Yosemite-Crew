@@ -1,6 +1,6 @@
 'use strict';
 (function () {
-  const yc = window.ycDesktop;
+  const yc = globalThis.ycDesktop;
   if (!yc) return;
 
   let docs = [];
@@ -49,7 +49,7 @@
   };
 
   const fileIcon = function (mime) {
-    if (/^image\//.test(mime)) return '\u{1F5BC}';
+    if (mime.startsWith('image/')) return '\u{1F5BC}';
     if (/^text\/|^application\/(json|xml|javascript)/.test(mime)) return '\u{1F4DD}';
     if (/pdf/.test(mime)) return '\u{1F4D1}';
     if (/spreadsheet|excel|csv/.test(mime)) return '\u{1F4CA}';
@@ -57,14 +57,14 @@
   };
 
   const isImage = function (mime) {
-    return /^image\//.test(mime);
+    return mime.startsWith('image/');
   };
 
   const loadStats = function () {
     yc.vaultStats().then(function (res) {
-      if (!res || !res.ok || !res.stats) return;
+      if (!res?.ok || !res.stats) return;
       const stats = res.stats;
-      docCountEl.textContent = stats.count + ' document' + (stats.count !== 1 ? 's' : '');
+      docCountEl.textContent = stats.count + ' document' + (stats.count === 1 ? '' : 's');
       sizeInfoEl.textContent = formatBytes(stats.totalSizeBytes || 0);
     });
     yc.getAppVersion().then(function () {
@@ -109,9 +109,11 @@
       if (isImage(d.mimeType)) {
         // Load thumbnail on demand
         yc.vaultGet(d.id).then(function (res) {
-          if (!res || !res.ok || !res.content) return;
+          if (!res?.ok || !res.content) return;
           const buf = res.content;
-          const blob = new Blob([new Uint8Array(buf.data || buf)], { type: d.mimeType });
+          const blob = new Blob([new Uint8Array(buf.data || buf)], {
+            type: d.mimeType,
+          });
           const url = URL.createObjectURL(blob);
           const img = document.createElement('img');
           img.src = url;
@@ -185,7 +187,7 @@
   const loadDocs = function () {
     loadingMsg.style.display = 'block';
     yc.vaultList().then(function (res) {
-      if (!res || !res.ok) {
+      if (!res?.ok) {
         loadingMsg.textContent = 'Failed to load vault.';
         return;
       }
@@ -233,9 +235,11 @@
 
     if (isImage(doc.mimeType)) {
       yc.vaultGet(id).then(function (res) {
-        if (!res || !res.ok || !res.content) return;
+        if (!res?.ok || !res.content) return;
         const buf = res.content;
-        const blob = new Blob([new Uint8Array(buf.data || buf)], { type: doc.mimeType });
+        const blob = new Blob([new Uint8Array(buf.data || buf)], {
+          type: doc.mimeType,
+        });
         const url = URL.createObjectURL(blob);
         previewImg.src = url;
         previewImg.style.display = 'block';
@@ -245,13 +249,13 @@
       });
     } else {
       yc.vaultGet(id).then(function (res) {
-        if (!res || !res.ok || !res.content) return;
+        if (!res?.ok || !res.content) return;
         const buf = res.content;
         const decoder = new TextDecoder('utf-8');
         let text;
         try {
           text = decoder.decode(new Uint8Array(buf.data || buf));
-        } catch (e) {
+        } catch {
           text = 'Binary content. Use Export to save to disk.';
         }
         previewText.textContent = text.substring(0, 10000);
@@ -278,7 +282,7 @@
 
   const exportDoc = function (id) {
     yc.vaultExport(id).then(function (res) {
-      if (!res || !res.ok) return;
+      if (!res?.ok) return;
       if (res.path) {
         // Show a brief success; the file was written
         // Refresh list to keep UI consistent
@@ -295,9 +299,9 @@
       return d.id === id;
     });
     if (!doc) return;
-    if (!window.confirm('Delete "' + doc.filename + '" from the vault?')) return;
+    if (!globalThis.confirm('Delete "' + doc.filename + '" from the vault?')) return;
     yc.vaultDelete(id).then(function (res) {
-      if (!res || !res.ok) return;
+      if (!res?.ok) return;
       if (selectedId === id) closePreview();
       scheduleLoad();
     });

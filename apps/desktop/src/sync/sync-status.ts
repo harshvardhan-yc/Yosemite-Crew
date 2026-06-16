@@ -51,7 +51,7 @@ export const summarizeSyncStatus = (input: SyncStatusInput): SyncStatusSummary =
     pendingMutations,
     dirtyRows,
     dirtyCounts: { ...dirtyCounts },
-    lastSyncTimestamps: { ...(input.lastSyncTimestamps || {}) },
+    lastSyncTimestamps: { ...input.lastSyncTimestamps },
     lastError,
   };
 };

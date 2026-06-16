@@ -61,14 +61,21 @@ export const createAppMenu = (actions: MenuActions): void => {
             label: app.name,
             submenu: [
               { role: 'about' as const },
-              { label: tr('menu.checkForUpdates'), click: () => actions.checkForUpdates() },
+              {
+                label: tr('menu.checkForUpdates'),
+                click: () => actions.checkForUpdates(),
+              },
               { type: 'separator' as const },
               {
                 label: 'Command Palette…',
                 accelerator: 'Cmd+Shift+P',
                 click: actions.openCommandPalette,
               },
-              { label: 'Preferences…', accelerator: 'Cmd+,', click: actions.createSettingsWindow },
+              {
+                label: 'Preferences…',
+                accelerator: 'Cmd+,',
+                click: actions.createSettingsWindow,
+              },
               { type: 'separator' as const },
               { role: 'services' as const },
               { type: 'separator' as const },
@@ -145,7 +152,11 @@ export const createAppMenu = (actions: MenuActions): void => {
               } as MenuItemConstructorOptions,
             ]),
         { type: 'separator' as const },
-        { role: 'close', label: 'Close Window', accelerator: 'Shift+CmdOrCtrl+W' },
+        {
+          role: 'close',
+          label: 'Close Window',
+          accelerator: 'Shift+CmdOrCtrl+W',
+        },
         ...(isMac ? [] : [{ role: 'quit' as const }]),
       ],
     },
@@ -199,7 +210,7 @@ export const createAppMenu = (actions: MenuActions): void => {
         { role: 'forceReload' },
         {
           label: 'Toggle Developer Tools',
-          accelerator: (() => (process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I'))(),
+          accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
           click: () => {
             const wc = actions.activeContents();
             if (wc && !wc.isDestroyed()) wc.toggleDevTools();
@@ -254,11 +265,20 @@ export const createAppMenu = (actions: MenuActions): void => {
     {
       label: 'Compliance',
       submenu: [
-        { label: 'Verify Audit Trail Integrity', click: actions.verifyAuditTrail },
-        { label: 'Export Controlled-Substance Daily Log', click: actions.exportCsDailyLog },
+        {
+          label: 'Verify Audit Trail Integrity',
+          click: actions.verifyAuditTrail,
+        },
+        {
+          label: 'Export Controlled-Substance Daily Log',
+          click: actions.exportCsDailyLog,
+        },
         { type: 'separator' as const },
         { label: 'DEA Renewal Status', click: actions.showDeaStatus },
-        { label: 'Generate DEA Biennial Report…', click: actions.generateDeaReportAction },
+        {
+          label: 'Generate DEA Biennial Report…',
+          click: actions.generateDeaReportAction,
+        },
         { label: 'PMP Submission Status', click: actions.showPmpStatus },
       ],
     },
@@ -274,7 +294,7 @@ export const createAppMenu = (actions: MenuActions): void => {
     {
       label: 'Tools',
       submenu: [
-        { label: 'Save Page as PDF...', click: () => void actions.savePageAsPdf() },
+        { label: 'Save Page as PDF...', click: () => actions.savePageAsPdf() },
         { label: 'Open on Second Screen', click: actions.openOnSecondScreen },
         { label: 'Printing & Label Status', click: actions.showPrintStatus },
         { type: 'separator' as const },
@@ -289,11 +309,14 @@ export const createAppMenu = (actions: MenuActions): void => {
     {
       role: 'help',
       submenu: [
-        { label: tr('menu.checkForUpdates'), click: () => actions.checkForUpdates() },
+        {
+          label: tr('menu.checkForUpdates'),
+          click: () => actions.checkForUpdates(),
+        },
         { type: 'separator' as const },
         {
           label: 'Export Diagnostics...',
-          click: () => void actions.exportDiagnostics(actions.mainWindow),
+          click: () => actions.exportDiagnostics(actions.mainWindow),
         },
         { type: 'separator' as const },
         ...actions.helpLinks.map((link) => ({

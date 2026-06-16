@@ -191,7 +191,11 @@ describe('createOfflineStore', () => {
     store.registerTable(appointmentSchema);
 
     store.insert('patients', { id: 'p1', name: 'Buddy', species: 'Canine' });
-    store.insert('appointments', { id: 'a1', patient_id: 'p1', reason: 'Annual checkup' });
+    store.insert('appointments', {
+      id: 'a1',
+      patient_id: 'p1',
+      reason: 'Annual checkup',
+    });
 
     const patients = store.findAll('patients');
     const appointments = store.findAll('appointments');

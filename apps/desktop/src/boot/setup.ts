@@ -57,9 +57,7 @@ export const setupTray = (deps: TrayDeps): Electron.Tray => {
         quit: () => app.quit(),
         quickActions: buildQuickActions(),
       });
-      tray?.setContextMenu(
-        Menu.buildFromTemplate(template as Electron.MenuItemConstructorOptions[])
-      );
+      tray?.setContextMenu(Menu.buildFromTemplate(template));
     };
     rebuild();
     deps.mainWindow?.on('show', rebuild);
@@ -134,7 +132,9 @@ export const setupCompliance = async (deps: ComplianceDeps): Promise<ComplianceS
     const deaReminder = createDeaBiennialReminder({
       storagePath: path.join(deps.userData, 'dea-biennial.json'),
     });
-    const dualWitnessLog = createDualWitnessLog({ logbook: controlledSubstanceLog });
+    const dualWitnessLog = createDualWitnessLog({
+      logbook: controlledSubstanceLog,
+    });
     const pmpService = createPmpSubmissionService();
     const csExport = createCsDailyExport({
       logbook: controlledSubstanceLog,
@@ -286,7 +286,9 @@ export const setupOfflineSync = async (deps: OfflineSyncDeps): Promise<OfflineSy
             });
             req.setHeader('content-type', 'application/json');
             req.on('response', (res) =>
-              resolve({ success: res.statusCode >= 200 && res.statusCode < 300 })
+              resolve({
+                success: res.statusCode >= 200 && res.statusCode < 300,
+              })
             );
             req.on('error', (error) => resolve({ success: false, errors: [String(error)] }));
             req.write(JSON.stringify(rows));
@@ -306,7 +308,9 @@ export const setupOfflineSync = async (deps: OfflineSyncDeps): Promise<OfflineSy
     };
     const offlineSyncTimer = setInterval(flush, 60_000);
     if (typeof offlineSyncTimer.unref === 'function') offlineSyncTimer.unref();
-    deps.logger.info('offline_sync_initialized', { endpointConfigured: Boolean(deps.endpoint) });
+    deps.logger.info('offline_sync_initialized', {
+      endpointConfigured: Boolean(deps.endpoint),
+    });
     return { offlineStore, syncEngine, offlineSyncTimer };
   } catch (error) {
     deps.logger.warn('offline_sync_init_failed', { error });
@@ -396,7 +400,9 @@ export const setupNativeSurfaces = (deps: NativeSurfacesDeps): NativeSurfacesSer
       return { path: outputPath, size: data.length, pages: 0 };
     },
   });
-  const labelPrintService = createLabelPrintService({ getPrinters: () => deps.cachedPrinterNames });
+  const labelPrintService = createLabelPrintService({
+    getPrinters: () => deps.cachedPrinterNames,
+  });
   deps.refreshPrinters();
 
   if (process.platform === 'darwin' && deps.app.dock) {
@@ -411,8 +417,12 @@ export const setupNativeSurfaces = (deps: NativeSurfacesDeps): NativeSurfacesSer
 
   if (process.platform === 'win32') {
     try {
-      const winNiceties = createWindowsNiceties({ mainWindow: deps.mainWindow ?? undefined });
-      deps.logger.info('windows_niceties_ready', { version: winNiceties.getWindowsVersion() });
+      const winNiceties = createWindowsNiceties({
+        mainWindow: deps.mainWindow ?? undefined,
+      });
+      deps.logger.info('windows_niceties_ready', {
+        version: winNiceties.getWindowsVersion(),
+      });
       const categories = createJumpList('Yosemite Crew PIMS.exe');
       deps.app.setJumpList(
         categories.map((c) => ({

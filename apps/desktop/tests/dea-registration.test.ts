@@ -27,7 +27,11 @@ describe('createDeaRegistrationTracker', () => {
   test('getAllRegistrations returns all registrations', () => {
     const tracker = createDeaRegistrationTracker();
     tracker.register(activeReg);
-    tracker.register({ ...activeReg, deaNumber: 'DEA-67890', registrantName: 'Dr. Jones' });
+    tracker.register({
+      ...activeReg,
+      deaNumber: 'DEA-67890',
+      registrantName: 'Dr. Jones',
+    });
 
     expect(tracker.getAllRegistrations()).toHaveLength(2);
   });
@@ -49,9 +53,21 @@ describe('createDeaRegistrationTracker', () => {
     const nowMs = new Date('2026-06-01').getTime();
     const tracker = createDeaRegistrationTracker({ now: () => nowMs });
 
-    tracker.register({ ...activeReg, deaNumber: 'DEA-001', expirationDate: '2026-06-10' }); // 9 days
-    tracker.register({ ...activeReg, deaNumber: 'DEA-002', expirationDate: '2026-07-15' }); // 44 days
-    tracker.register({ ...activeReg, deaNumber: 'DEA-003', expirationDate: '2027-01-01' }); // 214 days
+    tracker.register({
+      ...activeReg,
+      deaNumber: 'DEA-001',
+      expirationDate: '2026-06-10',
+    }); // 9 days
+    tracker.register({
+      ...activeReg,
+      deaNumber: 'DEA-002',
+      expirationDate: '2026-07-15',
+    }); // 44 days
+    tracker.register({
+      ...activeReg,
+      deaNumber: 'DEA-003',
+      expirationDate: '2027-01-01',
+    }); // 214 days
 
     const expiring = tracker.getExpiringSoon(30);
     expect(expiring).toHaveLength(1);
@@ -62,8 +78,16 @@ describe('createDeaRegistrationTracker', () => {
     const nowMs = new Date('2026-06-15').getTime();
     const tracker = createDeaRegistrationTracker({ now: () => nowMs });
 
-    tracker.register({ ...activeReg, deaNumber: 'DEA-001', expirationDate: '2026-01-15' }); // expired
-    tracker.register({ ...activeReg, deaNumber: 'DEA-002', expirationDate: '2027-01-14' }); // not expired
+    tracker.register({
+      ...activeReg,
+      deaNumber: 'DEA-001',
+      expirationDate: '2026-01-15',
+    }); // expired
+    tracker.register({
+      ...activeReg,
+      deaNumber: 'DEA-002',
+      expirationDate: '2027-01-14',
+    }); // not expired
 
     const overdue = tracker.getOverdue();
     expect(overdue).toHaveLength(1);
@@ -87,7 +111,11 @@ describe('createDeaRegistrationTracker', () => {
     test('persists registrations to disk and reloads them', () => {
       const tracker1 = createDeaRegistrationTracker({ storageDir: tmpDir });
       tracker1.register(activeReg);
-      tracker1.register({ ...activeReg, deaNumber: 'DEA-67890', registrantName: 'Dr. Jones' });
+      tracker1.register({
+        ...activeReg,
+        deaNumber: 'DEA-67890',
+        registrantName: 'Dr. Jones',
+      });
 
       // New instance reads from disk
       const tracker2 = createDeaRegistrationTracker({ storageDir: tmpDir });

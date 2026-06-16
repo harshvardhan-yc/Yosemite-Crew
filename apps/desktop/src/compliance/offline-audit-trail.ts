@@ -77,5 +77,10 @@ export const createOfflineAuditTrail = (deps: TrailDeps): OfflineAuditTrail => {
   const getSyncFailureCount = (): number =>
     getOfflineMutations().filter((m) => m.failedAt !== null).length;
 
-  return { logMutation, getOfflineMutations, getUnsyncedCount, getSyncFailureCount };
+  return {
+    logMutation,
+    getOfflineMutations,
+    getUnsyncedCount,
+    getSyncFailureCount,
+  };
 };

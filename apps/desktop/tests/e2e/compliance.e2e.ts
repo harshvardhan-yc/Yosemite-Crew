@@ -110,10 +110,10 @@ test.describe('compliance E2E', () => {
     app = relaunched.app;
     page = relaunched.page;
     await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
-    const getResult = await evaluateYcDesktop<{ ok: boolean; deaNumber: string | null }>(
-      page,
-      'getDeaNumber'
-    );
+    const getResult = await evaluateYcDesktop<{
+      ok: boolean;
+      deaNumber: string | null;
+    }>(page, 'getDeaNumber');
     expect(getResult.ok).toBe(true);
     expect(getResult.deaNumber).toBe('AB1234563');
   });
@@ -125,24 +125,23 @@ test.describe('compliance E2E', () => {
       details: 'E2E test entry',
     });
     expect(appendResult.ok).toBe(true);
-    const verifyResult = await evaluateYcDesktop<{ ok: boolean; valid: boolean }>(
-      page,
-      'verifyAuditTrail'
-    );
+    const verifyResult = await evaluateYcDesktop<{
+      ok: boolean;
+      valid: boolean;
+    }>(page, 'verifyAuditTrail');
     expect(verifyResult.ok).toBe(true);
     expect(verifyResult.valid).toBe(true);
   });
 
   test('create backup zip in userData/backups/', async () => {
     await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
-    const backupResult = await evaluateYcDesktop<{ ok: boolean; path?: string }>(
-      page,
-      'createBackup',
-      {
-        includeAuditLog: true,
-        includeSettings: true,
-      }
-    );
+    const backupResult = await evaluateYcDesktop<{
+      ok: boolean;
+      path?: string;
+    }>(page, 'createBackup', {
+      includeAuditLog: true,
+      includeSettings: true,
+    });
     expect(backupResult.ok).toBe(true);
     expect(backupResult.path).toBeTruthy();
     expect(fs.existsSync(backupResult.path!)).toBe(true);
@@ -152,15 +151,14 @@ test.describe('compliance E2E', () => {
 
   test('backup with encryption has non-plaintext body', async () => {
     await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
-    const backupResult = await evaluateYcDesktop<{ ok: boolean; path?: string }>(
-      page,
-      'createBackup',
-      {
-        includeAuditLog: true,
-        includeSettings: true,
-        encrypt: true,
-      }
-    );
+    const backupResult = await evaluateYcDesktop<{
+      ok: boolean;
+      path?: string;
+    }>(page, 'createBackup', {
+      includeAuditLog: true,
+      includeSettings: true,
+      encrypt: true,
+    });
     expect(backupResult.ok).toBe(true);
     expect(backupResult.path).toBeTruthy();
     const buf = fs.readFileSync(backupResult.path!);

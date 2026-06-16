@@ -154,7 +154,7 @@ export const createSettingsStore = (filePath: string, deps: StoreDeps = {}): Set
 
   const load = (): DesktopSettings => {
     try {
-      const raw = readFileSync(filePath, 'utf8') as string;
+      const raw = readFileSync(filePath, 'utf8');
       cached = normalizeSettings(JSON.parse(raw));
     } catch {
       cached = { ...DEFAULT_SETTINGS };
@@ -163,7 +163,7 @@ export const createSettingsStore = (filePath: string, deps: StoreDeps = {}): Set
   };
 
   const save = (partial: Partial<DesktopSettings>): DesktopSettings => {
-    if (!cached) cached = load();
+    cached ??= load();
     const merged = { ...cached, ...partial };
     cached = normalizeSettings(merged);
     try {

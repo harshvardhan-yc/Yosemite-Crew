@@ -119,5 +119,15 @@ export const createSyncQueue = (dirPath: string, deps: QueueDeps = {}): SyncQueu
   const size = (): number => load().length;
   const getAll = (): Mutation[] => load();
 
-  return { push, peek, pop, markFailed, getFailed, getPending, clear, size, getAll };
+  return {
+    push,
+    peek,
+    pop,
+    markFailed,
+    getFailed,
+    getPending,
+    clear,
+    size,
+    getAll,
+  };
 };

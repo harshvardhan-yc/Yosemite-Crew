@@ -325,7 +325,12 @@ const setTabViewBounds = (
 const layoutChromeStrip = (b: TabBounds, isVertical: boolean): void => {
   if (!tabChromeView) return;
   if (isVertical) {
-    tabChromeView.setBounds({ x: 0, y: 0, width: VERTICAL_TAB_WIDTH, height: b.height });
+    tabChromeView.setBounds({
+      x: 0,
+      y: 0,
+      width: VERTICAL_TAB_WIDTH,
+      height: b.height,
+    });
     return;
   }
   tabChromeView.setBounds({
@@ -620,7 +625,10 @@ const configureDownloads = (ses: Session): void => {
   downloadsConfigured = true;
 
   ses.on('will-download', (_event, item) => {
-    logger.info('download_started', { filename: item.getFilename(), url: item.getURL() });
+    logger.info('download_started', {
+      filename: item.getFilename(),
+      url: item.getURL(),
+    });
     item.once('done', (_doneEvent, state) => {
       logger.info('download_finished', { filename: item.getFilename(), state });
       if (state === 'completed') {
@@ -647,7 +655,9 @@ const configureDownloads = (ses: Session): void => {
             }
             logger.debug('download_vaulted', { filename: item.getFilename() });
           } catch {
-            logger.warn('download_vault_failed', { filename: item.getFilename() });
+            logger.warn('download_vault_failed', {
+              filename: item.getFilename(),
+            });
           }
         }
       } else if (state === 'interrupted') {
@@ -1006,7 +1016,10 @@ const runUrlCommand = async (
   if (!action.url) return;
   const href = deepLinkToUrl(action.url, config);
   if (!href) {
-    logger.warn('command_action_route_unresolved', { id: action.id, url: action.url });
+    logger.warn('command_action_route_unresolved', {
+      id: action.id,
+      url: action.url,
+    });
     return;
   }
   await wc.loadURL(href);
@@ -1245,9 +1258,14 @@ const applyRollbackDecision = (): void => {
   rollbackTracker = readTracker(trackerPath, rollbackFsDeps);
   const decision = evaluateRollback(rollbackTracker, appVersion);
   if (decision.shouldRollback) {
-    logger.warn('rollback_triggered', { reason: decision.reason, tracker: rollbackTracker });
+    logger.warn('rollback_triggered', {
+      reason: decision.reason,
+      tracker: rollbackTracker,
+    });
   } else if (rollbackTracker.crashCount > 0) {
-    logger.warn('previous_session_crashed', { crashCount: rollbackTracker.crashCount });
+    logger.warn('previous_session_crashed', {
+      crashCount: rollbackTracker.crashCount,
+    });
     // Carry forward the crash count so the current session can also
     // contribute if it crashes too.
     rollbackTracker = recordCrash(trackerPath, appVersion, rollbackFsDeps);
@@ -1343,11 +1361,17 @@ if (gotSingleInstanceLock) {
   void app.whenReady().then(
     async () => {
       logger = createLogger({ logDir: app.getPath('logs') });
-      logger.info('app_ready', { version: app.getVersion(), isPackaged: app.isPackaged });
+      logger.info('app_ready', {
+        version: app.getVersion(),
+        isPackaged: app.isPackaged,
+      });
       configureOnlineTracking();
       createCrashReporter({ app, crashReporter, logger });
       wireCrashLogging({ app, logger });
-      app.setAboutPanelOptions({ ...aboutPanelOptions(app.getVersion()), iconPath: getIconPath() });
+      app.setAboutPanelOptions({
+        ...aboutPanelOptions(app.getVersion()),
+        iconPath: getIconPath(),
+      });
       windowStateStore = createWindowStateStore(
         path.join(app.getPath('userData'), 'window-state.json'),
         { logger }
@@ -1561,7 +1585,10 @@ if (gotSingleInstanceLock) {
       setupTelemetry({ logger });
       // Run after the window's initial load so the synchronous safeStorage
       // keychain prompt (audit key) can't stall cold-start navigation.
-      const compliance = await setupCompliance({ logger, userData: app.getPath('userData') });
+      const compliance = await setupCompliance({
+        logger,
+        userData: app.getPath('userData'),
+      });
       auditLog = compliance.auditLog;
       controlledSubstanceLog = compliance.controlledSubstanceLog;
       offlineAuditTrail = compliance.offlineAuditTrail;
@@ -1571,7 +1598,11 @@ if (gotSingleInstanceLock) {
       pmpService = compliance.pmpService;
       csExport = compliance.csExport;
 
-      const vault = setupVaultAndBackup({ logger, userData: app.getPath('userData'), safeStorage });
+      const vault = setupVaultAndBackup({
+        logger,
+        userData: app.getPath('userData'),
+        safeStorage,
+      });
       documentVault = vault.documentVault;
       backupService = vault.backupService;
       backupTimer = vault.backupTimer;
@@ -1602,13 +1633,15 @@ if (gotSingleInstanceLock) {
         refreshPrinters,
       });
 
-      void setupOfflineSync({ logger, net, endpoint: process.env.YC_DESKTOP_SYNC_URL }).then(
-        (sync) => {
-          offlineStore = sync.offlineStore;
-          syncEngine = sync.syncEngine;
-          offlineSyncTimer = sync.offlineSyncTimer;
-        }
-      );
+      void setupOfflineSync({
+        logger,
+        net,
+        endpoint: process.env.YC_DESKTOP_SYNC_URL,
+      }).then((sync) => {
+        offlineStore = sync.offlineStore;
+        syncEngine = sync.syncEngine;
+        offlineSyncTimer = sync.offlineSyncTimer;
+      });
 
       const native = setupNativeSurfaces({
         app,

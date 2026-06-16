@@ -17,8 +17,13 @@ describe('crash reporting', () => {
         getVersion: () => '0.1.0',
         isPackaged: false,
       } as never,
-      crashReporter: { start: (options) => started.push(options as never) } as never,
-      logger: { info: (event) => logs.push({ event }), warn: jest.fn() } as never,
+      crashReporter: {
+        start: (options) => started.push(options as never),
+      } as never,
+      logger: {
+        info: (event) => logs.push({ event }),
+        warn: jest.fn(),
+      } as never,
       env: {},
     });
 
@@ -36,9 +41,13 @@ describe('crash reporting', () => {
         getVersion: () => '0.1.0',
         isPackaged: true,
       } as never,
-      crashReporter: { start: (options) => started.push(options as never) } as never,
+      crashReporter: {
+        start: (options) => started.push(options as never),
+      } as never,
       logger: { info: jest.fn(), warn: jest.fn() } as never,
-      env: { [CRASH_REPORTING_ENV.CRASH_UPLOAD_URL_ENV]: 'https://crash.example.com' },
+      env: {
+        [CRASH_REPORTING_ENV.CRASH_UPLOAD_URL_ENV]: 'https://crash.example.com',
+      },
     });
 
     expect(started[0].uploadToServer).toBe(true);
@@ -89,7 +98,10 @@ describe('crash reporting', () => {
         isPackaged: false,
       } as never,
       crashReporter: { start: jest.fn() } as never,
-      logger: { info: jest.fn(), warn: (event: string) => warns.push(event) } as never,
+      logger: {
+        info: jest.fn(),
+        warn: (event: string) => warns.push(event),
+      } as never,
       env: {},
     });
     expect(warns).toContain('crash_dump_path_failed');

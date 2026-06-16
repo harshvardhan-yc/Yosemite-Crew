@@ -37,7 +37,10 @@ const fetchJson = (url: string, opts: FetchOpts = {}): Promise<{ status: number;
       res.on('end', () => {
         try {
           const body = Buffer.concat(chunks).toString('utf8');
-          resolve({ status: res.statusCode || 500, body: body ? JSON.parse(body) : null });
+          resolve({
+            status: res.statusCode || 500,
+            body: body ? JSON.parse(body) : null,
+          });
         } catch {
           reject(new Error('Invalid JSON response'));
         }
@@ -101,7 +104,9 @@ describe('createLocalApiServer', () => {
     const deps = makeDeps();
     const api = createLocalApiServer(deps);
     await api.start();
-    const res = await fetchJson(`http://127.0.0.1:${deps.port}/health`, { auth: null });
+    const res = await fetchJson(`http://127.0.0.1:${deps.port}/health`, {
+      auth: null,
+    });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ status: 'ok' });
     await api.stop();
@@ -155,7 +160,9 @@ describe('createLocalApiServer', () => {
     const deps = makeDeps();
     const api = createLocalApiServer(deps);
     await api.start();
-    const res = await fetchJson(`http://127.0.0.1:${deps.port}/health`, { host: 'evil.com' });
+    const res = await fetchJson(`http://127.0.0.1:${deps.port}/health`, {
+      host: 'evil.com',
+    });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: 'forbidden host' });
     await api.stop();

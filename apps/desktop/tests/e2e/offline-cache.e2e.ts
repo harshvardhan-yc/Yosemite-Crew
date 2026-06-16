@@ -47,7 +47,11 @@ const PAGES = [
     title: 'Appt 2',
     body: '<h1>Appointment 2</h1><p>Patient: Whiskers</p>',
   },
-  { path: '/patients/42', title: 'Patient 42', body: '<h1>Patient 42</h1><p>Name: Buddy</p>' },
+  {
+    path: '/patients/42',
+    title: 'Patient 42',
+    body: '<h1>Patient 42</h1><p>Name: Buddy</p>',
+  },
 ];
 
 const startPimsServer = async (): Promise<TestServer> =>

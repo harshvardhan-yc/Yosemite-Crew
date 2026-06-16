@@ -45,7 +45,10 @@ describe('createDeaBiennialReminder', () => {
     const r1 = createDeaBiennialReminder({ storagePath, now: () => now });
     r1.recordReportGenerated();
     // Advance 1 year — not yet due
-    const r2 = createDeaBiennialReminder({ storagePath, now: () => now + 365 * 86400000 });
+    const r2 = createDeaBiennialReminder({
+      storagePath,
+      now: () => now + 365 * 86400000,
+    });
     expect(r2.isReportDue()).toBe(false);
   });
 
@@ -70,7 +73,10 @@ describe('createDeaBiennialReminder', () => {
     const now = 5000000;
     const r1 = createDeaBiennialReminder({ storagePath, now: () => now });
     r1.recordReportGenerated();
-    const r2 = createDeaBiennialReminder({ storagePath, now: () => now + 365 * 86400000 });
+    const r2 = createDeaBiennialReminder({
+      storagePath,
+      now: () => now + 365 * 86400000,
+    });
     const days = r2.getDaysUntilDue();
     expect(days).toBeGreaterThan(0);
     expect(days).toBeLessThanOrEqual(366);
@@ -80,7 +86,10 @@ describe('createDeaBiennialReminder', () => {
     const now = 5000000;
     const r1 = createDeaBiennialReminder({ storagePath, now: () => now });
     r1.recordReportGenerated();
-    const r2 = createDeaBiennialReminder({ storagePath, now: () => now + 3 * 365 * 86400000 });
+    const r2 = createDeaBiennialReminder({
+      storagePath,
+      now: () => now + 3 * 365 * 86400000,
+    });
     expect(r2.getDaysUntilDue()).toBeLessThan(0);
   });
 
@@ -89,7 +98,10 @@ describe('createDeaBiennialReminder', () => {
     const r1 = createDeaBiennialReminder({ storagePath, now: () => now });
     r1.recordReportGenerated();
     // Just 1 day after recording
-    const r2 = createDeaBiennialReminder({ storagePath, now: () => now + 86400000 });
+    const r2 = createDeaBiennialReminder({
+      storagePath,
+      now: () => now + 86400000,
+    });
     expect(r2.getReminderMessage()).toBeNull();
   });
 
@@ -111,7 +123,10 @@ describe('createDeaBiennialReminder', () => {
     const now = 5000000;
     const r1 = createDeaBiennialReminder({ storagePath, now: () => now });
     r1.recordReportGenerated();
-    const r2 = createDeaBiennialReminder({ storagePath, now: () => now + 3 * 365 * 86400000 });
+    const r2 = createDeaBiennialReminder({
+      storagePath,
+      now: () => now + 3 * 365 * 86400000,
+    });
     expect(r2.getReminderMessage()).toBe(
       'DEA biennial inventory report is due. Please generate and submit.'
     );

@@ -15,7 +15,9 @@ export interface PageActionTrigger {
 }
 
 export const PAGE_ACTION_TRIGGERS: Record<string, PageActionTrigger> = {
-  'action-new-appointment': { clickText: ['add appointment', 'new appointment'] },
+  'action-new-appointment': {
+    clickText: ['add appointment', 'new appointment'],
+  },
   'action-find-patient': { focusSelector: 'input[placeholder*="search" i]' },
   'action-new-invoice': {
     clickText: ['add invoice', 'create invoice', 'new invoice', 'add payment'],

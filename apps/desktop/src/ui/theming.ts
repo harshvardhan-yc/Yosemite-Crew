@@ -15,16 +15,15 @@ export const ACCENT_COLORS = [
 ] as const;
 
 export type AccentColor = (typeof ACCENT_COLORS)[number];
-export type FontScale = number;
 
 export const isValidAccentColor = (color: string): boolean =>
   ACCENT_COLORS.includes(color as AccentColor);
 
 export const isValidFontScale = (scale: number): boolean =>
-  typeof scale === 'number' && Number.isFinite(scale) && scale >= 0.5 && scale <= 2.0;
+  typeof scale === 'number' && Number.isFinite(scale) && scale >= 0.5 && scale <= 2;
 
 export const clampFontScale = (scale: number): number =>
-  Math.max(0.5, Math.min(2.0, Math.round(scale * 4) / 4));
+  Math.max(0.5, Math.min(2, Math.round(scale * 4) / 4));
 
 export const buildThemeCss = (accentColor: string): string => {
   const validColor = isValidAccentColor(accentColor) ? accentColor : DEFAULT_ACCENT_COLOR;

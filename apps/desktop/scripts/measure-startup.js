@@ -46,7 +46,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const rssForPid = (pid) => {
   if (process.platform === 'darwin' || process.platform === 'linux') {
     const output = childProcess
-      .execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], { encoding: 'utf8' })
+      .execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], {
+        encoding: 'utf8',
+      })
       .trim();
     return output ? Number(output) * 1024 : 0;
   }
@@ -82,7 +84,12 @@ const main = async () => {
 
   child.kill();
   await sleep(1_000);
-  fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 250 });
+  fs.rmSync(userDataDir, {
+    recursive: true,
+    force: true,
+    maxRetries: 3,
+    retryDelay: 250,
+  });
 
   console.log(
     JSON.stringify(

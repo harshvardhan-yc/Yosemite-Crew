@@ -76,8 +76,18 @@ describe('createSecondaryDisplayManager', () => {
     const deps = makeDeps();
     const mgr = createSecondaryDisplayManager(deps);
 
-    mgr.openDisplay({ role: 'whiteboard', url: '/wb1', mode: 'extend', displayIndex: 1 });
-    mgr.openDisplay({ role: 'kiosk', url: '/kiosk', mode: 'extend', displayIndex: 1 });
+    mgr.openDisplay({
+      role: 'whiteboard',
+      url: '/wb1',
+      mode: 'extend',
+      displayIndex: 1,
+    });
+    mgr.openDisplay({
+      role: 'kiosk',
+      url: '/kiosk',
+      mode: 'extend',
+      displayIndex: 1,
+    });
 
     mgr.closeAll();
     expect(mgr.getDisplayIds()).toHaveLength(0);
@@ -87,7 +97,12 @@ describe('createSecondaryDisplayManager', () => {
     const deps = makeDeps();
     const mgr = createSecondaryDisplayManager(deps);
 
-    mgr.openDisplay({ role: 'whiteboard', url: '/whiteboard', mode: 'extend', displayIndex: 0 });
+    mgr.openDisplay({
+      role: 'whiteboard',
+      url: '/whiteboard',
+      mode: 'extend',
+      displayIndex: 0,
+    });
 
     const displays = mgr.getDisplays();
     expect(displays).toHaveLength(1);
@@ -102,7 +117,12 @@ describe('createSecondaryDisplayManager', () => {
     };
     const mgr = createSecondaryDisplayManager(deps);
 
-    mgr.openDisplay({ role: 'whiteboard', url: '/whiteboard', mode: 'mirror', displayIndex: 0 });
+    mgr.openDisplay({
+      role: 'whiteboard',
+      url: '/whiteboard',
+      mode: 'mirror',
+      displayIndex: 0,
+    });
     expect(deps.createWindow).toHaveBeenCalledTimes(1);
   });
 });
@@ -117,7 +137,12 @@ describe('generateWhiteboardHtml', () => {
         reason: 'Annual checkup',
         waitTime: 15,
       },
-      { name: 'Max', owner: 'Jane Doe', status: 'checked-in', reason: 'Vaccination' },
+      {
+        name: 'Max',
+        owner: 'Jane Doe',
+        status: 'checked-in',
+        reason: 'Vaccination',
+      },
       { name: 'Luna', status: 'in-treatment', reason: 'Surgery' },
     ]);
 

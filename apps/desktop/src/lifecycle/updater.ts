@@ -37,7 +37,9 @@ interface AutoUpdaterLike {
 
 interface ElectronLike {
   app: { isPackaged: boolean };
-  dialog: { showMessageBox: (options: MessageBoxOptions) => Promise<{ response: number }> | void };
+  dialog: {
+    showMessageBox: (options: MessageBoxOptions) => Promise<{ response: number }> | void;
+  };
 }
 
 type ElectronUpdaterModule = {
@@ -66,7 +68,7 @@ export const shouldCheckForUpdates = (
 
 export const updateChannelFromEnv = (env: NodeJS.ProcessEnv = process.env): UpdateChannel => {
   const raw = env[UPDATE_CHANNEL_ENV];
-  return raw && raw.toLowerCase() === 'beta' ? 'beta' : 'latest';
+  return raw?.toLowerCase() === 'beta' ? 'beta' : 'latest';
 };
 
 export const configureUpdateChannel = (
@@ -84,7 +86,7 @@ export const autoUpdaterFromModule = (mod: ElectronUpdaterModule): AutoUpdaterLi
 
 // Pure: dialog shown once an update has been downloaded and is ready to install.
 export const updateDownloadedDialog = (info?: UpdateInfo): MessageBoxOptions => {
-  const version = info && info.version ? ` (${info.version})` : '';
+  const version = info?.version ? ` (${info.version})` : '';
   return {
     type: 'info',
     buttons: ['Restart Now', 'Later'],
@@ -105,7 +107,7 @@ export const manualResultDialog = (
       type: 'info',
       buttons: ['OK'],
       message: `${PRODUCT_NAME} is up to date.`,
-      detail: info && info.version ? `You're on the latest version (${info.version}).` : undefined,
+      detail: info?.version ? `You're on the latest version (${info.version}).` : undefined,
     };
   }
   if (state === 'available') {

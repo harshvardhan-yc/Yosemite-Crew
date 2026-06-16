@@ -24,7 +24,7 @@ interface BiometricDeps {
 }
 
 export const createBiometricLock = (deps: BiometricDeps = {}): BiometricLock => {
-  const platform = deps.platform !== undefined ? deps.platform : detectPlatform();
+  const platform = deps.platform ?? detectPlatform();
   let locked = false;
 
   const canPromptTouchID = deps.canPromptTouchID;

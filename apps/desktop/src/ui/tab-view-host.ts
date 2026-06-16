@@ -70,7 +70,11 @@ export const createTabViewHost = (deps: TabViewHostDeps): TabViewHost => {
       });
 
       view.webContents.loadURL(url).catch((err: Error) => {
-        deps.logger.warn('tab_view_load_failed', { id, url, error: err.message });
+        deps.logger.warn('tab_view_load_failed', {
+          id,
+          url,
+          error: err.message,
+        });
       });
 
       views.set(id, { id, view, url });
@@ -146,8 +150,8 @@ export const createTabViewHost = (deps: TabViewHostDeps): TabViewHost => {
       view.webContents.on('input-event', (_event, input) => {
         const mi = input as { type: string; button?: number };
         if (mi.type === 'mouseUp' && mi.button !== undefined) {
-          if (mi.button === 3) view.webContents.goBack();
-          else if (mi.button === 4) view.webContents.goForward();
+          if (mi.button === 3) view.webContents.navigationHistory.goBack();
+          else if (mi.button === 4) view.webContents.navigationHistory.goForward();
         }
       });
 

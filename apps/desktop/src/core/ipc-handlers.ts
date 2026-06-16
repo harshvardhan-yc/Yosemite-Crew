@@ -103,7 +103,10 @@ export interface IpcServices {
   documentVault: DocumentVault | null;
   syncEngine: SyncEngine | null;
   offlineStore: OfflineStore | null;
-  keyboardShortcutManager: { register: () => void; unregister: () => void } | null;
+  keyboardShortcutManager: {
+    register: () => void;
+    unregister: () => void;
+  } | null;
 
   // Compliance
   auditLog: AuditLog | null;
@@ -175,7 +178,7 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     if (typeof partial !== 'object' || partial === null || Array.isArray(partial)) {
       return { ok: false, error: 'invalid-settings' };
     }
-    const updated = store.save(partial as Partial<DesktopSettings>);
+    const updated = store.save(partial);
     services.applySettings(updated);
     return { ok: true, settings: updated };
   });
@@ -269,9 +272,17 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
 
   registry.handle('yc:sync-now', async () => {
     if (!services.syncEngine)
-      return { ok: false, error: 'sync-not-ready', status: services.getSyncStatusSummary() };
+      return {
+        ok: false,
+        error: 'sync-not-ready',
+        status: services.getSyncStatusSummary(),
+      };
     if (!net.isOnline())
-      return { ok: false, error: 'offline', status: services.getSyncStatusSummary() };
+      return {
+        ok: false,
+        error: 'offline',
+        status: services.getSyncStatusSummary(),
+      };
     const results = await services.runOfflineFullSync();
     services.logger.info('manual_sync_completed', {
       tables: results.length,
@@ -368,7 +379,10 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
       return { ok: false, error: 'invalid-entry' };
     const created = services.auditLog.append(entry as Parameters<AuditLog['append']>[0]);
-    services.logger.info('audit_appended', { id: created.id, action: created.action });
+    services.logger.info('audit_appended', {
+      id: created.id,
+      action: created.action,
+    });
     return { ok: true, entry: created };
   });
 
@@ -521,7 +535,7 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     child.on('page-title-updated', (event, title) => {
       event.preventDefault();
       const trimmed = (title || '').trim();
-      const prefixPattern = services.brandPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const prefixPattern = services.brandPrefix.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
       const hasBrand = new RegExp(prefixPattern, 'i').test(trimmed);
       if (hasBrand) {
         child.setTitle(trimmed);
@@ -584,7 +598,11 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
 
   registry.handle('yc:tabs-get', async () => {
     if (!services.tabManager) return { ok: false, error: 'tabs-not-ready' };
-    return { ok: true, ...services.tabManager.getState(), orientation: services.tabOrientation };
+    return {
+      ok: true,
+      ...services.tabManager.getState(),
+      orientation: services.tabOrientation,
+    };
   });
 
   registry.handle('yc:tab-new', async (_event, args) => {
@@ -721,7 +739,7 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     const [id, level] = args as [string, number];
     if (typeof id !== 'string' || typeof level !== 'number')
       return { ok: false, error: 'invalid-args' };
-    const clamped = Math.max(0.1, Math.min(5.0, level));
+    const clamped = Math.max(0.1, Math.min(5, level));
     services.tabManager.updateMeta(id, { zoom: clamped });
     services.tabViewHost.setZoom(id, clamped);
     services.saveSession();

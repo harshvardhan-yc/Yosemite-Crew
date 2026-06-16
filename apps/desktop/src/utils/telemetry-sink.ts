@@ -68,7 +68,10 @@ export const createTelemetryHttpSink = (options: TelemetryHttpSinkOptions): Tele
       return true;
     } catch (error) {
       failureCount += 1;
-      options.logger?.warn('telemetry_http_upload_failed', { error, delayMs: nextDelayMs() });
+      options.logger?.warn('telemetry_http_upload_failed', {
+        error,
+        delayMs: nextDelayMs(),
+      });
       return false;
     }
   };

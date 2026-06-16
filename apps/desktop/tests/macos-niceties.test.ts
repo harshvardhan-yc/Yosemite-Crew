@@ -6,12 +6,22 @@ import {
 
 describe('macOS niceties', () => {
   test('normalizes open-at-login settings', () => {
-    expect(normalizeLoginItemSettings(true)).toEqual({ openAtLogin: true, openAsHidden: true });
-    expect(normalizeLoginItemSettings(false)).toEqual({ openAtLogin: false, openAsHidden: false });
+    expect(normalizeLoginItemSettings(true)).toEqual({
+      openAtLogin: true,
+      openAsHidden: true,
+    });
+    expect(normalizeLoginItemSettings(false)).toEqual({
+      openAtLogin: false,
+      openAsHidden: false,
+    });
   });
 
   test('creates a dock menu template from injected actions', () => {
-    const deps = { show: jest.fn(), checkForUpdates: jest.fn(), newWindow: jest.fn() };
+    const deps = {
+      show: jest.fn(),
+      checkForUpdates: jest.fn(),
+      newWindow: jest.fn(),
+    };
     const menu = createDockMenuTemplate(deps);
 
     expect(menu.map((item) => item.id)).toEqual(['show', 'check-for-updates', 'new-window']);

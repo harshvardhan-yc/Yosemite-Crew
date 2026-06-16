@@ -69,7 +69,10 @@ describe('pure helpers', () => {
   test('configures the updater channel and prerelease flag', () => {
     const latestUpdater: { channel?: string; allowPrerelease?: boolean } = {};
     expect(configureUpdateChannel(latestUpdater, {})).toBe('latest');
-    expect(latestUpdater).toEqual({ channel: 'latest', allowPrerelease: false });
+    expect(latestUpdater).toEqual({
+      channel: 'latest',
+      allowPrerelease: false,
+    });
 
     const betaUpdater: { channel?: string; allowPrerelease?: boolean } = {};
     expect(configureUpdateChannel(betaUpdater, { [UPDATE_CHANNEL_ENV]: 'beta' })).toBe('beta');
@@ -108,7 +111,10 @@ describe('pure helpers', () => {
 describe('initAutoUpdates', () => {
   test('is a no-op in dev (not packaged)', async () => {
     const result = await initAutoUpdates({
-      electron: { app: { isPackaged: false }, dialog: { showMessageBox: () => undefined } },
+      electron: {
+        app: { isPackaged: false },
+        dialog: { showMessageBox: () => undefined },
+      },
       env: {},
     });
     expect(result).toBeNull();
@@ -187,7 +193,9 @@ describe('initAutoUpdates', () => {
     const updater = makeFakeUpdater();
     const warn = jest.fn();
     const logger = { info: jest.fn(), warn, error: jest.fn() };
-    const dialog = { showMessageBox: () => Promise.reject(new Error('dialog failed')) };
+    const dialog = {
+      showMessageBox: () => Promise.reject(new Error('dialog failed')),
+    };
     await initAutoUpdates({
       electron: { app: { isPackaged: true }, dialog },
       autoUpdater: updater as never,
@@ -225,7 +233,10 @@ describe('checkForUpdatesManually', () => {
   test('explains that updates need the packaged app in dev', async () => {
     const messages: Array<{ message: string }> = [];
     const result = await checkForUpdatesManually({
-      electron: { app: { isPackaged: false }, dialog: { showMessageBox: (o) => messages.push(o) } },
+      electron: {
+        app: { isPackaged: false },
+        dialog: { showMessageBox: (o) => messages.push(o) },
+      },
     });
     expect(result).toBeNull();
     expect(messages[0].message).toMatch(/installed app/i);
@@ -234,7 +245,10 @@ describe('checkForUpdatesManually', () => {
   test('registers feedback handlers and checks when packaged', async () => {
     const updater = makeFakeUpdater();
     await checkForUpdatesManually({
-      electron: { app: { isPackaged: true }, dialog: { showMessageBox: () => undefined } },
+      electron: {
+        app: { isPackaged: true },
+        dialog: { showMessageBox: () => undefined },
+      },
       autoUpdater: updater as never,
     });
     expect(typeof updater.handlers['update-not-available']).toBe('function');
@@ -248,7 +262,10 @@ describe('checkForUpdatesManually', () => {
   test('applies the beta update channel during manual checks', async () => {
     const updater = makeFakeUpdater();
     await checkForUpdatesManually({
-      electron: { app: { isPackaged: true }, dialog: { showMessageBox: () => undefined } },
+      electron: {
+        app: { isPackaged: true },
+        dialog: { showMessageBox: () => undefined },
+      },
       autoUpdater: updater as never,
       env: { [UPDATE_CHANNEL_ENV]: 'beta' },
     });
@@ -260,7 +277,10 @@ describe('checkForUpdatesManually', () => {
     const updater = makeFakeUpdater();
     const messages: Array<{ type?: string; message: string }> = [];
     await checkForUpdatesManually({
-      electron: { app: { isPackaged: true }, dialog: { showMessageBox: (o) => messages.push(o) } },
+      electron: {
+        app: { isPackaged: true },
+        dialog: { showMessageBox: (o) => messages.push(o) },
+      },
       autoUpdater: updater as never,
     });
     updater.handlers['update-not-available']({ version: '1.0.0' });

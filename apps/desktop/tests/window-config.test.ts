@@ -26,7 +26,12 @@ jest.mock('electron', () => ({
   shell: { openExternal: (...a: unknown[]) => shellOpenExternal(...a) },
 }));
 jest.mock('../src/utils/logger', () => ({
-  createLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
+  createLogger: () => ({
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  }),
 }));
 
 import {
@@ -76,7 +81,9 @@ describe('web preferences + child window', () => {
   });
 
   test('childWindowOptions uses secure prefs', () => {
-    expect(childWindowOptions().webPreferences).toMatchObject({ sandbox: true });
+    expect(childWindowOptions().webPreferences).toMatchObject({
+      sandbox: true,
+    });
   });
 });
 
@@ -177,7 +184,13 @@ describe('buildContextMenu', () => {
         x: 3,
         y: 4,
         selectionText: 'hi',
-        editFlags: { canCopy: true, canPaste: true, canCut: true, canUndo: true, canRedo: true },
+        editFlags: {
+          canCopy: true,
+          canPaste: true,
+          canCut: true,
+          canUndo: true,
+          canRedo: true,
+        },
       },
       { replaceMisspelling, copyImageAt } as never
     ) as unknown as FakeMenu;

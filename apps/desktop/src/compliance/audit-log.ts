@@ -106,7 +106,11 @@ export const createAuditLog = async (dirPath: string, deps: AuditDeps = {}): Pro
   // wrapper is present but unusable (caller then generates a fresh key).
   const decodeStoredKey = (stored: string): string | null => {
     try {
-      const parsed = JSON.parse(stored) as { enc?: boolean; data?: string; key?: string };
+      const parsed = JSON.parse(stored) as {
+        enc?: boolean;
+        data?: string;
+        key?: string;
+      };
       if (parsed.enc && parsed.data && secureStore) {
         return secureStore.decryptString(Buffer.from(parsed.data, 'base64'));
       }
@@ -156,7 +160,7 @@ export const createAuditLog = async (dirPath: string, deps: AuditDeps = {}): Pro
         cached = [];
         return cached;
       }
-      const raw = readFileSync(filePath, 'utf8') as string;
+      const raw = readFileSync(filePath, 'utf8');
       const entries: AuditEntry[] = JSON.parse(raw);
       if (!Array.isArray(entries)) {
         cached = [];

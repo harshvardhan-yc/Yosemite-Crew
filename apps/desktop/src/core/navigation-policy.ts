@@ -138,9 +138,7 @@ export const isAllowedInAppPopup = (
   const decision = classifyNavigation(rawUrl, config);
   if (decision.disposition === 'internal') return true;
   return Boolean(
-    decision.url &&
-    decision.url.protocol === 'https:' &&
-    config.inAppPopupOrigins.has(decision.url.origin)
+    decision.url?.protocol === 'https:' && config.inAppPopupOrigins.has(decision.url.origin)
   );
 };
 

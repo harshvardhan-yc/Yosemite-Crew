@@ -34,7 +34,13 @@ describe('normalizeWindowState', () => {
 
   test('preserves valid position and maximized flag', () => {
     expect(
-      normalizeWindowState({ width: 1600, height: 1000, x: 120, y: 64, isMaximized: true })
+      normalizeWindowState({
+        width: 1600,
+        height: 1000,
+        x: 120,
+        y: 64,
+        isMaximized: true,
+      })
     ).toEqual({
       width: 1600,
       height: 1000,
@@ -76,8 +82,22 @@ describe('createWindowStateStore', () => {
       isMaximized: false,
     });
 
-    expect(store.save({ width: 1500, height: 900, x: 10, y: 20, isMaximized: false })).toBe(true);
-    expect(store.load()).toEqual({ width: 1500, height: 900, x: 10, y: 20, isMaximized: false });
+    expect(
+      store.save({
+        width: 1500,
+        height: 900,
+        x: 10,
+        y: 20,
+        isMaximized: false,
+      })
+    ).toBe(true);
+    expect(store.load()).toEqual({
+      width: 1500,
+      height: 900,
+      x: 10,
+      y: 20,
+      isMaximized: false,
+    });
   });
 
   test('returns defaults when the file contains invalid JSON', () => {
@@ -105,7 +125,13 @@ describe('createWindowStateStore', () => {
       isMaximized: false,
     });
     expect(store.save({ width: 1480, height: 920, x: 3, y: 4, isMaximized: true })).toBe(true);
-    expect(store.load()).toEqual({ width: 1480, height: 920, x: 3, y: 4, isMaximized: true });
+    expect(store.load()).toEqual({
+      width: 1480,
+      height: 920,
+      x: 3,
+      y: 4,
+      isMaximized: true,
+    });
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -198,7 +224,13 @@ describe('manageWindow', () => {
     });
     manageWindow(win as never, { save: (s) => saved.push(s) });
     listeners.close();
-    expect(saved[0]).toEqual({ x: 1, y: 2, width: 1200, height: 800, isMaximized: false });
+    expect(saved[0]).toEqual({
+      x: 1,
+      y: 2,
+      width: 1200,
+      height: 800,
+      isMaximized: false,
+    });
   });
 });
 
@@ -206,12 +238,24 @@ describe('clampToVisibleDisplays', () => {
   const primary = { workArea: { x: 0, y: 0, width: 1440, height: 900 } };
 
   it('keeps the position when it overlaps a display', () => {
-    const state = { x: 100, y: 80, width: 1200, height: 800, isMaximized: false };
+    const state = {
+      x: 100,
+      y: 80,
+      width: 1200,
+      height: 800,
+      isMaximized: false,
+    };
     expect(clampToVisibleDisplays(state, [primary])).toEqual(state);
   });
 
   it('drops x/y when the window is entirely off every display', () => {
-    const state = { x: 3000, y: 1500, width: 1200, height: 800, isMaximized: false };
+    const state = {
+      x: 3000,
+      y: 1500,
+      width: 1200,
+      height: 800,
+      isMaximized: false,
+    };
     const result = clampToVisibleDisplays(state, [primary]);
     expect(result.x).toBeUndefined();
     expect(result.y).toBeUndefined();
@@ -220,8 +264,16 @@ describe('clampToVisibleDisplays', () => {
   });
 
   it('keeps the position when a second display covers it', () => {
-    const secondary = { workArea: { x: 1440, y: 0, width: 1920, height: 1080 } };
-    const state = { x: 2000, y: 200, width: 1200, height: 800, isMaximized: false };
+    const secondary = {
+      workArea: { x: 1440, y: 0, width: 1920, height: 1080 },
+    };
+    const state = {
+      x: 2000,
+      y: 200,
+      width: 1200,
+      height: 800,
+      isMaximized: false,
+    };
     expect(clampToVisibleDisplays(state, [primary, secondary])).toEqual(state);
   });
 

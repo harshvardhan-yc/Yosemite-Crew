@@ -23,6 +23,10 @@ docs/desktop-feature-plan.md
 # Local-only Sonar pipeline runner (carries an analysis token — never commit)
 sonar-local.sh
 
+# Local Sonar issue fetch — token file and fetched output (never commit)
+.sonar-token
+sonar-issues.json
+
 # Local dev launchers (contain machine-specific absolute paths) and their logs
 *.command
 .setup.log

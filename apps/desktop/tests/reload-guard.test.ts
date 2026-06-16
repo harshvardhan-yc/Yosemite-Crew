@@ -3,7 +3,11 @@ import { createReloadGuard } from '../src/core/reload-guard';
 describe('createReloadGuard', () => {
   test('allows reloads up to the limit, then blocks within the window', () => {
     const t = 1000;
-    const guard = createReloadGuard({ maxReloads: 3, windowMs: 10000, now: () => t });
+    const guard = createReloadGuard({
+      maxReloads: 3,
+      windowMs: 10000,
+      now: () => t,
+    });
 
     expect(guard.shouldReload()).toBe(true);
     expect(guard.shouldReload()).toBe(true);
@@ -14,7 +18,11 @@ describe('createReloadGuard', () => {
 
   test('forgets attempts older than the window', () => {
     let t = 0;
-    const guard = createReloadGuard({ maxReloads: 2, windowMs: 5000, now: () => t });
+    const guard = createReloadGuard({
+      maxReloads: 2,
+      windowMs: 5000,
+      now: () => t,
+    });
 
     expect(guard.shouldReload()).toBe(true);
     expect(guard.shouldReload()).toBe(true);
@@ -26,7 +34,11 @@ describe('createReloadGuard', () => {
 
   test('reset clears the recorded attempts', () => {
     const t = 0;
-    const guard = createReloadGuard({ maxReloads: 1, windowMs: 10000, now: () => t });
+    const guard = createReloadGuard({
+      maxReloads: 1,
+      windowMs: 10000,
+      now: () => t,
+    });
 
     expect(guard.shouldReload()).toBe(true);
     expect(guard.shouldReload()).toBe(false);

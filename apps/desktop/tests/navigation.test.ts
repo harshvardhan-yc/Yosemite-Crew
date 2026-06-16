@@ -47,7 +47,13 @@ describe('loadStartUrl', () => {
 
   test('is a no-op when there is no active contents', () => {
     const logger = makeLogger();
-    loadStartUrl({ logger, config, mainWindow: null, tabMode: false, activeContents: () => null });
+    loadStartUrl({
+      logger,
+      config,
+      mainWindow: null,
+      tabMode: false,
+      activeContents: () => null,
+    });
     expect(logger.info).not.toHaveBeenCalled();
   });
 });
@@ -57,13 +63,21 @@ describe('showOfflinePage', () => {
     const wc = makeWc();
     const logger = makeLogger();
     showOfflinePage(
-      { logger, config, mainWindow: null, tabMode: false, activeContents: () => wc as never },
+      {
+        logger,
+        config,
+        mainWindow: null,
+        tabMode: false,
+        activeContents: () => wc as never,
+      },
       'no-net'
     );
     expect(wc.loadFile).toHaveBeenCalledWith(expect.stringMatching(/offline\.html$/), {
       query: { reason: 'no-net' },
     });
-    expect(logger.warn).toHaveBeenCalledWith('offline_page_shown', { reason: 'no-net' });
+    expect(logger.warn).toHaveBeenCalledWith('offline_page_shown', {
+      reason: 'no-net',
+    });
   });
 
   test('normalizes a missing reason to an empty string and no-ops without contents', () => {
@@ -78,11 +92,19 @@ describe('showOfflinePage', () => {
       },
       ''
     );
-    expect(wc.loadFile).toHaveBeenCalledWith(expect.any(String), { query: { reason: '' } });
+    expect(wc.loadFile).toHaveBeenCalledWith(expect.any(String), {
+      query: { reason: '' },
+    });
 
     const logger = makeLogger();
     showOfflinePage(
-      { logger, config, mainWindow: null, tabMode: false, activeContents: () => null },
+      {
+        logger,
+        config,
+        mainWindow: null,
+        tabMode: false,
+        activeContents: () => null,
+      },
       'x'
     );
     expect(logger.warn).not.toHaveBeenCalled();
@@ -167,7 +189,9 @@ describe('handleDeepLink', () => {
       focusMainWindow: focus,
     });
     expect(result).toBeNull();
-    expect(logger.warn).toHaveBeenCalledWith('deep_link_rejected', { rawUrl: 'not-a-deep-link' });
+    expect(logger.warn).toHaveBeenCalledWith('deep_link_rejected', {
+      rawUrl: 'not-a-deep-link',
+    });
   });
 });
 

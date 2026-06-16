@@ -14,7 +14,9 @@ describe('PAGE_ACTION_TRIGGERS', () => {
 
 describe('buildPageActionScript', () => {
   test('embeds lowercased click patterns and DOM scan', () => {
-    const script = buildPageActionScript({ clickText: ['Add Appointment', 'NEW appointment'] });
+    const script = buildPageActionScript({
+      clickText: ['Add Appointment', 'NEW appointment'],
+    });
     expect(script).toContain('"add appointment"');
     expect(script).toContain('"new appointment"');
     expect(script).toContain('querySelectorAll');
@@ -22,7 +24,9 @@ describe('buildPageActionScript', () => {
   });
 
   test('embeds the focus selector', () => {
-    const script = buildPageActionScript({ focusSelector: 'input[placeholder*="search" i]' });
+    const script = buildPageActionScript({
+      focusSelector: 'input[placeholder*="search" i]',
+    });
     expect(script).toContain('input[placeholder');
     expect(script).toContain('.focus()');
   });

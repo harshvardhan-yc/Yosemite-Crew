@@ -53,9 +53,9 @@ const dirtyFilter = 'WHERE _dirty = 1';
 // SQLite identifier quoting: double any embedded quote and reject NUL bytes.
 // Table and column names can originate from synced server data, so they must
 // never be interpolated into SQL raw. (Bound values are already parameterized.)
-const NUL = String.fromCharCode(0);
+const NUL = String.fromCodePoint(0);
 export const quoteIdent = (id: string): string => {
-  if (typeof id !== 'string' || id.length === 0 || id.indexOf(NUL) !== -1) {
+  if (typeof id !== 'string' || id.length === 0 || id.includes(NUL)) {
     throw new Error('Invalid SQL identifier');
   }
   return `"${id.replaceAll('"', '""')}"`;
@@ -203,7 +203,7 @@ export const createOfflineStore = async (deps: StoreDeps = {}): Promise<OfflineS
   const loadFile = (filePath: string): void => {
     if (fs.existsSync(filePath)) {
       const buffer = fs.readFileSync(filePath);
-      db = new (db.constructor as { new (data?: Uint8Array): SqlJsDatabase })(buffer);
+      db = new (db.constructor as new (data?: Uint8Array) => SqlJsDatabase)(buffer);
     }
   };
 

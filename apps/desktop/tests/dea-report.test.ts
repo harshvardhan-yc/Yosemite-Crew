@@ -34,7 +34,10 @@ describe('generateDeaReport', () => {
     const nowMs = 1000;
     const deps = makeDeps(nowMs);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -103,7 +106,10 @@ describe('generateDeaReport', () => {
   test('handles transfer transactions with positive and negative quantities', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'transfer',
@@ -136,7 +142,10 @@ describe('generateDeaReport', () => {
   test('uses default drugClass and schedule for drugs with empty drugClass', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -158,7 +167,10 @@ describe('generateDeaReport', () => {
   test('generates empty report when no transactions', async () => {
     const deps = makeDeps();
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     const report = generateDeaReport({ logbook, facilityName: 'Test Clinic' });
     expect(report.totalDrugs).toBe(0);
@@ -168,7 +180,10 @@ describe('generateDeaReport', () => {
   test('handles multiple drugs', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -199,7 +214,10 @@ describe('generateDeaReport', () => {
   test('maps drug class to DEA schedule correctly', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -232,7 +250,10 @@ describe('generateDeaReport', () => {
   test('maps CIV and CV drug classes correctly', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',

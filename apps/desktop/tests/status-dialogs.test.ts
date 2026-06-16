@@ -4,7 +4,10 @@ jest.mock('../src/compliance/dea-report', () => ({
 }));
 jest.mock('../src/utils/diagnostics', () => ({
   collectDiagnosticData: jest.fn(() => ({})),
-  createDiagnosticBundle: jest.fn(() => ({ diagnosticsJson: '{}', logContent: '' })),
+  createDiagnosticBundle: jest.fn(() => ({
+    diagnosticsJson: '{}',
+    logContent: '',
+  })),
   readRecentLogEntries: jest.fn(() => []),
   writeDiagnosticZip: jest.fn(() => Promise.resolve()),
 }));
@@ -16,7 +19,12 @@ import { createStatusDialogService, type StatusDialogDeps } from '../src/ui/stat
 import { getDesktopConfig } from '../src/core/navigation-policy';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yc-sd-'));
-const logger = () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() });
+const logger = () => ({
+  debug: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+});
 
 const baseDialog = () => ({
   showMessageBox: jest.fn(() => Promise.resolve({ response: 0 })),
@@ -33,24 +41,36 @@ const makeDeps = (overrides: Partial<StatusDialogDeps> = {}): StatusDialogDeps =
   dialog: baseDialog() as never,
   safeStorage: { isEncryptionAvailable: () => true } as never,
   screen: { getAllDisplays: () => [{}, {}] } as never,
-  app: { getPath: () => tmp, getVersion: () => '1.0.0', isPackaged: false } as never,
+  app: {
+    getPath: () => tmp,
+    getVersion: () => '1.0.0',
+    isPackaged: false,
+  } as never,
   config: getDesktopConfig({}),
   auditLog: {
     verifyAll: () => ({ valid: 3, tampered: 0 }),
     verifyChain: () => true,
     size: () => 3,
   } as never,
-  csExport: { exportDailyLog: () => ({ rowCount: 2, filePath: '/tmp/cs.csv' }) } as never,
+  csExport: {
+    exportDailyLog: () => ({ rowCount: 2, filePath: '/tmp/cs.csv' }),
+  } as never,
   deaReminder: { getReminderMessage: () => 'Report due soon' } as never,
   deaTracker: {
     getExpiringSoon: () => [],
     getAllRegistrations: () => [{ deaNumber: 'AB123' }],
   } as never,
   controlledSubstanceLog: {} as never,
-  pmpService: { getPending: () => [], getSubmitted: () => [1], getFailed: () => [] } as never,
+  pmpService: {
+    getPending: () => [],
+    getSubmitted: () => [1],
+    getFailed: () => [],
+  } as never,
   dualWitnessLog: { getWasteEvents: () => [] } as never,
   offlineAuditTrail: { getUnsyncedCount: () => 0 } as never,
-  documentVault: { getStats: () => ({ count: 4, totalSizeBytes: 4096 }) } as never,
+  documentVault: {
+    getStats: () => ({ count: 4, totalSizeBytes: 4096 }),
+  } as never,
   backupService: { listBackups: () => [{ fileCount: 5, size: 2048 }] } as never,
   runBackup: jest.fn(() => Promise.resolve()),
   mainWindow: { isDestroyed: () => false } as never,
@@ -122,7 +142,9 @@ describe('status dialogs — uninitialized / edge branches', () => {
   });
 
   test('exportCsDailyLog reports when there is nothing to export', () => {
-    const deps = makeDeps({ csExport: { exportDailyLog: () => null } as never });
+    const deps = makeDeps({
+      csExport: { exportDailyLog: () => null } as never,
+    });
     createStatusDialogService(deps).exportCsDailyLog();
     expect(deps.dialog.showMessageBox).toHaveBeenCalled();
   });

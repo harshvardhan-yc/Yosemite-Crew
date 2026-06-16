@@ -133,10 +133,10 @@ test.describe('document-vault E2E', () => {
     await triggerDownload(page, pimsServer.origin, 'text');
     await page.waitForTimeout(1000);
 
-    const response = await evaluateYcDesktop<{ ok: boolean; documents: { filename: string }[] }>(
-      page,
-      'vaultList'
-    );
+    const response = await evaluateYcDesktop<{
+      ok: boolean;
+      documents: { filename: string }[];
+    }>(page, 'vaultList');
     expect(response.ok).toBe(true);
     expect(response.documents.some((d) => d.filename === 'report.txt')).toBe(true);
   });
@@ -177,10 +177,10 @@ test.describe('document-vault E2E', () => {
       await page.waitForTimeout(500);
     }
 
-    const listRes1 = await evaluateYcDesktop<{ ok: boolean; documents: { id: string }[] }>(
-      page,
-      'vaultList'
-    );
+    const listRes1 = await evaluateYcDesktop<{
+      ok: boolean;
+      documents: { id: string }[];
+    }>(page, 'vaultList');
     expect(listRes1.ok).toBe(true);
     expect(listRes1.documents.length).toBe(3);
 
@@ -191,10 +191,10 @@ test.describe('document-vault E2E', () => {
     );
     expect(deleteRes.ok).toBe(true);
 
-    const listRes2 = await evaluateYcDesktop<{ ok: boolean; documents: unknown[] }>(
-      page,
-      'vaultList'
-    );
+    const listRes2 = await evaluateYcDesktop<{
+      ok: boolean;
+      documents: unknown[];
+    }>(page, 'vaultList');
     expect(listRes2.ok).toBe(true);
     expect(listRes2.documents).toHaveLength(2);
   });
@@ -205,10 +205,10 @@ test.describe('document-vault E2E', () => {
     await triggerDownload(page, pimsServer.origin, 'text');
     await page.waitForTimeout(500);
 
-    const listRes1 = await evaluateYcDesktop<{ ok: boolean; documents: unknown[] }>(
-      page,
-      'vaultList'
-    );
+    const listRes1 = await evaluateYcDesktop<{
+      ok: boolean;
+      documents: unknown[];
+    }>(page, 'vaultList');
     expect(listRes1.ok).toBe(true);
     expect(listRes1.documents.length).toBe(1);
 
@@ -222,10 +222,10 @@ test.describe('document-vault E2E', () => {
     await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
     await page.waitForTimeout(500);
 
-    const listRes2 = await evaluateYcDesktop<{ ok: boolean; documents: unknown[] }>(
-      page,
-      'vaultList'
-    );
+    const listRes2 = await evaluateYcDesktop<{
+      ok: boolean;
+      documents: unknown[];
+    }>(page, 'vaultList');
     expect(listRes2.ok).toBe(true);
     expect(listRes2.documents.length).toBe(1);
   });
@@ -234,13 +234,10 @@ test.describe('document-vault E2E', () => {
     await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
 
     const content = Buffer.from('hello from renderer').toString('base64');
-    const saveRes = await evaluateYcDesktop<{ ok: boolean; document: { id: string } }>(
-      page,
-      'vaultSave',
-      'from-renderer.txt',
-      content,
-      'text/plain'
-    );
+    const saveRes = await evaluateYcDesktop<{
+      ok: boolean;
+      document: { id: string };
+    }>(page, 'vaultSave', 'from-renderer.txt', content, 'text/plain');
     expect(saveRes.ok).toBe(true);
     expect(saveRes.document).toBeTruthy();
 

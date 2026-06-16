@@ -88,7 +88,10 @@ describe('readTracker', () => {
 
   test('handles corrupt JSON gracefully', () => {
     mem.data = 'not-json';
-    const tracker = readTracker(trackerPath, { ...memDeps, readFileSync: () => 'not-json' });
+    const tracker = readTracker(trackerPath, {
+      ...memDeps,
+      readFileSync: () => 'not-json',
+    });
     expect(tracker.currentVersion).toBe('');
     expect(tracker.crashCount).toBe(0);
   });
@@ -245,7 +248,10 @@ describe('evaluateRollback', () => {
   });
 
   test('returns shouldRollback=false when version changed', () => {
-    const tracker = makeTracker({ currentVersion: '1.0.0', crashCount: MAX_CRASHES });
+    const tracker = makeTracker({
+      currentVersion: '1.0.0',
+      crashCount: MAX_CRASHES,
+    });
     const decision = evaluateRollback(tracker, '2.0.0');
     expect(decision.shouldRollback).toBe(false);
     expect(decision.reason).toBe('version-changed');

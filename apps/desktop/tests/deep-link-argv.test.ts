@@ -28,7 +28,10 @@ jest.mock('electron', () => ({
       return false;
     }
   },
-  dialog: { showErrorBox() {}, showMessageBox: () => Promise.resolve({ response: 1 }) },
+  dialog: {
+    showErrorBox() {},
+    showMessageBox: () => Promise.resolve({ response: 1 }),
+  },
   shell: { openExternal: async () => undefined, showItemInFolder() {} },
   ipcMain: { handle() {} },
   clipboard: { writeText() {} },

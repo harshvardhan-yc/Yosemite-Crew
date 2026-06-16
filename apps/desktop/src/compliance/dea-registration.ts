@@ -53,7 +53,7 @@ export const createDeaRegistrationTracker = (deps: TrackerDeps = {}): DeaRegistr
   const loadExisting = (source: string): void => {
     try {
       if (!existsSync(source)) return;
-      const raw = readFileSync(source, 'utf8') as string;
+      const raw = readFileSync(source, 'utf8');
       const entries: DeaRegistration[] = JSON.parse(raw);
       if (!Array.isArray(entries)) return;
       for (const reg of entries) {

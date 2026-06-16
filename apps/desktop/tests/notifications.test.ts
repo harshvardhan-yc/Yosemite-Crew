@@ -1,7 +1,15 @@
 import { createNotificationManager, isDndWindow, type DndSchedule } from '../src/ui/notifications';
 
-const dndOff = (): DndSchedule => ({ enabled: false, start: '22:00', end: '07:00' });
-const dndOn = (): DndSchedule => ({ enabled: true, start: '22:00', end: '07:00' });
+const dndOff = (): DndSchedule => ({
+  enabled: false,
+  start: '22:00',
+  end: '07:00',
+});
+const dndOn = (): DndSchedule => ({
+  enabled: true,
+  start: '22:00',
+  end: '07:00',
+});
 
 describe('isDndWindow', () => {
   test('returns true when current time is within DND range (overnight)', () => {
@@ -71,7 +79,9 @@ describe('createNotificationManager', () => {
     const mgr = createNotificationManager(dndOff, { showNotification });
     const result = mgr.show({ title: 'T', body: 'B' });
     expect(result).toBe(true);
-    expect(showNotification).toHaveBeenCalledWith('T', 'B', { silent: undefined });
+    expect(showNotification).toHaveBeenCalledWith('T', 'B', {
+      silent: undefined,
+    });
   });
 
   test('show passes silent option', () => {
@@ -108,7 +118,10 @@ describe('createNotificationManager', () => {
 
   test('show respects DND even with showNotification provided', () => {
     const showNotification = jest.fn(() => true);
-    const mgr = createNotificationManager(dndOn, { showNotification, now: () => '23:30' });
+    const mgr = createNotificationManager(dndOn, {
+      showNotification,
+      now: () => '23:30',
+    });
     expect(mgr.show({ title: 'T', body: 'B' })).toBe(false);
     expect(showNotification).not.toHaveBeenCalled();
   });

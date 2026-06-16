@@ -188,12 +188,12 @@ export const createMainWindow = async (
     getZoom: (id) => {
       const state = tabManager?.getState();
       const tab = state?.tabs.find((t) => t.id === id);
-      return tab?.zoom ?? 1.0;
+      return tab?.zoom ?? 1;
     },
   });
   const initialTabs = tabManager?.getState().tabs || [];
   for (const t of initialTabs) {
-    if (t.zoom !== 1.0) tabViewHost?.setZoom(t.id, t.zoom);
+    if (t.zoom !== 1) tabViewHost?.setZoom(t.id, t.zoom);
   }
 
   const mw = mainWindow;
@@ -231,7 +231,11 @@ export const createMainWindow = async (
     (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
       if (!isMainFrame || errorCode === -3) return;
       if (validatedUrl.startsWith('file:')) {
-        deps.logger.error('local_page_load_failed', { errorCode, errorDescription, validatedUrl });
+        deps.logger.error('local_page_load_failed', {
+          errorCode,
+          errorDescription,
+          validatedUrl,
+        });
         return;
       }
       if (deps.offlineCache) {
@@ -287,14 +291,19 @@ export const createMainWindow = async (
         )
           .then((result: unknown) => {
             if (!result || typeof result !== 'object') return;
-            const { title, html } = result as { title?: unknown; html?: unknown };
+            const { title, html } = result as {
+              title?: unknown;
+              html?: unknown;
+            };
             if (typeof html !== 'string') return;
             // Only accept a real string title; `String(obj)` would yield
             // '[object Object]' if the page returned a non-string.
             const safeTitle = typeof title === 'string' ? title : '';
             const MAX_CACHED_HTML_BYTES = 5 * 1024 * 1024;
             if (Buffer.byteLength(html, 'utf8') > MAX_CACHED_HTML_BYTES) {
-              deps.logger.debug('nav_cache_skipped_too_large', { url: loadedUrl });
+              deps.logger.debug('nav_cache_skipped_too_large', {
+                url: loadedUrl,
+              });
               return;
             }
             const strategy = getCacheStrategy(loadedUrl);
@@ -327,7 +336,7 @@ export const createMainWindow = async (
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     deps.logger.error('renderer_process_gone', details);
-    if (details && details.reason === 'clean-exit') return;
+    if (details?.reason === 'clean-exit') return;
     if (deps.reloadGuard.shouldReload()) {
       deps.loadStartUrl();
     } else {
@@ -355,8 +364,8 @@ export const createMainWindow = async (
   mainWindow.on('swipe', (_event, direction) => {
     const wc = deps.activeContents();
     if (!wc) return;
-    if (direction === 'left') wc.goForward();
-    else if (direction === 'right') wc.goBack();
+    if (direction === 'left') wc.navigationHistory.goForward();
+    else if (direction === 'right') wc.navigationHistory.goBack();
   });
 
   mainWindow.on('focus', () => {
@@ -402,7 +411,10 @@ export const createMainWindow = async (
   });
 
   const ignoreAborted = (error: { message?: string } | string) => {
-    const message = typeof error === 'string' ? error : (error?.message ?? String(error));
+    const message =
+      typeof error === 'string'
+        ? error
+        : (error?.message ?? (error instanceof Error ? error.message : ''));
     if (message.includes('ERR_ABORTED')) return;
     deps.logger.warn('local_page_failed', { error });
   };
@@ -441,5 +453,12 @@ export const createMainWindow = async (
   coldStartWatchdog.start();
 
   await initAutoUpdates({ logger: deps.logger });
-  return { mainWindow, tabManager, tabViewHost, saveSession, coldStartWatchdog, enterTabModeUrl };
+  return {
+    mainWindow,
+    tabManager,
+    tabViewHost,
+    saveSession,
+    coldStartWatchdog,
+    enterTabModeUrl,
+  };
 };

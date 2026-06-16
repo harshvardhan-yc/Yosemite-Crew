@@ -74,7 +74,7 @@ const bufferReviver = (_key: string, value: unknown): unknown => {
 const detectOldBase64Body = (body: unknown): Buffer | null => {
   if (typeof body !== 'string') return null;
   try {
-    return Buffer.from(body as string, 'base64');
+    return Buffer.from(body, 'base64');
   } catch {
     return null;
   }
@@ -88,9 +88,33 @@ const detectHeader = (raw: Buffer): { encryptedOffset: number; isEncrypted: bool
     return { encryptedOffset: MAGIC_SIZE + INTEGRITY_SIZE, isEncrypted: true };
   }
   if (raw.subarray(0, OLD_MAGIC_SIZE).equals(OLD_MAGIC_HEADER)) {
-    return { encryptedOffset: OLD_MAGIC_SIZE + INTEGRITY_SIZE, isEncrypted: true };
+    return {
+      encryptedOffset: OLD_MAGIC_SIZE + INTEGRITY_SIZE,
+      isEncrypted: true,
+    };
   }
   return { encryptedOffset: 0, isEncrypted: false };
+};
+
+// The 6-byte v1 magic ("YCENC\x01") shares its first five bytes with the legacy
+// 5-byte magic ("YCENC"), so a legacy file whose first integrity byte is 0x01 is
+// indistinguishable from a v1 header by prefix alone. Try every header length
+// whose magic matches and accept the first whose HMAC verifies, so that
+// ~1-in-256 collision can't silently drop an otherwise valid cache.
+const decryptVerified = (
+  raw: Buffer,
+  decryptString: (encrypted: Buffer) => string
+): string | null => {
+  const headerSizes: number[] = [];
+  if (raw.subarray(0, MAGIC_SIZE).equals(MAGIC_HEADER)) headerSizes.push(MAGIC_SIZE);
+  if (raw.subarray(0, OLD_MAGIC_SIZE).equals(OLD_MAGIC_HEADER)) headerSizes.push(OLD_MAGIC_SIZE);
+  for (const headerSize of headerSizes) {
+    const encrypted = raw.subarray(headerSize + INTEGRITY_SIZE);
+    const storedHash = raw.subarray(headerSize, headerSize + INTEGRITY_SIZE);
+    const computedHash = crypto.createHmac('sha256', HMAC_KEY).update(encrypted).digest();
+    if (storedHash.equals(computedHash)) return decryptString(encrypted);
+  }
+  return null;
 };
 
 const loadEntries = (
@@ -104,18 +128,11 @@ const loadEntries = (
     const raw = readFileSync(filePath) as Buffer;
     let jsonStr: string;
 
-    const { encryptedOffset, isEncrypted } = detectHeader(raw);
+    const { isEncrypted } = detectHeader(raw);
     if (isEncrypted && decryptString) {
-      const headerSize = raw.subarray(0, MAGIC_SIZE).equals(MAGIC_HEADER)
-        ? MAGIC_SIZE
-        : OLD_MAGIC_SIZE;
-      const encrypted = raw.subarray(encryptedOffset);
-      const storedHash = raw.subarray(headerSize, headerSize + INTEGRITY_SIZE);
-      const computedHash = crypto.createHmac('sha256', HMAC_KEY).update(encrypted).digest();
-      if (!storedHash.equals(computedHash)) {
-        return [];
-      }
-      jsonStr = decryptString(encrypted);
+      const decrypted = decryptVerified(raw, decryptString);
+      if (decrypted === null) return [];
+      jsonStr = decrypted;
     } else if (isEncrypted && !decryptString) {
       return [];
     } else {
@@ -133,12 +150,11 @@ const loadEntries = (
       if (typeof entry.body === 'string') {
         const decoded = detectOldBase64Body(entry.body);
         if (!decoded) return false;
-        (entry as Record<string, unknown>).body = decoded;
-        (entry as Record<string, unknown>).byteLength = decoded.length;
-      } else if (!Buffer.isBuffer(entry.body)) {
-        return false;
+        entry.body = decoded;
+        entry.byteLength = decoded.length;
+        return true;
       }
-      return true;
+      return Buffer.isBuffer(entry.body);
     });
   } catch {
     return [];
@@ -217,23 +233,22 @@ export const createOfflineCache = (dirPath: string, deps: StoreDeps = {}): Offli
     }
   };
 
+  const settleFlush = (resolve: () => void): void => {
+    if (writePending) {
+      writeResolve = (): void => {
+        writeResolve = null;
+        resolve();
+      };
+      return;
+    }
+    resolve();
+  };
+
   const flush = async (): Promise<void> => {
     if (!writePending) return;
-    return new Promise((resolve) => {
-      const check = (): void => {
-        if (!writePending) {
-          resolve();
-        } else {
-          writeResolve = (): void => {
-            writeResolve = null;
-            resolve();
-          };
-        }
-      };
-      // Write is sync so pending should resolve immediately; if somehow still
-      // pending (e.g. async file system in tests), wait for next microtask.
-      setImmediate(check);
-    });
+    // Write is sync so pending should resolve immediately; if somehow still
+    // pending (e.g. async file system in tests), wait for next microtask.
+    await new Promise<void>((resolve) => setImmediate(() => settleFlush(resolve)));
   };
 
   const markWritten = (): void => {

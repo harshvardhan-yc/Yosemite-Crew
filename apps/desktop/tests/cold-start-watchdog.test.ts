@@ -38,13 +38,20 @@ describe('createColdStartWatchdog', () => {
     const logger = { info: jest.fn() };
     const getUrl = jest.fn(() => 'about:blank');
 
-    const wd = createColdStartWatchdog({ getUrl, onRetry, logger, timeoutMs: 6000 });
+    const wd = createColdStartWatchdog({
+      getUrl,
+      onRetry,
+      logger,
+      timeoutMs: 6000,
+    });
     wd.start();
     expect(onRetry).not.toHaveBeenCalled();
 
     jest.advanceTimersByTime(6000);
     expect(onRetry).toHaveBeenCalledTimes(1);
-    expect(logger.info).toHaveBeenCalledWith('cold_start_recovered', { url: 'about:blank' });
+    expect(logger.info).toHaveBeenCalledWith('cold_start_recovered', {
+      url: 'about:blank',
+    });
   });
 
   test('does not trigger retry when url is valid', () => {

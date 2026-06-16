@@ -70,7 +70,12 @@ export const createStatusDialogService = (deps: StatusDialogDeps): StatusDialogS
   const { dialog } = deps;
 
   const infoDialog = (message: string, detail: string): void => {
-    void dialog.showMessageBox({ type: 'info', message, detail, buttons: ['OK'] });
+    void dialog.showMessageBox({
+      type: 'info',
+      message,
+      detail,
+      buttons: ['OK'],
+    });
   };
 
   return {
@@ -149,7 +154,10 @@ export const createStatusDialogService = (deps: StatusDialogDeps): StatusDialogS
         const formatArg = selectedFormat.name.toLowerCase() as 'json' | 'csv' | 'text';
         const content = formatDeaReport(report, formatArg);
         fs.writeFileSync(result, content, 'utf8');
-        deps.logger.info('dea_report_saved', { path: result, format: selectedFormat.name });
+        deps.logger.info('dea_report_saved', {
+          path: result,
+          format: selectedFormat.name,
+        });
       } catch (error) {
         deps.logger.error('dea_report_save_failed', { error });
         dialog.showErrorBox('DEA Report', 'Failed to save the report.');

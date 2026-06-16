@@ -25,7 +25,10 @@ export interface WindowsNiceties {
 
 interface WinDeps {
   getWindowsVersion?: () => string;
-  mainWindow?: { setProgressBar: (progress: number) => void; flashFrame: (flash: boolean) => void };
+  mainWindow?: {
+    setProgressBar: (progress: number) => void;
+    flashFrame: (flash: boolean) => void;
+  };
 }
 
 export const createWindowsNiceties = (deps: WinDeps = {}): WindowsNiceties => {

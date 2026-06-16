@@ -169,7 +169,10 @@ export const createTabManager = (initial?: TabSummary[]): TabManager => {
     duplicate(id: string): string | null {
       const tab = get(id);
       if (!tab) return null;
-      const dupId = this.create(tab.url, { pinned: false, title: tab.title || undefined });
+      const dupId = this.create(tab.url, {
+        pinned: false,
+        title: tab.title || undefined,
+      });
       return dupId;
     },
 

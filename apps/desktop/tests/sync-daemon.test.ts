@@ -47,9 +47,21 @@ describe('createSyncDaemon', () => {
     onOffline = jest.fn((cb: () => void) => {
       offlineCb = cb;
     });
-    logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    logger = {
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    };
 
-    daemon = createSyncDaemon({ queue, transport, isOnline, onOnline, onOffline, logger });
+    daemon = createSyncDaemon({
+      queue,
+      transport,
+      isOnline,
+      onOnline,
+      onOffline,
+      logger,
+    });
   });
 
   afterEach(() => {
@@ -79,7 +91,14 @@ describe('createSyncDaemon', () => {
 
     it('initial status is offline when isOnline returns false', () => {
       isOnline.mockReturnValue(false);
-      daemon = createSyncDaemon({ queue, transport, isOnline, onOnline, onOffline, logger });
+      daemon = createSyncDaemon({
+        queue,
+        transport,
+        isOnline,
+        onOnline,
+        onOffline,
+        logger,
+      });
       daemon.start();
       expect(daemon.getStatus().online).toBe('offline');
     });
@@ -113,7 +132,14 @@ describe('createSyncDaemon', () => {
   describe('getStatus', () => {
     it('returns running state, online status, and pending count', () => {
       queue.size.mockReturnValue(5);
-      daemon = createSyncDaemon({ queue, transport, isOnline, onOnline, onOffline, logger });
+      daemon = createSyncDaemon({
+        queue,
+        transport,
+        isOnline,
+        onOnline,
+        onOffline,
+        logger,
+      });
       daemon.start();
       expect(daemon.getStatus()).toEqual({
         running: true,

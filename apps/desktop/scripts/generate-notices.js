@@ -25,7 +25,9 @@ const packageDirs = () => {
   }
 
   const dirs = [];
-  for (const entry of fs.readdirSync(nodeModulesRoot, { withFileTypes: true })) {
+  for (const entry of fs.readdirSync(nodeModulesRoot, {
+    withFileTypes: true,
+  })) {
     if (entry.name.startsWith('.')) continue;
     const full = path.join(nodeModulesRoot, entry.name);
     if ((entry.isDirectory() || entry.isSymbolicLink()) && entry.name.startsWith('@')) {

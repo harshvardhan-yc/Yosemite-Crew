@@ -32,9 +32,12 @@ describe('Stream call IDs', () => {
   });
 
   test('uses explicit callId over appointment-derived IDs', () => {
-    expect(resolveStreamCallId({ appointmentId: 'appt-123', callId: 'stream-call-456' })).toBe(
-      'stream-call-456'
-    );
+    expect(
+      resolveStreamCallId({
+        appointmentId: 'appt-123',
+        callId: 'stream-call-456',
+      })
+    ).toBe('stream-call-456');
   });
 
   test('rejects unsafe appointment IDs', () => {
@@ -45,7 +48,10 @@ describe('Stream call IDs', () => {
 
 describe('parseTelehealthLaunchInput', () => {
   test('accepts an empty input for the appointment telehealth landing flow', () => {
-    expect(parseTelehealthLaunchInput(undefined)).toEqual({ ok: true, intent: {} });
+    expect(parseTelehealthLaunchInput(undefined)).toEqual({
+      ok: true,
+      intent: {},
+    });
   });
 
   test('normalizes valid launch IDs', () => {
@@ -57,7 +63,11 @@ describe('parseTelehealthLaunchInput', () => {
       })
     ).toEqual({
       ok: true,
-      intent: { appointmentId: 'appt-123', callId: 'call_456', companionId: 'comp.789' },
+      intent: {
+        appointmentId: 'appt-123',
+        callId: 'call_456',
+        companionId: 'comp.789',
+      },
     });
   });
 
@@ -89,7 +99,11 @@ describe('parseTelehealthLaunchInput', () => {
 
   test('empty strings are treated as invalid IDs', () => {
     expect(
-      parseTelehealthLaunchInput({ appointmentId: '', callId: 'valid', companionId: 'ok' })
+      parseTelehealthLaunchInput({
+        appointmentId: '',
+        callId: 'valid',
+        companionId: 'ok',
+      })
     ).toEqual({
       ok: false,
       error: 'invalid-appointment-id',
@@ -105,7 +119,11 @@ describe('telehealth URLs', () => {
   });
 
   test('builds an internal desktop URL against the configured PIMS origin', () => {
-    expect(buildTelehealthUrl('https://www.yosemitecrew.com/signin', { callId: 'call-1' })).toBe(
+    expect(
+      buildTelehealthUrl('https://www.yosemitecrew.com/signin', {
+        callId: 'call-1',
+      })
+    ).toBe(
       'https://www.yosemitecrew.com/appointments?action=telehealth&provider=getstream&callId=call-1'
     );
   });

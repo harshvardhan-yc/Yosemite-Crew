@@ -270,7 +270,13 @@
     <div id="tab-search-overlay">
       <div class="ts-panel" role="dialog" aria-label="Search tabs">
         <div class="ts-search">
-          <input id="ts-input" type="text" placeholder="Search tabs…" spellcheck="false" />
+          <input
+            id="ts-input"
+            type="text"
+            placeholder="Search tabs…"
+            spellcheck="false"
+            aria-label="Search tabs"
+          />
         </div>
         <div id="ts-list" class="ts-list"></div>
       </div>
@@ -345,7 +351,7 @@
       const tabStrip = document.getElementById('tab-strip');
       const newTabBtn = document.getElementById('new-tab-btn');
       const contextMenu = document.getElementById('context-menu');
-      const yc = window.ycDesktop;
+      const yc = globalThis.ycDesktop;
 
       const state = { tabs: [], activeId: null, closedStack: [] };
       let dragSrcId = null;
@@ -390,7 +396,7 @@
           dragging = false;
           try {
             dragSpacer.releasePointerCapture(e.pointerId);
-          } catch (_err) {
+          } catch {
             /* pointer already released */
           }
         };
@@ -456,18 +462,7 @@
 
       document.addEventListener('click', hideContextMenu);
 
-      const renderTab = (tab) => {
-        const div = document.createElement('div');
-        div.className =
-          'tab' +
-          (tab.id === state.activeId ? ' tab--active' : '') +
-          (tab.pinned ? ' tab--pinned' : '');
-        div.setAttribute('role', 'tab');
-        div.setAttribute('aria-selected', String(tab.id === state.activeId));
-        div.setAttribute('data-tab-id', tab.id);
-        div.setAttribute('draggable', 'true');
-        div.title = tab.title;
-
+      const wireTabDrag = (div, tab) => {
         div.addEventListener('dragstart', (e) => {
           dragSrcId = tab.id;
           dragDropped = false;
@@ -511,7 +506,9 @@
             send('moveTab', dragSrcId, toIndex);
           }
         });
+      };
 
+      const buildTabInner = (tab) => {
         const inner = document.createElement('div');
         inner.className = 'tab-inner';
 
@@ -554,28 +551,10 @@
           inner.appendChild(audio);
         }
 
-        div.appendChild(inner);
+        return inner;
+      };
 
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'tab-close-btn';
-        closeBtn.setAttribute('aria-label', 'Close tab');
-        closeBtn.textContent = '\u00D7';
-        closeBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          send('closeTab', tab.id);
-        });
-        if (!tab.pinned) div.appendChild(closeBtn);
-
-        div.addEventListener('click', () => send('activateTab', tab.id));
-        div.addEventListener('dblclick', () => send('closeTab', tab.id));
-
-        div.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          showContextMenu(e.clientX, e.clientY, tab.id);
-        });
-
-        // ── Hover preview ──
+      const wireTabHoverPreview = (div, tab) => {
         let previewTimer = null;
         div.addEventListener('mouseenter', () => {
           if (previewTimer) clearTimeout(previewTimer);
@@ -596,6 +575,44 @@
           if (previewTimer) clearTimeout(previewTimer);
           document.getElementById('tab-preview').style.display = 'none';
         });
+      };
+
+      const renderTab = (tab) => {
+        const div = document.createElement('div');
+        div.className =
+          'tab' +
+          (tab.id === state.activeId ? ' tab--active' : '') +
+          (tab.pinned ? ' tab--pinned' : '');
+        div.setAttribute('role', 'tab');
+        div.setAttribute('aria-selected', String(tab.id === state.activeId));
+        div.dataset.tabId = tab.id;
+        div.setAttribute('draggable', 'true');
+        div.title = tab.title;
+
+        wireTabDrag(div, tab);
+
+        div.appendChild(buildTabInner(tab));
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'tab-close-btn';
+        closeBtn.setAttribute('aria-label', 'Close tab');
+        closeBtn.textContent = '\u00D7';
+        closeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          send('closeTab', tab.id);
+        });
+        if (!tab.pinned) div.appendChild(closeBtn);
+
+        div.addEventListener('click', () => send('activateTab', tab.id));
+        div.addEventListener('dblclick', () => send('closeTab', tab.id));
+
+        div.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          showContextMenu(e.clientX, e.clientY, tab.id);
+        });
+
+        wireTabHoverPreview(div, tab);
 
         return div;
       };
@@ -605,7 +622,7 @@
         state.activeId = newState.activeId;
         state.closedStack = newState.closedStack || [];
         if (newState.orientation) {
-          document.getElementById('tabbar').setAttribute('data-orientation', newState.orientation);
+          document.getElementById('tabbar').dataset.orientation = newState.orientation;
         }
         tabStrip.innerHTML = '';
         for (const tab of state.tabs) {
@@ -739,7 +756,7 @@
         // set labels via textContent (avoid HTML injection from titles/urls)
         const items = tsList.querySelectorAll('.ts-item');
         items.forEach((el) => {
-          const i = Number.parseInt(el.getAttribute('data-i'), 10);
+          const i = Number.parseInt(el.dataset.i, 10);
           const row = tsRows[i];
           el.querySelector('.lbl').textContent = row.tab.title || row.tab.url || 'Untitled';
           el.addEventListener('mousemove', () => setSel(i));
@@ -751,7 +768,7 @@
           if (x)
             x.addEventListener('click', (e) => {
               e.stopPropagation();
-              send('closeTab', x.getAttribute('data-close'));
+              send('closeTab', x.dataset.close);
             });
         });
         if (tsSel >= tsRows.length) tsSel = Math.max(0, tsRows.length - 1);
@@ -760,7 +777,7 @@
 
       const paintSel = () => {
         tsList.querySelectorAll('.ts-item').forEach((el) => {
-          el.classList.toggle('sel', Number.parseInt(el.getAttribute('data-i'), 10) === tsSel);
+          el.classList.toggle('sel', Number.parseInt(el.dataset.i, 10) === tsSel);
         });
       };
       const setSel = (i) => {
@@ -790,7 +807,7 @@
         overlay.classList.remove('open');
         send('tabSearch', false); // collapse back to the strip
       };
-      window.__ycOpenTabSearch = openSearch;
+      globalThis.__ycOpenTabSearch = openSearch;
 
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) closeSearch();
@@ -826,7 +843,7 @@
         csOverlay.style.display = 'none';
         send('tabSearch', false);
       };
-      window.__ycOpenCheatsheet = openCheatsheet;
+      globalThis.__ycOpenCheatsheet = openCheatsheet;
       csOverlay.addEventListener('click', (e) => {
         if (e.target === csOverlay) closeCheatsheet();
       });

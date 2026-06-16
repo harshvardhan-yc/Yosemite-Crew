@@ -23,8 +23,7 @@ const createFakeWebContents = () => ({
   setZoomFactor: jest.fn(),
   isAudioMuted: jest.fn().mockReturnValue(false),
   setAudioMuted: jest.fn(),
-  goBack: jest.fn(),
-  goForward: jest.fn(),
+  navigationHistory: { goBack: jest.fn(), goForward: jest.fn() },
 });
 
 jest.mock('electron', () => ({
@@ -123,7 +122,12 @@ describe('TabViewHost', () => {
       host.create('tab_1', 'https://example.com');
       host.detach('tab_1');
       const view = host.get('tab_1') as { setBounds: jest.Mock };
-      expect(view.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 });
+      expect(view.setBounds).toHaveBeenCalledWith({
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+      });
     });
 
     it('does not throw for unknown id', () => {
@@ -158,7 +162,12 @@ describe('TabViewHost', () => {
     it('sets bounds on an existing view', () => {
       const host = createHost();
       host.create('tab_1', 'https://example.com');
-      const result = host.setBounds('tab_1', { x: 0, y: 40, width: 800, height: 560 });
+      const result = host.setBounds('tab_1', {
+        x: 0,
+        y: 40,
+        width: 800,
+        height: 560,
+      });
       expect(result).toBe(true);
     });
 
@@ -283,7 +292,9 @@ describe('TabViewHost', () => {
       const onUpdate = jest.fn();
       createHost({ onUpdate }).create('tab_1', 'https://example.com');
       viewEventHandlers['page-favicon-updated'](undefined, ['https://favicon.ico']);
-      expect(onUpdate).toHaveBeenCalledWith('tab_1', { favicon: 'https://favicon.ico' });
+      expect(onUpdate).toHaveBeenCalledWith('tab_1', {
+        favicon: 'https://favicon.ico',
+      });
     });
 
     it('page-favicon-updated handles empty list', () => {
@@ -297,7 +308,10 @@ describe('TabViewHost', () => {
       const onUpdate = jest.fn();
       createHost({ onUpdate }).create('tab_1', 'https://example.com');
       viewEventHandlers['did-start-loading']();
-      expect(onUpdate).toHaveBeenCalledWith('tab_1', { loading: true, error: null });
+      expect(onUpdate).toHaveBeenCalledWith('tab_1', {
+        loading: true,
+        error: null,
+      });
     });
 
     it('did-stop-loading calls onUpdate with loading false', () => {
@@ -396,32 +410,44 @@ describe('TabViewHost', () => {
     it('input-event mouseUp button 3 goes back', () => {
       const host = createHost();
       const view = host.create('tab_1', 'https://example.com');
-      viewEventHandlers['input-event'](undefined, { type: 'mouseUp', button: 3 });
-      expect(view.webContents.goBack).toHaveBeenCalled();
-      expect(view.webContents.goForward).not.toHaveBeenCalled();
+      viewEventHandlers['input-event'](undefined, {
+        type: 'mouseUp',
+        button: 3,
+      });
+      expect(view.webContents.navigationHistory.goBack).toHaveBeenCalled();
+      expect(view.webContents.navigationHistory.goForward).not.toHaveBeenCalled();
     });
 
     it('input-event mouseUp button 4 goes forward', () => {
       const host = createHost();
       const view = host.create('tab_1', 'https://example.com');
-      viewEventHandlers['input-event'](undefined, { type: 'mouseUp', button: 4 });
-      expect(view.webContents.goForward).toHaveBeenCalled();
+      viewEventHandlers['input-event'](undefined, {
+        type: 'mouseUp',
+        button: 4,
+      });
+      expect(view.webContents.navigationHistory.goForward).toHaveBeenCalled();
     });
 
     it('input-event non-mouseUp type does nothing', () => {
       const host = createHost();
       const view = host.create('tab_1', 'https://example.com');
-      viewEventHandlers['input-event'](undefined, { type: 'keyDown', key: 'a' });
-      expect(view.webContents.goBack).not.toHaveBeenCalled();
-      expect(view.webContents.goForward).not.toHaveBeenCalled();
+      viewEventHandlers['input-event'](undefined, {
+        type: 'keyDown',
+        key: 'a',
+      });
+      expect(view.webContents.navigationHistory.goBack).not.toHaveBeenCalled();
+      expect(view.webContents.navigationHistory.goForward).not.toHaveBeenCalled();
     });
 
     it('input-event unknown button does nothing', () => {
       const host = createHost();
       const view = host.create('tab_1', 'https://example.com');
-      viewEventHandlers['input-event'](undefined, { type: 'mouseUp', button: 999 });
-      expect(view.webContents.goBack).not.toHaveBeenCalled();
-      expect(view.webContents.goForward).not.toHaveBeenCalled();
+      viewEventHandlers['input-event'](undefined, {
+        type: 'mouseUp',
+        button: 999,
+      });
+      expect(view.webContents.navigationHistory.goBack).not.toHaveBeenCalled();
+      expect(view.webContents.navigationHistory.goForward).not.toHaveBeenCalled();
     });
 
     it('will-navigate calls onNavigate when provided', () => {
@@ -471,7 +497,10 @@ describe('TabViewHost', () => {
         const handler = (view.webContents.setWindowOpenHandler as jest.Mock).mock.calls[0][0];
         const result = handler({ url: 'https://popup.com' });
         expect(onWindowOpen).toHaveBeenCalledWith('https://popup.com');
-        expect(result).toEqual({ action: 'allow', overrideBrowserWindowOptions: {} });
+        expect(result).toEqual({
+          action: 'allow',
+          overrideBrowserWindowOptions: {},
+        });
       }
     });
   });

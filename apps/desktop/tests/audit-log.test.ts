@@ -360,8 +360,20 @@ describe('createAuditLog', () => {
       return v;
     });
     const log = await createAuditLog(tmpDir, deps);
-    log.append({ action: 'a', actor: 'x', resourceType: 'patient', resourceId: 'p1', details: {} });
-    log.append({ action: 'b', actor: 'x', resourceType: 'patient', resourceId: 'p2', details: {} });
+    log.append({
+      action: 'a',
+      actor: 'x',
+      resourceType: 'patient',
+      resourceId: 'p1',
+      details: {},
+    });
+    log.append({
+      action: 'b',
+      actor: 'x',
+      resourceType: 'patient',
+      resourceId: 'p2',
+      details: {},
+    });
     expect(log.verifyChain()).toBe(true);
 
     const auditWrites = (deps.writeFileSync as jest.Mock).mock.calls.filter((c) =>
@@ -394,7 +406,10 @@ describe('createAuditLog', () => {
       String(c[0]).endsWith('audit-key')
     );
     expect(keyWrite).toBeDefined();
-    const wrapper = JSON.parse(keyWrite![1] as string) as { enc: boolean; data: string };
+    const wrapper = JSON.parse(keyWrite![1] as string) as {
+      enc: boolean;
+      data: string;
+    };
     expect(wrapper.enc).toBe(true);
     expect(wrapper.data).not.toContain(entry.signature);
 
@@ -411,7 +426,10 @@ describe('createAuditLog', () => {
       resourceId: 'p1',
       details: {},
     });
-    const otherLog = await createAuditLog(tmpDir, { ...makeDeps(1000), hmacKey: 'key-two' });
+    const otherLog = await createAuditLog(tmpDir, {
+      ...makeDeps(1000),
+      hmacKey: 'key-two',
+    });
     expect(otherLog.verify(entry)).toBe(false);
   });
 
@@ -424,7 +442,13 @@ describe('createAuditLog', () => {
     mockFs[path.join(tmpDir, 'audit-log.json')] = '[]';
 
     const log = await createAuditLog(tmpDir, deps);
-    log.append({ action: 'a', actor: 'x', resourceType: 'patient', resourceId: 'p1', details: {} });
+    log.append({
+      action: 'a',
+      actor: 'x',
+      resourceType: 'patient',
+      resourceId: 'p1',
+      details: {},
+    });
     expect(log.size()).toBe(1);
   });
 

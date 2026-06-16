@@ -75,7 +75,10 @@ export const openExternal = async (url: URL | string | undefined): Promise<void>
     return;
   }
   if (!ALLOWED_EXTERNAL_SCHEMES.has(parsed.protocol)) {
-    _logger.warn('external_link_blocked_scheme', { href, scheme: parsed.protocol });
+    _logger.warn('external_link_blocked_scheme', {
+      href,
+      scheme: parsed.protocol,
+    });
     return;
   }
   try {
@@ -114,14 +117,23 @@ export const handleWindowOpen = (rawUrl: string): WindowOpenHandlerResponse => {
 
   if (decision.disposition === 'internal' || isAllowedInAppPopup(rawUrl, getConfig())) {
     _logger.info('popup_allowed_in_app', { url: decision.url?.href || rawUrl });
-    return { action: 'allow', overrideBrowserWindowOptions: childWindowOptions() };
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: childWindowOptions(),
+    };
   }
 
   if (decision.disposition === 'external') {
-    _logger.info('popup_opened_external', { reason: decision.reason, url: decision.url?.href });
+    _logger.info('popup_opened_external', {
+      reason: decision.reason,
+      url: decision.url?.href,
+    });
     void openExternal(decision.url);
   } else {
-    _logger.warn('popup_blocked', { reason: decision.reason, url: decision.url?.href || rawUrl });
+    _logger.warn('popup_blocked', {
+      reason: decision.reason,
+      url: decision.url?.href || rawUrl,
+    });
   }
 
   return { action: 'deny' };
@@ -208,9 +220,17 @@ export const buildContextMenu = (
 
   if (linkURL) {
     menu.append(
-      new MenuItem({ label: 'Open Link in Browser', click: () => void openExternal(linkURL) })
+      new MenuItem({
+        label: 'Open Link in Browser',
+        click: () => void openExternal(linkURL),
+      })
     );
-    menu.append(new MenuItem({ label: 'Copy Link', click: () => clipboard.writeText(linkURL) }));
+    menu.append(
+      new MenuItem({
+        label: 'Copy Link',
+        click: () => clipboard.writeText(linkURL),
+      })
+    );
     menu.append(new MenuItem({ type: 'separator' }));
   }
 
@@ -231,7 +251,12 @@ export const buildContextMenu = (
     menu.append(new MenuItem({ role: 'cut', enabled: editFlags.canCut }));
   }
 
-  menu.append(new MenuItem({ role: 'copy', enabled: editFlags.canCopy || Boolean(selectionText) }));
+  menu.append(
+    new MenuItem({
+      role: 'copy',
+      enabled: editFlags.canCopy || Boolean(selectionText),
+    })
+  );
 
   if (isEditable) {
     menu.append(new MenuItem({ role: 'paste', enabled: editFlags.canPaste }));

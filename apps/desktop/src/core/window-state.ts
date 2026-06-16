@@ -36,7 +36,10 @@ interface ManagedWindow {
   webContents?: { getZoomLevel?: () => number };
 }
 
-export const DEFAULT_BOUNDS: WindowBounds = Object.freeze({ width: 1440, height: 960 });
+export const DEFAULT_BOUNDS: WindowBounds = Object.freeze({
+  width: 1440,
+  height: 960,
+});
 export const MIN_WIDTH = 1024;
 export const MIN_HEIGHT = 700;
 
@@ -51,7 +54,7 @@ export const normalizeWindowState = (
   saved: Partial<WindowState> | null | undefined,
   defaults: WindowBounds = DEFAULT_BOUNDS
 ): WindowState => {
-  const source = (saved && typeof saved === 'object' ? saved : {}) as Partial<WindowState>;
+  const source: Partial<WindowState> = saved && typeof saved === 'object' ? saved : {};
   const width = isFiniteNumber(source.width)
     ? Math.max(MIN_WIDTH, Math.round(source.width))
     : defaults.width;
@@ -59,7 +62,11 @@ export const normalizeWindowState = (
     ? Math.max(MIN_HEIGHT, Math.round(source.height))
     : defaults.height;
 
-  const state: WindowState = { width, height, isMaximized: source.isMaximized === true };
+  const state: WindowState = {
+    width,
+    height,
+    isMaximized: source.isMaximized === true,
+  };
 
   if (isFiniteNumber(source.x) && isFiniteNumber(source.y)) {
     state.x = Math.round(source.x);
@@ -118,7 +125,7 @@ export const createWindowStateStore = (
 
   const load = (defaults: WindowBounds = DEFAULT_BOUNDS): WindowState => {
     try {
-      const raw = readFileSync(filePath, 'utf8') as string;
+      const raw = readFileSync(filePath, 'utf8');
       return normalizeWindowState(JSON.parse(raw), defaults);
     } catch (error) {
       deps.logger?.warn('window_state_load_failed', { error });

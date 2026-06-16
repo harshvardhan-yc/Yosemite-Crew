@@ -32,7 +32,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('record adds a controlled substance transaction and audit entry', async () => {
     const deps = makeFsDeps();
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     const tx = logbook.record({
       action: 'dispense',
@@ -62,7 +65,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('signs the cs transaction id into the audit entry without tampering it', async () => {
     const deps = makeFsDeps();
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     const tx = logbook.record({
       action: 'dispense',
@@ -77,7 +83,9 @@ describe('createControlledSubstanceLogbook', () => {
       veterinarianName: 'Dr. Smith',
     });
 
-    const [auditEntry] = auditLog.query({ resourceType: 'controlled-substance' });
+    const [auditEntry] = auditLog.query({
+      resourceType: 'controlled-substance',
+    });
     expect(auditEntry.details.csTransactionId).toBe(tx.id);
     expect(auditLog.verify(auditEntry)).toBe(true);
     expect(auditLog.verifyAll()).toEqual({ valid: 1, tampered: 0 });
@@ -86,7 +94,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('getTransactions returns all transactions', async () => {
     const deps = makeFsDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -118,7 +129,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('getByDrug filters by drug name', async () => {
     const deps = makeFsDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -148,7 +162,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('getByVeterinarian filters by veterinarian', async () => {
     const deps = makeFsDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -180,7 +197,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('getInventory calculates balances correctly', async () => {
     const deps = makeFsDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -226,7 +246,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('getDailyLog returns transactions for a given date', async () => {
     const deps = makeFsDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -247,7 +270,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('getAuditTrail returns raw audit entries for controlled substances', async () => {
     const deps = makeFsDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     logbook.record({
       action: 'receive',
@@ -269,7 +295,10 @@ describe('createControlledSubstanceLogbook', () => {
   test('size returns correct count', async () => {
     const deps = makeFsDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);
-    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const logbook = createControlledSubstanceLogbook(tmpDir, {
+      auditLog,
+      ...deps,
+    });
 
     expect(logbook.size()).toBe(0);
     logbook.record({

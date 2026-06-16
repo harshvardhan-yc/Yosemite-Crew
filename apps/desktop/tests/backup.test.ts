@@ -42,7 +42,11 @@ describe('createBackupService', () => {
       // simulate archiver: "write" the zip to mockFs
       createdZipPaths.push(zipPath);
       mockFs[zipPath] = 'fake-zip-content';
-      mockStats[zipPath] = { size: 16, isFile: () => true, isDirectory: () => false };
+      mockStats[zipPath] = {
+        size: 16,
+        isFile: () => true,
+        isDirectory: () => false,
+      };
     }),
   });
 
@@ -59,8 +63,16 @@ describe('createBackupService', () => {
 
     mockFs['/data/patients.json'] = '[{"id":"p1"}]';
     mockFs['/data/settings.json'] = '{"theme":"dark"}';
-    mockStats['/data/patients.json'] = { size: 20, isFile: () => true, isDirectory: () => false };
-    mockStats['/data/settings.json'] = { size: 18, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/patients.json'] = {
+      size: 20,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
+    mockStats['/data/settings.json'] = {
+      size: 18,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
 
     const result = await svc.createBackup({
       sourcePaths: ['/data/patients.json', '/data/settings.json'],
@@ -82,9 +94,21 @@ describe('createBackupService', () => {
     mockDirs['/data'] = ['patients.json', 'settings.json'];
     mockFs['/data/patients.json'] = '{"patients":[]}';
     mockFs['/data/settings.json'] = '{"theme":"dark"}';
-    mockStats['/data'] = { size: 0, isFile: () => false, isDirectory: () => true };
-    mockStats['/data/patients.json'] = { size: 16, isFile: () => true, isDirectory: () => false };
-    mockStats['/data/settings.json'] = { size: 16, isFile: () => true, isDirectory: () => false };
+    mockStats['/data'] = {
+      size: 0,
+      isFile: () => false,
+      isDirectory: () => true,
+    };
+    mockStats['/data/patients.json'] = {
+      size: 16,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
+    mockStats['/data/settings.json'] = {
+      size: 16,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
 
     const result = await svc.createBackup({
       sourcePaths: ['/data'],
@@ -102,9 +126,21 @@ describe('createBackupService', () => {
 
     mockDirs['/data'] = ['settings.json', 'document-vault'];
     mockDirs['/data/document-vault'] = ['manifest.json', 'doc1.enc'];
-    mockStats['/data'] = { size: 0, isFile: () => false, isDirectory: () => true };
-    mockStats['/data/document-vault'] = { size: 0, isFile: () => false, isDirectory: () => true };
-    mockStats['/data/settings.json'] = { size: 10, isFile: () => true, isDirectory: () => false };
+    mockStats['/data'] = {
+      size: 0,
+      isFile: () => false,
+      isDirectory: () => true,
+    };
+    mockStats['/data/document-vault'] = {
+      size: 0,
+      isFile: () => false,
+      isDirectory: () => true,
+    };
+    mockStats['/data/settings.json'] = {
+      size: 10,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
     mockStats['/data/document-vault/manifest.json'] = {
       size: 10,
       isFile: () => true,
@@ -139,7 +175,11 @@ describe('createBackupService', () => {
     const svc = createBackupService(deps);
 
     mockFs['/data/patients.json'] = 'data';
-    mockStats['/data/patients.json'] = { size: 4, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/patients.json'] = {
+      size: 4,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
 
     const result = await svc.createBackup({
       sourcePaths: ['/data/patients.json'],
@@ -163,7 +203,11 @@ describe('createBackupService', () => {
 
     mockDirs['/data'] = ['good-file.json', 'broken-link'];
     mockFs['/data/good-file.json'] = 'good-data';
-    mockStats['/data/good-file.json'] = { size: 9, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/good-file.json'] = {
+      size: 9,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
 
     const result = await svc.createBackup({
       sourcePaths: ['/data'],
@@ -182,7 +226,11 @@ describe('createBackupService', () => {
     const svc = createBackupService(deps);
 
     mockFs['/data/db.json'] = 'data';
-    mockStats['/data/db.json'] = { size: 4, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/db.json'] = {
+      size: 4,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
 
     const result = await svc.createBackup({
       sourcePaths: ['/data/db.json'],
@@ -203,7 +251,11 @@ describe('createBackupService', () => {
     const svc = createBackupService(deps);
 
     mockFs['/data/db.json'] = 'data';
-    mockStats['/data/db.json'] = { size: 4, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/db.json'] = {
+      size: 4,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
 
     const result = await svc.createBackup({
       sourcePaths: ['/data/db.json'],
@@ -221,7 +273,11 @@ describe('createBackupService', () => {
     const svc = createBackupService(deps);
 
     mockFs['/data/db.json'] = 'data';
-    mockStats['/data/db.json'] = { size: 4, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/db.json'] = {
+      size: 4,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
 
     const result = await svc.createBackup({
       sourcePaths: ['/data/db.json'],
@@ -237,7 +293,11 @@ describe('createBackupService', () => {
   test('listBackups returns backups sorted by timestamp descending', async () => {
     const deps1 = makeDeps(1000);
     mockFs['/data/db.json'] = 'data';
-    mockStats['/data/db.json'] = { size: 4, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/db.json'] = {
+      size: 4,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
     const svc1 = createBackupService(deps1);
     await svc1.createBackup({
       sourcePaths: ['/data/db.json'],
@@ -269,7 +329,11 @@ describe('createBackupService', () => {
   test('pruneOldBackups removes excess backups', async () => {
     const deps = makeDeps(1000);
     mockFs['/data/db.json'] = 'data';
-    mockStats['/data/db.json'] = { size: 4, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/db.json'] = {
+      size: 4,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
     const svc = createBackupService(deps);
 
     await svc.createBackup({
@@ -343,7 +407,11 @@ describe('createBackupService', () => {
     const svc = createBackupService(deps);
 
     mockFs['/data/db.json'] = 'data';
-    mockStats['/data/db.json'] = { size: 4, isFile: () => true, isDirectory: () => false };
+    mockStats['/data/db.json'] = {
+      size: 4,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
 
     await svc.createBackup({
       sourcePaths: ['/data/db.json'],
@@ -360,9 +428,21 @@ describe('createBackupService', () => {
 
     mockDirs['/data'] = ['patients.json', 'subdir'];
     mockFs['/data/patients.json'] = '{"patients":[]}';
-    mockStats['/data'] = { size: 0, isFile: () => false, isDirectory: () => true };
-    mockStats['/data/patients.json'] = { size: 16, isFile: () => true, isDirectory: () => false };
-    mockStats['/data/subdir'] = { size: 0, isFile: () => false, isDirectory: () => true };
+    mockStats['/data'] = {
+      size: 0,
+      isFile: () => false,
+      isDirectory: () => true,
+    };
+    mockStats['/data/patients.json'] = {
+      size: 16,
+      isFile: () => true,
+      isDirectory: () => false,
+    };
+    mockStats['/data/subdir'] = {
+      size: 0,
+      isFile: () => false,
+      isDirectory: () => true,
+    };
 
     const result = await svc.createBackup({
       sourcePaths: ['/data'],
