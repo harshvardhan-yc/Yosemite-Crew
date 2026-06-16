@@ -38,6 +38,8 @@ import {
   markEncounterReadyForDischarge,
   undoEncounterReadyForDischarge,
 } from '@/app/features/appointments/services/appointmentService';
+import { loadWorkspaceClinicalArtifacts } from '@/app/features/appointments/services/workspaceClinicalService';
+import { listSoapTemplatesForWorkspace } from '@/app/features/appointments/services/workspaceTemplateService';
 
 type AppointmentWorkspaceProps = {
   appointment: Appointment;
@@ -62,13 +64,12 @@ const getRoomUnits = (
 const isValidStep = (value: string | null): value is WorkspaceStep =>
   value != null && (WORKSPACE_STEPS as string[]).includes(value);
 
-/** Selectable add-on packages for the hospitalization flow (mock-backed, mirrors
- *  the service/package catalogue the backend will supply). */
-const HOSPITALIZATION_SERVICE_PACKAGES = [
-  { id: 'pkg-cardio', name: 'Cardio assessment package', cost: 150, maxDiscount: 25 },
-  { id: 'pkg-ortho', name: 'Orthopedic care package', cost: 220, maxDiscount: 30 },
-  { id: 'pkg-observation', name: '24h observation package', cost: 90, maxDiscount: 10 },
-];
+const HOSPITALIZATION_SERVICE_PACKAGES: {
+  id: string;
+  name: string;
+  cost: number;
+  maxDiscount: number;
+}[] = [];
 
 const resolveAppointmentReason = (appointment: Appointment): string =>
   appointment.concern?.trim() || 'No appointment reason recorded.';
@@ -94,6 +95,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
 
   const initEncounter = useAppointmentWorkspaceStore((s) => s.initEncounter);
   const encounter = useAppointmentWorkspaceStore((s) => s.encountersById[appointmentId]);
+  const mergeEncounterData = useAppointmentWorkspaceStore((s) => s.mergeEncounterData);
   const activeStep = useAppointmentWorkspaceStore((s) => s.activeStep);
   const setActiveStep = useAppointmentWorkspaceStore((s) => s.setActiveStep);
   const activeSideAction = useAppointmentWorkspaceStore((s) => s.activeSideAction);
@@ -119,6 +121,39 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       nurseName: supportMember?.name?.trim(),
     });
   }, [appointmentId, initialMode, initEncounter, appointment.lead, appointment.supportStaff]);
+
+  const hydratedClinicalRef = useRef<string | null>(null);
+  useEffect(() => {
+    const organisationId = appointment.organisationId;
+    if (!appointmentId || !organisationId || !encounter) return;
+    const hydrationKey = `${organisationId}:${appointmentId}:${appointment.encounterId ?? ''}`;
+    if (hydratedClinicalRef.current === hydrationKey) return;
+    hydratedClinicalRef.current = hydrationKey;
+
+    Promise.allSettled([
+      loadWorkspaceClinicalArtifacts({
+        organisationId,
+        appointmentId,
+        encounterId: appointment.encounterId,
+      }),
+      listSoapTemplatesForWorkspace(organisationId),
+    ])
+      .then(([clinicalResult, templatesResult]) => {
+        mergeEncounterData(appointmentId, {
+          ...(clinicalResult.status === 'fulfilled' ? clinicalResult.value : {}),
+          soapTemplates: templatesResult.status === 'fulfilled' ? templatesResult.value : [],
+        });
+      })
+      .catch((error) => {
+        console.error('Unable to hydrate workspace data:', error);
+      });
+  }, [
+    appointment.encounterId,
+    appointment.organisationId,
+    appointmentId,
+    encounter,
+    mergeEncounterData,
+  ]);
 
   const encounterMode = encounter?.mode ?? initialMode;
   const lockWindow = useAppointmentLockWindow();
@@ -384,6 +419,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         {activeStep === 'SOAP' && (
           <SoapStep
             appointmentId={appointmentId}
+            organisationId={appointment.organisationId}
+            encounterId={appointment.encounterId}
+            authorId={actor.id}
             appointmentReason={appointmentReason}
             encounter={effectiveEncounter}
             onRecordVitals={() => setActiveSideAction('RECORD')}
@@ -400,6 +438,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         {activeStep === 'TREATMENT' && (
           <TreatmentStep
             appointmentId={appointmentId}
+            organisationId={appointment.organisationId}
+            encounterId={appointment.encounterId}
+            authorId={actor.id}
             encounter={operationalEncounter}
             onOpenInvoice={() => handleStepChange('INVOICE')}
           />
@@ -424,6 +465,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       <QuickActionsModal
         appointment={appointment}
         appointmentId={appointmentId}
+        organisationId={appointment.organisationId}
+        encounterId={appointment.encounterId}
+        authorId={actor.id}
         activeAction={activeSideAction}
         onChangeAction={setActiveSideAction}
         onClose={() => setActiveSideAction(null)}

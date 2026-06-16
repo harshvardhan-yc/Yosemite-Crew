@@ -24,6 +24,7 @@ import type {
   WorkspaceDocument,
 } from '@/app/features/appointments/types/workspace';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
+import { saveDischargeSummaryArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
 
 type SummaryStepProps = {
   appointmentId: string;
@@ -131,7 +132,7 @@ const AllDocumentsTable = ({ documents }: { documents: WorkspaceDocument[] }) =>
   </SectionContainer>
 );
 
-const SummaryStep = ({ appointmentId, encounter }: SummaryStepProps) => {
+const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps) => {
   const setDischargeSummary = useAppointmentWorkspaceStore((s) => s.setDischargeSummary);
   const saveDischargeSummary = useAppointmentWorkspaceStore((s) => s.saveDischargeSummary);
   const reopenDischargeSummary = useAppointmentWorkspaceStore((s) => s.reopenDischargeSummary);
@@ -140,6 +141,7 @@ const SummaryStep = ({ appointmentId, encounter }: SummaryStepProps) => {
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
   const openSigningOverlay = useSigningOverlayStore((s) => s.openOverlay);
   const [templateQuery, setTemplateQuery] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   // The discharge summary becomes read-only once saved (or when the encounter
   // itself is view-only).
   const dischargeSaved = Boolean(encounter.dischargeSavedAt);
@@ -170,8 +172,27 @@ const SummaryStep = ({ appointmentId, encounter }: SummaryStepProps) => {
     openSigningOverlay(`workspace-summary-${appointmentId}`);
   };
 
-  const handleSave = () => {
-    saveDischargeSummary(appointmentId, encounter.leadName ?? 'Clinician');
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      if (appointment?.organisationId) {
+        await saveDischargeSummaryArtifact(
+          {
+            organisationId: appointment.organisationId,
+            appointmentId,
+            encounterId: appointment.encounterId,
+          },
+          encounter.dischargeSummary,
+          encounter.followUpAt
+        );
+      }
+    } catch (error) {
+      console.error('Unable to persist discharge summary:', error);
+    } finally {
+      saveDischargeSummary(appointmentId, encounter.leadName ?? 'Clinician');
+      setIsSaving(false);
+    }
   };
 
   const handleFollowUpChange = (next: Date | null) => {
@@ -304,7 +325,7 @@ const SummaryStep = ({ appointmentId, encounter }: SummaryStepProps) => {
             text="Save"
             icon={<LuSave aria-hidden="true" />}
             onClick={handleSave}
-            isDisabled={encounter.viewOnly}
+            isDisabled={encounter.viewOnly || isSaving}
           />
         )}
         <Primary

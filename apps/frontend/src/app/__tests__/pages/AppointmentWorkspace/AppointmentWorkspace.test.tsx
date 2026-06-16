@@ -11,6 +11,8 @@ import {
   markEncounterReadyForDischarge,
   undoEncounterReadyForDischarge,
 } from '@/app/features/appointments/services/appointmentService';
+import { loadWorkspaceClinicalArtifacts } from '@/app/features/appointments/services/workspaceClinicalService';
+import { listSoapTemplatesForWorkspace } from '@/app/features/appointments/services/workspaceTemplateService';
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
@@ -94,6 +96,13 @@ jest.mock('@/app/features/appointments/services/appointmentService', () => ({
   undoEncounterReadyForDischarge: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
+  loadWorkspaceClinicalArtifacts: jest.fn().mockResolvedValue({}),
+}));
+jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
+  listSoapTemplatesForWorkspace: jest.fn().mockResolvedValue([]),
+}));
+
 const makeAppointment = (startTime: Date, inpatient = false): Appointment => ({
   id: 'appt-workspace',
   companion: {
@@ -128,6 +137,8 @@ const resetStore = () => {
   (useRoomsForPrimaryOrg as jest.Mock).mockReturnValue([]);
   (markEncounterReadyForDischarge as jest.Mock).mockResolvedValue(undefined);
   (undoEncounterReadyForDischarge as jest.Mock).mockResolvedValue(undefined);
+  (loadWorkspaceClinicalArtifacts as jest.Mock).mockResolvedValue({});
+  (listSoapTemplatesForWorkspace as jest.Mock).mockResolvedValue([]);
   useOrganisationRoomStore.setState({
     roomUnitsById: {},
     roomUnitIdsByRoomId: {},
@@ -150,6 +161,36 @@ describe('AppointmentWorkspace container', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Quick Actions' }));
 
     expect(useAppointmentWorkspaceStore.getState().activeSideAction).toBe('RECORD');
+  });
+
+  it('hydrates clinical artifacts from the backend adapter', async () => {
+    (loadWorkspaceClinicalArtifacts as jest.Mock).mockResolvedValue({
+      soap: [
+        {
+          id: 'soap-backend',
+          chiefComplaint: '',
+          subjective: '<p>backend subjective</p>',
+          objective: '',
+          assessment: '',
+          plan: '',
+          status: 'COMPLETED',
+          createdAt: '2026-04-20T09:00:00.000Z',
+        },
+      ],
+    });
+
+    render(<AppointmentWorkspace appointment={makeAppointment(new Date())} />);
+
+    await waitFor(() =>
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.soap[0].id
+      ).toBe('soap-backend')
+    );
+    expect(loadWorkspaceClinicalArtifacts).toHaveBeenCalledWith({
+      organisationId: 'org-1',
+      appointmentId: 'appt-workspace',
+      encounterId: undefined,
+    });
   });
 
   it('wires header, meta bar and side-modal callbacks into the workspace store/router', async () => {

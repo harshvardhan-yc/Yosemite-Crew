@@ -24,6 +24,9 @@ import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 type QuickActionsModalProps = {
   appointment: Appointment;
   appointmentId: string;
+  organisationId: string;
+  encounterId?: string;
+  authorId?: string;
   activeAction: SideAction | null;
   onChangeAction: (action: SideAction) => void;
   onClose: () => void;
@@ -89,6 +92,9 @@ const NavButton = ({
 const QuickActionsModal = ({
   appointment,
   appointmentId,
+  organisationId,
+  encounterId,
+  authorId,
   activeAction,
   onChangeAction,
   onClose,
@@ -153,7 +159,14 @@ const QuickActionsModal = ({
         </nav>
 
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-hidden pr-1">
-          {activeAction === 'RECORD' && <RecordPanel appointmentId={appointmentId} />}
+          {activeAction === 'RECORD' && (
+            <RecordPanel
+              appointmentId={appointmentId}
+              organisationId={organisationId}
+              encounterId={encounterId}
+              authorId={authorId}
+            />
+          )}
           {activeAction === 'TASKS' && <TasksPanel appointmentId={appointmentId} />}
           {activeAction === 'DOCUMENTS' && (
             <DocumentsPanel appointmentId={appointmentId} companionId={appointment.companion.id} />

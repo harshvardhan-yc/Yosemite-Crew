@@ -10,10 +10,10 @@ import {
   resolveLandingStep,
   richTextIsEmpty,
 } from '@/app/lib/appointmentWorkspace';
-import { buildMockEncounter } from '@/app/features/appointments/services/workspaceMockData';
+import { buildEmptyEncounter } from '@/app/features/appointments/services/workspaceInitialData';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 
-const base = (): AppointmentEncounter => buildMockEncounter('a1', 'OUTPATIENT');
+const base = (): AppointmentEncounter => buildEmptyEncounter('a1', 'OUTPATIENT');
 
 describe('appointmentWorkspace lib', () => {
   it('builds workspace hrefs with and without a step', () => {

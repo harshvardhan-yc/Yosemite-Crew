@@ -14,9 +14,13 @@ import type {
   SoapNoteEntry,
 } from '@/app/features/appointments/types/workspace';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
+import { saveSoapNote } from '@/app/features/appointments/services/workspaceClinicalService';
 
 type SoapStepProps = {
   appointmentId: string;
+  organisationId?: string;
+  encounterId?: string;
+  authorId?: string;
   appointmentReason: string;
   encounter: AppointmentEncounter;
   onRecordVitals: () => void;
@@ -69,6 +73,9 @@ const SoapSignActions = ({
  */
 const SoapStep = ({
   appointmentId,
+  organisationId,
+  encounterId,
+  authorId,
   appointmentReason,
   encounter,
   onRecordVitals,
@@ -78,6 +85,7 @@ const SoapStep = ({
   const applySoapTemplate = useAppointmentWorkspaceStore((s) => s.applySoapTemplate);
   const signSoap = useAppointmentWorkspaceStore((s) => s.signSoap);
   const [templateQuery, setTemplateQuery] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Work on the active draft (first not-yet-signed note); once a note is signed
   // it moves to "All SOAP notes" history and the form clears for a new entry.
@@ -114,6 +122,25 @@ const SoapStep = ({
       ),
     [appointmentReason, encounter.soap]
   );
+
+  const handleSaveAndNext = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      if (organisationId) {
+        await saveSoapNote(
+          { organisationId, appointmentId, encounterId, authorId, templateId: note.templateId },
+          note
+        );
+      }
+    } catch (error) {
+      console.error('Unable to persist SOAP note:', error);
+    } finally {
+      signSoap(appointmentId, encounter.leadName ?? 'Clinician', false);
+      setIsSaving(false);
+      onSaveAndNext();
+    }
+  };
 
   return (
     <div className="flex flex-col gap-7">
@@ -219,12 +246,9 @@ const SoapStep = ({
 
           <div className="flex justify-end">
             <SoapSignActions
-              disabled={false}
+              disabled={isSaving}
               onPrintToSign={() => window.print()}
-              onSaveAndNext={() => {
-                signSoap(appointmentId, encounter.leadName ?? 'Clinician', false);
-                onSaveAndNext();
-              }}
+              onSaveAndNext={handleSaveAndNext}
             />
           </div>
         </>

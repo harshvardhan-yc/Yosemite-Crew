@@ -1,10 +1,12 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LuAlertCircle, LuCheckCircle, LuDownload, LuEye, LuPrinter } from 'react-icons/lu';
 import TabToggle from '@/app/ui/primitives/TabToggle/TabToggle';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import CompanionDocumentsSection from '@/app/features/documents/components/CompanionDocumentsSection';
+import { fetchAppointmentForms } from '@/app/features/forms/services/appointmentFormsService';
+import { isAuthRedirectError } from '@/app/services/axios';
 
 type DocumentsPanelProps = {
   appointmentId: string;
@@ -46,29 +48,19 @@ const AUTH_META: Record<FormAuthState, { label: string; tone: string; icon: Reac
   },
 };
 
-const MOCK_FORMS: SubmittedForm[] = [
-  {
-    id: 'frm-1',
-    title: 'Medication Admin - ID 67890',
-    auth: 'AUTHORIZED_CLIENT',
-    date: 'Apr 21, 2026',
-    time: '09:45 AM',
-  },
-  {
-    id: 'frm-2',
-    title: 'Medication Admin - ID 67890',
-    auth: 'PENDING',
-    date: 'Apr 21, 2026',
-    time: '09:45 AM',
-  },
-  {
-    id: 'frm-3',
-    title: 'Medication Admin - ID 67890',
-    auth: 'AUTHORIZED_PROVIDER',
-    date: 'Apr 21, 2026',
-    time: '09:45 AM',
-  },
-];
+const formatDate = (value: Date | string | undefined) => {
+  if (!value) return '-';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatTime = (value: Date | string | undefined) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+};
 
 const FormRow = ({ form }: { form: SubmittedForm }) => {
   const meta = AUTH_META[form.auth];
@@ -109,14 +101,87 @@ const FormRow = ({ form }: { form: SubmittedForm }) => {
   );
 };
 
-/** Documents panel: Forms (submitted forms + auth states) and Records (companion records). */
-const DocumentsPanel = ({ companionId }: DocumentsPanelProps) => {
-  const [tab, setTab] = useState<DocsTab>('FORMS');
+const AppointmentFormsPanel = ({ appointmentId }: { appointmentId: string }) => {
+  const initialAppointmentId = React.useRef(appointmentId);
   const [query, setQuery] = useState('');
+  const [forms, setForms] = useState<SubmittedForm[]>([]);
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
 
-  const forms = MOCK_FORMS.filter((f) =>
-    f.title.toLowerCase().includes(query.trim().toLowerCase())
+  useEffect(() => {
+    let cancelled = false;
+    fetchAppointmentForms(initialAppointmentId.current).then(
+      (response) => {
+        if (cancelled) return;
+        setForms(
+          response.forms.map(({ form, submission, status: formStatus }) => {
+            const updatedAt = form.updatedAt ?? form.createdAt;
+            return {
+              id: submission?._id ?? form._id ?? form.name,
+              title: form.name,
+              auth: formStatus === 'completed' ? 'AUTHORIZED_CLIENT' : 'PENDING',
+              date: formatDate(updatedAt),
+              time: formatTime(updatedAt),
+            };
+          })
+        );
+        setStatus('loaded');
+      },
+      (error) => {
+        if (cancelled) return;
+        if (!isAuthRedirectError(error)) {
+          console.error('Unable to load appointment forms:', error);
+        }
+        setStatus('error');
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredForms = useMemo(
+    () => forms.filter((f) => f.title.toLowerCase().includes(query.trim().toLowerCase())),
+    [forms, query]
   );
+
+  return (
+    <div
+      id="docs-panel-FORMS"
+      role="tabpanel"
+      aria-labelledby="tab-FORMS"
+      className="flex flex-col gap-3"
+    >
+      <Search
+        value={query}
+        setSearch={setQuery}
+        placeholder="Search forms to add"
+        label="Search forms to add"
+        className="w-full!"
+      />
+      {status === 'loading' ? (
+        <p className="py-6 text-center text-body-4 text-text-secondary">Loading forms...</p>
+      ) : status === 'error' ? (
+        <p className="py-6 text-center text-body-4 text-danger-600">
+          Unable to load forms. Try again later.
+        </p>
+      ) : filteredForms.length === 0 ? (
+        <p className="py-6 text-center text-body-4 text-text-secondary">
+          No forms match this search.
+        </p>
+      ) : (
+        <ul className="rounded-2xl border border-card-border px-4">
+          {filteredForms.map((form) => (
+            <FormRow key={form.id} form={form} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+/** Documents panel: Forms (submitted forms + auth states) and Records (companion records). */
+const DocumentsPanel = ({ appointmentId, companionId }: DocumentsPanelProps) => {
+  const [tab, setTab] = useState<DocsTab>('FORMS');
 
   return (
     <div className="flex flex-col gap-4">
@@ -127,31 +192,7 @@ const DocumentsPanel = ({ companionId }: DocumentsPanelProps) => {
         panelId={(key) => `docs-panel-${key}`}
       />
       {tab === 'FORMS' ? (
-        <div
-          id="docs-panel-FORMS"
-          role="tabpanel"
-          aria-labelledby="tab-FORMS"
-          className="flex flex-col gap-3"
-        >
-          <Search
-            value={query}
-            setSearch={setQuery}
-            placeholder="Search forms to add"
-            label="Search forms to add"
-            className="w-full!"
-          />
-          {forms.length === 0 ? (
-            <p className="py-6 text-center text-body-4 text-text-secondary">
-              No forms match this search.
-            </p>
-          ) : (
-            <ul className="rounded-2xl border border-card-border px-4">
-              {forms.map((form) => (
-                <FormRow key={form.id} form={form} />
-              ))}
-            </ul>
-          )}
-        </div>
+        <AppointmentFormsPanel key={appointmentId} appointmentId={appointmentId} />
       ) : (
         <div id="docs-panel-RECORDS" role="tabpanel" aria-labelledby="tab-RECORDS">
           {companionId ? (

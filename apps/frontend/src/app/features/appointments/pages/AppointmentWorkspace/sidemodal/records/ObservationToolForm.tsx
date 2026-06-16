@@ -4,7 +4,7 @@ import { LuArrowRight, LuEye, LuEyeOff } from 'react-icons/lu';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
-import { OBSERVATION_TOOLS } from '@/app/features/appointments/services/workspaceMockData';
+import { OBSERVATION_TOOLS } from '@/app/features/appointments/services/workspaceInitialData';
 import type { ObservationRecord } from '@/app/features/appointments/types/workspace';
 import { formatStampDate } from '@/app/lib/appointmentWorkspace';
 
@@ -60,7 +60,7 @@ const ObservationRow = ({ entry }: { entry: ObservationRecord }) => {
 
 /**
  * Observation Tool tab: choose a scoring tool (FGS / CSU-CAP), read its intro,
- * Start to score (mock auto-score), and review recorded observations.
+ * Start to score and review recorded observations.
  */
 const ObservationToolForm = ({ appointmentId, observations }: ObservationToolFormProps) => {
   const addObservation = useAppointmentWorkspaceStore((s) => s.addObservation);
@@ -71,7 +71,7 @@ const ObservationToolForm = ({ appointmentId, observations }: ObservationToolFor
 
   const handleStart = () => {
     if (!activeTool) return;
-    // Mock scoring — a real run opens the scoring wizard; here we record a stub.
+    // Until the scoring wizard is connected, record the selected clinical tool.
     addObservation(appointmentId, {
       toolKey: activeTool.key,
       toolName: activeTool.name,

@@ -17,7 +17,7 @@ const seed = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
 describe('appointmentWorkspaceStore', () => {
   beforeEach(reset);
 
-  it('initialises a mock encounter once', () => {
+  it('initialises an empty encounter once', () => {
     seed();
     const first = getStore().getEncounter(APPT);
     expect(first?.appointmentId).toBe(APPT);
@@ -27,10 +27,10 @@ describe('appointmentWorkspaceStore', () => {
     expect(getStore().getEncounter(APPT)?.mode).toBe('OUTPATIENT');
   });
 
-  it('seeds inpatient schedule for inpatient mode without assigning a placeholder room', () => {
+  it('initialises inpatient mode without seeded schedule or placeholder room', () => {
     seed('INPATIENT');
     const enc = getStore().getEncounter(APPT);
-    expect(enc?.schedule.length).toBeGreaterThan(0);
+    expect(enc?.schedule).toHaveLength(0);
     expect(enc?.roomId).toBeUndefined();
   });
 
@@ -42,7 +42,7 @@ describe('appointmentWorkspaceStore', () => {
     let enc = getStore().getEncounter(APPT)!;
     expect(enc.mode).toBe('INPATIENT');
     expect(enc.consultationType).toBe('Inpatient');
-    expect(enc.schedule.length).toBeGreaterThan(0);
+    expect(enc.schedule).toHaveLength(0);
     expect(enc.roomId).toBeUndefined();
     expect(enc.soap[0].subjective).toBe('<p>preserved</p>');
 
@@ -75,6 +75,59 @@ describe('appointmentWorkspaceStore', () => {
     expect(enc?.unitId).toBe('unit-3');
   });
 
+  it('merges backend clinical data without clearing local fallback sections', () => {
+    seed();
+    getStore().addVitals(APPT, { weightLbs: 55, recordedByName: 'Sarah', recordedAt: 'now' });
+
+    getStore().mergeEncounterData(APPT, {
+      soap: [
+        {
+          id: 'soap-backend',
+          chiefComplaint: '',
+          subjective: '<p>backend</p>',
+          objective: '',
+          assessment: '',
+          plan: '',
+          status: 'COMPLETED',
+          createdAt: '2026-04-20T09:00:00.000Z',
+        },
+      ],
+      observations: [
+        {
+          id: 'obs-backend',
+          code: 'OT-001',
+          toolKey: 'fgs',
+          toolName: 'Feline grimace scale',
+          scores: { posture: 1 },
+          total: 1,
+          recordedByName: 'Pet parent',
+          recordedAt: '2026-04-20T09:10:00.000Z',
+        },
+      ],
+      vitals: [],
+      dischargeSummary: '<p>summary</p>',
+      stepStatus: { SUMMARY: 'IN_PROGRESS' },
+    });
+
+    const enc = getStore().getEncounter(APPT)!;
+    expect(enc.soap[0].id).toBe('soap-backend');
+    expect(enc.observations[0].id).toBe('obs-backend');
+    expect(enc.vitals).toHaveLength(1);
+    expect(enc.dischargeSummary).toBe('<p>summary</p>');
+    expect(enc.stepStatus.SUMMARY).toBe('IN_PROGRESS');
+  });
+
+  it('merges backend SOAP template options without clearing existing templates on empty refresh', () => {
+    seed();
+    getStore().mergeEncounterData(APPT, {
+      soapTemplates: [{ id: 'tpl-1', name: 'Standard SOAP', isDefault: true }],
+    });
+    expect(getStore().getEncounter(APPT)?.soapTemplates).toHaveLength(1);
+
+    getStore().mergeEncounterData(APPT, { soapTemplates: [] });
+    expect(getStore().getEncounter(APPT)?.soapTemplates[0].name).toBe('Standard SOAP');
+  });
+
   it('upserts SOAP then signs it, completing the step', () => {
     seed();
     getStore().upsertSoap(APPT, { subjective: '<p>hi</p>' });
@@ -93,7 +146,7 @@ describe('appointmentWorkspaceStore', () => {
 
   it('applies a SOAP template', () => {
     seed();
-    const tpl = getStore().getEncounter(APPT)!.soapTemplates[1];
+    const tpl = { id: 'tpl-ortho', name: 'Orthopaedic exam', serviceId: 'svc-ortho' };
     getStore().applySoapTemplate(APPT, tpl);
     expect(getStore().getEncounter(APPT)?.soap[0].templateId).toBe(tpl.id);
   });
@@ -115,7 +168,7 @@ describe('appointmentWorkspaceStore', () => {
     seed();
     getStore().upsertSoap(APPT, { subjective: '<p>first</p>' });
     getStore().signSoap(APPT, 'Dr Tim', false);
-    const tpl = getStore().getEncounter(APPT)!.soapTemplates[0];
+    const tpl = { id: 'tpl-default', name: 'Default SOAP', isDefault: true };
     getStore().applySoapTemplate(APPT, tpl);
     const soap = getStore().getEncounter(APPT)!.soap;
     const draft = soap.find((n) => n.status !== 'COMPLETED');
@@ -147,8 +200,16 @@ describe('appointmentWorkspaceStore', () => {
 
   it('adds diagnostic orders and removes queued diagnostic tests', () => {
     seed();
-    const initial = getStore().getEncounter(APPT)!;
-    getStore().removeDiagnosticTest(APPT, initial.diagnosticTests[0].id);
+    useAppointmentWorkspaceStore.setState((state) => ({
+      encountersById: {
+        ...state.encountersById,
+        [APPT]: {
+          ...state.encountersById[APPT],
+          diagnosticTests: [{ id: 'dx-1', name: 'CBC', priceCents: 1000 }],
+        },
+      },
+    }));
+    getStore().removeDiagnosticTest(APPT, 'dx-1');
     expect(getStore().getEncounter(APPT)?.diagnosticTests).toHaveLength(0);
 
     getStore().addDiagnosticOrder(APPT, { orderCode: 'ABC-123', status: 'SUBMITTED' });
@@ -307,6 +368,14 @@ describe('appointmentWorkspaceStore', () => {
 
   it('updates an invoice line item, re-deriving gross/amount and clamping discount', () => {
     seed();
+    getStore().addInvoiceLineItem(APPT, {
+      name: 'Initial Consultation',
+      unitPriceCents: 10000,
+      qty: 1,
+      grossCents: 10000,
+      discountCents: 1000,
+      amountCents: 9000,
+    });
     const item = getStore().getEncounter(APPT)!.invoiceLineItems[0];
 
     getStore().updateInvoiceLineItem(APPT, item.id, { qty: 4 });
@@ -328,6 +397,14 @@ describe('appointmentWorkspaceStore', () => {
 
   it('records an invoice payment, clearing the bill and prepending a paid invoice', () => {
     seed();
+    getStore().addInvoiceLineItem(APPT, {
+      name: 'Initial Consultation',
+      unitPriceCents: 10000,
+      qty: 1,
+      grossCents: 10000,
+      discountCents: 1000,
+      amountCents: 9000,
+    });
     const before = getStore().getEncounter(APPT)!;
     const pastCount = before.pastInvoices.length;
 
@@ -345,6 +422,20 @@ describe('appointmentWorkspaceStore', () => {
 
   it('reduces the deposit when payment is from the deposit', () => {
     seed();
+    getStore().addInvoiceLineItem(APPT, {
+      name: 'Initial Consultation',
+      unitPriceCents: 10000,
+      qty: 1,
+      grossCents: 10000,
+      discountCents: 1000,
+      amountCents: 9000,
+    });
+    useAppointmentWorkspaceStore.setState((state) => ({
+      encountersById: {
+        ...state.encountersById,
+        [APPT]: { ...state.encountersById[APPT], depositCents: 120000 },
+      },
+    }));
     const start = getStore().getEncounter(APPT)!.depositCents;
 
     getStore().recordInvoicePayment(APPT, { method: 'DEPOSIT' });

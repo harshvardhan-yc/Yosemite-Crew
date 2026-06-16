@@ -1,13 +1,41 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import TreatmentStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/TreatmentStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useInventoryStore } from '@/app/stores/inventoryStore';
+import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
+import { savePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
+import {
+  applyInpatientScheduleTemplate,
+  createWorkspaceTemplateInstance,
+  listInpatientScheduleTemplates,
+} from '@/app/features/appointments/services/workspaceTemplateService';
+import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
+
+jest.mock('@/app/features/inventory/services/inventoryService', () => ({
+  fetchInventoryItems: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
+  savePrescriptionArtifact: jest.fn().mockResolvedValue({ resourceType: 'MedicationRequest' }),
+}));
+
+jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
+  applyInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
+  createWorkspaceTemplateInstance: jest.fn().mockResolvedValue({ id: 'instance-1' }),
+  listInpatientScheduleTemplates: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('@/app/features/tasks/services/taskService', () => ({
+  loadTasksForPrimaryOrg: jest.fn().mockResolvedValue(undefined),
+}));
 
 expect.extend(toHaveNoViolations);
 
 const APPT = 'appt-treatment';
+const ORG = 'org-treatment';
 
 const reset = () =>
   useAppointmentWorkspaceStore.setState({
@@ -16,17 +44,176 @@ const reset = () =>
     activeSideAction: null,
   });
 
+const resetInventory = () =>
+  useInventoryStore.setState({
+    itemsById: {},
+    itemIdsByOrgId: {},
+    turnoverByOrgId: {},
+    statusByOrgId: {},
+    errorByOrgId: {},
+    lastFetchedByOrgId: {},
+  });
+
+const inventoryItem = (id: string, name: string, category = 'Medicine'): InventoryItem => ({
+  id,
+  organisationId: ORG,
+  basicInfo: {
+    name,
+    category,
+    subCategory: '',
+    department: '',
+    description: '',
+    status: 'Active',
+  },
+  classification: {},
+  pricing: { selling: '12.5' },
+  vendor: { supplierName: '', brand: '', vendor: '', license: '', paymentTerms: '' },
+  stock: {
+    current: '14',
+    allocated: '2',
+    available: '12',
+    reorderLevel: '5',
+    reorderQuantity: '',
+    stockLocation: '',
+  },
+  batch: { batch: '', manufactureDate: '', expiryDate: '' },
+});
+
+const seedPrescriptionInventory = () => {
+  useInventoryStore
+    .getState()
+    .setInventoryForOrg(ORG, [
+      inventoryItem('inv-gaba', 'Gabapentin'),
+      inventoryItem('inv-carp', 'Carprofen'),
+    ]);
+};
+
 const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
   useAppointmentWorkspaceStore.getState().initEncounter(APPT, mode);
+  useAppointmentWorkspaceStore.setState((state) => ({
+    encountersById: {
+      ...state.encountersById,
+      [APPT]: {
+        ...state.encountersById[APPT],
+        services: [
+          {
+            id: 'li-1',
+            refId: 'svc-cerenia',
+            kind: 'PACKAGE',
+            name: 'SC Injection - Cerenia 0.5ml',
+            qty: 1,
+            instructions: "Don't give bath for 2 days, wash wound post",
+            unitPriceCents: 10000,
+            amountCents: 10000,
+            breakdown: [
+              { id: 'bd-1', name: 'Syringe', qty: 2, instructions: '-', amountCents: 1500 },
+              {
+                id: 'bd-2',
+                name: 'Cerenia (injectable medicine)',
+                qty: 1,
+                instructions: '-',
+                amountCents: 4500,
+              },
+            ],
+          },
+          {
+            id: 'li-2',
+            refId: 'svc-acupuncture',
+            kind: 'SERVICE',
+            name: 'Acupuncture',
+            qty: 1,
+            instructions: '-',
+            unitPriceCents: 13500,
+            amountCents: 13500,
+          },
+        ],
+        prescription: [
+          {
+            id: 'rx-1',
+            medicineName: 'Amoxicillin - 625',
+            dosage: '1 tab',
+            route: 'Oral',
+            frequency: 'BID',
+            durationDays: '5 days',
+            refill: 'x 2',
+            instructions: 'Do not skip dosage',
+            fulfillment: 'IN_HOUSE',
+            priceCents: 16500,
+            stockQty: 14,
+          },
+          {
+            id: 'rx-2',
+            medicineName: 'Prednisone',
+            dosage: '10mg',
+            route: 'Oral',
+            frequency: 'QD',
+            durationDays: '5 days',
+            refill: 'x 1',
+            instructions: 'Morning with food',
+            fulfillment: 'IN_HOUSE',
+            priceCents: 9000,
+            stockQty: 3,
+            lowStock: true,
+          },
+        ],
+        schedule:
+          mode === 'INPATIENT'
+            ? [
+                {
+                  id: 'sch-1',
+                  time: '10:00 AM',
+                  description: 'Record observation for analgesic',
+                  category: 'Record',
+                  assignedToName: 'Sarah Mitchell',
+                  status: 'COMPLETED',
+                  autoGenerated: true,
+                },
+                {
+                  id: 'sch-2',
+                  time: '12:00 PM',
+                  description: 'Feed patient meal',
+                  category: 'Care',
+                  assignedToName: 'Sarah Mitchell',
+                  status: 'UPCOMING',
+                  autoGenerated: false,
+                },
+              ]
+            : [],
+      },
+    },
+  }));
   return useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
 };
 
 describe('TreatmentStep', () => {
-  beforeEach(reset);
+  beforeEach(() => {
+    reset();
+    resetInventory();
+    (savePrescriptionArtifact as jest.Mock).mockClear();
+    (savePrescriptionArtifact as jest.Mock).mockResolvedValue({
+      resourceType: 'MedicationRequest',
+    });
+    (applyInpatientScheduleTemplate as jest.Mock).mockClear();
+    (createWorkspaceTemplateInstance as jest.Mock).mockClear();
+    (listInpatientScheduleTemplates as jest.Mock).mockClear();
+    (loadTasksForPrimaryOrg as jest.Mock).mockClear();
+    (applyInpatientScheduleTemplate as jest.Mock).mockResolvedValue({ resourceType: 'Task' });
+    (createWorkspaceTemplateInstance as jest.Mock).mockResolvedValue({ id: 'instance-1' });
+    (listInpatientScheduleTemplates as jest.Mock).mockResolvedValue([]);
+    (loadTasksForPrimaryOrg as jest.Mock).mockResolvedValue(undefined);
+  });
 
   it('filters service and medication add lists', () => {
     const enc = seedAndGet();
-    render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
+    seedPrescriptionInventory();
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
 
     fireEvent.change(screen.getByLabelText(/search for services and packages/i), {
       target: { value: 'arthritis' },
@@ -157,20 +344,29 @@ describe('TreatmentStep', () => {
     expect(writeText).toHaveBeenCalledWith('Do not skip dosage');
   });
 
-  it('adds prescriptions, updates fulfillment and removes medication', () => {
+  it('adds prescriptions, updates fulfillment and removes medication', async () => {
     const seeded = seedAndGet();
+    seedPrescriptionInventory();
     // Work with only the un-billed (editable) prescriptions for this flow.
     const enc = { ...seeded, prescription: seeded.prescription.filter((p) => !p.billed) };
     useAppointmentWorkspaceStore.setState((s) => ({
       encountersById: { ...s.encountersById, [APPT]: enc },
     }));
-    render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
 
     // Adding is search-driven: type to surface the medication, then click it.
     fireEvent.change(screen.getByLabelText(/search medicines/i), {
       target: { value: 'gabapentin' },
     });
     fireEvent.click(screen.getByRole('button', { name: /gabapentin/i }));
+    await waitFor(() => expect(savePrescriptionArtifact).toHaveBeenCalled());
     expect(
       useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.prescription.at(-1)?.medicineName
     ).toBe('Gabapentin');
@@ -246,6 +442,46 @@ describe('TreatmentStep', () => {
     expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.schedule).toHaveLength(
       before + 1
     );
+  });
+
+  it('applies an inpatient schedule template and refreshes tasks', async () => {
+    (listInpatientScheduleTemplates as jest.Mock).mockResolvedValue([
+      {
+        id: 'tpl-care',
+        name: 'Post-op care pathway',
+        kind: 'CARE_PATHWAY',
+        status: 'PUBLISHED',
+      },
+    ]);
+    const enc = seedAndGet('INPATIENT');
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        authorId="user-1"
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /load schedule template/i }));
+    fireEvent.click(screen.getByRole('button', { name: /post-op care pathway/i }));
+
+    await waitFor(() =>
+      expect(createWorkspaceTemplateInstance).toHaveBeenCalledWith(ORG, 'tpl-care', {
+        appointmentId: APPT,
+        encounterId: 'enc-1',
+        authorId: 'user-1',
+        data: {},
+        status: 'DRAFT',
+      })
+    );
+    expect(applyInpatientScheduleTemplate).toHaveBeenCalledWith(ORG, 'instance-1', {
+      force: true,
+      notify: false,
+    });
+    expect(loadTasksForPrimaryOrg).toHaveBeenCalledWith({ force: true, silent: true });
   });
 
   it('updates inpatient schedule rows', () => {

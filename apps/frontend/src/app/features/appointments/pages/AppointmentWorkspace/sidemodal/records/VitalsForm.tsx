@@ -7,9 +7,13 @@ import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorks
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type { Vitals } from '@/app/features/appointments/types/workspace';
 import { formatStampDate } from '@/app/lib/appointmentWorkspace';
+import { saveVitalRecord } from '@/app/features/appointments/services/workspaceClinicalService';
 
 type VitalsFormProps = {
   appointmentId: string;
+  organisationId: string;
+  encounterId?: string;
+  authorId?: string;
   vitals: Vitals[];
 };
 
@@ -135,18 +139,26 @@ const VitalRow = ({ entry }: { entry: Vitals }) => {
 };
 
 /** Vitals tab: a "New vitals" form plus the recorded-vitals list. */
-const VitalsForm = ({ appointmentId, vitals }: VitalsFormProps) => {
+const VitalsForm = ({
+  appointmentId,
+  organisationId,
+  encounterId,
+  authorId,
+  vitals,
+}: VitalsFormProps) => {
   const addVitals = useAppointmentWorkspaceStore((s) => s.addVitals);
   const [draft, setDraft] = useState<DraftVitals>(EMPTY_DRAFT);
   const [notes, setNotes] = useState('');
   const [recorder, setRecorder] = useState(RECORDER_OPTIONS[0]);
   const [creating, setCreating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const updateField = (key: keyof DraftVitals, value: string) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
 
-  const handleSave = () => {
-    addVitals(appointmentId, {
+  const handleSave = async () => {
+    const nextVitals = {
       weightLbs: parseNumber(draft.weightLbs),
       tempF: parseNumber(draft.tempF),
       heartRateBpm: parseNumber(draft.heartRateBpm),
@@ -158,7 +170,22 @@ const VitalsForm = ({ appointmentId, vitals }: VitalsFormProps) => {
       notes: notes || undefined,
       recordedByName: recorder.label,
       recordedAt: new Date().toISOString(),
-    });
+    };
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await saveVitalRecord(
+        { organisationId, appointmentId, encounterId, authorId: authorId ?? recorder.value },
+        nextVitals
+      );
+      addVitals(appointmentId, nextVitals);
+    } catch (error) {
+      console.error('Failed to save vitals', error);
+      setSaveError('Unable to save vitals. Please try again.');
+      return;
+    } finally {
+      setIsSaving(false);
+    }
     setDraft(EMPTY_DRAFT);
     setNotes('');
     setCreating(false);
@@ -228,7 +255,13 @@ const VitalsForm = ({ appointmentId, vitals }: VitalsFormProps) => {
         />
       </div>
       <div className="flex items-center justify-center gap-3">
-        <Primary text="Save vitals" icon={<LuCheck aria-hidden="true" />} onClick={handleSave} />
+        {saveError && <p className="text-caption-1 text-red-600">{saveError}</p>}
+        <Primary
+          text={isSaving ? 'Saving...' : 'Save vitals'}
+          icon={<LuCheck aria-hidden="true" />}
+          onClick={handleSave}
+          isDisabled={isSaving}
+        />
         <Secondary text="Discard" onClick={handleDiscard} />
       </div>
     </div>

@@ -22,6 +22,19 @@ const reset = () =>
 
 const seedAndGet = () => {
   useAppointmentWorkspaceStore.getState().initEncounter(APPT, 'OUTPATIENT');
+  useAppointmentWorkspaceStore.setState((state) => ({
+    encountersById: {
+      ...state.encountersById,
+      [APPT]: {
+        ...state.encountersById[APPT],
+        leadName: 'Dr. Tim Apple',
+        soapTemplates: [
+          { id: 'tpl-default', name: 'Default SOAP', isDefault: true },
+          { id: 'tpl-ortho', name: 'Orthopaedic exam', serviceId: 'svc-ortho' },
+        ],
+      },
+    },
+  }));
   return useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
 };
 

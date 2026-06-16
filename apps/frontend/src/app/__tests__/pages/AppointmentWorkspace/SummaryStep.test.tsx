@@ -66,7 +66,20 @@ describe('SummaryStep', () => {
 
   it('renders discharge summary, follow-up date field and all documents', () => {
     const enc = seedAndGet();
-    renderSummary(enc);
+    const withDocument = {
+      ...enc,
+      documents: [
+        {
+          id: 'doc-soap-1',
+          createdAt: '2026-04-20T12:30:00Z',
+          category: 'SOAP' as const,
+          description: 'Signed SOAP note',
+          signedByName: 'Dr. Tim Apple',
+          lastModifiedAt: '2026-04-20T12:45:00Z',
+        },
+      ],
+    };
+    renderSummary(withDocument);
 
     expect(screen.getByText('Discharge Summary')).toBeInTheDocument();
     expect(screen.getByLabelText('Discharge summary')).toBeInTheDocument();

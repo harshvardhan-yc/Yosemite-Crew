@@ -16,6 +16,7 @@ import type {
 
 type PrescriptionEditorProps = {
   items: PrescriptionItem[];
+  catalogItems?: Omit<PrescriptionItem, 'id'>[];
   readOnly: boolean;
   deleteLocked?: boolean;
   onAddItem: (item: Omit<PrescriptionItem, 'id'>) => void;
@@ -23,28 +24,6 @@ type PrescriptionEditorProps = {
   onRemoveItem: (id: string) => void;
   onPrint: () => void;
 };
-
-/** Searchable catalog — results only surface as the user types (no chips up front). */
-const MEDICATIONS: Omit<PrescriptionItem, 'id'>[] = [
-  {
-    medicineName: 'Gabapentin',
-    dosage: '100mg',
-    route: 'Oral',
-    frequency: 'BID',
-    durationDays: '7 days',
-    instructions: 'Give with food',
-    fulfillment: 'IN_HOUSE',
-  },
-  {
-    medicineName: 'Carprofen',
-    dosage: '25mg',
-    route: 'Oral',
-    frequency: 'SID',
-    durationDays: '5 days',
-    instructions: 'Monitor appetite',
-    fulfillment: 'PRESCRIPTION_ONLY',
-  },
-];
 
 const FULFILLMENT_LABELS: Record<PrescriptionFulfillment, string> = {
   IN_HOUSE: 'In-house fulfilled',
@@ -270,6 +249,7 @@ const PrescriptionRow = ({
 
 const PrescriptionEditor = ({
   items,
+  catalogItems = [],
   readOnly,
   deleteLocked = readOnly,
   onAddItem,
@@ -282,8 +262,8 @@ const PrescriptionEditor = ({
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return [];
-    return MEDICATIONS.filter((item) => item.medicineName.toLowerCase().includes(query));
-  }, [search]);
+    return catalogItems.filter((item) => item.medicineName.toLowerCase().includes(query));
+  }, [catalogItems, search]);
 
   return (
     <div className="flex flex-col gap-3">

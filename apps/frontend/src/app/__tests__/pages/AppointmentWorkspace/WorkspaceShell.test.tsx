@@ -8,7 +8,7 @@ import WorkspaceStepper from '@/app/features/appointments/pages/AppointmentWorks
 import WorkspaceHeader from '@/app/features/appointments/pages/AppointmentWorkspace/WorkspaceHeader';
 import CompanionContextCard from '@/app/features/appointments/pages/AppointmentWorkspace/CompanionContextCard';
 import WorkspaceMetaBar from '@/app/features/appointments/pages/AppointmentWorkspace/WorkspaceMetaBar';
-import { buildMockEncounter } from '@/app/features/appointments/services/workspaceMockData';
+import { buildEmptyEncounter } from '@/app/features/appointments/services/workspaceInitialData';
 import type { StepStatus, WorkspaceStep } from '@/app/features/appointments/types/workspace';
 import type { Appointment } from '@yosemite-crew/types';
 
@@ -246,7 +246,7 @@ describe('ReadyToggle stamp formatting', () => {
 
 describe('WorkspaceMetaBar', () => {
   const baseProps = (mode: 'OUTPATIENT' | 'INPATIENT') => ({
-    encounter: buildMockEncounter('a1', mode),
+    encounter: buildEmptyEncounter('a1', mode),
     activeStep: 'SOAP' as WorkspaceStep,
     roomOptions: [{ label: 'Room 1', value: 'room-1' }],
     unitOptions: [{ label: '24', value: 'unit-24' }],

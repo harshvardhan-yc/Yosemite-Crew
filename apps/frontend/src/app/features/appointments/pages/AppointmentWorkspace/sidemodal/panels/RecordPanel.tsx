@@ -7,6 +7,9 @@ import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceS
 
 type RecordPanelProps = {
   appointmentId: string;
+  organisationId: string;
+  encounterId?: string;
+  authorId?: string;
 };
 
 type RecordTab = 'VITALS' | 'OBSERVATION';
@@ -17,7 +20,12 @@ const TABS = [
 ];
 
 /** Record panel: Vitals + Observation Tool tabs, each with a form + recorded list. */
-const RecordPanel = ({ appointmentId }: RecordPanelProps) => {
+const RecordPanel = ({
+  appointmentId,
+  organisationId,
+  encounterId,
+  authorId,
+}: RecordPanelProps) => {
   const [tab, setTab] = useState<RecordTab>('VITALS');
   const encounter = useAppointmentWorkspaceStore((s) => s.encountersById[appointmentId]);
 
@@ -33,7 +41,13 @@ const RecordPanel = ({ appointmentId }: RecordPanelProps) => {
       />
       {tab === 'VITALS' ? (
         <div id="record-panel-VITALS" role="tabpanel" aria-labelledby="tab-VITALS">
-          <VitalsForm appointmentId={appointmentId} vitals={encounter.vitals} />
+          <VitalsForm
+            appointmentId={appointmentId}
+            organisationId={organisationId}
+            encounterId={encounterId}
+            authorId={authorId}
+            vitals={encounter.vitals}
+          />
         </div>
       ) : (
         <div id="record-panel-OBSERVATION" role="tabpanel" aria-labelledby="tab-OBSERVATION">

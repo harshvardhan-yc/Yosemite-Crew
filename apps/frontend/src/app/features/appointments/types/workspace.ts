@@ -168,6 +168,10 @@ export type PrescriptionItem = {
   fulfillment: PrescriptionFulfillment;
   /** Line price in cents, shown at the right end of the row. */
   priceCents?: number;
+  /** Source inventory item, required before stock can be consumed/dispensed. */
+  inventoryItemId?: string;
+  /** Optional source batch for controlled or batch-tracked stock consumption. */
+  inventoryBatchId?: string;
   /** On-hand inventory count; drives the In stock / Low stock health pill. */
   stockQty?: number;
   /** True when the on-hand count is at/below the reorder threshold. */

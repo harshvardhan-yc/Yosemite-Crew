@@ -19,12 +19,15 @@ import { Primary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import type { ScheduleTask, ScheduleTaskStatus } from '@/app/features/appointments/types/workspace';
+import type { TemplateLike } from '@yosemite-crew/types';
 
 type InpatientScheduleProps = {
   tasks: ScheduleTask[];
+  templates?: TemplateLike[];
   readOnly: boolean;
   onAddTask: (task: Omit<ScheduleTask, 'id'>) => void;
   onUpdateTask: (id: string, patch: Partial<ScheduleTask>) => void;
+  onApplyTemplate?: (templateId: string) => void;
 };
 
 const STATUS_OPTIONS: { label: string; value: ScheduleTaskStatus }[] = [
@@ -238,9 +241,11 @@ const TaskBreakdown = ({
 
 const InpatientSchedule = ({
   tasks,
+  templates = [],
   readOnly,
   onAddTask,
   onUpdateTask,
+  onApplyTemplate,
 }: InpatientScheduleProps) => {
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(tasks[0]?.id ?? null);
@@ -293,6 +298,19 @@ const InpatientSchedule = ({
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {templates.length > 0 && (
+            <div className="w-full sm:w-70">
+              <LabelDropdown
+                placeholder="Load schedule template"
+                options={templates.map((template) => ({
+                  label: template.name,
+                  value: template.id,
+                }))}
+                searchable
+                onSelect={(option) => onApplyTemplate?.(option.value)}
+              />
+            </div>
+          )}
           <CircleIconButton
             icon={<LuPlus aria-hidden="true" />}
             label="Add schedule task"

@@ -19,6 +19,62 @@ const reset = () =>
 
 const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
   useAppointmentWorkspaceStore.getState().initEncounter(APPT, mode);
+  useAppointmentWorkspaceStore.setState((state) => ({
+    encountersById: {
+      ...state.encountersById,
+      [APPT]: {
+        ...state.encountersById[APPT],
+        depositCents: 120000,
+        taxPercent: 7,
+        overallDiscountPercent: 5,
+        invoiceLineItems: [
+          {
+            id: 'inv-1',
+            name: 'Initial Consultation',
+            unitPriceCents: 10000,
+            qty: 1,
+            grossCents: 10000,
+            discountCents: 1000,
+            amountCents: 9000,
+          },
+          {
+            id: 'inv-3',
+            name: 'X-Ray Imaging',
+            unitPriceCents: 20000,
+            qty: 1,
+            grossCents: 20000,
+            discountCents: 2000,
+            amountCents: 18000,
+          },
+        ],
+        pastInvoices: [
+          {
+            id: '20560DTH',
+            createdAt: '2026-04-20T12:00:00Z',
+            totalCents: 41500,
+            outstandingCents: 0,
+            status: 'PAID_FULL',
+            byName: 'Rachel Sanders',
+            paidByName: 'Rachel Sanders',
+            paidAt: '2026-04-20T13:15:00Z',
+            paymentMethod: 'CASH',
+            paidFromDeposit: true,
+            items: [
+              {
+                id: 'pi-1',
+                name: 'Initial Consultation',
+                unitPriceCents: 10000,
+                qty: 1,
+                grossCents: 10000,
+                discountCents: 1000,
+                amountCents: 9000,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  }));
   return useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
 };
 
@@ -157,7 +213,7 @@ describe('InvoiceStep', () => {
     const newest = getEnc().pastInvoices[0];
     expect(newest.paymentMethod).toBe('CASH');
     expect(newest.status).toBe('PAID_FULL');
-    expect(newest.paidByName).toBe('Dr. Tim Apple');
+    expect(newest.paidByName).toBe('Front desk');
   });
 
   it('records an online payment', () => {

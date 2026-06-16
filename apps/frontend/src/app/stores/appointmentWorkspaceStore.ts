@@ -12,6 +12,7 @@ import type {
   SideAction,
   SoapNoteEntry,
   SoapTemplate,
+  StepStatus,
   Vitals,
   WorkspaceStep,
   InvoiceLineItem,
@@ -19,7 +20,7 @@ import type {
   PaymentMethod,
   WorkspaceDocument,
 } from '@/app/features/appointments/types/workspace';
-import { buildMockEncounter } from '@/app/features/appointments/services/workspaceMockData';
+import { buildEmptyEncounter } from '@/app/features/appointments/services/workspaceInitialData';
 
 let idCounter = 0;
 const nextId = (prefix: string): string => {
@@ -70,6 +71,22 @@ type AppointmentWorkspaceState = {
     staff?: { leadId?: string; leadName?: string; nurseId?: string; nurseName?: string }
   ) => void;
   getEncounter: (appointmentId: string) => AppointmentEncounter | undefined;
+  mergeEncounterData: (
+    appointmentId: string,
+    patch: Partial<
+      Pick<
+        AppointmentEncounter,
+        | 'soap'
+        | 'vitals'
+        | 'observations'
+        | 'prescription'
+        | 'dischargeSummary'
+        | 'followUpAt'
+        | 'documents'
+        | 'soapTemplates'
+      >
+    > & { stepStatus?: Partial<Record<WorkspaceStep, StepStatus>> }
+  ) => void;
   setEncounterMode: (appointmentId: string, mode: EncounterMode) => void;
 
   setActiveStep: (step: WorkspaceStep) => void;
@@ -153,7 +170,7 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
   initEncounter: (appointmentId, mode, staff) =>
     set((state) => {
       if (state.encountersById[appointmentId]) return {};
-      const base = buildMockEncounter(appointmentId, mode);
+      const base = buildEmptyEncounter(appointmentId, mode);
       return {
         encountersById: {
           ...state.encountersById,
@@ -170,10 +187,36 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
 
   getEncounter: (appointmentId) => get().encountersById[appointmentId],
 
+  mergeEncounterData: (appointmentId, patch) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => ({
+        ...enc,
+        soap: patch.soap && patch.soap.length > 0 ? patch.soap : enc.soap,
+        vitals: patch.vitals && patch.vitals.length > 0 ? patch.vitals : enc.vitals,
+        observations:
+          patch.observations && patch.observations.length > 0
+            ? patch.observations
+            : enc.observations,
+        prescription:
+          patch.prescription && patch.prescription.length > 0
+            ? patch.prescription
+            : enc.prescription,
+        dischargeSummary:
+          patch.dischargeSummary !== undefined ? patch.dischargeSummary : enc.dischargeSummary,
+        followUpAt: patch.followUpAt !== undefined ? patch.followUpAt : enc.followUpAt,
+        documents: patch.documents && patch.documents.length > 0 ? patch.documents : enc.documents,
+        soapTemplates:
+          patch.soapTemplates && patch.soapTemplates.length > 0
+            ? patch.soapTemplates
+            : enc.soapTemplates,
+        stepStatus: patch.stepStatus ? { ...enc.stepStatus, ...patch.stepStatus } : enc.stepStatus,
+      }))
+    ),
+
   setEncounterMode: (appointmentId, mode) =>
     set((state) => {
       const current = state.encountersById[appointmentId];
-      const modeDefaults = buildMockEncounter(appointmentId, mode);
+      const modeDefaults = buildEmptyEncounter(appointmentId, mode);
       if (!current) {
         return {
           encountersById: {
