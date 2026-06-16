@@ -18,8 +18,19 @@ import {
   normalizeTemplateKind,
   toLegacyTemplateKind,
 } from "@yosemite-crew/types";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
 import { Prisma } from "@prisma/client";
+import { AvailabilitySlotMongo } from "src/models/base-availability";
 import { prisma } from "src/config/prisma";
+import { AvailabilityService } from "./availability.service";
+import helpers from "src/utils/helper";
+import {
+  addCachedPromise,
+  type CachedPromise,
+} from "src/utils/cached-promise-cache";
+
+dayjs.extend(utc);
 
 export type CatalogPackageItemInput = {
   childProductItemId: string;
@@ -243,6 +254,55 @@ export class CatalogServiceError extends Error {
   }
 }
 
+type CatalogBookableSlotWithVets = AvailabilitySlotMongo & {
+  vetIds: string[];
+};
+
+type CatalogSchedulingContext = {
+  productItemId: string;
+  organisationId: string;
+  durationMinutes: number;
+  vetIds: string[];
+};
+
+type CatalogCalendarPrefillRequest = {
+  organisationId: string;
+  date: Date;
+  minuteOfDay: number;
+  leadId?: string;
+  serviceIds: string[];
+};
+
+type CatalogCalendarPrefillMatch = {
+  serviceId: string;
+  slot: {
+    startTime: string;
+    endTime: string;
+    vetIds: string[];
+  };
+  meta: {
+    localStartMinute: number;
+    localEndMinute: number;
+  };
+};
+
+type PreferredTimeZoneClock = {
+  minutes: number;
+  dayOffset: number;
+};
+
+const DAY_MINUTES = 24 * 60;
+const SLOT_MATCH_TOLERANCE_MINUTES = 5;
+const CALENDAR_PREFILL_CACHE_TTL_MS = 15_000;
+const CALENDAR_PREFILL_CACHE_MAX_ENTRIES = 2_000;
+const CALENDAR_PREFILL_CACHE_PRUNE_INTERVAL_MS = 15_000;
+const UTC_CLOCK_TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const OFFSET_TIMEZONE_REGEX = /^(?:UTC)?([+-])(\d{1,2}):(\d{2})$/;
+const calendarPrefillCache = new Map<
+  string,
+  CachedPromise<CatalogCalendarPrefillMatch[]>
+>();
+
 const requireSafeString = (value: unknown, field: string) => {
   if (typeof value !== "string") {
     throw new CatalogServiceError(`${field} is required.`, 400);
@@ -268,6 +328,415 @@ const optionalSafeString = (value: unknown): string | null => {
   const trimmed = value.trim();
   return trimmed || null;
 };
+
+const toRadians = (value: number) => (value * Math.PI) / 180;
+
+const calculateDistanceMeters = (
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+) => {
+  const earthRadiusMeters = 6_371_000;
+  const dLat = toRadians(lat2 - lat1);
+  const dLng = toRadians(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+};
+
+const extractTimezoneFromPersonalDetails = (value: unknown): string | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const timezone = (value as { timezone?: unknown }).timezone;
+  if (typeof timezone !== "string") {
+    return null;
+  }
+
+  const trimmed = timezone.trim();
+  return trimmed || null;
+};
+
+const parseDatePartsForTimeZone = (
+  date: Date,
+  timezone: string,
+): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} => {
+  if (timezone === "UTC") {
+    return {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(),
+    };
+  }
+
+  const offsetMatch = OFFSET_TIMEZONE_REGEX.exec(timezone);
+  if (offsetMatch) {
+    const sign = offsetMatch[1] === "-" ? -1 : 1;
+    const hours = Number(offsetMatch[2]);
+    const minutes = Number(offsetMatch[3]);
+    const offsetMinutes = sign * (hours * 60 + minutes);
+    const shiftedDate = new Date(date.getTime() + offsetMinutes * 60_000);
+
+    return {
+      year: shiftedDate.getUTCFullYear(),
+      month: shiftedDate.getUTCMonth() + 1,
+      day: shiftedDate.getUTCDate(),
+      hour: shiftedDate.getUTCHours(),
+      minute: shiftedDate.getUTCMinutes(),
+    };
+  }
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? "0");
+
+  return {
+    year: getPart("year"),
+    month: getPart("month"),
+    day: getPart("day"),
+    hour: getPart("hour"),
+    minute: getPart("minute"),
+  };
+};
+
+const utcClockTimeToTimezoneClock = (
+  utcTime: string,
+  timezone: string,
+): PreferredTimeZoneClock => {
+  const match = UTC_CLOCK_TIME_REGEX.exec(utcTime);
+  if (!match) {
+    return { minutes: 0, dayOffset: 0 };
+  }
+
+  const targetDate = new Date(
+    Date.UTC(1970, 0, 1, Number(match[1]), Number(match[2]), 0, 0),
+  );
+  const baseDate = new Date(Date.UTC(1970, 0, 1, 0, 0, 0, 0));
+
+  const baseParts = parseDatePartsForTimeZone(baseDate, timezone);
+  const targetParts = parseDatePartsForTimeZone(targetDate, timezone);
+
+  const baseDayIndex = Math.floor(
+    Date.UTC(baseParts.year, baseParts.month - 1, baseParts.day) / 86_400_000,
+  );
+  const targetDayIndex = Math.floor(
+    Date.UTC(targetParts.year, targetParts.month - 1, targetParts.day) /
+      86_400_000,
+  );
+
+  return {
+    minutes: targetParts.hour * 60 + targetParts.minute,
+    dayOffset: targetDayIndex - baseDayIndex,
+  };
+};
+
+const normalizeSlotForSelectedDay = (params: {
+  timezone: string;
+  utcDateShift: number;
+  slot: CatalogBookableSlotWithVets;
+}) => {
+  const startClock = utcClockTimeToTimezoneClock(
+    params.slot.startTime,
+    params.timezone,
+  );
+  const endClock = utcClockTimeToTimezoneClock(
+    params.slot.endTime,
+    params.timezone,
+  );
+
+  const startAbsoluteMinute =
+    startClock.dayOffset * DAY_MINUTES + startClock.minutes;
+  let endAbsoluteMinute = endClock.dayOffset * DAY_MINUTES + endClock.minutes;
+
+  if (endAbsoluteMinute <= startAbsoluteMinute) {
+    endAbsoluteMinute += DAY_MINUTES;
+  }
+
+  const localStartMinute =
+    startAbsoluteMinute + params.utcDateShift * DAY_MINUTES;
+  const localEndMinute = endAbsoluteMinute + params.utcDateShift * DAY_MINUTES;
+
+  if (localStartMinute < 0 || localStartMinute >= DAY_MINUTES) {
+    return null;
+  }
+
+  return {
+    localStartMinute,
+    localEndMinute,
+  };
+};
+
+const resolveOrganisationTimezone = async (params: {
+  organisationId: string;
+  leadId?: string;
+}) => {
+  const safeOrganisationId = requireSafeString(
+    params.organisationId,
+    "organisationId",
+  );
+  const safeLeadId = params.leadId
+    ? requireSafeString(params.leadId, "leadId")
+    : undefined;
+
+  if (safeLeadId) {
+    const leadProfile = await prisma.userProfile.findFirst({
+      where: {
+        organizationId: safeOrganisationId,
+        userId: safeLeadId,
+      },
+      select: {
+        personalDetails: true,
+      },
+    });
+
+    const leadTimezone = extractTimezoneFromPersonalDetails(
+      leadProfile?.personalDetails,
+    );
+    if (leadTimezone) return leadTimezone;
+  }
+
+  const orgProfile = await prisma.userProfile.findFirst({
+    where: {
+      organizationId: safeOrganisationId,
+    },
+    select: {
+      personalDetails: true,
+    },
+  });
+
+  return (
+    extractTimezoneFromPersonalDetails(orgProfile?.personalDetails) ?? "UTC"
+  );
+};
+
+const buildBookableWindowsForVets = async (params: {
+  organisationId: string;
+  vetIds: string[];
+  durationMinutes: number;
+  referenceDate: Date;
+  slotCache?: Map<
+    string,
+    Promise<{
+      date: string;
+      dayOfWeek: string;
+      windows: AvailabilitySlotMongo[];
+    }>
+  >;
+}) => {
+  if (params.vetIds.length === 0) {
+    return {
+      date: params.referenceDate,
+      windows: [],
+    };
+  }
+
+  const allSlots: Array<CatalogBookableSlotWithVets> = [];
+
+  for (const vetId of params.vetIds) {
+    const cacheKey = [
+      params.organisationId,
+      vetId,
+      params.durationMinutes,
+      dayjs(params.referenceDate).utc().format("YYYY-MM-DD"),
+    ].join("|");
+
+    const cachedResult = params.slotCache?.get(cacheKey);
+    const resultPromise =
+      cachedResult ??
+      AvailabilityService.getBookableSlotsForDate(
+        params.organisationId,
+        vetId,
+        params.durationMinutes,
+        params.referenceDate,
+      );
+
+    if (!cachedResult && params.slotCache) {
+      params.slotCache.set(cacheKey, resultPromise);
+    }
+
+    const result = await resultPromise;
+
+    if (result?.windows?.length) {
+      for (const slot of result.windows) {
+        allSlots.push({
+          ...slot,
+          vetIds: [vetId],
+        });
+      }
+    }
+  }
+
+  const slotMap = new Map<string, CatalogBookableSlotWithVets>();
+
+  for (const slot of allSlots) {
+    const key = `${slot.startTime}-${slot.endTime}`;
+
+    if (slotMap.has(key)) {
+      const existing = slotMap.get(key)!;
+      existing.vetIds.push(...slot.vetIds);
+    } else {
+      slotMap.set(key, slot);
+    }
+  }
+
+  let finalWindows = Array.from(slotMap.values()).map((slot) => ({
+    ...slot,
+    vetIds: Array.from(new Set(slot.vetIds)),
+  }));
+
+  const todayStr = dayjs().utc().format("YYYY-MM-DD");
+  const refStr = dayjs(params.referenceDate).utc().format("YYYY-MM-DD");
+
+  if (refStr === todayStr) {
+    const now = dayjs().utc();
+
+    finalWindows = finalWindows.filter((slot) => {
+      const slotTime = dayjs.utc(
+        `${refStr} ${slot.startTime}`,
+        "YYYY-MM-DD HH:mm",
+        true,
+      );
+      return slotTime.isAfter(now);
+    });
+  }
+
+  finalWindows.sort((a, b) => {
+    const t1 = dayjs(`2000-01-01 ${a.startTime}`);
+    const t2 = dayjs(`2000-01-01 ${b.startTime}`);
+    return t1.valueOf() - t2.valueOf();
+  });
+
+  return {
+    date: refStr,
+    dayOfWeek: dayjs(params.referenceDate).utc().format("dddd").toUpperCase(),
+    windows: finalWindows,
+  };
+};
+
+const resolveCatalogSchedulingContext = async (
+  productItemId: string,
+  organisationId: string,
+): Promise<CatalogSchedulingContext> => {
+  const safeProductItemId = requireSafeString(productItemId, "productItemId");
+  const safeOrganisationId = requireSafeString(
+    organisationId,
+    "organisationId",
+  );
+
+  const product =
+    (
+      await prisma.productItem.findMany({
+        where: {
+          OR: [
+            { id: safeProductItemId },
+            { legacyServiceId: safeProductItemId },
+          ],
+          organisationId: safeOrganisationId,
+        },
+        select: {
+          id: true,
+          organisationId: true,
+          specialityId: true,
+          bookable: {
+            select: {
+              durationMinutes: true,
+            },
+          },
+        },
+        take: 1,
+      })
+    )[0] ?? null;
+
+  if (!product) {
+    throw new CatalogServiceError("Product not found.", 404);
+  }
+
+  if (!product.bookable) {
+    throw new CatalogServiceError("Product is not bookable.", 400);
+  }
+
+  if (!product.specialityId) {
+    throw new CatalogServiceError("Speciality not found.", 404);
+  }
+
+  const speciality = await prisma.speciality.findFirst({
+    where: { id: product.specialityId },
+    select: { memberUserIds: true },
+  });
+
+  if (!speciality) {
+    throw new CatalogServiceError("Speciality not found.", 404);
+  }
+
+  return {
+    productItemId: product.id,
+    organisationId: product.organisationId,
+    durationMinutes: product.bookable.durationMinutes,
+    vetIds: speciality.memberUserIds || [],
+  };
+};
+
+const mapOrganisationWithAddress = (org: {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+  phoneNo: string;
+  type: string;
+  appointmentCheckInBufferMinutes?: number | null;
+  appointmentCheckInRadiusMeters?: number | null;
+  address: {
+    addressLine: string | null;
+    country: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  } | null;
+}) => ({
+  id: org.id,
+  name: org.name,
+  imageURL: org.imageUrl ?? undefined,
+  phoneNo: org.phoneNo ?? undefined,
+  type: org.type,
+  appointmentCheckInBufferMinutes: org.appointmentCheckInBufferMinutes ?? 5,
+  appointmentCheckInRadiusMeters: org.appointmentCheckInRadiusMeters ?? 200,
+  address: org.address
+    ? {
+        addressLine: org.address.addressLine ?? undefined,
+        country: org.address.country ?? undefined,
+        city: org.address.city ?? undefined,
+        state: org.address.state ?? undefined,
+        postalCode: org.address.postalCode ?? undefined,
+        latitude: org.address.latitude ?? undefined,
+        longitude: org.address.longitude ?? undefined,
+      }
+    : undefined,
+});
 
 const assertPackageItems = (
   kind: ProductKind,
@@ -2043,6 +2512,271 @@ export const CatalogService = {
     });
 
     return resolveCatalogSelectionFromRecord(product, templateBindings);
+  },
+
+  async getBookableSlotsService(
+    productItemId: string,
+    organisationId: string,
+    referenceDate: Date,
+  ) {
+    const context = await resolveCatalogSchedulingContext(
+      productItemId,
+      organisationId,
+    );
+
+    return buildBookableWindowsForVets({
+      organisationId: context.organisationId,
+      vetIds: context.vetIds,
+      durationMinutes: context.durationMinutes,
+      referenceDate,
+    });
+  },
+
+  async getCalendarPrefillMatches(input: CatalogCalendarPrefillRequest) {
+    const serviceIds = Array.from(
+      new Set(
+        input.serviceIds
+          .map((serviceId) => requireSafeString(serviceId, "serviceId"))
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+
+    if (serviceIds.length === 0) {
+      return [];
+    }
+
+    const cacheKey = JSON.stringify({
+      organisationId: requireSafeString(input.organisationId, "organisationId"),
+      date: dayjs(input.date).utc().format("YYYY-MM-DD"),
+      minuteOfDay: input.minuteOfDay,
+      leadId: input.leadId ? requireSafeString(input.leadId, "leadId") : "",
+      serviceIds,
+    });
+
+    return addCachedPromise(
+      calendarPrefillCache,
+      cacheKey,
+      CALENDAR_PREFILL_CACHE_TTL_MS,
+      async () => {
+        const timezone = await resolveOrganisationTimezone({
+          organisationId: input.organisationId,
+          leadId: input.leadId,
+        });
+
+        const slotCache = new Map<
+          string,
+          Promise<{
+            date: string;
+            dayOfWeek: string;
+            windows: AvailabilitySlotMongo[];
+          }>
+        >();
+
+        const serviceContexts = await Promise.all(
+          serviceIds.map((serviceId) =>
+            resolveCatalogSchedulingContext(serviceId, input.organisationId),
+          ),
+        );
+
+        const utcDateShifts = [-1, 0, 1] as const;
+        const matches: CatalogCalendarPrefillMatch[] = [];
+
+        for (const context of serviceContexts) {
+          for (const utcDateShift of utcDateShifts) {
+            const referenceDate = dayjs(input.date)
+              .utc()
+              .add(utcDateShift, "day")
+              .toDate();
+
+            const result = await buildBookableWindowsForVets({
+              organisationId: context.organisationId,
+              vetIds: context.vetIds,
+              durationMinutes: context.durationMinutes,
+              referenceDate,
+              slotCache,
+            });
+
+            for (const slot of result.windows) {
+              if (
+                input.leadId &&
+                !(slot.vetIds ?? []).includes(
+                  requireSafeString(input.leadId, "leadId"),
+                )
+              ) {
+                continue;
+              }
+
+              const meta = normalizeSlotForSelectedDay({
+                timezone,
+                utcDateShift,
+                slot,
+              });
+              if (!meta) {
+                continue;
+              }
+
+              if (
+                Math.abs(meta.localStartMinute - input.minuteOfDay) >
+                SLOT_MATCH_TOLERANCE_MINUTES
+              ) {
+                continue;
+              }
+
+              matches.push({
+                serviceId: context.productItemId,
+                slot: {
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                  vetIds: slot.vetIds ?? [],
+                },
+                meta,
+              });
+            }
+          }
+        }
+
+        matches.sort((a, b) => {
+          if (a.meta.localStartMinute !== b.meta.localStartMinute) {
+            return a.meta.localStartMinute - b.meta.localStartMinute;
+          }
+          if (a.meta.localEndMinute !== b.meta.localEndMinute) {
+            return a.meta.localEndMinute - b.meta.localEndMinute;
+          }
+          return a.serviceId.localeCompare(b.serviceId);
+        });
+
+        return matches;
+      },
+      {
+        maxEntries: CALENDAR_PREFILL_CACHE_MAX_ENTRIES,
+        pruneIntervalMs: CALENDAR_PREFILL_CACHE_PRUNE_INTERVAL_MS,
+      },
+    );
+  },
+
+  async listOrganisationsProvidingServiceNearby(
+    serviceName: string,
+    lat: number,
+    lng: number,
+    query?: string,
+    radius = 5000,
+  ) {
+    const safeName = serviceName.trim();
+    if (!safeName) return [];
+
+    const matchedProducts = await prisma.productItem.findMany({
+      where: {
+        name: { contains: safeName, mode: "insensitive" },
+        isActive: true,
+        bookable: {
+          isNot: null,
+        },
+      },
+      select: { organisationId: true },
+    });
+
+    if (!matchedProducts.length) return [];
+
+    const orgIds = [...new Set(matchedProducts.map((s) => s.organisationId))];
+
+    if (!lat && !lng) {
+      const result = (await helpers.getGeoLocation(query!)) as {
+        lat: number;
+        lng: number;
+      };
+      lat = result.lat;
+      lng = result.lng;
+    }
+
+    const metersPerDegreeLat = 111000;
+    const latDelta = radius / metersPerDegreeLat;
+    const lngDelta = radius / (metersPerDegreeLat * Math.cos(toRadians(lat)));
+
+    const organisations = await prisma.organization.findMany({
+      where: {
+        id: { in: orgIds },
+        address: {
+          is: {
+            latitude: { gte: lat - latDelta, lte: lat + latDelta },
+            longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
+          },
+        },
+      },
+      include: { address: true },
+    });
+
+    const nearbyOrgs = organisations.filter((org) => {
+      if (!org.address?.latitude || !org.address?.longitude) {
+        return false;
+      }
+      const distance = calculateDistanceMeters(
+        lat,
+        lng,
+        org.address.latitude,
+        org.address.longitude,
+      );
+      return distance <= radius;
+    });
+
+    const allSpecialities = await prisma.speciality.findMany({
+      where: { organisationId: { in: orgIds } },
+      select: { id: true, name: true, organisationId: true },
+    });
+
+    const allProductsForOrgs = await prisma.productItem.findMany({
+      where: {
+        organisationId: { in: orgIds },
+        isActive: true,
+        bookable: {
+          isNot: null,
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        specialityId: true,
+        organisationId: true,
+        prices: {
+          orderBy: [{ isDefault: "desc" as const }],
+          select: {
+            unitPrice: true,
+          },
+          take: 1,
+        },
+      },
+    });
+
+    return nearbyOrgs.map((org) => {
+      const orgSpecialities = allSpecialities.filter(
+        (s) => s.organisationId === org.id,
+      );
+
+      const orgServices = allProductsForOrgs
+        .filter((s) => s.organisationId === org.id)
+        .map((product) => ({
+          id: product.id,
+          name: product.name,
+          cost: product.prices[0]?.unitPrice ?? 0,
+          specialityId: product.specialityId,
+          organisationId: product.organisationId,
+        }));
+
+      const specialitiesWithServices = orgSpecialities.map((spec) => {
+        const specServices = orgServices.filter(
+          (srv) => srv.specialityId === spec.id,
+        );
+
+        return {
+          ...spec,
+          services: specServices,
+        };
+      });
+
+      return {
+        ...mapOrganisationWithAddress(org),
+        specialities: specialitiesWithServices,
+      };
+    });
   },
 
   async getOrganisationSummary(

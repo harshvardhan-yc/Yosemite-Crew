@@ -3,7 +3,9 @@ import {
   CatalogServiceError,
   resolveCatalogSelectionFromRecord,
 } from "../../src/services/catalog.service";
+import { AvailabilityService } from "../../src/services/availability.service";
 import { prisma } from "../../src/config/prisma";
+import helpers from "../../src/utils/helper";
 
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
@@ -58,6 +60,25 @@ jest.mock("../../src/config/prisma", () => ({
     inventoryItem: {
       findMany: jest.fn(),
     },
+    userProfile: {
+      findFirst: jest.fn(),
+    },
+    organization: {
+      findMany: jest.fn(),
+    },
+  },
+}));
+
+jest.mock("../../src/services/availability.service", () => ({
+  AvailabilityService: {
+    getBookableSlotsForDate: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/utils/helper", () => ({
+  __esModule: true,
+  default: {
+    getGeoLocation: jest.fn(),
   },
 }));
 
@@ -76,6 +97,15 @@ describe("CatalogService", () => {
     (prisma.invoice.count as jest.Mock).mockResolvedValue(0);
     (prisma.productPackageItem.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.templateCatalogLink.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.userProfile.findFirst as jest.Mock).mockResolvedValue(null);
+    (prisma.organization.findMany as jest.Mock).mockResolvedValue([]);
+    (helpers.getGeoLocation as jest.Mock).mockResolvedValue({
+      lat: 0,
+      lng: 0,
+    });
+    (
+      AvailabilityService.getBookableSlotsForDate as jest.Mock
+    ).mockResolvedValue({ windows: [] });
     (prisma.productItem.findFirst as jest.Mock).mockImplementation(
       (args?: { where?: { code?: string; id?: string } }) => {
         if (args?.where?.code) {
@@ -1504,6 +1534,191 @@ describe("CatalogService", () => {
     expect(prisma.invoice.count).not.toHaveBeenCalled();
     expect(prisma.speciality.delete).toHaveBeenCalledWith({
       where: { id: "spec_1" },
+    });
+  });
+
+  describe("catalog scheduling helpers", () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("returns merged bookable windows for a catalog item", async () => {
+      jest.useFakeTimers({ advanceTimers: false });
+      jest.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+
+      (prisma.productItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: "prod_1",
+          organisationId: "org_1",
+          specialityId: "spec_1",
+          bookable: {
+            durationMinutes: 60,
+          },
+        },
+      ]);
+      (prisma.speciality.findFirst as jest.Mock).mockResolvedValueOnce({
+        memberUserIds: ["vet1", "vet2"],
+      });
+      (AvailabilityService.getBookableSlotsForDate as jest.Mock)
+        .mockResolvedValueOnce({
+          windows: [
+            { startTime: "10:00", endTime: "11:00", isAvailable: true },
+            { startTime: "14:00", endTime: "15:00", isAvailable: true },
+          ],
+        })
+        .mockResolvedValueOnce({
+          windows: [
+            { startTime: "14:00", endTime: "15:00", isAvailable: true },
+            { startTime: "18:00", endTime: "19:00", isAvailable: true },
+          ],
+        });
+
+      const result = await CatalogService.getBookableSlotsService(
+        "prod_1",
+        "org_1",
+        new Date("2026-01-01T00:00:00Z"),
+      );
+
+      expect(result.windows).toHaveLength(2);
+      expect(result.windows[0]).toEqual(
+        expect.objectContaining({
+          startTime: "14:00",
+          endTime: "15:00",
+          vetIds: ["vet1", "vet2"],
+        }),
+      );
+      expect(result.windows[1]).toEqual(
+        expect.objectContaining({
+          startTime: "18:00",
+          endTime: "19:00",
+          vetIds: ["vet2"],
+        }),
+      );
+    });
+
+    it("returns calendar prefill matches for a catalog item", async () => {
+      (prisma.productItem.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: "prod_1",
+          organisationId: "org_1",
+          specialityId: "spec_1",
+          bookable: {
+            durationMinutes: 15,
+          },
+        },
+      ]);
+      (prisma.speciality.findFirst as jest.Mock).mockResolvedValueOnce({
+        memberUserIds: ["vet-1"],
+      });
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValueOnce({
+        personalDetails: { timezone: "UTC" },
+      });
+      (AvailabilityService.getBookableSlotsForDate as jest.Mock)
+        .mockResolvedValueOnce({ windows: [] })
+        .mockResolvedValueOnce({
+          windows: [
+            { startTime: "00:05", endTime: "00:20", isAvailable: true },
+          ],
+        })
+        .mockResolvedValueOnce({ windows: [] });
+
+      const matches = await CatalogService.getCalendarPrefillMatches({
+        organisationId: "org_1",
+        date: new Date("2026-04-01T00:00:00.000Z"),
+        minuteOfDay: 5,
+        serviceIds: ["prod_1"],
+      });
+
+      expect(matches).toEqual([
+        {
+          serviceId: "prod_1",
+          slot: {
+            startTime: "00:05",
+            endTime: "00:20",
+            vetIds: ["vet-1"],
+          },
+          meta: {
+            localStartMinute: 5,
+            localEndMinute: 20,
+          },
+        },
+      ]);
+      expect(prisma.userProfile.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { organizationId: "org_1" },
+          select: { personalDetails: true },
+        }),
+      );
+    });
+
+    it("lists nearby organisations for bookable catalog items", async () => {
+      (prisma.productItem.findMany as jest.Mock)
+        .mockResolvedValueOnce([{ organisationId: "org_1" }])
+        .mockResolvedValueOnce([
+          {
+            id: "prod_1",
+            name: "Checkup",
+            specialityId: "spec_1",
+            organisationId: "org_1",
+            prices: [{ unitPrice: 50 }],
+          },
+        ]);
+      (helpers.getGeoLocation as jest.Mock).mockResolvedValueOnce({
+        lat: 40,
+        lng: -74,
+      });
+      (prisma.organization.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: "org_1",
+          name: "Org",
+          imageUrl: null,
+          phoneNo: "12345",
+          type: "CLINIC",
+          appointmentCheckInBufferMinutes: null,
+          appointmentCheckInRadiusMeters: null,
+          address: {
+            addressLine: "1 Main St",
+            country: "US",
+            city: "Austin",
+            state: "TX",
+            postalCode: "73301",
+            latitude: 40,
+            longitude: -74,
+          },
+        },
+      ]);
+      (prisma.speciality.findMany as jest.Mock).mockResolvedValueOnce([
+        { id: "spec_1", name: "General", organisationId: "org_1" },
+      ]);
+
+      const result =
+        await CatalogService.listOrganisationsProvidingServiceNearby(
+          "Checkup",
+          0,
+          0,
+          "Austin",
+        );
+
+      expect(helpers.getGeoLocation).toHaveBeenCalledWith("Austin");
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          id: "org_1",
+          name: "Org",
+          specialities: [
+            expect.objectContaining({
+              id: "spec_1",
+              services: [
+                expect.objectContaining({
+                  id: "prod_1",
+                  name: "Checkup",
+                  cost: 50,
+                }),
+              ],
+            }),
+          ],
+        }),
+      );
     });
   });
 });

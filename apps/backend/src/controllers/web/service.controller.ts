@@ -4,6 +4,10 @@ import {
   ServiceService,
   ServiceServiceError,
 } from "../../services/service.service";
+import {
+  CatalogService,
+  CatalogServiceError,
+} from "../../services/catalog.service";
 import logger from "../../utils/logger";
 import { ServiceRequestDTO } from "@yosemite-crew/types";
 import dayjs from "dayjs";
@@ -57,7 +61,10 @@ const CalendarPrefillPayloadSchema = z.object({
 });
 
 const handleError = (error: unknown, res: Response, defaultMessage: string) => {
-  if (error instanceof ServiceServiceError) {
+  if (
+    error instanceof ServiceServiceError ||
+    error instanceof CatalogServiceError
+  ) {
     return res.status(error.statusCode).json({ message: error.message });
   }
   logger.error(defaultMessage, error);
@@ -233,7 +240,7 @@ export const ServiceController = {
       }
 
       const results =
-        await ServiceService.listOrganisationsProvidingServiceNearby(
+        await CatalogService.listOrganisationsProvidingServiceNearby(
           serviceName,
           lat,
           lng,
@@ -275,7 +282,7 @@ export const ServiceController = {
       const { serviceId, organisationId, date } = payloadResult.data;
       const referenceDate = dayjs.utc(date, "YYYY-MM-DD", true).toDate();
 
-      const result = await ServiceService.getBookableSlotsService(
+      const result = await CatalogService.getBookableSlotsService(
         serviceId,
         organisationId,
         referenceDate,
@@ -308,7 +315,7 @@ export const ServiceController = {
       const { organisationId, date, minuteOfDay, leadId, serviceIds } =
         payloadResult.data;
 
-      const matches = await ServiceService.getCalendarPrefillMatches({
+      const matches = await CatalogService.getCalendarPrefillMatches({
         organisationId,
         date: dayjs.utc(date, "YYYY-MM-DD", true).toDate(),
         minuteOfDay,
