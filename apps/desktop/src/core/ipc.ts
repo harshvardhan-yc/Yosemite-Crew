@@ -71,7 +71,9 @@ export type IpcChannel = (typeof IPC_CHANNELS)[number];
 const TRUSTED_DESKTOP_PROTOCOL = 'yosemitecrew-desktop:';
 const TRUSTED_DESKTOP_HOSTS = new Set(['loading', 'offline', 'welcome']);
 
-type IpcHandlerResult = Promise<unknown> | unknown;
+// A handler may return a value or a promise; `unknown` already covers both
+// (a bare `Promise<unknown> | unknown` collapses to `unknown` and Sonar flags it).
+type IpcHandlerResult = unknown;
 type IpcHandler = (event: IpcMainInvokeEvent, args: readonly unknown[]) => IpcHandlerResult;
 
 interface IpcRegistryDeps {

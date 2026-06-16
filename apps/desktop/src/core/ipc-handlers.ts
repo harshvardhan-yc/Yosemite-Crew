@@ -43,6 +43,9 @@ export interface IpcServices {
   activeContents: () => Electron.WebContents | null;
   loadStartUrl: () => void;
   enterTabMode: (url: string) => void;
+  // Leave tab mode and return to the welcome screen (used when the last tab is
+  // closed).
+  exitTabMode: () => void;
   runCommandAction: (id: string) => Promise<void>;
   tabMode: boolean;
   tabManager: {
@@ -120,6 +123,9 @@ export interface IpcServices {
 
   // Telehealth
   startTelehealth: (intent?: TelehealthLaunchIntent) => string;
+
+  // Manual window drag from the tab bar (see windowDragBy in preload).
+  moveWindowBy: (dx: number, dy: number) => void;
 }
 
 export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): void => {
@@ -347,6 +353,7 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     if (!services.csExport) return { ok: false, error: 'cs-export-not-ready' };
     const dateArg = args[0];
     const date = typeof dateArg === 'string' ? new Date(dateArg) : new Date();
+    if (Number.isNaN(date.getTime())) return { ok: false, error: 'invalid-date' };
     const result = services.csExport.exportDailyLog(date);
     return { ok: true, result };
   });
@@ -545,6 +552,17 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     };
     tabViewHost.setBounds(id, contentBounds);
     services.attachedTabId = id;
+    // Keep the tab-bar chrome view on TOP of the content view. Input is routed to
+    // the topmost sibling WebContentsView, so the content view we just added would
+    // otherwise capture every click/hover meant for the tabs and the
+    // new-tab/search/close controls. A bare addChildView on an already-attached
+    // view does not reliably re-order it, so remove then re-add to force the
+    // chrome strip back to the top of the stack.
+    const chrome = services.tabChromeView;
+    if (chrome && !chrome.webContents.isDestroyed()) {
+      services.mainWindow.contentView.removeChildView(chrome);
+      services.mainWindow.contentView.addChildView(chrome);
+    }
   };
 
   const detachActiveTabView = (): void => {
@@ -596,13 +614,19 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     const id = args[0];
     if (typeof id !== 'string') return { ok: false, error: 'invalid-id' };
     if (id === services.attachedTabId) detachActiveTabView();
+    // Clear split state if the closed tab was the split pane, otherwise the
+    // chrome keeps a stale split pointer to a destroyed tab.
+    if (id === services.splitId) services.setSplitTab(null);
     services.tabViewHost.destroy(id);
     services.tabManager.close(id);
     const state = services.tabManager.getState();
     if (state.activeId) {
       attachTabView(state.activeId);
+      services.saveSession();
+    } else {
+      // Last tab closed — leave tab mode and return to the welcome screen.
+      services.exitTabMode();
     }
-    services.saveSession();
     return { ok: true };
   });
 
@@ -625,7 +649,7 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
   registry.handle('yc:tab-move', async (_event, args) => {
     if (!services.tabManager) return { ok: false, error: 'tabs-not-ready' };
     const [id, toIndex] = args as [string, number];
-    if (typeof id !== 'string' || typeof toIndex !== 'number')
+    if (typeof id !== 'string' || !Number.isInteger(toIndex))
       return { ok: false, error: 'invalid-args' };
     const moved = services.tabManager.move(id, toIndex);
     if (moved) services.saveSession();
@@ -771,6 +795,7 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     const state = services.tabManager.getState();
     const tab = state.tabs.find((t) => t.id === id);
     if (!tab) return { ok: false, error: 'tab-not-found' };
+    if (id === services.splitId) services.setSplitTab(null);
     services.tabManager.close(id);
     services.tabViewHost.destroy(id);
     services.saveSession();
@@ -852,5 +877,16 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
       }
     }
     return { ok: true };
+  });
+
+  // Fire-and-forget channel: the tab bar streams pointer deltas here while the
+  // user drags the empty area, moving the frameless window manually (a child
+  // WebContentsView can't use native -webkit-app-region drag without breaking the
+  // tab controls). Invalid/non-finite deltas are ignored.
+  ipc.on('yc:window-drag-by', (_event, dx: unknown, dy: unknown) => {
+    if (typeof dx !== 'number' || typeof dy !== 'number') return;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    if (dx === 0 && dy === 0) return;
+    services.moveWindowBy(dx, dy);
   });
 };

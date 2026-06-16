@@ -7,6 +7,7 @@ import {
   MIN_WIDTH,
   MIN_HEIGHT,
   normalizeWindowState,
+  clampToVisibleDisplays,
   createWindowStateStore,
   manageWindow,
 } from '../src/core/window-state';
@@ -198,5 +199,34 @@ describe('manageWindow', () => {
     manageWindow(win as never, { save: (s) => saved.push(s) });
     listeners.close();
     expect(saved[0]).toEqual({ x: 1, y: 2, width: 1200, height: 800, isMaximized: false });
+  });
+});
+
+describe('clampToVisibleDisplays', () => {
+  const primary = { workArea: { x: 0, y: 0, width: 1440, height: 900 } };
+
+  it('keeps the position when it overlaps a display', () => {
+    const state = { x: 100, y: 80, width: 1200, height: 800, isMaximized: false };
+    expect(clampToVisibleDisplays(state, [primary])).toEqual(state);
+  });
+
+  it('drops x/y when the window is entirely off every display', () => {
+    const state = { x: 3000, y: 1500, width: 1200, height: 800, isMaximized: false };
+    const result = clampToVisibleDisplays(state, [primary]);
+    expect(result.x).toBeUndefined();
+    expect(result.y).toBeUndefined();
+    expect(result.width).toBe(1200);
+    expect(result.height).toBe(800);
+  });
+
+  it('keeps the position when a second display covers it', () => {
+    const secondary = { workArea: { x: 1440, y: 0, width: 1920, height: 1080 } };
+    const state = { x: 2000, y: 200, width: 1200, height: 800, isMaximized: false };
+    expect(clampToVisibleDisplays(state, [primary, secondary])).toEqual(state);
+  });
+
+  it('returns the state unchanged when no position is set', () => {
+    const state = { width: 1200, height: 800, isMaximized: false };
+    expect(clampToVisibleDisplays(state, [primary])).toEqual(state);
   });
 });

@@ -342,6 +342,43 @@ describe('TabViewHost', () => {
       });
     });
 
+    it('did-fail-load surfaces a main-frame failure via onLoadError', () => {
+      const onLoadError = jest.fn();
+      createHost({ onLoadError }).create('tab_1', 'https://example.com');
+      viewEventHandlers['did-fail-load'](
+        undefined,
+        -106,
+        'ERR_INTERNET_DISCONNECTED',
+        'https://example.com/app',
+        true
+      );
+      expect(onLoadError).toHaveBeenCalledWith('tab_1', {
+        url: 'https://example.com/app',
+        error: 'ERR_INTERNET_DISCONNECTED',
+        code: -106,
+      });
+    });
+
+    it('did-fail-load ignores intentional aborts (ERR_ABORTED) for onLoadError', () => {
+      const onLoadError = jest.fn();
+      createHost({ onLoadError }).create('tab_1', 'https://example.com');
+      viewEventHandlers['did-fail-load'](undefined, -3, 'ERR_ABORTED', 'https://example.com', true);
+      expect(onLoadError).not.toHaveBeenCalled();
+    });
+
+    it('did-fail-load ignores subframe failures for onLoadError', () => {
+      const onLoadError = jest.fn();
+      createHost({ onLoadError }).create('tab_1', 'https://example.com');
+      viewEventHandlers['did-fail-load'](
+        undefined,
+        -106,
+        'ERR_FAILED',
+        'https://ads.example',
+        false
+      );
+      expect(onLoadError).not.toHaveBeenCalled();
+    });
+
     it('media-started-playing calls onUpdate with audible true', () => {
       const onUpdate = jest.fn();
       createHost({ onUpdate }).create('tab_1', 'https://example.com');

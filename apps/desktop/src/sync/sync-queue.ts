@@ -53,7 +53,7 @@ export const createSyncQueue = (dirPath: string, deps: QueueDeps = {}): SyncQueu
   const load = (): Mutation[] => {
     try {
       if (!existsSync(filePath)) return [];
-      const raw = readFileSync(filePath, 'utf8') as string;
+      const raw = readFileSync(filePath, 'utf8');
       const entries: Mutation[] = JSON.parse(raw);
       if (!Array.isArray(entries)) return [];
       return entries.filter(

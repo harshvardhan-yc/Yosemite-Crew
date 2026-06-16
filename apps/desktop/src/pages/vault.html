@@ -515,8 +515,7 @@
 
         var renderList = function (list) {
           var frag = document.createDocumentFragment();
-          for (var i = 0; i < list.length; i++) {
-            var d = list[i];
+          for (const d of list) {
             var div = document.createElement('div');
             div.className = 'doc' + (d.id === selectedId ? ' selected' : '');
             div.dataset.id = d.id;
@@ -728,21 +727,19 @@
           dropZone.classList.remove('dragover');
           var files = e.dataTransfer.files;
           if (!files || files.length === 0) return;
-          for (var i = 0; i < files.length; i++) {
-            (function (f) {
-              var reader = new FileReader();
-              reader.onload = function (evt) {
-                var result = evt.target.result;
-                var commaIdx = result.indexOf(',');
-                var base64 = commaIdx >= 0 ? result.substring(commaIdx + 1) : result;
-                yc.vaultSaveBuffer(f.name, base64, f.type || 'application/octet-stream').then(
-                  function (res) {
-                    if (res && res.ok) scheduleLoad();
-                  }
-                );
-              };
-              reader.readAsDataURL(f);
-            })(files[i]);
+          for (const f of files) {
+            var reader = new FileReader();
+            reader.onload = function (evt) {
+              var result = evt.target.result;
+              var commaIdx = result.indexOf(',');
+              var base64 = commaIdx >= 0 ? result.substring(commaIdx + 1) : result;
+              yc.vaultSaveBuffer(f.name, base64, f.type || 'application/octet-stream').then(
+                function (res) {
+                  if (res && res.ok) scheduleLoad();
+                }
+              );
+            };
+            reader.readAsDataURL(f);
           }
         };
 

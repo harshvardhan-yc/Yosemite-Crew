@@ -7,6 +7,7 @@ interface Invocation {
 
 const mockExposed: Record<string, YcDesktop> = {};
 const mockInvoked: Invocation[] = [];
+const mockSent: Invocation[] = [];
 const mockListeners: Record<string, (event: unknown, ...args: unknown[]) => void> = {};
 
 jest.mock('electron', () => ({
@@ -19,6 +20,9 @@ jest.mock('electron', () => ({
     invoke: (channel: string, ...args: unknown[]) => {
       mockInvoked.push({ channel, args });
       return Promise.resolve({ ok: true });
+    },
+    send: (channel: string, ...args: unknown[]) => {
+      mockSent.push({ channel, args });
     },
     on: (channel: string, handler: (event: unknown, ...args: unknown[]) => void) => {
       mockListeners[channel] = handler;
@@ -214,6 +218,17 @@ describe('preload bridge', () => {
       expect(mockInvoked).toHaveLength(1);
       expect(mockInvoked[0].channel).toBe('yc:set-settings');
       expect(mockInvoked[0].args).toEqual([{}]);
+    });
+  });
+
+  describe('windowDragBy', () => {
+    test('sends yc:window-drag-by with the pointer deltas (fire-and-forget)', () => {
+      mockSent.length = 0;
+      const result = mockExposed.ycDesktop.windowDragBy(12, -7);
+      expect(result).toBeUndefined();
+      expect(mockSent).toHaveLength(1);
+      expect(mockSent[0].channel).toBe('yc:window-drag-by');
+      expect(mockSent[0].args).toEqual([12, -7]);
     });
   });
 

@@ -63,10 +63,8 @@ export const createTelemetryClient = (
 
     try {
       const result = sink.send(event);
-      if (result && typeof (result as Promise<void>).catch === 'function') {
-        void (result as Promise<void>).catch((error) =>
-          logger?.warn('telemetry_send_failed', { error })
-        );
+      if (result && typeof result.catch === 'function') {
+        void result.catch((error) => logger?.warn('telemetry_send_failed', { error }));
       }
       return true;
     } catch (error) {

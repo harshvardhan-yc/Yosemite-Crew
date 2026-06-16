@@ -29,6 +29,22 @@
         justify-content: center;
         padding: 24px;
       }
+      /* Frameless window: a draggable title-bar strip across the empty top edge
+         so the window can be moved (there is no native title bar to grab). */
+      body::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 52px;
+        /* no-drag: in tab mode this page can stay mounted as the window's base
+           layer behind the tab-bar WebContentsView, and a drag region here is
+           promoted to a window-level native drag rect that swallows clicks on the
+           tab-bar controls stacked above it. */
+        -webkit-app-region: no-drag;
+        z-index: 10;
+      }
       .card {
         width: 100%;
         max-width: 460px;
@@ -158,15 +174,15 @@
         var retry = function () {
           if (retried) return;
           retried = true;
-          if (window.ycDesktop) window.ycDesktop.reload();
+          if (globalThis.ycDesktop) globalThis.ycDesktop.reload();
         };
         document.getElementById('retry').addEventListener('click', retry);
         document.getElementById('browser').addEventListener('click', function () {
-          if (window.ycDesktop) window.ycDesktop.openInBrowser();
+          if (globalThis.ycDesktop) globalThis.ycDesktop.openInBrowser();
         });
 
         // Reconnect immediately when the network comes back.
-        window.addEventListener('online', retry);
+        globalThis.addEventListener('online', retry);
 
         var secs = 20;
         var secsEl = document.getElementById('secs');

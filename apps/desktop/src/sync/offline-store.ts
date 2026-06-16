@@ -3,6 +3,9 @@
 import fs from 'node:fs';
 import type { SqlJsStatic, Database as SqlJsDatabase } from 'sql.js';
 
+// Values accepted as SQL bind parameters by sql.js.
+type SqlParam = number | string | Uint8Array | null;
+
 export interface TableSchema {
   name: string;
   columns: ColumnDef[];
@@ -100,7 +103,7 @@ export const createOfflineStore = async (deps: StoreDeps = {}): Promise<OfflineS
     db.run(sql);
   };
 
-  const exec = (sql: string, params?: (number | string | Uint8Array | null)[]): void => {
+  const exec = (sql: string, params?: SqlParam[]): void => {
     if (params) {
       const stmt = db.prepare(sql);
       stmt.bind(params);
@@ -111,10 +114,7 @@ export const createOfflineStore = async (deps: StoreDeps = {}): Promise<OfflineS
     }
   };
 
-  const queryAll = (
-    sql: string,
-    params?: (number | string | Uint8Array | null)[]
-  ): Record<string, unknown>[] => {
+  const queryAll = (sql: string, params?: SqlParam[]): Record<string, unknown>[] => {
     const results: Record<string, unknown>[] = [];
     const stmt = db.prepare(sql);
     if (params) stmt.bind(params);
@@ -125,10 +125,7 @@ export const createOfflineStore = async (deps: StoreDeps = {}): Promise<OfflineS
     return results;
   };
 
-  const queryOne = (
-    sql: string,
-    params?: (number | string | Uint8Array | null)[]
-  ): Record<string, unknown> | undefined => {
+  const queryOne = (sql: string, params?: SqlParam[]): Record<string, unknown> | undefined => {
     const rows = queryAll(sql, params);
     return rows.length > 0 ? rows[0] : undefined;
   };
@@ -140,7 +137,7 @@ export const createOfflineStore = async (deps: StoreDeps = {}): Promise<OfflineS
     const placeholders = cols.map(() => '?').join(', ');
     const colNames = cols.map((c) => `${quoteIdent(c)}`).join(', ');
     const sql = `INSERT OR REPLACE INTO ${quoteIdent(table)} (${colNames}, _dirty, _synced_at) VALUES (${placeholders}, ?, ?)`;
-    const values = cols.map((c) => row[c]) as (number | string | Uint8Array | null)[];
+    const values = cols.map((c) => row[c]) as SqlParam[];
     exec(sql, [...values, 1, ts]);
   };
 
@@ -153,7 +150,7 @@ export const createOfflineStore = async (deps: StoreDeps = {}): Promise<OfflineS
     const keys = Object.keys(changes);
     const setClause = keys.map((c) => `${quoteIdent(c)} = ?`).join(', ');
     const sql = `UPDATE ${quoteIdent(table)} SET ${setClause}, _dirty = 1, _synced_at = ? WHERE "id" = ?`;
-    const values = keys.map((c) => changes[c]) as (number | string | Uint8Array | null)[];
+    const values = keys.map((c) => changes[c]) as SqlParam[];
     exec(sql, [...values, now(), id]);
   };
 
@@ -177,7 +174,7 @@ export const createOfflineStore = async (deps: StoreDeps = {}): Promise<OfflineS
     if (!filters || Object.keys(filters).length === 0) return findAll(table);
     const keys = Object.keys(filters);
     const where = keys.map((c) => `${quoteIdent(c)} = ?`).join(' AND ');
-    const values = keys.map((c) => filters[c]) as (number | string | Uint8Array | null)[];
+    const values = keys.map((c) => filters[c]) as SqlParam[];
     return queryAll(`SELECT * FROM ${quoteIdent(table)} WHERE ${where}`, values);
   };
 

@@ -239,6 +239,7 @@
   <body>
     <nav id="tabbar" role="tablist" aria-label="Tabs">
       <div id="tab-strip" class="tab-strip"></div>
+      <div class="drag-spacer" aria-hidden="true"></div>
       <div class="tabbar-trailing">
         <button
           id="search-tabs-btn"
@@ -359,6 +360,43 @@
         if (yc && typeof yc[method] === 'function') return yc[method](...args);
         return Promise.resolve(null);
       };
+
+      // Manual window drag. The tab bar lives in a child WebContentsView where
+      // `-webkit-app-region: drag` is all-or-nothing (it would make the tabs and
+      // controls undraggable-but-unclickable), so the empty filler streams pointer
+      // deltas to the main process to move the frameless window itself.
+      const dragSpacer = document.querySelector('.drag-spacer');
+      if (dragSpacer && yc && typeof yc.windowDragBy === 'function') {
+        let dragging = false;
+        let lastX = 0;
+        let lastY = 0;
+        dragSpacer.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) return;
+          dragging = true;
+          lastX = e.screenX;
+          lastY = e.screenY;
+          dragSpacer.setPointerCapture(e.pointerId);
+        });
+        dragSpacer.addEventListener('pointermove', (e) => {
+          if (!dragging) return;
+          const dx = e.screenX - lastX;
+          const dy = e.screenY - lastY;
+          lastX = e.screenX;
+          lastY = e.screenY;
+          if (dx || dy) yc.windowDragBy(dx, dy);
+        });
+        const endDrag = (e) => {
+          if (!dragging) return;
+          dragging = false;
+          try {
+            dragSpacer.releasePointerCapture(e.pointerId);
+          } catch (_err) {
+            /* pointer already released */
+          }
+        };
+        dragSpacer.addEventListener('pointerup', endDrag);
+        dragSpacer.addEventListener('pointercancel', endDrag);
+      }
 
       const hideContextMenu = () => {
         contextMenu.style.display = 'none';
@@ -613,33 +651,40 @@
 
       newTabBtn.addEventListener('click', () => send('newTab'));
 
+      const cycleActiveTab = (backward) => {
+        if (state.tabs.length <= 1) return;
+        const idx = state.tabs.findIndex((t) => t.id === state.activeId);
+        const next = backward
+          ? (idx - 1 + state.tabs.length) % state.tabs.length
+          : (idx + 1) % state.tabs.length;
+        send('activateTab', state.tabs[next].id);
+      };
+
+      const activateByNumber = (key) => {
+        const idx = Number.parseInt(key, 10) - 1;
+        if (idx < state.tabs.length) send('activateTab', state.tabs[idx].id);
+      };
+
       document.addEventListener('keydown', (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === 't' && !e.shiftKey) {
+        // All tab shortcuts require the platform modifier; bail early otherwise so
+        // each branch below stays flat (keeps cognitive complexity low).
+        if (!(e.metaKey || e.ctrlKey)) return;
+        const key = e.key;
+        if (key === 't' && !e.shiftKey) {
           e.preventDefault();
           send('newTab');
-        }
-        if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 't') {
+        } else if (key === 't' && e.shiftKey) {
           e.preventDefault();
           send('reopenClosedTab');
-        }
-        if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
+        } else if (key === 'w') {
           e.preventDefault();
           if (state.activeId) send('closeTab', state.activeId);
-        }
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Tab') {
+        } else if (key === 'Tab') {
           e.preventDefault();
-          if (state.tabs.length > 1) {
-            const idx = state.tabs.findIndex((t) => t.id === state.activeId);
-            const next = e.shiftKey
-              ? (idx - 1 + state.tabs.length) % state.tabs.length
-              : (idx + 1) % state.tabs.length;
-            send('activateTab', state.tabs[next].id);
-          }
-        }
-        if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '9') {
+          cycleActiveTab(e.shiftKey);
+        } else if (key >= '1' && key <= '9') {
           e.preventDefault();
-          const idx = parseInt(e.key, 10) - 1;
-          if (idx < state.tabs.length) send('activateTab', state.tabs[idx].id);
+          activateByNumber(key);
         }
       });
 
@@ -694,7 +739,7 @@
         // set labels via textContent (avoid HTML injection from titles/urls)
         const items = tsList.querySelectorAll('.ts-item');
         items.forEach((el) => {
-          const i = parseInt(el.getAttribute('data-i'), 10);
+          const i = Number.parseInt(el.getAttribute('data-i'), 10);
           const row = tsRows[i];
           el.querySelector('.lbl').textContent = row.tab.title || row.tab.url || 'Untitled';
           el.addEventListener('mousemove', () => setSel(i));
@@ -715,7 +760,7 @@
 
       const paintSel = () => {
         tsList.querySelectorAll('.ts-item').forEach((el) => {
-          el.classList.toggle('sel', parseInt(el.getAttribute('data-i'), 10) === tsSel);
+          el.classList.toggle('sel', Number.parseInt(el.getAttribute('data-i'), 10) === tsSel);
         });
       };
       const setSel = (i) => {

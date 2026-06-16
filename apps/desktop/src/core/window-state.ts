@@ -74,6 +74,37 @@ export const normalizeWindowState = (
   return state;
 };
 
+export interface DisplayWorkArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Drop a saved window position when it doesn't overlap any connected display's
+ * work area (e.g. the external monitor it was docked to is now disconnected),
+ * so the window can never restore fully off-screen and become unreachable.
+ * Pure function so it can be unit tested without Electron's `screen` module.
+ */
+export const clampToVisibleDisplays = (
+  state: WindowState,
+  displays: ReadonlyArray<{ workArea: DisplayWorkArea }>
+): WindowState => {
+  if (!isFiniteNumber(state.x) || !isFiniteNumber(state.y)) return state;
+  const x = state.x;
+  const y = state.y;
+  const overlaps = displays.some(
+    ({ workArea: a }) =>
+      x < a.x + a.width && x + state.width > a.x && y < a.y + a.height && y + state.height > a.y
+  );
+  if (overlaps) return state;
+  const next: WindowState = { ...state };
+  delete next.x;
+  delete next.y;
+  return next;
+};
+
 /**
  * Persistence store keyed to a JSON file. `deps` is injectable for tests.
  */

@@ -204,7 +204,7 @@
             <div class="row-label">Theme</div>
             <div class="row-hint">Syncs with system or stay fixed</div>
           </div>
-          <select id="theme">
+          <select id="theme" aria-label="Theme">
             <option value="system">System</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
@@ -229,7 +229,7 @@
             <div class="row-label">Update channel</div>
             <div class="row-hint">Beta may include unfinished features</div>
           </div>
-          <select id="updateChannel">
+          <select id="updateChannel" aria-label="Update channel">
             <option value="latest">Stable</option>
             <option value="beta">Beta</option>
           </select>
@@ -254,7 +254,7 @@
             <div class="row-label">Idle auto-lock</div>
             <div class="row-hint">Lock after inactivity</div>
           </div>
-          <select id="idleLockMinutes">
+          <select id="idleLockMinutes" aria-label="Auto-lock after inactivity">
             <option value="0">Off</option>
             <option value="5">5 minutes</option>
             <option value="15">15 minutes</option>
@@ -272,7 +272,7 @@
             <div class="row-hint">Show system notifications for appointments and messages</div>
           </div>
           <label class="toggle">
-            <input type="checkbox" id="notificationsEnabled" />
+            <input type="checkbox" id="notificationsEnabled" aria-label="Enable notifications" />
             <span class="slider"></span>
           </label>
         </div>
@@ -286,6 +286,7 @@
               type="text"
               id="dndStart"
               placeholder="22:00"
+              aria-label="Do not disturb start time"
               style="width: 72px; text-align: center"
             />
             <span style="color: var(--text-tertiary); font-size: 13px">to</span>
@@ -293,6 +294,7 @@
               type="text"
               id="dndEnd"
               placeholder="07:00"
+              aria-label="Do not disturb end time"
               style="width: 72px; text-align: center"
             />
           </div>
@@ -307,7 +309,7 @@
             <div class="row-hint">Anonymous usage data to improve the app</div>
           </div>
           <label class="toggle">
-            <input type="checkbox" id="telemetryOptIn" />
+            <input type="checkbox" id="telemetryOptIn" aria-label="Share anonymous telemetry" />
             <span class="slider"></span>
           </label>
         </div>
@@ -329,7 +331,7 @@
               Video visits use GetStream call sessions from PIMS appointments
             </div>
           </div>
-          <select id="telehealthProvider">
+          <select id="telehealthProvider" aria-label="Telehealth provider">
             <option value="getstream">GetStream</option>
           </select>
         </div>
@@ -343,7 +345,7 @@
             <div class="row-hint">Launch automatically when you sign in</div>
           </div>
           <label class="toggle">
-            <input type="checkbox" id="openAtLogin" />
+            <input type="checkbox" id="openAtLogin" aria-label="Open at login" />
             <span class="slider"></span>
           </label>
         </div>

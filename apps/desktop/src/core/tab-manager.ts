@@ -40,7 +40,7 @@ interface TabManager {
   ): boolean;
   getState(): TabManagerState;
   persist(): string;
-  restore(json: string): boolean;
+  restore(json: string, isAllowed?: (url: string) => boolean): boolean;
   get activeTab(): TabSummary | null;
   get tabCount(): number;
 }
@@ -233,27 +233,38 @@ export const createTabManager = (initial?: TabSummary[]): TabManager => {
       });
     },
 
-    restore(json: string): boolean {
+    restore(json: string, isAllowed?: (url: string) => boolean): boolean {
       try {
         const data = JSON.parse(json) as {
           tabs: Array<Partial<Omit<TabSummary, 'created'>>>;
           activeId: string | null;
         };
         if (!Array.isArray(data.tabs)) return false;
-        tabs = data.tabs.map((t, i) => ({
-          id: t.id || `tab_restored_${i}`,
-          title: t.title || 'Loading...',
-          url: t.url || '',
-          favicon: t.favicon || '',
-          loading: true,
-          pinned: t.pinned || false,
-          zoom: typeof t.zoom === 'number' ? t.zoom : 1.0,
-          error: null,
-          offline: false,
-          audible: false,
-          muted: false,
-          created: Date.now(),
-        }));
+        tabs = data.tabs
+          // Drop tabs whose persisted URL is missing or not an allowed in-app
+          // origin — a tampered/corrupt session file must never load file:// or
+          // arbitrary external origins inside the trusted shell.
+          .filter((t) => (isAllowed ? isAllowed(t.url || '') : true))
+          .map((t, i) => ({
+            id: t.id || `tab_restored_${i}`,
+            title: t.title || 'Loading...',
+            url: t.url || '',
+            favicon: t.favicon || '',
+            loading: true,
+            pinned: t.pinned || false,
+            zoom: typeof t.zoom === 'number' ? t.zoom : 1.0,
+            error: null,
+            offline: false,
+            audible: false,
+            muted: false,
+            created: Date.now(),
+          }));
+        // Nothing valid restored — report failure so the caller starts fresh
+        // (seeds a default tab at the start URL) rather than showing empty chrome.
+        if (tabs.length === 0) {
+          activeId = null;
+          return false;
+        }
         activeId =
           data.activeId && tabs.some((t) => t.id === data.activeId)
             ? data.activeId

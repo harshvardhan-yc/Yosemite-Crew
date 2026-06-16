@@ -10,7 +10,6 @@
   padding: 0 4px;
   gap: 2px;
   user-select: none;
-  -webkit-app-region: drag;
 }
 
 /* ── Vertical tab sidebar ── */
@@ -47,13 +46,30 @@
 
 .tab-strip {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 0;
   gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
   align-items: stretch;
   padding: 4px 0;
   -webkit-app-region: no-drag;
+}
+
+/* Empty filler that pushes the trailing controls to the right. It is NOT a
+   drag region: in a child WebContentsView a single draggable element makes the
+   WHOLE view draggable (per-element no-drag carve-outs are ignored), which would
+   swallow clicks on the tabs and the search/new-tab/close controls. Window
+   dragging is instead driven manually from JS (pointer events → move-window-by).
+   */
+.drag-spacer {
+  flex: 1 1 0;
+  align-self: stretch;
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+#tabbar[data-orientation='vertical'] .drag-spacer {
+  display: none;
 }
 
 .tab-strip::-webkit-scrollbar {

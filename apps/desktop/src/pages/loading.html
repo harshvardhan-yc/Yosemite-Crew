@@ -24,6 +24,13 @@
         user-select: none;
         overflow: hidden;
       }
+      /* NOTE: deliberately NO `-webkit-app-region: drag` strip here. In tab mode
+         this page stays mounted as the window's base layer behind the tab-bar and
+         content WebContentsViews. A drag region declared here is promoted to a
+         window-level native drag rect that swallows ALL mouse input over the
+         tab-bar view stacked on top of it, making its controls unclickable.
+         Window dragging in tab mode is handled by the tab bar's own drag-spacer
+         (pointer events -> windowDragBy). */
       .wrap {
         height: 100%;
         display: flex;

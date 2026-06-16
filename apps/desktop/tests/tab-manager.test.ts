@@ -237,11 +237,40 @@ describe('TabManager', () => {
       expect(tm.restore(JSON.stringify({}))).toBe(false);
     });
 
-    it('handles empty activeId after restore', () => {
+    it('returns false when no tabs remain after restore', () => {
       const json = JSON.stringify({ tabs: [], activeId: null });
-      expect(tm.restore(json)).toBe(true);
+      expect(tm.restore(json)).toBe(false);
       expect(tm.getState().tabs).toHaveLength(0);
       expect(tm.getState().activeId).toBeNull();
+    });
+
+    it('drops restored tabs whose URL fails the validator', () => {
+      const json = JSON.stringify({
+        tabs: [{ url: 'https://app.example/a' }, { url: 'file:///etc/passwd' }, { url: '' }],
+        activeId: null,
+      });
+      // Parse and compare the host exactly — a startsWith check would also accept
+      // hosts like app.example.evil.com (CodeQL: incomplete URL sanitization).
+      const isAllowed = (u: string): boolean => {
+        try {
+          return new URL(u).host === 'app.example';
+        } catch {
+          return false;
+        }
+      };
+      expect(tm.restore(json, isAllowed)).toBe(true);
+      const state = tm.getState();
+      expect(state.tabs).toHaveLength(1);
+      expect(state.tabs[0].url).toBe('https://app.example/a');
+    });
+
+    it('returns false when every restored tab is filtered out', () => {
+      const json = JSON.stringify({
+        tabs: [{ url: 'file:///x' }, { url: 'http://evil.com' }],
+        activeId: null,
+      });
+      expect(tm.restore(json, () => false)).toBe(false);
+      expect(tm.getState().tabs).toHaveLength(0);
     });
   });
 

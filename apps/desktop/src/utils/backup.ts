@@ -96,7 +96,7 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
     const mf = metaFilename(destDir);
     if (!existsSync(mf)) return [];
     try {
-      const raw = readFileSync(mf, 'utf8') as string;
+      const raw = readFileSync(mf, 'utf8');
       return JSON.parse(raw);
     } catch {
       return [];

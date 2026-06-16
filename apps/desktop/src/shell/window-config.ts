@@ -173,10 +173,10 @@ export const configureSessionPermissions = (ses: Session): void => {
 
 export const getCacheStrategy = (url: string): 'cache-first' | 'network-first' => {
   const pathname = new URL(url).pathname;
-  if (/^\/_next\/static\//.test(pathname)) return 'cache-first';
-  if (/^\/static\//.test(pathname)) return 'cache-first';
-  if (/^\/assets\//.test(pathname)) return 'cache-first';
-  if (/^\/fonts\//.test(pathname)) return 'cache-first';
+  if (pathname.startsWith('/_next/static/')) return 'cache-first';
+  if (pathname.startsWith('/static/')) return 'cache-first';
+  if (pathname.startsWith('/assets/')) return 'cache-first';
+  if (pathname.startsWith('/fonts/')) return 'cache-first';
   return 'network-first';
 };
 

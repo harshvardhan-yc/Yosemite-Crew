@@ -17,6 +17,22 @@
           radial-gradient(900px 500px at 50% -10%, rgba(0, 124, 245, 0.08), transparent 60%),
           var(--surface-page);
       }
+      /* Frameless window: a draggable title-bar strip across the empty top edge
+         so the window can be moved (there is no native title bar to grab). */
+      body::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 52px;
+        /* no-drag: in tab mode this page can stay mounted as the window's base
+           layer behind the tab-bar WebContentsView, and a drag region here is
+           promoted to a window-level native drag rect that swallows clicks on the
+           tab-bar controls stacked above it. */
+        -webkit-app-region: no-drag;
+        z-index: 10;
+      }
       .wrap {
         height: 100%;
         display: flex;
@@ -163,13 +179,13 @@
     <script>
       (function () {
         var version = document.getElementById('version');
-        if (window.ycDesktop) {
-          window.ycDesktop.getAppVersion().then(function (v) {
+        if (globalThis.ycDesktop) {
+          globalThis.ycDesktop.getAppVersion().then(function (v) {
             version.textContent = 'v' + v;
           });
         }
         document.getElementById('continue-btn').addEventListener('click', function () {
-          if (window.ycDesktop) window.ycDesktop.dismissWhatsNew();
+          if (globalThis.ycDesktop) globalThis.ycDesktop.dismissWhatsNew();
         });
       })();
     </script>

@@ -25,6 +25,10 @@ interface TabViewHostDeps {
   // denied and in-place navigation is unrestricted (test/back-compat default).
   onWindowOpen?: (url: string) => WindowOpenHandlerResponse;
   onNavigate?: (event: { preventDefault: () => void }, url: string) => void;
+  // Surface a main-frame load failure (real network error, not a deliberate
+  // abort) so the shell can show its offline/retry page instead of leaving the
+  // user on a blank or stuck tab with no recovery path.
+  onLoadError?: (id: string, info: { url: string; error: string; code: number }) => void;
 }
 
 interface TabView {
@@ -105,10 +109,23 @@ export const createTabViewHost = (deps: TabViewHostDeps): TabViewHost => {
         }
       });
 
-      view.webContents.on('did-fail-load', (_event, _errorCode, errorDescription) => {
-        deps.logger.warn('tab_fail_load', { id, error: errorDescription });
-        deps.onUpdate?.(id, { error: errorDescription, loading: false });
-      });
+      view.webContents.on(
+        'did-fail-load',
+        (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+          deps.logger.warn('tab_fail_load', { id, error: errorDescription });
+          deps.onUpdate?.(id, { error: errorDescription, loading: false });
+          // errorCode -3 is ERR_ABORTED, fired on intentional redirect/cancel
+          // (e.g. an external link handed off by the nav policy) — not a real
+          // failure. Only surface genuine main-frame load failures.
+          if (isMainFrame && errorCode !== -3) {
+            deps.onLoadError?.(id, {
+              url: validatedURL,
+              error: errorDescription,
+              code: errorCode,
+            });
+          }
+        }
+      );
 
       view.webContents.on('media-started-playing', () => {
         deps.logger.debug('tab_media_started', { id });

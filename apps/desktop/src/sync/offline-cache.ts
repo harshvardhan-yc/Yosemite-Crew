@@ -84,10 +84,10 @@ const OLD_MAGIC_HEADER = Buffer.from('YCENC', 'utf8');
 const OLD_MAGIC_SIZE = 5;
 
 const detectHeader = (raw: Buffer): { encryptedOffset: number; isEncrypted: boolean } => {
-  if (raw.slice(0, MAGIC_SIZE).equals(MAGIC_HEADER)) {
+  if (raw.subarray(0, MAGIC_SIZE).equals(MAGIC_HEADER)) {
     return { encryptedOffset: MAGIC_SIZE + INTEGRITY_SIZE, isEncrypted: true };
   }
-  if (raw.slice(0, OLD_MAGIC_SIZE).equals(OLD_MAGIC_HEADER)) {
+  if (raw.subarray(0, OLD_MAGIC_SIZE).equals(OLD_MAGIC_HEADER)) {
     return { encryptedOffset: OLD_MAGIC_SIZE + INTEGRITY_SIZE, isEncrypted: true };
   }
   return { encryptedOffset: 0, isEncrypted: false };
@@ -106,11 +106,11 @@ const loadEntries = (
 
     const { encryptedOffset, isEncrypted } = detectHeader(raw);
     if (isEncrypted && decryptString) {
-      const headerSize = raw.slice(0, MAGIC_SIZE).equals(MAGIC_HEADER)
+      const headerSize = raw.subarray(0, MAGIC_SIZE).equals(MAGIC_HEADER)
         ? MAGIC_SIZE
         : OLD_MAGIC_SIZE;
-      const encrypted = raw.slice(encryptedOffset);
-      const storedHash = raw.slice(headerSize, headerSize + INTEGRITY_SIZE);
+      const encrypted = raw.subarray(encryptedOffset);
+      const storedHash = raw.subarray(headerSize, headerSize + INTEGRITY_SIZE);
       const computedHash = crypto.createHmac('sha256', HMAC_KEY).update(encrypted).digest();
       if (!storedHash.equals(computedHash)) {
         return [];

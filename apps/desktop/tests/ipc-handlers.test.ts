@@ -73,6 +73,7 @@ const makeServices = (overrides: Partial<IpcServices> = {}): IpcServices => {
     activeContents: () => wc as never,
     loadStartUrl: jest.fn(),
     enterTabMode: jest.fn(),
+    exitTabMode: jest.fn(),
     runCommandAction: jest.fn(async () => {}),
     tabMode: true,
     tabManager: {
@@ -168,18 +169,25 @@ const makeServices = (overrides: Partial<IpcServices> = {}): IpcServices => {
     unreadCount: 0,
     updateUnreadBadge: jest.fn(),
     startTelehealth: jest.fn(() => 'https://yosemitecrew.com/telehealth'),
+    moveWindowBy: jest.fn(),
     ...overrides,
   };
 };
 
 const register = (services: IpcServices) => {
   const handlers: Record<string, (e: unknown, ...a: unknown[]) => Promise<unknown>> = {};
+  const listeners: Record<string, (e: unknown, ...a: unknown[]) => void> = {};
   registerIpc(services, {
     handle: (ch: string, fn: never) => {
       handlers[ch] = fn;
     },
+    on: (ch: string, fn: never) => {
+      listeners[ch] = fn;
+    },
   } as never);
-  return (channel: string, ...args: unknown[]) => handlers[channel](event, ...args);
+  return Object.assign((channel: string, ...args: unknown[]) => handlers[channel](event, ...args), {
+    emit: (channel: string, ...args: unknown[]) => listeners[channel]?.(event, ...args),
+  });
 };
 
 describe('ipc-handlers — happy paths', () => {
@@ -260,6 +268,35 @@ describe('ipc-handlers — happy paths', () => {
     expect(await call('yc:dismiss-whats-new')).toBeDefined();
     expect(await call('yc:tab-close', 't2')).toMatchObject({ ok: true });
   });
+
+  test('yc:tab-close exits tab mode when the last tab closes', async () => {
+    const services = makeServices();
+    const call = register(services);
+    services.tabManager.getState.mockReturnValue({ tabs: [], activeId: null });
+    expect(await call('yc:tab-close', 't1')).toMatchObject({ ok: true });
+    expect(services.exitTabMode).toHaveBeenCalled();
+  });
+
+  test('yc:tab-close clears split state when the split tab is closed', async () => {
+    const services = makeServices();
+    const call = register(services);
+    services.splitId = 't2';
+    expect(await call('yc:tab-close', 't2')).toMatchObject({ ok: true });
+    expect(services.setSplitTab).toHaveBeenCalledWith(null);
+  });
+
+  test('yc:window-drag-by forwards finite deltas and ignores invalid ones', () => {
+    const moveWindowBy = jest.fn();
+    const services = makeServices({ moveWindowBy });
+    const call = register(services);
+    call.emit('yc:window-drag-by', 10, -5);
+    expect(moveWindowBy).toHaveBeenCalledWith(10, -5);
+    call.emit('yc:window-drag-by', 'x', 5);
+    call.emit('yc:window-drag-by', 3, NaN);
+    call.emit('yc:window-drag-by', Infinity, 1);
+    call.emit('yc:window-drag-by', 0, 0);
+    expect(moveWindowBy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('ipc-handlers — not-ready / invalid branches', () => {
@@ -304,6 +341,10 @@ describe('ipc-handlers — not-ready / invalid branches', () => {
     });
     expect(await call('yc:tab-close', 123)).toMatchObject({ ok: false, error: 'invalid-id' });
     expect(await call('yc:tab-move', 't1', 'x')).toMatchObject({
+      ok: false,
+      error: 'invalid-args',
+    });
+    expect(await call('yc:tab-move', 't1', NaN)).toMatchObject({
       ok: false,
       error: 'invalid-args',
     });

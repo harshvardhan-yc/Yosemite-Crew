@@ -130,7 +130,14 @@
     </style>
   </head>
   <body>
-    <input id="search" type="text" placeholder="Search commands…" autofocus spellcheck="false" />
+    <input
+      id="search"
+      type="text"
+      placeholder="Search commands…"
+      aria-label="Search commands"
+      autofocus
+      spellcheck="false"
+    />
     <div id="results"></div>
 
     <script>
@@ -291,11 +298,11 @@
 
           resultsEl.querySelectorAll('.item').forEach(function (el) {
             el.addEventListener('click', function () {
-              var idx = parseInt(el.getAttribute('data-index'), 10);
+              var idx = Number.parseInt(el.dataset.index, 10);
               selectItem(idx);
             });
             el.addEventListener('mousemove', function () {
-              var idx = parseInt(el.getAttribute('data-index'), 10);
+              var idx = Number.parseInt(el.dataset.index, 10);
               if (selectedIndex !== idx) {
                 setSelected(idx);
               }

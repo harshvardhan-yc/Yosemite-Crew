@@ -99,7 +99,11 @@ export const generateWhiteboardHtml = (
 };
 
 const escapeHtml = (s: string): string =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 
 export const createSecondaryDisplayManager = (deps: DisplayDeps = {}): SecondaryDisplayManager => {
   const getDisplays = deps.getDisplays || (() => []);

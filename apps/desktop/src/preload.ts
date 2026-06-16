@@ -61,6 +61,10 @@ export interface YcDesktop {
   getLastSeenVersion: () => Promise<string>;
   setLastSeenVersion: (v: string) => Promise<unknown>;
   dismissWhatsNew: () => Promise<unknown>;
+  // Manual window drag for the tab bar. A child WebContentsView can't use
+  // `-webkit-app-region: drag` without making the whole view (controls included)
+  // draggable, so the empty area drives window movement by sending pointer deltas.
+  windowDragBy: (dx: number, dy: number) => void;
 }
 
 const api: YcDesktop = {
@@ -143,6 +147,7 @@ const api: YcDesktop = {
   setLastSeenVersion: (v: string): Promise<unknown> =>
     ipcRenderer.invoke('yc:set-last-seen-version', v),
   dismissWhatsNew: (): Promise<unknown> => ipcRenderer.invoke('yc:dismiss-whats-new'),
+  windowDragBy: (dx: number, dy: number): void => ipcRenderer.send('yc:window-drag-by', dx, dy),
 };
 
 contextBridge.exposeInMainWorld('ycDesktop', api);

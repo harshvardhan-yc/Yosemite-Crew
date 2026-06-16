@@ -2,12 +2,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, BrowserWindow, dialog, type Session } from 'electron';
+import { app, BrowserWindow, dialog, screen, type Session } from 'electron';
 import { classifyNavigation } from '../core/navigation-policy';
 import type { DesktopConfig } from '../core/navigation-policy';
 import { createTabManager } from '../core/tab-manager';
 import { createTabViewHost } from '../ui/tab-view-host';
-import { manageWindow } from '../core/window-state';
+import { clampToVisibleDisplays, manageWindow } from '../core/window-state';
 import type { WindowStateStore } from '../core/window-state';
 import { createAppMenu } from '../ui/app-menu';
 import { createColdStartWatchdog, type ColdStartWatchdog } from '../core/cold-start-watchdog';
@@ -105,7 +105,7 @@ export const createMainWindow = async (
     throw new Error('Window state store must be initialized before creating the main window.');
   }
 
-  const restored = deps.windowStateStore.load();
+  const restored = clampToVisibleDisplays(deps.windowStateStore.load(), screen.getAllDisplays());
 
   const mainWindow = new BrowserWindow({
     width: restored.width,
@@ -139,7 +139,10 @@ export const createMainWindow = async (
     try {
       const raw = fs.readFileSync(sp, 'utf8');
       tabManager = createTabManager();
-      tabManager.restore(raw);
+      tabManager.restore(
+        raw,
+        (url) => classifyNavigation(url, deps.config).disposition === 'internal'
+      );
     } catch {
       tabManager = createTabManager();
     }
@@ -163,7 +166,24 @@ export const createMainWindow = async (
     onNavigate: handleMainNavigation,
     onUpdate: (id, meta) => {
       tabManager?.updateMeta(id, meta);
+      // The web app — where the user actually signs in and out — lives in the
+      // tab, not the main window. Feed the tab's in-app navigations into auth
+      // tracking so a web sign-out is detected; otherwise the signed-in hint is
+      // never cleared and the welcome screen stays skipped on the next launch.
+      if (
+        typeof meta.url === 'string' &&
+        classifyNavigation(meta.url, deps.config).disposition === 'internal'
+      ) {
+        deps.trackAuthNavigation(meta.url);
+      }
       saveSession();
+    },
+    onLoadError: (id, info) => {
+      // Only take over the screen when the failed tab is the visible one;
+      // a background tab failing shouldn't replace what the user is viewing.
+      if (id === deps.attachedTabId()) {
+        deps.showOfflinePage(info.error || `Could not reach ${info.url}`);
+      }
     },
     getZoom: (id) => {
       const state = tabManager?.getState();
@@ -230,6 +250,14 @@ export const createMainWindow = async (
     }
   );
 
+  // Track the real HTTP status of the last main-frame navigation so the offline
+  // cache never stores a 4xx/5xx error or maintenance page as if it were a good
+  // document (did-finish-load fires for error pages too).
+  let lastMainFrameStatus = 0;
+  mainWindow.webContents.on('did-navigate', (_event, _url, httpResponseCode) => {
+    lastMainFrameStatus = typeof httpResponseCode === 'number' ? httpResponseCode : 0;
+  });
+
   mainWindow.webContents.on('did-finish-load', () => {
     if (typeof restored.zoomLevel === 'number') {
       mainWindow?.webContents.setZoomLevel(restored.zoomLevel);
@@ -243,8 +271,12 @@ export const createMainWindow = async (
     }
     deps.consumePendingDeepLink();
 
+    // Only cache successful documents — never a 4xx/5xx error or maintenance
+    // page, which would then be served verbatim while offline.
+    const statusOk = lastMainFrameStatus >= 200 && lastMainFrameStatus < 300;
     if (
       deps.offlineCache &&
+      statusOk &&
       classifyNavigation(loadedUrl, deps.config).disposition === 'internal'
     ) {
       const wc = mainWindow?.webContents;
@@ -257,6 +289,9 @@ export const createMainWindow = async (
             if (!result || typeof result !== 'object') return;
             const { title, html } = result as { title?: unknown; html?: unknown };
             if (typeof html !== 'string') return;
+            // Only accept a real string title; `String(obj)` would yield
+            // '[object Object]' if the page returned a non-string.
+            const safeTitle = typeof title === 'string' ? title : '';
             const MAX_CACHED_HTML_BYTES = 5 * 1024 * 1024;
             if (Buffer.byteLength(html, 'utf8') > MAX_CACHED_HTML_BYTES) {
               deps.logger.debug('nav_cache_skipped_too_large', { url: loadedUrl });
@@ -265,13 +300,13 @@ export const createMainWindow = async (
             const strategy = getCacheStrategy(loadedUrl);
             deps.logger.debug('offline_cache_navigation', {
               url: loadedUrl,
-              title: String(title || ''),
+              title: safeTitle,
               bytes: Buffer.byteLength(html, 'utf8'),
               strategy,
             });
             deps.offlineCache?.set(
               createCacheEntry(loadedUrl, html, 'text/html', 200, {
-                'x-yc-title': String(title || ''),
+                'x-yc-title': safeTitle,
                 'x-cache-strategy': strategy,
               })
             );

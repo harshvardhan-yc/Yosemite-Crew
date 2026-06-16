@@ -22,7 +22,7 @@ import {
   type Session,
   type WebContents,
 } from 'electron';
-import { deepLinkToUrl, getDesktopConfig } from './core/navigation-policy';
+import { classifyNavigation, deepLinkToUrl, getDesktopConfig } from './core/navigation-policy';
 import { createCrashReporter, wireCrashLogging } from './lifecycle/crash-reporting';
 import { registerIpc as registerIpcHandlers } from './core/ipc-handlers';
 import type { createTabManager } from './core/tab-manager';
@@ -301,33 +301,51 @@ const layoutTabChrome = (): void => {
   const tvh = tabViewHost;
   if (attachedTabId && tvh) {
     const hasSplit = Boolean(splitId && tvh.get(splitId) && splitId !== attachedTabId);
-    const setViewBounds = (id: string, isSplitView: boolean): void => {
+    const paneWidth = (pane: 'full' | 'left' | 'right', full: number, half: number): number => {
+      if (pane === 'full') return full;
+      if (pane === 'left') return half;
+      return full - half;
+    };
+    const setViewBounds = (id: string, pane: 'full' | 'left' | 'right'): void => {
       if (isVertical) {
         const cw = Math.max(0, b.width - VERTICAL_TAB_WIDTH);
+        const half = Math.floor(cw / 2);
         tvh.setBounds(id, {
-          x: VERTICAL_TAB_WIDTH + (isSplitView ? Math.floor(cw / 2) : 0),
+          x: VERTICAL_TAB_WIDTH + (pane === 'right' ? half : 0),
           y: 0,
-          width: isSplitView ? Math.floor(cw / 2) : cw,
+          width: paneWidth(pane, cw, half),
           height: b.height,
         });
       } else {
         const ch = Math.max(0, b.height - CHROME_STRIP_HEIGHT);
+        const half = Math.floor(b.width / 2);
         tvh.setBounds(id, {
-          x: isSplitView ? Math.floor(b.width / 2) : 0,
+          x: pane === 'right' ? half : 0,
           y: CHROME_STRIP_HEIGHT,
-          width: isSplitView ? Math.floor(b.width / 2) : b.width,
+          width: paneWidth(pane, b.width, half),
           height: ch,
         });
       }
     };
-    setViewBounds(attachedTabId, false);
+    // In split view the primary tab takes the LEFT half (not the full width) so
+    // the two views sit side by side instead of the split overlaying the primary.
+    setViewBounds(attachedTabId, hasSplit ? 'left' : 'full');
     if (hasSplit) {
-      setViewBounds(splitId!, true);
+      setViewBounds(splitId!, 'right');
       const av = tvh.get(attachedTabId);
       const sv = tvh.get(splitId!);
       if (av) mainWindow.contentView.addChildView(av);
       if (sv) mainWindow.contentView.addChildView(sv);
     }
+  }
+  // Always keep the tab-bar chrome view topmost in z-order. Input is routed to
+  // the topmost sibling WebContentsView, so any content view added above (on
+  // attach, split, or detach) steals the clicks/hover meant for the tab bar
+  // controls. A bare addChildView on an already-attached view does not reliably
+  // re-order it, so remove then re-add to force the 40px chrome strip to the top.
+  if (tabChromeView && !tabChromeView.webContents.isDestroyed()) {
+    mainWindow.contentView.removeChildView(tabChromeView);
+    mainWindow.contentView.addChildView(tabChromeView);
   }
 };
 
@@ -343,7 +361,12 @@ const enterTabMode = (initialUrl: string): void => {
     .loadFile(localPage('tabbar'))
     .then(() => {
       const cv = tabChromeView;
-      if (tabOrientation === 'vertical' && cv && !cv.webContents.isDestroyed()) {
+      if (!cv || cv.webContents.isDestroyed()) return;
+      // Seed the tab bar with the saved theme. A WebContentsView doesn't reliably
+      // track nativeTheme/prefers-color-scheme live, so set the explicit
+      // data-theme attribute tokens.css reads.
+      applyThemeModeToWc(cv.webContents, (settingsStore?.load() || DEFAULT_SETTINGS).theme);
+      if (tabOrientation === 'vertical') {
         void cv.webContents
           .executeJavaScript(
             `document.getElementById('tabbar')?.setAttribute('data-orientation','vertical')`
@@ -399,16 +422,46 @@ const switchToTab = (id: string): void => {
 // Menu/shortcut tab actions (the tab-bar UI uses the IPC handlers; these share
 // the same module state).
 const newTab = (url?: string): void => {
-  const target = url || config.startUrl.href;
   if (!tabMode) {
-    enterTabMode(target);
+    enterTabMode(url || config.startUrl.href);
     return;
   }
   if (!tabManager || !tabViewHost) return;
+  // For a signed-in user, defaulting a new tab to the start URL (/signin) lands
+  // on the login page, which the web app 404s/bounces. Open the active tab's
+  // current in-app page instead; fall back to the start URL only when the active
+  // page isn't a normal in-app URL (e.g. the offline page or a data: URL).
+  const activeUrl = attachedTabId ? tabViewHost.getUrl(attachedTabId) : '';
+  const activeIsInApp =
+    !!activeUrl && classifyNavigation(activeUrl, config).disposition === 'internal';
+  const target = url || (activeIsInApp ? activeUrl : config.startUrl.href);
   const id = tabManager.create(target);
   tabViewHost.create(id, target);
   switchToTab(id);
   saveSession();
+};
+
+// Closing the last remaining tab leaves tab mode entirely and returns to the
+// welcome (sign-in) screen, instead of stranding the user on the hidden loading
+// page beneath an empty tab bar.
+const exitTabMode = (): void => {
+  if (tabChromeView) {
+    if (mainWindow && !mainWindow.isDestroyed() && !tabChromeView.webContents.isDestroyed()) {
+      mainWindow.contentView.removeChildView(tabChromeView);
+    }
+    if (!tabChromeView.webContents.isDestroyed()) tabChromeView.webContents.close();
+    tabChromeView = null;
+  }
+  tabViewHost?.destroyAll();
+  tabMode = false;
+  attachedTabId = null;
+  splitId = null;
+  saveSession();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    void mainWindow.webContents
+      .loadFile(localPage('welcome'))
+      .catch((error) => logger.warn('welcome_reload_failed', { error }));
+  }
 };
 
 const closeActiveTab = (): void => {
@@ -434,8 +487,12 @@ const closeActiveTab = (): void => {
   attachedTabId = null;
   tabManager.close(id);
   const next = tabManager.getState().activeId;
-  if (next) switchToTab(next);
-  saveSession();
+  if (next) {
+    switchToTab(next);
+    saveSession();
+    return;
+  }
+  exitTabMode();
 };
 
 const reopenClosedTab = (): void => {
@@ -546,8 +603,16 @@ const configureDownloads = (ses: Session): void => {
       logger.info('download_finished', { filename: item.getFilename(), state });
       if (state === 'completed') {
         shell.showItemInFolder(item.getSavePath());
-        // Auto-save completed downloads into the document vault.
-        if (documentVault) {
+        // Auto-save completed downloads into the document vault. Skip very large
+        // files — vaulting reads the whole file into memory, which would spike or
+        // exhaust main-process memory on a multi-GB download.
+        const MAX_VAULT_BYTES = 25 * 1024 * 1024;
+        if (documentVault && item.getReceivedBytes() > MAX_VAULT_BYTES) {
+          logger.warn('download_vault_skipped_too_large', {
+            filename: item.getFilename(),
+            bytes: item.getReceivedBytes(),
+          });
+        } else if (documentVault) {
           try {
             const mimeType = item.getMimeType() || 'application/octet-stream';
             const isText = /^text\/|^application\/(json|xml|javascript)$/.test(mimeType);
@@ -771,8 +836,47 @@ const startTelehealth = (intent: TelehealthLaunchIntent = {}): string => {
 
 // setupTray and setupTelemetry extracted to src/boot/setup.ts
 
+// Explicitly drive the local (file://) pages' theme via the `data-theme`
+// attribute that tokens.css reads, instead of relying solely on
+// nativeTheme/prefers-color-scheme. A child WebContentsView (the tab bar) does
+// not reliably re-evaluate prefers-color-scheme live when themeSource changes,
+// so without this the strip stays on its load-time scheme. 'system' is resolved
+// to the current OS appearance and re-applied whenever the OS theme changes.
+const resolveThemeMode = (theme: DesktopSettings['theme']): 'dark' | 'light' => {
+  if (theme !== 'system') return theme;
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+};
+
+const applyThemeModeToWc = (
+  wc: Electron.WebContents | null | undefined,
+  theme: DesktopSettings['theme']
+): void => {
+  if (!wc || wc.isDestroyed()) return;
+  const mode = resolveThemeMode(theme);
+  wc.executeJavaScript(
+    `document.documentElement.setAttribute('data-theme', ${JSON.stringify(mode)})`,
+    false
+  ).catch(() => {
+    /* page may be mid-navigation; theme re-applies on next change */
+  });
+};
+
+// Re-apply the saved theme to the local-page views. Used on settings change and
+// when the OS appearance flips while the user is on 'system'.
+const reapplyLocalPageTheme = (): void => {
+  const theme = (settingsStore?.load() || DEFAULT_SETTINGS).theme;
+  applyThemeModeToWc(tabChromeView?.webContents, theme);
+  applyThemeModeToWc(mainWindow?.webContents, theme);
+};
+
+// Follow the OS appearance live when the user's preference is 'system'.
+nativeTheme.on('updated', reapplyLocalPageTheme);
+
 const applySettings = (settings: DesktopSettings): void => {
   nativeTheme.themeSource = settings.theme === 'system' ? 'system' : settings.theme;
+  // Local pages that won't re-evaluate prefers-color-scheme on their own.
+  applyThemeModeToWc(tabChromeView?.webContents, settings.theme);
+  applyThemeModeToWc(mainWindow?.webContents, settings.theme);
   try {
     app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
   } catch {
@@ -1168,6 +1272,7 @@ if (!gotSingleInstanceLock) {
         activeContents,
         loadStartUrl,
         enterTabMode,
+        exitTabMode,
         runCommandAction,
         get tabMode() {
           return tabMode;
@@ -1265,6 +1370,12 @@ if (!gotSingleInstanceLock) {
         },
         updateUnreadBadge,
         startTelehealth,
+        moveWindowBy: (dx, dy) => {
+          const win = mainWindow;
+          if (!win || win.isDestroyed() || win.isMaximized() || win.isFullScreen()) return;
+          const [x = 0, y = 0] = win.getPosition();
+          win.setPosition(Math.round(x + dx), Math.round(y + dy));
+        },
       });
       // Auto-rollback: read the tracker left by the previous session. A non-zero
       // crash count means the previous session didn't cleanly exit (crashed /
