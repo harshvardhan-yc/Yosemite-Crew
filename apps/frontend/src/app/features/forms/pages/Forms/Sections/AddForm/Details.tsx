@@ -53,7 +53,17 @@ const Details = ({
     | undefined;
   const effectiveOrgType = orgTypeOverride || orgType;
   const categoryOptions = useMemo(() => {
-    const base = new Set(['Consent form', 'Prescription', 'SOAP', 'Discharge Form', 'Custom']);
+    const base = new Set([
+      'Consent form',
+      'Prescription',
+      'SOAP',
+      'Discharge Form',
+      'Vitals',
+      'Prescription Template',
+      'Inpatient Schedule',
+      'Task Template',
+      'Custom',
+    ]);
     if (effectiveOrgType === 'HOSPITAL') {
       return FormsCategoryOptions.filter((c) => base.has(c));
     }

@@ -4,6 +4,8 @@ import type {
   Form as BackendForm,
   FormField as BackendFormField,
   Organisation,
+  TemplateKind,
+  TemplateOwnershipType,
 } from '@yosemite-crew/types';
 
 const formsCategories = [
@@ -11,6 +13,10 @@ const formsCategories = [
   'Prescription',
   'SOAP',
   'Discharge Form',
+  'Vitals',
+  'Prescription Template',
+  'Inpatient Schedule',
+  'Task Template',
   'Boarder - Boarding Checklist',
   'Boarder - Dietary Plan',
   'Boarder - Medication Details',
@@ -92,6 +98,11 @@ export type FormsProps = {
   lastUpdated: string;
   status?: FormsStatus;
   schema: FormField[];
+  templateId?: string;
+  templateKind?: TemplateKind;
+  templateSource?: TemplateOwnershipType;
+  templateVersion?: number;
+  isTemplateBacked?: boolean;
 };
 
 const makeOption = (label: string, value?: string): FieldOption => ({
@@ -308,6 +319,10 @@ const buildServicesGroup = (): FormField => ({
 
 export const CategoryTemplates: Record<FormsCategory, FormField[]> = {
   Custom: [],
+  Vitals: [],
+  'Prescription Template': [],
+  'Inpatient Schedule': [],
+  'Task Template': [],
   'Consent form': [
     textInputField('pet_name', 'Companion name', 'Enter Companion name', { required: true }),
     textInputField('owner_name', 'Pet parent name', 'Enter pet parent name', { required: true }),

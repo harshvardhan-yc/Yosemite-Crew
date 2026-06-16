@@ -4,7 +4,13 @@ import {
   FormRequestDTO,
   FormResponseDTO,
   fromFormRequestDTO,
+  templateMapper,
   toFormResponseDTO,
+  TemplateKind,
+  TemplateLike,
+  TemplateSchemaSnapshot,
+  TemplateStatus,
+  TemplateUpsertInput,
 } from '@yosemite-crew/types';
 import {
   CategoryTemplates,
@@ -19,6 +25,22 @@ const statusToLabelMap: Record<Form['status'], FormsStatus> = {
   draft: 'Draft',
   published: 'Published',
   archived: 'Archived',
+};
+
+const templateStatusToLabelMap: Record<TemplateStatus, FormsStatus> = {
+  DRAFT: 'Draft',
+  PUBLISHED: 'Published',
+  ARCHIVED: 'Archived',
+};
+
+const templateKindToCategoryMap: Record<TemplateKind, FormsCategory> = {
+  FORM: 'Custom',
+  SOAP_NOTE: 'SOAP',
+  VITAL_RECORD: 'Vitals',
+  PRESCRIPTION: 'Prescription Template',
+  DISCHARGE_SUMMARY: 'Discharge Form',
+  TASK_TEMPLATE: 'Task Template',
+  CARE_PATHWAY: 'Inpatient Schedule',
 };
 
 const labelToStatusMap: Record<FormsStatus, Form['status']> = {
@@ -49,6 +71,41 @@ export const labelToStatus = (label?: FormsStatus): Form['status'] => {
   if (!label) return 'draft';
   return labelToStatusMap[label] ?? 'draft';
 };
+
+export const templateStatusToLabel = (status?: TemplateStatus): FormsStatus => {
+  if (!status) return 'Draft';
+  return templateStatusToLabelMap[status] ?? 'Draft';
+};
+
+export const templateKindToCategory = (kind?: TemplateKind): FormsCategory => {
+  if (!kind) return 'Custom';
+  return templateKindToCategoryMap[kind] ?? 'Custom';
+};
+
+export const categoryToTemplateKind = (category?: FormsCategory): TemplateKind | null => {
+  switch (category) {
+    case 'SOAP':
+      return 'SOAP_NOTE';
+    case 'Vitals':
+      return 'VITAL_RECORD';
+    case 'Prescription Template':
+      return 'PRESCRIPTION';
+    case 'Discharge Form':
+      return 'DISCHARGE_SUMMARY';
+    case 'Task Template':
+      return 'TASK_TEMPLATE';
+    case 'Inpatient Schedule':
+      return 'CARE_PATHWAY';
+    case 'Custom':
+    case 'Consent form':
+      return 'FORM';
+    default:
+      return null;
+  }
+};
+
+export const shouldUseTemplateApi = (form: Pick<FormsProps, 'category' | 'isTemplateBacked'>) =>
+  Boolean(form.isTemplateBacked || categoryToTemplateKind(form.category));
 
 const cloneField = (field: FormField): FormField => {
   if (field.type === 'group') {
@@ -132,6 +189,571 @@ export const mapFormToUI = (form: Form): FormsProps => ({
 
 export const mapQuestionnaireToUI = (dto: FormResponseDTO): FormsProps =>
   mapFormToUI(questionnaireToForm(dto));
+
+const templateToForm = (template: TemplateLike): Form => {
+  if (templateMapper.isPlanDefinitionResourceKind(template.kind)) {
+    const resource = templateMapper.templateToPlanDefinition(template);
+    const input = templateMapper.planDefinitionToTemplateInput(resource, {
+      createdBy: template.createdBy,
+      updatedBy: template.updatedBy,
+      organisationId: template.organisationId ?? undefined,
+      ownerUserId: template.ownerUserId ?? undefined,
+      ownership: template.ownership,
+      scope: template.scope,
+      kind: template.kind,
+    });
+
+    return {
+      _id: template.id,
+      orgId: template.organisationId ?? '',
+      name: input.name,
+      category: templateKindToCategory(input.kind),
+      description: input.description,
+      visibilityType: 'Internal',
+      status: template.status === 'ARCHIVED' ? 'archived' : 'draft',
+      schema: [],
+      serviceId: template.catalogItemIds,
+      createdBy: template.createdBy,
+      updatedBy: template.updatedBy,
+      createdAt: template.createdAt,
+      updatedAt: template.updatedAt,
+    } as Form;
+  }
+
+  const resource = templateMapper.templateToQuestionnaire(template);
+  const input = templateMapper.questionnaireToTemplateInput(resource, {
+    createdBy: template.createdBy,
+    updatedBy: template.updatedBy,
+    organisationId: template.organisationId ?? undefined,
+    ownerUserId: template.ownerUserId ?? undefined,
+    ownership: template.ownership,
+    scope: template.scope,
+    kind: template.kind,
+  });
+
+  return {
+    _id: template.id,
+    orgId: template.organisationId ?? '',
+    name: input.name,
+    category: templateKindToCategory(input.kind),
+    description: input.description,
+    visibilityType: 'Internal',
+    status:
+      input.schemaSnapshot.sections.length && template.status === 'PUBLISHED'
+        ? 'published'
+        : template.status === 'ARCHIVED'
+          ? 'archived'
+          : 'draft',
+    schema: mapFormToUI(questionnaireToForm(resource as FormResponseDTO)).schema,
+    serviceId: template.catalogItemIds,
+    createdBy: template.createdBy,
+    updatedBy: template.updatedBy,
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
+  } as Form;
+};
+
+export const mapTemplateToUI = (template: TemplateLike): FormsProps => ({
+  ...mapFormToUI(templateToForm(template)),
+  category: templateKindToCategory(template.kind),
+  status: templateStatusToLabel(template.status),
+  templateId: template.id,
+  templateKind: template.kind,
+  templateSource: template.ownership,
+  templateVersion: template.publishedVersion ?? template.latestVersion,
+  isTemplateBacked: true,
+});
+
+type TemplateFieldType = TemplateSchemaSnapshot['sections'][number]['fields'][number]['type'];
+
+const templateFieldTypeMap: Record<FormField['type'], TemplateFieldType> = {
+  input: 'text',
+  textarea: 'richText',
+  number: 'number',
+  dropdown: 'select',
+  radio: 'select',
+  checkbox: 'multiSelect',
+  boolean: 'boolean',
+  date: 'date',
+  signature: 'signature',
+  group: 'repeater',
+};
+
+const toTemplateField = (
+  field: FormField,
+  index: number
+): TemplateSchemaSnapshot['sections'][number]['fields'][number] => {
+  const options = 'options' in field ? field.options : undefined;
+  return {
+    key: field.id,
+    label: field.label || field.id,
+    type: templateFieldTypeMap[field.type],
+    required: field.required,
+    repeatable:
+      field.type === 'group' || ('multiple' in field && Boolean(field.multiple)) || undefined,
+    order: field.order ?? index + 1,
+    options: options?.length ? options : undefined,
+    rules: field.meta,
+    source: 'USER',
+  };
+};
+
+const fieldsToTemplateSection = (
+  id: string,
+  title: string,
+  fields: FormField[] = [],
+  order = 99
+): TemplateSchemaSnapshot['sections'][number] => ({
+  id,
+  title,
+  order,
+  fields: fields.flatMap((field, index) => {
+    if (field.type === 'group') {
+      return (field.fields?.length ? field.fields : [field]).map((nested, nestedIndex) =>
+        toTemplateField(nested, index + nestedIndex)
+      );
+    }
+    return [toTemplateField(field, index)];
+  }),
+});
+
+const clinicalBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> = {
+  SOAP_NOTE: {
+    sections: [
+      {
+        id: 'subjective',
+        title: 'Subjective',
+        order: 1,
+        fields: [
+          {
+            key: 'chiefComplaint',
+            label: 'Chief complaint',
+            type: 'textarea',
+            required: true,
+            order: 1,
+          },
+          { key: 'history', label: 'History', type: 'richText', order: 2 },
+          { key: 'ownerConcern', label: 'Owner concern', type: 'text', order: 3 },
+        ],
+      },
+      {
+        id: 'objective',
+        title: 'Objective',
+        order: 2,
+        fields: [
+          {
+            key: 'vitals',
+            label: 'Vitals',
+            type: 'vitalRow',
+            repeatable: true,
+            order: 1,
+            rules: { columns: ['label', 'value', 'unit'] },
+          },
+          { key: 'examFindings', label: 'Exam findings', type: 'richText', order: 2 },
+          {
+            key: 'testResults',
+            label: 'Test results',
+            type: 'table',
+            order: 3,
+            rules: { columns: ['testName', 'result', 'unit'] },
+          },
+        ],
+      },
+      {
+        id: 'assessment',
+        title: 'Assessment',
+        order: 3,
+        fields: [
+          {
+            key: 'diagnoses',
+            label: 'Diagnoses',
+            type: 'diagnosis',
+            required: true,
+            repeatable: true,
+            order: 1,
+          },
+          { key: 'assessmentNotes', label: 'Assessment notes', type: 'richText', order: 2 },
+          {
+            key: 'severity',
+            label: 'Severity',
+            type: 'select',
+            order: 3,
+            options: [
+              { label: 'Mild', value: 'mild' },
+              { label: 'Moderate', value: 'moderate' },
+              { label: 'Severe', value: 'severe' },
+            ],
+            rules: { allowCustom: false },
+          },
+        ],
+      },
+      {
+        id: 'plan',
+        title: 'Plan',
+        order: 4,
+        fields: [
+          {
+            key: 'medications',
+            label: 'Medications',
+            type: 'medicationLine',
+            required: true,
+            repeatable: true,
+            order: 1,
+            rules: { columns: ['drug', 'dose', 'frequency', 'duration'] },
+          },
+          {
+            key: 'procedures',
+            label: 'Procedures',
+            type: 'procedure',
+            repeatable: true,
+            order: 2,
+            rules: { columns: ['procedure', 'notes'] },
+          },
+          {
+            key: 'instructions',
+            label: 'Instructions',
+            type: 'instructionBlock',
+            required: true,
+            order: 3,
+          },
+          { key: 'followUp', label: 'Follow up', type: 'datetime', order: 4 },
+        ],
+      },
+    ],
+  },
+  PRESCRIPTION: {
+    sections: [
+      {
+        id: 'medications',
+        title: 'Medications',
+        order: 1,
+        fields: [
+          {
+            key: 'prescribedItems',
+            label: 'Prescribed items',
+            type: 'medicationLine',
+            repeatable: true,
+            order: 1,
+            rules: { columns: ['drug', 'dose', 'frequency', 'duration'] },
+          },
+        ],
+      },
+      {
+        id: 'instructions',
+        title: 'Instructions',
+        order: 2,
+        fields: [
+          {
+            key: 'usageInstructions',
+            label: 'Usage instructions',
+            type: 'instructionBlock',
+            order: 1,
+          },
+        ],
+      },
+      {
+        id: 'notes',
+        title: 'Notes',
+        order: 3,
+        fields: [{ key: 'clinicalNotes', label: 'Clinical notes', type: 'richText', order: 1 }],
+      },
+    ],
+  },
+  DISCHARGE_SUMMARY: {
+    sections: [
+      {
+        id: 'summary',
+        title: 'Summary',
+        order: 1,
+        fields: [
+          { key: 'summaryText', label: 'Summary text', type: 'richText', required: true, order: 1 },
+        ],
+      },
+      {
+        id: 'diagnoses',
+        title: 'Diagnoses',
+        order: 2,
+        fields: [
+          {
+            key: 'diagnosisItems',
+            label: 'Diagnosis items',
+            type: 'diagnosis',
+            required: true,
+            repeatable: true,
+            order: 1,
+          },
+        ],
+      },
+      {
+        id: 'medications',
+        title: 'Medications',
+        order: 3,
+        fields: [
+          {
+            key: 'medicationLines',
+            label: 'Medication lines',
+            type: 'medicationLine',
+            required: true,
+            repeatable: true,
+            order: 1,
+            rules: { columns: ['drug', 'dose', 'frequency', 'duration'] },
+          },
+        ],
+      },
+      {
+        id: 'follow_up',
+        title: 'Follow Up',
+        order: 4,
+        fields: [{ key: 'followUpDate', label: 'Follow up date', type: 'datetime', order: 1 }],
+      },
+      {
+        id: 'instructions',
+        title: 'Instructions',
+        order: 5,
+        fields: [
+          {
+            key: 'dischargeInstructions',
+            label: 'Discharge instructions',
+            type: 'instructionBlock',
+            required: true,
+            order: 1,
+          },
+        ],
+      },
+    ],
+  },
+  VITAL_RECORD: {
+    sections: [
+      {
+        id: 'measured_at',
+        title: 'Measured At',
+        order: 1,
+        fields: [
+          { key: 'measuredAt', label: 'Measured at', type: 'datetime', required: true, order: 1 },
+        ],
+      },
+      {
+        id: 'vitals',
+        title: 'Vitals',
+        order: 2,
+        fields: [
+          {
+            key: 'vitalRows',
+            label: 'Vital rows',
+            type: 'vitalRow',
+            required: true,
+            repeatable: true,
+            order: 1,
+            rules: { columns: ['label', 'value', 'unit'] },
+          },
+        ],
+      },
+      {
+        id: 'notes',
+        title: 'Notes',
+        order: 3,
+        fields: [{ key: 'recordNotes', label: 'Record notes', type: 'richText', order: 1 }],
+      },
+      {
+        id: 'metadata',
+        title: 'Metadata',
+        order: 4,
+        fields: [{ key: 'recordedBy', label: 'Recorded by', type: 'text', order: 1 }],
+      },
+    ],
+  },
+};
+
+const workflowBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> = {
+  TASK_TEMPLATE: {
+    sections: [
+      {
+        id: 'definition',
+        title: 'Task Definition',
+        order: 1,
+        fields: [
+          {
+            key: 'taskKind',
+            label: 'Task kind',
+            type: 'select',
+            required: true,
+            options: [
+              { label: 'Medication', value: 'MEDICATION' },
+              { label: 'Observation tool', value: 'OBSERVATION_TOOL' },
+              { label: 'Hygiene', value: 'HYGIENE' },
+              { label: 'Diet', value: 'DIET' },
+              { label: 'Custom', value: 'CUSTOM' },
+            ],
+            rules: { allowCustom: false },
+          },
+          { key: 'category', label: 'Category', type: 'text', required: true },
+          { key: 'name', label: 'Name', type: 'text', required: true },
+          { key: 'description', label: 'Description', type: 'richText' },
+        ],
+      },
+      {
+        id: 'assignment',
+        title: 'Assignment',
+        order: 2,
+        fields: [
+          {
+            key: 'audience',
+            label: 'Audience',
+            type: 'select',
+            required: true,
+            options: [
+              { label: 'Employee task', value: 'EMPLOYEE_TASK' },
+              { label: 'Parent task', value: 'PARENT_TASK' },
+            ],
+            rules: { allowCustom: false },
+          },
+          {
+            key: 'defaultAssigneeRole',
+            label: 'Default assignee role',
+            type: 'select',
+            options: [
+              { label: 'Employee task', value: 'EMPLOYEE_TASK' },
+              { label: 'Parent task', value: 'PARENT_TASK' },
+            ],
+            rules: { allowCustom: false },
+          },
+          { key: 'syncWithCalendar', label: 'Sync with calendar', type: 'boolean' },
+        ],
+      },
+      {
+        id: 'timing',
+        title: 'Timing',
+        order: 3,
+        fields: [
+          { key: 'dueOffsetMinutes', label: 'Due offset minutes', type: 'number', required: true },
+          {
+            key: 'defaultReminderOffsetMinutes',
+            label: 'Default reminder offset minutes',
+            type: 'number',
+          },
+          {
+            key: 'recurrence',
+            label: 'Recurrence',
+            type: 'select',
+            options: [
+              { label: 'Once', value: 'ONCE' },
+              { label: 'Daily', value: 'DAILY' },
+              { label: 'Weekly', value: 'WEEKLY' },
+              { label: 'Custom', value: 'CUSTOM' },
+            ],
+            rules: { allowCustom: false },
+          },
+        ],
+      },
+    ],
+  },
+  CARE_PATHWAY: {
+    sections: [
+      {
+        id: 'admission',
+        title: 'Admission',
+        order: 1,
+        fields: [
+          {
+            key: 'admissionOffsetMinutes',
+            label: 'Admission offset minutes',
+            type: 'number',
+            required: true,
+          },
+          {
+            key: 'anchor',
+            label: 'Anchor',
+            type: 'select',
+            options: [
+              { label: 'Admission', value: 'ADMISSION' },
+              { label: 'Stay', value: 'STAY' },
+              { label: 'Discharge', value: 'DISCHARGE' },
+            ],
+            rules: { allowCustom: false },
+          },
+        ],
+      },
+      {
+        id: 'schedule',
+        title: 'Schedule',
+        order: 2,
+        fields: [
+          {
+            key: 'taskBlocks',
+            label: 'Task blocks',
+            type: 'repeater',
+            required: true,
+            repeatable: true,
+            rules: {
+              columns: ['dayOffset', 'timeOfDay', 'taskKind', 'category', 'name', 'audience'],
+            },
+          },
+        ],
+      },
+      {
+        id: 'discharge',
+        title: 'Discharge',
+        order: 3,
+        fields: [
+          { key: 'dischargeOffsetMinutes', label: 'Discharge offset minutes', type: 'number' },
+          { key: 'followUpTaskName', label: 'Follow-up task name', type: 'text' },
+          { key: 'signOffRequired', label: 'Sign-off required', type: 'boolean' },
+        ],
+      },
+    ],
+  },
+};
+
+const cloneTemplateSchema = (schema: TemplateSchemaSnapshot): TemplateSchemaSnapshot => ({
+  sections: schema.sections.map((section) => ({
+    ...section,
+    fields: section.fields.map((field) => ({ ...field })),
+  })),
+});
+
+export const buildTemplateSchemaSnapshot = (
+  form: FormsProps,
+  kind = categoryToTemplateKind(form.category)
+): TemplateSchemaSnapshot => {
+  const customFields = form.schema?.length
+    ? [fieldsToTemplateSection('custom_fields', 'Custom Fields', form.schema, 999)]
+    : [];
+  const blueprint = kind ? (clinicalBlueprints[kind] ?? workflowBlueprints[kind]) : undefined;
+  if (blueprint) {
+    return {
+      sections: [...cloneTemplateSchema(blueprint).sections, ...customFields],
+    };
+  }
+  return { sections: customFields };
+};
+
+export const buildTemplatePayload = (
+  form: FormsProps,
+  orgId: string
+): Omit<TemplateUpsertInput, 'createdBy'> => {
+  const kind = form.templateKind ?? categoryToTemplateKind(form.category) ?? 'FORM';
+  return {
+    organisationId: orgId,
+    ownership: form.templateSource === 'USER_TEMPLATE' ? 'USER_TEMPLATE' : 'ORG_TEMPLATE',
+    kind,
+    name: form.name,
+    description: form.description,
+    scope: kind === 'CARE_PATHWAY' ? 'INPATIENT' : 'ORGANISATION',
+    rules: {
+      species: form.species ?? [],
+      requiredSigner: form.requiredSigner,
+      visibility: form.usage,
+      category: form.category,
+    },
+    schemaSnapshot: buildTemplateSchemaSnapshot(form, kind),
+    renderConfigSnapshot: {
+      title: form.name,
+      category: form.category,
+    },
+    validationSnapshot: {},
+    updatedBy: form.updatedBy,
+  };
+};
 
 type BuildPayloadArgs = {
   form: FormsProps;
