@@ -245,6 +245,26 @@ describe("LabResultController", () => {
       expect(statusMock).toHaveBeenCalledWith(200);
       expect(sendMock).toHaveBeenCalled();
     });
+
+    it("maps fetch failures to the controller error handler", async () => {
+      mockedLabResultService.getByResultId.mockResolvedValue({
+        id: "result-1",
+      });
+      mockedIdexxResultsQueryService.getResultPdf.mockRejectedValue(
+        new Error("boom"),
+      );
+
+      await LabResultController.getPdf(req as Request, res);
+
+      expect(mockedLogger.error).toHaveBeenCalledWith(
+        "Failed to fetch result PDF",
+        expect.any(Error),
+      );
+      expect(statusMock).toHaveBeenCalledWith(500);
+      expect(jsonMock).toHaveBeenCalledWith({
+        message: "Failed to fetch result PDF.",
+      });
+    });
   });
 
   describe("getNotificationsPdf", () => {

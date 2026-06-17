@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import { AuthenticatedRequest } from "src/middlewares/auth";
 import {
   ClinicalArtifactService,
   ClinicalArtifactServiceError,
@@ -10,39 +9,23 @@ import {
   InventoryConsumptionService,
   InventoryConsumptionServiceError,
 } from "src/services/inventory-consumption.service";
-import logger from "src/utils/logger";
+import { createFhirErrorHandler } from "src/controllers/web/fhir-controller.shared";
+import { resolveUserIdFromRequest } from "src/utils/request";
 
 const actionBodySchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   reason: z.string().trim().min(1).optional(),
 });
 
-const handleError = (error: unknown, res: Response) => {
-  if (
+const handleError = createFhirErrorHandler({
+  isServiceError: (
+    error,
+  ): error is ClinicalArtifactServiceError | InventoryConsumptionServiceError =>
     error instanceof ClinicalArtifactServiceError ||
-    error instanceof InventoryConsumptionServiceError
-  ) {
-    return res.status(error.statusCode).json({ message: error.message });
-  }
-
-  if (error instanceof z.ZodError) {
-    return res.status(400).json({
-      message: "Invalid prescription action payload.",
-      issues: error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
-    });
-  }
-
-  logger.error("Unexpected prescription action error", error);
-  return res.status(500).json({ message: "Internal Server Error" });
-};
-
-const resolveUserId = (req: Request) => {
-  const typed = req as AuthenticatedRequest;
-  return typeof typed.userId === "string" ? typed.userId : "";
-};
+    error instanceof InventoryConsumptionServiceError,
+  invalidPayloadMessage: "Invalid prescription action payload.",
+  logMessage: "Unexpected prescription action error",
+});
 
 const loadPrescription = async (
   organisationId: string,
@@ -56,7 +39,7 @@ const buildMetadata = (
 ) => ({
   ...(body.metadata ?? {}),
   action,
-  performedBy: resolveUserId(req) || undefined,
+  performedBy: resolveUserIdFromRequest(req),
   reason: body.reason ?? undefined,
   performedAt: new Date().toISOString(),
 });

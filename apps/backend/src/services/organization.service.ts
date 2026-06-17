@@ -29,6 +29,7 @@ import { prisma } from "src/config/prisma";
 import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
 import { isReadFromPostgres } from "src/config/read-switch";
 import { buildGeoPoint } from "src/utils/geojson";
+import { calculateDistanceMeters, toRadians } from "src/utils/geo";
 
 const TAX_ID_EXTENSION_URL =
   "http://example.org/fhir/StructureDefinition/taxId";
@@ -706,27 +707,6 @@ const buildFHIRResponseFromPrisma = (
     : undefined;
 
   return toOrganizationResponseDTO(response, responseOptions);
-};
-
-const toRadians = (value: number) => (value * Math.PI) / 180;
-
-const calculateDistanceMeters = (
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-) => {
-  const earthRadiusMeters = 6371000;
-  const dLat = toRadians(lat2 - lat1);
-  const dLng = toRadians(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) *
-      Math.cos(toRadians(lat2)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return earthRadiusMeters * c;
 };
 
 const resolveIdQuery = (id: unknown) => {

@@ -9,7 +9,7 @@ import {
   InventoryService,
   InventoryServiceError,
 } from "src/services/inventory.service";
-import logger from "src/utils/logger";
+import { createFhirErrorHandler } from "src/controllers/web/fhir-controller.shared";
 import type {
   ScopedSearchItem,
   ScopedSearchResponse,
@@ -108,28 +108,15 @@ const isMedicationItem = (item: Record<string, unknown>) =>
   Boolean(item.prescriptionRequired) ||
   asString(item.category)?.toLowerCase().includes("medication") === true;
 
-const handleError = (error: unknown, res: Response) => {
-  if (error instanceof InventoryServiceError) {
-    return res.status(error.statusCode).json({ message: error.message });
-  }
-
-  if (error instanceof CatalogServiceError) {
-    return res.status(error.statusCode).json({ message: error.message });
-  }
-
-  if (error instanceof z.ZodError) {
-    return res.status(400).json({
-      message: "Invalid search query.",
-      issues: error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
-    });
-  }
-
-  logger.error("Unexpected search error", error);
-  return res.status(500).json({ message: "Internal Server Error" });
-};
+const handleError = createFhirErrorHandler({
+  isServiceError: (
+    error,
+  ): error is InventoryServiceError | CatalogServiceError =>
+    error instanceof InventoryServiceError ||
+    error instanceof CatalogServiceError,
+  invalidPayloadMessage: "Invalid search query.",
+  logMessage: "Unexpected search error",
+});
 
 const runSearch = async (
   organisationId: string,

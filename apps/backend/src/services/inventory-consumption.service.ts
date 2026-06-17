@@ -178,51 +178,32 @@ const consumeInventoryItem = async (
       );
     }
 
-    const batchesAfter = await tx.inventoryBatch.findMany({
-      where: { itemId: inventoryItemId, organisationId },
-    });
-    const onHand = batchesAfter.reduce(
-      (sum, batch) => sum + (batch.quantity ?? 0),
-      0,
-    );
-    const allocated = batchesAfter.reduce(
-      (sum, batch) => sum + (batch.allocated ?? 0),
-      0,
-    );
+    await updateInventoryItemTotals(tx, organisationId, inventoryItemId);
 
-    await tx.inventoryItem.update({
-      where: { id: inventoryItemId },
-      data: { onHand, allocated },
-    });
-
-    return tx.inventoryConsumptionEvent.create({
-      data: {
-        organisationId,
-        sourceType,
-        sourceId,
-        sourceLineKey,
-        action,
-        idempotencyKey,
-        inventoryItemId,
-        quantity,
-        status: "APPLIED",
-        metadata,
-      },
+    return createInventoryConsumptionEvent(tx, {
+      organisationId,
+      sourceType,
+      sourceId,
+      sourceLineKey,
+      action,
+      idempotencyKey,
+      inventoryItemId,
+      quantity,
+      status: "APPLIED",
+      metadata,
     });
   } else if (action !== "CONSUME") {
-    return tx.inventoryConsumptionEvent.create({
-      data: {
-        organisationId,
-        sourceType,
-        sourceId,
-        sourceLineKey,
-        action,
-        idempotencyKey,
-        inventoryItemId,
-        quantity,
-        status: "SKIPPED",
-        metadata,
-      },
+    return createInventoryConsumptionEvent(tx, {
+      organisationId,
+      sourceType,
+      sourceId,
+      sourceLineKey,
+      action,
+      idempotencyKey,
+      inventoryItemId,
+      quantity,
+      status: "SKIPPED",
+      metadata,
     });
   }
 
@@ -276,36 +257,19 @@ const consumeInventoryItem = async (
     );
   }
 
-  const batchesAfter = await tx.inventoryBatch.findMany({
-    where: { itemId: inventoryItemId, organisationId },
-  });
-  const onHand = batchesAfter.reduce(
-    (sum, batch) => sum + (batch.quantity ?? 0),
-    0,
-  );
-  const allocated = batchesAfter.reduce(
-    (sum, batch) => sum + (batch.allocated ?? 0),
-    0,
-  );
+  await updateInventoryItemTotals(tx, organisationId, inventoryItemId);
 
-  await tx.inventoryItem.update({
-    where: { id: inventoryItemId },
-    data: { onHand, allocated },
-  });
-
-  return tx.inventoryConsumptionEvent.create({
-    data: {
-      organisationId,
-      sourceType,
-      sourceId,
-      sourceLineKey,
-      action,
-      idempotencyKey,
-      inventoryItemId,
-      quantity,
-      status: "APPLIED",
-      metadata,
-    },
+  return createInventoryConsumptionEvent(tx, {
+    organisationId,
+    sourceType,
+    sourceId,
+    sourceLineKey,
+    action,
+    idempotencyKey,
+    inventoryItemId,
+    quantity,
+    status: "APPLIED",
+    metadata,
   });
 };
 
@@ -383,6 +347,48 @@ const resolveInventoryItemIdByBatch = async (
 
   return batch ?? null;
 };
+
+const updateInventoryItemTotals = async (
+  tx: Prisma.TransactionClient,
+  organisationId: string,
+  inventoryItemId: string,
+) => {
+  const batchesAfter = await tx.inventoryBatch.findMany({
+    where: { itemId: inventoryItemId, organisationId },
+  });
+  const onHand = batchesAfter.reduce(
+    (sum, batch) => sum + (batch.quantity ?? 0),
+    0,
+  );
+  const allocated = batchesAfter.reduce(
+    (sum, batch) => sum + (batch.allocated ?? 0),
+    0,
+  );
+
+  await tx.inventoryItem.update({
+    where: { id: inventoryItemId },
+    data: { onHand, allocated },
+  });
+};
+
+const createInventoryConsumptionEvent = (
+  tx: Prisma.TransactionClient,
+  data: {
+    organisationId: string;
+    sourceType: InventoryConsumptionSourceType;
+    sourceId: string;
+    sourceLineKey: string;
+    action: InventoryConsumptionAction;
+    idempotencyKey: string;
+    inventoryItemId: string;
+    quantity: number;
+    status: "APPLIED" | "SKIPPED";
+    metadata?: Prisma.InputJsonValue;
+  },
+) =>
+  tx.inventoryConsumptionEvent.create({
+    data,
+  });
 
 const consumeResolvedLines = async (
   tx: Prisma.TransactionClient,
@@ -571,6 +577,49 @@ const resolvePrescriptionLines = async (
   return resolved;
 };
 
+const runPrescriptionInventoryAction = async (params: {
+  organisationId: string;
+  prescriptionId: string;
+  medications: unknown;
+  metadata?: Prisma.InputJsonValue;
+  action: InventoryConsumptionAction;
+  movementReason?: string;
+}) => {
+  const organisationId = asNonEmptyString(params.organisationId);
+  const prescriptionId = asNonEmptyString(params.prescriptionId);
+  if (!organisationId || !prescriptionId) {
+    throw new InventoryConsumptionServiceError(
+      "organisationId and prescriptionId are required",
+      400,
+    );
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const lines = await resolvePrescriptionLines(
+      tx,
+      organisationId,
+      params.medications,
+    );
+    if (!lines.length) return [];
+
+    return consumeResolvedLines(
+      tx,
+      {
+        organisationId,
+        sourceType: "PRESCRIPTION",
+        sourceId: prescriptionId,
+        action: params.action,
+        metadata: params.metadata,
+        lines,
+      },
+      lines,
+      params.movementReason
+        ? { movementReason: params.movementReason }
+        : undefined,
+    );
+  });
+};
+
 export const InventoryConsumptionService = {
   async upsertRule(input: InventoryConsumptionRuleInput) {
     const organisationId = asNonEmptyString(input.organisationId);
@@ -694,36 +743,13 @@ export const InventoryConsumptionService = {
     medications: unknown;
     metadata?: Prisma.InputJsonValue;
   }) {
-    const organisationId = asNonEmptyString(params.organisationId);
-    const prescriptionId = asNonEmptyString(params.prescriptionId);
-    if (!organisationId || !prescriptionId) {
-      throw new InventoryConsumptionServiceError(
-        "organisationId and prescriptionId are required",
-        400,
-      );
-    }
-
-    return prisma.$transaction(async (tx) => {
-      const lines = await resolvePrescriptionLines(
-        tx,
-        organisationId,
-        params.medications,
-      );
-      if (!lines.length) return [];
-
-      return consumeResolvedLines(
-        tx,
-        {
-          organisationId,
-          sourceType: "PRESCRIPTION",
-          sourceId: prescriptionId,
-          action: "CONSUME",
-          metadata: params.metadata,
-          lines,
-        },
-        lines,
-        { movementReason: "PRESCRIPTION_DISPENSE" },
-      );
+    return runPrescriptionInventoryAction({
+      organisationId: params.organisationId,
+      prescriptionId: params.prescriptionId,
+      medications: params.medications,
+      metadata: params.metadata,
+      action: "CONSUME",
+      movementReason: "PRESCRIPTION_DISPENSE",
     });
   },
 
@@ -733,35 +759,12 @@ export const InventoryConsumptionService = {
     medications: unknown;
     metadata?: Prisma.InputJsonValue;
   }) {
-    const organisationId = asNonEmptyString(params.organisationId);
-    const prescriptionId = asNonEmptyString(params.prescriptionId);
-    if (!organisationId || !prescriptionId) {
-      throw new InventoryConsumptionServiceError(
-        "organisationId and prescriptionId are required",
-        400,
-      );
-    }
-
-    return prisma.$transaction(async (tx) => {
-      const lines = await resolvePrescriptionLines(
-        tx,
-        organisationId,
-        params.medications,
-      );
-      if (!lines.length) return [];
-
-      return consumeResolvedLines(
-        tx,
-        {
-          organisationId,
-          sourceType: "PRESCRIPTION",
-          sourceId: prescriptionId,
-          action: "RESERVE",
-          metadata: params.metadata,
-          lines,
-        },
-        lines,
-      );
+    return runPrescriptionInventoryAction({
+      organisationId: params.organisationId,
+      prescriptionId: params.prescriptionId,
+      medications: params.medications,
+      metadata: params.metadata,
+      action: "RESERVE",
     });
   },
 
@@ -771,36 +774,13 @@ export const InventoryConsumptionService = {
     medications: unknown;
     metadata?: Prisma.InputJsonValue;
   }) {
-    const organisationId = asNonEmptyString(params.organisationId);
-    const prescriptionId = asNonEmptyString(params.prescriptionId);
-    if (!organisationId || !prescriptionId) {
-      throw new InventoryConsumptionServiceError(
-        "organisationId and prescriptionId are required",
-        400,
-      );
-    }
-
-    return prisma.$transaction(async (tx) => {
-      const lines = await resolvePrescriptionLines(
-        tx,
-        organisationId,
-        params.medications,
-      );
-      if (!lines.length) return [];
-
-      return consumeResolvedLines(
-        tx,
-        {
-          organisationId,
-          sourceType: "PRESCRIPTION",
-          sourceId: prescriptionId,
-          action: "RELEASE",
-          metadata: params.metadata,
-          lines,
-        },
-        lines,
-        { movementReason: "PRESCRIPTION_RELEASE" },
-      );
+    return runPrescriptionInventoryAction({
+      organisationId: params.organisationId,
+      prescriptionId: params.prescriptionId,
+      medications: params.medications,
+      metadata: params.metadata,
+      action: "RELEASE",
+      movementReason: "PRESCRIPTION_RELEASE",
     });
   },
 
@@ -810,36 +790,13 @@ export const InventoryConsumptionService = {
     medications: unknown;
     metadata?: Prisma.InputJsonValue;
   }) {
-    const organisationId = asNonEmptyString(params.organisationId);
-    const prescriptionId = asNonEmptyString(params.prescriptionId);
-    if (!organisationId || !prescriptionId) {
-      throw new InventoryConsumptionServiceError(
-        "organisationId and prescriptionId are required",
-        400,
-      );
-    }
-
-    return prisma.$transaction(async (tx) => {
-      const lines = await resolvePrescriptionLines(
-        tx,
-        organisationId,
-        params.medications,
-      );
-      if (!lines.length) return [];
-
-      return consumeResolvedLines(
-        tx,
-        {
-          organisationId,
-          sourceType: "PRESCRIPTION",
-          sourceId: prescriptionId,
-          action: "RELEASE",
-          metadata: params.metadata,
-          lines,
-        },
-        lines,
-        { movementReason: "PRESCRIPTION_RETURN" },
-      );
+    return runPrescriptionInventoryAction({
+      organisationId: params.organisationId,
+      prescriptionId: params.prescriptionId,
+      medications: params.medications,
+      metadata: params.metadata,
+      action: "RELEASE",
+      movementReason: "PRESCRIPTION_RETURN",
     });
   },
 
@@ -849,39 +806,16 @@ export const InventoryConsumptionService = {
     medications: unknown;
     metadata?: Prisma.InputJsonValue;
   }) {
-    const organisationId = asNonEmptyString(params.organisationId);
-    const prescriptionId = asNonEmptyString(params.prescriptionId);
-    if (!organisationId || !prescriptionId) {
-      throw new InventoryConsumptionServiceError(
-        "organisationId and prescriptionId are required",
-        400,
-      );
-    }
-
-    return prisma.$transaction(async (tx) => {
-      const lines = await resolvePrescriptionLines(
-        tx,
-        organisationId,
-        params.medications,
-      );
-      if (!lines.length) return [];
-
-      return consumeResolvedLines(
-        tx,
-        {
-          organisationId,
-          sourceType: "PRESCRIPTION",
-          sourceId: prescriptionId,
-          action: "RELEASE",
-          metadata: {
-            voided: true,
-            originalMetadata: params.metadata ?? null,
-          } as Prisma.InputJsonValue,
-          lines,
-        },
-        lines,
-        { movementReason: "PRESCRIPTION_VOID_DISPENSE" },
-      );
+    return runPrescriptionInventoryAction({
+      organisationId: params.organisationId,
+      prescriptionId: params.prescriptionId,
+      medications: params.medications,
+      metadata: {
+        voided: true,
+        originalMetadata: params.metadata ?? null,
+      } as Prisma.InputJsonValue,
+      action: "RELEASE",
+      movementReason: "PRESCRIPTION_VOID_DISPENSE",
     });
   },
 

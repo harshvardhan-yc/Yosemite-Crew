@@ -2,10 +2,7 @@ import { Types } from "mongoose";
 import CompanionModel from "src/models/companion";
 import ParentCompanionModel from "src/models/parent-companion";
 import { ParentModel } from "src/models/parent";
-import CodeMappingModel from "src/models/code-mapping";
 import CodeEntryModel from "src/models/code-entry";
-import { IntegrationService } from "src/services/integration.service";
-import { IdexxClient } from "src/integrations/idexx/idexx.client";
 import { prisma } from "src/config/prisma";
 import { isReadFromPostgres } from "src/config/read-switch";
 import type {
@@ -15,6 +12,10 @@ import type {
 } from "../types";
 import { LabOrderServiceError } from "src/services/lab-order.service";
 import { normalizeLabStatus } from "src/labs/status";
+import {
+  buildIdexxClient,
+  lookupIdexxMapping,
+} from "src/labs/idexx/idexx.shared";
 
 type IdLike = Types.ObjectId | string;
 
@@ -25,48 +26,6 @@ const resolveDocId = (doc: { id?: string; _id?: { toString(): string } }) => {
   if ("id" in doc && typeof doc.id === "string") return doc.id;
   if ("_id" in doc && doc._id) return doc._id.toString();
   throw new LabOrderServiceError("Missing document id.", 500);
-};
-
-const lookupIdexxMapping = async (
-  yosemiteCode: string,
-  field: "species" | "breed" | "providerCode" = "providerCode",
-) => {
-  const mapping = isReadFromPostgres()
-    ? await prisma.codeMapping.findFirst({
-        where: {
-          sourceSystem: "YOSEMITECODE",
-          sourceCode: yosemiteCode,
-          targetSystem: "IDEXX",
-          active: true,
-        },
-      })
-    : await CodeMappingModel.findOne({
-        sourceSystem: "YOSEMITECODE",
-        sourceCode: yosemiteCode,
-        targetSystem: "IDEXX",
-        active: true,
-      }).lean();
-
-  if (!mapping) {
-    throw new LabOrderServiceError(
-      `Missing IDEXX mapping for code ${yosemiteCode}.`,
-      400,
-      field === "species"
-        ? "DIAGNOSTIC_SPECIES_MAPPING_UNSUPPORTED"
-        : field === "breed"
-          ? "DIAGNOSTIC_BREED_MAPPING_UNSUPPORTED"
-          : "DIAGNOSTIC_PROVIDER_CODE_MAPPING_UNSUPPORTED",
-      {
-        provider: "IDEXX",
-        field,
-        code: yosemiteCode,
-        sourceSystem: "YOSEMITECODE",
-        targetSystem: "IDEXX",
-      },
-    );
-  }
-
-  return mapping.targetCode;
 };
 
 const coerceString = (value: unknown): string | null => {
@@ -89,38 +48,6 @@ const resolveGenderCode = (gender: string, isNeutered?: boolean) => {
     return isNeutered === true ? "FEMALE_SPAYED" : "FEMALE_INTACT";
   }
   return "UNKNOWN";
-};
-
-const requireIdexxClient = async (organisationId: string) => {
-  const account = await IntegrationService.requireAccount(
-    organisationId,
-    "IDEXX",
-  );
-
-  const credentials = account.credentials as {
-    username?: string;
-    password?: string;
-    labAccountId?: string;
-  };
-
-  if (!credentials?.username || !credentials.password) {
-    throw new LabOrderServiceError("IDEXX credentials missing.", 400);
-  }
-
-  const pimsId = process.env.IDEXX_PIMS_ID;
-  const pimsVersion = process.env.IDEXX_PIMS_VERSION;
-
-  if (!pimsId || !pimsVersion) {
-    throw new LabOrderServiceError("IDEXX PIMS config missing.", 500);
-  }
-
-  return new IdexxClient({
-    username: credentials.username,
-    password: credentials.password,
-    labAccountId: credentials.labAccountId,
-    pimsId,
-    pimsVersion,
-  });
 };
 
 const validateTestCodes = async (tests: string[]) => {
@@ -380,7 +307,7 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
       specimenCollectionDate: input.specimenCollectionDate,
     });
 
-    const client = await requireIdexxClient(input.organisationId);
+    const client = await buildIdexxClient(input.organisationId);
 
     if (input.modality === "IN_HOUSE") {
       const censusPayload = await buildCensusPayload({
@@ -421,7 +348,7 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
     idexxOrderId: string,
     input: LabOrderCreateInput,
   ): Promise<LabOrderCreateResult> {
-    const client = await requireIdexxClient(input.organisationId);
+    const client = await buildIdexxClient(input.organisationId);
 
     const response = await client.getOrder(idexxOrderId);
     const resp = response as Record<string, unknown>;
@@ -460,7 +387,7 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
       specimenCollectionDate: input.specimenCollectionDate,
     });
 
-    const client = await requireIdexxClient(input.organisationId);
+    const client = await buildIdexxClient(input.organisationId);
 
     const response = await client.updateOrder(idexxOrderId, payload);
     const resp = response as Record<string, unknown>;
@@ -471,7 +398,7 @@ export class IdexxOrderAdapter implements LabOrderAdapter {
     idexxOrderId: string,
     input: LabOrderCreateInput,
   ): Promise<LabOrderCreateResult> {
-    const client = await requireIdexxClient(input.organisationId);
+    const client = await buildIdexxClient(input.organisationId);
 
     const response = await client.cancelOrder(idexxOrderId);
     const resp = response as Record<string, unknown>;
