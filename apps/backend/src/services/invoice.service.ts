@@ -14,6 +14,7 @@ import {
   DEFAULT_TAX_BEHAVIOR,
   getInvoiceTaxProviderAdapter,
 } from "./finance/tax";
+import { FinancePaymentService } from "./finance/payment";
 import { prisma } from "src/config/prisma";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
 import { NotificationTemplates } from "src/utils/notificationTemplates";
@@ -677,8 +678,10 @@ export const InvoiceService = {
       throw new InvoiceServiceError("Invoice cannot be marked paid.", 409);
     }
 
-    const updated = await this.markInvoicePaid({ invoiceId: doc.id });
-    return updated ? toInvoiceRecord(updated) : null;
+    const result = await FinancePaymentService.recordManualPayment(doc.id, {
+      settlementChannel: "CASH",
+    });
+    return toInvoiceRecord(result.invoice);
   },
 
   async updatePaymentCollectionMethod(

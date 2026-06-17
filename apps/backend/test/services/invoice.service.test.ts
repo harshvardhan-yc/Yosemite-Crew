@@ -6,6 +6,7 @@ import { prisma } from "src/config/prisma";
 import { CatalogService } from "../../src/services/catalog.service";
 import { NotificationService } from "../../src/services/notification.service";
 import { AuditTrailService } from "../../src/services/audit-trail.service";
+import { FinancePaymentService } from "../../src/services/finance/payment";
 import { StripeService } from "../../src/services/stripe.service";
 import { sendEmailTemplate } from "../../src/utils/email";
 
@@ -56,6 +57,13 @@ jest.mock("../../src/services/audit-trail.service", () => ({
   },
 }));
 
+jest.mock("../../src/services/finance/payment", () => ({
+  __esModule: true,
+  FinancePaymentService: {
+    recordManualPayment: jest.fn(),
+  },
+}));
+
 jest.mock("../../src/services/stripe.service", () => ({
   __esModule: true,
   StripeService: {
@@ -76,7 +84,7 @@ describe("InvoiceService", () => {
   const parentId = "parent_1";
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     (CatalogService.resolveSelection as jest.Mock).mockResolvedValue(null);
   });
 
@@ -492,8 +500,22 @@ describe("InvoiceService", () => {
       updatedAt: new Date(),
     });
 
-    await InvoiceService.markInvoicePaidManually("inv_4", organisationId);
-    expect(prisma.invoice.update).toHaveBeenCalled();
+    (FinancePaymentService.recordManualPayment as jest.Mock).mockResolvedValue({
+      invoice: {
+        id: "inv_4",
+        status: "PAID",
+      },
+    });
+
+    const result = await InvoiceService.markInvoicePaidManually(
+      "inv_4",
+      organisationId,
+    );
+    expect(FinancePaymentService.recordManualPayment).toHaveBeenCalledWith(
+      "inv_4",
+      expect.objectContaining({ settlementChannel: "CASH" }),
+    );
+    expect(result.id).toBe("inv_4");
   });
 
   it("cancels or refunds invoices using Postgres only", async () => {

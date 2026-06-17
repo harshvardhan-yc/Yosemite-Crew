@@ -1170,6 +1170,52 @@ enum PaymentCollectionMethod {
   PAYMENT_AT_CLINIC
 }
 
+enum PaymentProvider {
+  STRIPE
+  MANUAL
+}
+
+enum PaymentAttemptStatus {
+  REQUIRES_ACTION
+  REQUIRES_PAYMENT_METHOD
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum BillingCollectionMode {
+  PREPAY_AT_BOOKING
+  PAY_AT_VISIT_END
+  STAGED_DURING_VISIT
+  DEPOSIT_THEN_SETTLE
+  MANUAL_OFFLINE
+}
+
+enum SettlementChannel {
+  STRIPE
+  CASH
+  BANK_TRANSFER
+  CARD_PRESENT
+  DEPOSIT
+  OTHER
+}
+
 enum TaxProvider {
   STRIPE
 }
@@ -2576,6 +2622,8 @@ model Invoice {
   updatedAt                DateTime                 @updatedAt
 
   taxSnapshot              InvoiceTaxSnapshot?
+  paymentAttempts          PaymentAttempt[]
+  payments                 Payment[]
 
   @@index([parentId])
   @@index([organisationId])
@@ -2604,4 +2652,86 @@ model InvoiceTaxSnapshot {
   updatedAt           DateTime     @updatedAt
 
   invoice             Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model PaymentAttempt {
+  id                      String               @id @default(uuid())
+  invoiceId               String
+  provider                PaymentProvider
+  settlementChannel       SettlementChannel?
+  providerPaymentIntentId String?
+  providerCheckoutSessionId String?
+  providerPaymentLinkId   String?
+  status                  PaymentAttemptStatus @default(REQUIRES_PAYMENT_METHOD)
+  amountRequested         Float                @default(0)
+  amountCaptured          Float                @default(0)
+  amountApplied           Float                @default(0)
+  currency                String
+  failureCode             String?
+  failureMessage          String?
+  collectionMode          BillingCollectionMode?
+  isOffline               Boolean              @default(false)
+  isPartial               Boolean              @default(false)
+  rawProviderPayload      Json?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+
+  invoice                 Invoice              @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payment                 Payment?
+
+  @@index([invoiceId])
+  @@index([provider])
+  @@index([providerPaymentIntentId])
+  @@index([providerCheckoutSessionId])
+  @@index([providerPaymentLinkId])
+  @@index([status])
+}
+
+model Payment {
+  id                    String          @id @default(uuid())
+  invoiceId             String
+  paymentAttemptId      String?         @unique
+  provider              PaymentProvider
+  settlementChannel     SettlementChannel?
+  collectionMode        BillingCollectionMode?
+  providerPaymentId     String?
+  amount                Float
+  currency              String
+  status                PaymentStatus   @default(PENDING)
+  paidAt                DateTime?
+  receiptUrl            String?
+  rawProviderPayload    Json?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  invoice               Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  paymentAttempt        PaymentAttempt? @relation(fields: [paymentAttemptId], references: [id])
+  refunds               Refund[]
+
+  @@index([invoiceId])
+  @@index([paymentAttemptId])
+  @@index([provider])
+  @@index([providerPaymentId])
+  @@index([status])
+}
+
+model Refund {
+  id                    String         @id @default(uuid())
+  paymentId             String
+  provider              PaymentProvider
+  providerRefundId      String?
+  amount                Float
+  currency              String
+  status                RefundStatus   @default(PENDING)
+  reason                String?
+  rawProviderPayload    Json?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  payment               Payment        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([provider])
+  @@index([providerRefundId])
+  @@index([status])
 }
