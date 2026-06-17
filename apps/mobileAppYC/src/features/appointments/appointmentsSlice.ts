@@ -38,6 +38,7 @@ const ensureAccessToken = async (): Promise<string> => {
 type BookAppointmentInput = {
   businessId: string;
   serviceId: string;
+  productItemId?: string | null;
   serviceName: string;
   specialityId?: string | null;
   specialityName?: string | null;
@@ -185,7 +186,7 @@ export const createAppointment = createAsyncThunk<
           }
         : undefined,
       appointmentType: {
-        id: payload.serviceId,
+        id: payload.productItemId ?? payload.serviceId,
         name: payload.serviceName,
         speciality: {
           id: payload.specialityId ?? payload.specialityName ?? '',
