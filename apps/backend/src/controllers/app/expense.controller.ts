@@ -9,9 +9,9 @@ import logger from "src/utils/logger";
 export const ExpenseController = {
   getExpenseSummary: async (req: Request, res: Response) => {
     try {
-      const { companionId } = req.params;
+      const { patientId } = req.params;
       const summary =
-        await ExpenseService.getTotalExpenseForCompanion(companionId);
+        await ExpenseService.getTotalExpenseForCompanion(patientId);
       res.status(200).json(summary);
     } catch (error) {
       if (error instanceof ExternalExpenseServiceError)
@@ -73,8 +73,8 @@ export const ExpenseController = {
 
   getExpensesByCompanion: async (req: Request, res: Response) => {
     try {
-      const { companionId } = req.params;
-      const expenses = await ExpenseService.getExpensesByCompanion(companionId);
+      const { patientId } = req.params;
+      const expenses = await ExpenseService.getExpensesByCompanion(patientId);
       res.status(200).json(expenses);
     } catch (error) {
       if (error instanceof ExternalExpenseServiceError)

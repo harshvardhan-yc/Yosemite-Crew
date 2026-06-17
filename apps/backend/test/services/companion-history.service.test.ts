@@ -29,7 +29,7 @@ jest.mock("../../src/config/read-switch", () => ({
 }));
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
-    companionOrganisation: { findFirst: jest.fn() },
+    patientOrganisation: { findFirst: jest.fn(), findMany: jest.fn() },
   },
 }));
 jest.mock("@yosemite-crew/types", () => ({
@@ -56,7 +56,7 @@ describe("CompanionHistoryService", () => {
     (CompanionOrganisationModel.findOne as jest.Mock).mockReturnValue(
       mockLean({ _id: "link-1" }),
     );
-    (prisma.companionOrganisation.findFirst as jest.Mock).mockResolvedValue({
+    (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue({
       id: "pg-link",
     });
 
@@ -125,7 +125,7 @@ describe("CompanionHistoryService", () => {
 
     const firstPage = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       limit: 2,
     });
 
@@ -136,7 +136,7 @@ describe("CompanionHistoryService", () => {
 
     const secondPage = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       limit: 2,
       cursor: firstPage.nextCursor ?? undefined,
     });
@@ -178,7 +178,7 @@ describe("CompanionHistoryService", () => {
 
     const result = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: ["TASK"],
     });
 
@@ -190,14 +190,14 @@ describe("CompanionHistoryService", () => {
     await expect(
       CompanionHistoryService.listForCompanion({
         organisationId: "bad.$",
-        companionId,
+        patientId: companionId,
       }),
     ).rejects.toThrow("Invalid organisationId");
 
     await expect(
       CompanionHistoryService.listForCompanion({
         organisationId,
-        companionId,
+        patientId: companionId,
         limit: 0,
       }),
     ).rejects.toThrow("Invalid limit");
@@ -205,7 +205,7 @@ describe("CompanionHistoryService", () => {
     await expect(
       CompanionHistoryService.listForCompanion({
         organisationId,
-        companionId,
+        patientId: companionId,
         cursor: "not-base64",
       }),
     ).rejects.toThrow("Invalid cursor");
@@ -215,7 +215,7 @@ describe("CompanionHistoryService", () => {
     await expect(
       CompanionHistoryService.listForCompanion({
         organisationId,
-        companionId,
+        patientId: companionId,
         types: ["BAD" as any],
       }),
     ).rejects.toThrow("Invalid types filter");
@@ -229,7 +229,7 @@ describe("CompanionHistoryService", () => {
     await expect(
       CompanionHistoryService.listForCompanion({
         organisationId,
-        companionId,
+        patientId: companionId,
       }),
     ).rejects.toThrow("Companion not found");
   });
@@ -242,24 +242,24 @@ describe("CompanionHistoryService", () => {
     await expect(
       CompanionHistoryService.listForCompanion({
         organisationId,
-        companionId,
+        patientId: companionId,
       }),
     ).rejects.toThrow("Companion not found");
   });
 
   it("uses postgres visibility when read switch is enabled", async () => {
     (isReadFromPostgres as jest.Mock).mockReturnValue(true);
-    (prisma.companionOrganisation.findFirst as jest.Mock).mockResolvedValue({
+    (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue({
       id: "pg-link",
     });
 
     await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: [],
     });
 
-    expect(prisma.companionOrganisation.findFirst).toHaveBeenCalled();
+    expect(prisma.patientOrganisation.findFirst).toHaveBeenCalled();
     expect(CompanionOrganisationModel.findOne).not.toHaveBeenCalled();
   });
 
@@ -284,7 +284,7 @@ describe("CompanionHistoryService", () => {
 
     const result = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: ["TASK"],
     });
 
@@ -327,7 +327,7 @@ describe("CompanionHistoryService", () => {
 
     const result = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: ["APPOINTMENT"],
     });
 
@@ -366,7 +366,7 @@ describe("CompanionHistoryService", () => {
 
     const result = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: ["DOCUMENT"],
     });
 
@@ -389,7 +389,7 @@ describe("CompanionHistoryService", () => {
 
     const result = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: ["FORM_SUBMISSION"],
     });
 
@@ -418,7 +418,7 @@ describe("CompanionHistoryService", () => {
 
     const result = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: ["LAB_RESULT"],
     });
 
@@ -456,7 +456,7 @@ describe("CompanionHistoryService", () => {
 
     const result = await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: ["INVOICE"],
     });
 
@@ -471,13 +471,13 @@ describe("CompanionHistoryService", () => {
 
     await CompanionHistoryService.listForCompanion({
       organisationId,
-      companionId,
+      patientId: companionId,
       types: ["APPOINTMENT"],
     });
 
     expect(logger.warn).toHaveBeenCalledWith(
       "Companion history appointments failed",
-      expect.objectContaining({ organisationId, companionId }),
+      expect.objectContaining({ organisationId, patientId: companionId }),
     );
   });
 });

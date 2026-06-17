@@ -109,7 +109,7 @@ describe("AppointmentPrismaController", () => {
 
   it("creates document upload urls", async () => {
     (req as any).userId = "user_1";
-    req.body = { companionId: "comp_1", mimeType: "image/png" };
+    req.body = { patientId: "comp_1", mimeType: "image/png" };
     mockedUpload.mockResolvedValue({
       url: "https://upload-url",
       key: "appointments/comp_1/file",
@@ -237,11 +237,11 @@ describe("AppointmentPrismaController", () => {
     await AppointmentController.cancelFromPMS(req as any, res as any);
     await AppointmentController.getById(req as any, res as any);
     await AppointmentController.listByCompanion(
-      { params: { companionId: "comp_1" } } as any,
+      { params: { patientId: "comp_1" } } as any,
       res as any,
     );
     await AppointmentController.listByCompanionForOrganisation(
-      { params: { companionId: "comp_1", organisationId: "org_1" } } as any,
+      { params: { patientId: "comp_1", organisationId: "org_1" } } as any,
       res as any,
     );
     await AppointmentController.listByParent(req as any, res as any);
@@ -295,7 +295,7 @@ describe("AppointmentPrismaController", () => {
     expect(res.status).toHaveBeenCalledWith(400);
 
     await AppointmentController.getDocumentUplaodURL(
-      { body: { companionId: "comp_1" }, userId: "user_1" } as any,
+      { body: { patientId: "comp_1" }, userId: "user_1" } as any,
       res as any,
     );
     expect(res.status).toHaveBeenCalledWith(400);

@@ -18,7 +18,10 @@ module.exports = {
         'fhir',
         'repo',
         'ci',
-        'docs'
+        'docs',
+        'lib',
+        'auth',
+        'database'
       ]
     ],
     'subject-case': [0],

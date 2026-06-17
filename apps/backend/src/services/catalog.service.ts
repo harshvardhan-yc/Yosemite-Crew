@@ -14,8 +14,29 @@ import type {
   SpecialityCatalogView,
   TemplateKind,
 } from "@yosemite-crew/types";
+import {
+  normalizeTemplateKind,
+  toLegacyTemplateKind,
+} from "@yosemite-crew/types";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js";
 import { Prisma } from "@prisma/client";
+import { AvailabilitySlotMongo } from "src/models/base-availability";
 import { prisma } from "src/config/prisma";
+import { AvailabilityService } from "./availability.service";
+import {
+  addCachedPromise,
+  type CachedPromise,
+} from "src/utils/cached-promise-cache";
+import {
+  buildBookableWindowsForVets,
+  mapOrganisationWithAddress,
+  normalizeSlotForSelectedDay,
+  resolveOrganisationTimezone,
+} from "src/utils/scheduling";
+import { filterWithinRadius, getBoundingDeltas } from "src/utils/geo";
+
+dayjs.extend(utc);
 
 export type CatalogPackageItemInput = {
   childProductItemId: string;
@@ -239,6 +260,43 @@ export class CatalogServiceError extends Error {
   }
 }
 
+type CatalogSchedulingContext = {
+  productItemId: string;
+  organisationId: string;
+  durationMinutes: number;
+  vetIds: string[];
+};
+
+type CatalogCalendarPrefillRequest = {
+  organisationId: string;
+  date: Date;
+  minuteOfDay: number;
+  leadId?: string;
+  serviceIds: string[];
+};
+
+type CatalogCalendarPrefillMatch = {
+  serviceId: string;
+  slot: {
+    startTime: string;
+    endTime: string;
+    vetIds: string[];
+  };
+  meta: {
+    localStartMinute: number;
+    localEndMinute: number;
+  };
+};
+
+const SLOT_MATCH_TOLERANCE_MINUTES = 5;
+const CALENDAR_PREFILL_CACHE_TTL_MS = 15_000;
+const CALENDAR_PREFILL_CACHE_MAX_ENTRIES = 2_000;
+const CALENDAR_PREFILL_CACHE_PRUNE_INTERVAL_MS = 15_000;
+const calendarPrefillCache = new Map<
+  string,
+  CachedPromise<CatalogCalendarPrefillMatch[]>
+>();
+
 const requireSafeString = (value: unknown, field: string) => {
   if (typeof value !== "string") {
     throw new CatalogServiceError(`${field} is required.`, 400);
@@ -263,6 +321,69 @@ const optionalSafeString = (value: unknown): string | null => {
   }
   const trimmed = value.trim();
   return trimmed || null;
+};
+
+const resolveCatalogSchedulingContext = async (
+  productItemId: string,
+  organisationId: string,
+): Promise<CatalogSchedulingContext> => {
+  const safeProductItemId = requireSafeString(productItemId, "productItemId");
+  const safeOrganisationId = requireSafeString(
+    organisationId,
+    "organisationId",
+  );
+
+  const product =
+    (
+      await prisma.productItem.findMany({
+        where: {
+          OR: [
+            { id: safeProductItemId },
+            { legacyServiceId: safeProductItemId },
+          ],
+          organisationId: safeOrganisationId,
+        },
+        select: {
+          id: true,
+          organisationId: true,
+          specialityId: true,
+          bookable: {
+            select: {
+              durationMinutes: true,
+            },
+          },
+        },
+        take: 1,
+      })
+    )[0] ?? null;
+
+  if (!product) {
+    throw new CatalogServiceError("Product not found.", 404);
+  }
+
+  if (!product.bookable) {
+    throw new CatalogServiceError("Product is not bookable.", 400);
+  }
+
+  if (!product.specialityId) {
+    throw new CatalogServiceError("Speciality not found.", 404);
+  }
+
+  const speciality = await prisma.speciality.findFirst({
+    where: { id: product.specialityId },
+    select: { memberUserIds: true },
+  });
+
+  if (!speciality) {
+    throw new CatalogServiceError("Speciality not found.", 404);
+  }
+
+  return {
+    productItemId: product.id,
+    organisationId: product.organisationId,
+    durationMinutes: product.bookable.durationMinutes,
+    vetIds: speciality.memberUserIds || [],
+  };
 };
 
 const assertPackageItems = (
@@ -1291,7 +1412,7 @@ const resolveSelectionTemplateKinds = (params: {
 
   if (params.productKind === "PACKAGE") {
     if (params.appointmentKinds.includes("INPATIENT")) {
-      pushUnique("CARE_PATHWAY");
+      pushUnique("INPATIENT_SCHEDULE");
       pushUnique("SOAP_NOTE");
       pushUnique("DISCHARGE_SUMMARY");
       return templateKinds;
@@ -1543,7 +1664,7 @@ const loadTemplateBindingsForProduct = async (params: {
       catalogItemId: params.productItemId,
       template: {
         kind: {
-          in: params.templateKinds,
+          in: params.templateKinds.map(toLegacyTemplateKind),
         },
       },
     },
@@ -1560,7 +1681,7 @@ const loadTemplateBindingsForProduct = async (params: {
   });
 
   return links.map<CatalogTemplateBinding>((link) => ({
-    templateKind: link.template.kind,
+    templateKind: normalizeTemplateKind(link.template.kind),
     templateId: link.template.id,
     templateVersion:
       link.template.publishedVersion ?? link.template.latestVersion,
@@ -2039,6 +2160,282 @@ export const CatalogService = {
     });
 
     return resolveCatalogSelectionFromRecord(product, templateBindings);
+  },
+
+  async getBookableSlotsService(
+    productItemId: string,
+    organisationId: string,
+    referenceDate: Date,
+  ) {
+    const context = await resolveCatalogSchedulingContext(
+      productItemId,
+      organisationId,
+    );
+
+    return buildBookableWindowsForVets({
+      organisationId: context.organisationId,
+      vetIds: context.vetIds,
+      durationMinutes: context.durationMinutes,
+      referenceDate,
+      getBookableSlotsForDate: (...args) =>
+        AvailabilityService.getBookableSlotsForDate(...args),
+    });
+  },
+
+  async getCalendarPrefillMatches(input: CatalogCalendarPrefillRequest) {
+    const serviceIds = Array.from(
+      new Set(
+        input.serviceIds
+          .map((serviceId) => requireSafeString(serviceId, "serviceId"))
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+
+    if (serviceIds.length === 0) {
+      return [];
+    }
+
+    const safeOrganisationId = requireSafeString(
+      input.organisationId,
+      "organisationId",
+    );
+    const safeLeadId = input.leadId
+      ? requireSafeString(input.leadId, "leadId")
+      : undefined;
+
+    const cacheKey = JSON.stringify({
+      organisationId: safeOrganisationId,
+      date: dayjs(input.date).utc().format("YYYY-MM-DD"),
+      minuteOfDay: input.minuteOfDay,
+      leadId: safeLeadId ?? "",
+      serviceIds,
+    });
+
+    return addCachedPromise(
+      calendarPrefillCache,
+      cacheKey,
+      CALENDAR_PREFILL_CACHE_TTL_MS,
+      async () => {
+        const timezone = await resolveOrganisationTimezone({
+          organisationId: safeOrganisationId,
+          leadId: safeLeadId,
+          getLeadPersonalDetails: async (organisationId, leadId) =>
+            (
+              await prisma.userProfile.findFirst({
+                where: {
+                  organizationId: organisationId,
+                  userId: leadId,
+                },
+                select: {
+                  personalDetails: true,
+                },
+              })
+            )?.personalDetails,
+          getOrganisationPersonalDetails: async (organisationId) =>
+            (
+              await prisma.userProfile.findFirst({
+                where: {
+                  organizationId: organisationId,
+                },
+                select: {
+                  personalDetails: true,
+                },
+              })
+            )?.personalDetails,
+        });
+
+        const slotCache = new Map<
+          string,
+          Promise<{
+            date: string;
+            dayOfWeek: string;
+            windows: AvailabilitySlotMongo[];
+          }>
+        >();
+
+        const serviceContexts = await Promise.all(
+          serviceIds.map((serviceId) =>
+            resolveCatalogSchedulingContext(serviceId, input.organisationId),
+          ),
+        );
+
+        const utcDateShifts = [-1, 0, 1] as const;
+        const matches: CatalogCalendarPrefillMatch[] = [];
+
+        for (const context of serviceContexts) {
+          for (const utcDateShift of utcDateShifts) {
+            const referenceDate = dayjs(input.date)
+              .utc()
+              .add(utcDateShift, "day")
+              .toDate();
+
+            const result = await buildBookableWindowsForVets({
+              organisationId: context.organisationId,
+              vetIds: context.vetIds,
+              durationMinutes: context.durationMinutes,
+              referenceDate,
+              slotCache,
+              getBookableSlotsForDate: (...args) =>
+                AvailabilityService.getBookableSlotsForDate(...args),
+            });
+
+            for (const slot of result.windows) {
+              if (
+                input.leadId &&
+                !(slot.vetIds ?? []).includes(
+                  requireSafeString(input.leadId, "leadId"),
+                )
+              ) {
+                continue;
+              }
+
+              const meta = normalizeSlotForSelectedDay({
+                timezone,
+                utcDateShift,
+                slot,
+              });
+              if (!meta) {
+                continue;
+              }
+
+              if (
+                Math.abs(meta.localStartMinute - input.minuteOfDay) >
+                SLOT_MATCH_TOLERANCE_MINUTES
+              ) {
+                continue;
+              }
+
+              matches.push({
+                serviceId: context.productItemId,
+                slot: {
+                  startTime: slot.startTime,
+                  endTime: slot.endTime,
+                  vetIds: slot.vetIds ?? [],
+                },
+                meta,
+              });
+            }
+          }
+        }
+
+        matches.sort((a, b) => {
+          if (a.meta.localStartMinute !== b.meta.localStartMinute) {
+            return a.meta.localStartMinute - b.meta.localStartMinute;
+          }
+          if (a.meta.localEndMinute !== b.meta.localEndMinute) {
+            return a.meta.localEndMinute - b.meta.localEndMinute;
+          }
+          return a.serviceId.localeCompare(b.serviceId);
+        });
+
+        return matches;
+      },
+      {
+        maxEntries: CALENDAR_PREFILL_CACHE_MAX_ENTRIES,
+        pruneIntervalMs: CALENDAR_PREFILL_CACHE_PRUNE_INTERVAL_MS,
+      },
+    );
+  },
+
+  async listOrganisationsProvidingServiceNearby(
+    lat: number,
+    lng: number,
+    radius = 5000,
+  ) {
+    const { latDelta, lngDelta } = getBoundingDeltas(lat, radius);
+
+    const organisations = await prisma.organization.findMany({
+      where: {
+        isVerified: true,
+        isActive: true,
+        address: {
+          is: {
+            latitude: { gte: lat - latDelta, lte: lat + latDelta },
+            longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
+          },
+        },
+      },
+      include: { address: true },
+    });
+
+    const nearbyOrgs = filterWithinRadius(organisations, lat, lng, radius);
+
+    const candidateOrgs =
+      nearbyOrgs.length > 0
+        ? nearbyOrgs
+        : await prisma.organization.findMany({
+            include: { address: true },
+          });
+
+    if (!candidateOrgs.length) {
+      return [];
+    }
+
+    const orgIds = candidateOrgs.map((org) => org.id);
+
+    const allSpecialities = await prisma.speciality.findMany({
+      where: { organisationId: { in: orgIds } },
+      select: { id: true, name: true, organisationId: true },
+    });
+
+    const allProductsForOrgs = await prisma.productItem.findMany({
+      where: {
+        organisationId: { in: orgIds },
+        isActive: true,
+        bookable: {
+          isNot: null,
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        specialityId: true,
+        organisationId: true,
+        prices: {
+          orderBy: [{ isDefault: "desc" as const }],
+          select: {
+            unitPrice: true,
+          },
+          take: 1,
+        },
+      },
+    });
+
+    return candidateOrgs
+      .map((org) => {
+        const orgSpecialities = allSpecialities.filter(
+          (s) => s.organisationId === org.id,
+        );
+
+        const orgServices = allProductsForOrgs
+          .filter((s) => s.organisationId === org.id)
+          .map((product) => ({
+            id: product.id,
+            name: product.name,
+            cost: product.prices?.[0]?.unitPrice ?? 0,
+            specialityId: product.specialityId,
+            organisationId: product.organisationId,
+          }));
+
+        const specialitiesWithServices = orgSpecialities
+          .map((spec) => {
+            const specServices = orgServices.filter(
+              (srv) => srv.specialityId === spec.id,
+            );
+
+            return {
+              ...spec,
+              services: specServices,
+            };
+          })
+          .filter((spec) => spec.services.length > 0);
+
+        return {
+          ...mapOrganisationWithAddress(org),
+          specialities: specialitiesWithServices,
+        };
+      })
+      .filter((org) => org.specialities.length > 0);
   },
 
   async getOrganisationSummary(
