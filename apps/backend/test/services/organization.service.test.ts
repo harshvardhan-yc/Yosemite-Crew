@@ -5,6 +5,7 @@ import {
 import { UserOrganizationService } from "../../src/services/user-organization.service";
 import { SpecialityService } from "../../src/services/speciality.service";
 import { OrganisationRoomService } from "../../src/services/organisation-room.service";
+import { buildS3Key, moveFile } from "../../src/middlewares/upload";
 import * as TypesPkg from "@yosemite-crew/types";
 import { prisma } from "src/config/prisma";
 
@@ -186,6 +187,43 @@ describe("OrganizationService", () => {
       expect(result.response.name).toBe("Test Hospital");
     });
 
+    it("uploads a local image URL during create", async () => {
+      (TypesPkg.fromOrganizationRequestDTO as jest.Mock).mockReturnValueOnce({
+        ...baseDto,
+        imageURL: "http://example.com/image.jpg",
+      });
+      (prisma.organization.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      (prisma.organization.create as jest.Mock).mockResolvedValueOnce(baseOrg);
+      (
+        prisma.organization.findUniqueOrThrow as jest.Mock
+      ).mockResolvedValueOnce({
+        ...baseOrg,
+        imageUrl: "https://cdn.example.com/org/key",
+      });
+      (prisma.userProfile.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      (moveFile as jest.Mock).mockResolvedValueOnce(
+        "https://cdn.example.com/org/key",
+      );
+
+      await OrganizationService.upsert(
+        {
+          ...baseDto,
+          imageURL: "http://example.com/image.jpg",
+        },
+        userId,
+      );
+
+      expect(buildS3Key).toHaveBeenCalledWith("org", orgId, "image/jpg");
+      expect(moveFile).toHaveBeenCalledWith(
+        "http://example.com/image.jpg",
+        "org/key",
+      );
+      expect(prisma.organization.update).toHaveBeenCalledWith({
+        where: { id: orgId },
+        data: { imageUrl: "https://cdn.example.com/org/key" },
+      });
+    });
+
     it("updates an existing organisation", async () => {
       (prisma.organization.findFirst as jest.Mock).mockResolvedValueOnce(
         baseOrg,
@@ -209,6 +247,12 @@ describe("OrganizationService", () => {
   describe("lookups", () => {
     it("returns null when getById receives empty input", async () => {
       await expect(OrganizationService.getById("   ")).resolves.toBeNull();
+    });
+
+    it("returns null for invalid update identifiers", async () => {
+      await expect(
+        OrganizationService.update("   ", baseDto),
+      ).resolves.toBeNull();
     });
 
     it("returns organizations from prisma for getById and listAll", async () => {
@@ -265,6 +309,35 @@ describe("OrganizationService", () => {
         OrganizationService.resolveOrganisation({ name: "Hospital" }),
       ).resolves.toMatchObject({ isPmsOrganisation: true });
     });
+
+    it("returns a non-PMS result when no organisation matches", async () => {
+      (prisma.organization.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      (prisma.organization.findMany as jest.Mock).mockResolvedValueOnce([]);
+
+      await expect(
+        OrganizationService.resolveOrganisation({
+          placeId: "missing-place",
+          lat: 1,
+          lng: 2,
+          name: "Missing",
+        }),
+      ).resolves.toEqual({ isPmsOrganisation: false });
+    });
+
+    it("rejects invalid search input and bad coordinates", async () => {
+      await expect(
+        OrganizationService.resolveOrganisation({} as never),
+      ).rejects.toEqual(
+        expect.objectContaining({
+          message: "Invalid search input.",
+          statusCode: 400,
+        }),
+      );
+
+      await expect(
+        OrganizationService.listNearbyForAppointmentsPaginated(Number.NaN, 20),
+      ).rejects.toThrow("lat/lng are required");
+    });
   });
 
   describe("mutations", () => {
@@ -303,6 +376,10 @@ describe("OrganizationService", () => {
       expect(
         OrganisationRoomService.deleteAllByOrganizationId,
       ).toHaveBeenCalledWith(orgId);
+    });
+
+    it("returns false for invalid delete identifiers", async () => {
+      await expect(OrganizationService.deleteById("   ")).resolves.toBe(false);
     });
   });
 

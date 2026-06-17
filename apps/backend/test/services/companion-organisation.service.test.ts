@@ -107,6 +107,28 @@ describe("CompanionOrganisationService", () => {
       expect(AuditTrailService.recordSafely).not.toHaveBeenCalled();
     });
 
+    it("returns an existing pending PMS link without creating another one", async () => {
+      (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValueOnce(
+        {
+          id: linkId,
+          patientId,
+          organisationId,
+          organisationType: "HOSPITAL",
+          status: "PENDING",
+        },
+      );
+
+      const result = await CompanionOrganisationService.linkByPmsUser({
+        pmsUserId: "pms-1",
+        patientId,
+        organisationId,
+        organisationType: "HOSPITAL",
+      });
+
+      expect(result._id).toBe(linkId);
+      expect(prisma.patientOrganisation.create).not.toHaveBeenCalled();
+    });
+
     it("creates a parent link and records audit", async () => {
       (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValueOnce(
         null,
@@ -164,6 +186,22 @@ describe("CompanionOrganisationService", () => {
       expect(result.status).toBe("PENDING");
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
         expect.objectContaining({ eventType: "PATIENT_ORG_LINK_REQUESTED" }),
+      );
+    });
+
+    it("rejects invalid link identifiers", async () => {
+      await expect(
+        CompanionOrganisationService.linkByParent({
+          parentId: "bad$id",
+          patientId,
+          organisationId,
+          organisationType: "HOSPITAL",
+        }),
+      ).rejects.toEqual(
+        expect.objectContaining({
+          message: "Invalid parentId",
+          statusCode: 400,
+        }),
       );
     });
   });
@@ -240,6 +278,21 @@ describe("CompanionOrganisationService", () => {
         new CompanionOrganisationServiceError("Invalid or expired invite", 404),
       );
     });
+
+    it("rejects rejected invites with missing records", async () => {
+      (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValueOnce(
+        null,
+      );
+
+      await expect(
+        CompanionOrganisationService.rejectInvite({
+          token: "missing",
+          organisationId,
+        }),
+      ).rejects.toThrow(
+        new CompanionOrganisationServiceError("Invalid invite token", 404),
+      );
+    });
   });
 
   describe("link lifecycle", () => {
@@ -303,6 +356,21 @@ describe("CompanionOrganisationService", () => {
       await CompanionOrganisationService.parentRejectLink(parentId, linkId);
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
         expect.objectContaining({ eventType: "PATIENT_ORG_LINK_REJECTED" }),
+      );
+    });
+
+    it("throws when trying to revoke a missing link", async () => {
+      (
+        prisma.patientOrganisation.findUnique as jest.Mock
+      ).mockResolvedValueOnce(null);
+
+      await expect(
+        CompanionOrganisationService.revokeLink(linkId),
+      ).rejects.toEqual(
+        expect.objectContaining({
+          message: "Link not found",
+          statusCode: 404,
+        }),
       );
     });
   });

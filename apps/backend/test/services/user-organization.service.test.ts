@@ -130,6 +130,34 @@ describe("UserOrganizationService", () => {
       expect(prisma.organizationUsageCounter.update).toHaveBeenCalled();
     });
 
+    it("rejects unsupported resource types before persisting", async () => {
+      await expect(
+        UserOrganizationService.create({
+          ...payload,
+          resourceType: "Observation",
+        } as never),
+      ).rejects.toEqual(
+        expect.objectContaining({
+          message: "Invalid payload. Expected FHIR PractitionerRole resource.",
+          statusCode: 400,
+        }),
+      );
+    });
+
+    it("rejects invalid role codes", async () => {
+      await expect(
+        UserOrganizationService.create({
+          ...payload,
+          roleCode: "NOT_A_ROLE",
+        } as never),
+      ).rejects.toEqual(
+        expect.objectContaining({
+          message: expect.stringContaining('Invalid roleCode "NOT_A_ROLE"'),
+          statusCode: 400,
+        }),
+      );
+    });
+
     it("creates via upsert and returns created true", async () => {
       (prisma.userOrganization.findFirst as jest.Mock).mockResolvedValueOnce(
         null,
@@ -234,6 +262,12 @@ describe("UserOrganizationService", () => {
       });
     });
 
+    it("returns false for blank delete identifiers", async () => {
+      await expect(UserOrganizationService.deleteById("   ")).resolves.toBe(
+        false,
+      );
+    });
+
     it("removes mappings by organization id", async () => {
       await UserOrganizationService.deleteAllByOrganizationId(orgId);
       expect(prisma.userOrganization.deleteMany).toHaveBeenCalledWith({
@@ -243,6 +277,16 @@ describe("UserOrganizationService", () => {
   });
 
   describe("aggregations", () => {
+    it("returns an empty list when a user has no mappings", async () => {
+      (prisma.userOrganization.findMany as jest.Mock).mockImplementation(
+        async () => [],
+      );
+
+      await expect(
+        UserOrganizationService.listByUserId(userId),
+      ).resolves.toEqual([]);
+    });
+
     it("lists by user and organisation ids", async () => {
       (prisma.userOrganization.findMany as jest.Mock)
         .mockResolvedValueOnce([
