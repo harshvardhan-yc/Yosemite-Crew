@@ -17,8 +17,11 @@ export class DocumentServiceError extends Error {
 }
 
 const COMPANION_DOCUMENT_CATEGORIES = new Set([
+  "ADMIN",
   "HEALTH",
   "HYGIENE_MAINTENANCE",
+  "DIETARY_PLANS",
+  "OTHERS",
 ]);
 
 const VALID_CATEGORY_SUBCATEGORIES: Record<string, Set<string>> = {
