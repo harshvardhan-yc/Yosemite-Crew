@@ -45,6 +45,13 @@ jest.mock("../../src/models/document", () => ({
   },
 }));
 
+jest.mock("../../src/models/appointment", () => ({
+  __esModule: true,
+  default: {
+    findById: jest.fn(),
+  },
+}));
+
 jest.mock("../../src/models/parent-companion", () => ({
   __esModule: true,
   default: {
@@ -87,6 +94,12 @@ jest.mock("src/config/prisma", () => ({
     documentAttachment: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
+    },
+    renderedDocument: {
+      findMany: jest.fn(),
+    },
+    appointment: {
+      findUnique: jest.fn(),
     },
   },
 }));
@@ -138,6 +151,7 @@ describe("DocumentService", () => {
   let mockSort: jest.Mock;
   let mockParentCompanionExec: jest.Mock;
   let mockCompanionOrganisationExec: jest.Mock;
+  let AppointmentModel: typeof import("../../src/models/appointment").default;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -162,6 +176,14 @@ describe("DocumentService", () => {
     (DocumentModel.findOne as jest.Mock).mockImplementation(createQueryChain);
     (DocumentModel.findById as jest.Mock).mockImplementation(createQueryChain);
     (DocumentModel.deleteOne as jest.Mock).mockImplementation(createQueryChain);
+    AppointmentModel = require("../../src/models/appointment").default;
+    (AppointmentModel.findById as jest.Mock).mockImplementation(() => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({
+        organisationId: validObjectIdStr,
+        companion: { id: validObjectIdStr },
+      }),
+    }));
 
     (ParentCompanionModel.findOne as jest.Mock).mockImplementation(() => ({
       lean: () => ({
@@ -218,6 +240,8 @@ describe("DocumentService", () => {
       (prisma.document.findMany as jest.Mock).mockReset();
       (prisma.document.findUnique as jest.Mock).mockReset();
       (prisma.documentAttachment.findMany as jest.Mock).mockReset();
+      (prisma.renderedDocument.findMany as jest.Mock).mockReset();
+      (prisma.appointment.findUnique as jest.Mock).mockReset();
       (prisma.parentPatient.findFirst as jest.Mock).mockReset();
       (prisma.parentPatient.findMany as jest.Mock).mockReset();
       (prisma.patientOrganisation.findFirst as jest.Mock).mockReset();
@@ -234,6 +258,12 @@ describe("DocumentService", () => {
       (prisma.patientOrganisation.findMany as jest.Mock).mockResolvedValue([
         { patientId: validObjectIdStr },
       ]);
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
+        organisationId: validObjectIdStr,
+        patient: { id: validObjectIdStr },
+      });
+      (prisma.renderedDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (AppointmentModel.findById as jest.Mock).mockReset();
     });
 
     afterEach(() => {
@@ -296,6 +326,42 @@ describe("DocumentService", () => {
       });
       expect(res).toHaveLength(1);
       expect(res[0].appointmentId).toBe(validObjectIdStr);
+    });
+
+    it("listForAppointmentParent includes rendered documents", async () => {
+      (prisma.document.findMany as jest.Mock).mockResolvedValueOnce([]);
+      (prisma.renderedDocument.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: "rendered-1",
+          organisationId: validObjectIdStr,
+          sourceKind: "TEMPLATE_INSTANCE",
+          sourceId: "instance-1",
+          templateId: "template-1",
+          templateVersion: 2,
+          kind: "FORM",
+          title: "Intake form",
+          status: "SIGNED",
+          pdfUrl: "https://example.com/pdf",
+          signing: { status: "SIGNED" },
+          createdAt: new Date("2026-01-02T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+          templateInstance: {
+            appointmentId: validObjectIdStr,
+            encounterId: null,
+          },
+          clinicalArtifact: null,
+        },
+      ]);
+
+      const res = await DocumentService.listForAppointmentParent({
+        appointmentId: validObjectIdStr,
+        parentId: validObjectIdStr,
+      });
+
+      expect(res).toHaveLength(1);
+      expect(res[0].sourceKind).toBe("TEMPLATE_INSTANCE");
+      expect(res[0].templateId).toBe("template-1");
+      expect(res[0].pdfUrl).toBe("https://example.com/pdf");
     });
 
     it("listForAppointmentPms returns mapped docs", async () => {
@@ -711,6 +777,7 @@ describe("DocumentService", () => {
 
   describe("listForAppointmentParent & listForAppointmentPms", () => {
     it("listForAppointmentParent should query by appointmentId", async () => {
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValueOnce(null);
       mockExec.mockResolvedValue([createMockDoc()]);
       await DocumentService.listForAppointmentParent({
         appointmentId: validObjectIdStr,
@@ -723,6 +790,7 @@ describe("DocumentService", () => {
     });
 
     it("listForAppointmentPms should query by appointmentId, patientId, and pmsVisible", async () => {
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValueOnce(null);
       mockExec.mockResolvedValue([createMockDoc()]);
       await DocumentService.listForAppointmentPms({
         appointmentId: validObjectIdStr,

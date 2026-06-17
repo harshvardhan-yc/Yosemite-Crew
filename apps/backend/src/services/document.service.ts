@@ -13,6 +13,7 @@ import { AuditTrailService } from "./audit-trail.service";
 import { prisma } from "src/config/prisma";
 import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
 import { isReadFromPostgres } from "src/config/read-switch";
+import AppointmentModel from "src/models/appointment";
 import ParentCompanionModel from "src/models/parent-companion";
 import CompanionOrganisationModel from "src/models/companion-organisation";
 
@@ -101,6 +102,16 @@ const ensureObjectId = (
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
+
+const normalizeAppointmentId = (appointmentId: string | Types.ObjectId) =>
+  typeof appointmentId === "string"
+    ? appointmentId.trim()
+    : appointmentId.toString();
+
+const parseAppointmentObjectId = (appointmentId: string) =>
+  Types.ObjectId.isValid(appointmentId)
+    ? new Types.ObjectId(appointmentId)
+    : null;
 
 const assertParentCanAccessCompanion = async (
   parentId: string | Types.ObjectId,
@@ -451,6 +462,12 @@ export interface DocumentDto {
 
   uploadedByParentId: string | null;
   uploadedByPmsUserId: string | null;
+  sourceKind?: string;
+  sourceId?: string;
+  templateId?: string | null;
+  templateVersion?: number | null;
+  signingStatus?: string;
+  pdfUrl?: string | null;
 
   createdAt: string;
   updatedAt: string;
@@ -537,9 +554,175 @@ const mapDocumentToDtoFromPrisma = (doc: {
   syncedFromPms: doc.syncedFromPms,
   uploadedByParentId: doc.uploadedByParentId ?? null,
   uploadedByPmsUserId: doc.uploadedByPmsUserId ?? null,
+  sourceKind: "LEGACY_DOCUMENT",
+  sourceId: doc.id,
+  templateId: null,
+  templateVersion: null,
+  signingStatus: doc.pmsVisible ? "SIGNED" : "NOT_STARTED",
+  pdfUrl: null,
   createdAt: doc.createdAt.toISOString(),
   updatedAt: doc.updatedAt.toISOString(),
 });
+
+type AppointmentDocumentLookup = {
+  organisationId: string;
+  patientId?: string | null;
+  source: "postgres" | "mongo";
+};
+
+const loadAppointmentForDocumentLookup = async (
+  appointmentId: string,
+): Promise<AppointmentDocumentLookup | null> => {
+  const normalizedId = normalizeAppointmentId(appointmentId);
+
+  const postgresAppointment = await prisma.appointment.findUnique({
+    where: { id: normalizedId },
+    select: {
+      organisationId: true,
+      patient: true,
+    },
+  });
+
+  if (postgresAppointment) {
+    const patient =
+      postgresAppointment.patient &&
+      typeof postgresAppointment.patient === "object"
+        ? (postgresAppointment.patient as { id?: string | null })
+        : null;
+
+    return {
+      organisationId: postgresAppointment.organisationId,
+      patientId: patient?.id ?? null,
+      source: "postgres",
+    };
+  }
+
+  const mongoObjectId = parseAppointmentObjectId(normalizedId);
+  if (!mongoObjectId) {
+    return null;
+  }
+
+  const legacyAppointment = await AppointmentModel.findById(mongoObjectId)
+    .select({ organisationId: 1, companion: 1 })
+    .lean();
+
+  if (!legacyAppointment) {
+    return null;
+  }
+
+  const companion =
+    legacyAppointment.companion &&
+    typeof legacyAppointment.companion === "object"
+      ? (legacyAppointment.companion as { id?: string | null })
+      : null;
+
+  return {
+    organisationId: legacyAppointment.organisationId,
+    patientId: companion?.id ?? null,
+    source: "mongo",
+  };
+};
+
+const mapRenderedDocumentToDto = (document: {
+  id: string;
+  organisationId: string;
+  sourceKind: string;
+  sourceId: string;
+  templateId: string | null;
+  templateVersion: number | null;
+  kind: string;
+  title: string;
+  status: string;
+  pdfUrl: string | null;
+  signing: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+  templateInstance: {
+    appointmentId: string | null;
+    encounterId: string | null;
+  } | null;
+  clinicalArtifact: {
+    appointmentId: string | null;
+    encounterId: string | null;
+  } | null;
+}): DocumentDto => ({
+  id: document.id,
+  patientId:
+    document.templateInstance?.appointmentId ??
+    document.clinicalArtifact?.appointmentId ??
+    document.sourceId,
+  appointmentId:
+    document.templateInstance?.appointmentId ??
+    document.clinicalArtifact?.appointmentId ??
+    null,
+  category: document.kind,
+  subcategory: null,
+  visitType: null,
+  title: document.title,
+  issuingBusinessName: null,
+  issueDate: null,
+  attachments: [],
+  pmsVisible: document.status === "SIGNED",
+  syncedFromPms: false,
+  uploadedByParentId: null,
+  uploadedByPmsUserId: null,
+  sourceKind: document.sourceKind,
+  sourceId: document.sourceId,
+  templateId: document.templateId,
+  templateVersion: document.templateVersion,
+  signingStatus:
+    typeof document.signing === "object" &&
+    document.signing !== null &&
+    !Array.isArray(document.signing) &&
+    typeof (document.signing as { status?: unknown }).status === "string"
+      ? String((document.signing as { status?: string }).status)
+      : document.status === "SIGNED"
+        ? "SIGNED"
+        : "NOT_STARTED",
+  pdfUrl: document.pdfUrl,
+  createdAt: document.createdAt.toISOString(),
+  updatedAt: document.updatedAt.toISOString(),
+});
+
+const loadRenderedAppointmentDocuments = async (params: {
+  appointmentId: string;
+  organisationId: string;
+}) => {
+  const renderedDocuments = await prisma.renderedDocument.findMany({
+    where: {
+      organisationId: params.organisationId,
+      OR: [
+        {
+          templateInstance: {
+            is: { appointmentId: params.appointmentId },
+          },
+        },
+        {
+          clinicalArtifact: {
+            is: { appointmentId: params.appointmentId },
+          },
+        },
+      ],
+    },
+    include: {
+      templateInstance: {
+        select: {
+          appointmentId: true,
+          encounterId: true,
+        },
+      },
+      clinicalArtifact: {
+        select: {
+          appointmentId: true,
+          encounterId: true,
+        },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  return renderedDocuments.map(mapRenderedDocumentToDto);
+};
 
 const toPrismaDocumentData = (doc: DocumentDocument) => {
   const obj = doc.toObject() as DocumentMongo & {
@@ -794,10 +977,9 @@ export const DocumentService = {
     }
 
     if (params.appointmentId) {
-      filter.appointmentId = ensureObjectId(
-        params.appointmentId,
-        "appointmentId",
-      );
+      filter.appointmentId = isReadFromPostgres()
+        ? String(params.appointmentId).trim()
+        : ensureObjectId(params.appointmentId, "appointmentId");
     }
 
     if (isReadFromPostgres()) {
@@ -812,7 +994,7 @@ export const DocumentService = {
             ? String(params.subcategory).toUpperCase()
             : undefined,
           appointmentId: params.appointmentId
-            ? ensureObjectId(params.appointmentId, "appointmentId").toString()
+            ? String(params.appointmentId).trim()
             : undefined,
         },
         orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
@@ -887,27 +1069,57 @@ export const DocumentService = {
     appointmentId: string | Types.ObjectId;
     parentId: string | Types.ObjectId;
   }): Promise<DocumentDto[]> {
-    const appointmentId = ensureObjectId(params.appointmentId, "appointmentId");
+    const appointmentId = normalizeAppointmentId(params.appointmentId);
     const companionIds = await getParentAccessibleCompanionIds(params.parentId);
+    const appointmentLookup =
+      await loadAppointmentForDocumentLookup(appointmentId);
 
     if (!companionIds.length) {
       return [];
     }
 
-    if (isReadFromPostgres()) {
-      const docs = await prisma.document.findMany({
-        where: {
-          appointmentId: appointmentId.toString(),
-          patientId: { in: companionIds.map((id) => id.toString()) },
-        },
-        orderBy: { createdAt: "desc" },
-        include: { attachments: true },
-      });
-      return docs.map(mapDocumentToDtoFromPrisma);
+    if (appointmentLookup?.source === "postgres") {
+      if (
+        appointmentLookup.patientId &&
+        !companionIds.some(
+          (companionId) =>
+            companionId.toString() === appointmentLookup.patientId,
+        )
+      ) {
+        return [];
+      }
+
+      const [docs, renderedDocs] = await Promise.all([
+        prisma.document.findMany({
+          where: {
+            appointmentId,
+            patientId: { in: companionIds.map((id) => id.toString()) },
+          },
+          orderBy: { createdAt: "desc" },
+          include: { attachments: true },
+        }),
+        loadRenderedAppointmentDocuments({
+          appointmentId,
+          organisationId: appointmentLookup.organisationId,
+        }),
+      ]);
+
+      const mappedDocs = (docs ?? []).map(mapDocumentToDtoFromPrisma);
+
+      return [...mappedDocs, ...renderedDocs].sort(
+        (left, right) =>
+          new Date(right.updatedAt).getTime() -
+          new Date(left.updatedAt).getTime(),
+      );
+    }
+
+    const mongoAppointmentId = parseAppointmentObjectId(appointmentId);
+    if (!mongoAppointmentId || !appointmentLookup) {
+      return [];
     }
 
     const docs = await DocumentModel.find({
-      appointmentId,
+      appointmentId: mongoAppointmentId,
       patientId: { $in: companionIds },
     })
       .sort({ createdAt: -1 })
@@ -922,10 +1134,12 @@ export const DocumentService = {
     organisationId: string;
     patientId?: string | Types.ObjectId;
   }): Promise<DocumentDto[]> {
-    const appointmentId = ensureObjectId(params.appointmentId, "appointmentId");
+    const appointmentId = normalizeAppointmentId(params.appointmentId);
     const companionIds = params.patientId
       ? [ensureObjectId(params.patientId, "patientId")]
       : await getOrganisationAccessibleCompanionIds(params.organisationId);
+    const appointmentLookup =
+      await loadAppointmentForDocumentLookup(appointmentId);
 
     if (params.patientId) {
       await assertPmsCanAccessCompanion(params.organisationId, companionIds[0]);
@@ -935,22 +1149,40 @@ export const DocumentService = {
       return [];
     }
 
-    if (isReadFromPostgres()) {
-      const docs = await prisma.document.findMany({
-        where: {
-          patientId: { in: companionIds.map((id) => id.toString()) },
-          appointmentId: appointmentId.toString(),
-          pmsVisible: true,
-        },
-        orderBy: { createdAt: "desc" },
-        include: { attachments: true },
-      });
-      return docs.map(mapDocumentToDtoFromPrisma);
+    if (appointmentLookup?.source === "postgres") {
+      const [docs, renderedDocs] = await Promise.all([
+        prisma.document.findMany({
+          where: {
+            patientId: { in: companionIds.map((id) => id.toString()) },
+            appointmentId,
+            pmsVisible: true,
+          },
+          orderBy: { createdAt: "desc" },
+          include: { attachments: true },
+        }),
+        loadRenderedAppointmentDocuments({
+          appointmentId,
+          organisationId: appointmentLookup.organisationId,
+        }),
+      ]);
+
+      const mappedDocs = (docs ?? []).map(mapDocumentToDtoFromPrisma);
+
+      return [...mappedDocs, ...renderedDocs].sort(
+        (left, right) =>
+          new Date(right.updatedAt).getTime() -
+          new Date(left.updatedAt).getTime(),
+      );
+    }
+
+    const mongoAppointmentId = parseAppointmentObjectId(appointmentId);
+    if (!mongoAppointmentId || !appointmentLookup) {
+      return [];
     }
 
     const docs = await DocumentModel.find({
       patientId: { $in: companionIds },
-      appointmentId,
+      appointmentId: mongoAppointmentId,
       pmsVisible: true,
     })
       .sort({ createdAt: -1 })
