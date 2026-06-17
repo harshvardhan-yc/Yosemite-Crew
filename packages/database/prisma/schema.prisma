@@ -689,6 +689,7 @@ model Organization {
   type                        OrganizationType
   petNamePreference           PetNamePreference? @default(PATIENT)
   phoneNo                     String
+  email                       String?
   website                     String?
   documensoTeamId             String?
   documensoApiKey             String?

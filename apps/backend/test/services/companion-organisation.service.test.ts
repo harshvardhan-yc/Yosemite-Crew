@@ -49,6 +49,9 @@ jest.mock("src/config/prisma", () => ({
       update: jest.fn(),
       delete: jest.fn(),
     },
+    organization: {
+      findMany: jest.fn(),
+    },
     parentPatient: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -414,16 +417,21 @@ describe("CompanionOrganisationService", () => {
         email: "jane@example.com",
         phoneNumber: "123",
       });
-      (prisma.parentPatient.findMany as jest.Mock).mockResolvedValueOnce([
-        { patientId, parentId, role: "PRIMARY", status: "ACTIVE" },
-      ]);
-      (prisma.parent.findMany as jest.Mock).mockResolvedValueOnce([
+      (prisma.organization.findMany as jest.Mock).mockResolvedValueOnce([
         {
-          id: parentId,
-          firstName: "Jane",
-          lastName: "Doe",
-          email: "jane@example.com",
-          phoneNumber: "123",
+          id: organisationId,
+          name: "Clinic Name",
+          phoneNo: "+1234567890",
+          email: "clinic@example.com",
+          imageUrl: "https://example.com/logo.png",
+          googlePlacesId: "ChIJ...",
+          address: {
+            addressLine: "123 Main St",
+            city: "San Francisco",
+            state: "CA",
+            postalCode: "94105",
+            country: "US",
+          },
         },
       ]);
 
@@ -432,9 +440,35 @@ describe("CompanionOrganisationService", () => {
           patientId,
           "HOSPITAL",
         );
-      expect(companionView.parentName).toBe("Jane Doe");
-      expect(companionView.email).toBe("jane@example.com");
-      expect(companionView.companionName).toBe("Buddy");
+      expect(companionView).toEqual({
+        links: [
+          {
+            id: linkId,
+            patientId,
+            organisationType: "HOSPITAL",
+            status: "ACTIVE",
+            organization: {
+              id: organisationId,
+              name: "Clinic Name",
+              phoneNo: "+1234567890",
+              email: "clinic@example.com",
+              imageURL: "https://example.com/logo.png",
+              googlePlacesId: "ChIJ...",
+              address: {
+                addressLine: "123 Main St",
+                city: "San Francisco",
+                state: "CA",
+                postalCode: "94105",
+                country: "US",
+              },
+            },
+          },
+        ],
+      });
+
+      (prisma.patient.findMany as jest.Mock).mockResolvedValueOnce([]);
+      (prisma.parentPatient.findMany as jest.Mock).mockResolvedValueOnce([]);
+      (prisma.parent.findMany as jest.Mock).mockResolvedValueOnce([]);
 
       const orgView =
         await CompanionOrganisationService.getLinksForOrganisation(

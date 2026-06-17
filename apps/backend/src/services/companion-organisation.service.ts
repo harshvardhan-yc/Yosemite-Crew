@@ -15,6 +15,34 @@ import { Types } from "mongoose";
 
 type BusinessType = "HOSPITAL" | "BREEDER" | "BOARDER" | "GROOMER";
 
+type CompanionOrganisationLinkOrganization = {
+  id: string;
+  name: string;
+  phoneNo: string;
+  email?: string;
+  imageURL?: string;
+  googlePlacesId?: string;
+  address?: {
+    addressLine?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+  };
+};
+
+type CompanionOrganisationLinkWithOrganization = {
+  id: string;
+  organization: CompanionOrganisationLinkOrganization | null;
+  organisationType: BusinessType;
+  status: PatientOrganisationStatus;
+  patientId: string;
+};
+
+type CompanionOrganisationLinksResponse = {
+  links: CompanionOrganisationLinkWithOrganization[];
+};
+
 type PatientOrganisationRecord = PatientOrganisation & {
   _id: string;
 };
@@ -42,6 +70,38 @@ const requireId = (value: string | Types.ObjectId, field: string) => {
 const toRecord = (link: PatientOrganisation): PatientOrganisationRecord => ({
   ...link,
   _id: link.id,
+});
+
+const mapOrganizationFromPrisma = (organization: {
+  id: string;
+  name: string;
+  phoneNo: string;
+  email: string | null;
+  imageUrl: string | null;
+  googlePlacesId: string | null;
+  address: {
+    addressLine: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    country: string | null;
+  } | null;
+}): CompanionOrganisationLinkOrganization => ({
+  id: organization.id,
+  name: organization.name,
+  phoneNo: organization.phoneNo,
+  email: organization.email ?? undefined,
+  imageURL: organization.imageUrl ?? undefined,
+  googlePlacesId: organization.googlePlacesId ?? undefined,
+  address: organization.address
+    ? {
+        addressLine: organization.address.addressLine ?? undefined,
+        city: organization.address.city ?? undefined,
+        state: organization.address.state ?? undefined,
+        postalCode: organization.address.postalCode ?? undefined,
+        country: organization.address.country ?? undefined,
+      }
+    : undefined,
 });
 
 const findActiveOrPendingLink = async (params: {
@@ -530,45 +590,59 @@ export const CompanionOrganisationService = {
   async getLinksForCompanionByOrganisationTye(
     patientId: string | Types.ObjectId,
     type: BusinessType,
-  ) {
+  ): Promise<CompanionOrganisationLinksResponse> {
     const id = requireId(patientId, "patientId");
 
-    const [links, parentLink, companion] = await Promise.all([
-      prisma.patientOrganisation.findMany({
-        where: {
-          patientId: id,
-          organisationType: type as OrganisationType,
-          OR: [
-            { status: PatientOrganisationStatus.ACTIVE },
-            {
-              status: PatientOrganisationStatus.PENDING,
-              organisationId: { not: null },
-            },
-          ],
-        },
-      }),
-      prisma.parentPatient.findFirst({
-        where: { patientId: id, role: "PRIMARY", status: "ACTIVE" },
-      }),
-      prisma.patient.findUnique({
-        where: { id },
-      }),
-    ]);
+    const links = await prisma.patientOrganisation.findMany({
+      where: {
+        patientId: id,
+        organisationType: type as OrganisationType,
+        OR: [
+          { status: PatientOrganisationStatus.ACTIVE },
+          {
+            status: PatientOrganisationStatus.PENDING,
+            organisationId: { not: null },
+          },
+        ],
+      },
+    });
 
-    const parent = parentLink
-      ? await prisma.parent.findUnique({
-          where: { id: parentLink.parentId },
+    const organisationIds = links
+      .map((link) => link.organisationId)
+      .filter((organisationId): organisationId is string =>
+        Boolean(organisationId),
+      );
+
+    const organizations = organisationIds.length
+      ? await prisma.organization.findMany({
+          where: {
+            id: {
+              in: organisationIds,
+            },
+          },
+          include: {
+            address: true,
+          },
         })
-      : null;
+      : [];
+
+    const organizationMap = new Map(
+      organizations.map((organization) => [
+        organization.id,
+        mapOrganizationFromPrisma(organization),
+      ]),
+    );
 
     return {
-      links: links.map(toRecord),
-      parentName: parent
-        ? [parent.firstName, parent.lastName].filter(Boolean).join(" ")
-        : undefined,
-      email: parent?.email,
-      companionName: companion?.name,
-      phoneNumber: parent?.phoneNumber ?? undefined,
+      links: links.map((link) => ({
+        id: link.id,
+        organization: link.organisationId
+          ? (organizationMap.get(link.organisationId) ?? null)
+          : null,
+        organisationType: link.organisationType as BusinessType,
+        status: link.status,
+        patientId: link.patientId,
+      })),
     };
   },
 
