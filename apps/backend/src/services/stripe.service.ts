@@ -328,92 +328,46 @@ export const StripeService = {
   async createOrGetConnectedAccount(organisationId: string) {
     const stripe = getStripeClient();
 
-    if (isReadFromPostgres()) {
-      const org = await prisma.organization.findUnique({
-        where: { id: organisationId },
-      });
-      if (!org) throw new Error("Organisation not found");
-
-      if (org.stripeAccountId) return { accountId: org.stripeAccountId };
-
-      const account = await stripe.accounts.create({});
-
-      await prisma.organization.update({
-        where: { id: organisationId },
-        data: { stripeAccountId: account.id },
-      });
-
-      await prisma.organizationBilling.upsert({
-        where: { orgId: organisationId },
-        create: { orgId: organisationId, connectAccountId: account.id },
-        update: { connectAccountId: account.id },
-      });
-
-      return { accountId: account.id };
-    }
-
-    const org = await OrganizationModel.findById(organisationId);
+    const org = await prisma.organization.findUnique({
+      where: { id: organisationId },
+    });
     if (!org) throw new Error("Organisation not found");
 
     if (org.stripeAccountId) return { accountId: org.stripeAccountId };
 
-    // NOTE: For Standard accounts, onboarding flows differ (OAuth / account links are common).
-    // Keep your existing approach if it works in your Connect settings.
     const account = await stripe.accounts.create({});
 
-    org.stripeAccountId = account.id;
-    await org.save();
+    await prisma.organization.update({
+      where: { id: organisationId },
+      data: { stripeAccountId: account.id },
+    });
 
-    if (shouldDualWrite) {
-      try {
-        await prisma.organization.updateMany({
-          where: { id: organisationId },
-          data: { stripeAccountId: account.id },
-        });
-      } catch (err) {
-        handleDualWriteError("Organization stripeAccountId", err);
-      }
-    }
-
-    // Ensure OrgBilling doc exists and store connectAccountId
-    const billingDoc = (await OrgBilling.findOneAndUpdate(
-      { orgId: organisationId },
-      {
-        $set: { connectAccountId: account.id },
-        $setOnInsert: { orgId: organisationId },
-      },
-      { upsert: true, new: true },
-    )) as unknown as OrgBillingDoc | null;
-    await syncOrgBillingToPostgres(billingDoc);
+    await prisma.organizationBilling.upsert({
+      where: { orgId: organisationId },
+      create: { orgId: organisationId, connectAccountId: account.id },
+      update: { connectAccountId: account.id },
+    });
 
     return { accountId: account.id };
   },
 
   async getAccountStatus(organisationId: string) {
-    if (isReadFromPostgres()) {
-      const [orgBilling, orgUsage] = await Promise.all([
-        prisma.organizationBilling.findUnique({
-          where: { orgId: organisationId },
-        }),
-        prisma.organizationUsageCounter.findUnique({
-          where: { orgId: organisationId },
-        }),
-      ]);
-      return { orgBilling, orgUsage };
-    }
-
-    const org = await OrganizationModel.findById(organisationId);
+    const org = await prisma.organization.findUnique({
+      where: { id: organisationId },
+      select: { id: true },
+    });
     if (!org) {
       throw new Error("Organistaion not found");
     }
 
-    const orgBilling = (await OrgBilling.findOne({
-      orgId: org._id,
-    }).lean()) as unknown as OrgBillingDoc | null;
-
-    const orgUsage = (await OrgUsageCounters.findOne({
-      orgId: org._id,
-    }).lean()) as unknown as OrgUsageCountersDoc | null;
+    const [orgBilling, orgUsage] = await Promise.all([
+      prisma.organizationBilling.findUnique({
+        where: { orgId: org.id },
+      }),
+      prisma.organizationUsageCounter.findUnique({
+        where: { orgId: org.id },
+      }),
+    ]);
 
     return {
       orgBilling: orgBilling,
@@ -423,38 +377,9 @@ export const StripeService = {
 
   async createOnboardingLink(organisationId: string) {
     const stripe = getStripeClient();
-
-    if (isReadFromPostgres()) {
-      const orgBilling = await prisma.organizationBilling.findUnique({
-        where: { orgId: organisationId },
-      });
-
-      if (!orgBilling?.connectAccountId)
-        throw new Error("Organisation does not have a Stripe account");
-
-      const accountSession = await stripe.accountSessions.create({
-        account: orgBilling.connectAccountId,
-        components: {
-          account_onboarding: { enabled: true },
-          tax_settings: {
-            enabled: true,
-            features: {},
-          },
-          tax_registrations: {
-            enabled: true,
-          },
-        },
-      });
-
-      return { client_secret: accountSession.client_secret };
-    }
-
-    const org = await OrganizationModel.findById(organisationId);
-    if (!org) throw new Error("No Organisation Found");
-
-    const orgBilling = (await OrgBilling.findOne({
-      orgId: org._id,
-    })) as unknown as OrgBillingDoc | null;
+    const orgBilling = await prisma.organizationBilling.findUnique({
+      where: { orgId: organisationId },
+    });
 
     if (!orgBilling?.connectAccountId)
       throw new Error("Organisation does not have a Stripe account");
@@ -485,131 +410,37 @@ export const StripeService = {
     interval: "month" | "year",
   ) {
     const stripe = getStripeClient();
-
-    if (isReadFromPostgres()) {
-      const org = await prisma.organization.findUnique({
-        where: { id: orgId },
-      });
-      if (!org) throw new Error("Organisation not found");
-
-      const { billing } = await ensureBillingDocs(orgId);
-
-      if (!billing.connectAccountId && org.stripeAccountId) {
-        await prisma.organizationBilling.update({
-          where: { orgId },
-          data: { connectAccountId: org.stripeAccountId },
-        });
-      }
-
-      const seats = await computeBillableSeats(orgId);
-      if (seats < 1)
-        throw new Error(
-          "No users found. Add at least 1 user to start Business.",
-        );
-
-      await prisma.organizationUsageCounter.updateMany({
-        where: { orgId },
-        data: { usersActiveCount: seats, usersBillableCount: seats },
-      });
-
-      const priceId =
-        interval === "month"
-          ? process.env.STRIPE_PRICE_BUSINESS_MONTH
-          : process.env.STRIPE_PRICE_BUSINESS_YEAR;
-
-      if (!priceId) throw new Error("Missing STRIPE_PRICE_BUSINESS_* env vars");
-
-      let billingRow = await prisma.organizationBilling.findUnique({
-        where: { orgId },
-      });
-      if (!billingRow?.stripeCustomerId) {
-        const customer = await stripe.customers.create({
-          name: org.name,
-          metadata: {
-            orgId: String(orgId),
-            connectAccountId: String(billingRow?.connectAccountId ?? ""),
-          },
-        });
-
-        billingRow = await prisma.organizationBilling.update({
-          where: { orgId },
-          data: { stripeCustomerId: customer.id },
-        });
-      }
-
-      const successUrl = `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`;
-      const cancelUrl = `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`;
-
-      const session = await stripe.checkout.sessions.create({
-        mode: "subscription",
-        customer: billingRow?.stripeCustomerId ?? undefined,
-        line_items: [
-          {
-            price: priceId,
-            quantity: seats,
-          },
-        ],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        allow_promotion_codes: true,
-        subscription_data: {
-          metadata: {
-            orgId: String(orgId),
-            connectAccountId: String(billingRow?.connectAccountId ?? ""),
-          },
-        },
-        tax_id_collection: {
-          enabled: true,
-        },
-        automatic_tax: {
-          enabled: true,
-        },
-        billing_address_collection: "auto",
-        metadata: {
-          orgId: String(orgId),
-          interval,
-          seats: String(seats),
-        },
-        customer_update: {
-          name: "auto",
-          address: "auto",
-        },
-      });
-
-      return { url: session.url };
-    }
-
-    const org = await OrganizationModel.findById(orgId);
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+    });
     if (!org) throw new Error("Organisation not found");
 
-    const { billing } = await ensureBillingDocs(orgId);
+    let billingRow = await prisma.organizationBilling.upsert({
+      where: { orgId },
+      create: { orgId },
+      update: {},
+    });
 
-    // Ensure connectAccountId mirrored into billing
-    if (!billing.connectAccountId && org.stripeAccountId) {
-      billing.connectAccountId = org.stripeAccountId;
-      await billing.save();
-      await syncOrgBillingToPostgres(billing);
+    if (!billingRow.connectAccountId && org.stripeAccountId) {
+      billingRow = await prisma.organizationBilling.update({
+        where: { orgId },
+        data: { connectAccountId: org.stripeAccountId },
+      });
     }
 
     const seats = await computeBillableSeats(orgId);
     if (seats < 1)
       throw new Error("No users found. Add at least 1 user to start Business.");
 
-    // Update usage counters snapshot
-    await OrgUsageCounters.updateOne(
-      { orgId },
-      { usersActiveCount: seats, usersBillableCount: seats },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.organizationUsageCounter.updateMany({
-          where: { orgId },
-          data: { usersActiveCount: seats, usersBillableCount: seats },
-        });
-      } catch (err) {
-        handleDualWriteError("OrganizationUsageCounter snapshot", err);
-      }
-    }
+    await prisma.organizationUsageCounter.upsert({
+      where: { orgId },
+      create: {
+        orgId,
+        usersActiveCount: seats,
+        usersBillableCount: seats,
+      },
+      update: { usersActiveCount: seats, usersBillableCount: seats },
+    });
 
     const priceId =
       interval === "month"
@@ -618,19 +449,19 @@ export const StripeService = {
 
     if (!priceId) throw new Error("Missing STRIPE_PRICE_BUSINESS_* env vars");
 
-    // Create/reuse platform Customer
-    if (!billing.stripeCustomerId) {
+    if (!billingRow.stripeCustomerId) {
       const customer = await stripe.customers.create({
         name: org.name,
         metadata: {
           orgId: String(orgId),
-          connectAccountId: String(billing.connectAccountId ?? ""),
+          connectAccountId: String(billingRow.connectAccountId ?? ""),
         },
       });
 
-      billing.stripeCustomerId = customer.id;
-      await billing.save();
-      await syncOrgBillingToPostgres(billing);
+      billingRow = await prisma.organizationBilling.update({
+        where: { orgId },
+        data: { stripeCustomerId: customer.id },
+      });
     }
 
     const successUrl = `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`;
@@ -638,7 +469,7 @@ export const StripeService = {
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: billing.stripeCustomerId,
+      customer: billingRow.stripeCustomerId ?? undefined,
       line_items: [
         {
           price: priceId,
@@ -651,7 +482,7 @@ export const StripeService = {
       subscription_data: {
         metadata: {
           orgId: String(orgId),
-          connectAccountId: String(billing.connectAccountId ?? ""),
+          connectAccountId: String(billingRow.connectAccountId ?? ""),
         },
       },
       tax_id_collection: {

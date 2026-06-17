@@ -189,36 +189,6 @@ describe("StripeService", () => {
     });
   });
 
-  describe("createOrGetConnectedAccount", () => {
-    it("should throw error if org not found", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce(null);
-      await expect(
-        StripeService.createOrGetConnectedAccount("org_1"),
-      ).rejects.toThrow("Organisation not found");
-    });
-
-    it("should return existing accountId if org has one", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        stripeAccountId: "acct_existing",
-      });
-      const result = await StripeService.createOrGetConnectedAccount("org_1");
-      expect(result).toEqual({ accountId: "acct_existing" });
-    });
-
-    it("should create new account and update billing if org does not have one", async () => {
-      const mockOrg = { _id: "org_1", stripeAccountId: null, save: jest.fn() };
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce(mockOrg);
-      mStripe.accounts.create.mockResolvedValueOnce({ id: "acct_new" });
-      (OrgBilling.findOneAndUpdate as jest.Mock).mockResolvedValueOnce({});
-
-      const result = await StripeService.createOrGetConnectedAccount("org_1");
-
-      expect(result).toEqual({ accountId: "acct_new" });
-      expect(mockOrg.stripeAccountId).toBe("acct_new");
-      expect(mockOrg.save).toHaveBeenCalled();
-    });
-  });
-
   describe("createOrGetConnectedAccount (postgres)", () => {
     const originalReadFromPostgres = process.env.READ_FROM_POSTGRES;
 
@@ -266,31 +236,6 @@ describe("StripeService", () => {
     });
   });
 
-  describe("getAccountStatus", () => {
-    it("should throw if org not found", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce(null);
-      await expect(StripeService.getAccountStatus("org_1")).rejects.toThrow(
-        "Organistaion not found",
-      );
-    });
-
-    it("should return billing and usage data", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        _id: "org_1",
-      });
-      (OrgBilling.findOne as jest.Mock).mockReturnValueOnce({
-        lean: jest.fn().mockResolvedValue({ plan: "free" }),
-      });
-      (OrgUsageCounters.findOne as jest.Mock).mockReturnValueOnce({
-        lean: jest.fn().mockResolvedValue({ users: 5 }),
-      });
-
-      const result = await StripeService.getAccountStatus("org_1");
-      expect(result.orgBilling).toEqual({ plan: "free" });
-      expect(result.orgUsage).toEqual({ users: 5 });
-    });
-  });
-
   describe("getAccountStatus (postgres)", () => {
     const originalReadFromPostgres = process.env.READ_FROM_POSTGRES;
 
@@ -303,6 +248,9 @@ describe("StripeService", () => {
     });
 
     it("should return billing and usage rows", async () => {
+      (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: "org_1",
+      });
       (
         prisma.organizationBilling.findUnique as jest.Mock
       ).mockResolvedValueOnce({ orgId: "org_1" });
@@ -662,128 +610,6 @@ describe("StripeService", () => {
     });
   });
 
-  describe("createOnboardingLink", () => {
-    it("should throw if org not found", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce(null);
-      await expect(StripeService.createOnboardingLink("org_1")).rejects.toThrow(
-        "No Organisation Found",
-      );
-    });
-
-    it("should throw if org has no stripe account", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        _id: "org_1",
-      });
-      (OrgBilling.findOne as jest.Mock).mockResolvedValueOnce({
-        connectAccountId: null,
-      });
-      await expect(StripeService.createOnboardingLink("org_1")).rejects.toThrow(
-        "Organisation does not have a Stripe account",
-      );
-    });
-
-    it("should create account session", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        _id: "org_1",
-      });
-      (OrgBilling.findOne as jest.Mock).mockResolvedValueOnce({
-        connectAccountId: "acct_123",
-      });
-      mStripe.accountSessions.create.mockResolvedValueOnce({
-        client_secret: "secret_123",
-      });
-
-      const result = await StripeService.createOnboardingLink("org_1");
-      expect(result.client_secret).toBe("secret_123");
-    });
-  });
-
-  describe("createBusinessCheckoutSession", () => {
-    it("should throw if org not found", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce(null);
-      await expect(
-        StripeService.createBusinessCheckoutSession("org_1", "month"),
-      ).rejects.toThrow("Organisation not found");
-    });
-
-    it("should throw if no billable seats", async () => {
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        _id: "org_1",
-      });
-      (OrgBilling.findOneAndUpdate as jest.Mock).mockResolvedValueOnce({
-        connectAccountId: null,
-        save: jest.fn(),
-      });
-      (OrgUsageCounters.findOneAndUpdate as jest.Mock).mockResolvedValueOnce(
-        {},
-      );
-      (UserOrganizationModel.countDocuments as jest.Mock).mockResolvedValueOnce(
-        0,
-      );
-
-      await expect(
-        StripeService.createBusinessCheckoutSession("org_1", "month"),
-      ).rejects.toThrow("No users found");
-    });
-
-    it("should throw if missing priceId vars", async () => {
-      delete process.env.STRIPE_PRICE_BUSINESS_MONTH;
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        _id: "org_1",
-      });
-      (OrgBilling.findOneAndUpdate as jest.Mock).mockResolvedValueOnce({
-        connectAccountId: null,
-        save: jest.fn(),
-      });
-      (OrgUsageCounters.findOneAndUpdate as jest.Mock).mockResolvedValueOnce(
-        {},
-      );
-      (UserOrganizationModel.countDocuments as jest.Mock).mockResolvedValueOnce(
-        1,
-      );
-
-      await expect(
-        StripeService.createBusinessCheckoutSession("org_1", "month"),
-      ).rejects.toThrow("Missing STRIPE_PRICE_BUSINESS_* env vars");
-    });
-
-    it("should create customer and checkout session (and sync connect ID)", async () => {
-      const mockBilling = {
-        stripeCustomerId: null,
-        save: jest.fn(),
-        connectAccountId: null,
-      };
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        _id: "org_1",
-        name: "Test Org",
-        stripeAccountId: "acct_sync",
-      });
-      (OrgBilling.findOneAndUpdate as jest.Mock).mockResolvedValueOnce(
-        mockBilling,
-      );
-      (OrgUsageCounters.findOneAndUpdate as jest.Mock).mockResolvedValueOnce(
-        {},
-      );
-      (UserOrganizationModel.countDocuments as jest.Mock).mockResolvedValueOnce(
-        5,
-      );
-
-      mStripe.customers.create.mockResolvedValueOnce({ id: "cus_123" });
-      mStripe.checkout.sessions.create.mockResolvedValueOnce({
-        url: "http://checkout.url",
-      });
-
-      const result = await StripeService.createBusinessCheckoutSession(
-        "org_1",
-        "year",
-      );
-
-      expect(mockBilling.connectAccountId).toBe("acct_sync");
-      expect(mockBilling.stripeCustomerId).toBe("cus_123");
-      expect(result.url).toBe("http://checkout.url");
-    });
-  });
-
   describe("createBusinessCheckoutSession (postgres)", () => {
     const originalReadFromPostgres = process.env.READ_FROM_POSTGRES;
 
@@ -859,6 +685,17 @@ describe("StripeService", () => {
         orgId: "org_1",
         connectAccountId: null,
       });
+      (prisma.organizationBilling.update as jest.Mock)
+        .mockResolvedValueOnce({
+          orgId: "org_1",
+          connectAccountId: "acct_1",
+          stripeCustomerId: null,
+        })
+        .mockResolvedValueOnce({
+          orgId: "org_1",
+          connectAccountId: "acct_1",
+          stripeCustomerId: "cus_1",
+        });
       (
         prisma.organizationUsageCounter.upsert as jest.Mock
       ).mockResolvedValueOnce({ orgId: "org_1" });
@@ -866,18 +703,7 @@ describe("StripeService", () => {
       (
         prisma.organizationUsageCounter.updateMany as jest.Mock
       ).mockResolvedValueOnce({});
-      (
-        prisma.organizationBilling.findUnique as jest.Mock
-      ).mockResolvedValueOnce({
-        orgId: "org_1",
-        stripeCustomerId: null,
-        connectAccountId: "acct_1",
-      });
       mStripe.customers.create.mockResolvedValueOnce({ id: "cus_1" });
-      (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({
-        orgId: "org_1",
-        stripeCustomerId: "cus_1",
-      });
       mStripe.checkout.sessions.create.mockResolvedValueOnce({
         url: "http://checkout.url",
       });
@@ -889,9 +715,14 @@ describe("StripeService", () => {
 
       expect(result).toEqual({ url: "http://checkout.url" });
       expect(prisma.organizationBilling.update).toHaveBeenCalled();
-      expect(prisma.organizationUsageCounter.updateMany).toHaveBeenCalledWith({
+      expect(prisma.organizationUsageCounter.upsert).toHaveBeenCalledWith({
         where: { orgId: "org_1" },
-        data: { usersActiveCount: 3, usersBillableCount: 3 },
+        create: {
+          orgId: "org_1",
+          usersActiveCount: 3,
+          usersBillableCount: 3,
+        },
+        update: { usersActiveCount: 3, usersBillableCount: 3 },
       });
     });
   });
