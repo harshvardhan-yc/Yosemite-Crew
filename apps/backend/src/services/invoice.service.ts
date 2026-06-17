@@ -1,6 +1,8 @@
 import mongoose, { Types } from "mongoose";
 import InvoiceModel, { InvoiceDocument, InvoiceMongo } from "../models/invoice";
-import AppointmentModel from "src/models/appointment";
+import AppointmentModel, {
+  type AppointmentMongo,
+} from "src/models/appointment";
 import ServiceModel from "src/models/service";
 import {
   Invoice,
@@ -88,31 +90,39 @@ const assertAppointmentInOrganisation = async (
   }
 };
 
-const resolveAuditTargetsForInvoice = async (invoice: InvoiceDocument) => {
-  if (invoice.organisationId && invoice.companionId) {
+const resolveAuditTargetsForInvoice = async (
+  invoice: InvoiceDocument,
+): Promise<{
+  organisationId?: string;
+  patientId?: string;
+}> => {
+  if (invoice.organisationId && invoice.patientId) {
     return {
       organisationId: invoice.organisationId,
-      companionId: invoice.companionId,
+      patientId: invoice.patientId,
     };
   }
 
   if (invoice.appointmentId) {
     const appointment = await AppointmentModel.findById(invoice.appointmentId, {
       organisationId: 1,
-      "companion.id": 1,
-    }).lean();
+      patient: 1,
+    }).lean<Pick<AppointmentMongo, "organisationId" | "patient">>();
 
-    if (appointment?.organisationId && appointment?.companion?.id) {
-      return {
-        organisationId: appointment.organisationId,
-        companionId: appointment.companion.id,
-      };
+    if (appointment?.organisationId) {
+      const { patientId } = getAppointmentPatientLink(appointment);
+      if (patientId) {
+        return {
+          organisationId: appointment.organisationId,
+          patientId,
+        };
+      }
     }
   }
 
   return {
     organisationId: invoice.organisationId,
-    companionId: invoice.companionId,
+    patientId: invoice.patientId,
   };
 };
 
@@ -156,7 +166,7 @@ const toDomain = (doc: InvoiceDocument): Invoice => {
   return {
     id: o._id.toString(),
     parentId: o.parentId?.toString(),
-    companionId: o.companionId?.toString(),
+    patientId: o.patientId?.toString(),
     organisationId: o.organisationId?.toString(),
     appointmentId: o.appointmentId?.toString(),
     items,
@@ -207,7 +217,7 @@ const normalizeInvoiceMetadata = (
 const toDomainFromPrisma = (row: {
   id: string;
   parentId: string | null;
-  companionId: string | null;
+  patientId: string | null;
   organisationId: string | null;
   appointmentId: string | null;
   items: Prisma.JsonValue;
@@ -241,7 +251,7 @@ const toDomainFromPrisma = (row: {
   return {
     id: row.id,
     parentId: row.parentId ?? undefined,
-    companionId: row.companionId ?? undefined,
+    patientId: row.patientId ?? undefined,
     organisationId: row.organisationId ?? undefined,
     appointmentId: row.appointmentId ?? undefined,
     items,
@@ -350,7 +360,7 @@ const buildMongoRefundMetadata = (
 const recordInvoiceAuditEvent = async (
   targets: {
     organisationId?: string | null;
-    companionId?: string | null;
+    patientId?: string | null;
   },
   payload: {
     eventType: AuditEventType;
@@ -358,13 +368,13 @@ const recordInvoiceAuditEvent = async (
     metadata: Record<string, unknown>;
   },
 ) => {
-  if (!targets.organisationId || !targets.companionId) {
+  if (!targets.organisationId || !targets.patientId) {
     return;
   }
 
   await AuditTrailService.recordSafely({
     organisationId: targets.organisationId,
-    companionId: targets.companionId,
+    patientId: targets.patientId,
     eventType: payload.eventType,
     actorType: "SYSTEM",
     entityType: "INVOICE",
@@ -376,7 +386,7 @@ const recordInvoiceAuditEvent = async (
 const recordInvoiceAuditForRow = async (
   row: {
     organisationId: string | null;
-    companionId: string | null;
+    patientId: string | null;
     appointmentId: string | null;
   },
   eventType: AuditEventType,
@@ -395,6 +405,37 @@ const recordInvoiceAuditForDoc = async (
 ) => {
   const targets = await resolveAuditTargetsForInvoice(doc);
   await recordInvoiceAuditEvent(targets, { eventType, entityId, metadata });
+};
+
+const getAppointmentPatientLink = (appointment: {
+  patient?: Prisma.JsonValue | null;
+  companion?: Prisma.JsonValue | null;
+}) => {
+  const value = appointment.patient ?? appointment.companion ?? null;
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const companion = value as Record<string, unknown>;
+  const patientId = typeof companion.id === "string" ? companion.id : undefined;
+  const parent = companion.parent as Record<string, unknown> | undefined;
+  const parentId =
+    parent && typeof parent.id === "string" ? parent.id : undefined;
+
+  return { patientId, parentId };
+};
+
+const getAppointmentPatientIdOrThrow = (appointment: {
+  patient?: Prisma.JsonValue | null;
+  companion?: Prisma.JsonValue | null;
+}) => {
+  const { patientId } = getAppointmentPatientLink(appointment);
+
+  if (!patientId) {
+    throw new InvoiceServiceError("Appointment patient links are missing", 500);
+  }
+
+  return patientId;
 };
 
 const cancelUnpaidInvoiceRow = async (
@@ -470,28 +511,14 @@ const refundPaidInvoiceDoc = async (
 };
 
 const coerceAppointmentCompanionId = (appointment: {
-  companion: Prisma.JsonValue | null;
-}): string | undefined => {
-  if (!appointment.companion || typeof appointment.companion !== "object") {
-    return undefined;
-  }
-  const companion = appointment.companion as Record<string, unknown>;
-  return typeof companion.id === "string" ? companion.id : undefined;
-};
+  patient?: Prisma.JsonValue | null;
+  companion?: Prisma.JsonValue | null;
+}): string | undefined => getAppointmentPatientLink(appointment).patientId;
 
 const coerceAppointmentParentId = (appointment: {
-  companion: Prisma.JsonValue | null;
-}): string | undefined => {
-  if (!appointment.companion || typeof appointment.companion !== "object") {
-    return undefined;
-  }
-  const companion = appointment.companion as Record<string, unknown>;
-  if (!companion.parent || typeof companion.parent !== "object") {
-    return undefined;
-  }
-  const parent = companion.parent as Record<string, unknown>;
-  return typeof parent.id === "string" ? parent.id : undefined;
-};
+  patient?: Prisma.JsonValue | null;
+  companion?: Prisma.JsonValue | null;
+}): string | undefined => getAppointmentPatientLink(appointment).parentId;
 
 const coerceAppointmentTypeId = (
   appointmentType: Prisma.JsonValue | null,
@@ -555,28 +582,32 @@ const resolveCatalogSelectionSafe = async (
 
 const resolveAuditTargetsForInvoiceRow = async (row: {
   organisationId: string | null;
-  companionId: string | null;
+  patientId: string | null;
   appointmentId: string | null;
 }) => {
-  if (row.organisationId && row.companionId) {
+  if (row.organisationId && row.patientId) {
     return {
       organisationId: row.organisationId,
-      companionId: row.companionId,
+      patientId: row.patientId,
     };
   }
 
   if (row.appointmentId) {
-    const appointment = await prisma.appointment.findUnique({
+    const appointment = (await prisma.appointment.findUnique({
       where: { id: row.appointmentId },
-      select: { organisationId: true, companion: true },
-    });
+      select: { organisationId: true, patient: true },
+    })) as {
+      organisationId?: string | null;
+      patient?: Prisma.JsonValue | null;
+      companion?: Prisma.JsonValue | null;
+    } | null;
 
     if (appointment?.organisationId) {
-      const companionId = coerceAppointmentCompanionId(appointment);
-      if (companionId) {
+      const patientId = coerceAppointmentCompanionId(appointment);
+      if (patientId) {
         return {
           organisationId: appointment.organisationId,
-          companionId,
+          patientId,
         };
       }
     }
@@ -584,7 +615,7 @@ const resolveAuditTargetsForInvoiceRow = async (row: {
 
   return {
     organisationId: row.organisationId ?? undefined,
-    companionId: row.companionId ?? undefined,
+    patientId: row.patientId ?? undefined,
   };
 };
 
@@ -598,7 +629,7 @@ const toPrismaInvoiceData = (doc: InvoiceDocument) => {
   return {
     id: obj._id.toString(),
     parentId: obj.parentId?.toString() ?? undefined,
-    companionId: obj.companionId?.toString() ?? undefined,
+    patientId: obj.patientId?.toString() ?? undefined,
     organisationId: obj.organisationId?.toString() ?? undefined,
     appointmentId: obj.appointmentId?.toString() ?? undefined,
     items: obj.items as unknown as Prisma.InputJsonValue,
@@ -669,7 +700,7 @@ export const InvoiceService = {
       appointmentId: string;
       parentId: string;
       organisationId: string;
-      companionId: string;
+      patientId: string;
       items: {
         description: string;
         quantity: number;
@@ -687,7 +718,11 @@ export const InvoiceService = {
     if (isReadFromPostgres()) {
       const appointment = await prisma.appointment.findUnique({
         where: { id: input.appointmentId },
-        select: { id: true, organisationId: true, companion: true },
+        select: {
+          id: true,
+          organisationId: true,
+          patient: true,
+        },
       });
 
       if (!appointment) {
@@ -702,14 +737,21 @@ export const InvoiceService = {
 
       const totals = resolveInvoiceTotals(itemsDetailed, 0);
       const currency = await getOrgBillingCurrency(input.organisationId);
-      const companionId = coerceAppointmentCompanionId(appointment);
+      const patientId = coerceAppointmentCompanionId(appointment);
+      const parentId = coerceAppointmentParentId(appointment);
+      if (!patientId || !parentId) {
+        throw new InvoiceServiceError(
+          "Appointment missing parent or patient links",
+          500,
+        );
+      }
 
       const createdInvoice = await prisma.invoice.create({
         data: {
           appointmentId: input.appointmentId,
           parentId: input.parentId,
           organisationId: input.organisationId,
-          companionId: companionId ?? undefined,
+          patientId: patientId ?? undefined,
           currency,
           status: "AWAITING_PAYMENT",
           paymentCollectionMethod: input.paymentCollectionMethod,
@@ -724,10 +766,10 @@ export const InvoiceService = {
 
       const auditTargets =
         await resolveAuditTargetsForInvoiceRow(createdInvoice);
-      if (auditTargets.organisationId && auditTargets.companionId) {
+      if (auditTargets.organisationId && auditTargets.patientId) {
         await AuditTrailService.recordSafely({
           organisationId: auditTargets.organisationId,
-          companionId: auditTargets.companionId,
+          patientId: auditTargets.patientId,
           eventType: "INVOICE_CREATED",
           actorType: "SYSTEM",
           entityType: "INVOICE",
@@ -809,10 +851,11 @@ export const InvoiceService = {
 
     const createdInvoice = Array.isArray(invoice) ? invoice[0] : invoice;
     await syncInvoiceToPostgres(createdInvoice);
+    const patientId = getAppointmentPatientIdOrThrow(appointment);
 
     await AuditTrailService.recordSafely({
       organisationId: input.organisationId,
-      companionId: appointment.companion.id,
+      patientId,
       eventType: "INVOICE_CREATED",
       actorType: "SYSTEM",
       entityType: "INVOICE",
@@ -839,7 +882,7 @@ export const InvoiceService = {
       appointmentId: string;
       parentId: string;
       organisationId: string;
-      companionId: string;
+      patientId: string;
       items: {
         description: string;
         quantity: number;
@@ -872,7 +915,11 @@ export const InvoiceService = {
     if (isReadFromPostgres()) {
       const appointment = await prisma.appointment.findUnique({
         where: { id: input.appointmentId },
-        select: { id: true, organisationId: true, companion: true },
+        select: {
+          id: true,
+          organisationId: true,
+          patient: true,
+        },
       });
       if (!appointment) {
         throw new InvoiceServiceError("Appointment not found", 404);
@@ -890,14 +937,14 @@ export const InvoiceService = {
       }));
 
       const totals = resolveInvoiceTotals(itemsDetailed, 0);
-      const companionId = coerceAppointmentCompanionId(appointment);
+      const patientId = coerceAppointmentCompanionId(appointment);
       const parentId = coerceAppointmentParentId(appointment);
 
       const invoice = await prisma.invoice.create({
         data: {
           appointmentId: appointment.id,
           parentId: parentId ?? undefined,
-          companionId: companionId ?? undefined,
+          patientId: patientId ?? undefined,
           organisationId: appointment.organisationId,
           currency,
           status: "AWAITING_PAYMENT",
@@ -915,10 +962,10 @@ export const InvoiceService = {
       });
 
       const auditTargets = await resolveAuditTargetsForInvoiceRow(invoice);
-      if (auditTargets.organisationId && auditTargets.companionId) {
+      if (auditTargets.organisationId && auditTargets.patientId) {
         await AuditTrailService.recordSafely({
           organisationId: auditTargets.organisationId,
-          companionId: auditTargets.companionId,
+          patientId: auditTargets.patientId,
           eventType: "INVOICE_CREATED",
           actorType: "SYSTEM",
           entityType: "INVOICE",
@@ -951,10 +998,17 @@ export const InvoiceService = {
     }
 
     const currency = await getOrgBillingCurrency(appointment.organisationId);
+    const { patientId, parentId } = getAppointmentPatientLink(appointment);
+    if (!patientId || !parentId) {
+      throw new InvoiceServiceError(
+        "Appointment missing parent or patient links",
+        500,
+      );
+    }
     const invoice = new InvoiceModel({
       appointmentId: appointment._id,
-      parentId: appointment.companion.parent.id,
-      companionId: appointment.companion.id,
+      parentId,
+      patientId,
       organisationId: appointment.organisationId,
       currency,
 
@@ -978,7 +1032,7 @@ export const InvoiceService = {
 
     await AuditTrailService.recordSafely({
       organisationId: appointment.organisationId,
-      companionId: appointment.companion.id,
+      patientId,
       eventType: "INVOICE_CREATED",
       actorType: "SYSTEM",
       entityType: "INVOICE",
@@ -992,7 +1046,7 @@ export const InvoiceService = {
     });
 
     await NotificationService.sendToUser(
-      appointment.companion.parent.id,
+      parentId,
       NotificationTemplates.Payment.PAYMENT_PENDING(
         invoice.totalAmount,
         invoice.currency,
@@ -1072,10 +1126,10 @@ export const InvoiceService = {
       });
 
       const targets = await resolveAuditTargetsForInvoiceRow(invoice);
-      if (targets.organisationId && targets.companionId) {
+      if (targets.organisationId && targets.patientId) {
         await AuditTrailService.recordSafely({
           organisationId: targets.organisationId,
-          companionId: targets.companionId,
+          patientId: targets.patientId,
           eventType: "INVOICE_PAID",
           actorType: "SYSTEM",
           entityType: "INVOICE",
@@ -1109,10 +1163,10 @@ export const InvoiceService = {
     if (invoice) {
       await syncInvoiceToPostgres(invoice);
       const targets = await resolveAuditTargetsForInvoice(invoice);
-      if (targets.organisationId && targets.companionId) {
+      if (targets.organisationId && targets.patientId) {
         await AuditTrailService.recordSafely({
           organisationId: targets.organisationId,
-          companionId: targets.companionId,
+          patientId: targets.patientId,
           eventType: "INVOICE_PAID",
           actorType: "SYSTEM",
           entityType: "INVOICE",
@@ -1338,10 +1392,10 @@ export const InvoiceService = {
       });
 
       const targets = await resolveAuditTargetsForInvoiceRow(invoice);
-      if (targets.organisationId && targets.companionId) {
+      if (targets.organisationId && targets.patientId) {
         await AuditTrailService.recordSafely({
           organisationId: targets.organisationId,
-          companionId: targets.companionId,
+          patientId: targets.patientId,
           eventType: "INVOICE_UPDATED",
           actorType: "SYSTEM",
           entityType: "INVOICE",
@@ -1363,10 +1417,10 @@ export const InvoiceService = {
     await syncInvoiceToPostgres(invoice);
 
     const targets = await resolveAuditTargetsForInvoice(invoice);
-    if (targets.organisationId && targets.companionId) {
+    if (targets.organisationId && targets.patientId) {
       await AuditTrailService.recordSafely({
         organisationId: targets.organisationId,
-        companionId: targets.companionId,
+        patientId: targets.patientId,
         eventType: "INVOICE_UPDATED",
         actorType: "SYSTEM",
         entityType: "INVOICE",
@@ -1406,7 +1460,7 @@ export const InvoiceService = {
         select: {
           id: true,
           organisationId: true,
-          companion: true,
+          patient: true,
           appointmentType: true,
           productItemId: true,
           concern: true,
@@ -1447,8 +1501,8 @@ export const InvoiceService = {
       }
 
       const parentId = coerceAppointmentParentId(appointment);
-      const companionId = coerceAppointmentCompanionId(appointment);
-      if (!parentId || !companionId) {
+      const patientId = coerceAppointmentCompanionId(appointment);
+      if (!parentId || !patientId) {
         throw new InvoiceServiceError(
           "Appointment missing parent or companion",
           400,
@@ -1492,7 +1546,7 @@ export const InvoiceService = {
       return this.createDraftForAppointment({
         appointmentId,
         parentId,
-        companionId,
+        patientId,
         organisationId: appointment.organisationId,
         items,
         notes: appointment.concern ?? undefined,
@@ -1548,10 +1602,18 @@ export const InvoiceService = {
       ];
     }
 
+    const { patientId, parentId } = getAppointmentPatientLink(appointment);
+    if (!patientId || !parentId) {
+      throw new InvoiceServiceError(
+        "Appointment missing parent or patient links",
+        500,
+      );
+    }
+
     return this.createDraftForAppointment({
       appointmentId,
-      parentId: appointment.companion.parent.id,
-      companionId: appointment.companion.id,
+      parentId,
+      patientId,
       organisationId: appointment.organisationId,
       items,
       notes: appointment.concern ?? undefined,
@@ -1632,17 +1694,17 @@ export const InvoiceService = {
     return docs.map((d) => toInvoiceResponseDTO(toDomain(d)));
   },
 
-  async listForCompanion(companionId: string) {
+  async listForCompanion(patientId: string) {
     if (isReadFromPostgres()) {
       const docs = await prisma.invoice.findMany({
-        where: { companionId },
+        where: { patientId },
         orderBy: { createdAt: "desc" },
       });
       return docs.map((d) => toInvoiceResponseDTO(toDomainFromPrisma(d)));
     }
 
     const docs = await InvoiceModel.find({
-      companionId,
+      patientId,
     }).sort({ createdAt: -1 });
 
     return docs.map((d) => toInvoiceResponseDTO(toDomain(d)));
@@ -1696,10 +1758,10 @@ export const InvoiceService = {
       });
 
       const targets = await resolveAuditTargetsForInvoiceRow(updated);
-      if (targets.organisationId && targets.companionId) {
+      if (targets.organisationId && targets.patientId) {
         await AuditTrailService.recordSafely({
           organisationId: targets.organisationId,
-          companionId: targets.companionId,
+          patientId: targets.patientId,
           eventType: "INVOICE_UPDATED",
           actorType: "SYSTEM",
           entityType: "INVOICE",
@@ -1751,10 +1813,10 @@ export const InvoiceService = {
     await syncInvoiceToPostgres(invoice);
 
     const targets = await resolveAuditTargetsForInvoice(invoice);
-    if (targets.organisationId && targets.companionId) {
+    if (targets.organisationId && targets.patientId) {
       await AuditTrailService.recordSafely({
         organisationId: targets.organisationId,
-        companionId: targets.companionId,
+        patientId: targets.patientId,
         eventType: "INVOICE_UPDATED",
         actorType: "SYSTEM",
         entityType: "INVOICE",

@@ -39,8 +39,8 @@ export const ExpenseService = {
   async createExpense(
     input: Omit<ExternalExpenseMongo, "createdAt" | "updatedAt">,
   ): Promise<ExternalExpenseDocument> {
-    if (!input.companionId) {
-      throw new ExternalExpenseServiceError("companionId is required");
+    if (!input.patientId) {
+      throw new ExternalExpenseServiceError("patientId is required");
     }
     if (!input.parentId) {
       throw new ExternalExpenseServiceError("parentId is required");
@@ -58,7 +58,7 @@ export const ExpenseService = {
     if (isReadFromPostgres()) {
       const doc = await prisma.externalExpense.create({
         data: {
-          companionId: input.companionId.toString(),
+          patientId: input.patientId.toString(),
           parentId: input.parentId.toString(),
           category: input.category,
           subcategory: input.subcategory ?? undefined,
@@ -86,7 +86,7 @@ export const ExpenseService = {
         await prisma.externalExpense.create({
           data: {
             id: doc._id.toString(),
-            companionId: doc.companionId.toString(),
+            patientId: doc.patientId.toString(),
             parentId: doc.parentId.toString(),
             category: doc.category,
             subcategory: doc.subcategory ?? undefined,
@@ -111,14 +111,14 @@ export const ExpenseService = {
     return doc;
   },
 
-  async getExpensesByCompanion(companionId: string) {
-    if (!companionId) {
-      throw new ExternalExpenseServiceError("companionId is required");
+  async getExpensesByCompanion(patientId: string) {
+    if (!patientId) {
+      throw new ExternalExpenseServiceError("patientId is required");
     }
 
     if (isReadFromPostgres()) {
       const external = await prisma.externalExpense.findMany({
-        where: { companionId },
+        where: { patientId: patientId },
         orderBy: { date: "desc" },
       });
 
@@ -137,7 +137,7 @@ export const ExpenseService = {
 
       const invoices = await prisma.invoice.findMany({
         where: {
-          companionId,
+          patientId: patientId,
           status: { in: ["PAID", "AWAITING_PAYMENT"] },
         },
         orderBy: { createdAt: "desc" },
@@ -181,7 +181,7 @@ export const ExpenseService = {
       return combined;
     }
 
-    const external = (await ExternalExpenseModel.find({ companionId })
+    const external = (await ExternalExpenseModel.find({ patientId })
       .sort({ date: -1 })
       .lean()) as unknown as Array<{
       _id: Types.ObjectId;
@@ -209,7 +209,7 @@ export const ExpenseService = {
     }));
 
     const invoices = (await InvoiceModel.find({
-      companionId,
+      patientId,
       status: { $in: ["PAID", "AWAITING_PAYMENT"] },
     })
       .sort({ createdAt: -1 })
@@ -392,7 +392,7 @@ export const ExpenseService = {
       const doc = await prisma.externalExpense.update({
         where: { id: expenseId },
         data: {
-          companionId: updates.companionId?.toString(),
+          patientId: updates.patientId?.toString(),
           parentId: updates.parentId?.toString(),
           category: updates.category ?? undefined,
           subcategory: updates.subcategory ?? undefined,
@@ -429,7 +429,7 @@ export const ExpenseService = {
         await prisma.externalExpense.updateMany({
           where: { id: doc._id.toString() },
           data: {
-            companionId: doc.companionId.toString(),
+            patientId: doc.patientId.toString(),
             parentId: doc.parentId.toString(),
             category: doc.category,
             subcategory: doc.subcategory ?? undefined,
@@ -453,15 +453,15 @@ export const ExpenseService = {
     return doc;
   },
 
-  async getTotalExpenseForCompanion(companionId: string) {
+  async getTotalExpenseForCompanion(patientId: string) {
     if (isReadFromPostgres()) {
       const [invoiceAgg, externalAgg] = await Promise.all([
         prisma.invoice.aggregate({
-          where: { companionId, status: "PAID" },
+          where: { patientId: patientId, status: "PAID" },
           _sum: { totalAmount: true },
         }),
         prisma.externalExpense.aggregate({
-          where: { companionId },
+          where: { patientId: patientId },
           _sum: { amount: true },
         }),
       ]);
@@ -470,7 +470,7 @@ export const ExpenseService = {
       const externalTotal = externalAgg._sum.amount ?? 0;
 
       return {
-        companionId,
+        patientId,
         invoiceTotal,
         externalTotal,
         totalExpense: invoiceTotal + externalTotal,
@@ -478,7 +478,7 @@ export const ExpenseService = {
     }
 
     const invoices = await InvoiceModel.aggregate<{ total?: number }>([
-      { $match: { companionId, status: "PAID" } },
+      { $match: { patientId, status: "PAID" } },
       { $group: { _id: null, total: { $sum: "$totalAmount" } } },
     ]);
 
@@ -486,14 +486,14 @@ export const ExpenseService = {
 
     // 2. Sum external expenses
     const external = await ExternalExpenseModel.aggregate<{ total?: number }>([
-      { $match: { companionId } },
+      { $match: { patientId } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
 
     const externalTotal: number = external[0]?.total ?? 0;
 
     return {
-      companionId,
+      patientId,
       invoiceTotal,
       externalTotal,
       totalExpense: invoiceTotal + externalTotal,
