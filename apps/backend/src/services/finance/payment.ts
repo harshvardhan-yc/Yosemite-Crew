@@ -6,6 +6,7 @@ import type {
   PaymentStatus as PrismaPaymentStatus,
   SettlementChannel as PrismaSettlementChannel,
 } from "@prisma/client";
+import Stripe from "stripe";
 import { prisma } from "src/config/prisma";
 import { roundMoney } from "./pricing";
 
@@ -13,6 +14,23 @@ type PaymentLineSummary = {
   id: string;
   amount: number;
   status: PrismaPaymentStatus;
+};
+
+type StripeCheckoutSessionClient = {
+  checkout: {
+    sessions: {
+      create: (input: Record<string, unknown>) => Promise<{
+        id: string;
+        url?: string | null;
+      }>;
+    };
+  };
+};
+
+type CheckoutSessionResult = {
+  sessionId: string;
+  url?: string | null;
+  paymentAttemptId?: string | null;
 };
 
 export class FinancePaymentError extends Error {
@@ -100,6 +118,31 @@ const createPaymentAttempt = async (
     },
   });
 
+let stripeClient: StripeCheckoutSessionClient | null = null;
+
+export const __setFinanceStripeClientForTests = (
+  client: StripeCheckoutSessionClient | null,
+) => {
+  stripeClient = client;
+};
+
+const getStripeClient = (): StripeCheckoutSessionClient => {
+  if (stripeClient) {
+    return stripeClient;
+  }
+
+  const apiKey = process.env.STRIPE_SECRET_KEY;
+  if (!apiKey) {
+    throw new Error("STRIPE_SECRET_KEY is not configured");
+  }
+
+  stripeClient = new Stripe(apiKey, {
+    apiVersion: "2026-01-28.clover",
+  }) as unknown as StripeCheckoutSessionClient;
+
+  return stripeClient;
+};
+
 export const FinancePaymentService = {
   async createPaymentAttempt(invoiceId: string, input: PaymentAttemptInput) {
     const invoice = await prisma.invoice.findUnique({
@@ -111,6 +154,144 @@ export const FinancePaymentService = {
     }
 
     return createPaymentAttempt(invoiceId, input);
+  },
+
+  async createCheckoutSessionForInvoice(
+    invoiceId: string,
+    provider?: PrismaPaymentProvider | null,
+  ): Promise<CheckoutSessionResult> {
+    if (provider && provider !== "STRIPE") {
+      throw new FinancePaymentError("Unsupported payment provider", 400);
+    }
+
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+
+    if (!invoice) {
+      throw new FinancePaymentError("Invoice not found", 404);
+    }
+
+    if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
+      throw new FinancePaymentError("Invoice is not payable", 409);
+    }
+
+    if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
+      throw new FinancePaymentError(
+        "Invoice is marked for in-clinic payment",
+        409,
+      );
+    }
+
+    if (invoice.stripePaymentIntentId) {
+      throw new FinancePaymentError("Invoice already has a PaymentIntent", 409);
+    }
+
+    if (invoice.stripeCheckoutSessionId) {
+      return {
+        sessionId: invoice.stripeCheckoutSessionId,
+        url: invoice.stripeCheckoutUrl,
+        paymentAttemptId: null,
+      };
+    }
+
+    if (!invoice.organisationId) {
+      throw new FinancePaymentError("Invoice missing organisation", 500);
+    }
+
+    const organisation = await prisma.organization.findUnique({
+      where: { id: invoice.organisationId },
+      select: { stripeAccountId: true },
+    });
+    if (!organisation?.stripeAccountId) {
+      throw new FinancePaymentError(
+        "Organisation not connected to Stripe",
+        409,
+      );
+    }
+
+    const items = Array.isArray(invoice.items) ? invoice.items : [];
+    if (items.length === 0) {
+      throw new FinancePaymentError("Invoice items are missing", 400);
+    }
+
+    const stripe = getStripeClient();
+    const expiresAt = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: items.map((item) => ({
+        price_data: {
+          currency: invoice.currency || "usd",
+          product_data: {
+            name: (item as { name?: string }).name ?? "Service",
+            description:
+              (item as { description?: string }).description ?? undefined,
+          },
+          unit_amount: Math.round(
+            (item as { unitPrice: number }).unitPrice * 100,
+          ),
+        },
+        quantity: (item as { quantity: number }).quantity,
+      })),
+      metadata: {
+        type: "INVOICE_PAYMENT",
+        invoiceId: invoice.id,
+        appointmentId: invoice.appointmentId ?? "",
+        organisationId: invoice.organisationId ?? "",
+        parentId: invoice.parentId ?? "",
+      },
+      payment_intent_data: {
+        metadata: {
+          type: "INVOICE_PAYMENT",
+          invoiceId: invoice.id,
+          appointmentId: invoice.appointmentId ?? "",
+          organisationId: invoice.organisationId ?? "",
+          parentId: invoice.parentId ?? "",
+        },
+        transfer_data: { destination: organisation.stripeAccountId },
+      },
+      success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
+      cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
+      expires_at: expiresAt,
+    });
+
+    const paymentAttempt = await prisma.paymentAttempt.create({
+      data: {
+        invoiceId,
+        provider: "STRIPE",
+        settlementChannel: "STRIPE",
+        providerCheckoutSessionId: session.id,
+        status: "REQUIRES_ACTION",
+        amountRequested: invoice.totalAmount,
+        amountCaptured: 0,
+        amountApplied: 0,
+        currency: invoice.currency,
+        collectionMode: null,
+        isOffline: false,
+        isPartial: false,
+        rawProviderPayload: {
+          sessionId: session.id,
+          url: session.url ?? null,
+          destinationAccountId: organisation.stripeAccountId,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    await prisma.invoice.updateMany({
+      where: { id: invoiceId },
+      data: {
+        paymentCollectionMethod: "PAYMENT_LINK",
+        stripeCheckoutSessionId: session.id,
+        stripeCheckoutUrl: session.url ?? undefined,
+      },
+    });
+
+    return {
+      sessionId: session.id,
+      url: session.url,
+      paymentAttemptId: paymentAttempt.id,
+    };
   },
 
   async recordManualPayment(invoiceId: string, input: ManualPaymentInput = {}) {

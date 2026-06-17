@@ -1,6 +1,7 @@
 import {
   FinancePaymentError,
   FinancePaymentService,
+  __setFinanceStripeClientForTests,
 } from "../../src/services/finance/payment";
 import { prisma } from "src/config/prisma";
 
@@ -9,6 +10,10 @@ jest.mock("src/config/prisma", () => ({
     invoice: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    organization: {
+      findUnique: jest.fn(),
     },
     paymentAttempt: {
       create: jest.fn(),
@@ -23,6 +28,11 @@ jest.mock("src/config/prisma", () => ({
 describe("FinancePaymentService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    __setFinanceStripeClientForTests({
+      checkout: { sessions: { create: jest.fn() } },
+    });
+    process.env.STRIPE_SECRET_KEY = "sk_test_mock";
+    process.env.APP_URL = "https://app.test";
   });
 
   it("creates provider-backed payment attempts", async () => {
@@ -106,6 +116,129 @@ describe("FinancePaymentService", () => {
     expect(prisma.invoice.update).not.toHaveBeenCalled();
     expect(result.balanceAfterPayment).toBe(75);
     expect(result.appliedAmount).toBe(25);
+  });
+
+  it("creates a checkout session and payment attempt for payable invoices", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_6",
+      totalAmount: 100,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_INTENT",
+      stripePaymentIntentId: null,
+      stripeCheckoutSessionId: null,
+      stripeCheckoutUrl: null,
+      organisationId: "org_1",
+      appointmentId: "appt_1",
+      parentId: "parent_1",
+      items: [
+        {
+          name: "Consult",
+          description: "Consult",
+          unitPrice: 100,
+          quantity: 1,
+        },
+      ],
+    });
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+      stripeAccountId: "acct_1",
+    });
+    const stripeClient = {
+      checkout: { sessions: { create: jest.fn() } },
+    };
+    __setFinanceStripeClientForTests(stripeClient);
+    (stripeClient.checkout.sessions.create as jest.Mock).mockResolvedValueOnce({
+      id: "cs_1",
+      url: "https://checkout",
+    });
+    (prisma.paymentAttempt.create as jest.Mock).mockResolvedValueOnce({
+      id: "pa_6",
+    });
+    (prisma.invoice.updateMany as jest.Mock).mockResolvedValueOnce({
+      count: 1,
+    });
+
+    const result =
+      await FinancePaymentService.createCheckoutSessionForInvoice("inv_6");
+
+    expect(stripeClient.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "payment",
+        payment_intent_data: expect.objectContaining({
+          transfer_data: { destination: "acct_1" },
+        }),
+      }),
+    );
+    expect(prisma.paymentAttempt.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          invoiceId: "inv_6",
+          provider: "STRIPE",
+          providerCheckoutSessionId: "cs_1",
+          status: "REQUIRES_ACTION",
+          amountRequested: 100,
+        }),
+      }),
+    );
+    expect(prisma.invoice.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inv_6" },
+        data: expect.objectContaining({
+          stripeCheckoutSessionId: "cs_1",
+          paymentCollectionMethod: "PAYMENT_LINK",
+        }),
+      }),
+    );
+    expect(result.sessionId).toBe("cs_1");
+    expect(result.paymentAttemptId).toBe("pa_6");
+  });
+
+  it("returns an existing checkout session without creating a new one", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_7",
+      totalAmount: 100,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      stripePaymentIntentId: null,
+      stripeCheckoutSessionId: "cs_existing",
+      stripeCheckoutUrl: "https://existing",
+      organisationId: "org_1",
+      items: [],
+    });
+
+    const result =
+      await FinancePaymentService.createCheckoutSessionForInvoice("inv_7");
+
+    expect(
+      (prisma.organization.findUnique as jest.Mock).mock.calls,
+    ).toHaveLength(0);
+    expect((prisma.invoice.updateMany as jest.Mock).mock.calls).toHaveLength(0);
+    expect(prisma.paymentAttempt.create).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      sessionId: "cs_existing",
+      url: "https://existing",
+      paymentAttemptId: null,
+    });
+  });
+
+  it("rejects checkout session creation for in-clinic invoices", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_8",
+      totalAmount: 100,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_AT_CLINIC",
+      stripePaymentIntentId: null,
+      stripeCheckoutSessionId: null,
+      stripeCheckoutUrl: null,
+      organisationId: "org_1",
+      items: [],
+    });
+
+    await expect(
+      FinancePaymentService.createCheckoutSessionForInvoice("inv_8"),
+    ).rejects.toBeInstanceOf(FinancePaymentError);
   });
 
   it("records manual settlement for the outstanding balance", async () => {

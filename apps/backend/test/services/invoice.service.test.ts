@@ -61,6 +61,7 @@ jest.mock("../../src/services/finance/payment", () => ({
   __esModule: true,
   FinancePaymentService: {
     recordManualPayment: jest.fn(),
+    createCheckoutSessionForInvoice: jest.fn(),
   },
 }));
 
@@ -68,7 +69,6 @@ jest.mock("../../src/services/stripe.service", () => ({
   __esModule: true,
   StripeService: {
     refundPaymentIntent: jest.fn(),
-    createCheckoutSessionForInvoice: jest.fn(),
   },
 }));
 
@@ -649,7 +649,7 @@ describe("InvoiceService", () => {
 
   it("creates checkout sessions and emails the parent", async () => {
     (
-      StripeService.createCheckoutSessionForInvoice as jest.Mock
+      FinancePaymentService.createCheckoutSessionForInvoice as jest.Mock
     ).mockResolvedValue({
       url: "https://checkout",
     });
@@ -677,6 +677,9 @@ describe("InvoiceService", () => {
     const result =
       await InvoiceService.createCheckoutSessionAndEmailParent("inv_8");
 
+    expect(
+      FinancePaymentService.createCheckoutSessionForInvoice,
+    ).toHaveBeenCalledWith("inv_8");
     expect(result.emailSent).toBe(true);
     expect(sendEmailTemplate).toHaveBeenCalled();
   });

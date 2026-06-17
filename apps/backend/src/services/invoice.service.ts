@@ -1197,7 +1197,7 @@ export const InvoiceService = {
 
   async createCheckoutSessionAndEmailParent(invoiceId: string) {
     const checkout =
-      await StripeService.createCheckoutSessionForInvoice(invoiceId);
+      await FinancePaymentService.createCheckoutSessionForInvoice(invoiceId);
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
     });
