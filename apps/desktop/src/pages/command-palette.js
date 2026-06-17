@@ -45,7 +45,9 @@
     if (!q) return { results: [], isRecents: true };
     const scored = [];
     ACTIONS.forEach(function (item) {
-      const texts = [item.label, item.desc].concat(item.kw).filter(Boolean);
+      const texts = [item.label, item.description]
+        .concat(item.keywords || [])
+        .filter(Boolean);
       let best = 0;
       texts.forEach(function (t) {
         const s = scoreFuzzy(q, t);
@@ -134,8 +136,8 @@
           '<div class="item-label">' +
           escapeHtml(a.label) +
           "</div>" +
-          (a.desc
-            ? '<div class="item-desc">' + escapeHtml(a.desc) + "</div>"
+          (a.description
+            ? '<div class="item-desc">' + escapeHtml(a.description) + "</div>"
             : "") +
           "</div>";
       });
@@ -268,8 +270,8 @@
         {
           id: "open-settings",
           label: "Open settings",
-          desc: "Application preferences",
-          kw: ["preferences", "config", "options"],
+          description: "Application preferences",
+          keywords: ["preferences", "config", "options"],
           type: "action",
           icon: "\u2699",
         },

@@ -23,6 +23,8 @@ const createFakeWebContents = () => ({
   setZoomFactor: jest.fn(),
   isAudioMuted: jest.fn().mockReturnValue(false),
   setAudioMuted: jest.fn(),
+  isDestroyed: jest.fn().mockReturnValue(false),
+  getURL: jest.fn().mockReturnValue('https://example.com/page'),
   navigationHistory: { goBack: jest.fn(), goForward: jest.fn() },
 });
 
@@ -448,6 +450,31 @@ describe('TabViewHost', () => {
       });
       expect(view.webContents.navigationHistory.goBack).not.toHaveBeenCalled();
       expect(view.webContents.navigationHistory.goForward).not.toHaveBeenCalled();
+    });
+
+    it('did-finish-load forwards webContents and http status to onDidFinishLoad', () => {
+      const onDidFinishLoad = jest.fn();
+      const host = createHost({ onDidFinishLoad });
+      const view = host.create('tab_1', 'https://example.com');
+      // A prior did-navigate records the main-frame status used by the cache hook.
+      viewEventHandlers['did-navigate'](undefined, 'https://example.com/page', 200);
+      viewEventHandlers['did-finish-load']();
+      expect(onDidFinishLoad).toHaveBeenCalledWith('tab_1', view.webContents, 200);
+    });
+
+    it('did-finish-load is not registered without onDidFinishLoad', () => {
+      const host = createHost();
+      host.create('tab_1', 'https://example.com');
+      expect('did-finish-load' in viewEventHandlers).toBe(false);
+    });
+
+    it('did-finish-load skips a destroyed webContents', () => {
+      const onDidFinishLoad = jest.fn();
+      const host = createHost({ onDidFinishLoad });
+      const view = host.create('tab_1', 'https://example.com');
+      (view.webContents.isDestroyed as jest.Mock).mockReturnValue(true);
+      viewEventHandlers['did-finish-load']();
+      expect(onDidFinishLoad).not.toHaveBeenCalled();
     });
 
     it('will-navigate calls onNavigate when provided', () => {

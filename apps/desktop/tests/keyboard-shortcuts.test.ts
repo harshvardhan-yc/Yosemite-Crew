@@ -24,6 +24,11 @@ describe('createKeyboardShortcutManager', () => {
     };
   };
 
+  test('inbox and billing map to the real chat and finance routes', () => {
+    expect(shortcutActionUrl.inbox).toBe('yosemitecrew://chat');
+    expect(shortcutActionUrl.billing).toBe('yosemitecrew://finance');
+  });
+
   test('registers all shortcuts on register()', () => {
     const deps = makeDeps();
     const mgr = createKeyboardShortcutManager(deps);

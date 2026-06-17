@@ -692,11 +692,20 @@ const configureOnlineTracking = (): void => {
 
 const configureOfflineServe = (ses: Session): void => {
   const ALLOWED_ORIGINS: string[] = [];
-  try {
-    ALLOWED_ORIGINS.push(
-      new URL(process.env.YC_DESKTOP_ALLOWED_ORIGINS || config.startUrl.origin).origin
-    );
-  } catch {
+  const rawOrigins = process.env.YC_DESKTOP_ALLOWED_ORIGINS || config.startUrl.origin;
+  // The env var may hold a comma-separated list (managedConfigToEnv joins
+  // allowedOrigins with ','), so parse each entry individually rather than
+  // treating the whole string as one URL.
+  for (const candidate of rawOrigins.split(',')) {
+    const trimmed = candidate.trim();
+    if (!trimmed) continue;
+    try {
+      ALLOWED_ORIGINS.push(new URL(trimmed).origin);
+    } catch {
+      // skip an unparseable entry; fall back handled below
+    }
+  }
+  if (ALLOWED_ORIGINS.length === 0) {
     ALLOWED_ORIGINS.push(config.startUrl.origin);
   }
 
@@ -1004,7 +1013,22 @@ const runTabCommand = (id: string): void => {
       setTabOrientation(tabOrientation === 'vertical' ? 'horizontal' : 'vertical');
       break;
     case 'tab:toggle-split':
-      setSplitTab(splitId ? null : attachedTabId || null);
+      if (splitId) {
+        setSplitTab(null);
+      } else {
+        // layoutContentPanes ignores a split that equals the active tab, so the
+        // split must be a DIFFERENT tab. Pick the next tab after the active one
+        // (wrapping); if there's only one tab, leave the split closed.
+        const state = tabManager?.getState();
+        const tabs = state?.tabs ?? [];
+        const activeId = attachedTabId ?? state?.activeId ?? null;
+        const activeIndex = tabs.findIndex((t) => t.id === activeId);
+        const other =
+          tabs.length > 1
+            ? tabs[(Math.max(0, activeIndex) + 1) % tabs.length]?.id ?? null
+            : null;
+        if (other && other !== activeId) setSplitTab(other);
+      }
       break;
   }
 };
@@ -1294,10 +1318,15 @@ const maybeStartLocalApi = (): void => {
     handleNavigate: (url: string) => {
       if (!mainWindow || mainWindow.isDestroyed()) return;
       const href = deepLinkToUrl(url, config);
-      if (href)
-        mainWindow.loadURL(href).catch((err) => {
-          logger.warn('navigate_deep_link_failed', { error: String(err) });
-        });
+      if (!href) return;
+      // In tab mode the visible page is a WebContentsView, so loading into the
+      // main window's webContents would be invisible. Target the active tab's
+      // contents (activeContents falls back to the main window outside tab mode).
+      const wc = activeContents();
+      if (!wc) return;
+      wc.loadURL(href).catch((err) => {
+        logger.warn('navigate_deep_link_failed', { error: String(err) });
+      });
     },
   });
   const startedApi = localApi;
@@ -1419,6 +1448,8 @@ if (gotSingleInstanceLock) {
           return mainWindow;
         },
         activeContents,
+        onNavigate: handleMainNavigation,
+        onWindowOpen: handleWindowOpen,
         loadStartUrl,
         enterTabMode,
         exitTabMode,
@@ -1586,7 +1617,8 @@ if (gotSingleInstanceLock) {
         logger,
         iconPath: getIconPath(),
         runCommandAction,
-        checkForUpdatesManually,
+        checkForUpdatesManually: (d) =>
+          checkForUpdatesManually({ ...d, preferredChannel: settingsStore?.load().updateChannel }),
       });
       // Telemetry is fire-and-forget: setupTelemetry records app_ready and keeps
       // its own flush timer alive, so we don't retain the client here.
@@ -1661,7 +1693,8 @@ if (gotSingleInstanceLock) {
         mainWindow,
         focusMainWindow,
         activeContents,
-        checkForUpdatesManually,
+        checkForUpdatesManually: (d) =>
+          checkForUpdatesManually({ ...d, preferredChannel: settingsStore?.load().updateChannel }),
         cachedPrinterNames,
         refreshPrinters,
       });

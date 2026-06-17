@@ -48,8 +48,17 @@ export const createTelemetryHttpSink = (options: TelemetryHttpSinkOptions): Tele
   const maxBackoffMs = options.maxBackoffMs || 60_000;
   const queue: TelemetryEvent[] = [];
   let failureCount = 0;
+  let lastFailureAt = 0;
 
-  const nextDelayMs = (): number => telemetryBackoffMs(failureCount, baseBackoffMs, maxBackoffMs);
+  // Remaining backoff: the full window for the current failureCount minus the
+  // time elapsed since the last failure. Returns 0 once the window has passed so
+  // a later flush actually retries instead of being stranded forever.
+  const nextDelayMs = (): number => {
+    const window = telemetryBackoffMs(failureCount, baseBackoffMs, maxBackoffMs);
+    if (window <= 0) return 0;
+    const elapsed = now().getTime() - lastFailureAt;
+    return Math.max(0, window - elapsed);
+  };
 
   const flush = async (): Promise<boolean> => {
     if (queue.length === 0) return true;
@@ -65,9 +74,11 @@ export const createTelemetryHttpSink = (options: TelemetryHttpSinkOptions): Tele
       if (!response.ok) throw new Error(`telemetry upload failed: ${response.status}`);
       queue.splice(0, batch.length);
       failureCount = 0;
+      lastFailureAt = 0;
       return true;
     } catch (error) {
       failureCount += 1;
+      lastFailureAt = now().getTime();
       options.logger?.warn('telemetry_http_upload_failed', {
         error,
         delayMs: nextDelayMs(),

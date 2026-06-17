@@ -65,6 +65,25 @@ describe('createSecondaryDisplayManager', () => {
     });
     expect(mgr.closeDisplay(id)).toBe(true);
     expect(mgr.getDisplayIds()).toHaveLength(0);
+    // closeWindow must receive the real window id returned by createWindow
+    // (win-N), not the generated display id (disp-N) the manager hands callers.
+    // openDisplay calls generateId() (disp-1) before createWindow() (win-2).
+    expect(deps.closeWindow).toHaveBeenCalledWith('win-2');
+    expect(deps.closeWindow).not.toHaveBeenCalledWith(id);
+  });
+
+  test('closeAll closes the real window ids returned by createWindow', () => {
+    const deps = makeDeps();
+    const mgr = createSecondaryDisplayManager(deps);
+
+    mgr.openDisplay({ role: 'whiteboard', url: '/wb1', mode: 'extend', displayIndex: 1 });
+    mgr.openDisplay({ role: 'kiosk', url: '/kiosk', mode: 'extend', displayIndex: 1 });
+
+    mgr.closeAll();
+    const closedWith = deps.closeWindow.mock.calls.map((c: string[]) => c[0]);
+    // First open: generateId disp-1, createWindow win-2. Second: disp-3, win-4.
+    expect(closedWith).toEqual(expect.arrayContaining(['win-2', 'win-4']));
+    expect(closedWith).not.toContain('disp-1');
   });
 
   test('closeDisplay returns false for unknown id', () => {

@@ -74,8 +74,8 @@ export const shortcutActionUrl: Record<ShortcutId, string | null> = {
   appointments: 'yosemitecrew://appointments',
   search: 'yosemitecrew://patients/find',
   'check-in': 'yosemitecrew://appointments/check-in',
-  inbox: 'yosemitecrew://inbox',
-  billing: 'yosemitecrew://billing',
+  inbox: 'yosemitecrew://chat',
+  billing: 'yosemitecrew://finance',
   'new-appointment': 'yosemitecrew://appointments/new',
 };
 

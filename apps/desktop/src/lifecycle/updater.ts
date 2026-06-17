@@ -53,6 +53,7 @@ export interface UpdaterDeps {
   electron?: ElectronLike;
   autoUpdater?: AutoUpdaterLike;
   env?: NodeJS.ProcessEnv;
+  preferredChannel?: UpdateChannel;
   logger?: {
     info: (event: string, data?: unknown) => void;
     warn: (event: string, data?: unknown) => void;
@@ -73,9 +74,10 @@ export const updateChannelFromEnv = (env: NodeJS.ProcessEnv = process.env): Upda
 
 export const configureUpdateChannel = (
   autoUpdater: Pick<AutoUpdaterLike, 'allowPrerelease' | 'channel'>,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  preferred?: UpdateChannel
 ): UpdateChannel => {
-  const channel = updateChannelFromEnv(env);
+  const channel = preferred ?? updateChannelFromEnv(env);
   autoUpdater.channel = channel;
   autoUpdater.allowPrerelease = channel === 'beta';
   return channel;
@@ -151,7 +153,7 @@ export const initAutoUpdates = async (deps: UpdaterDeps = {}): Promise<AutoUpdat
   let autoUpdater: AutoUpdaterLike;
   try {
     autoUpdater = await resolveAutoUpdater(deps);
-    configureUpdateChannel(autoUpdater, deps.env || process.env);
+    configureUpdateChannel(autoUpdater, deps.env || process.env, deps.preferredChannel);
   } catch (error) {
     deps.logger?.warn('update_setup_unavailable', { error });
     return null;
@@ -199,7 +201,7 @@ export const checkForUpdatesManually = async (
   let autoUpdater: AutoUpdaterLike;
   try {
     autoUpdater = await resolveAutoUpdater(deps);
-    configureUpdateChannel(autoUpdater, deps.env || process.env);
+    configureUpdateChannel(autoUpdater, deps.env || process.env, deps.preferredChannel);
   } catch (error) {
     deps.logger?.warn('manual_update_setup_unavailable', { error });
     void dialog.showMessageBox(manualResultDialog('error'));

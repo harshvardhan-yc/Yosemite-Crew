@@ -34,6 +34,11 @@ interface TabViewHostDeps {
   // abort) so the shell can show its offline/retry page instead of leaving the
   // user on a blank or stuck tab with no recovery path.
   onLoadError?: (id: string, info: { url: string; error: string; code: number }) => void;
+  // Fires after a tab finishes loading so the shell can populate the offline
+  // cache from the tab's webContents (mirroring the main window). The current
+  // HTTP status of the last main-frame navigation is provided so error pages are
+  // not cached as good documents.
+  onDidFinishLoad?: (id: string, wc: WebContents, httpStatus: number) => void;
 }
 
 interface TabView {
@@ -98,10 +103,24 @@ export const createTabViewHost = (deps: TabViewHostDeps): TabViewHost => {
         if (entry) entry.url = navUrl;
         deps.onUpdate?.(id, { url: navUrl });
       };
-      view.webContents.on('did-navigate', (_event, navUrl) => syncUrl(navUrl));
+      // Track the HTTP status of the last main-frame navigation so the offline
+      // cache (populated via onDidFinishLoad) never stores a 4xx/5xx error page
+      // as if it were a good document — did-finish-load fires for error pages too.
+      let lastMainFrameStatus = 0;
+      view.webContents.on('did-navigate', (_event, navUrl, httpResponseCode) => {
+        lastMainFrameStatus = typeof httpResponseCode === 'number' ? httpResponseCode : 0;
+        syncUrl(navUrl);
+      });
       view.webContents.on('did-navigate-in-page', (_event, navUrl, isMainFrame) => {
         if (isMainFrame) syncUrl(navUrl);
       });
+
+      if (deps.onDidFinishLoad) {
+        view.webContents.on('did-finish-load', () => {
+          if (view.webContents.isDestroyed()) return;
+          deps.onDidFinishLoad!(id, view.webContents, lastMainFrameStatus);
+        });
+      }
 
       view.webContents.on('did-start-loading', () => {
         deps.logger.debug('tab_start_loading', { id });
