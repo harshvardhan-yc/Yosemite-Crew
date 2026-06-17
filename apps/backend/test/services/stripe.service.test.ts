@@ -2,8 +2,6 @@
 import { StripeService } from "../../src/services/stripe.service";
 import logger from "../../src/utils/logger";
 
-// Mock Models
-import InvoiceModel from "../../src/models/invoice";
 import OrganizationModel from "../../src/models/organization";
 import ServiceModel from "../../src/models/service";
 import AppointmentModel from "../../src/models/appointment";
@@ -1385,133 +1383,6 @@ describe("StripeService", () => {
     });
   });
 
-  describe("createPaymentIntentForInvoice", () => {
-    it("should throw if invoice not found", async () => {
-      (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce(null);
-      await expect(
-        StripeService.createPaymentIntentForInvoice("inv_1"),
-      ).rejects.toThrow("Invoice not found");
-    });
-
-    it("should throw if not payable", async () => {
-      (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-        status: "PAID",
-      });
-      await expect(
-        StripeService.createPaymentIntentForInvoice("inv_1"),
-      ).rejects.toThrow("Invoice is not payable");
-    });
-
-    it("should throw if switch fetch fails", async () => {
-      (InvoiceModel.findById as jest.Mock)
-        .mockResolvedValueOnce({
-          status: "PENDING",
-          paymentCollectionMethod: "PAYMENT_LINK",
-          stripeCheckoutSessionId: "cs_1",
-        })
-        .mockResolvedValueOnce(null);
-      await expect(
-        StripeService.createPaymentIntentForInvoice("inv_1"),
-      ).rejects.toThrow("Invoice not found after switch");
-    });
-
-    it("should throw if no stripe connected account", async () => {
-      (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-        status: "PENDING",
-      });
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        stripeAccountId: null,
-      });
-      await expect(
-        StripeService.createPaymentIntentForInvoice("inv_1"),
-      ).rejects.toThrow(
-        "Organisation does not have a Stripe connected account",
-      );
-    });
-  });
-
-  describe("createCheckoutSessionForInvoice", () => {
-    it("should throw if invoice not found", async () => {
-      (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce(null);
-      await expect(
-        StripeService.createCheckoutSessionForInvoice("inv_1"),
-      ).rejects.toThrow("Invoice not found");
-    });
-
-    it("should throw if invoice has payment intent", async () => {
-      (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-        status: "PENDING",
-        stripePaymentIntentId: "pi_123",
-      });
-      await expect(
-        StripeService.createCheckoutSessionForInvoice("inv_1"),
-      ).rejects.toThrow("Invoice already has a PaymentIntent");
-    });
-
-    it("should throw if org not connected", async () => {
-      (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-        status: "PENDING",
-      });
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        stripeAccountId: null,
-      });
-      await expect(
-        StripeService.createCheckoutSessionForInvoice("inv_1"),
-      ).rejects.toThrow("Organisation not connected to Stripe");
-    });
-
-    it("should create checkout session successfully", async () => {
-      (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-        _id: "inv_1",
-        status: "PENDING",
-        organisationId: "org_1",
-        items: [{ name: "item1", unitPrice: 50, quantity: 2 }],
-      });
-      (OrganizationModel.findById as jest.Mock).mockResolvedValueOnce({
-        stripeAccountId: "acct_1",
-      });
-      mStripe.checkout.sessions.create.mockResolvedValueOnce({
-        id: "cs_123",
-        url: "http://cs.url",
-      });
-
-      const res = await StripeService.createCheckoutSessionForInvoice("inv_1");
-      expect(res.url).toBe("http://cs.url");
-    });
-  });
-
-  describe("Simple retrieval & Refund wrappers", () => {
-    it("retrievePaymentIntent", async () => {
-      await StripeService.retrievePaymentIntent("pi_123");
-      expect(mStripe.paymentIntents.retrieve).toHaveBeenCalledWith("pi_123");
-    });
-
-    it("retrieveCheckoutSession handles missing amount", async () => {
-      mStripe.checkout.sessions.retrieve.mockResolvedValueOnce({
-        payment_status: "paid",
-      }); // missing amount
-      const res = await StripeService.retrieveCheckoutSession("cs_123");
-      expect(res).toEqual({ status: "paid", total: 0 });
-    });
-
-    it("refundPaymentIntent throws if no invoice or no charge", async () => {
-      (InvoiceModel.findOne as jest.Mock).mockResolvedValueOnce(null);
-      await expect(StripeService.refundPaymentIntent("pi_123")).rejects.toThrow(
-        "Invoice not found",
-      );
-
-      (InvoiceModel.findOne as jest.Mock).mockResolvedValueOnce({
-        _id: "inv_1",
-      });
-      mStripe.paymentIntents.retrieve.mockResolvedValueOnce({
-        latest_charge: null,
-      });
-      await expect(StripeService.refundPaymentIntent("pi_123")).rejects.toThrow(
-        "No charge found for PaymentIntent",
-      );
-    });
-  });
-
   describe("Webhook Handlers", () => {
     it("verifyWebhook throws on missing secret", () => {
       delete process.env.STRIPE_WEBHOOK_SECRET;
@@ -1573,7 +1444,6 @@ describe("StripeService", () => {
 
     it("_handleRefund aborts if no appointment or invoice", async () => {
       await StripeService._handleRefund({ metadata: {} } as any);
-      (InvoiceModel.findOne as jest.Mock).mockResolvedValueOnce(null);
       await StripeService._handleRefund({
         metadata: { appointmentId: "app_1" },
       } as any);
@@ -1594,113 +1464,6 @@ describe("StripeService", () => {
         expect(logger.error).toHaveBeenCalledWith(
           "Unknown payment type in metadata",
         );
-      });
-    });
-
-    describe("_handleAppointmentBookingPayment Edge Cases", () => {
-      it("returns early if no appointmentId, appt missing, existing invoice, or no service", async () => {
-        await StripeService._handleAppointmentBookingPayment({
-          metadata: {},
-        } as any);
-
-        (AppointmentModel.findById as jest.Mock).mockResolvedValueOnce(null);
-        await StripeService._handleAppointmentBookingPayment({
-          metadata: { appointmentId: "app_1" },
-        } as any);
-
-        (AppointmentModel.findById as jest.Mock).mockResolvedValueOnce({});
-        (InvoiceModel.findOne as jest.Mock)
-          .mockReturnValueOnce({
-            sort: jest.fn().mockResolvedValueOnce(null),
-          })
-          .mockResolvedValueOnce({ id: "existing", status: "PAID" });
-        await StripeService._handleAppointmentBookingPayment({
-          metadata: { appointmentId: "app_1" },
-        } as any);
-
-        (AppointmentModel.findById as jest.Mock).mockResolvedValueOnce({
-          appointmentType: { id: "srv_1" },
-        });
-        (InvoiceModel.findOne as jest.Mock).mockReturnValueOnce({
-          sort: jest.fn().mockResolvedValueOnce(null),
-        });
-        mStripe.charges.retrieve.mockResolvedValueOnce({ id: "ch_1" });
-        (ServiceModel.findById as jest.Mock).mockResolvedValueOnce(null);
-        await StripeService._handleAppointmentBookingPayment({
-          metadata: { appointmentId: "app_1" },
-          latest_charge: "ch_1",
-        } as any);
-      });
-    });
-
-    describe("_handleInvoicePayment Edge Cases", () => {
-      it("returns early if missing/paid, skips checkout-session payments, refunds if wrong method", async () => {
-        await StripeService._handleInvoicePayment({ metadata: {} } as any);
-
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce(null);
-        await StripeService._handleInvoicePayment({
-          metadata: { invoiceId: "inv_1" },
-        } as any);
-
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-          status: "PAID",
-        });
-        await StripeService._handleInvoicePayment({
-          metadata: { invoiceId: "inv_1" },
-        } as any);
-
-        const refundSpy = jest
-          .spyOn(StripeService, "_refundByPaymentIntentId")
-          .mockImplementation(jest.fn() as any);
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-          status: "PENDING",
-          paymentCollectionMethod: "PAYMENT_LINK",
-        });
-        await StripeService._handleInvoicePayment({
-          id: "pi_checkout",
-          metadata: { invoiceId: "inv_checkout" },
-        } as any);
-        expect(refundSpy).not.toHaveBeenCalled();
-
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-          status: "PENDING",
-          paymentCollectionMethod: "PAYMENT_AT_CLINIC",
-        });
-        await StripeService._handleInvoicePayment({
-          id: "pi_123",
-          metadata: { invoiceId: "inv_1" },
-        } as any);
-        expect(refundSpy).toHaveBeenCalledWith("pi_123");
-      });
-
-      it("successfully marks invoice PAID", async () => {
-        const mockInvoice = {
-          status: "PENDING",
-          paymentCollectionMethod: "PAYMENT_INTENT",
-          save: jest.fn(),
-        };
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce(mockInvoice);
-        mStripe.charges.retrieve.mockResolvedValueOnce({
-          id: "ch_1",
-          receipt_url: "url",
-        });
-
-        await StripeService._handleInvoicePayment({
-          id: "pi_123",
-          latest_charge: "ch_1",
-          metadata: { invoiceId: "inv_1" },
-        } as any);
-        expect(mockInvoice.status).toBe("PAID");
-      });
-    });
-
-    describe("_handlePaymentFailed Edge Cases", () => {
-      it("returns if no appt or invoice", async () => {
-        await StripeService._handlePaymentFailed({ metadata: {} } as any);
-        (InvoiceModel.findOne as jest.Mock).mockResolvedValueOnce(null);
-        await StripeService._handlePaymentFailed({
-          metadata: { appointmentId: "app_1" },
-        } as any);
       });
     });
 
@@ -1726,50 +1489,6 @@ describe("StripeService", () => {
           customer: "cus_1",
           subscription: "sub_1",
         } as any);
-      });
-    });
-
-    describe("_handleInvoiceCheckout Edge Cases", () => {
-      it("early returns and full updates", async () => {
-        await StripeService._handleInvoiceCheckout({ metadata: {} } as any);
-
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce(null);
-        await StripeService._handleInvoiceCheckout({
-          metadata: { invoiceId: "inv_1" },
-        } as any);
-
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-          status: "PAID",
-        });
-        await StripeService._handleInvoiceCheckout({
-          metadata: { invoiceId: "inv_1" },
-        } as any);
-
-        const refundSpy = jest
-          .spyOn(StripeService, "_refundCheckoutSession")
-          .mockImplementation(jest.fn() as any);
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-          status: "PENDING",
-          paymentCollectionMethod: "PAYMENT_INTENT",
-        });
-        await StripeService._handleInvoiceCheckout({
-          id: "cs_1",
-          metadata: { invoiceId: "inv_1" },
-        } as any);
-        expect(refundSpy).toHaveBeenCalled();
-
-        (InvoiceModel.findById as jest.Mock).mockResolvedValueOnce({
-          status: "PENDING",
-          paymentCollectionMethod: "PAYMENT_LINK",
-          appointmentId: "app_1",
-          parentId: "par_1",
-        });
-        await StripeService._handleInvoiceCheckout({
-          id: "cs_1",
-          metadata: { invoiceId: "inv_1" },
-        } as any);
-        expect(AppointmentModel.updateOne).toHaveBeenCalled();
-        expect(NotificationService.sendToUser).toHaveBeenCalled();
       });
     });
 

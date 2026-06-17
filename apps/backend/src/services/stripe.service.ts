@@ -2,7 +2,6 @@
 import Stripe from "stripe";
 import logger from "../utils/logger";
 
-import InvoiceModel from "src/models/invoice";
 import OrganizationModel from "src/models/organization";
 import ServiceModel from "src/models/service";
 import AppointmentModel from "src/models/appointment";
@@ -991,98 +990,7 @@ export const StripeService = {
       };
     }
 
-    let invoice = await InvoiceModel.findById(invoiceId);
-    if (!invoice) throw new Error("Invoice not found");
-
-    if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
-      throw new Error("Invoice is not payable");
-    }
-    if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
-      throw new Error("Invoice is marked for in-clinic payment");
-    }
-
-    // 🔒 Switch payment path if coming from PAYMENT_LINK
-    if (
-      invoice.stripeCheckoutSessionId &&
-      invoice.paymentCollectionMethod === "PAYMENT_LINK"
-    ) {
-      await InvoiceModel.updateOne(
-        {
-          _id: invoiceId,
-          status: { $in: ["AWAITING_PAYMENT", "PENDING"] },
-          paymentCollectionMethod: "PAYMENT_LINK",
-          stripePaymentIntentId: { $in: [null, undefined] },
-        },
-        {
-          $set: {
-            paymentCollectionMethod: "PAYMENT_INTENT",
-            stripeCheckoutSessionId: null,
-            stripeCheckoutUrl: null,
-          },
-        },
-      );
-      if (shouldDualWrite) {
-        try {
-          await prisma.invoice.updateMany({
-            where: { id: invoiceId },
-            data: {
-              paymentCollectionMethod: "PAYMENT_INTENT",
-              stripeCheckoutSessionId: null,
-              stripeCheckoutUrl: null,
-            },
-          });
-        } catch (err) {
-          handleDualWriteError("Invoice switch payment path", err);
-        }
-      }
-
-      // 🔁 re-fetch to avoid stale state
-      invoice = await InvoiceModel.findById(invoiceId);
-      if (!invoice) throw new Error("Invoice not found after switch");
-    }
-
-    // Prevent duplicate PI
-    if (invoice.stripePaymentIntentId) {
-      return this.retrievePaymentIntent(invoice.stripePaymentIntentId);
-    }
-
-    const organisation = await OrganizationModel.findById(
-      invoice.organisationId,
-    );
-    if (!organisation?.stripeAccountId) {
-      throw new Error("Organisation does not have a Stripe connected account");
-    }
-
-    const amountToPay = invoice.totalAmount;
-    const stripeAmount = toStripeAmount(amountToPay);
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: stripeAmount,
-      currency: invoice.currency || "usd",
-      metadata: {
-        type: "INVOICE_PAYMENT",
-        invoiceId,
-        appointmentId: invoice.appointmentId || "",
-        organisationId: invoice.organisationId ?? "",
-        parentId: invoice.parentId ?? "",
-        patientId: invoice.patientId ?? "",
-      },
-      description: `Payment for Invoice ${invoiceId}`,
-      transfer_data: { destination: organisation.stripeAccountId },
-    });
-
-    await InvoiceService.attachStripeDetails(invoiceId, {
-      stripePaymentIntentId: paymentIntent.id,
-      status: "AWAITING_PAYMENT",
-      paymentCollectionMethod: "PAYMENT_INTENT",
-    });
-
-    return {
-      paymentIntentId: paymentIntent.id,
-      clientSecret: paymentIntent.client_secret,
-      amount: amountToPay,
-      currency: invoice.currency || "usd",
-    };
+    throw new Error("Postgres read mode is required for invoice payments");
   },
 
   async createCheckoutSessionForInvoice(invoiceId: string) {
@@ -1181,100 +1089,7 @@ export const StripeService = {
       return { sessionId: session.id, url: session.url };
     }
 
-    const invoice = await InvoiceModel.findById(invoiceId);
-    if (!invoice) throw new Error("Invoice not found");
-
-    // Guard: payable only
-    if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
-      throw new Error("Invoice is not payable");
-    }
-    if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
-      throw new Error("Invoice is marked for in-clinic payment");
-    }
-
-    // Guard: don’t start two payment paths
-    if (invoice.stripePaymentIntentId) {
-      throw new Error("Invoice already has a PaymentIntent");
-    }
-    if (invoice.stripeCheckoutSessionId) {
-      // optionally return existing url to re-send
-      return {
-        sessionId: invoice.stripeCheckoutSessionId,
-        url: invoice.stripeCheckoutUrl,
-      };
-    }
-
-    const organisation = await OrganizationModel.findById(
-      invoice.organisationId,
-    );
-    if (!organisation?.stripeAccountId)
-      throw new Error("Organisation not connected to Stripe");
-
-    // Optional expiry (recommended): e.g. 24 hours
-    const expiresAt = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      line_items: invoice.items.map((item) => ({
-        price_data: {
-          currency: invoice.currency || "usd",
-          product_data: {
-            name: item.name,
-            description: item.description ?? undefined,
-          },
-          unit_amount: Math.round(item.unitPrice * 100),
-        },
-        quantity: item.quantity,
-      })),
-      metadata: {
-        type: "INVOICE_PAYMENT",
-        invoiceId: invoice._id.toString(),
-        appointmentId: invoice.appointmentId ?? "",
-        organisationId: invoice.organisationId ?? "",
-        parentId: invoice.parentId ?? "",
-      },
-      payment_intent_data: {
-        metadata: {
-          type: "INVOICE_PAYMENT",
-          invoiceId: invoice._id.toString(),
-          appointmentId: invoice.appointmentId ?? "",
-          organisationId: invoice.organisationId ?? "",
-          parentId: invoice.parentId ?? "",
-        },
-        transfer_data: { destination: organisation.stripeAccountId },
-      },
-      success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-      cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-      expires_at: expiresAt,
-    });
-
-    await InvoiceModel.updateOne(
-      { _id: invoiceId },
-      {
-        $set: {
-          paymentCollectionMethod: "PAYMENT_LINK",
-          stripeCheckoutSessionId: session.id,
-          stripeCheckoutUrl: session.url,
-          paymentDueAt: new Date(expiresAt * 1000),
-        },
-      },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.invoice.updateMany({
-          where: { id: invoiceId },
-          data: {
-            paymentCollectionMethod: "PAYMENT_LINK",
-            stripeCheckoutSessionId: session.id,
-            stripeCheckoutUrl: session.url ?? undefined,
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("Invoice checkout session", err);
-      }
-    }
-
-    return { sessionId: session.id, url: session.url };
+    throw new Error("Postgres read mode is required for invoice checkout");
   },
 
   async retrievePaymentIntent(paymentIntentId: string) {
@@ -1321,29 +1136,7 @@ export const StripeService = {
       };
     }
 
-    const invoice = await InvoiceModel.findOne({
-      stripePaymentIntentId: paymentIntentId,
-    });
-    if (!invoice) throw new Error("Invoice not found");
-
-    const paymentIntent = await stripe.paymentIntents.retrieve(
-      paymentIntentId,
-      {
-        expand: ["latest_charge"],
-      },
-    );
-
-    const charge = paymentIntent.latest_charge as Stripe.Charge;
-    if (!charge) throw new Error("No charge found for PaymentIntent");
-
-    const refund = await stripe.refunds.create({ charge: charge.id });
-    await InvoiceService.markRefunded(invoice._id.toString());
-
-    return {
-      refundId: refund.id,
-      status: refund.status,
-      amountRefunded: refund.amount / 100,
-    };
+    throw new Error("Postgres read mode is required for invoice refunds");
   },
 
   // ----------------------------
@@ -1852,165 +1645,8 @@ export const StripeService = {
       return;
     }
 
-    const appointment = await AppointmentModel.findById(appointmentId);
-    if (!appointment) return;
-
-    const openInvoice = await InvoiceModel.findOne({
-      appointmentId,
-      status: { $in: ["AWAITING_PAYMENT", "PENDING"] },
-    }).sort({ createdAt: -1 });
-
-    if (openInvoice) {
-      const chargeId = pi.latest_charge as string;
-      const charge = await getStripeClient().charges.retrieve(chargeId);
-
-      await InvoiceService.attachStripeDetails(openInvoice._id.toString(), {
-        status: "PAID",
-        stripePaymentIntentId: pi.id,
-        stripeChargeId: charge.id,
-        stripeReceiptUrl: charge.receipt_url ?? undefined,
-        paymentCollectionMethod: "PAYMENT_INTENT",
-        paidAt: new Date(),
-      });
-
-      await AppointmentModel.updateOne(
-        { _id: appointmentId },
-        {
-          status: "REQUESTED",
-          stripePaymentIntentId: pi.id,
-          stripeChargeId: charge.id,
-          updatedAt: new Date(),
-          expiresAt: undefined,
-        },
-      );
-      if (shouldDualWrite) {
-        try {
-          await prisma.appointment.updateMany({
-            where: { id: appointmentId },
-            data: {
-              status: "REQUESTED",
-              updatedAt: new Date(),
-              expiresAt: null,
-            },
-          });
-        } catch (err) {
-          handleDualWriteError("Appointment booking payment", err);
-        }
-      }
-
-      logger.info(
-        `Appointment ${appointmentId} booking PAID. Invoice ${openInvoice.id} settled`,
-      );
-      return;
-    }
-
-    const existingInvoice = await InvoiceModel.findOne({
-      appointmentId,
-      status: "PAID",
-    });
-    if (existingInvoice) return;
-
-    const chargeId = pi.latest_charge as string;
-    const charge = await getStripeClient().charges.retrieve(chargeId);
-
-    const service = await ServiceModel.findById(
-      appointment.appointmentType?.id,
-    );
-    if (!service) return;
-
-    const invoice = await InvoiceModel.create({
-      appointmentId,
-      organisationId: appointment.organisationId,
-      parentId:
-        extractAppointmentPatientRefs(appointment).parentId ??
-        appointment.patient?.parent?.id,
-      patientId:
-        extractAppointmentPatientRefs(appointment).patientId ??
-        appointment.patient?.id,
-      currency: pi.currency,
-
-      status: "PAID",
-      items: [
-        {
-          name: service.name,
-          description: service.description,
-          quantity: 1,
-          unitPrice: service.cost,
-          total: service.cost,
-        },
-      ],
-      subtotal: service.cost,
-      discountTotal: 0,
-      taxTotal: 0,
-      totalAmount: service.cost,
-
-      stripePaymentIntentId: pi.id,
-      stripeChargeId: charge.id,
-      stripeReceiptUrl: charge.receipt_url,
-    });
-    if (shouldDualWrite) {
-      try {
-        await prisma.invoice.create({
-          data: {
-            id: invoice._id.toString(),
-            appointmentId,
-            organisationId: appointment.organisationId,
-            parentId:
-              extractAppointmentPatientRefs(appointment).parentId ??
-              appointment.patient?.parent?.id,
-            patientId:
-              extractAppointmentPatientRefs(appointment).patientId ??
-              appointment.patient?.id,
-            currency: pi.currency,
-            status: "PAID",
-            items: invoice.items as unknown as Prisma.InputJsonValue,
-            subtotal: invoice.subtotal,
-            discountTotal: invoice.discountTotal ?? 0,
-            taxTotal: invoice.taxTotal ?? 0,
-            taxPercent: invoice.taxPercent ?? 0,
-            totalAmount: invoice.totalAmount,
-            paymentCollectionMethod:
-              invoice.paymentCollectionMethod as Prisma.InvoiceCreateInput["paymentCollectionMethod"],
-            stripePaymentIntentId: invoice.stripePaymentIntentId ?? undefined,
-            stripeChargeId: invoice.stripeChargeId ?? undefined,
-            stripeReceiptUrl: invoice.stripeReceiptUrl ?? undefined,
-            createdAt: invoice.createdAt ?? undefined,
-            updatedAt: invoice.updatedAt ?? undefined,
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("Invoice create (appointment booking)", err);
-      }
-    }
-
-    await AppointmentModel.updateOne(
-      { _id: appointmentId },
-      {
-        status: "REQUESTED",
-        invoiceId: invoice._id,
-        stripePaymentIntentId: pi.id,
-        stripeChargeId: charge.id,
-        updatedAt: new Date(),
-        expiresAt: undefined,
-      },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.appointment.updateMany({
-          where: { id: appointmentId },
-          data: {
-            status: "REQUESTED",
-            updatedAt: new Date(),
-            expiresAt: null,
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("Appointment booking payment", err);
-      }
-    }
-
-    logger.info(
-      `Appointment ${appointmentId} booking PAID. Invoice ${invoice.id} created`,
+    throw new Error(
+      "Postgres read mode is required for appointment booking payments",
     );
   },
 
@@ -2018,42 +1654,9 @@ export const StripeService = {
     const invoiceId = pi.metadata?.invoiceId;
     if (!invoiceId) return;
 
-    if (isReadFromPostgres()) {
-      const invoice = await prisma.invoice.findUnique({
-        where: { id: invoiceId },
-      });
-      if (!invoice) return;
-
-      if (invoice.status === "PAID") return;
-
-      if (invoice.paymentCollectionMethod === "PAYMENT_LINK") {
-        return;
-      }
-
-      if (invoice.paymentCollectionMethod !== "PAYMENT_INTENT") {
-        await this._refundByPaymentIntentId(pi.id);
-        return;
-      }
-
-      const chargeId = pi.latest_charge as string;
-      const charge = await getStripeClient().charges.retrieve(chargeId);
-
-      await prisma.invoice.updateMany({
-        where: { id: invoiceId },
-        data: {
-          status: "PAID",
-          stripePaymentIntentId: pi.id,
-          stripeChargeId: charge.id,
-          stripeReceiptUrl: charge.receipt_url ?? undefined,
-          updatedAt: new Date(),
-        },
-      });
-
-      logger.info(`Invoice ${invoiceId} marked PAID`);
-      return;
-    }
-
-    const invoice = await InvoiceModel.findById(invoiceId);
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
     if (!invoice) return;
 
     if (invoice.status === "PAID") return;
@@ -2071,28 +1674,16 @@ export const StripeService = {
     const chargeId = pi.latest_charge as string;
     const charge = await getStripeClient().charges.retrieve(chargeId);
 
-    invoice.status = "PAID";
-    invoice.stripePaymentIntentId = pi.id;
-    invoice.stripeChargeId = charge.id;
-    invoice.stripeReceiptUrl = charge.receipt_url!;
-    invoice.updatedAt = new Date();
-    await invoice.save();
-    if (shouldDualWrite) {
-      try {
-        await prisma.invoice.updateMany({
-          where: { id: invoice._id.toString() },
-          data: {
-            status: "PAID",
-            stripePaymentIntentId: pi.id,
-            stripeChargeId: charge.id,
-            stripeReceiptUrl: charge.receipt_url ?? undefined,
-            updatedAt: new Date(),
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("Invoice payment", err);
-      }
-    }
+    await prisma.invoice.updateMany({
+      where: { id: invoiceId },
+      data: {
+        status: "PAID",
+        stripePaymentIntentId: pi.id,
+        stripeChargeId: charge.id,
+        stripeReceiptUrl: charge.receipt_url ?? undefined,
+        updatedAt: new Date(),
+      },
+    });
 
     logger.info(`Invoice ${invoiceId} marked PAID`);
   },
@@ -2101,33 +1692,15 @@ export const StripeService = {
     const appointmentId = pi.metadata?.appointmentId;
     if (!appointmentId) return;
 
-    if (isReadFromPostgres()) {
-      const invoice = await prisma.invoice.findFirst({
-        where: { appointmentId },
-      });
-      if (!invoice) return;
-      await prisma.invoice.updateMany({
-        where: { id: invoice.id },
-        data: { status: "FAILED" },
-      });
-      logger.warn(`Invoice ${invoice.id} marked FAILED`);
-      return;
-    }
-
-    const invoice = await InvoiceModel.findOne({ appointmentId });
+    const invoice = await prisma.invoice.findFirst({
+      where: { appointmentId },
+    });
     if (!invoice) return;
 
-    await InvoiceModel.updateOne({ _id: invoice._id }, { status: "FAILED" });
-    if (shouldDualWrite) {
-      try {
-        await prisma.invoice.updateMany({
-          where: { id: invoice._id.toString() },
-          data: { status: "FAILED" },
-        });
-      } catch (err) {
-        handleDualWriteError("Invoice failed", err);
-      }
-    }
+    await prisma.invoice.updateMany({
+      where: { id: invoice.id },
+      data: { status: "FAILED" },
+    });
     logger.warn(`Invoice ${invoice.id} marked FAILED`);
   },
 
@@ -2135,52 +1708,26 @@ export const StripeService = {
     const appointmentId = charge.metadata?.appointmentId;
     if (!appointmentId) return;
 
-    if (isReadFromPostgres()) {
-      const invoice = await prisma.invoice.findFirst({
-        where: { appointmentId },
-      });
-      if (!invoice) return;
-      await prisma.invoice.updateMany({
-        where: { id: invoice.id },
-        data: { status: "REFUNDED" },
-      });
-
-      const notificationPayload = NotificationTemplates.Payment.REFUND_ISSUED(
-        charge.amount / 100,
-        charge.currency,
-      );
-      if (invoice.parentId) {
-        await NotificationService.sendToUser(
-          invoice.parentId,
-          notificationPayload,
-        );
-      }
-
-      logger.warn(`Invoice ${invoice.id} marked REFUNDED`);
-      return;
-    }
-
-    const invoice = await InvoiceModel.findOne({ appointmentId });
+    const invoice = await prisma.invoice.findFirst({
+      where: { appointmentId },
+    });
     if (!invoice) return;
 
-    await InvoiceModel.updateOne({ _id: invoice._id }, { status: "REFUNDED" });
-    if (shouldDualWrite) {
-      try {
-        await prisma.invoice.updateMany({
-          where: { id: invoice._id.toString() },
-          data: { status: "REFUNDED" },
-        });
-      } catch (err) {
-        handleDualWriteError("Invoice refunded", err);
-      }
-    }
+    await prisma.invoice.updateMany({
+      where: { id: invoice.id },
+      data: { status: "REFUNDED" },
+    });
 
     const notificationPayload = NotificationTemplates.Payment.REFUND_ISSUED(
       charge.amount / 100,
       charge.currency,
     );
-    const parentId = invoice.parentId;
-    await NotificationService.sendToUser(parentId!, notificationPayload);
+    if (invoice.parentId) {
+      await NotificationService.sendToUser(
+        invoice.parentId,
+        notificationPayload,
+      );
+    }
 
     logger.warn(`Invoice ${invoice.id} marked REFUNDED`);
   },
@@ -2290,106 +1837,34 @@ export const StripeService = {
     const invoiceId = session.metadata?.invoiceId;
     if (!invoiceId) return;
 
-    if (isReadFromPostgres()) {
-      const invoice = await prisma.invoice.findUnique({
-        where: { id: invoiceId },
-      });
-      if (!invoice) return;
-
-      if (invoice.status === "PAID") return;
-
-      const shouldRefundPayment =
-        invoice.paymentCollectionMethod !== "PAYMENT_LINK" ||
-        (invoice.stripeCheckoutSessionId &&
-          invoice.stripeCheckoutSessionId !== session.id);
-
-      if (shouldRefundPayment) {
-        await this._refundCheckoutSession(session);
-        return;
-      }
-
-      await prisma.invoice.updateMany({
-        where: { id: invoiceId },
-        data: { status: "PAID", paidAt: new Date(), updatedAt: new Date() },
-      });
-
-      if (invoice.appointmentId) {
-        await prisma.appointment.updateMany({
-          where: { id: invoice.appointmentId },
-          data: { updatedAt: new Date() },
-        });
-      }
-
-      if (invoice.parentId) {
-        await NotificationService.sendToUser(
-          invoice.parentId,
-          NotificationTemplates.Payment.PAYMENT_SUCCESS(
-            invoice.totalAmount,
-            invoice.currency,
-          ),
-        );
-      }
-      return;
-    }
-
-    const invoice = await InvoiceModel.findById(invoiceId);
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
     if (!invoice) return;
 
-    // Idempotency
     if (invoice.status === "PAID") return;
 
     const shouldRefundPayment =
       invoice.paymentCollectionMethod !== "PAYMENT_LINK" ||
       (invoice.stripeCheckoutSessionId &&
         invoice.stripeCheckoutSessionId !== session.id);
-
-    // Late or invalid payment → refund
     if (shouldRefundPayment) {
       await this._refundCheckoutSession(session);
       return;
     }
 
-    // ✅ Mark invoice PAID
-    await InvoiceModel.updateOne(
-      { _id: invoiceId, status: { $ne: "PAID" } },
-      {
-        $set: {
-          status: "PAID",
-          paidAt: new Date(),
-          updatedAt: new Date(),
-        },
-      },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.invoice.updateMany({
-          where: { id: invoiceId },
-          data: { status: "PAID", paidAt: new Date(), updatedAt: new Date() },
-        });
-      } catch (err) {
-        handleDualWriteError("Invoice checkout paid", err);
-      }
-    }
+    await prisma.invoice.updateMany({
+      where: { id: invoiceId },
+      data: { status: "PAID", paidAt: new Date(), updatedAt: new Date() },
+    });
 
-    // Optional: update appointment state
     if (invoice.appointmentId) {
-      await AppointmentModel.updateOne(
-        { _id: invoice.appointmentId },
-        { $set: { updatedAt: new Date() } },
-      );
-      if (shouldDualWrite) {
-        try {
-          await prisma.appointment.updateMany({
-            where: { id: invoice.appointmentId },
-            data: { updatedAt: new Date() },
-          });
-        } catch (err) {
-          handleDualWriteError("Appointment update (invoice checkout)", err);
-        }
-      }
+      await prisma.appointment.updateMany({
+        where: { id: invoice.appointmentId },
+        data: { updatedAt: new Date() },
+      });
     }
 
-    // Optional: notify parent
     if (invoice.parentId) {
       await NotificationService.sendToUser(
         invoice.parentId,
