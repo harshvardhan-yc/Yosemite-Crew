@@ -1170,6 +1170,15 @@ enum PaymentCollectionMethod {
   PAYMENT_AT_CLINIC
 }
 
+enum TaxProvider {
+  STRIPE
+}
+
+enum TaxBehavior {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
 enum FormVisibilityType {
   Internal
   External
@@ -2547,6 +2556,7 @@ model Invoice {
   invoiceDiscountTotal     Float                    @default(0)
   taxTotal                 Float                    @default(0)
   taxPercent               Float                    @default(0)
+  taxProvider              TaxProvider?
   totalAmount              Float
   currency                 String
   paymentCollectionMethod  PaymentCollectionMethod  @default(PAYMENT_INTENT)
@@ -2564,6 +2574,8 @@ model Invoice {
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
 
+  taxSnapshot              InvoiceTaxSnapshot?
+
   @@index([parentId])
   @@index([organisationId])
   @@index([appointmentId])
@@ -2571,4 +2583,24 @@ model Invoice {
   @@index([status])
   @@index([stripeCheckoutSessionId])
   @@index([paymentCollectionMethod])
+  @@index([taxProvider])
+}
+
+model InvoiceTaxSnapshot {
+  id                  String       @id @default(uuid())
+  invoiceId           String       @unique
+  provider            TaxProvider
+  providerReferenceId String?
+  jurisdictionCountry String?
+  jurisdictionState   String?
+  taxBehavior         TaxBehavior?
+  taxableSubtotal     Float        @default(0)
+  taxAmount           Float        @default(0)
+  taxBreakdown        Json?
+  rawProviderPayload  Json?
+  calculatedAt        DateTime     @default(now())
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  invoice             Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
