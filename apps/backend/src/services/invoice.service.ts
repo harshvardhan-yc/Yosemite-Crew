@@ -3,12 +3,17 @@ import {
   Invoice as PrismaInvoice,
   InvoiceStatus as PrismaInvoiceStatus,
   PaymentCollectionMethod,
+  TaxBehavior as PrismaTaxBehavior,
 } from "@prisma/client";
 import { Invoice, InvoiceItem } from "@yosemite-crew/types";
 import {
   calculateInvoicePricing,
   type InvoiceDiscountInput as PricingInvoiceDiscountInput,
 } from "./finance/pricing";
+import {
+  DEFAULT_TAX_BEHAVIOR,
+  getInvoiceTaxProviderAdapter,
+} from "./finance/tax";
 import { prisma } from "src/config/prisma";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
 import { NotificationTemplates } from "src/utils/notificationTemplates";
@@ -132,10 +137,21 @@ const buildInvoiceLineSnapshots = (items: DraftInvoiceItemInput[]) =>
         : 0),
   }));
 
+const toTaxLineItems = (items: DraftInvoiceItemInput[]) =>
+  items.map((item) => ({
+    description: item.description,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    discountPercent: item.discountPercent,
+  }));
+
 const resolveInvoiceTotals = (
   items: DraftInvoiceItemInput[],
   taxPercent = 0,
   invoiceDiscount?: PricingInvoiceDiscountInput,
+  taxBehavior: PrismaTaxBehavior = DEFAULT_TAX_BEHAVIOR,
+  provider?: string | null,
+  mode: "preview" | "finalize" = "preview",
 ) => {
   const pricing = calculateInvoicePricing({
     lines: items.map((item) => ({
@@ -143,11 +159,12 @@ const resolveInvoiceTotals = (
       unitAmount: item.unitPrice,
       discountType: item.discountPercent != null ? "PERCENTAGE" : undefined,
       discountValue: item.discountPercent ?? undefined,
-      taxBehavior: "EXCLUSIVE",
+      taxBehavior,
     })),
     taxRatePercent: taxPercent,
     invoiceDiscount,
   });
+  const adapter = getInvoiceTaxProviderAdapter(provider);
 
   return {
     subtotal: pricing.subtotal,
@@ -156,6 +173,24 @@ const resolveInvoiceTotals = (
     taxTotal: pricing.taxTotal,
     taxPercent: taxPercent ?? 0,
     totalAmount: pricing.totalAmount,
+    taxSnapshot:
+      mode === "finalize"
+        ? adapter.finalize({
+            provider: adapter.provider,
+            taxBehavior,
+            taxRatePercent: taxPercent,
+            invoiceDiscount,
+            pricing,
+            lineItems: toTaxLineItems(items),
+          })
+        : adapter.preview({
+            provider: adapter.provider,
+            taxBehavior,
+            taxRatePercent: taxPercent,
+            invoiceDiscount,
+            pricing,
+            lineItems: toTaxLineItems(items),
+          }),
   };
 };
 
@@ -370,9 +405,15 @@ const normalizeCreateInput = (
   patientId: string,
   parentId: string,
   currency: string,
+  taxBehavior: PrismaTaxBehavior = DEFAULT_TAX_BEHAVIOR,
 ) => {
   const items = buildInvoiceLineSnapshots(input.items);
-  const totals = resolveInvoiceTotals(input.items, 0, input.invoiceDiscount);
+  const totals = resolveInvoiceTotals(
+    input.items,
+    0,
+    input.invoiceDiscount,
+    taxBehavior,
+  );
 
   return {
     items,
@@ -385,6 +426,7 @@ const normalizeCreateInput = (
       currency,
       status: "AWAITING_PAYMENT" as const,
       paymentCollectionMethod: input.paymentCollectionMethod,
+      taxProvider: totals.taxSnapshot.provider,
       items: items as unknown as Prisma.InputJsonValue,
       subtotal: totals.subtotal,
       discountTotal: totals.discountTotal,
@@ -398,6 +440,7 @@ const normalizeCreateInput = (
         ...(input.notes ? { notes: input.notes } : {}),
       } as unknown as Prisma.InputJsonValue,
     },
+    taxSnapshot: totals.taxSnapshot,
   };
 };
 
@@ -425,8 +468,20 @@ export const InvoiceService = {
     }
 
     const currency = await resolveOrganisationCurrency(input.organisationId);
-    const { data } = normalizeCreateInput(input, patientId, parentId, currency);
-    const createdInvoice = await prisma.invoice.create({ data });
+    const { data, taxSnapshot } = normalizeCreateInput(
+      input,
+      patientId,
+      parentId,
+      currency,
+    );
+    const createdInvoice = await prisma.invoice.create({
+      data: {
+        ...data,
+        taxSnapshot: {
+          create: taxSnapshot,
+        },
+      },
+    });
 
     const targets = await resolveAuditTargetsForInvoiceRow(createdInvoice);
     await recordInvoiceAuditEvent(targets, {
@@ -503,6 +558,7 @@ export const InvoiceService = {
         currency,
         status: "AWAITING_PAYMENT",
         paymentCollectionMethod: "PAYMENT_LINK",
+        taxProvider: totals.taxSnapshot.provider,
         items: buildInvoiceLineSnapshots(
           items,
         ) as unknown as Prisma.InputJsonValue,
@@ -518,6 +574,9 @@ export const InvoiceService = {
           ...(input.metadata ?? {}),
           source: "EXTRA_CHARGES",
         } as unknown as Prisma.InputJsonValue,
+        taxSnapshot: {
+          create: totals.taxSnapshot,
+        },
       },
     });
 
@@ -862,6 +921,7 @@ export const InvoiceService = {
   async addItemsToInvoice(invoiceId: string, items: InvoiceItem[]) {
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
+      include: { taxSnapshot: true },
     });
     if (!invoice) {
       throw new InvoiceServiceError("Invoice not found", 404);
@@ -869,6 +929,10 @@ export const InvoiceService = {
 
     if (invoice.status === "PAID") {
       throw new InvoiceServiceError("Cannot modify a paid invoice", 409);
+    }
+
+    if (invoice.finalizedAt) {
+      throw new InvoiceServiceError("Cannot modify a finalized invoice", 409);
     }
 
     const existingItems = Array.isArray(invoice.items)
@@ -890,11 +954,13 @@ export const InvoiceService = {
             value: invoice.invoiceDiscountValue,
           }
         : undefined,
+      invoice.taxSnapshot?.taxBehavior ?? DEFAULT_TAX_BEHAVIOR,
     );
 
     const updated = await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
+        taxProvider: totals.taxSnapshot.provider,
         items: buildInvoiceLineSnapshots(
           mergedItems,
         ) as unknown as Prisma.InputJsonValue,
@@ -914,6 +980,12 @@ export const InvoiceService = {
           invoice.stripeCheckoutSessionId
             ? null
             : invoice.stripeCheckoutUrl,
+        taxSnapshot: {
+          upsert: {
+            create: totals.taxSnapshot,
+            update: totals.taxSnapshot,
+          },
+        },
       },
     });
 
@@ -927,6 +999,74 @@ export const InvoiceService = {
         currency: updated.currency,
         itemsAdded: items.length,
       },
+    });
+
+    return toInvoiceRecord(updated);
+  },
+
+  async finalizeTaxForInvoice(invoiceId: string, taxProvider?: string | null) {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { taxSnapshot: true },
+    });
+    if (!invoice) {
+      throw new InvoiceServiceError("Invoice not found", 404);
+    }
+
+    if (["PAID", "CANCELLED", "REFUNDED"].includes(invoice.status)) {
+      throw new InvoiceServiceError("Invoice cannot be finalized", 409);
+    }
+
+    if (invoice.finalizedAt) {
+      return toInvoiceRecord(invoice);
+    }
+
+    const items = Array.isArray(invoice.items)
+      ? (invoice.items as unknown as DraftInvoiceItemInput[])
+      : [];
+    const invoiceDiscount =
+      invoice.invoiceDiscountType && invoice.invoiceDiscountValue != null
+        ? {
+            type: invoice.invoiceDiscountType as PricingInvoiceDiscountInput["type"],
+            value: invoice.invoiceDiscountValue,
+          }
+        : undefined;
+    const totals = resolveInvoiceTotals(
+      items,
+      invoice.taxPercent,
+      invoiceDiscount,
+      invoice.taxSnapshot?.taxBehavior ?? DEFAULT_TAX_BEHAVIOR,
+      taxProvider ?? invoice.taxSnapshot?.provider,
+      "finalize",
+    );
+
+    const finalizedAt = new Date();
+    const updated = await prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        finalizedAt,
+        taxProvider: totals.taxSnapshot.provider,
+        taxTotal: totals.taxTotal,
+        taxSnapshot: {
+          upsert: {
+            create: {
+              ...totals.taxSnapshot,
+              calculatedAt: finalizedAt,
+            },
+            update: {
+              ...totals.taxSnapshot,
+              calculatedAt: finalizedAt,
+            },
+          },
+        },
+      },
+    });
+
+    await recordInvoiceAuditForRow(updated, "INVOICE_UPDATED", updated.id, {
+      status: updated.status,
+      totalAmount: updated.totalAmount,
+      currency: updated.currency,
+      taxFinalizedAt: finalizedAt.toISOString(),
     });
 
     return toInvoiceRecord(updated);

@@ -2571,6 +2571,7 @@ model Invoice {
   status                   InvoiceStatus            @default(PENDING)
   metadata                 Json?
   paidAt                   DateTime?
+  finalizedAt              DateTime?
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
 

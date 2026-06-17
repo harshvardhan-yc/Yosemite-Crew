@@ -126,16 +126,86 @@ describe("InvoiceService", () => {
     expect(prisma.invoice.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          taxProvider: "STRIPE",
           invoiceDiscountType: "FIXED_AMOUNT",
           invoiceDiscountValue: 12,
           invoiceDiscountTotal: 12,
           subtotal: 120,
           totalAmount: 108,
+          taxSnapshot: expect.objectContaining({
+            create: expect.objectContaining({
+              provider: "STRIPE",
+              taxBehavior: "EXCLUSIVE",
+              taxAmount: 0,
+            }),
+          }),
         }),
       }),
     );
     expect(NotificationService.sendToUser).toHaveBeenCalled();
     expect((result as { id: string }).id).toBe("inv_1");
+  });
+
+  it("creates extra invoices with a frozen tax snapshot", async () => {
+    (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
+      id: appointmentId,
+      organisationId,
+      patient: { id: patientId, parent: { id: parentId } },
+      companion: { id: patientId, parent: { id: parentId } },
+    });
+    (prisma.organizationBilling.findUnique as jest.Mock).mockResolvedValue({
+      currency: "usd",
+    });
+    (prisma.invoice.create as jest.Mock).mockResolvedValue({
+      id: "inv_extra",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [],
+      subtotal: 40,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      totalAmount: 40,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const result = await InvoiceService.createExtraInvoiceForAppointment({
+      appointmentId,
+      items: [
+        {
+          name: "Medication",
+          description: "Medication",
+          quantity: 2,
+          unitPrice: 20,
+          total: 40,
+        },
+      ],
+    });
+
+    expect(prisma.invoice.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          taxProvider: "STRIPE",
+          taxSnapshot: expect.objectContaining({
+            create: expect.objectContaining({
+              provider: "STRIPE",
+              taxBehavior: "EXCLUSIVE",
+            }),
+          }),
+        }),
+      }),
+    );
+    expect((result as { id: string }).id).toBe("inv_extra");
   });
 
   it("updates invoice totals when adding items", async () => {
@@ -167,6 +237,10 @@ describe("InvoiceService", () => {
       totalAmount: 90,
       stripeCheckoutSessionId: "cs_1",
       stripeCheckoutUrl: "https://checkout",
+      taxSnapshot: {
+        provider: "STRIPE",
+        taxBehavior: "EXCLUSIVE",
+      },
       metadata: {},
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -208,14 +282,151 @@ describe("InvoiceService", () => {
     expect(prisma.invoice.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          taxProvider: "STRIPE",
           invoiceDiscountTotal: 15,
           totalAmount: 135,
           stripeCheckoutSessionId: null,
           stripeCheckoutUrl: null,
+          taxSnapshot: expect.objectContaining({
+            upsert: expect.objectContaining({
+              create: expect.objectContaining({
+                provider: "STRIPE",
+                taxBehavior: "EXCLUSIVE",
+              }),
+              update: expect.objectContaining({
+                provider: "STRIPE",
+                taxBehavior: "EXCLUSIVE",
+              }),
+            }),
+          }),
         }),
       }),
     );
     expect(result.totalAmount).toBe(135);
+  });
+
+  it("finalizes tax snapshots and locks future line edits", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_final",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [
+        {
+          name: "Consult",
+          description: "Consult",
+          quantity: 1,
+          unitPrice: 100,
+          total: 100,
+        },
+      ],
+      subtotal: 100,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 18,
+      taxPercent: 18,
+      taxSnapshot: {
+        provider: "STRIPE",
+        taxBehavior: "EXCLUSIVE",
+      },
+      finalizedAt: null,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_final",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [],
+      subtotal: 100,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 18,
+      taxPercent: 18,
+      taxProvider: "STRIPE",
+      finalizedAt: new Date(),
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const finalized = await InvoiceService.finalizeTaxForInvoice("inv_final");
+
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          finalizedAt: expect.any(Date),
+          taxProvider: "STRIPE",
+          taxTotal: 18,
+          taxSnapshot: expect.objectContaining({
+            upsert: expect.objectContaining({
+              create: expect.objectContaining({
+                provider: "STRIPE",
+                taxBehavior: "EXCLUSIVE",
+              }),
+              update: expect.objectContaining({
+                provider: "STRIPE",
+                taxBehavior: "EXCLUSIVE",
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(finalized.id).toBe("inv_final");
+
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_final",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [],
+      subtotal: 100,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 18,
+      taxPercent: 18,
+      taxSnapshot: {
+        provider: "STRIPE",
+        taxBehavior: "EXCLUSIVE",
+      },
+      finalizedAt: new Date(),
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(
+      InvoiceService.addItemsToInvoice("inv_final", [
+        {
+          description: "Lab",
+          name: "Lab",
+          quantity: 1,
+          unitPrice: 50,
+          total: 50,
+        },
+      ]),
+    ).rejects.toThrow("Cannot modify a finalized invoice");
   });
 
   it("marks paid invoices and supports manual settlement", async () => {
