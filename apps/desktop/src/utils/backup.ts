@@ -110,8 +110,14 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
     writeFileSync(metaFilename(destDir), JSON.stringify(entries, null, 2), 'utf8');
   };
 
-  const collectFiles = (srcPaths: string[]): { srcPath: string; relativePath: string }[] => {
+  const collectFiles = (
+    srcPaths: string[],
+    excludeDir?: string
+  ): { srcPath: string; relativePath: string }[] => {
     const files: { srcPath: string; relativePath: string }[] = [];
+    // Never archive the backup destination itself, or each run would nest the
+    // prior backups + metadata and grow without bound.
+    const excludeResolved = excludeDir ? path.resolve(excludeDir) : null;
 
     // Recurse into subdirectories so nested stores (e.g. userData/document-vault
     // and the compliance directories) are included, not just immediate files.
@@ -128,6 +134,7 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
         try {
           const s = statSync(fullPath);
           if (s.isDirectory()) {
+            if (excludeResolved && path.resolve(fullPath) === excludeResolved) continue;
             walkDir(fullPath, relativePath);
           } else if (s.isFile()) {
             files.push({ srcPath: fullPath, relativePath });
@@ -158,7 +165,7 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
     try {
       mkdirSync(options.destinationDir, { recursive: true });
 
-      const files = collectFiles(options.sourcePaths);
+      const files = collectFiles(options.sourcePaths, options.destinationDir);
       const fileCount = files.length;
 
       await createArchive(zipPath, files, options.compressionLevel ?? 6);
@@ -169,7 +176,9 @@ export const createBackupService = (deps: BackupDeps = {}): BackupService => {
 
       if (options.encrypt && deps.encryptString) {
         const raw = readFileSync(zipPath);
-        const encrypted = deps.encryptString(raw.toString('utf8'));
+        // base64 (not utf8) so the binary zip survives the string round-trip;
+        // restore must base64-decode after decryptString.
+        const encrypted = deps.encryptString(raw.toString('base64'));
         const encPath = path.join(options.destinationDir, `${id}.enc`);
         writeFileSync(encPath, encrypted);
         unlinkSync(zipPath);

@@ -190,7 +190,7 @@ export const createControlledSubstanceLogbook = (
   const getDailyLog = (date: Date): CsTransaction[] => {
     const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
     const end = start + 86_400_000;
-    return getTransactions({ since: start }).filter((tx) => tx.timestamp <= end);
+    return getTransactions({ since: start }).filter((tx) => tx.timestamp < end);
   };
 
   const getAuditTrail = (): ReturnType<AuditLog['query']> =>

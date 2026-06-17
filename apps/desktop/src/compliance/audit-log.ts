@@ -210,7 +210,7 @@ export const createAuditLog = async (dirPath: string, deps: AuditDeps = {}): Pro
     since?: number;
     limit?: number;
   }): AuditEntry[] => {
-    let entries = load();
+    let entries = [...load()];
     if (opts?.resourceType) {
       entries = entries.filter((e) => e.resourceType === opts.resourceType);
     }
