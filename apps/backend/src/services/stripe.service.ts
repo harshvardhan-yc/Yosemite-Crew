@@ -2,33 +2,15 @@
 import Stripe from "stripe";
 import logger from "../utils/logger";
 
-import OrganizationModel from "src/models/organization";
-import ServiceModel from "src/models/service";
-import AppointmentModel from "src/models/appointment";
 import { InvoiceService } from "./invoice.service";
 import { NotificationTemplates } from "src/utils/notificationTemplates";
 import { NotificationService } from "./notification.service";
 
-import { OrgBilling } from "src/models/organization.billing";
-import { OrgUsageCounters } from "src/models/organisation.usage.counter";
-import UserOrganizationModel from "src/models/user-organization";
 import { prisma } from "src/config/prisma";
-import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
 import { getOrgBillingCurrency } from "src/utils/billing";
-import {
-  Prisma,
-  AccessState,
-  BillingInterval,
-  SubscriptionStatus,
-} from "@prisma/client";
-import { isReadFromPostgres } from "src/config/read-switch";
+import { Prisma, BillingInterval, SubscriptionStatus } from "@prisma/client";
 
 let stripeClient: Stripe | null = null;
-
-type IdLike = { toString(): string } | string;
-
-const toIdString = (value: IdLike | null | undefined) =>
-  typeof value === "string" ? value : value?.toString?.();
 
 const extractAppointmentTypeId = (
   value: Prisma.JsonValue | null,
@@ -55,80 +37,6 @@ const extractAppointmentPatientRefs = (appointment: {
   companion?: Prisma.JsonValue | null;
 }) =>
   extractCompanionRefs(appointment.patient ?? appointment.companion ?? null);
-
-type OrgBillingDoc = {
-  _id?: IdLike;
-  orgId: IdLike;
-  connectAccountId?: string | null;
-  canAcceptPayments?: boolean;
-  connectChargesEnabled?: boolean;
-  connectPayoutsEnabled?: boolean;
-  connectDisabledReason?: string | null;
-  connectRequirements?: {
-    currentlyDue?: string[];
-    eventuallyDue?: string[];
-    pastDue?: string[];
-    pendingVerification?: string[];
-    errors?: unknown[];
-  } | null;
-  stripeCustomerId?: string | null;
-  stripeSubscriptionId?: string | null;
-  stripeSubscriptionItemId?: string | null;
-  stripePriceId?: string | null;
-  stripeProductId?: string | null;
-  stripeLivemode?: boolean;
-  plan?: "free" | "business";
-  billingInterval?: "month" | "year" | null;
-  currency?: string;
-  seatQuantity?: number;
-  seatQuantityUpdatedAt?: Date | null;
-  subscriptionStatus?: string | null;
-  cancelAtPeriodEnd?: boolean;
-  canceledAt?: Date | null;
-  currentPeriodStart?: Date | null;
-  currentPeriodEnd?: Date | null;
-  nextInvoiceAt?: Date | null;
-  lastInvoiceId?: string | null;
-  lastPaymentStatus?: string | null;
-  lastPaymentAt?: Date | null;
-  joinedAt?: Date | null;
-  upgradedAt?: Date | null;
-  downgradedAt?: Date | null;
-  accessState?: string | null;
-  gracePeriodEndsAt?: Date | null;
-  version?: number;
-  lastStripeEventId?: string | null;
-  createdAt?: Date;
-  updatedAt?: Date;
-};
-
-type OrgBillingMongooseDoc = OrgBillingDoc & {
-  save: () => Promise<OrgBillingMongooseDoc>;
-};
-
-type OrgUsageCountersDoc = {
-  _id?: IdLike;
-  orgId: IdLike;
-  appointmentsUsed?: number;
-  toolsUsed?: number;
-  usersActiveCount?: number;
-  usersBillableCount?: number;
-  freeAppointmentsLimit?: number;
-  freeToolsLimit?: number;
-  freeUsersLimit?: number;
-  freeLimitReachedAt?: Date | null;
-  createdAt?: Date;
-  updatedAt?: Date;
-};
-
-const toAccessState = (value?: string | null): AccessState | undefined => {
-  if (!value) return undefined;
-  if (value === "free") return "free";
-  if (value === "active") return "active";
-  if (value === "past_due") return "past_due";
-  if (value === "suspended") return "suspended";
-  return undefined;
-};
 
 const toBillingInterval = (
   value?: string | null,
@@ -168,152 +76,31 @@ function toStripeAmount(amount: number): number {
 }
 
 // --- Billing helpers ---
+type BillingDoc = {
+  stripeCustomerId?: string | null;
+};
+
 async function ensureBillingDocs(
   orgId: string,
-): Promise<{ billing: OrgBillingMongooseDoc; usage: OrgUsageCountersDoc }> {
-  if (isReadFromPostgres()) {
-    const [billing, usage] = await Promise.all([
-      prisma.organizationBilling.upsert({
-        where: { orgId },
-        create: { orgId },
-        update: {},
-      }),
-      prisma.organizationUsageCounter.upsert({
-        where: { orgId },
-        create: { orgId },
-        update: {},
-      }),
-    ]);
+): Promise<{ billing: BillingDoc }> {
+  const billing = await prisma.organizationBilling.upsert({
+    where: { orgId },
+    create: { orgId },
+    update: {},
+  });
 
-    return {
-      billing: billing as unknown as OrgBillingMongooseDoc,
-      usage: usage as unknown as OrgUsageCountersDoc,
-    };
-  }
-
-  const [billing, usage] = await Promise.all([
-    OrgBilling.findOneAndUpdate(
-      { orgId },
-      { $setOnInsert: { orgId } },
-      { upsert: true, new: true },
-    ) as Promise<OrgBillingMongooseDoc | null>,
-    OrgUsageCounters.findOneAndUpdate(
-      { orgId },
-      { $setOnInsert: { orgId } },
-      { upsert: true, new: true },
-    ) as Promise<OrgUsageCountersDoc | null>,
-  ]);
-
-  if (!billing || !usage) {
-    throw new Error("Failed to initialize billing or usage counters");
-  }
-
-  await syncOrgBillingToPostgres(billing);
-  await syncOrgUsageToPostgres(usage);
-
-  return { billing, usage };
+  return {
+    billing: billing as BillingDoc,
+  };
 }
-
-const syncOrgBillingToPostgres = async (doc: OrgBillingDoc | null) => {
-  if (!shouldDualWrite || !doc) return;
-  const orgId = toIdString(doc.orgId);
-  if (!orgId) return;
-  const id = toIdString(doc._id) ?? orgId;
-  const payload = {
-    connectAccountId: doc.connectAccountId ?? undefined,
-    canAcceptPayments: doc.canAcceptPayments ?? false,
-    connectChargesEnabled: doc.connectChargesEnabled ?? false,
-    connectPayoutsEnabled: doc.connectPayoutsEnabled ?? false,
-    connectDisabledReason: doc.connectDisabledReason ?? undefined,
-    connectRequirements: (doc.connectRequirements ??
-      undefined) as Prisma.InputJsonValue,
-    stripeCustomerId: doc.stripeCustomerId ?? undefined,
-    stripeSubscriptionId: doc.stripeSubscriptionId ?? undefined,
-    stripeSubscriptionItemId: doc.stripeSubscriptionItemId ?? undefined,
-    stripePriceId: doc.stripePriceId ?? undefined,
-    stripeProductId: doc.stripeProductId ?? undefined,
-    stripeLivemode: doc.stripeLivemode ?? false,
-    plan: doc.plan ?? "free",
-    billingInterval: toBillingInterval(doc.billingInterval),
-    currency: doc.currency ?? "usd",
-    seatQuantity: doc.seatQuantity ?? 0,
-    seatQuantityUpdatedAt: doc.seatQuantityUpdatedAt ?? undefined,
-    subscriptionStatus: toSubscriptionStatus(doc.subscriptionStatus) ?? "none",
-    cancelAtPeriodEnd: doc.cancelAtPeriodEnd ?? false,
-    canceledAt: doc.canceledAt ?? undefined,
-    currentPeriodStart: doc.currentPeriodStart ?? undefined,
-    currentPeriodEnd: doc.currentPeriodEnd ?? undefined,
-    nextInvoiceAt: doc.nextInvoiceAt ?? undefined,
-    lastInvoiceId: doc.lastInvoiceId ?? undefined,
-    lastPaymentStatus: doc.lastPaymentStatus ?? undefined,
-    lastPaymentAt: doc.lastPaymentAt ?? undefined,
-    joinedAt: doc.joinedAt ?? undefined,
-    upgradedAt: doc.upgradedAt ?? undefined,
-    downgradedAt: doc.downgradedAt ?? undefined,
-    accessState: toAccessState(doc.accessState) ?? "free",
-    gracePeriodEndsAt: doc.gracePeriodEndsAt ?? undefined,
-    version: doc.version ?? 0,
-    lastStripeEventId: doc.lastStripeEventId ?? undefined,
-    updatedAt: doc.updatedAt ?? undefined,
-  };
-  try {
-    await prisma.organizationBilling.upsert({
-      where: { orgId },
-      create: {
-        id,
-        orgId,
-        ...payload,
-        createdAt: doc.createdAt ?? undefined,
-      },
-      update: payload,
-    });
-  } catch (err) {
-    handleDualWriteError("OrganizationBilling", err);
-  }
-};
-
-const syncOrgUsageToPostgres = async (doc: OrgUsageCountersDoc | null) => {
-  if (!shouldDualWrite || !doc) return;
-  const orgId = toIdString(doc.orgId);
-  if (!orgId) return;
-  const id = toIdString(doc._id) ?? orgId;
-  const payload = {
-    appointmentsUsed: doc.appointmentsUsed ?? 0,
-    toolsUsed: doc.toolsUsed ?? 0,
-    usersActiveCount: doc.usersActiveCount ?? 0,
-    usersBillableCount: doc.usersBillableCount ?? 0,
-    freeAppointmentsLimit: doc.freeAppointmentsLimit ?? 120,
-    freeToolsLimit: doc.freeToolsLimit ?? 200,
-    freeUsersLimit: doc.freeUsersLimit ?? 10,
-    freeLimitReachedAt: doc.freeLimitReachedAt ?? undefined,
-    updatedAt: doc.updatedAt ?? undefined,
-  };
-  try {
-    await prisma.organizationUsageCounter.upsert({
-      where: { orgId },
-      create: {
-        id,
-        orgId,
-        ...payload,
-        createdAt: doc.createdAt ?? undefined,
-      },
-      update: payload,
-    });
-  } catch (err) {
-    handleDualWriteError("OrganizationUsageCounter", err);
-  }
-};
 
 async function computeBillableSeats(orgId: string): Promise<number> {
   // Every active user in this org is billable
-  if (isReadFromPostgres()) {
-    return prisma.userOrganization.count({
-      where: { organizationReference: orgId, active: true },
-    });
-  }
-  return UserOrganizationModel.countDocuments({
-    organizationReference: orgId,
-    active: true,
+  return prisma.userOrganization.count({
+    where: {
+      organizationReference: orgId,
+      active: true,
+    },
   });
 }
 
@@ -524,67 +311,24 @@ export const StripeService = {
 
   async syncSubscriptionSeats(orgId: string) {
     const stripe = getStripeClient();
-    const { billing } = await ensureBillingDocs(orgId);
+    const billingRow = await prisma.organizationBilling.findUnique({
+      where: { orgId },
+    });
 
-    if (isReadFromPostgres()) {
-      const billingRow = await prisma.organizationBilling.findUnique({
-        where: { orgId },
-      });
-
-      if (!billingRow) return { updated: false, reason: "not_business" };
-      if (billingRow.plan !== "business")
-        return { updated: false, reason: "not_business" };
-      const subscriptionItemId = billingRow.stripeSubscriptionItemId;
-      if (!subscriptionItemId)
-        return { updated: false, reason: "missing_item_id" };
-
-      const subscriptionStatus = billingRow.subscriptionStatus ?? "none";
-      if (!["active", "trialing", "past_due"].includes(subscriptionStatus)) {
-        return { updated: false, reason: "subscription_not_syncable" };
-      }
-
-      const newSeats = await computeBillableSeats(orgId);
-      const oldSeats = billingRow.seatQuantity ?? 0;
-      if (newSeats === oldSeats) return { updated: false, reason: "no_change" };
-
-      const prorationBehavior =
-        newSeats > oldSeats ? "create_prorations" : "none";
-
-      await stripe.subscriptionItems.update(subscriptionItemId, {
-        quantity: newSeats,
-        proration_behavior: prorationBehavior,
-      });
-
-      await prisma.organizationUsageCounter.updateMany({
-        where: { orgId },
-        data: { usersActiveCount: newSeats, usersBillableCount: newSeats },
-      });
-
-      await prisma.organizationBilling.update({
-        where: { orgId },
-        data: {
-          seatQuantity: newSeats,
-          seatQuantityUpdatedAt: new Date(),
-        },
-      });
-
-      return { updated: true, oldSeats, newSeats, prorationBehavior };
-    }
-
-    if (billing.plan !== "business")
+    if (!billingRow) return { updated: false, reason: "not_business" };
+    if (billingRow.plan !== "business")
       return { updated: false, reason: "not_business" };
-    const subscriptionItemId = billing.stripeSubscriptionItemId;
+    const subscriptionItemId = billingRow.stripeSubscriptionItemId;
     if (!subscriptionItemId)
       return { updated: false, reason: "missing_item_id" };
 
-    // Don’t sync if fully canceled/unpaid/suspended
-    const subscriptionStatus = billing.subscriptionStatus ?? "none";
+    const subscriptionStatus = billingRow.subscriptionStatus ?? "none";
     if (!["active", "trialing", "past_due"].includes(subscriptionStatus)) {
       return { updated: false, reason: "subscription_not_syncable" };
     }
 
     const newSeats = await computeBillableSeats(orgId);
-    const oldSeats = billing.seatQuantity ?? 0;
+    const oldSeats = billingRow.seatQuantity ?? 0;
     if (newSeats === oldSeats) return { updated: false, reason: "no_change" };
 
     const prorationBehavior =
@@ -595,25 +339,23 @@ export const StripeService = {
       proration_behavior: prorationBehavior,
     });
 
-    await OrgUsageCounters.updateOne(
-      { orgId },
-      { usersActiveCount: newSeats, usersBillableCount: newSeats },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.organizationUsageCounter.updateMany({
-          where: { orgId },
-          data: { usersActiveCount: newSeats, usersBillableCount: newSeats },
-        });
-      } catch (err) {
-        handleDualWriteError("OrganizationUsageCounter syncSeats", err);
-      }
-    }
+    await prisma.organizationUsageCounter.upsert({
+      where: { orgId },
+      create: {
+        orgId,
+        usersActiveCount: newSeats,
+        usersBillableCount: newSeats,
+      },
+      update: { usersActiveCount: newSeats, usersBillableCount: newSeats },
+    });
 
-    billing.seatQuantity = newSeats;
-    billing.seatQuantityUpdatedAt = new Date();
-    await billing.save();
-    await syncOrgBillingToPostgres(billing);
+    await prisma.organizationBilling.update({
+      where: { orgId },
+      data: {
+        seatQuantity: newSeats,
+        seatQuantityUpdatedAt: new Date(),
+      },
+    });
 
     return { updated: true, oldSeats, newSeats, prorationBehavior };
   },
@@ -624,86 +366,34 @@ export const StripeService = {
 
   async createPaymentIntentForAppointment(appointmentId: string) {
     const stripe = getStripeClient();
-
-    if (isReadFromPostgres()) {
-      const appointment = await prisma.appointment.findUnique({
-        where: { id: appointmentId },
-        select: {
-          id: true,
-          status: true,
-          organisationId: true,
-          appointmentType: true,
-          patient: true,
-        },
-      });
-      if (!appointment) throw new Error("Appointment not found");
-
-      const normalizedStatus = appointment.status;
-      if (!["REQUESTED", "UPCOMING"].includes(normalizedStatus)) {
-        throw new Error("Appointment does not allow payment");
-      }
-
-      const serviceId = extractAppointmentTypeId(appointment.appointmentType);
-      if (!serviceId) throw new Error("Service not found");
-
-      const service = await prisma.service.findUnique({
-        where: { id: serviceId },
-      });
-      if (!service) throw new Error("Service not found");
-
-      const organisation = await prisma.organization.findUnique({
-        where: { id: appointment.organisationId },
-        select: { stripeAccountId: true },
-      });
-      if (!organisation?.stripeAccountId)
-        throw new Error("Organisation has no Stripe account");
-
-      const { parentId, patientId } =
-        extractAppointmentPatientRefs(appointment);
-
-      const amount = toStripeAmount(service.cost);
-      const currency = await getOrgBillingCurrency(appointment.organisationId);
-
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount,
-        currency,
-        metadata: {
-          type: "APPOINTMENT_BOOKING",
-          appointmentId,
-          organisationId: appointment.organisationId,
-          parentId: parentId ?? "",
-          patientId: patientId ?? "",
-          companionId: patientId ?? "",
-        },
-        transfer_data: { destination: organisation.stripeAccountId },
-      });
-
-      return {
-        paymentIntentId: paymentIntent.id,
-        clientSecret: paymentIntent.client_secret,
-        amount: service.cost,
-        currency,
-      };
-    }
-
-    const appointment = await AppointmentModel.findById(appointmentId);
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: {
+        id: true,
+        status: true,
+        organisationId: true,
+        appointmentType: true,
+        patient: true,
+      },
+    });
     if (!appointment) throw new Error("Appointment not found");
 
-    const rawStatus = appointment.status as string;
-    const normalizedStatus =
-      rawStatus === "NO_PAYMENT" ? "REQUESTED" : rawStatus;
-    if (!["REQUESTED", "UPCOMING"].includes(normalizedStatus)) {
+    if (!["REQUESTED", "UPCOMING"].includes(appointment.status)) {
       throw new Error("Appointment does not allow payment");
     }
 
-    const service = await ServiceModel.findById(
-      appointment.appointmentType?.id,
-    );
+    const serviceId = extractAppointmentTypeId(appointment.appointmentType);
+    if (!serviceId) throw new Error("Service not found");
+
+    const service = await prisma.service.findUnique({
+      where: { id: serviceId },
+    });
     if (!service) throw new Error("Service not found");
 
-    const organisation = await OrganizationModel.findById(
-      appointment.organisationId,
-    );
+    const organisation = await prisma.organization.findUnique({
+      where: { id: appointment.organisationId },
+      select: { stripeAccountId: true },
+    });
     if (!organisation?.stripeAccountId)
       throw new Error("Organisation has no Stripe account");
 
@@ -711,6 +401,7 @@ export const StripeService = {
     const currency = await getOrgBillingCurrency(appointment.organisationId);
 
     const { parentId, patientId } = extractAppointmentPatientRefs(appointment);
+    const companionId = patientId ?? "";
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
@@ -720,15 +411,11 @@ export const StripeService = {
         appointmentId,
         organisationId: appointment.organisationId,
         parentId: parentId ?? "",
-        patientId: patientId ?? "",
+        patientId: companionId,
+        companionId,
       },
       transfer_data: { destination: organisation.stripeAccountId },
     });
-
-    await AppointmentModel.updateOne(
-      { _id: appointmentId },
-      { stripePaymentIntentId: paymentIntent.id },
-    );
 
     return {
       paymentIntentId: paymentIntent.id,
@@ -740,152 +427,151 @@ export const StripeService = {
 
   async createPaymentIntentForInvoice(invoiceId: string) {
     const stripe = getStripeClient();
+    let invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+    if (!invoice) throw new Error("Invoice not found");
 
-    if (isReadFromPostgres()) {
-      let invoice = await prisma.invoice.findUnique({
-        where: { id: invoiceId },
-      });
-      if (!invoice) throw new Error("Invoice not found");
-
-      if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
-        throw new Error("Invoice is not payable");
-      }
-      if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
-        throw new Error("Invoice is marked for in-clinic payment");
-      }
-
-      if (
-        invoice.stripeCheckoutSessionId &&
-        invoice.paymentCollectionMethod === "PAYMENT_LINK"
-      ) {
-        await prisma.invoice.updateMany({
-          where: { id: invoiceId },
-          data: {
-            paymentCollectionMethod: "PAYMENT_INTENT",
-            stripeCheckoutSessionId: null,
-            stripeCheckoutUrl: null,
-          },
-        });
-
-        invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
-        if (!invoice) throw new Error("Invoice not found after switch");
-      }
-
-      if (invoice.stripePaymentIntentId) {
-        return this.retrievePaymentIntent(invoice.stripePaymentIntentId);
-      }
-
-      if (!invoice.organisationId) {
-        throw new Error("Invoice missing organisation");
-      }
-
-      const organisation = await prisma.organization.findUnique({
-        where: { id: invoice.organisationId },
-        select: { stripeAccountId: true },
-      });
-      if (!organisation?.stripeAccountId) {
-        throw new Error(
-          "Organisation does not have a Stripe connected account",
-        );
-      }
-
-      const amountToPay = invoice.totalAmount;
-      const stripeAmount = toStripeAmount(amountToPay);
-
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: stripeAmount,
-        currency: invoice.currency || "usd",
-        metadata: {
-          type: "INVOICE_PAYMENT",
-          invoiceId,
-          appointmentId: invoice.appointmentId || "",
-          organisationId: invoice.organisationId ?? "",
-          parentId: invoice.parentId ?? "",
-          patientId: invoice.patientId ?? "",
-        },
-        description: `Payment for Invoice ${invoiceId}`,
-        transfer_data: { destination: organisation.stripeAccountId },
-      });
-
-      await InvoiceService.attachStripeDetails(invoiceId, {
-        stripePaymentIntentId: paymentIntent.id,
-        status: "AWAITING_PAYMENT",
-        paymentCollectionMethod: "PAYMENT_INTENT",
-      });
-
-      return {
-        paymentIntentId: paymentIntent.id,
-        clientSecret: paymentIntent.client_secret,
-        amount: amountToPay,
-        currency: invoice.currency || "usd",
-      };
+    if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
+      throw new Error("Invoice is not payable");
+    }
+    if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
+      throw new Error("Invoice is marked for in-clinic payment");
     }
 
-    throw new Error("Postgres read mode is required for invoice payments");
+    if (
+      invoice.stripeCheckoutSessionId &&
+      invoice.paymentCollectionMethod === "PAYMENT_LINK"
+    ) {
+      await prisma.invoice.updateMany({
+        where: { id: invoiceId },
+        data: {
+          paymentCollectionMethod: "PAYMENT_INTENT",
+          stripeCheckoutSessionId: null,
+          stripeCheckoutUrl: null,
+        },
+      });
+
+      invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+      if (!invoice) throw new Error("Invoice not found after switch");
+    }
+
+    if (invoice.stripePaymentIntentId) {
+      return this.retrievePaymentIntent(invoice.stripePaymentIntentId);
+    }
+
+    if (!invoice.organisationId) {
+      throw new Error("Invoice missing organisation");
+    }
+
+    const organisation = await prisma.organization.findUnique({
+      where: { id: invoice.organisationId },
+      select: { stripeAccountId: true },
+    });
+    if (!organisation?.stripeAccountId) {
+      throw new Error("Organisation does not have a Stripe connected account");
+    }
+
+    const amountToPay = invoice.totalAmount;
+    const stripeAmount = toStripeAmount(amountToPay);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: stripeAmount,
+      currency: invoice.currency || "usd",
+      metadata: {
+        type: "INVOICE_PAYMENT",
+        invoiceId,
+        appointmentId: invoice.appointmentId || "",
+        organisationId: invoice.organisationId ?? "",
+        parentId: invoice.parentId ?? "",
+        patientId: invoice.patientId ?? "",
+      },
+      description: `Payment for Invoice ${invoiceId}`,
+      transfer_data: { destination: organisation.stripeAccountId },
+    });
+
+    await InvoiceService.attachStripeDetails(invoiceId, {
+      stripePaymentIntentId: paymentIntent.id,
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_INTENT",
+    });
+
+    return {
+      paymentIntentId: paymentIntent.id,
+      clientSecret: paymentIntent.client_secret,
+      amount: amountToPay,
+      currency: invoice.currency || "usd",
+    };
   },
 
   async createCheckoutSessionForInvoice(invoiceId: string) {
     const stripe = getStripeClient();
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+    if (!invoice) throw new Error("Invoice not found");
 
-    if (isReadFromPostgres()) {
-      const invoice = await prisma.invoice.findUnique({
-        where: { id: invoiceId },
-      });
-      if (!invoice) throw new Error("Invoice not found");
+    if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
+      throw new Error("Invoice is not payable");
+    }
+    if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
+      throw new Error("Invoice is marked for in-clinic payment");
+    }
 
-      if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
-        throw new Error("Invoice is not payable");
-      }
-      if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
-        throw new Error("Invoice is marked for in-clinic payment");
-      }
+    if (invoice.stripePaymentIntentId) {
+      throw new Error("Invoice already has a PaymentIntent");
+    }
+    if (invoice.stripeCheckoutSessionId) {
+      return {
+        sessionId: invoice.stripeCheckoutSessionId,
+        url: invoice.stripeCheckoutUrl,
+      };
+    }
 
-      if (invoice.stripePaymentIntentId) {
-        throw new Error("Invoice already has a PaymentIntent");
-      }
-      if (invoice.stripeCheckoutSessionId) {
-        return {
-          sessionId: invoice.stripeCheckoutSessionId,
-          url: invoice.stripeCheckoutUrl,
-        };
-      }
+    if (!invoice.organisationId) {
+      throw new Error("Invoice missing organisation");
+    }
 
-      if (!invoice.organisationId) {
-        throw new Error("Invoice missing organisation");
-      }
+    const organisation = await prisma.organization.findUnique({
+      where: { id: invoice.organisationId },
+      select: { stripeAccountId: true },
+    });
+    if (!organisation?.stripeAccountId)
+      throw new Error("Organisation not connected to Stripe");
 
-      const organisation = await prisma.organization.findUnique({
-        where: { id: invoice.organisationId },
-        select: { stripeAccountId: true },
-      });
-      if (!organisation?.stripeAccountId)
-        throw new Error("Organisation not connected to Stripe");
+    const items = Array.isArray(invoice.items)
+      ? invoice.items
+      : ([] as unknown[]);
+    if (items.length === 0) {
+      throw new Error("Invoice items are missing");
+    }
 
-      const items = Array.isArray(invoice.items)
-        ? invoice.items
-        : ([] as unknown[]);
-      if (items.length === 0) {
-        throw new Error("Invoice items are missing");
-      }
+    const expiresAt = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
 
-      const expiresAt = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
-
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        line_items: items.map((item) => ({
-          price_data: {
-            currency: invoice.currency || "usd",
-            product_data: {
-              name: (item as { name?: string }).name ?? "Service",
-              description:
-                (item as { description?: string }).description ?? undefined,
-            },
-            unit_amount: Math.round(
-              (item as { unitPrice: number }).unitPrice * 100,
-            ),
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: items.map((item) => ({
+        price_data: {
+          currency: invoice.currency || "usd",
+          product_data: {
+            name: (item as { name?: string }).name ?? "Service",
+            description:
+              (item as { description?: string }).description ?? undefined,
           },
-          quantity: (item as { quantity: number }).quantity,
-        })),
+          unit_amount: Math.round(
+            (item as { unitPrice: number }).unitPrice * 100,
+          ),
+        },
+        quantity: (item as { quantity: number }).quantity,
+      })),
+      metadata: {
+        type: "INVOICE_PAYMENT",
+        invoiceId: invoice.id,
+        appointmentId: invoice.appointmentId ?? "",
+        organisationId: invoice.organisationId ?? "",
+        parentId: invoice.parentId ?? "",
+      },
+      payment_intent_data: {
         metadata: {
           type: "INVOICE_PAYMENT",
           invoiceId: invoice.id,
@@ -893,34 +579,23 @@ export const StripeService = {
           organisationId: invoice.organisationId ?? "",
           parentId: invoice.parentId ?? "",
         },
-        payment_intent_data: {
-          metadata: {
-            type: "INVOICE_PAYMENT",
-            invoiceId: invoice.id,
-            appointmentId: invoice.appointmentId ?? "",
-            organisationId: invoice.organisationId ?? "",
-            parentId: invoice.parentId ?? "",
-          },
-          transfer_data: { destination: organisation.stripeAccountId },
-        },
-        success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-        cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-        expires_at: expiresAt,
-      });
+        transfer_data: { destination: organisation.stripeAccountId },
+      },
+      success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
+      cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
+      expires_at: expiresAt,
+    });
 
-      await prisma.invoice.updateMany({
-        where: { id: invoiceId },
-        data: {
-          paymentCollectionMethod: "PAYMENT_LINK",
-          stripeCheckoutSessionId: session.id,
-          stripeCheckoutUrl: session.url ?? undefined,
-        },
-      });
+    await prisma.invoice.updateMany({
+      where: { id: invoiceId },
+      data: {
+        paymentCollectionMethod: "PAYMENT_LINK",
+        stripeCheckoutSessionId: session.id,
+        stripeCheckoutUrl: session.url ?? undefined,
+      },
+    });
 
-      return { sessionId: session.id, url: session.url };
-    }
-
-    throw new Error("Postgres read mode is required for invoice checkout");
+    return { sessionId: session.id, url: session.url };
   },
 
   async retrievePaymentIntent(paymentIntentId: string) {
@@ -942,32 +617,29 @@ export const StripeService = {
 
   async refundPaymentIntent(paymentIntentId: string) {
     const stripe = getStripeClient();
+    const invoice = await prisma.invoice.findFirst({
+      where: { stripePaymentIntentId: paymentIntentId },
+    });
+    if (!invoice) throw new Error("Invoice not found");
 
-    if (isReadFromPostgres()) {
-      const invoice = await prisma.invoice.findFirst({
-        where: { stripePaymentIntentId: paymentIntentId },
-      });
-      if (!invoice) throw new Error("Invoice not found");
+    const paymentIntent = await stripe.paymentIntents.retrieve(
+      paymentIntentId,
+      {
+        expand: ["latest_charge"],
+      },
+    );
 
-      const paymentIntent = await stripe.paymentIntents.retrieve(
-        paymentIntentId,
-        { expand: ["latest_charge"] },
-      );
+    const charge = paymentIntent.latest_charge as Stripe.Charge;
+    if (!charge) throw new Error("No charge found for PaymentIntent");
 
-      const charge = paymentIntent.latest_charge as Stripe.Charge;
-      if (!charge) throw new Error("No charge found for PaymentIntent");
+    const refund = await stripe.refunds.create({ charge: charge.id });
+    await InvoiceService.markRefunded(invoice.id);
 
-      const refund = await stripe.refunds.create({ charge: charge.id });
-      await InvoiceService.markRefunded(invoice.id);
-
-      return {
-        refundId: refund.id,
-        status: refund.status,
-        amountRefunded: refund.amount / 100,
-      };
-    }
-
-    throw new Error("Postgres read mode is required for invoice refunds");
+    return {
+      refundId: refund.id,
+      status: refund.status,
+      amountRefunded: refund.amount / 100,
+    };
   },
 
   // ----------------------------
@@ -1044,71 +716,24 @@ export const StripeService = {
     const canAccept =
       account.charges_enabled === true && account.payouts_enabled === true;
 
-    if (isReadFromPostgres()) {
-      await prisma.organizationBilling.updateMany({
-        where: { connectAccountId: account.id },
-        data: {
-          currency: account.default_currency ?? undefined,
-          connectChargesEnabled: account.charges_enabled ?? false,
-          connectPayoutsEnabled: account.payouts_enabled ?? false,
-          canAcceptPayments: canAccept,
-          connectDisabledReason:
-            account.requirements?.disabled_reason ?? undefined,
-          connectRequirements: {
-            currentlyDue: account.requirements?.currently_due ?? [],
-            eventuallyDue: account.requirements?.eventually_due ?? [],
-            pastDue: account.requirements?.past_due ?? [],
-            pendingVerification:
-              account.requirements?.pending_verification ?? [],
-            errors: account.requirements?.errors ?? [],
-          } as unknown as Prisma.InputJsonValue,
-        },
-      });
-      return;
-    }
-
-    await OrgBilling.updateOne(
-      { connectAccountId: account.id },
-      {
-        currency: account.default_currency,
-        connectChargesEnabled: account.charges_enabled,
-        connectPayoutsEnabled: account.payouts_enabled,
+    await prisma.organizationBilling.updateMany({
+      where: { connectAccountId: account.id },
+      data: {
+        currency: account.default_currency ?? undefined,
+        connectChargesEnabled: account.charges_enabled ?? false,
+        connectPayoutsEnabled: account.payouts_enabled ?? false,
         canAcceptPayments: canAccept,
-        connectDisabledReason: account.requirements?.disabled_reason ?? null,
+        connectDisabledReason:
+          account.requirements?.disabled_reason ?? undefined,
         connectRequirements: {
           currentlyDue: account.requirements?.currently_due ?? [],
           eventuallyDue: account.requirements?.eventually_due ?? [],
           pastDue: account.requirements?.past_due ?? [],
           pendingVerification: account.requirements?.pending_verification ?? [],
           errors: account.requirements?.errors ?? [],
-        },
+        } as unknown as Prisma.InputJsonValue,
       },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.organizationBilling.updateMany({
-          where: { connectAccountId: account.id },
-          data: {
-            currency: account.default_currency ?? undefined,
-            connectChargesEnabled: account.charges_enabled ?? false,
-            connectPayoutsEnabled: account.payouts_enabled ?? false,
-            canAcceptPayments: canAccept,
-            connectDisabledReason:
-              account.requirements?.disabled_reason ?? undefined,
-            connectRequirements: {
-              currentlyDue: account.requirements?.currently_due ?? [],
-              eventuallyDue: account.requirements?.eventually_due ?? [],
-              pastDue: account.requirements?.past_due ?? [],
-              pendingVerification:
-                account.requirements?.pending_verification ?? [],
-              errors: account.requirements?.errors ?? [],
-            } as unknown as Prisma.InputJsonValue,
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("OrganizationBilling accountUpdated", err);
-      }
-    }
+    });
   },
 
   // ----------------------------
@@ -1125,123 +750,38 @@ export const StripeService = {
   async _handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     const item = subscription.items.data[0];
 
-    if (isReadFromPostgres()) {
-      await prisma.organizationBilling.updateMany({
-        where: { stripeSubscriptionId: subscription.id },
-        data: {
-          subscriptionStatus:
-            toSubscriptionStatus(subscription.status) ?? "none",
-          cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-          canceledAt: subscription.canceled_at
-            ? new Date(subscription.canceled_at * 1000)
-            : undefined,
-          seatQuantity: item?.quantity ?? 0,
-          currentPeriodStart: new Date(item.current_period_start * 1000),
-          currentPeriodEnd: new Date(item.current_period_end * 1000),
-        },
-      });
-      return;
-    }
-
-    await OrgBilling.updateOne(
-      { stripeSubscriptionId: subscription.id },
-      {
-        subscriptionStatus: subscription.status,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    await prisma.organizationBilling.updateMany({
+      where: { stripeSubscriptionId: subscription.id },
+      data: {
+        subscriptionStatus: toSubscriptionStatus(subscription.status) ?? "none",
+        cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
         canceledAt: subscription.canceled_at
           ? new Date(subscription.canceled_at * 1000)
-          : null,
-
+          : undefined,
         seatQuantity: item?.quantity ?? 0,
-
         currentPeriodStart: new Date(item.current_period_start * 1000),
         currentPeriodEnd: new Date(item.current_period_end * 1000),
       },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.organizationBilling.updateMany({
-          where: { stripeSubscriptionId: subscription.id },
-          data: {
-            subscriptionStatus:
-              toSubscriptionStatus(subscription.status) ?? "none",
-            cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-            canceledAt: subscription.canceled_at
-              ? new Date(subscription.canceled_at * 1000)
-              : undefined,
-            seatQuantity: item?.quantity ?? 0,
-            currentPeriodStart: new Date(item.current_period_start * 1000),
-            currentPeriodEnd: new Date(item.current_period_end * 1000),
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("OrganizationBilling subscriptionUpdated", err);
-      }
-    }
+    });
   },
 
   async _handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-    if (isReadFromPostgres()) {
-      await prisma.organizationBilling.updateMany({
-        where: { stripeSubscriptionId: subscription.id },
-        data: {
-          plan: "free",
-          accessState: "free",
-          downgradedAt: new Date(),
-          subscriptionStatus: "canceled",
-          billingInterval: null,
-          stripeSubscriptionItemId: null,
-          stripePriceId: null,
-          cancelAtPeriodEnd: false,
-          currentPeriodStart: null,
-          currentPeriodEnd: null,
-          gracePeriodEndsAt: null,
-        },
-      });
-      return;
-    }
-
-    await OrgBilling.updateOne(
-      { stripeSubscriptionId: subscription.id },
-      {
+    await prisma.organizationBilling.updateMany({
+      where: { stripeSubscriptionId: subscription.id },
+      data: {
         plan: "free",
         accessState: "free",
         downgradedAt: new Date(),
-
         subscriptionStatus: "canceled",
-        billingInterval: undefined,
-
+        billingInterval: null,
         stripeSubscriptionItemId: null,
         stripePriceId: null,
-
         cancelAtPeriodEnd: false,
         currentPeriodStart: null,
         currentPeriodEnd: null,
         gracePeriodEndsAt: null,
       },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.organizationBilling.updateMany({
-          where: { stripeSubscriptionId: subscription.id },
-          data: {
-            plan: "free",
-            accessState: "free",
-            downgradedAt: new Date(),
-            subscriptionStatus: "canceled",
-            billingInterval: undefined,
-            stripeSubscriptionItemId: null,
-            stripePriceId: null,
-            cancelAtPeriodEnd: false,
-            currentPeriodStart: null,
-            currentPeriodEnd: null,
-            gracePeriodEndsAt: null,
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("OrganizationBilling subscriptionDeleted", err);
-      }
-    }
+    });
   },
 
   async _handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -1252,46 +792,16 @@ export const StripeService = {
         : subscriptionValue?.id;
     if (!subscriptionId) return;
 
-    if (isReadFromPostgres()) {
-      await prisma.organizationBilling.updateMany({
-        where: { stripeSubscriptionId: subscriptionId },
-        data: {
-          lastInvoiceId: invoice.id ?? undefined,
-          lastPaymentStatus: "paid",
-          lastPaymentAt: new Date(),
-          accessState: "active",
-          gracePeriodEndsAt: null,
-        },
-      });
-      return;
-    }
-
-    await OrgBilling.updateOne(
-      { stripeSubscriptionId: subscriptionId },
-      {
-        lastInvoiceId: invoice.id,
+    await prisma.organizationBilling.updateMany({
+      where: { stripeSubscriptionId: subscriptionId },
+      data: {
+        lastInvoiceId: invoice.id ?? undefined,
         lastPaymentStatus: "paid",
         lastPaymentAt: new Date(),
         accessState: "active",
         gracePeriodEndsAt: null,
       },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.organizationBilling.updateMany({
-          where: { stripeSubscriptionId: subscriptionId },
-          data: {
-            lastInvoiceId: invoice.id ?? undefined,
-            lastPaymentStatus: "paid",
-            lastPaymentAt: new Date(),
-            accessState: "active",
-            gracePeriodEndsAt: null,
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("OrganizationBilling invoicePaid", err);
-      }
-    }
+    });
   },
 
   async _handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
@@ -1304,43 +814,15 @@ export const StripeService = {
 
     const graceEnd = addDays(new Date(), 7);
 
-    if (isReadFromPostgres()) {
-      await prisma.organizationBilling.updateMany({
-        where: { stripeSubscriptionId: subscriptionId },
-        data: {
-          lastInvoiceId: invoice.id ?? undefined,
-          lastPaymentStatus: "failed",
-          accessState: "past_due",
-          gracePeriodEndsAt: graceEnd,
-        },
-      });
-      return;
-    }
-
-    await OrgBilling.updateOne(
-      { stripeSubscriptionId: subscriptionId },
-      {
-        lastInvoiceId: invoice.id,
+    await prisma.organizationBilling.updateMany({
+      where: { stripeSubscriptionId: subscriptionId },
+      data: {
+        lastInvoiceId: invoice.id ?? undefined,
         lastPaymentStatus: "failed",
         accessState: "past_due",
         gracePeriodEndsAt: graceEnd,
       },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.organizationBilling.updateMany({
-          where: { stripeSubscriptionId: subscriptionId },
-          data: {
-            lastInvoiceId: invoice.id ?? undefined,
-            lastPaymentStatus: "failed",
-            accessState: "past_due",
-            gracePeriodEndsAt: graceEnd,
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("OrganizationBilling invoicePaymentFailed", err);
-      }
-    }
+    });
   },
 
   // ----------------------------
@@ -1362,104 +844,41 @@ export const StripeService = {
     // (your existing code unchanged)
     const appointmentId = pi.metadata?.appointmentId;
     if (!appointmentId) return;
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: {
+        id: true,
+        appointmentType: true,
+        organisationId: true,
+        patient: true,
+      },
+    });
+    if (!appointment) return;
 
-    if (isReadFromPostgres()) {
-      const appointment = await prisma.appointment.findUnique({
-        where: { id: appointmentId },
-        select: {
-          id: true,
-          appointmentType: true,
-          organisationId: true,
-          patient: true,
-        },
-      });
-      if (!appointment) return;
+    const openInvoice = await prisma.invoice.findFirst({
+      where: {
+        appointmentId,
+        status: { in: ["AWAITING_PAYMENT", "PENDING"] },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-      const openInvoice = await prisma.invoice.findFirst({
-        where: {
-          appointmentId,
-          status: { in: ["AWAITING_PAYMENT", "PENDING"] },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      if (openInvoice) {
-        const chargeId = pi.latest_charge as string;
-        const charge = await getStripeClient().charges.retrieve(chargeId);
-
-        await prisma.invoice.updateMany({
-          where: {
-            id: openInvoice.id,
-            status: { in: ["AWAITING_PAYMENT", "PENDING"] },
-          },
-          data: {
-            status: "PAID",
-            stripePaymentIntentId: pi.id,
-            stripeChargeId: charge.id,
-            stripeReceiptUrl: charge.receipt_url ?? undefined,
-            paymentCollectionMethod: "PAYMENT_INTENT",
-            updatedAt: new Date(),
-          },
-        });
-
-        await prisma.appointment.updateMany({
-          where: { id: appointmentId },
-          data: {
-            status: "REQUESTED",
-            updatedAt: new Date(),
-            expiresAt: null,
-          },
-        });
-
-        logger.info(
-          `Appointment ${appointmentId} booking PAID. Invoice ${openInvoice.id} settled`,
-        );
-        return;
-      }
-
-      const existingInvoice = await prisma.invoice.findFirst({
-        where: { appointmentId, status: "PAID" },
-      });
-      if (existingInvoice) return;
-
+    if (openInvoice) {
       const chargeId = pi.latest_charge as string;
       const charge = await getStripeClient().charges.retrieve(chargeId);
 
-      const serviceId = extractAppointmentTypeId(appointment.appointmentType);
-      if (!serviceId) return;
-
-      const service = await prisma.service.findUnique({
-        where: { id: serviceId },
-      });
-      if (!service) return;
-
-      const { parentId, patientId } =
-        extractAppointmentPatientRefs(appointment);
-
-      await prisma.invoice.create({
+      await prisma.invoice.updateMany({
+        where: {
+          id: openInvoice.id,
+          status: { in: ["AWAITING_PAYMENT", "PENDING"] },
+        },
         data: {
-          appointmentId,
-          organisationId: appointment.organisationId,
-          parentId: parentId ?? undefined,
-          patientId: patientId ?? undefined,
-          currency: pi.currency ?? "usd",
           status: "PAID",
-          items: [
-            {
-              name: service.name,
-              description: service.description ?? undefined,
-              quantity: 1,
-              unitPrice: service.cost,
-              total: service.cost,
-            },
-          ] as unknown as Prisma.InputJsonValue,
-          subtotal: service.cost,
-          discountTotal: 0,
-          taxTotal: 0,
-          totalAmount: service.cost,
           stripePaymentIntentId: pi.id,
           stripeChargeId: charge.id,
           stripeReceiptUrl: charge.receipt_url ?? undefined,
+          paymentCollectionMethod: "PAYMENT_INTENT",
+          updatedAt: new Date(),
         },
       });
 
@@ -1472,13 +891,67 @@ export const StripeService = {
         },
       });
 
-      logger.info(`Appointment ${appointmentId} booking PAID. Invoice created`);
+      logger.info(
+        `Appointment ${appointmentId} booking PAID. Invoice ${openInvoice.id} settled`,
+      );
       return;
     }
 
-    throw new Error(
-      "Postgres read mode is required for appointment booking payments",
-    );
+    const existingInvoice = await prisma.invoice.findFirst({
+      where: { appointmentId, status: "PAID" },
+    });
+    if (existingInvoice) return;
+
+    const chargeId = pi.latest_charge as string;
+    const charge = await getStripeClient().charges.retrieve(chargeId);
+
+    const serviceId = extractAppointmentTypeId(appointment.appointmentType);
+    if (!serviceId) return;
+
+    const service = await prisma.service.findUnique({
+      where: { id: serviceId },
+    });
+    if (!service) return;
+
+    const { parentId, patientId } = extractAppointmentPatientRefs(appointment);
+
+    await prisma.invoice.create({
+      data: {
+        appointmentId,
+        organisationId: appointment.organisationId,
+        parentId: parentId ?? undefined,
+        patientId: patientId ?? undefined,
+        currency: pi.currency ?? "usd",
+        status: "PAID",
+        items: [
+          {
+            name: service.name,
+            description: service.description ?? undefined,
+            quantity: 1,
+            unitPrice: service.cost,
+            total: service.cost,
+          },
+        ] as unknown as Prisma.InputJsonValue,
+        subtotal: service.cost,
+        discountTotal: 0,
+        taxTotal: 0,
+        totalAmount: service.cost,
+        stripePaymentIntentId: pi.id,
+        stripeChargeId: charge.id,
+        stripeReceiptUrl: charge.receipt_url ?? undefined,
+      },
+    });
+
+    await prisma.appointment.updateMany({
+      where: { id: appointmentId },
+      data: {
+        status: "REQUESTED",
+        updatedAt: new Date(),
+        expiresAt: null,
+      },
+    });
+
+    logger.info(`Appointment ${appointmentId} booking PAID. Invoice created`);
   },
 
   async _handleInvoicePayment(pi: Stripe.PaymentIntent) {
@@ -1580,88 +1053,28 @@ export const StripeService = {
     const productId =
       typeof price.product === "string" ? price.product : price.product?.id;
 
-    if (isReadFromPostgres()) {
-      await prisma.organizationBilling.updateMany({
-        where: { stripeCustomerId: customerId },
-        data: {
-          plan: "business",
-          accessState: "active",
-          upgradedAt: new Date(),
-          stripeSubscriptionId: subscription.id,
-          stripeSubscriptionItemId: item.id,
-          stripePriceId: price.id,
-          stripeProductId: productId ?? null,
-          billingInterval: toBillingInterval(price.recurring?.interval),
-          joinedAt: new Date(),
-          subscriptionStatus:
-            toSubscriptionStatus(subscription.status) ?? "none",
-          cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-          seatQuantity: item.quantity ?? 0,
-          seatQuantityUpdatedAt: new Date(),
-          currentPeriodStart: new Date(item.current_period_start * 1000),
-          currentPeriodEnd: new Date(item.current_period_end * 1000),
-          stripeLivemode: session.livemode ?? false,
-          gracePeriodEndsAt: null,
-        },
-      });
-      return;
-    }
-
-    await OrgBilling.updateOne(
-      { stripeCustomerId: customerId },
-      {
+    await prisma.organizationBilling.updateMany({
+      where: { stripeCustomerId: customerId },
+      data: {
         plan: "business",
         accessState: "active",
         upgradedAt: new Date(),
-
         stripeSubscriptionId: subscription.id,
         stripeSubscriptionItemId: item.id,
         stripePriceId: price.id,
         stripeProductId: productId ?? null,
-        billingInterval: price.recurring?.interval,
+        billingInterval: toBillingInterval(price.recurring?.interval),
         joinedAt: new Date(),
-        subscriptionStatus: subscription.status,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-
+        subscriptionStatus: toSubscriptionStatus(subscription.status) ?? "none",
+        cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
         seatQuantity: item.quantity ?? 0,
         seatQuantityUpdatedAt: new Date(),
-
         currentPeriodStart: new Date(item.current_period_start * 1000),
         currentPeriodEnd: new Date(item.current_period_end * 1000),
-
         stripeLivemode: session.livemode ?? false,
         gracePeriodEndsAt: null,
       },
-    );
-    if (shouldDualWrite) {
-      try {
-        await prisma.organizationBilling.updateMany({
-          where: { stripeCustomerId: customerId },
-          data: {
-            plan: "business",
-            accessState: "active",
-            upgradedAt: new Date(),
-            stripeSubscriptionId: subscription.id,
-            stripeSubscriptionItemId: item.id,
-            stripePriceId: price.id,
-            stripeProductId: productId ?? null,
-            billingInterval: toBillingInterval(price.recurring?.interval),
-            joinedAt: new Date(),
-            subscriptionStatus:
-              toSubscriptionStatus(subscription.status) ?? "none",
-            cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-            seatQuantity: item.quantity ?? 0,
-            seatQuantityUpdatedAt: new Date(),
-            currentPeriodStart: new Date(item.current_period_start * 1000),
-            currentPeriodEnd: new Date(item.current_period_end * 1000),
-            stripeLivemode: session.livemode ?? false,
-            gracePeriodEndsAt: null,
-          },
-        });
-      } catch (err) {
-        handleDualWriteError("OrganizationBilling subscriptionCheckout", err);
-      }
-    }
+    });
   },
 
   async _handleInvoiceCheckout(session: Stripe.Checkout.Session) {
