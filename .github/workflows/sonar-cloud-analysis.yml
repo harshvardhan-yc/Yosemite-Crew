@@ -181,7 +181,7 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: ${{ matrix.dir }}
-        run: pnpm test --coverage --ci --maxWorkers=2 --cacheDirectory=.jest-cache
+        run: pnpm run test --coverage --ci --maxWorkers=2 --cacheDirectory=.jest-cache
 
       - name: Sonar Scan
         uses: SonarSource/sonarqube-scan-action@v6
