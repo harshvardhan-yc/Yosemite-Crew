@@ -11,10 +11,7 @@ import CompanionOrganisationModel from "src/models/companion-organisation";
 import { prisma } from "src/config/prisma";
 import { isReadFromPostgres } from "src/config/read-switch";
 import logger from "src/utils/logger";
-import {
-  fromFHIRInvoice,
-  type AppointmentResponseDTO,
-} from "@yosemite-crew/types";
+import { type AppointmentResponseDTO } from "@yosemite-crew/types";
 import type { DocumentDto } from "src/services/document.service";
 import type { LabResultMongo } from "src/models/lab-result";
 
@@ -695,7 +692,6 @@ export const CompanionHistoryService = {
       try {
         const invoices = await InvoiceService.listForCompanion(patientId);
         invoices
-          .map((invoice) => fromFHIRInvoice(invoice))
           .filter((invoice) => invoice.organisationId === organisationId)
           .forEach((invoice) => {
             const occurredAt =
