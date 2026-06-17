@@ -28,6 +28,10 @@ import { ensureObjectId as ensureObjectIdStrict } from "src/utils/mongo";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
 import { assertSafeString } from "src/utils/sanitize";
 import {
+  calculateInvoicePricing,
+  type InvoiceDiscountInput as PricingInvoiceDiscountInput,
+} from "./finance/pricing";
+import {
   InvoiceStatus as PrismaInvoiceStatus,
   PaymentCollectionMethod,
   Prisma,
@@ -226,6 +230,9 @@ const toDomainFromPrisma = (row: {
   taxPercent: number;
   taxTotal: number;
   discountTotal: number;
+  invoiceDiscountType: string | null;
+  invoiceDiscountValue: number | null;
+  invoiceDiscountTotal: number;
   currency: string;
   paymentCollectionMethod: PaymentCollectionMethod;
   stripePaymentIntentId: string | null;
@@ -278,29 +285,30 @@ const toDomainFromPrisma = (row: {
   };
 };
 
-const resolveInvoiceTotals = (items: InvoiceItem[], taxPercent = 0) => {
-  const subtotal = items.reduce(
-    (sum, item) => sum + item.quantity * item.unitPrice,
-    0,
-  );
-  const discountTotal = items.reduce(
-    (sum, item) =>
-      sum +
-      (item.discountPercent
-        ? (item.discountPercent / 100) * item.unitPrice * item.quantity
-        : 0),
-    0,
-  );
-  const normalizedTaxPercent = taxPercent ?? 0;
-  const taxTotal = (normalizedTaxPercent / 100) * (subtotal - discountTotal);
-  const totalAmount = subtotal - discountTotal + taxTotal;
+const resolveInvoiceTotals = (
+  items: InvoiceItem[],
+  taxPercent = 0,
+  invoiceDiscount?: PricingInvoiceDiscountInput,
+) => {
+  const pricing = calculateInvoicePricing({
+    lines: items.map((item) => ({
+      quantity: item.quantity,
+      unitAmount: item.unitPrice,
+      discountType: item.discountPercent != null ? "PERCENTAGE" : undefined,
+      discountValue: item.discountPercent ?? undefined,
+      taxBehavior: "EXCLUSIVE",
+    })),
+    taxRatePercent: taxPercent,
+    invoiceDiscount,
+  });
 
   return {
-    subtotal,
-    discountTotal,
-    taxTotal,
-    taxPercent: normalizedTaxPercent,
-    totalAmount,
+    subtotal: pricing.subtotal,
+    discountTotal: pricing.lineDiscountTotal,
+    invoiceDiscountTotal: pricing.invoiceDiscountTotal,
+    taxTotal: pricing.taxTotal,
+    taxPercent: taxPercent ?? 0,
+    totalAmount: pricing.totalAmount,
   };
 };
 
@@ -624,6 +632,9 @@ const toPrismaInvoiceData = (doc: InvoiceDocument) => {
     _id: Types.ObjectId;
     createdAt?: Date;
     updatedAt?: Date;
+    invoiceDiscountType?: PricingInvoiceDiscountInput["type"] | null;
+    invoiceDiscountValue?: number | null;
+    invoiceDiscountTotal?: number;
   };
 
   return {
@@ -635,6 +646,9 @@ const toPrismaInvoiceData = (doc: InvoiceDocument) => {
     items: obj.items as unknown as Prisma.InputJsonValue,
     subtotal: obj.subtotal,
     discountTotal: obj.discountTotal ?? 0,
+    invoiceDiscountType: obj.invoiceDiscountType ?? undefined,
+    invoiceDiscountValue: obj.invoiceDiscountValue ?? undefined,
+    invoiceDiscountTotal: obj.invoiceDiscountTotal ?? 0,
     taxTotal: obj.taxTotal ?? 0,
     taxPercent: obj.taxPercent ?? 0,
     totalAmount: obj.totalAmount,
@@ -671,27 +685,37 @@ const syncInvoiceToPostgres = async (doc: InvoiceDocument) => {
   }
 };
 
-const recalculateTotals = (invoice: InvoiceDocument) => {
-  invoice.subtotal = invoice.items.reduce(
-    (sum, i) => sum + i.quantity * i.unitPrice,
-    0,
-  );
+type InvoiceDocumentWithDiscount = InvoiceDocument & {
+  invoiceDiscountType?: PricingInvoiceDiscountInput["type"] | null;
+  invoiceDiscountValue?: number | null;
+  invoiceDiscountTotal?: number;
+};
 
-  invoice.discountTotal = invoice.items.reduce(
-    (sum, i) =>
-      sum +
-      (i.discountPercent
-        ? (i.discountPercent / 100) * i.unitPrice * i.quantity
-        : 0),
-    0,
-  );
+const recalculateTotals = (invoice: InvoiceDocumentWithDiscount) => {
+  const pricing = calculateInvoicePricing({
+    lines: invoice.items.map((item) => ({
+      quantity: item.quantity,
+      unitAmount: item.unitPrice,
+      discountType: item.discountPercent != null ? "PERCENTAGE" : undefined,
+      discountValue: item.discountPercent ?? undefined,
+      taxBehavior: "EXCLUSIVE",
+    })),
+    taxRatePercent: invoice.taxPercent ?? 0,
+    invoiceDiscount:
+      invoice.invoiceDiscountType && invoice.invoiceDiscountValue != null
+        ? {
+            type: invoice.invoiceDiscountType,
+            value: invoice.invoiceDiscountValue,
+          }
+        : undefined,
+  });
 
+  invoice.subtotal = pricing.subtotal;
+  invoice.discountTotal = pricing.lineDiscountTotal;
+  invoice.invoiceDiscountTotal = pricing.invoiceDiscountTotal;
   invoice.taxPercent = invoice.taxPercent ?? 0;
-  invoice.taxTotal =
-    (invoice.taxPercent / 100) * (invoice.subtotal - invoice.discountTotal);
-
-  invoice.totalAmount =
-    invoice.subtotal - invoice.discountTotal + invoice.taxTotal;
+  invoice.taxTotal = pricing.taxTotal;
+  invoice.totalAmount = pricing.totalAmount;
 };
 
 export const InvoiceService = {
@@ -708,6 +732,7 @@ export const InvoiceService = {
         discountPercent?: number;
       }[];
       notes?: string;
+      invoiceDiscount?: PricingInvoiceDiscountInput;
       paymentCollectionMethod:
         | "PAYMENT_INTENT"
         | "PAYMENT_LINK"
@@ -735,7 +760,11 @@ export const InvoiceService = {
         total: item.quantity * item.unitPrice,
       }));
 
-      const totals = resolveInvoiceTotals(itemsDetailed, 0);
+      const totals = resolveInvoiceTotals(
+        itemsDetailed,
+        0,
+        input.invoiceDiscount,
+      );
       const currency = await getOrgBillingCurrency(input.organisationId);
       const patientId = coerceAppointmentCompanionId(appointment);
       const parentId = coerceAppointmentParentId(appointment);
@@ -758,6 +787,9 @@ export const InvoiceService = {
           items: itemsDetailed as unknown as Prisma.InputJsonValue,
           subtotal: totals.subtotal,
           discountTotal: totals.discountTotal,
+          invoiceDiscountTotal: totals.invoiceDiscountTotal,
+          invoiceDiscountType: input.invoiceDiscount?.type ?? null,
+          invoiceDiscountValue: input.invoiceDiscount?.value ?? null,
           taxTotal: totals.taxTotal,
           taxPercent: totals.taxPercent,
           totalAmount: totals.totalAmount,
@@ -910,6 +942,7 @@ export const InvoiceService = {
   async createExtraInvoiceForAppointment(input: {
     appointmentId: string;
     items: InvoiceItem[];
+    invoiceDiscount?: PricingInvoiceDiscountInput;
     metadata?: Record<string, string | number | boolean | undefined>;
   }) {
     if (isReadFromPostgres()) {
@@ -936,7 +969,11 @@ export const InvoiceService = {
             : 0),
       }));
 
-      const totals = resolveInvoiceTotals(itemsDetailed, 0);
+      const totals = resolveInvoiceTotals(
+        itemsDetailed,
+        0,
+        input.invoiceDiscount,
+      );
       const patientId = coerceAppointmentCompanionId(appointment);
       const parentId = coerceAppointmentParentId(appointment);
 
@@ -951,6 +988,9 @@ export const InvoiceService = {
           items: itemsDetailed as unknown as Prisma.InputJsonValue,
           subtotal: totals.subtotal,
           discountTotal: totals.discountTotal,
+          invoiceDiscountTotal: totals.invoiceDiscountTotal,
+          invoiceDiscountType: input.invoiceDiscount?.type ?? null,
+          invoiceDiscountValue: input.invoiceDiscount?.value ?? null,
           taxTotal: totals.taxTotal,
           taxPercent: totals.taxPercent,
           totalAmount: totals.totalAmount,

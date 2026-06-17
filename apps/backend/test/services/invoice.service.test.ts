@@ -322,6 +322,45 @@ describe("InvoiceService", () => {
       expect((result as any).id).toBe("inv_1");
     });
 
+    it("should persist invoice-level discounts in postgres", async () => {
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
+        id: validId,
+        organisationId: "org_1",
+        patient: { id: "comp_1", parent: { id: "parent_1" } },
+      });
+      (prisma.organizationBilling.findUnique as jest.Mock).mockResolvedValue({
+        currency: "usd",
+      });
+      (prisma.invoice.create as jest.Mock).mockResolvedValue({
+        id: "inv_discount",
+        organisationId: "org_1",
+        patientId: "comp_1",
+        status: "AWAITING_PAYMENT",
+        totalAmount: 108,
+        currency: "usd",
+      });
+
+      await InvoiceService.createDraftForAppointment({
+        appointmentId: validId,
+        parentId: "parent_1",
+        organisationId: "org_1",
+        patientId: "comp_1",
+        items: [{ description: "Consult", quantity: 1, unitPrice: 120 }],
+        invoiceDiscount: { type: "FIXED_AMOUNT", value: 12 },
+        paymentCollectionMethod: "PAYMENT_LINK",
+      });
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            invoiceDiscountType: "FIXED_AMOUNT",
+            invoiceDiscountValue: 12,
+            invoiceDiscountTotal: 12,
+          }),
+        }),
+      );
+    });
+
     it("should throw 404 if appointment not found", async () => {
       (prisma.appointment.findUnique as jest.Mock).mockResolvedValue(null);
 

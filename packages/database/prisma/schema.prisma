@@ -2542,6 +2542,9 @@ model Invoice {
   items                    Json
   subtotal                 Float
   discountTotal            Float                    @default(0)
+  invoiceDiscountType      String?
+  invoiceDiscountValue     Float?
+  invoiceDiscountTotal     Float                    @default(0)
   taxTotal                 Float                    @default(0)
   taxPercent               Float                    @default(0)
   totalAmount              Float
