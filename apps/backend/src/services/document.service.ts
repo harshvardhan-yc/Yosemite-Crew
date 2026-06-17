@@ -1,4 +1,3 @@
-import escapeStringRegex from "escape-string-regexp";
 import { prisma } from "src/config/prisma";
 import {
   deleteFromS3,
@@ -17,21 +16,31 @@ export class DocumentServiceError extends Error {
   }
 }
 
-const PMS_VISIBLE_CATEGORIES = new Set(["HEALTH", "HYGIENE_MAINTENANCE"]);
+const COMPANION_DOCUMENT_CATEGORIES = new Set([
+  "HEALTH",
+  "HYGIENE_MAINTENANCE",
+]);
 
 const VALID_CATEGORY_SUBCATEGORIES: Record<string, Set<string>> = {
   ADMIN: new Set(["PASSPORT", "CERTIFICATES", "INSURANCE"]),
   HEALTH: new Set([
-    "HOSPITAL_VISITS",
-    "PRESCRIPTIONS_AND_TREATMENTS",
-    "VACCINATION_AND_PARASITE_PREVENTION",
-    "LAB_TESTS",
+    "SURGERY_OR_PROCEDURE",
+    "PRESCRIPTION",
+    "VACCINATION",
+    "DISCHARGE_SUMMARY",
+    "LAB_TEST",
+    "IMAGING_OR_DIAGNOSTIC",
+    "PARASITE_PREVENTION",
+    "MEDICAL_CONDITION",
   ]),
   HYGIENE_MAINTENANCE: new Set([
-    "GROOMER_VISIT",
-    "BOARDER_VISIT",
-    "BREEDER_VISIT",
-    "TRAINING_AND_BEHAVIOUR_REPORTS",
+    "BATHING",
+    "NAIL_TRIM",
+    "GROOMING",
+    "EAR_CLEANING",
+    "DENTAL_CLEANING",
+    "SKIN_CARE",
+    "ANAL_GLAND_EXPRESSION",
   ]),
   DIETARY_PLANS: new Set(["NUTRITION_PLANS"]),
   OTHERS: new Set(),
@@ -53,7 +62,7 @@ const validateCategoryAndSubcategory = (
   subcategory?: string | null,
 ): void => {
   const upperCategory = category.toUpperCase();
-  if (!Object.hasOwn(VALID_CATEGORY_SUBCATEGORIES, upperCategory)) {
+  if (!COMPANION_DOCUMENT_CATEGORIES.has(upperCategory)) {
     throw new DocumentServiceError(
       `Invalid document category: ${category}`,
       400,
@@ -75,7 +84,7 @@ const validateCategoryAndSubcategory = (
 };
 
 const isPmsVisibleCategory = (category: string) =>
-  PMS_VISIBLE_CATEGORIES.has(category.toUpperCase());
+  COMPANION_DOCUMENT_CATEGORIES.has(category.toUpperCase());
 
 const parseIssueDate = (issueDate?: string | Date | null): Date | null => {
   if (!issueDate) {
@@ -962,12 +971,11 @@ export const DocumentService = {
     const patientId = normalizeStringId(params.patientId, "patientId");
     await assertParentCanAccessCompanion(params.parentId, patientId);
 
-    const safe = escapeStringRegex(params.title.trim());
     const docs = (await prisma.document.findMany({
       where: {
         patientId,
         title: {
-          contains: safe,
+          contains: params.title.trim(),
           mode: "insensitive",
         },
       },

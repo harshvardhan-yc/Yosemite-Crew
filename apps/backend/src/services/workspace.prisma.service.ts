@@ -1186,7 +1186,7 @@ const loadDocuments = async (params: {
     ...documents.map((document) =>
       mapDocumentRow({
         documentId: document.id,
-        sourceKind: "FORM_SUBMISSION",
+        sourceKind: "DOCUMENT",
         sourceId: document.id,
         appointmentId: document.appointmentId ?? null,
         encounterId: null,

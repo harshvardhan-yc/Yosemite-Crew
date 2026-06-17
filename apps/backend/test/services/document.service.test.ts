@@ -161,6 +161,7 @@ describe("DocumentService", () => {
     const input: CreateDocumentInput = {
       patientId: uuidPatientId,
       category: "HEALTH",
+      subcategory: "PRESCRIPTION",
       title: "Vaccination card",
       attachments: [{ key: "k-1", mimeType: "image/png", size: 123 }],
     };
@@ -174,6 +175,7 @@ describe("DocumentService", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           patientId: uuidPatientId,
+          subcategory: "PRESCRIPTION",
           uploadedByParentId: uuidParentId,
           pmsVisible: true,
         }),
@@ -361,6 +363,24 @@ describe("DocumentService", () => {
         { parentId: uuidParentId },
       ),
     ).rejects.toBeInstanceOf(DocumentServiceError);
+
+    await expect(
+      DocumentService.create(
+        {
+          patientId: uuidPatientId,
+          category: "HEALTH",
+          subcategory: "INVALID",
+          title: "Doc",
+          attachments: [{ key: "k-1", mimeType: "image/png" }],
+        },
+        { parentId: uuidParentId },
+      ),
+    ).rejects.toThrow(
+      new DocumentServiceError(
+        "Invalid subcategory 'INVALID' for category 'HEALTH'",
+        400,
+      ),
+    );
 
     await expect(
       DocumentService.searchByTitleForParent({
