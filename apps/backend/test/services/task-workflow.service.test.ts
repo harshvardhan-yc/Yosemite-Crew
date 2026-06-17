@@ -689,7 +689,7 @@ describe("TaskWorkflowService", () => {
       materializedSeeds: [{ id: "seed-delayed" }],
     });
 
-    const deferredUntil = new Date("2099-06-16T10:00:00.000Z");
+    const deferredUntil = new Date(Date.now() + 60 * 60 * 1000);
     const result = await TaskWorkflowService.launchFromTemplateInstance(
       "instance-6",
       "org-1",
