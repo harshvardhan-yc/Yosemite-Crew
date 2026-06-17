@@ -21,6 +21,10 @@ jest.mock("src/config/prisma", () => ({
     payment: {
       create: jest.fn(),
       findMany: jest.fn(),
+      update: jest.fn(),
+    },
+    refund: {
+      create: jest.fn(),
     },
   },
 }));
@@ -30,6 +34,8 @@ describe("FinancePaymentService", () => {
     jest.resetAllMocks();
     __setFinanceStripeClientForTests({
       checkout: { sessions: { create: jest.fn() } },
+      paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
+      refunds: { create: jest.fn() },
     });
     process.env.STRIPE_SECRET_KEY = "sk_test_mock";
     process.env.APP_URL = "https://app.test";
@@ -145,6 +151,8 @@ describe("FinancePaymentService", () => {
     });
     const stripeClient = {
       checkout: { sessions: { create: jest.fn() } },
+      paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
+      refunds: { create: jest.fn() },
     };
     __setFinanceStripeClientForTests(stripeClient);
     (stripeClient.checkout.sessions.create as jest.Mock).mockResolvedValueOnce({
@@ -191,6 +199,85 @@ describe("FinancePaymentService", () => {
     );
     expect(result.sessionId).toBe("cs_1");
     expect(result.paymentAttemptId).toBe("pa_6");
+  });
+
+  it("creates a payment intent and records a payment attempt for payable invoices", async () => {
+    const stripeClient = {
+      checkout: { sessions: { create: jest.fn() } },
+      paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
+      refunds: { create: jest.fn() },
+    };
+    __setFinanceStripeClientForTests(stripeClient);
+    (prisma.invoice.findUnique as jest.Mock)
+      .mockResolvedValueOnce({
+        id: "inv_10",
+        totalAmount: 100,
+        currency: "usd",
+        status: "AWAITING_PAYMENT",
+        paymentCollectionMethod: "PAYMENT_LINK",
+        stripeCheckoutSessionId: "sess_old",
+        stripeCheckoutUrl: "https://old",
+        stripePaymentIntentId: null,
+        organisationId: "org_1",
+        appointmentId: "appt_1",
+        parentId: "parent_1",
+        items: [],
+      })
+      .mockResolvedValueOnce({
+        id: "inv_10",
+        totalAmount: 100,
+        currency: "usd",
+        status: "AWAITING_PAYMENT",
+        paymentCollectionMethod: "PAYMENT_INTENT",
+        stripeCheckoutSessionId: null,
+        stripeCheckoutUrl: null,
+        stripePaymentIntentId: null,
+        organisationId: "org_1",
+        appointmentId: "appt_1",
+        parentId: "parent_1",
+        items: [],
+      });
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+      stripeAccountId: "acct_10",
+    });
+    (stripeClient.paymentIntents.create as jest.Mock).mockResolvedValueOnce({
+      id: "pi_10",
+      client_secret: "cs_10",
+    });
+    (prisma.paymentAttempt.create as jest.Mock).mockResolvedValueOnce({
+      id: "pa_10",
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_10",
+    });
+    (prisma.invoice.updateMany as jest.Mock).mockResolvedValueOnce({
+      count: 1,
+    });
+
+    const result =
+      await FinancePaymentService.createPaymentIntentForInvoice("inv_10");
+
+    expect(stripeClient.paymentIntents.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 10000,
+        currency: "usd",
+      }),
+    );
+    expect(prisma.paymentAttempt.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          invoiceId: "inv_10",
+          providerPaymentIntentId: "pi_10",
+          status: "REQUIRES_ACTION",
+        }),
+      }),
+    );
+    expect(result).toEqual({
+      paymentIntentId: "pi_10",
+      clientSecret: "cs_10",
+      amount: 100,
+      currency: "usd",
+    });
   });
 
   it("returns an existing checkout session without creating a new one", async () => {
@@ -317,6 +404,75 @@ describe("FinancePaymentService", () => {
         currency: "usd",
       }),
     ).rejects.toBeInstanceOf(FinancePaymentError);
+  });
+
+  it("refunds a Stripe-backed invoice payment", async () => {
+    const stripeClient = {
+      checkout: { sessions: { create: jest.fn() } },
+      paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
+      refunds: { create: jest.fn() },
+    };
+    __setFinanceStripeClientForTests(stripeClient);
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_9",
+      totalAmount: 90,
+      currency: "usd",
+      status: "PAID",
+      stripePaymentIntentId: "pi_9",
+      metadata: {},
+      payments: [],
+    });
+    (stripeClient.paymentIntents.retrieve as jest.Mock).mockResolvedValueOnce({
+      latest_charge: { id: "ch_9" },
+    });
+    (stripeClient.refunds.create as jest.Mock).mockResolvedValueOnce({
+      id: "re_9",
+      status: "succeeded",
+      amount: 9000,
+    });
+    (prisma.payment.create as jest.Mock).mockResolvedValueOnce({
+      id: "pay_9",
+      amount: 90,
+      currency: "usd",
+      provider: "STRIPE",
+    });
+    (prisma.refund.create as jest.Mock).mockResolvedValueOnce({
+      id: "refund_9",
+    });
+    (prisma.payment.update as jest.Mock).mockResolvedValueOnce({
+      id: "pay_9",
+      status: "REFUNDED",
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_9",
+      status: "REFUNDED",
+      currency: "usd",
+      payments: [],
+    });
+
+    const result = await FinancePaymentService.refundInvoicePayment(
+      "inv_9",
+      "requested by owner",
+    );
+
+    expect(stripeClient.paymentIntents.retrieve).toHaveBeenCalledWith("pi_9", {
+      expand: ["latest_charge"],
+    });
+    expect(stripeClient.refunds.create).toHaveBeenCalledWith({
+      charge: "ch_9",
+    });
+    expect(prisma.refund.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentId: "pay_9",
+          provider: "STRIPE",
+          providerRefundId: "re_9",
+          amount: 90,
+        }),
+      }),
+    );
+    expect(result.refund.refundId).toBe("re_9");
+    expect(result.invoice.status).toBe("REFUNDED");
   });
 
   it("lists invoice payments in creation order", async () => {

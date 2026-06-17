@@ -1,5 +1,6 @@
 // test/services/stripe.service.test.ts
 import { StripeService } from "../../src/services/stripe.service";
+import { FinancePaymentService } from "../../src/services/finance/payment";
 import { NotificationService } from "../../src/services/notification.service";
 import { prisma } from "src/config/prisma";
 
@@ -49,6 +50,15 @@ jest.mock("../../src/models/invoice", () => ({
 
 jest.mock("../../src/services/invoice.service", () => ({
   InvoiceService: { attachStripeDetails: jest.fn(), markRefunded: jest.fn() },
+}));
+
+jest.mock("../../src/services/finance/payment", () => ({
+  __esModule: true,
+  FinancePaymentService: {
+    createPaymentIntentForInvoice: jest.fn(),
+    createCheckoutSessionForInvoice: jest.fn(),
+    refundInvoicePayment: jest.fn(),
+  },
 }));
 
 jest.mock("../../src/services/notification.service", () => ({
@@ -407,35 +417,20 @@ describe("StripeService", () => {
     });
 
     it("should create payment intent for payable invoice", async () => {
-      (prisma.invoice.findUnique as jest.Mock)
-        .mockResolvedValueOnce({
-          id: "inv_1",
-          status: "AWAITING_PAYMENT",
-          paymentCollectionMethod: "PAYMENT_LINK",
-          stripeCheckoutSessionId: "sess_1",
-          organisationId: "org_1",
-          currency: "usd",
-          totalAmount: 50,
-        })
-        .mockResolvedValueOnce({
-          id: "inv_1",
-          status: "AWAITING_PAYMENT",
-          paymentCollectionMethod: "PAYMENT_INTENT",
-          stripeCheckoutSessionId: null,
-          organisationId: "org_1",
-          currency: "usd",
-          totalAmount: 50,
-        });
-      (prisma.invoice.updateMany as jest.Mock).mockResolvedValueOnce({});
-      (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
-        stripeAccountId: "acct_1",
-      });
-      mStripe.paymentIntents.create.mockResolvedValueOnce({
-        id: "pi_inv",
-        client_secret: "cs_inv",
+      (
+        FinancePaymentService.createPaymentIntentForInvoice as jest.Mock
+      ).mockResolvedValueOnce({
+        paymentIntentId: "pi_inv",
+        clientSecret: "cs_inv",
+        amount: 50,
+        currency: "usd",
       });
 
       const result = await StripeService.createPaymentIntentForInvoice("inv_1");
+
+      expect(
+        FinancePaymentService.createPaymentIntentForInvoice,
+      ).toHaveBeenCalledWith("inv_1");
 
       expect(result).toEqual({
         paymentIntentId: "pi_inv",
@@ -446,10 +441,9 @@ describe("StripeService", () => {
     });
 
     it("should throw if invoice is not payable", async () => {
-      (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: "inv_1",
-        status: "PAID",
-      });
+      (
+        FinancePaymentService.createPaymentIntentForInvoice as jest.Mock
+      ).mockRejectedValueOnce(new Error("Invoice is not payable"));
       await expect(
         StripeService.createPaymentIntentForInvoice("inv_1"),
       ).rejects.toThrow("Invoice is not payable");
@@ -468,45 +462,42 @@ describe("StripeService", () => {
     });
 
     it("should return existing checkout session", async () => {
-      (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: "inv_1",
-        status: "AWAITING_PAYMENT",
-        paymentCollectionMethod: "PAYMENT_LINK",
-        stripeCheckoutSessionId: "sess_1",
-        stripeCheckoutUrl: "http://checkout",
+      (
+        FinancePaymentService.createCheckoutSessionForInvoice as jest.Mock
+      ).mockResolvedValueOnce({
+        sessionId: "sess_1",
+        url: "http://checkout",
+        paymentAttemptId: null,
       });
 
       const result =
         await StripeService.createCheckoutSessionForInvoice("inv_1");
-      expect(result).toEqual({ sessionId: "sess_1", url: "http://checkout" });
+      expect(result).toEqual({
+        sessionId: "sess_1",
+        url: "http://checkout",
+        paymentAttemptId: null,
+      });
     });
 
     it("should create checkout session for invoice", async () => {
-      (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: "inv_2",
-        status: "AWAITING_PAYMENT",
-        paymentCollectionMethod: "PAYMENT_LINK",
-        stripePaymentIntentId: null,
-        stripeCheckoutSessionId: null,
-        organisationId: "org_1",
-        currency: "usd",
-        items: [{ name: "Service", unitPrice: 10, quantity: 2 }],
-      });
-      (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
-        stripeAccountId: "acct_1",
-      });
-      mStripe.checkout.sessions.create.mockResolvedValueOnce({
-        id: "sess_new",
+      (
+        FinancePaymentService.createCheckoutSessionForInvoice as jest.Mock
+      ).mockResolvedValueOnce({
+        sessionId: "sess_new",
         url: "http://checkout.new",
+        paymentAttemptId: "pa_1",
       });
 
       const result =
         await StripeService.createCheckoutSessionForInvoice("inv_2");
 
-      expect(prisma.invoice.updateMany).toHaveBeenCalled();
+      expect(
+        FinancePaymentService.createCheckoutSessionForInvoice,
+      ).toHaveBeenCalledWith("inv_2");
       expect(result).toEqual({
         sessionId: "sess_new",
         url: "http://checkout.new",
+        paymentAttemptId: "pa_1",
       });
     });
   });
@@ -538,16 +529,23 @@ describe("StripeService", () => {
       (prisma.invoice.findFirst as jest.Mock).mockResolvedValueOnce({
         id: "inv_1",
       });
-      mStripe.paymentIntents.retrieve.mockResolvedValueOnce({
-        latest_charge: { id: "ch_1" },
-      });
-      mStripe.refunds.create.mockResolvedValueOnce({
-        id: "re_1",
-        status: "succeeded",
-        amount: 5000,
+      (
+        FinancePaymentService.refundInvoicePayment as jest.Mock
+      ).mockResolvedValueOnce({
+        invoice: { id: "inv_1" },
+        refund: {
+          refundId: "re_1",
+          status: "succeeded",
+          amountRefunded: 50,
+          paymentId: "pay_1",
+        },
       });
 
       const result = await StripeService.refundPaymentIntent("pi_1");
+
+      expect(FinancePaymentService.refundInvoicePayment).toHaveBeenCalledWith(
+        "inv_1",
+      );
 
       expect(result).toEqual({
         refundId: "re_1",

@@ -23,7 +23,6 @@ import { AuditTrailService } from "./audit-trail.service";
 import { sendEmailTemplate } from "src/utils/email";
 import logger from "src/utils/logger";
 import type { AuditEventType } from "src/models/audit-trail";
-import { StripeService } from "./stripe.service";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
 import { assertSafeString } from "src/utils/sanitize";
 
@@ -371,35 +370,6 @@ const cancelUnpaidInvoice = async (invoice: PrismaInvoice, reason: string) =>
       } as unknown as Prisma.InputJsonValue,
     },
   });
-
-const refundPaidInvoice = async (invoice: PrismaInvoice, reason: string) => {
-  if (!invoice.stripePaymentIntentId) {
-    throw new InvoiceServiceError(
-      "Cannot refund: missing Stripe paymentIntentId",
-      500,
-    );
-  }
-
-  const refund = await StripeService.refundPaymentIntent(
-    invoice.stripePaymentIntentId,
-  );
-
-  const updated = await prisma.invoice.update({
-    where: { id: invoice.id },
-    data: {
-      status: "REFUNDED",
-      metadata: {
-        ...(normalizeInvoiceMetadata(invoice.metadata) ?? {}),
-        cancellationReason: reason,
-        refundId: refund.refundId,
-        amount: refund.amountRefunded,
-        refundDate: new Date().toISOString(),
-      } as unknown as Prisma.InputJsonValue,
-    },
-  });
-
-  return { updated, refund };
-};
 
 const normalizeCreateInput = (
   input: CreateInvoiceInput,
@@ -1133,7 +1103,8 @@ export const InvoiceService = {
     }
 
     if (invoice.status === "PAID") {
-      const { updated, refund } = await refundPaidInvoice(invoice, reason);
+      const { invoice: updated, refund } =
+        await FinancePaymentService.refundInvoicePayment(invoice.id, reason);
       await recordInvoiceAuditForRow(updated, "INVOICE_REFUNDED", updated.id, {
         status: updated.status,
         reason,
@@ -1168,7 +1139,8 @@ export const InvoiceService = {
     }
 
     if (invoice.status === "PAID") {
-      const { updated, refund } = await refundPaidInvoice(invoice, reason);
+      const { invoice: updated, refund } =
+        await FinancePaymentService.refundInvoicePayment(invoice.id, reason);
       await recordInvoiceAuditForRow(updated, "INVOICE_REFUNDED", updated.id, {
         status: updated.status,
         reason,

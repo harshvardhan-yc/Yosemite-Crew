@@ -7,7 +7,6 @@ import { CatalogService } from "../../src/services/catalog.service";
 import { NotificationService } from "../../src/services/notification.service";
 import { AuditTrailService } from "../../src/services/audit-trail.service";
 import { FinancePaymentService } from "../../src/services/finance/payment";
-import { StripeService } from "../../src/services/stripe.service";
 import { sendEmailTemplate } from "../../src/utils/email";
 
 jest.mock("src/config/prisma", () => ({
@@ -62,13 +61,7 @@ jest.mock("../../src/services/finance/payment", () => ({
   FinancePaymentService: {
     recordManualPayment: jest.fn(),
     createCheckoutSessionForInvoice: jest.fn(),
-  },
-}));
-
-jest.mock("../../src/services/stripe.service", () => ({
-  __esModule: true,
-  StripeService: {
-    refundPaymentIntent: jest.fn(),
+    refundInvoicePayment: jest.fn(),
   },
 }));
 
@@ -522,37 +515,25 @@ describe("InvoiceService", () => {
     (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
       id: "inv_5",
       status: "PAID",
-      stripePaymentIntentId: "pi_123",
       organisationId,
       patientId,
       parentId,
       currency: "usd",
       metadata: {},
     });
-    (StripeService.refundPaymentIntent as jest.Mock).mockResolvedValue({
-      refundId: "re_123",
-      amountRefunded: 90,
-    });
-    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
-      id: "inv_5",
-      status: "REFUNDED",
-      organisationId,
-      patientId,
-      parentId,
-      currency: "usd",
-      totalAmount: 90,
-      metadata: {},
-      items: [],
-      subtotal: 90,
-      discountTotal: 0,
-      invoiceDiscountType: null,
-      invoiceDiscountValue: null,
-      invoiceDiscountTotal: 0,
-      taxTotal: 0,
-      taxPercent: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    (FinancePaymentService.refundInvoicePayment as jest.Mock).mockResolvedValue(
+      {
+        invoice: {
+          id: "inv_5",
+          status: "REFUNDED",
+          currency: "usd",
+        },
+        refund: {
+          refundId: "re_123",
+          amountRefunded: 90,
+        },
+      },
+    );
 
     const result = await InvoiceService.handleInvoiceCancellation(
       "inv_5",
@@ -560,7 +541,10 @@ describe("InvoiceService", () => {
     );
 
     expect(result).toEqual({ action: "REFUNDED", status: "REFUNDED" });
-    expect(StripeService.refundPaymentIntent).toHaveBeenCalledWith("pi_123");
+    expect(FinancePaymentService.refundInvoicePayment).toHaveBeenCalledWith(
+      "inv_5",
+      "reason",
+    );
   });
 
   it("bootsraps from Postgres appointment context", async () => {

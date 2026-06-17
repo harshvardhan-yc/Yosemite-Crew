@@ -4,6 +4,7 @@ import type {
   PaymentAttemptStatus as PrismaPaymentAttemptStatus,
   PaymentProvider as PrismaPaymentProvider,
   PaymentStatus as PrismaPaymentStatus,
+  RefundStatus as PrismaRefundStatus,
   SettlementChannel as PrismaSettlementChannel,
 } from "@prisma/client";
 import Stripe from "stripe";
@@ -24,6 +25,23 @@ type StripeCheckoutSessionClient = {
         url?: string | null;
       }>;
     };
+  };
+  paymentIntents: {
+    create: (input: Record<string, unknown>) => Promise<{
+      id: string;
+      client_secret?: string | null;
+    }>;
+    retrieve: (
+      paymentIntentId: string,
+      options?: Record<string, unknown>,
+    ) => Promise<{ latest_charge?: { id: string } | string | null }>;
+  };
+  refunds: {
+    create: (input: { charge: string }) => Promise<{
+      id: string;
+      status: string;
+      amount: number;
+    }>;
   };
 };
 
@@ -79,6 +97,26 @@ export type InvoicePaymentInput = {
   rawProviderPayload?: Prisma.InputJsonValue | null;
 };
 
+export type RefundInvoiceResult = {
+  invoice: Prisma.InvoiceGetPayload<{
+    include: { payments: true };
+  }>;
+  refund: {
+    refundId: string;
+    providerRefundId?: string | null;
+    status: string;
+    amountRefunded: number;
+    paymentId: string;
+  };
+};
+
+export type PaymentIntentResult = {
+  paymentIntentId: string;
+  clientSecret?: string | null;
+  amount: number;
+  currency: string;
+};
+
 const getOutstandingBalance = async (
   invoiceId: string,
   totalAmount: number,
@@ -117,6 +155,20 @@ const createPaymentAttempt = async (
       rawProviderPayload: input.rawProviderPayload ?? undefined,
     },
   });
+
+const mapRefundStatus = (status: string): PrismaRefundStatus => {
+  switch (status) {
+    case "succeeded":
+      return "SUCCEEDED";
+    case "canceled":
+      return "CANCELED";
+    case "failed":
+      return "FAILED";
+    case "pending":
+    default:
+      return "PENDING";
+  }
+};
 
 let stripeClient: StripeCheckoutSessionClient | null = null;
 
@@ -216,13 +268,14 @@ export const FinancePaymentService = {
     }
 
     const stripe = getStripeClient();
+    const invoiceCurrency = invoice.currency || "usd";
     const expiresAt = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: items.map((item) => ({
         price_data: {
-          currency: invoice.currency || "usd",
+          currency: invoiceCurrency,
           product_data: {
             name: (item as { name?: string }).name ?? "Service",
             description:
@@ -266,7 +319,7 @@ export const FinancePaymentService = {
         amountRequested: invoice.totalAmount,
         amountCaptured: 0,
         amountApplied: 0,
-        currency: invoice.currency,
+        currency: invoiceCurrency,
         collectionMode: null,
         isOffline: false,
         isPartial: false,
@@ -291,6 +344,270 @@ export const FinancePaymentService = {
       sessionId: session.id,
       url: session.url,
       paymentAttemptId: paymentAttempt.id,
+    };
+  },
+
+  async createPaymentIntentForInvoice(
+    invoiceId: string,
+  ): Promise<PaymentIntentResult> {
+    let invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+
+    if (!invoice) {
+      throw new FinancePaymentError("Invoice not found", 404);
+    }
+
+    if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
+      throw new FinancePaymentError("Invoice is not payable", 409);
+    }
+
+    if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
+      throw new FinancePaymentError(
+        "Invoice is marked for in-clinic payment",
+        409,
+      );
+    }
+
+    if (
+      invoice.stripeCheckoutSessionId &&
+      invoice.paymentCollectionMethod === "PAYMENT_LINK"
+    ) {
+      await prisma.invoice.updateMany({
+        where: { id: invoiceId },
+        data: {
+          paymentCollectionMethod: "PAYMENT_INTENT",
+          stripeCheckoutSessionId: null,
+          stripeCheckoutUrl: null,
+        },
+      });
+
+      invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+      if (!invoice) {
+        throw new FinancePaymentError("Invoice not found after switch", 404);
+      }
+    }
+
+    if (invoice.stripePaymentIntentId) {
+      return {
+        paymentIntentId: invoice.stripePaymentIntentId,
+        clientSecret: null,
+        amount: invoice.totalAmount,
+        currency: invoice.currency,
+      };
+    }
+
+    if (!invoice.organisationId) {
+      throw new FinancePaymentError("Invoice missing organisation", 500);
+    }
+
+    const organisation = await prisma.organization.findUnique({
+      where: { id: invoice.organisationId },
+      select: { stripeAccountId: true },
+    });
+    if (!organisation?.stripeAccountId) {
+      throw new FinancePaymentError(
+        "Organisation does not have a Stripe connected account",
+        409,
+      );
+    }
+
+    const stripe = getStripeClient();
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(invoice.totalAmount * 100),
+      currency: invoice.currency || "usd",
+      metadata: {
+        type: "INVOICE_PAYMENT",
+        invoiceId,
+        appointmentId: invoice.appointmentId || "",
+        organisationId: invoice.organisationId ?? "",
+        parentId: invoice.parentId ?? "",
+        patientId: invoice.patientId ?? "",
+      },
+      description: `Payment for Invoice ${invoiceId}`,
+      transfer_data: { destination: organisation.stripeAccountId },
+    });
+
+    await createPaymentAttempt(invoiceId, {
+      provider: "STRIPE",
+      status: "REQUIRES_ACTION",
+      settlementChannel: "STRIPE",
+      providerPaymentIntentId: paymentIntent.id,
+      amountRequested: invoice.totalAmount,
+      amountCaptured: 0,
+      amountApplied: 0,
+      currency: invoice.currency || "usd",
+      collectionMode: null,
+      isOffline: false,
+      isPartial: false,
+      rawProviderPayload: {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret ?? null,
+        destinationAccountId: organisation.stripeAccountId,
+      } as Prisma.InputJsonValue,
+    });
+
+    await prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        stripePaymentIntentId: paymentIntent.id,
+        paymentCollectionMethod: "PAYMENT_INTENT",
+      },
+    });
+
+    return {
+      paymentIntentId: paymentIntent.id,
+      clientSecret: paymentIntent.client_secret,
+      amount: invoice.totalAmount,
+      currency: invoice.currency || "usd",
+    };
+  },
+
+  async refundInvoicePayment(
+    invoiceId: string,
+    reason?: string,
+  ): Promise<RefundInvoiceResult> {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        payments: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    if (!invoice) {
+      throw new FinancePaymentError("Invoice not found", 404);
+    }
+
+    if (!invoice.payments.length && !invoice.stripePaymentIntentId) {
+      throw new FinancePaymentError("Invoice has no refundable payment", 409);
+    }
+
+    const existingPayment = invoice.payments[0];
+    const paymentIntentId =
+      existingPayment?.providerPaymentId ??
+      invoice.stripePaymentIntentId ??
+      null;
+
+    let payment = existingPayment ?? null;
+    if (!payment) {
+      if (!paymentIntentId) {
+        throw new FinancePaymentError(
+          "Invoice has no refundable payment intent",
+          409,
+        );
+      }
+
+      payment = await prisma.payment.create({
+        data: {
+          invoiceId,
+          provider: "STRIPE",
+          settlementChannel: "STRIPE",
+          providerPaymentId: paymentIntentId,
+          amount: invoice.totalAmount,
+          currency: invoice.currency,
+          status: "SUCCEEDED",
+          paidAt: invoice.paidAt ?? new Date(),
+          rawProviderPayload: {
+            source: "finance.refundInvoicePayment",
+            invoiceId,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    let providerRefundId: string | null = null;
+    let refundStatus = "succeeded";
+    let amountRefunded = payment.amount;
+
+    if (payment.provider === "STRIPE") {
+      if (!paymentIntentId) {
+        throw new FinancePaymentError(
+          "Invoice has no Stripe payment intent to refund",
+          409,
+        );
+      }
+
+      const stripe = getStripeClient();
+      const paymentIntent = await stripe.paymentIntents.retrieve(
+        paymentIntentId,
+        {
+          expand: ["latest_charge"],
+        },
+      );
+
+      const charge = paymentIntent?.latest_charge;
+      const chargeId =
+        typeof charge === "string" ? charge : (charge?.id ?? null);
+      if (!chargeId) {
+        throw new FinancePaymentError("No charge found for refund", 409);
+      }
+
+      const refund = await stripe.refunds.create({ charge: chargeId });
+
+      providerRefundId = refund.id;
+      refundStatus = refund.status;
+      amountRefunded = roundMoney(refund.amount / 100);
+    }
+
+    const refund = await prisma.refund.create({
+      data: {
+        paymentId: payment.id,
+        provider: payment.provider,
+        providerRefundId,
+        amount: amountRefunded,
+        currency: payment.currency,
+        status: mapRefundStatus(refundStatus),
+        reason: reason ?? undefined,
+        rawProviderPayload: {
+          source: "finance.refundInvoicePayment",
+          invoiceId,
+          paymentId: payment.id,
+          providerRefundId,
+          refundStatus,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    const updatedPayment = await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: "REFUNDED",
+        rawProviderPayload: {
+          source: "finance.refundInvoicePayment",
+          invoiceId,
+          refundId: refund.id,
+          providerRefundId,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    const updatedInvoice = await prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: "REFUNDED",
+        metadata: {
+          ...((invoice.metadata as Record<string, unknown> | null) ?? {}),
+          cancellationReason: reason ?? undefined,
+          refundId: providerRefundId ?? refund.id,
+          amount: amountRefunded,
+          refundDate: new Date().toISOString(),
+        } as unknown as Prisma.InputJsonValue,
+      },
+      include: { payments: true },
+    });
+
+    return {
+      invoice: updatedInvoice,
+      refund: {
+        refundId: providerRefundId ?? refund.id,
+        providerRefundId,
+        status: refund.status,
+        amountRefunded,
+        paymentId: updatedPayment.id,
+      },
     };
   },
 

@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import logger from "../utils/logger";
 
 import { InvoiceService } from "./invoice.service";
+import { FinancePaymentService } from "./finance/payment";
 import { NotificationTemplates } from "src/utils/notificationTemplates";
 import { NotificationService } from "./notification.service";
 
@@ -426,176 +427,11 @@ export const StripeService = {
   },
 
   async createPaymentIntentForInvoice(invoiceId: string) {
-    const stripe = getStripeClient();
-    let invoice = await prisma.invoice.findUnique({
-      where: { id: invoiceId },
-    });
-    if (!invoice) throw new Error("Invoice not found");
-
-    if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
-      throw new Error("Invoice is not payable");
-    }
-    if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
-      throw new Error("Invoice is marked for in-clinic payment");
-    }
-
-    if (
-      invoice.stripeCheckoutSessionId &&
-      invoice.paymentCollectionMethod === "PAYMENT_LINK"
-    ) {
-      await prisma.invoice.updateMany({
-        where: { id: invoiceId },
-        data: {
-          paymentCollectionMethod: "PAYMENT_INTENT",
-          stripeCheckoutSessionId: null,
-          stripeCheckoutUrl: null,
-        },
-      });
-
-      invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
-      if (!invoice) throw new Error("Invoice not found after switch");
-    }
-
-    if (invoice.stripePaymentIntentId) {
-      return this.retrievePaymentIntent(invoice.stripePaymentIntentId);
-    }
-
-    if (!invoice.organisationId) {
-      throw new Error("Invoice missing organisation");
-    }
-
-    const organisation = await prisma.organization.findUnique({
-      where: { id: invoice.organisationId },
-      select: { stripeAccountId: true },
-    });
-    if (!organisation?.stripeAccountId) {
-      throw new Error("Organisation does not have a Stripe connected account");
-    }
-
-    const amountToPay = invoice.totalAmount;
-    const stripeAmount = toStripeAmount(amountToPay);
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: stripeAmount,
-      currency: invoice.currency || "usd",
-      metadata: {
-        type: "INVOICE_PAYMENT",
-        invoiceId,
-        appointmentId: invoice.appointmentId || "",
-        organisationId: invoice.organisationId ?? "",
-        parentId: invoice.parentId ?? "",
-        patientId: invoice.patientId ?? "",
-      },
-      description: `Payment for Invoice ${invoiceId}`,
-      transfer_data: { destination: organisation.stripeAccountId },
-    });
-
-    await InvoiceService.attachStripeDetails(invoiceId, {
-      stripePaymentIntentId: paymentIntent.id,
-      status: "AWAITING_PAYMENT",
-      paymentCollectionMethod: "PAYMENT_INTENT",
-    });
-
-    return {
-      paymentIntentId: paymentIntent.id,
-      clientSecret: paymentIntent.client_secret,
-      amount: amountToPay,
-      currency: invoice.currency || "usd",
-    };
+    return FinancePaymentService.createPaymentIntentForInvoice(invoiceId);
   },
 
   async createCheckoutSessionForInvoice(invoiceId: string) {
-    const stripe = getStripeClient();
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: invoiceId },
-    });
-    if (!invoice) throw new Error("Invoice not found");
-
-    if (!["AWAITING_PAYMENT", "PENDING"].includes(invoice.status)) {
-      throw new Error("Invoice is not payable");
-    }
-    if (invoice.paymentCollectionMethod === "PAYMENT_AT_CLINIC") {
-      throw new Error("Invoice is marked for in-clinic payment");
-    }
-
-    if (invoice.stripePaymentIntentId) {
-      throw new Error("Invoice already has a PaymentIntent");
-    }
-    if (invoice.stripeCheckoutSessionId) {
-      return {
-        sessionId: invoice.stripeCheckoutSessionId,
-        url: invoice.stripeCheckoutUrl,
-      };
-    }
-
-    if (!invoice.organisationId) {
-      throw new Error("Invoice missing organisation");
-    }
-
-    const organisation = await prisma.organization.findUnique({
-      where: { id: invoice.organisationId },
-      select: { stripeAccountId: true },
-    });
-    if (!organisation?.stripeAccountId)
-      throw new Error("Organisation not connected to Stripe");
-
-    const items = Array.isArray(invoice.items)
-      ? invoice.items
-      : ([] as unknown[]);
-    if (items.length === 0) {
-      throw new Error("Invoice items are missing");
-    }
-
-    const expiresAt = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      line_items: items.map((item) => ({
-        price_data: {
-          currency: invoice.currency || "usd",
-          product_data: {
-            name: (item as { name?: string }).name ?? "Service",
-            description:
-              (item as { description?: string }).description ?? undefined,
-          },
-          unit_amount: Math.round(
-            (item as { unitPrice: number }).unitPrice * 100,
-          ),
-        },
-        quantity: (item as { quantity: number }).quantity,
-      })),
-      metadata: {
-        type: "INVOICE_PAYMENT",
-        invoiceId: invoice.id,
-        appointmentId: invoice.appointmentId ?? "",
-        organisationId: invoice.organisationId ?? "",
-        parentId: invoice.parentId ?? "",
-      },
-      payment_intent_data: {
-        metadata: {
-          type: "INVOICE_PAYMENT",
-          invoiceId: invoice.id,
-          appointmentId: invoice.appointmentId ?? "",
-          organisationId: invoice.organisationId ?? "",
-          parentId: invoice.parentId ?? "",
-        },
-        transfer_data: { destination: organisation.stripeAccountId },
-      },
-      success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-      cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-      expires_at: expiresAt,
-    });
-
-    await prisma.invoice.updateMany({
-      where: { id: invoiceId },
-      data: {
-        paymentCollectionMethod: "PAYMENT_LINK",
-        stripeCheckoutSessionId: session.id,
-        stripeCheckoutUrl: session.url ?? undefined,
-      },
-    });
-
-    return { sessionId: session.id, url: session.url };
+    return FinancePaymentService.createCheckoutSessionForInvoice(invoiceId);
   },
 
   async retrievePaymentIntent(paymentIntentId: string) {
@@ -616,29 +452,18 @@ export const StripeService = {
   },
 
   async refundPaymentIntent(paymentIntentId: string) {
-    const stripe = getStripeClient();
     const invoice = await prisma.invoice.findFirst({
       where: { stripePaymentIntentId: paymentIntentId },
     });
     if (!invoice) throw new Error("Invoice not found");
 
-    const paymentIntent = await stripe.paymentIntents.retrieve(
-      paymentIntentId,
-      {
-        expand: ["latest_charge"],
-      },
-    );
-
-    const charge = paymentIntent.latest_charge as Stripe.Charge;
-    if (!charge) throw new Error("No charge found for PaymentIntent");
-
-    const refund = await stripe.refunds.create({ charge: charge.id });
+    const result = await FinancePaymentService.refundInvoicePayment(invoice.id);
     await InvoiceService.markRefunded(invoice.id);
 
     return {
-      refundId: refund.id,
-      status: refund.status,
-      amountRefunded: refund.amount / 100,
+      refundId: result.refund.refundId,
+      status: result.refund.status,
+      amountRefunded: result.refund.amountRefunded,
     };
   },
 
