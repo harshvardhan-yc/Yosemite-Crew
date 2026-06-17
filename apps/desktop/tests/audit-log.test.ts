@@ -125,6 +125,19 @@ describe('createAuditLog', () => {
     expect(results[0].actor).toBe('dr-b');
   });
 
+  test('query() without filters does not mutate the stored chain order', async () => {
+    let t = 1000;
+    const deps = makeDeps(() => (t += 100));
+    const log = await createAuditLog(tmpDir, deps);
+    log.append({ action: 'create', actor: 'a', resourceType: 'patient', resourceId: 'p1', details: {} });
+    log.append({ action: 'create', actor: 'b', resourceType: 'patient', resourceId: 'p2', details: {} });
+    // No-filter query previously sorted the cached array in place (newest-first),
+    // so the next append linked its prevSignature to the wrong (reordered) entry.
+    log.query();
+    log.append({ action: 'create', actor: 'c', resourceType: 'patient', resourceId: 'p3', details: {} });
+    expect(log.verifyChain()).toBe(true);
+  });
+
   test('query limits results and sorts descending by timestamp', async () => {
     let t = 1000;
     const deps = makeDeps(() => {

@@ -104,6 +104,11 @@ describe('createDualWitnessLog', () => {
     });
 
     expect(event.witnessPinVerified).toBe(false);
+    // An unverified witness must NOT produce an inventory transaction, or it would
+    // decrement stock and read back via getWasteEvents() as a compliant record.
+    expect(event.csTransactionId).toBe('');
+    expect(logbook.getTransactions().filter((t) => t.action === 'waste')).toHaveLength(0);
+    expect(dwLog.getWasteEvents()).toHaveLength(0);
   });
 
   test('getWasteEvents returns waste transactions', async () => {

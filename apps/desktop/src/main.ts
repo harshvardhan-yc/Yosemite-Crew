@@ -1110,10 +1110,18 @@ const openCommandPalette = (): void => {
 // When biometric lock is available and enabled, locks biometric instead of
 // clearing the session — requiring Touch ID / Windows Hello to resume.
 const setupIdleLock = (ses: Session): void => {
-  const idleMinutes = idleLockMinutesFromEnv(process.env);
-  if (!idleMinutes) return;
+  // Prefer the persisted Preferences value (read live each tick so toggling
+  // "Idle auto-lock" applies without a restart); fall back to the env override.
+  const resolveIdleMinutes = (): number => {
+    const minutes = settingsStore?.load().idleLockMinutes;
+    return typeof minutes === 'number' && minutes > 0
+      ? minutes
+      : (idleLockMinutesFromEnv(process.env) ?? 0);
+  };
   let locked = false;
   setInterval(() => {
+    const idleMinutes = resolveIdleMinutes();
+    if (!idleMinutes) return;
     const idleMs = powerMonitor.getSystemIdleTime() * 1000;
     if (!locked && shouldLockAfterIdle(Date.now() - idleMs, Date.now(), idleMinutes)) {
       locked = true;

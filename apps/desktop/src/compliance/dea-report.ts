@@ -40,6 +40,21 @@ const SCHEDULE_MAP: Record<string, string> = {
   CV: 'V',
 };
 
+const netInventoryChange = (txs: CsTransaction[]): number =>
+  txs.reduce((sum, tx) => {
+    switch (tx.action) {
+      case 'receive':
+      case 'transfer':
+        return sum + tx.quantity;
+      case 'dispense':
+      case 'administer':
+      case 'waste':
+        return sum - tx.quantity;
+      default:
+        return sum;
+    }
+  }, 0);
+
 export const generateDeaReport = (deps: DeaDeps): DeaInventoryReport => {
   const now = deps.now || (() => Date.now());
   const endDate = new Date(now());
@@ -55,6 +70,14 @@ export const generateDeaReport = (deps: DeaDeps): DeaInventoryReport => {
     .getTransactions({ since: startTs })
     .filter((tx) => tx.timestamp <= endTs);
 
+  const priorByDrug = new Map<string, CsTransaction[]>();
+  for (const tx of deps.logbook.getTransactions()) {
+    if (tx.timestamp >= startTs) continue;
+    const list = priorByDrug.get(tx.drugName);
+    if (list) list.push(tx);
+    else priorByDrug.set(tx.drugName, [tx]);
+  }
+
   const byDrug = new Map<string, CsTransaction[]>();
   for (const tx of allTx) {
     if (!byDrug.has(tx.drugName)) byDrug.set(tx.drugName, []);
@@ -64,7 +87,7 @@ export const generateDeaReport = (deps: DeaDeps): DeaInventoryReport => {
   const drugs: DeaDrugEntry[] = [];
   for (const [drugName, txs] of byDrug) {
     const drugClass = txs[0]?.drugClass || 'CIII';
-    const beginningInventory = 0;
+    const beginningInventory = netInventoryChange(priorByDrug.get(drugName) || []);
     let received = 0;
     let dispensed = 0;
     let administered = 0;

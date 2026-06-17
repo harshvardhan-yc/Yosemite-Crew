@@ -139,6 +139,33 @@ describe('generateDeaReport', () => {
     expect(ketamine?.endingInventory).toBe(10);
   });
 
+  test('beginning inventory reflects transactions before the report window', async () => {
+    let clock = 0;
+    const deps = { ...makeDeps(), now: jest.fn(() => clock) };
+    const auditLog = await createAuditLog(tmpDir, deps);
+    const logbook = createControlledSubstanceLogbook(tmpDir, { auditLog, ...deps });
+    const base = {
+      drugName: 'Ketamine',
+      drugClass: 'CIII',
+      lotNumber: 'L1',
+      unit: 'mL',
+      veterinarianId: 'v1',
+      veterinarianName: 'Dr. X',
+    };
+    // Receipt long BEFORE the 2-year window (t=0).
+    clock = 0;
+    logbook.record({ ...base, action: 'receive', quantity: 100 });
+    // Dispense inside the window (t = reportNow).
+    const reportNow = 5 * 365 * 24 * 60 * 60 * 1000;
+    clock = reportNow;
+    logbook.record({ ...base, action: 'dispense', quantity: 30 });
+
+    const report = generateDeaReport({ logbook, now: () => reportNow });
+    const ketamine = report.drugs.find((d) => d.drugName === 'Ketamine');
+    expect(ketamine?.beginningInventory).toBe(100);
+    expect(ketamine?.endingInventory).toBe(70);
+  });
+
   test('uses default drugClass and schedule for drugs with empty drugClass', async () => {
     const deps = makeDeps(1000);
     const auditLog = await createAuditLog(tmpDir, deps);

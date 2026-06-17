@@ -81,6 +81,27 @@ export const createDualWitnessLog = (deps: DualWitnessDeps): DualWitnessLog => {
     >
   ): WasteEvent => {
     const pinVerified = verifyWitnessPin(input.witnessId, input.witnessPin);
+    if (!pinVerified) {
+      // Reject before touching inventory: an unverified or missing witness must not
+      // produce a controlled-substance waste transaction (which would decrement stock
+      // and later read back via getWasteEvents() as a compliant, verified record).
+      return {
+        id: generateId(),
+        timestamp: now(),
+        drugName: input.drugName,
+        drugClass: input.drugClass,
+        lotNumber: input.lotNumber,
+        quantity: input.quantity,
+        unit: input.unit,
+        veterinarianId: input.veterinarianId,
+        veterinarianName: input.veterinarianName,
+        witnessId: input.witnessId,
+        witnessName: input.witnessName,
+        witnessPinVerified: false,
+        reason: input.reason,
+        csTransactionId: '',
+      };
+    }
     const csTx = deps.logbook.record({
       action: 'waste',
       drugName: input.drugName,

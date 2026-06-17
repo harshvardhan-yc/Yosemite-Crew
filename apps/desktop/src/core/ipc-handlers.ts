@@ -357,6 +357,27 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
     const data = args[0];
     if (typeof data !== 'object' || data === null || Array.isArray(data))
       return { ok: false, error: 'invalid-data' };
+    const d = data as Record<string, unknown>;
+    const action = d.action;
+    const CS_ACTIONS = ['dispense', 'administer', 'receive', 'waste', 'transfer', 'inventory'];
+    if (typeof action !== 'string' || !CS_ACTIONS.includes(action))
+      return { ok: false, error: 'invalid-action' };
+    for (const f of [
+      'drugName',
+      'drugClass',
+      'lotNumber',
+      'unit',
+      'veterinarianId',
+      'veterinarianName',
+    ]) {
+      const v = d[f];
+      if (typeof v !== 'string' || v.trim() === '') return { ok: false, error: `missing-${f}` };
+    }
+    const quantity = d.quantity;
+    if (typeof quantity !== 'number' || !Number.isFinite(quantity))
+      return { ok: false, error: 'invalid-quantity' };
+    if (action !== 'transfer' && action !== 'inventory' && quantity <= 0)
+      return { ok: false, error: 'invalid-quantity' };
     const tx = services.controlledSubstanceLog.record(
       data as Parameters<ControlledSubstanceLogbook['record']>[0]
     );

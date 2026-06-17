@@ -260,7 +260,18 @@ describe('ipc-handlers — happy paths', () => {
       ok: true,
     });
     expect(await call('yc:apply-theme')).toEqual({ ok: true });
-    expect(await call('yc:cs-record', { drug: 'x' })).toMatchObject({
+    expect(
+      await call('yc:cs-record', {
+        action: 'dispense',
+        drugName: 'Ketamine',
+        drugClass: 'CIII',
+        lotNumber: 'L1',
+        quantity: 5,
+        unit: 'mL',
+        veterinarianId: 'v1',
+        veterinarianName: 'Dr. X',
+      })
+    ).toMatchObject({
       ok: true,
     });
     expect(await call('yc:cs-export', '2026-01-01')).toMatchObject({
@@ -284,6 +295,38 @@ describe('ipc-handlers — happy paths', () => {
     expect(await call('yc:vault-delete', 'd')).toMatchObject({ ok: true });
     expect(await call('yc:dea-register', { deaNumber: 'AB1' })).toMatchObject({
       ok: true,
+    });
+  });
+
+  test('cs-record rejects invalid payloads at the IPC boundary', async () => {
+    const services = makeServices();
+    const call = register(services);
+    const valid = {
+      action: 'dispense',
+      drugName: 'Ketamine',
+      drugClass: 'CIII',
+      lotNumber: 'L1',
+      quantity: 5,
+      unit: 'mL',
+      veterinarianId: 'v1',
+      veterinarianName: 'Dr. X',
+    };
+    // missing required fields (the old { drug: 'x' } shape)
+    expect(await call('yc:cs-record', { drug: 'x' })).toMatchObject({ ok: false });
+    // unsupported action
+    expect(await call('yc:cs-record', { ...valid, action: 'bogus' })).toMatchObject({
+      ok: false,
+      error: 'invalid-action',
+    });
+    // non-positive quantity for a consuming action
+    expect(await call('yc:cs-record', { ...valid, quantity: 0 })).toMatchObject({
+      ok: false,
+      error: 'invalid-quantity',
+    });
+    // NaN quantity
+    expect(await call('yc:cs-record', { ...valid, quantity: Number.NaN })).toMatchObject({
+      ok: false,
+      error: 'invalid-quantity',
     });
   });
 
