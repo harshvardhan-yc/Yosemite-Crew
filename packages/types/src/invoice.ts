@@ -64,6 +64,15 @@ export type Invoice = {
   status: InvoiceStatus;
   creditNotes?: CreditNote[];
 
+  stripePaymentIntentId?: string;
+  stripeInvoiceId?: string;
+  stripePaymentLinkId?: string;
+  stripeCustomerId?: string;
+  stripeChargeId?: string;
+  stripeReceiptUrl?: string;
+  stripeCheckoutSessionId?: string;
+  stripeCheckoutUrl?: string;
+
   metadata?: Record<string, string | number | boolean>;
   paidAt?: Date;
   createdAt: Date;
