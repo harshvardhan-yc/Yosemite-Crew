@@ -942,6 +942,80 @@ model OrganizationBilling {
   @@map("OrgBilling")
 }
 
+model SubscriptionEntitlement {
+  id            String   @id @default(uuid())
+  orgId         String
+  code          String
+  name          String?
+  value         Json?
+  source        String   @default("MANUAL")
+  status        String   @default("ACTIVE")
+  grantedAt     DateTime @default(now())
+  expiresAt     DateTime?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([orgId, code])
+  @@index([orgId, status])
+  @@map("OrgSubscriptionEntitlements")
+}
+
+model FinanceProviderLink {
+  id                     String   @id @default(uuid())
+  orgId                  String
+  provider               String
+  externalCustomerId     String?
+  externalSubscriptionId String?
+  externalSubscriptionItemId String?
+  externalPriceId        String?
+  externalProductId      String?
+  metadata               Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([orgId, provider])
+  @@index([externalSubscriptionId])
+  @@index([externalCustomerId])
+  @@map("OrgSubscriptionProviderLinks")
+}
+
+model UsageEvent {
+  id                String   @id @default(uuid())
+  orgId             String
+  usageKey          String
+  quantity          Int      @default(1)
+  billableQuantity  Int      @default(1)
+  source            String
+  referenceType     String?
+  referenceId       String?
+  metadata          Json?
+  occurredAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([orgId, usageKey, occurredAt])
+  @@index([orgId, referenceType, referenceId])
+  @@map("OrgUsageEvents")
+}
+
+model UsageSnapshot {
+  id               String   @id @default(uuid())
+  orgId            String
+  snapshotType     String   @default("snapshot")
+  snapshotAt       DateTime @default(now())
+  seatsActive      Int      @default(0)
+  seatsBillable    Int      @default(0)
+  appointmentsUsed Int      @default(0)
+  toolsUsed        Int      @default(0)
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([orgId, snapshotAt])
+  @@map("OrgUsageSnapshots")
+}
+
 model OrganizationDocument {
   id              String                @id @default(uuid())
   organisationId  String

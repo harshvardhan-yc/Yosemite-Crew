@@ -6,12 +6,28 @@ jest.mock("src/config/prisma", () => ({
     organization: {
       findUnique: jest.fn(),
     },
+    subscriptionEntitlement: {
+      upsert: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    financeProviderLink: {
+      upsert: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    usageEvent: {
+      create: jest.fn(),
+    },
+    usageSnapshot: {
+      create: jest.fn(),
+    },
     organizationUsageCounter: {
       upsert: jest.fn(),
     },
     organizationBilling: {
       upsert: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
     },
@@ -35,6 +51,8 @@ describe("FinanceSubscriptionService", () => {
   });
 
   it("records seat usage in org billing and usage counters", async () => {
+    (prisma.usageEvent.create as jest.Mock).mockResolvedValueOnce({});
+    (prisma.usageSnapshot.create as jest.Mock).mockResolvedValueOnce({});
     (prisma.organizationUsageCounter.upsert as jest.Mock).mockResolvedValueOnce(
       {},
     );
@@ -45,6 +63,15 @@ describe("FinanceSubscriptionService", () => {
       seats: 4,
     });
 
+    expect(prisma.usageEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orgId: "org_1",
+        usageKey: "SEATS_ACTIVE",
+        quantity: 4,
+        billableQuantity: 4,
+        source: "SUBSCRIPTION",
+      }),
+    });
     expect(prisma.organizationUsageCounter.upsert).toHaveBeenCalledWith({
       where: { orgId: "org_1" },
       create: {
@@ -60,6 +87,14 @@ describe("FinanceSubscriptionService", () => {
         seatQuantity: 4,
         seatQuantityUpdatedAt: new Date("2026-06-18T00:00:00.000Z"),
       },
+    });
+    expect(prisma.usageSnapshot.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orgId: "org_1",
+        snapshotType: "SEAT_SYNC",
+        seatsActive: 4,
+        seatsBillable: 4,
+      }),
     });
   });
 
@@ -130,6 +165,7 @@ describe("FinanceSubscriptionService", () => {
   });
 
   it("records the stripe customer id for business checkout", async () => {
+    (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
     (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({});
 
     await FinanceSubscriptionService.recordBusinessCheckoutCustomer({
@@ -137,6 +173,32 @@ describe("FinanceSubscriptionService", () => {
       stripeCustomerId: "cus_1",
     });
 
+    expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith({
+      where: {
+        orgId_provider: {
+          orgId: "org_1",
+          provider: "STRIPE",
+        },
+      },
+      create: {
+        orgId: "org_1",
+        provider: "STRIPE",
+        externalCustomerId: "cus_1",
+        externalSubscriptionId: undefined,
+        externalSubscriptionItemId: undefined,
+        externalPriceId: undefined,
+        externalProductId: undefined,
+        metadata: { source: "business_checkout" },
+      },
+      update: {
+        externalCustomerId: "cus_1",
+        externalSubscriptionId: undefined,
+        externalSubscriptionItemId: undefined,
+        externalPriceId: undefined,
+        externalProductId: undefined,
+        metadata: { source: "business_checkout" },
+      },
+    });
     expect(prisma.organizationBilling.update).toHaveBeenCalledWith({
       where: { orgId: "org_1" },
       data: { stripeCustomerId: "cus_1" },
@@ -244,6 +306,16 @@ describe("FinanceSubscriptionService", () => {
   });
 
   it("records business checkout completion", async () => {
+    (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
+      { orgId: "org_1" },
+    ]);
+    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
+    (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
+    (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
     (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
       {},
     );
@@ -280,9 +352,58 @@ describe("FinanceSubscriptionService", () => {
         gracePeriodEndsAt: null,
       }),
     });
+    expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith({
+      where: {
+        orgId_provider: {
+          orgId: "org_1",
+          provider: "STRIPE",
+        },
+      },
+      create: expect.objectContaining({
+        orgId: "org_1",
+        provider: "STRIPE",
+        externalCustomerId: "cus_1",
+        externalSubscriptionId: "sub_1",
+        externalSubscriptionItemId: "item_1",
+        externalPriceId: "price_1",
+        externalProductId: "prod_1",
+      }),
+      update: expect.objectContaining({
+        externalCustomerId: "cus_1",
+        externalSubscriptionId: "sub_1",
+      }),
+    });
+    expect(prisma.subscriptionEntitlement.upsert).toHaveBeenCalledWith({
+      where: {
+        orgId_code: {
+          orgId: "org_1",
+          code: "BUSINESS_PLAN",
+        },
+      },
+      create: expect.objectContaining({
+        orgId: "org_1",
+        code: "BUSINESS_PLAN",
+        source: "STRIPE",
+        status: "ACTIVE",
+      }),
+      update: expect.objectContaining({
+        source: "STRIPE",
+        status: "ACTIVE",
+      }),
+    });
   });
 
   it("normalizes stripe subscription checkout completion into finance writes", async () => {
+    (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
+      { orgId: "org_1" },
+    ]);
+    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
+    (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
+    (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
     (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
       {},
     );
@@ -330,6 +451,8 @@ describe("FinanceSubscriptionService", () => {
         stripeLivemode: false,
       }),
     });
+    expect(prisma.financeProviderLink.upsert).toHaveBeenCalled();
+    expect(prisma.subscriptionEntitlement.upsert).toHaveBeenCalled();
   });
 
   it("records subscription updates and omits absent timestamps", async () => {
@@ -392,11 +515,19 @@ describe("FinanceSubscriptionService", () => {
   });
 
   it("records subscription lifecycle changes", async () => {
+    (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
+      { orgId: "org_1" },
+    ]);
     (prisma.organizationBilling.updateMany as jest.Mock)
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
+    (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
+    (
+      prisma.subscriptionEntitlement.updateMany as jest.Mock
+    ).mockResolvedValueOnce({});
+    (prisma.usageSnapshot.create as jest.Mock).mockResolvedValueOnce({});
 
     await FinanceSubscriptionService.recordSubscriptionDeleted("sub_1");
     await FinanceSubscriptionService.recordSubscriptionInvoicePaid({
@@ -421,6 +552,34 @@ describe("FinanceSubscriptionService", () => {
         }),
       }),
     );
+    expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith({
+      where: {
+        orgId_provider: {
+          orgId: "org_1",
+          provider: "STRIPE",
+        },
+      },
+      create: expect.objectContaining({
+        orgId: "org_1",
+        provider: "STRIPE",
+        externalSubscriptionId: "sub_1",
+      }),
+      update: expect.objectContaining({
+        externalSubscriptionId: "sub_1",
+      }),
+    });
+    expect(prisma.subscriptionEntitlement.updateMany).toHaveBeenCalledWith({
+      where: { orgId: "org_1", code: "BUSINESS_PLAN" },
+      data: expect.objectContaining({
+        status: "INACTIVE",
+      }),
+    });
+    expect(prisma.usageSnapshot.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orgId: "org_1",
+        snapshotType: "SUBSCRIPTION_TERMINATED",
+      }),
+    });
     expect(prisma.organizationBilling.updateMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({

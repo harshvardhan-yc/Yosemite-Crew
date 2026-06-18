@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { BillingInterval, SubscriptionStatus } from "@prisma/client";
 import Stripe from "stripe";
@@ -31,6 +32,52 @@ const toBillingInterval = (
 type SeatUsageInput = {
   orgId: string;
   seats: number;
+};
+
+type UsageEventInput = {
+  orgId: string;
+  usageKey: string;
+  quantity: number;
+  billableQuantity?: number;
+  source: string;
+  referenceType?: string | null;
+  referenceId?: string | null;
+  metadata?: Record<string, unknown>;
+  occurredAt?: Date;
+};
+
+type UsageSnapshotInput = {
+  orgId: string;
+  snapshotType?: string;
+  seatsActive?: number;
+  seatsBillable?: number;
+  appointmentsUsed?: number;
+  toolsUsed?: number;
+  metadata?: Record<string, unknown>;
+  snapshotAt?: Date;
+};
+
+type SubscriptionEntitlementInput = {
+  orgId: string;
+  code: string;
+  name?: string | null;
+  value?: Record<string, unknown> | null;
+  source: string;
+  status?: string | null;
+  grantedAt?: Date;
+  expiresAt?: Date | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+type SubscriptionProviderLinkInput = {
+  orgId: string;
+  provider: string;
+  externalCustomerId?: string | null;
+  externalSubscriptionId?: string | null;
+  externalSubscriptionItemId?: string | null;
+  externalPriceId?: string | null;
+  externalProductId?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type BusinessCheckoutInterval = "month" | "year";
@@ -97,7 +144,117 @@ type SubscriptionLifecycleInput = {
   invoiceId?: string | null;
 };
 
+const toPositiveInteger = (value: number) =>
+  Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+
 export const FinanceSubscriptionService = {
+  async recordUsageEvent(input: UsageEventInput) {
+    return prisma.usageEvent.create({
+      data: {
+        orgId: input.orgId,
+        usageKey: input.usageKey,
+        quantity: toPositiveInteger(input.quantity),
+        billableQuantity: toPositiveInteger(
+          input.billableQuantity ?? input.quantity,
+        ),
+        source: input.source,
+        referenceType: input.referenceType ?? undefined,
+        referenceId: input.referenceId ?? undefined,
+        metadata: input.metadata as unknown as
+          | Prisma.InputJsonValue
+          | undefined,
+        occurredAt: input.occurredAt ?? new Date(),
+      },
+    });
+  },
+
+  async captureUsageSnapshot(input: UsageSnapshotInput) {
+    return prisma.usageSnapshot.create({
+      data: {
+        orgId: input.orgId,
+        snapshotType: input.snapshotType ?? "snapshot",
+        seatsActive: toPositiveInteger(input.seatsActive ?? 0),
+        seatsBillable: toPositiveInteger(input.seatsBillable ?? 0),
+        appointmentsUsed: toPositiveInteger(input.appointmentsUsed ?? 0),
+        toolsUsed: toPositiveInteger(input.toolsUsed ?? 0),
+        metadata: input.metadata as unknown as
+          | Prisma.InputJsonValue
+          | undefined,
+        snapshotAt: input.snapshotAt ?? new Date(),
+      },
+    });
+  },
+
+  async upsertSubscriptionEntitlement(input: SubscriptionEntitlementInput) {
+    return prisma.subscriptionEntitlement.upsert({
+      where: {
+        orgId_code: {
+          orgId: input.orgId,
+          code: input.code,
+        },
+      },
+      create: {
+        orgId: input.orgId,
+        code: input.code,
+        name: input.name ?? undefined,
+        value: input.value as unknown as Prisma.InputJsonValue | undefined,
+        source: input.source,
+        status: input.status ?? "ACTIVE",
+        grantedAt: input.grantedAt ?? new Date(),
+        expiresAt: input.expiresAt ?? undefined,
+        metadata: input.metadata as unknown as
+          | Prisma.InputJsonValue
+          | undefined,
+      },
+      update: {
+        name: input.name ?? undefined,
+        value: input.value as unknown as Prisma.InputJsonValue | undefined,
+        source: input.source,
+        status: input.status ?? "ACTIVE",
+        grantedAt: input.grantedAt ?? undefined,
+        expiresAt: input.expiresAt ?? undefined,
+        metadata: input.metadata as unknown as
+          | Prisma.InputJsonValue
+          | undefined,
+      },
+    });
+  },
+
+  async upsertSubscriptionProviderLink(input: SubscriptionProviderLinkInput) {
+    return prisma.financeProviderLink.upsert({
+      where: {
+        orgId_provider: {
+          orgId: input.orgId,
+          provider: input.provider,
+        },
+      },
+      create: {
+        orgId: input.orgId,
+        provider: input.provider,
+        externalCustomerId: input.externalCustomerId ?? undefined,
+        externalSubscriptionId: input.externalSubscriptionId ?? undefined,
+        externalSubscriptionItemId:
+          input.externalSubscriptionItemId ?? undefined,
+        externalPriceId: input.externalPriceId ?? undefined,
+        externalProductId: input.externalProductId ?? undefined,
+        metadata: input.metadata as unknown as
+          | Prisma.InputJsonValue
+          | undefined,
+      },
+      update: {
+        externalCustomerId: input.externalCustomerId ?? undefined,
+        externalSubscriptionId: input.externalSubscriptionId ?? undefined,
+        externalSubscriptionItemId:
+          input.externalSubscriptionItemId ?? undefined,
+        externalPriceId: input.externalPriceId ?? undefined,
+        externalProductId: input.externalProductId ?? undefined,
+        metadata: input.metadata as unknown as
+          | Prisma.InputJsonValue
+          | undefined,
+      },
+    });
+  },
+
   async prepareBusinessCheckoutSession(
     orgId: string,
     interval: BusinessCheckoutInterval,
@@ -159,6 +316,15 @@ export const FinanceSubscriptionService = {
   async recordBusinessCheckoutCustomer(
     input: CheckoutCustomerInput,
   ): Promise<void> {
+    await this.upsertSubscriptionProviderLink({
+      orgId: input.orgId,
+      provider: "STRIPE",
+      externalCustomerId: input.stripeCustomerId,
+      metadata: {
+        source: "business_checkout",
+      },
+    });
+
     await prisma.organizationBilling.update({
       where: { orgId: input.orgId },
       data: { stripeCustomerId: input.stripeCustomerId },
@@ -168,6 +334,24 @@ export const FinanceSubscriptionService = {
   async resolveBillingCustomerId(
     orgId: string,
   ): Promise<BillingCustomerLookup> {
+    const providerLink = await prisma.financeProviderLink.findUnique({
+      where: {
+        orgId_provider: {
+          orgId,
+          provider: "STRIPE",
+        },
+      },
+      select: {
+        externalCustomerId: true,
+      },
+    });
+
+    if (providerLink?.externalCustomerId) {
+      return {
+        stripeCustomerId: providerLink.externalCustomerId,
+      };
+    }
+
     const billing = await prisma.organizationBilling.upsert({
       where: { orgId },
       create: { orgId },
@@ -223,6 +407,19 @@ export const FinanceSubscriptionService = {
   },
 
   async recordSeatUsage({ orgId, seats }: SeatUsageInput) {
+    await this.recordUsageEvent({
+      orgId,
+      usageKey: "SEATS_ACTIVE",
+      quantity: seats,
+      billableQuantity: seats,
+      source: "SUBSCRIPTION",
+      referenceType: "organization_billing",
+      referenceId: orgId,
+      metadata: {
+        scope: "business_checkout",
+      },
+    });
+
     await prisma.organizationUsageCounter.upsert({
       where: { orgId },
       create: {
@@ -240,9 +437,34 @@ export const FinanceSubscriptionService = {
         seatQuantityUpdatedAt: new Date(),
       },
     });
+
+    await this.captureUsageSnapshot({
+      orgId,
+      snapshotType: "SEAT_SYNC",
+      seatsActive: seats,
+      seatsBillable: seats,
+      metadata: {
+        usageKey: "SEATS_ACTIVE",
+      },
+    });
   },
 
   async recordBusinessCheckoutCompleted(input: BusinessCheckoutCompletedInput) {
+    const billingRows = await prisma.financeProviderLink.findMany({
+      where: {
+        provider: "STRIPE",
+        externalCustomerId: input.customerId,
+      },
+      select: { orgId: true },
+    });
+    const rows =
+      billingRows.length > 0
+        ? billingRows
+        : await prisma.organizationBilling.findMany({
+            where: { stripeCustomerId: input.customerId },
+            select: { orgId: true },
+          });
+
     await prisma.organizationBilling.updateMany({
       where: { stripeCustomerId: input.customerId },
       data: {
@@ -265,6 +487,45 @@ export const FinanceSubscriptionService = {
         gracePeriodEndsAt: null,
       },
     });
+
+    await Promise.all(
+      rows.map((row) =>
+        Promise.all([
+          this.upsertSubscriptionProviderLink({
+            orgId: row.orgId,
+            provider: "STRIPE",
+            externalCustomerId: input.customerId,
+            externalSubscriptionId: input.subscriptionId,
+            externalSubscriptionItemId: input.subscriptionItemId,
+            externalPriceId: input.priceId,
+            externalProductId: input.productId ?? null,
+            metadata: {
+              subscriptionStatus: input.subscriptionStatus ?? "none",
+              cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+            },
+          }),
+          this.upsertSubscriptionEntitlement({
+            orgId: row.orgId,
+            code: "BUSINESS_PLAN",
+            name: "Business subscription",
+            value: {
+              plan: "business",
+              billingInterval: input.billingInterval ?? null,
+              seatQuantity: input.seatQuantity ?? 0,
+              priceId: input.priceId,
+              productId: input.productId ?? null,
+            },
+            source: "STRIPE",
+            status: "ACTIVE",
+            grantedAt: new Date(),
+            metadata: {
+              subscriptionStatus: input.subscriptionStatus ?? "none",
+              cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+            },
+          }),
+        ]),
+      ),
+    );
   },
 
   async recordSubscriptionUpdated(input: SubscriptionUpdatedInput) {
@@ -348,6 +609,21 @@ export const FinanceSubscriptionService = {
   },
 
   async recordSubscriptionDeleted(subscriptionId: string) {
+    const billingRows = await prisma.financeProviderLink.findMany({
+      where: {
+        provider: "STRIPE",
+        externalSubscriptionId: subscriptionId,
+      },
+      select: { orgId: true },
+    });
+    const rows =
+      billingRows.length > 0
+        ? billingRows
+        : await prisma.organizationBilling.findMany({
+            where: { stripeSubscriptionId: subscriptionId },
+            select: { orgId: true },
+          });
+
     await prisma.organizationBilling.updateMany({
       where: { stripeSubscriptionId: subscriptionId },
       data: {
@@ -364,6 +640,35 @@ export const FinanceSubscriptionService = {
         gracePeriodEndsAt: null,
       },
     });
+
+    await Promise.all(
+      rows.map((row) =>
+        Promise.all([
+          this.upsertSubscriptionProviderLink({
+            orgId: row.orgId,
+            provider: "STRIPE",
+            externalSubscriptionId: subscriptionId,
+            metadata: {
+              status: "canceled",
+            },
+          }),
+          prisma.subscriptionEntitlement.updateMany({
+            where: { orgId: row.orgId, code: "BUSINESS_PLAN" },
+            data: {
+              status: "INACTIVE",
+              expiresAt: new Date(),
+            },
+          }),
+          this.captureUsageSnapshot({
+            orgId: row.orgId,
+            snapshotType: "SUBSCRIPTION_TERMINATED",
+            metadata: {
+              subscriptionId,
+            },
+          }),
+        ]),
+      ),
+    );
   },
 
   async recordSubscriptionInvoicePaid(input: SubscriptionLifecycleInput) {
