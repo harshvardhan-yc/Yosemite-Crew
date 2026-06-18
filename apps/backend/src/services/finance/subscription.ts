@@ -21,6 +21,13 @@ const toSubscriptionStatus = (
   return undefined;
 };
 
+const toBillingInterval = (
+  value?: string | null,
+): BillingInterval | undefined => {
+  if (value === "month" || value === "year") return value;
+  return undefined;
+};
+
 type SeatUsageInput = {
   orgId: string;
   seats: number;
@@ -74,6 +81,12 @@ type SubscriptionUpdatedInput = {
 };
 
 type StripeSubscriptionUpdatedInput = Stripe.Subscription;
+
+type StripeSubscriptionCheckoutCompletedInput = {
+  customerId: string;
+  session: Stripe.Checkout.Session;
+  subscription: Stripe.Subscription;
+};
 
 type SubscriptionLifecycleInput = {
   subscriptionId: string;
@@ -277,6 +290,39 @@ export const FinanceSubscriptionService = {
         item?.current_period_end !== undefined
           ? new Date(item.current_period_end * 1000)
           : null,
+    });
+  },
+
+  async recordStripeSubscriptionCheckoutCompleted(
+    input: StripeSubscriptionCheckoutCompletedInput,
+  ) {
+    const item = input.subscription.items.data[0];
+    const price = item?.price;
+    if (!item || !price) return;
+
+    const productId =
+      typeof price.product === "string" ? price.product : price.product?.id;
+
+    await this.recordBusinessCheckoutCompleted({
+      customerId: input.customerId,
+      subscriptionId: input.subscription.id,
+      subscriptionItemId: item.id,
+      priceId: price.id,
+      productId: productId ?? null,
+      billingInterval: toBillingInterval(price.recurring?.interval) ?? null,
+      subscriptionStatus:
+        toSubscriptionStatus(input.subscription.status) ?? "none",
+      cancelAtPeriodEnd: input.subscription.cancel_at_period_end ?? false,
+      seatQuantity: item.quantity ?? 0,
+      currentPeriodStart:
+        item.current_period_start !== undefined
+          ? new Date(item.current_period_start * 1000)
+          : null,
+      currentPeriodEnd:
+        item.current_period_end !== undefined
+          ? new Date(item.current_period_end * 1000)
+          : null,
+      livemode: input.session.livemode ?? false,
     });
   },
 

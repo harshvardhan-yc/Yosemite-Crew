@@ -261,6 +261,56 @@ describe("FinanceSubscriptionService", () => {
     });
   });
 
+  it("normalizes stripe subscription checkout completion into finance writes", async () => {
+    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
+
+    await FinanceSubscriptionService.recordStripeSubscriptionCheckoutCompleted({
+      customerId: "cus_1",
+      session: {
+        livemode: false,
+      } as any,
+      subscription: {
+        id: "sub_1",
+        status: "active",
+        cancel_at_period_end: false,
+        items: {
+          data: [
+            {
+              id: "item_1",
+              quantity: 2,
+              current_period_start: 1718668800,
+              current_period_end: 1721260800,
+              price: {
+                id: "price_1",
+                recurring: { interval: "month" },
+                product: "prod_1",
+              },
+            },
+          ],
+        },
+      } as any,
+    });
+
+    expect(prisma.organizationBilling.updateMany).toHaveBeenCalledWith({
+      where: { stripeCustomerId: "cus_1" },
+      data: expect.objectContaining({
+        plan: "business",
+        accessState: "active",
+        stripeSubscriptionId: "sub_1",
+        stripeSubscriptionItemId: "item_1",
+        stripePriceId: "price_1",
+        stripeProductId: "prod_1",
+        billingInterval: "month",
+        subscriptionStatus: "active",
+        cancelAtPeriodEnd: false,
+        seatQuantity: 2,
+        stripeLivemode: false,
+      }),
+    });
+  });
+
   it("records subscription updates and omits absent timestamps", async () => {
     (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
       {},

@@ -76,6 +76,7 @@ jest.mock("../../src/services/finance/subscription", () => ({
     recordSeatUsage: jest.fn(),
     recordBusinessCheckoutCompleted: jest.fn(),
     recordStripeSubscriptionUpdated: jest.fn(),
+    recordStripeSubscriptionCheckoutCompleted: jest.fn(),
     recordSubscriptionUpdated: jest.fn(),
     recordSubscriptionDeleted: jest.fn(),
     recordSubscriptionInvoicePaid: jest.fn(),
@@ -1100,13 +1101,17 @@ describe("StripeService", () => {
       } as any);
 
       expect(
-        FinanceSubscriptionService.recordBusinessCheckoutCompleted,
+        FinanceSubscriptionService.recordStripeSubscriptionCheckoutCompleted,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
           customerId: "cus_1",
-          subscriptionId: "sub_1",
-          subscriptionItemId: "item_1",
-          priceId: "price_1",
+          session: expect.objectContaining({
+            customer: "cus_1",
+            subscription: "sub_1",
+          }),
+          subscription: expect.objectContaining({
+            id: "sub_1",
+          }),
         }),
       );
       expect(

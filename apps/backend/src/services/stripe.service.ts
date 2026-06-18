@@ -10,7 +10,7 @@ import { NotificationService } from "./notification.service";
 
 import { prisma } from "src/config/prisma";
 import { getOrgBillingCurrency } from "src/utils/billing";
-import { Prisma, BillingInterval, SubscriptionStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 let stripeClient: Stripe | null = null;
 
@@ -40,29 +40,6 @@ const extractAppointmentPatientRefs = (appointment: {
 }) =>
   extractCompanionRefs(appointment.patient ?? appointment.companion ?? null);
 
-const toBillingInterval = (
-  value?: string | null,
-): BillingInterval | undefined => {
-  if (value === "month" || value === "year") return value;
-  return undefined;
-};
-
-const toSubscriptionStatus = (
-  value?: string | null,
-): SubscriptionStatus | undefined => {
-  if (!value) return undefined;
-  if (value === "none") return "none";
-  if (value === "trialing") return "trialing";
-  if (value === "active") return "active";
-  if (value === "past_due") return "past_due";
-  if (value === "unpaid") return "unpaid";
-  if (value === "canceled") return "canceled";
-  if (value === "incomplete") return "incomplete";
-  if (value === "incomplete_expired") return "incomplete_expired";
-  if (value === "paused") return "paused";
-  return undefined;
-};
-
 const getStripeClient = () => {
   if (stripeClient) return stripeClient;
 
@@ -75,25 +52,6 @@ const getStripeClient = () => {
 
 function toStripeAmount(amount: number): number {
   return Math.round(amount * 100);
-}
-
-// --- Billing helpers ---
-type BillingDoc = {
-  stripeCustomerId?: string | null;
-};
-
-async function ensureBillingDocs(
-  orgId: string,
-): Promise<{ billing: BillingDoc }> {
-  const billing = await prisma.organizationBilling.upsert({
-    where: { orgId },
-    create: { orgId },
-    update: {},
-  });
-
-  return {
-    billing: billing as BillingDoc,
-  };
 }
 
 export const StripeService = {
@@ -251,7 +209,14 @@ export const StripeService = {
 
   async createCustomerPortalSession(orgId: string) {
     const stripe = getStripeClient();
-    const { billing } = await ensureBillingDocs(orgId);
+    const billing = await prisma.organizationBilling.upsert({
+      where: { orgId },
+      create: { orgId },
+      update: {},
+      select: {
+        stripeCustomerId: true,
+      },
+    });
 
     if (!billing.stripeCustomerId) {
       throw new Error("No billing customer found. Upgrade to Business first.");
@@ -755,25 +720,10 @@ export const StripeService = {
       expand: ["items.data.price"],
     });
 
-    const item = subscription.items.data[0];
-    const price = item.price;
-
-    const productId =
-      typeof price.product === "string" ? price.product : price.product?.id;
-
-    await FinanceSubscriptionService.recordBusinessCheckoutCompleted({
+    await FinanceSubscriptionService.recordStripeSubscriptionCheckoutCompleted({
       customerId,
-      subscriptionId: subscription.id,
-      subscriptionItemId: item.id,
-      priceId: price.id,
-      productId: productId ?? null,
-      billingInterval: toBillingInterval(price.recurring?.interval) ?? null,
-      subscriptionStatus: toSubscriptionStatus(subscription.status) ?? "none",
-      cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-      seatQuantity: item.quantity ?? 0,
-      currentPeriodStart: new Date(item.current_period_start * 1000),
-      currentPeriodEnd: new Date(item.current_period_end * 1000),
-      livemode: session.livemode ?? false,
+      session,
+      subscription,
     });
   },
 
