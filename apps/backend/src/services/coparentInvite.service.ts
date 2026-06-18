@@ -224,7 +224,7 @@ export const CoParentInviteService = {
       where: {
         parentId,
         patientId: invite.patient.id,
-        status: { in: ["ACTIVE", "PENDING"] },
+        status: { in: ["ACTIVE"] },
       },
       select: { id: true },
     });
