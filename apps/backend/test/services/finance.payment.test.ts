@@ -31,6 +31,9 @@ jest.mock("src/config/prisma", () => ({
       create: jest.fn(),
       findFirst: jest.fn(),
     },
+    financeEvent: {
+      create: jest.fn(),
+    },
   },
 }));
 
@@ -121,6 +124,15 @@ describe("FinancePaymentService", () => {
           isPartial: true,
           isOffline: true,
           provider: "MANUAL",
+        }),
+      }),
+    );
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "PAYMENT_SUCCEEDED",
+          entityType: "PAYMENT",
+          entityId: "pay_2",
         }),
       }),
     );
@@ -527,6 +539,37 @@ describe("FinancePaymentService", () => {
     ).rejects.toBeInstanceOf(FinancePaymentError);
   });
 
+  it("emits a payment failed event when marking a payment failed", async () => {
+    (prisma.invoice.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: "inv_failed_1",
+      organisationId: "org_1",
+      status: "PENDING",
+      currency: "usd",
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_failed_1",
+      organisationId: "org_1",
+      status: "FAILED",
+      currency: "usd",
+    });
+
+    const result = await FinancePaymentService.handleInvoicePaymentFailed({
+      invoiceId: "inv_failed_1",
+      paymentIntentId: "pi_failed_1",
+    });
+
+    expect(result.action).toBe("FAILED");
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "PAYMENT_FAILED",
+          entityType: "PAYMENT",
+          entityId: "pi_failed_1",
+        }),
+      }),
+    );
+  });
+
   it("normalizes a Stripe payment intent success into invoice payment rows", async () => {
     (prisma.invoice.findFirst as jest.Mock).mockResolvedValueOnce({
       id: "inv_webhook_1",
@@ -788,6 +831,15 @@ describe("FinancePaymentService", () => {
           provider: "STRIPE",
           providerRefundId: "re_9",
           amount: 90,
+        }),
+      }),
+    );
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "INVOICE_REFUNDED",
+          entityType: "INVOICE",
+          entityId: "inv_9",
         }),
       }),
     );

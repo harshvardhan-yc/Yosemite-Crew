@@ -21,6 +21,9 @@ jest.mock("src/config/prisma", () => ({
     usageSnapshot: {
       create: jest.fn(),
     },
+    financeEvent: {
+      create: jest.fn(),
+    },
     organizationUsageCounter: {
       upsert: jest.fn(),
     },
@@ -44,6 +47,21 @@ describe("FinanceSubscriptionService", () => {
     jest.setSystemTime(new Date("2026-06-18T00:00:00.000Z"));
     process.env.STRIPE_PRICE_BUSINESS_MONTH = "price_month_mock";
     process.env.STRIPE_PRICE_BUSINESS_YEAR = "price_year_mock";
+    (prisma.usageEvent.create as jest.Mock).mockResolvedValue({
+      id: "usage_evt_default",
+      quantity: 0,
+      billableQuantity: 0,
+      occurredAt: new Date("2026-06-18T00:00:00.000Z"),
+    });
+    (prisma.usageSnapshot.create as jest.Mock).mockResolvedValue({
+      id: "usage_snapshot_default",
+      snapshotType: "snapshot",
+      seatsActive: 0,
+      seatsBillable: 0,
+      appointmentsUsed: 0,
+      toolsUsed: 0,
+      snapshotAt: new Date("2026-06-18T00:00:00.000Z"),
+    });
   });
 
   afterEach(() => {
@@ -51,8 +69,21 @@ describe("FinanceSubscriptionService", () => {
   });
 
   it("records seat usage in org billing and usage counters", async () => {
-    (prisma.usageEvent.create as jest.Mock).mockResolvedValueOnce({});
-    (prisma.usageSnapshot.create as jest.Mock).mockResolvedValueOnce({});
+    (prisma.usageEvent.create as jest.Mock).mockResolvedValueOnce({
+      id: "usage_evt_1",
+      quantity: 4,
+      billableQuantity: 4,
+      occurredAt: new Date("2026-06-18T00:00:00.000Z"),
+    });
+    (prisma.usageSnapshot.create as jest.Mock).mockResolvedValueOnce({
+      id: "usage_snapshot_1",
+      snapshotType: "SEAT_SYNC",
+      seatsActive: 4,
+      seatsBillable: 4,
+      appointmentsUsed: 0,
+      toolsUsed: 0,
+      snapshotAt: new Date("2026-06-18T00:00:00.000Z"),
+    });
     (prisma.organizationUsageCounter.upsert as jest.Mock).mockResolvedValueOnce(
       {},
     );
@@ -568,7 +599,15 @@ describe("FinanceSubscriptionService", () => {
     (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
       {},
     );
-    (prisma.usageSnapshot.create as jest.Mock).mockResolvedValueOnce({});
+    (prisma.usageSnapshot.create as jest.Mock).mockResolvedValueOnce({
+      id: "usage_snapshot_2",
+      snapshotType: "SUBSCRIPTION_TERMINATED",
+      seatsActive: 0,
+      seatsBillable: 0,
+      appointmentsUsed: 0,
+      toolsUsed: 0,
+      snapshotAt: new Date("2026-06-18T00:00:00.000Z"),
+    });
 
     await FinanceSubscriptionService.recordSubscriptionDeleted("sub_1");
     await FinanceSubscriptionService.recordSubscriptionInvoicePaid({

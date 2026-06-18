@@ -17,6 +17,7 @@ import {
   getInvoiceTaxProviderAdapter,
 } from "./finance/tax";
 import { FinancePaymentService } from "./finance/payment";
+import { FinanceEventService } from "./finance/events";
 import { prisma } from "src/config/prisma";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
 import { NotificationTemplates } from "src/utils/notificationTemplates";
@@ -440,16 +441,32 @@ const resolveInvoiceTaxContext = async (
 };
 
 const cancelUnpaidInvoice = async (invoice: PrismaInvoice, reason: string) =>
-  prisma.invoice.update({
-    where: { id: invoice.id },
-    data: {
-      status: "CANCELLED",
-      metadata: {
-        ...(normalizeInvoiceMetadata(invoice.metadata) ?? {}),
-        cancellationReason: reason,
-      } as unknown as Prisma.InputJsonValue,
-    },
-  });
+  prisma.invoice
+    .update({
+      where: { id: invoice.id },
+      data: {
+        status: "CANCELLED",
+        metadata: {
+          ...(normalizeInvoiceMetadata(invoice.metadata) ?? {}),
+          cancellationReason: reason,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    })
+    .then(async (updated) => {
+      await FinanceEventService.recordEvent({
+        organisationId: updated.organisationId ?? null,
+        eventType: "INVOICE_CANCELLED",
+        entityType: "INVOICE",
+        entityId: updated.id,
+        payload: {
+          status: updated.status,
+          reason,
+        },
+        occurredAt: new Date(),
+      });
+
+      return updated;
+    });
 
 const normalizeCreateInput = async (
   input: CreateInvoiceInput,
@@ -566,6 +583,20 @@ export const InvoiceService = {
       },
     });
 
+    await FinanceEventService.recordEvent({
+      organisationId: createdInvoice.organisationId ?? null,
+      eventType: "INVOICE_CREATED",
+      entityType: "INVOICE",
+      entityId: createdInvoice.id,
+      payload: {
+        appointmentId: input.appointmentId,
+        status: createdInvoice.status,
+        totalAmount: createdInvoice.totalAmount,
+        currency: createdInvoice.currency,
+      },
+      occurredAt: createdInvoice.createdAt,
+    });
+
     await NotificationService.sendToUser(
       parentId,
       NotificationTemplates.Payment.PAYMENT_PENDING(
@@ -680,6 +711,20 @@ export const InvoiceService = {
       },
     });
 
+    await FinanceEventService.recordEvent({
+      organisationId: invoice.organisationId ?? null,
+      eventType: "INVOICE_CREATED",
+      entityType: "INVOICE",
+      entityId: invoice.id,
+      payload: {
+        appointmentId: appointment.id,
+        status: invoice.status,
+        totalAmount: invoice.totalAmount,
+        currency: invoice.currency,
+      },
+      occurredAt: invoice.createdAt,
+    });
+
     await NotificationService.sendToUser(
       parentId,
       NotificationTemplates.Payment.PAYMENT_PENDING(
@@ -746,6 +791,20 @@ export const InvoiceService = {
       currency: invoice.currency,
     });
 
+    await FinanceEventService.recordEvent({
+      organisationId: invoice.organisationId ?? null,
+      eventType: "INVOICE_PAID",
+      entityType: "INVOICE",
+      entityId: invoice.id,
+      payload: {
+        status: invoice.status,
+        totalAmount: invoice.totalAmount,
+        currency: invoice.currency,
+        paidAt: invoice.paidAt?.toISOString() ?? null,
+      },
+      occurredAt: invoice.paidAt ?? new Date(),
+    });
+
     return invoice;
   },
 
@@ -809,6 +868,19 @@ export const InvoiceService = {
       data: { status: "FAILED" },
     });
 
+    await FinanceEventService.recordEvent({
+      organisationId: doc.organisationId ?? null,
+      eventType: "INVOICE_FAILED",
+      entityType: "INVOICE",
+      entityId: doc.id,
+      payload: {
+        status: doc.status,
+        totalAmount: doc.totalAmount,
+        currency: doc.currency,
+      },
+      occurredAt: new Date(),
+    });
+
     await recordInvoiceAuditForRow(doc, "INVOICE_FAILED", doc.id, {
       status: doc.status,
       totalAmount: doc.totalAmount,
@@ -822,6 +894,19 @@ export const InvoiceService = {
     const doc = await prisma.invoice.update({
       where: { id: invoiceId },
       data: { status: "REFUNDED" },
+    });
+
+    await FinanceEventService.recordEvent({
+      organisationId: doc.organisationId ?? null,
+      eventType: "INVOICE_REFUNDED",
+      entityType: "INVOICE",
+      entityId: doc.id,
+      payload: {
+        status: doc.status,
+        totalAmount: doc.totalAmount,
+        currency: doc.currency,
+      },
+      occurredAt: new Date(),
     });
 
     await recordInvoiceAuditForRow(doc, "INVOICE_REFUNDED", doc.id, {
@@ -844,6 +929,17 @@ export const InvoiceService = {
 
     await recordInvoiceAuditForRow(invoice, "INVOICE_UPDATED", invoice.id, {
       status: invoice.status,
+    });
+
+    await FinanceEventService.recordEvent({
+      organisationId: invoice.organisationId ?? null,
+      eventType: "INVOICE_STATUS_CHANGED",
+      entityType: "INVOICE",
+      entityId: invoice.id,
+      payload: {
+        status,
+      },
+      occurredAt: new Date(),
     });
 
     return invoice;
@@ -1244,6 +1340,21 @@ export const InvoiceService = {
       totalAmount: updated.totalAmount,
       currency: updated.currency,
       taxFinalizedAt: finalizedAt.toISOString(),
+    });
+
+    await FinanceEventService.recordEvent({
+      organisationId: updated.organisationId ?? null,
+      eventType: "INVOICE_FINALIZED",
+      entityType: "INVOICE",
+      entityId: updated.id,
+      payload: {
+        status: updated.status,
+        totalAmount: updated.totalAmount,
+        currency: updated.currency,
+        taxProvider: updated.taxProvider ?? null,
+        taxFinalizedAt: finalizedAt.toISOString(),
+      },
+      occurredAt: finalizedAt,
     });
 
     return toInvoiceRecord(updated);

@@ -19,6 +19,9 @@ jest.mock("src/config/prisma", () => ({
       findMany: jest.fn(),
       update: jest.fn(),
     },
+    financeEvent: {
+      create: jest.fn(),
+    },
     service: { findUnique: jest.fn() },
     organizationBilling: { findUnique: jest.fn() },
     organization: { findUnique: jest.fn() },
@@ -149,6 +152,15 @@ describe("InvoiceService", () => {
     );
     expect(NotificationService.sendToUser).toHaveBeenCalled();
     expect((result as { id: string }).id).toBe("inv_1");
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "INVOICE_CREATED",
+          entityType: "INVOICE",
+          entityId: "inv_1",
+        }),
+      }),
+    );
   });
 
   it("creates extra invoices with a frozen tax snapshot", async () => {
@@ -501,6 +513,15 @@ describe("InvoiceService", () => {
       }),
     );
     expect(finalized.id).toBe("inv_final");
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "INVOICE_FINALIZED",
+          entityType: "INVOICE",
+          entityId: "inv_final",
+        }),
+      }),
+    );
 
     (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
       id: "inv_final",
@@ -574,6 +595,15 @@ describe("InvoiceService", () => {
 
     const paid = await InvoiceService.markInvoicePaid({ invoiceId: "inv_3" });
     expect(paid).toBeTruthy();
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "INVOICE_PAID",
+          entityType: "INVOICE",
+          entityId: "inv_3",
+        }),
+      }),
+    );
 
     (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
       id: "inv_4",
@@ -656,6 +686,44 @@ describe("InvoiceService", () => {
     expect(FinancePaymentService.refundInvoicePayment).toHaveBeenCalledWith(
       "inv_5",
       "reason",
+    );
+  });
+
+  it("emits finance events when cancelling unpaid invoices", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_5c",
+      status: "AWAITING_PAYMENT",
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      metadata: {},
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_5c",
+      status: "CANCELLED",
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      totalAmount: 75,
+      metadata: {},
+    });
+
+    const result = await InvoiceService.handleInvoiceCancellation(
+      "inv_5c",
+      "owner request",
+    );
+
+    expect(result).toEqual({ action: "CANCELLED_UNPAID", status: "CANCELLED" });
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "INVOICE_CANCELLED",
+          entityType: "INVOICE",
+          entityId: "inv_5c",
+        }),
+      }),
     );
   });
 

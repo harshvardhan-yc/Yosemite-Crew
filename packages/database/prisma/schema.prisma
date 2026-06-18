@@ -1016,6 +1016,26 @@ model UsageSnapshot {
   @@map("OrgUsageSnapshots")
 }
 
+model FinanceEvent {
+  id            String   @id @default(uuid())
+  organisationId String?
+  eventType     String
+  entityType    String
+  entityId      String
+  payload       Json
+  occurredAt    DateTime @default(now())
+  processedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([organisationId])
+  @@index([eventType])
+  @@index([entityType, entityId])
+  @@index([occurredAt])
+  @@index([processedAt])
+  @@map("FinanceEvents")
+}
+
 model OrganizationDocument {
   id              String                @id @default(uuid())
   organisationId  String

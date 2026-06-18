@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { BillingInterval, SubscriptionStatus } from "@prisma/client";
 import Stripe from "stripe";
+import { FinanceEventService } from "./events";
 
 const addDays = (date: Date, days: number) =>
   new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
@@ -163,7 +164,7 @@ const readNumber = (value: unknown) =>
 
 export const FinanceSubscriptionService = {
   async recordUsageEvent(input: UsageEventInput) {
-    return prisma.usageEvent.create({
+    const event = await prisma.usageEvent.create({
       data: {
         orgId: input.orgId,
         usageKey: input.usageKey,
@@ -180,10 +181,28 @@ export const FinanceSubscriptionService = {
         occurredAt: input.occurredAt ?? new Date(),
       },
     });
+
+    await FinanceEventService.recordEvent({
+      organisationId: input.orgId,
+      eventType: "USAGE_EVENT_RECORDED",
+      entityType: "USAGE",
+      entityId: event.id,
+      payload: {
+        usageKey: input.usageKey,
+        quantity: event.quantity,
+        billableQuantity: event.billableQuantity,
+        source: input.source,
+        referenceType: input.referenceType ?? null,
+        referenceId: input.referenceId ?? null,
+      },
+      occurredAt: event.occurredAt,
+    });
+
+    return event;
   },
 
   async captureUsageSnapshot(input: UsageSnapshotInput) {
-    return prisma.usageSnapshot.create({
+    const snapshot = await prisma.usageSnapshot.create({
       data: {
         orgId: input.orgId,
         snapshotType: input.snapshotType ?? "snapshot",
@@ -197,6 +216,23 @@ export const FinanceSubscriptionService = {
         snapshotAt: input.snapshotAt ?? new Date(),
       },
     });
+
+    await FinanceEventService.recordEvent({
+      organisationId: input.orgId,
+      eventType: "USAGE_SNAPSHOT_CAPTURED",
+      entityType: "USAGE",
+      entityId: snapshot.id,
+      payload: {
+        snapshotType: snapshot.snapshotType,
+        seatsActive: snapshot.seatsActive,
+        seatsBillable: snapshot.seatsBillable,
+        appointmentsUsed: snapshot.appointmentsUsed,
+        toolsUsed: snapshot.toolsUsed,
+      },
+      occurredAt: snapshot.snapshotAt,
+    });
+
+    return snapshot;
   },
 
   async upsertSubscriptionEntitlement(input: SubscriptionEntitlementInput) {
@@ -589,6 +625,21 @@ export const FinanceSubscriptionService = {
         ]),
       ),
     );
+
+    await FinanceEventService.recordEvent({
+      organisationId: rows[0]?.orgId ?? input.customerId,
+      eventType: "SUBSCRIPTION_STARTED",
+      entityType: "SUBSCRIPTION",
+      entityId: input.subscriptionId,
+      payload: {
+        customerId: input.customerId,
+        subscriptionItemId: input.subscriptionItemId,
+        billingInterval: input.billingInterval ?? null,
+        subscriptionStatus: input.subscriptionStatus ?? "none",
+        seatQuantity: input.seatQuantity ?? 0,
+        cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+      },
+    });
   },
 
   async recordSubscriptionUpdated(input: SubscriptionUpdatedInput) {
@@ -680,6 +731,21 @@ export const FinanceSubscriptionService = {
         ]),
       ),
     );
+
+    await FinanceEventService.recordEvent({
+      organisationId: rows[0]?.orgId ?? input.subscriptionId,
+      eventType: "SUBSCRIPTION_UPDATED",
+      entityType: "SUBSCRIPTION",
+      entityId: input.subscriptionId,
+      payload: {
+        subscriptionStatus: input.subscriptionStatus ?? "none",
+        cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+        canceledAt: input.canceledAt ?? null,
+        seatQuantity: input.seatQuantity ?? 0,
+        currentPeriodStart: input.currentPeriodStart?.toISOString() ?? null,
+        currentPeriodEnd: input.currentPeriodEnd?.toISOString() ?? null,
+      },
+    });
   },
 
   async recordStripeSubscriptionUpdated(
@@ -822,6 +888,16 @@ export const FinanceSubscriptionService = {
         ]),
       ),
     );
+
+    await FinanceEventService.recordEvent({
+      organisationId: rows[0]?.orgId ?? subscriptionId,
+      eventType: "SUBSCRIPTION_DELETED",
+      entityType: "SUBSCRIPTION",
+      entityId: subscriptionId,
+      payload: {
+        status: "canceled",
+      },
+    });
   },
 
   async recordSubscriptionInvoicePaid(input: SubscriptionLifecycleInput) {
@@ -859,6 +935,17 @@ export const FinanceSubscriptionService = {
         }),
       ),
     );
+
+    await FinanceEventService.recordEvent({
+      organisationId: rows[0]?.orgId ?? input.subscriptionId,
+      eventType: "SUBSCRIPTION_INVOICE_PAID",
+      entityType: "SUBSCRIPTION",
+      entityId: input.subscriptionId,
+      payload: {
+        invoiceId: input.invoiceId ?? null,
+        paymentStatus: "paid",
+      },
+    });
   },
 
   async recordSubscriptionInvoiceFailed(input: SubscriptionLifecycleInput) {
@@ -895,5 +982,16 @@ export const FinanceSubscriptionService = {
         }),
       ),
     );
+
+    await FinanceEventService.recordEvent({
+      organisationId: rows[0]?.orgId ?? input.subscriptionId,
+      eventType: "SUBSCRIPTION_INVOICE_FAILED",
+      entityType: "SUBSCRIPTION",
+      entityId: input.subscriptionId,
+      payload: {
+        invoiceId: input.invoiceId ?? null,
+        paymentStatus: "failed",
+      },
+    });
   },
 };

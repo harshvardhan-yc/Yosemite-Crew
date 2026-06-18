@@ -9,6 +9,7 @@ import type {
 } from "@prisma/client";
 import Stripe from "stripe";
 import { prisma } from "src/config/prisma";
+import { FinanceEventService } from "./events";
 import { roundMoney } from "./pricing";
 
 type PaymentLineSummary = {
@@ -585,6 +586,22 @@ export const FinancePaymentService = {
       },
     });
 
+    await FinanceEventService.recordEvent({
+      organisationId: invoice.organisationId ?? null,
+      eventType: "INVOICE_REFUNDED",
+      entityType: "INVOICE",
+      entityId: invoiceId,
+      payload: {
+        paymentId: payment.id,
+        refundId: refund.id,
+        providerRefundId,
+        refundStatus,
+        amountRefunded,
+        reason: reason ?? null,
+      },
+      occurredAt: new Date(),
+    });
+
     const updatedInvoice = await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
@@ -789,6 +806,24 @@ export const FinancePaymentService = {
               },
             })
           : invoice;
+
+    await FinanceEventService.recordEvent({
+      organisationId: invoice.organisationId ?? null,
+      eventType: "PAYMENT_SUCCEEDED",
+      entityType: "PAYMENT",
+      entityId: payment.id,
+      payload: {
+        invoiceId,
+        paymentId: payment.id,
+        provider: input.provider,
+        amount: appliedAmount,
+        currency: input.currency ?? invoice.currency,
+        settlementChannel: input.settlementChannel ?? null,
+        collectionMode: input.collectionMode ?? null,
+        isPartial,
+      },
+      occurredAt: receivedAt,
+    });
 
     const summary = await getOutstandingBalance(
       invoiceId,
@@ -1037,6 +1072,18 @@ export const FinancePaymentService = {
     await prisma.invoice.update({
       where: { id: invoice.id },
       data: { status: "FAILED" },
+    });
+
+    await FinanceEventService.recordEvent({
+      organisationId: invoice.organisationId ?? null,
+      eventType: "PAYMENT_FAILED",
+      entityType: "PAYMENT",
+      entityId: input.paymentIntentId ?? invoice.id,
+      payload: {
+        invoiceId: invoice.id,
+        appointmentId: input.appointmentId ?? null,
+        paymentIntentId: input.paymentIntentId ?? null,
+      },
     });
 
     return { action: "FAILED" as const, invoice };
