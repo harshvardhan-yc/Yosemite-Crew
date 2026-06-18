@@ -21,6 +21,10 @@ type IssueCreditNoteBody = {
   metadata?: unknown;
 };
 
+type VoidCreditNoteBody = {
+  reason?: unknown;
+};
+
 const isInvoiceItem = (item: unknown): item is InvoiceItem => {
   if (!item || typeof item !== "object") return false;
   const candidate = item as Partial<InvoiceItem>;
@@ -340,6 +344,56 @@ export const InvoiceController = {
       return res.status(201).json(creditNote);
     } catch (err) {
       logger.error("Error issuing credit note", err);
+
+      const statusCode =
+        err instanceof InvoiceServiceError ? err.statusCode : 500;
+      const message =
+        err instanceof InvoiceServiceError
+          ? err.message
+          : "Internal server error";
+
+      return res.status(statusCode).json({ message });
+    }
+  },
+
+  async voidCreditNote(
+    this: void,
+    req: Request<
+      { invoiceId: string; creditNoteId: string },
+      unknown,
+      VoidCreditNoteBody
+    >,
+    res: Response,
+  ) {
+    try {
+      const orgReq = req as OrgRequest;
+      const organisationId = orgReq.organisationId;
+      const invoiceId = req.params.invoiceId;
+      const creditNoteId = req.params.creditNoteId;
+
+      if (!invoiceId) {
+        return res.status(400).json({ message: "Invoice Id is required" });
+      }
+
+      if (!creditNoteId) {
+        return res.status(400).json({ message: "Credit note Id is required" });
+      }
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const reason =
+        typeof req.body.reason === "string" ? req.body.reason : undefined;
+      const creditNote = await InvoiceService.voidCreditNote(
+        invoiceId,
+        creditNoteId,
+        reason,
+      );
+
+      return res.status(200).json(creditNote);
+    } catch (err) {
+      logger.error("Error voiding credit note", err);
 
       const statusCode =
         err instanceof InvoiceServiceError ? err.statusCode : 500;

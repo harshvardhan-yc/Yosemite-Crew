@@ -74,6 +74,12 @@ type InvoiceWithCreditNotes = PrismaInvoice & {
   creditNotes?: PrismaCreditNote[];
 };
 
+const invoiceCreditNotesInclude = {
+  creditNotes: {
+    orderBy: { createdAt: "desc" as const },
+  },
+};
+
 type DraftInvoiceItemInput = {
   description: string;
   quantity: number;
@@ -999,9 +1005,6 @@ export const InvoiceService = {
       include: {
         creditNotes: {
           where: { status: "ISSUED" },
-          select: {
-            amount: true,
-          },
         },
       },
     });
@@ -1061,6 +1064,66 @@ export const InvoiceService = {
     });
 
     return toCreditNoteRecord(creditNote);
+  },
+
+  async voidCreditNote(
+    invoiceId: string,
+    creditNoteId: string,
+    reason?: string,
+  ) {
+    const creditNote = await prisma.creditNote.findUnique({
+      where: { id: creditNoteId },
+      include: {
+        invoice: {
+          select: {
+            id: true,
+            organisationId: true,
+          },
+        },
+      },
+    });
+
+    if (!creditNote || creditNote.invoiceId !== invoiceId) {
+      throw new InvoiceServiceError("Credit note not found.", 404);
+    }
+
+    if (creditNote.status === "VOIDED") {
+      return toCreditNoteRecord(creditNote);
+    }
+
+    if (creditNote.status !== "ISSUED") {
+      throw new InvoiceServiceError("Credit note cannot be voided.", 409);
+    }
+
+    const updated = await prisma.creditNote.update({
+      where: { id: creditNote.id },
+      data: {
+        status: "VOIDED",
+        metadata: {
+          ...((normalizeCreditNoteMetadata(creditNote.metadata) ??
+            {}) as Record<string, string | number | boolean>),
+          voidReason: reason ?? undefined,
+          voidedAt: new Date().toISOString(),
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    await FinanceEventService.recordEvent({
+      organisationId: creditNote.invoice.organisationId ?? null,
+      eventType: "CREDIT_NOTE_VOIDED",
+      entityType: "CREDIT_NOTE",
+      entityId: updated.id,
+      payload: {
+        invoiceId: creditNote.invoiceId,
+        creditNoteNumber: updated.creditNoteNumber,
+        amount: updated.amount,
+        reason: reason ?? null,
+        status: updated.status,
+      },
+      occurredAt: new Date(),
+    });
+
+    return toCreditNoteRecord(updated);
   },
 
   async updateStatus(invoiceId: string, status: PrismaInvoiceStatus) {
@@ -1165,6 +1228,7 @@ export const InvoiceService = {
         appointmentId: appId,
         ...(organisationId ? { organisationId } : {}),
       },
+      include: invoiceCreditNotesInclude,
       orderBy: { createdAt: "desc" },
     });
 
@@ -1277,11 +1341,7 @@ export const InvoiceService = {
   async getById(id: string) {
     const doc = await prisma.invoice.findUnique({
       where: { id },
-      include: {
-        creditNotes: {
-          orderBy: { createdAt: "desc" },
-        },
-      },
+      include: invoiceCreditNotesInclude,
     });
     if (!doc) {
       throw new InvoiceServiceError("Invoice not found.", 404);
@@ -1308,6 +1368,7 @@ export const InvoiceService = {
   async listForOrganisation(organisationId: string) {
     const docs = await prisma.invoice.findMany({
       where: { organisationId },
+      include: invoiceCreditNotesInclude,
       orderBy: { createdAt: "desc" },
     });
     return docs.map((d) => toInvoiceRecord(d));
@@ -1316,6 +1377,7 @@ export const InvoiceService = {
   async listForParent(parentId: string) {
     const docs = await prisma.invoice.findMany({
       where: { parentId },
+      include: invoiceCreditNotesInclude,
       orderBy: { createdAt: "desc" },
     });
     return docs.map((d) => toInvoiceRecord(d));
@@ -1324,6 +1386,7 @@ export const InvoiceService = {
   async listForCompanion(patientId: string) {
     const docs = await prisma.invoice.findMany({
       where: { patientId },
+      include: invoiceCreditNotesInclude,
       orderBy: { createdAt: "desc" },
     });
     return docs.map((d) => toInvoiceRecord(d));

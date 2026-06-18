@@ -24,6 +24,8 @@ jest.mock("src/config/prisma", () => ({
     },
     creditNote: {
       create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
     },
     service: { findUnique: jest.fn() },
     organizationBilling: { findUnique: jest.fn() },
@@ -385,6 +387,64 @@ describe("InvoiceService", () => {
       }),
     );
     expect(result.creditNoteNumber).toBe("CN-INV_CRED-ABC");
+  });
+
+  it("voids a credit note and records a finance event", async () => {
+    (prisma.creditNote.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "cn_void_1",
+      invoiceId: "inv_void_1",
+      creditNoteNumber: "CN-VOID-1",
+      reason: "Pricing correction",
+      amount: 25,
+      status: "ISSUED",
+      metadata: { source: "manual" },
+      createdAt: new Date("2026-06-18T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-18T00:00:00.000Z"),
+      invoice: {
+        id: "inv_void_1",
+        organisationId,
+      },
+    });
+    (prisma.creditNote.update as jest.Mock).mockResolvedValueOnce({
+      id: "cn_void_1",
+      invoiceId: "inv_void_1",
+      creditNoteNumber: "CN-VOID-1",
+      reason: "Pricing correction",
+      amount: 25,
+      status: "VOIDED",
+      metadata: {
+        source: "manual",
+        voidReason: "entered in error",
+        voidedAt: "2026-06-18T00:00:00.000Z",
+      },
+      createdAt: new Date("2026-06-18T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-18T00:00:00.000Z"),
+    });
+
+    const result = await InvoiceService.voidCreditNote(
+      "inv_void_1",
+      "cn_void_1",
+      "entered in error",
+    );
+
+    expect(prisma.creditNote.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "cn_void_1" },
+        data: expect.objectContaining({
+          status: "VOIDED",
+        }),
+      }),
+    );
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "CREDIT_NOTE_VOIDED",
+          entityType: "CREDIT_NOTE",
+          entityId: "cn_void_1",
+        }),
+      }),
+    );
+    expect(result.status).toBe("VOIDED");
   });
 
   it("updates invoice totals when adding items", async () => {

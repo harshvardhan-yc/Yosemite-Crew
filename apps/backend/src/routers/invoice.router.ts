@@ -108,6 +108,14 @@ router.post(
   InvoiceController.issueCreditNote,
 );
 
+router.post(
+  "/:invoiceId/credit-notes/:creditNoteId/void",
+  authorizeCognito,
+  withInvoiceOrgPermissions(),
+  requirePermission("billing:edit:any"),
+  InvoiceController.voidCreditNote,
+);
+
 // Get invoice by ID
 router.get("/:invoiceId", authorizeCognito, InvoiceController.getInvoiceById);
 

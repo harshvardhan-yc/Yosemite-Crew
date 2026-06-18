@@ -24,6 +24,7 @@ jest.mock("../../../src/services/invoice.service", () => {
       markInvoicePaidManually: jest.fn(),
       updatePaymentCollectionMethod: jest.fn(),
       issueCreditNote: jest.fn(),
+      voidCreditNote: jest.fn(),
     },
   };
 });
@@ -637,6 +638,56 @@ describe("InvoiceController", () => {
 
       expect(statusMock).toHaveBeenCalledWith(409);
       expect(jsonMock).toHaveBeenCalledWith({ message: "Too much" });
+    });
+  });
+
+  describe("voidCreditNote", () => {
+    it("should 400 if creditNoteId missing", async () => {
+      (req as any).organisationId = "org1";
+      req.params = { invoiceId: "inv1" } as any;
+      req.body = {};
+
+      await InvoiceController.voidCreditNote(req as any, res as Response);
+
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(jsonMock).toHaveBeenCalledWith({
+        message: "Credit note Id is required",
+      });
+    });
+
+    it("should success (200)", async () => {
+      (req as any).organisationId = "org1";
+      req.params = { invoiceId: "inv1", creditNoteId: "cn1" };
+      req.body = { reason: "Entered in error" };
+      mockedInvoiceService.voidCreditNote.mockResolvedValue({
+        id: "cn1",
+        status: "VOIDED",
+      } as any);
+
+      await InvoiceController.voidCreditNote(req as any, res as Response);
+
+      expect(mockedInvoiceService.voidCreditNote).toHaveBeenCalledWith(
+        "inv1",
+        "cn1",
+        "Entered in error",
+      );
+      expect(statusMock).toHaveBeenCalledWith(200);
+      expect(jsonMock).toHaveBeenCalledWith({
+        id: "cn1",
+        status: "VOIDED",
+      });
+    });
+
+    it("should handle service error with custom status", async () => {
+      (req as any).organisationId = "org1";
+      req.params = { invoiceId: "inv1", creditNoteId: "cn1" };
+      req.body = {};
+      mockServiceError("voidCreditNote", 409, "Cannot void");
+
+      await InvoiceController.voidCreditNote(req as any, res as Response);
+
+      expect(statusMock).toHaveBeenCalledWith(409);
+      expect(jsonMock).toHaveBeenCalledWith({ message: "Cannot void" });
     });
   });
 });
