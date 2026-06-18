@@ -1,6 +1,7 @@
 // test/services/stripe.service.test.ts
 import { StripeService } from "../../src/services/stripe.service";
 import { FinancePaymentService } from "../../src/services/finance/payment";
+import { FinanceSubscriptionService } from "../../src/services/finance/subscription";
 import { NotificationService } from "../../src/services/notification.service";
 import { prisma } from "src/config/prisma";
 
@@ -58,6 +59,23 @@ jest.mock("../../src/services/finance/payment", () => ({
     createPaymentIntentForInvoice: jest.fn(),
     createCheckoutSessionForInvoice: jest.fn(),
     refundInvoicePayment: jest.fn(),
+    handleInvoicePaymentIntentSucceeded: jest.fn(),
+    handleInvoiceCheckoutSessionCompleted: jest.fn(),
+    markInvoiceRefundedFromWebhook: jest.fn(),
+    handleInvoicePaymentFailed: jest.fn(),
+    refundPaymentIntent: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/finance/subscription", () => ({
+  __esModule: true,
+  FinanceSubscriptionService: {
+    recordSeatUsage: jest.fn(),
+    recordBusinessCheckoutCompleted: jest.fn(),
+    recordSubscriptionUpdated: jest.fn(),
+    recordSubscriptionDeleted: jest.fn(),
+    recordSubscriptionInvoicePaid: jest.fn(),
+    recordSubscriptionInvoiceFailed: jest.fn(),
   },
 }));
 
@@ -602,16 +620,6 @@ describe("StripeService", () => {
         id: "org_1",
         name: "Test Org",
       });
-      (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-        orgId: "org_1",
-      });
-      (
-        prisma.organizationUsageCounter.upsert as jest.Mock
-      ).mockResolvedValueOnce({ orgId: "org_1" });
-      (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(2);
-      (
-        prisma.organizationUsageCounter.updateMany as jest.Mock
-      ).mockResolvedValueOnce({});
 
       await expect(
         StripeService.createBusinessCheckoutSession("org_1", "month"),
@@ -641,13 +649,7 @@ describe("StripeService", () => {
           connectAccountId: "acct_1",
           stripeCustomerId: "cus_1",
         });
-      (
-        prisma.organizationUsageCounter.upsert as jest.Mock
-      ).mockResolvedValueOnce({ orgId: "org_1" });
       (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(3);
-      (
-        prisma.organizationUsageCounter.updateMany as jest.Mock
-      ).mockResolvedValueOnce({});
       mStripe.customers.create.mockResolvedValueOnce({ id: "cus_1" });
       mStripe.checkout.sessions.create.mockResolvedValueOnce({
         url: "http://checkout.url",
@@ -660,14 +662,9 @@ describe("StripeService", () => {
 
       expect(result).toEqual({ url: "http://checkout.url" });
       expect(prisma.organizationBilling.update).toHaveBeenCalled();
-      expect(prisma.organizationUsageCounter.upsert).toHaveBeenCalledWith({
-        where: { orgId: "org_1" },
-        create: {
-          orgId: "org_1",
-          usersActiveCount: 3,
-          usersBillableCount: 3,
-        },
-        update: { usersActiveCount: 3, usersBillableCount: 3 },
+      expect(FinanceSubscriptionService.recordSeatUsage).toHaveBeenCalledWith({
+        orgId: "org_1",
+        seats: 3,
       });
     });
   });
@@ -677,6 +674,7 @@ describe("StripeService", () => {
 
     beforeEach(() => {
       process.env.READ_FROM_POSTGRES = "true";
+      (prisma.userOrganization.count as jest.Mock).mockReset();
     });
 
     afterEach(() => {
@@ -732,9 +730,6 @@ describe("StripeService", () => {
         orgId: "org_1",
       });
       (
-        prisma.organizationUsageCounter.upsert as jest.Mock
-      ).mockResolvedValueOnce({ orgId: "org_1" });
-      (
         prisma.organizationBilling.findUnique as jest.Mock
       ).mockResolvedValueOnce({
         plan: "business",
@@ -754,9 +749,6 @@ describe("StripeService", () => {
         orgId: "org_1",
       });
       (
-        prisma.organizationUsageCounter.upsert as jest.Mock
-      ).mockResolvedValueOnce({ orgId: "org_1" });
-      (
         prisma.organizationBilling.findUnique as jest.Mock
       ).mockResolvedValueOnce({
         plan: "business",
@@ -765,12 +757,6 @@ describe("StripeService", () => {
         seatQuantity: 2,
       });
       (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(5);
-      (
-        prisma.organizationUsageCounter.updateMany as jest.Mock
-      ).mockResolvedValueOnce({});
-      (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce(
-        {},
-      );
 
       const result = await StripeService.syncSubscriptionSeats("org_1");
       expect(result).toEqual({
@@ -782,6 +768,10 @@ describe("StripeService", () => {
       expect(mStripe.subscriptionItems.update).toHaveBeenCalledWith("item_1", {
         quantity: 5,
         proration_behavior: "create_prorations",
+      });
+      expect(FinanceSubscriptionService.recordSeatUsage).toHaveBeenCalledWith({
+        orgId: "org_1",
+        seats: 5,
       });
     });
   });
@@ -798,6 +788,19 @@ describe("StripeService", () => {
     });
 
     it("handles account/subscription/invoice updates", async () => {
+      (
+        FinanceSubscriptionService.recordSubscriptionUpdated as jest.Mock
+      ).mockResolvedValueOnce(undefined);
+      (
+        FinanceSubscriptionService.recordSubscriptionDeleted as jest.Mock
+      ).mockResolvedValueOnce(undefined);
+      (
+        FinanceSubscriptionService.recordSubscriptionInvoicePaid as jest.Mock
+      ).mockResolvedValueOnce(undefined);
+      (
+        FinanceSubscriptionService.recordSubscriptionInvoiceFailed as jest.Mock
+      ).mockResolvedValueOnce(undefined);
+
       await StripeService._handleAccountUpdated({
         id: "acct_1",
         charges_enabled: true,
@@ -843,7 +846,30 @@ describe("StripeService", () => {
         lines: { data: [{ subscription: "sub_1" }] },
       } as any);
 
-      expect(prisma.organizationBilling.updateMany).toHaveBeenCalled();
+      expect(
+        FinanceSubscriptionService.recordSubscriptionUpdated,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscriptionId: "sub_1",
+          subscriptionStatus: "active",
+          seatQuantity: 2,
+        }),
+      );
+      expect(
+        FinanceSubscriptionService.recordSubscriptionDeleted,
+      ).toHaveBeenCalledWith("sub_1");
+      expect(
+        FinanceSubscriptionService.recordSubscriptionInvoicePaid,
+      ).toHaveBeenCalledWith({
+        subscriptionId: "sub_1",
+        invoiceId: "in_1",
+      });
+      expect(
+        FinanceSubscriptionService.recordSubscriptionInvoiceFailed,
+      ).toHaveBeenCalledWith({
+        subscriptionId: "sub_1",
+        invoiceId: "in_1",
+      });
     });
 
     it("handles appointment booking payment", async () => {
@@ -906,14 +932,28 @@ describe("StripeService", () => {
     });
 
     it("handles invoice payment and failure/refund flows", async () => {
-      (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: "inv_1",
-        status: "PENDING",
-        paymentCollectionMethod: "PAYMENT_INTENT",
+      (
+        FinancePaymentService.handleInvoicePaymentIntentSucceeded as jest.Mock
+      ).mockResolvedValueOnce({
+        action: "PAID",
+        invoice: {
+          id: "inv_1",
+          parentId: "par_1",
+          totalAmount: 10,
+          currency: "usd",
+        },
       });
-      mStripe.charges.retrieve.mockResolvedValueOnce({
-        id: "ch_1",
-        receipt_url: "url",
+      (
+        FinancePaymentService.handleInvoicePaymentFailed as jest.Mock
+      ).mockResolvedValueOnce({
+        action: "FAILED",
+        invoice: { id: "inv_2" },
+      });
+      (
+        FinancePaymentService.markInvoiceRefundedFromWebhook as jest.Mock
+      ).mockResolvedValueOnce({
+        action: "REFUNDED",
+        invoice: { id: "inv_3", parentId: "par_1" },
       });
 
       await StripeService._handleInvoicePayment({
@@ -922,24 +962,44 @@ describe("StripeService", () => {
         metadata: { invoiceId: "inv_1" },
       } as any);
 
-      (prisma.invoice.findFirst as jest.Mock).mockResolvedValueOnce({
-        id: "inv_2",
-      });
       await StripeService._handlePaymentFailed({
+        id: "pi_2",
         metadata: { appointmentId: "appt_1" },
       } as any);
 
-      (prisma.invoice.findFirst as jest.Mock).mockResolvedValueOnce({
-        id: "inv_3",
-        parentId: "par_1",
-      });
       await StripeService._handleRefund({
-        metadata: { appointmentId: "appt_1" },
+        id: "ch_1",
+        payment_intent: "pi_3",
+        metadata: { invoiceId: "inv_3" },
         amount: 1000,
         currency: "usd",
       } as any);
 
-      expect(prisma.invoice.updateMany).toHaveBeenCalled();
+      expect(
+        FinancePaymentService.handleInvoicePaymentIntentSucceeded,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoiceId: "inv_1",
+          paymentIntentId: "pi_1",
+        }),
+      );
+      expect(
+        FinancePaymentService.handleInvoicePaymentFailed,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appointmentId: "appt_1",
+          paymentIntentId: "pi_2",
+        }),
+      );
+      expect(
+        FinancePaymentService.markInvoiceRefundedFromWebhook,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoiceId: "inv_3",
+          paymentIntentId: "pi_3",
+          chargeId: "ch_1",
+        }),
+      );
       expect(NotificationService.sendToUser).toHaveBeenCalled();
     });
 
@@ -947,14 +1007,11 @@ describe("StripeService", () => {
       const originalReadFromPostgres = process.env.READ_FROM_POSTGRES;
       process.env.READ_FROM_POSTGRES = "true";
 
-      const refundSpy = jest
-        .spyOn(StripeService, "_refundByPaymentIntentId")
-        .mockImplementation(jest.fn() as any);
-
-      (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: "inv_checkout",
-        status: "PENDING",
-        paymentCollectionMethod: "PAYMENT_LINK",
+      (
+        FinancePaymentService.handleInvoicePaymentIntentSucceeded as jest.Mock
+      ).mockResolvedValueOnce({
+        action: "IGNORED",
+        invoice: { id: "inv_checkout" },
       });
 
       await StripeService._handleInvoicePayment({
@@ -962,10 +1019,12 @@ describe("StripeService", () => {
         metadata: { invoiceId: "inv_checkout" },
       } as any);
 
-      expect(refundSpy).not.toHaveBeenCalled();
-      expect(prisma.invoice.updateMany).not.toHaveBeenCalledWith(
+      expect(
+        FinancePaymentService.handleInvoicePaymentIntentSucceeded,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: "inv_checkout" },
+          invoiceId: "inv_checkout",
+          paymentIntentId: "pi_checkout",
         }),
       );
 
@@ -1010,14 +1069,41 @@ describe("StripeService", () => {
         totalAmount: 10,
         currency: "usd",
       });
+      (
+        FinancePaymentService.handleInvoiceCheckoutSessionCompleted as jest.Mock
+      ).mockResolvedValueOnce({
+        action: "PAID",
+        invoice: {
+          id: "inv_1",
+          parentId: "par_1",
+          totalAmount: 10,
+          currency: "usd",
+        },
+      });
 
       await StripeService._handleInvoiceCheckout({
         id: "cs_1",
         metadata: { invoiceId: "inv_1" },
       } as any);
 
-      expect(prisma.organizationBilling.updateMany).toHaveBeenCalled();
-      expect(prisma.invoice.updateMany).toHaveBeenCalled();
+      expect(
+        FinanceSubscriptionService.recordBusinessCheckoutCompleted,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerId: "cus_1",
+          subscriptionId: "sub_1",
+          subscriptionItemId: "item_1",
+          priceId: "price_1",
+        }),
+      );
+      expect(
+        FinancePaymentService.handleInvoiceCheckoutSessionCompleted,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoiceId: "inv_1",
+          sessionId: "cs_1",
+        }),
+      );
       expect(NotificationService.sendToUser).toHaveBeenCalled();
     });
   });
