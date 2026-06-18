@@ -48,10 +48,24 @@ It's the same PIMS your team knows, plus the things only a native app can do: it
 
 ## ✨ Features
 
-<p align="center">
-  <img src="resources/screenshots/onboarding-organization.png" width="860" alt="Yosemite Crew PIMS Desktop running in a native tab — Create organization onboarding" />
-</p>
-<p align="center"><em>The full PIMS in a native, tabbed window — here, organization onboarding running in its own tab.</em></p>
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="resources/screenshots/dashboard.png" alt="Yosemite Crew PIMS Desktop dashboard with sidebar navigation, command palette, and live practice metrics" /><br />
+      <sub><b>Dashboard &amp; navigation</b> — sidebar, <code>⌘K</code> command palette, and at-a-glance practice metrics.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="resources/screenshots/native-menus.png" alt="Native macOS application menu showing Command Palette, Settings, and Check for Updates" /><br />
+      <sub><b>Native macOS menus</b> — a real menu bar with Command Palette, Settings, and built-in auto-update.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center" valign="top">
+      <img src="resources/screenshots/onboarding-organization.png" width="72%" alt="Organization onboarding running in its own native tab" /><br />
+      <sub><b>The full PIMS in native tabs</b> — every workflow opens in its own tab; split two side by side.</sub>
+    </td>
+  </tr>
+</table>
 
 **🖥️ A real desktop experience**
 - Multi-tab browsing (Arc/Figma-style) — each tab is its own view; open, close, reorder, split two side-by-side, and restore your tabs on relaunch.
