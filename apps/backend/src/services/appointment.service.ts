@@ -1992,6 +1992,13 @@ export const AppointmentService = {
           ? (invoice as { id: string }).id
           : (invoice as { _id?: Types.ObjectId })._id?.toString();
 
+      if (invoiceId) {
+        await InvoiceService.setInvoiceDepositTarget(
+          invoiceId,
+          invoice.totalAmount,
+        );
+      }
+
       const paymentIntent = invoiceId
         ? await StripeService.createPaymentIntentForInvoice(invoiceId)
         : undefined;

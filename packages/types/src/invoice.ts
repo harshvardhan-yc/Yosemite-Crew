@@ -61,15 +61,6 @@ export type Invoice = {
   discountTotal?: number;
   taxTotal?: number;
 
-  stripeChargeId?: string;
-  stripeReceiptUrl?: string;
-  stripePaymentIntentId?: string;
-  stripePaymentLinkId?: string;
-  stripeInvoiceId?: string;
-  stripeCustomerId?: string;
-  stripeCheckoutSessionId?: string;
-  stripeCheckoutUrl?: string;
-
   status: InvoiceStatus;
   creditNotes?: CreditNote[];
 
@@ -91,19 +82,6 @@ export type CreditNote = {
   updatedAt: Date;
 };
 
-const EXT_STRIPE_INVOICE_ID = 'https://yosemitecrew.com/fhir/StructureDefinition/stripe-invoice-id';
-const EXT_STRIPE_PI_ID =
-  'https://yosemitecrew.com/fhir/StructureDefinition/stripe-payment-intent-id';
-const EXT_STRIPE_PL_ID = 'https://yosemitecrew.com/fhir/StructureDefinition/stripe-payment-link-id';
-const EXT_STRIPE_CUSTOMER_ID =
-  'https://yosemitecrew.com/fhir/StructureDefinition/stripe-customer-id';
-const EXT_STRIPE_CHARGE_ID = 'https://yosemitecrew.com/fhir/StructureDefinition/stripe-charge-id';
-const EXT_STRIPE_RECEIPT_URL =
-  'https://yosemitecrew.com/fhir/StructureDefinition/stripe-receipt-url';
-const EXT_STRIPE_CHECKOUT_SESSION_ID =
-  'https://yosemitecrew.com/fhir/StructureDefinition/stripe-checkout-session-id';
-const EXT_STRIPE_CHECKOUT_URL =
-  'https://yosemitecrew.com/fhir/StructureDefinition/stripe-checkout-url';
 const EXT_PAYMENT_COLLECTION_METHOD =
   'https://yosemitecrew.com/fhir/StructureDefinition/payment-collection-method';
 const EXT_PAID_AT = 'https://yosemitecrew.com/fhir/StructureDefinition/paid-at';
@@ -290,62 +268,6 @@ export function toFHIRInvoice(invoice: Invoice): FHIRInvoice {
 
   const metadataExt = buildMetadataExtension(invoice.metadata);
   if (metadataExt) extensions.push(metadataExt);
-
-  if (invoice.stripeInvoiceId) {
-    extensions.push({
-      url: EXT_STRIPE_INVOICE_ID,
-      valueString: invoice.stripeInvoiceId,
-    });
-  }
-
-  if (invoice.stripePaymentIntentId) {
-    extensions.push({
-      url: EXT_STRIPE_PI_ID,
-      valueString: invoice.stripePaymentIntentId,
-    });
-  }
-
-  if (invoice.stripePaymentLinkId) {
-    extensions.push({
-      url: EXT_STRIPE_PL_ID,
-      valueString: invoice.stripePaymentLinkId,
-    });
-  }
-
-  if (invoice.stripeCustomerId) {
-    extensions.push({
-      url: EXT_STRIPE_CUSTOMER_ID,
-      valueString: invoice.stripeCustomerId,
-    });
-  }
-
-  if (invoice.stripeChargeId) {
-    extensions.push({
-      url: EXT_STRIPE_CHARGE_ID,
-      valueString: invoice.stripeChargeId,
-    });
-  }
-
-  if (invoice.stripeReceiptUrl) {
-    extensions.push({
-      url: EXT_STRIPE_RECEIPT_URL,
-      valueUri: invoice.stripeReceiptUrl,
-    });
-  }
-
-  if (invoice.stripeCheckoutSessionId) {
-    extensions.push({
-      url: EXT_STRIPE_CHECKOUT_SESSION_ID,
-      valueString: invoice.stripeCheckoutSessionId,
-    });
-  }
-
-  if (invoice.stripeCheckoutUrl) {
-    extensions.push({
-      url: EXT_STRIPE_CHECKOUT_URL,
-      valueUri: invoice.stripeCheckoutUrl,
-    });
-  }
 
   if (invoice.paymentCollectionMethod) {
     extensions.push({
@@ -562,26 +484,6 @@ export function fromFHIRInvoice(fhirInvoice: FHIRInvoice): Invoice {
     taxTotal,
     totalAmount,
     currency,
-    stripePaymentIntentId: fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_PI_ID)
-      ?.valueString,
-    stripePaymentLinkId: fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_PL_ID)
-      ?.valueString,
-    stripeInvoiceId: fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_INVOICE_ID)
-      ?.valueString,
-    stripeCustomerId: fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_CUSTOMER_ID)
-      ?.valueString,
-    stripeChargeId: fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_CHARGE_ID)
-      ?.valueString,
-    stripeReceiptUrl:
-      fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_RECEIPT_URL)?.valueUri ??
-      fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_RECEIPT_URL)?.valueString,
-    stripeCheckoutSessionId: fhirInvoice.extension?.find(
-      (ext) => ext.url === EXT_STRIPE_CHECKOUT_SESSION_ID
-    )?.valueString,
-    stripeCheckoutUrl:
-      fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_CHECKOUT_URL)?.valueUri ??
-      fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_CHECKOUT_URL)?.valueUrl ??
-      fhirInvoice.extension?.find((ext) => ext.url === EXT_STRIPE_CHECKOUT_URL)?.valueString,
     paymentCollectionMethod:
       (fhirInvoice.extension?.find((ext) => ext.url === EXT_PAYMENT_COLLECTION_METHOD)
         ?.valueString as PaymentCollectionMethod | undefined) ?? 'PAYMENT_INTENT',

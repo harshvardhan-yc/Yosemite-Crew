@@ -2716,14 +2716,6 @@ model Invoice {
   visitBillingStage        InvoiceVisitBillingStage  @default(DRAFT)
   depositTargetAmount      Float                    @default(0)
   depositCollectedAmount   Float                    @default(0)
-  stripePaymentIntentId    String?
-  stripePaymentLinkId      String?
-  stripeInvoiceId          String?
-  stripeCustomerId         String?
-  stripeChargeId           String?
-  stripeReceiptUrl         String?
-  stripeCheckoutSessionId  String?
-  stripeCheckoutUrl        String?
   status                   InvoiceStatus            @default(PENDING)
   metadata                 Json?
   paidAt                   DateTime?
@@ -2739,9 +2731,7 @@ model Invoice {
   @@index([parentId])
   @@index([organisationId])
   @@index([appointmentId])
-  @@index([stripePaymentIntentId])
   @@index([status])
-  @@index([stripeCheckoutSessionId])
   @@index([paymentCollectionMethod])
   @@index([billingCollectionMode])
   @@index([visitBillingStage])

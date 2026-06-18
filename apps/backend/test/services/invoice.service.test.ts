@@ -166,6 +166,7 @@ describe("InvoiceService", () => {
         }),
       }),
     );
+    expect(prisma.organizationBilling.findUnique).not.toHaveBeenCalled();
   });
 
   it("creates extra invoices with a frozen tax snapshot", async () => {
@@ -232,6 +233,7 @@ describe("InvoiceService", () => {
       }),
     );
     expect((result as { id: string }).id).toBe("inv_extra");
+    expect(prisma.organizationBilling.findUnique).not.toHaveBeenCalled();
   });
 
   it("marks visit-based invoices ready for billing and leaves prepay invoices alone", async () => {
@@ -474,8 +476,6 @@ describe("InvoiceService", () => {
       taxTotal: 0,
       taxPercent: 0,
       totalAmount: 90,
-      stripeCheckoutSessionId: "cs_1",
-      stripeCheckoutUrl: "https://checkout",
       taxSnapshot: {
         provider: "STRIPE",
         taxBehavior: "EXCLUSIVE",
@@ -501,8 +501,6 @@ describe("InvoiceService", () => {
       invoiceDiscountTotal: 15,
       taxTotal: 0,
       taxPercent: 0,
-      stripeCheckoutSessionId: null,
-      stripeCheckoutUrl: null,
       metadata: {},
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -524,8 +522,6 @@ describe("InvoiceService", () => {
           taxProvider: "STRIPE",
           invoiceDiscountTotal: 15,
           totalAmount: 135,
-          stripeCheckoutSessionId: null,
-          stripeCheckoutUrl: null,
           taxSnapshot: expect.objectContaining({
             upsert: expect.objectContaining({
               create: expect.objectContaining({

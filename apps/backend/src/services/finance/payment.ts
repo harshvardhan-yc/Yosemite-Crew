@@ -189,6 +189,65 @@ const createPaymentAttempt = async (
     },
   });
 
+const readJsonRecord = (value: Prisma.JsonValue | null | undefined) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+};
+
+const readString = (value: unknown) =>
+  typeof value === "string" && value.length > 0 ? value : null;
+
+const getCheckoutSessionUrl = (attempt: {
+  rawProviderPayload?: Prisma.JsonValue | null;
+}) => {
+  const payload = readJsonRecord(attempt.rawProviderPayload);
+  return readString(payload.url);
+};
+
+const findInvoiceByPaymentIntentId = async (paymentIntentId: string) => {
+  const paymentAttempt = await prisma.paymentAttempt.findFirst({
+    where: { providerPaymentIntentId: paymentIntentId },
+    select: { invoiceId: true },
+  });
+
+  if (paymentAttempt) {
+    return prisma.invoice.findUnique({
+      where: { id: paymentAttempt.invoiceId },
+    });
+  }
+
+  const payment = await prisma.payment.findFirst({
+    where: { providerPaymentId: paymentIntentId },
+    select: { invoiceId: true },
+  });
+
+  if (payment) {
+    return prisma.invoice.findUnique({
+      where: { id: payment.invoiceId },
+    });
+  }
+
+  return null;
+};
+
+const findInvoiceByCheckoutSessionId = async (sessionId: string) => {
+  const paymentAttempt = await prisma.paymentAttempt.findFirst({
+    where: { providerCheckoutSessionId: sessionId },
+    select: { invoiceId: true },
+  });
+
+  if (paymentAttempt) {
+    return prisma.invoice.findUnique({
+      where: { id: paymentAttempt.invoiceId },
+    });
+  }
+
+  return null;
+};
+
 const mapRefundStatus = (status: string): PrismaRefundStatus => {
   switch (status) {
     case "succeeded":
@@ -268,15 +327,37 @@ export const FinancePaymentService = {
       );
     }
 
-    if (invoice.stripePaymentIntentId) {
+    const existingPaymentIntentAttempt = await prisma.paymentAttempt.findFirst({
+      where: {
+        invoiceId,
+        provider: "STRIPE",
+        providerPaymentIntentId: { not: null },
+      },
+      select: { id: true },
+    });
+    if (existingPaymentIntentAttempt) {
       throw new FinancePaymentError("Invoice already has a PaymentIntent", 409);
     }
 
-    if (invoice.stripeCheckoutSessionId) {
+    const existingCheckoutAttempt = await prisma.paymentAttempt.findFirst({
+      where: {
+        invoiceId,
+        provider: "STRIPE",
+        providerCheckoutSessionId: { not: null },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        providerCheckoutSessionId: true,
+        rawProviderPayload: true,
+      },
+    });
+
+    if (existingCheckoutAttempt?.providerCheckoutSessionId) {
       return {
-        sessionId: invoice.stripeCheckoutSessionId,
-        url: invoice.stripeCheckoutUrl,
-        paymentAttemptId: null,
+        sessionId: existingCheckoutAttempt.providerCheckoutSessionId,
+        url: getCheckoutSessionUrl(existingCheckoutAttempt),
+        paymentAttemptId: existingCheckoutAttempt.id,
       };
     }
 
@@ -392,12 +473,10 @@ export const FinancePaymentService = {
       },
     });
 
-    await prisma.invoice.updateMany({
+    await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         paymentCollectionMethod: "PAYMENT_LINK",
-        stripeCheckoutSessionId: session.id,
-        stripeCheckoutUrl: session.url ?? undefined,
       },
     });
 
@@ -411,7 +490,7 @@ export const FinancePaymentService = {
   async createPaymentIntentForInvoice(
     invoiceId: string,
   ): Promise<PaymentIntentResult> {
-    let invoice = await prisma.invoice.findUnique({
+    const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
     });
 
@@ -430,32 +509,37 @@ export const FinancePaymentService = {
       );
     }
 
-    if (
-      invoice.stripeCheckoutSessionId &&
-      invoice.paymentCollectionMethod === "PAYMENT_LINK"
-    ) {
-      await prisma.invoice.updateMany({
-        where: { id: invoiceId },
+    if (invoice.paymentCollectionMethod === "PAYMENT_LINK") {
+      await prisma.paymentAttempt.updateMany({
+        where: {
+          invoiceId,
+          provider: "STRIPE",
+          providerCheckoutSessionId: { not: null },
+        },
         data: {
-          paymentCollectionMethod: "PAYMENT_INTENT",
-          stripeCheckoutSessionId: null,
-          stripeCheckoutUrl: null,
+          status: "CANCELED",
         },
       });
-
-      invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
-      if (!invoice) {
-        throw new FinancePaymentError("Invoice not found after switch", 404);
-      }
     }
 
-    if (invoice.stripePaymentIntentId) {
+    const existingPaymentIntentAttempt = await prisma.paymentAttempt.findFirst({
+      where: {
+        invoiceId,
+        provider: "STRIPE",
+        providerPaymentIntentId: { not: null },
+      },
+      select: {
+        providerPaymentIntentId: true,
+      },
+    });
+
+    if (existingPaymentIntentAttempt?.providerPaymentIntentId) {
       const summary = await getInvoiceFinancialSummary(
         invoiceId,
         invoice.totalAmount,
       );
       return {
-        paymentIntentId: invoice.stripePaymentIntentId,
+        paymentIntentId: existingPaymentIntentAttempt.providerPaymentIntentId,
         clientSecret: null,
         amount: summary.balance,
         currency: invoice.currency,
@@ -523,7 +607,6 @@ export const FinancePaymentService = {
     await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
-        stripePaymentIntentId: paymentIntent.id,
         paymentCollectionMethod: "PAYMENT_INTENT",
       },
     });
@@ -554,14 +637,28 @@ export const FinancePaymentService = {
       throw new FinancePaymentError("Invoice not found", 404);
     }
 
-    if (!invoice.payments.length && !invoice.stripePaymentIntentId) {
+    const latestPaymentAttempt = await prisma.paymentAttempt.findFirst({
+      where: {
+        invoiceId,
+        provider: "STRIPE",
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        providerPaymentIntentId: true,
+      },
+    });
+
+    if (
+      !invoice.payments.length &&
+      !latestPaymentAttempt?.providerPaymentIntentId
+    ) {
       throw new FinancePaymentError("Invoice has no refundable payment", 409);
     }
 
     const existingPayment = invoice.payments[0];
     const paymentIntentId =
       existingPayment?.providerPaymentId ??
-      invoice.stripePaymentIntentId ??
+      latestPaymentAttempt?.providerPaymentIntentId ??
       null;
 
     let payment = existingPayment ?? null;
@@ -704,16 +801,16 @@ export const FinancePaymentService = {
     paymentIntentId: string,
     reason?: string,
   ): Promise<RefundInvoiceResult> {
-    const invoice = await prisma.invoice.findFirst({
-      where: { stripePaymentIntentId: paymentIntentId },
-      select: { id: true },
+    const paymentAttempt = await prisma.paymentAttempt.findFirst({
+      where: { providerPaymentIntentId: paymentIntentId },
+      select: { invoiceId: true },
     });
 
-    if (!invoice) {
+    if (!paymentAttempt) {
       throw new FinancePaymentError("Invoice not found", 404);
     }
 
-    return this.refundInvoicePayment(invoice.id, reason);
+    return this.refundInvoicePayment(paymentAttempt.invoiceId, reason);
   },
 
   async recordManualPayment(invoiceId: string, input: ManualPaymentInput = {}) {
@@ -920,14 +1017,13 @@ export const FinancePaymentService = {
     amount?: number | null;
     rawProviderPayload?: Prisma.InputJsonValue | null;
   }) {
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        ...(input.invoiceId ? { id: input.invoiceId } : {}),
-        ...(input.paymentIntentId
-          ? { stripePaymentIntentId: input.paymentIntentId }
-          : {}),
-      },
-    });
+    const invoice = input.invoiceId
+      ? await prisma.invoice.findFirst({
+          where: { id: input.invoiceId },
+        })
+      : input.paymentIntentId
+        ? await findInvoiceByPaymentIntentId(input.paymentIntentId)
+        : null;
 
     if (!invoice) {
       return { action: "NO_INVOICE" as const };
@@ -964,15 +1060,6 @@ export const FinancePaymentService = {
       rawProviderPayload: input.rawProviderPayload ?? undefined,
     });
 
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: {
-        stripePaymentIntentId: input.paymentIntentId,
-        stripeChargeId: input.chargeId ?? undefined,
-        stripeReceiptUrl: input.receiptUrl ?? undefined,
-      },
-    });
-
     return { action: "PAID" as const, ...applied };
   },
 
@@ -985,12 +1072,11 @@ export const FinancePaymentService = {
     currency?: string | null;
     rawProviderPayload?: Prisma.InputJsonValue | null;
   }) {
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        ...(input.invoiceId ? { id: input.invoiceId } : {}),
-        stripeCheckoutSessionId: input.sessionId,
-      },
-    });
+    const invoice = input.invoiceId
+      ? await prisma.invoice.findFirst({
+          where: { id: input.invoiceId },
+        })
+      : await findInvoiceByCheckoutSessionId(input.sessionId);
 
     if (!invoice) {
       return { action: "NO_INVOICE" as const };
@@ -1000,11 +1086,7 @@ export const FinancePaymentService = {
       return { action: "ALREADY_PAID" as const, invoice };
     }
 
-    if (
-      invoice.paymentCollectionMethod !== "PAYMENT_LINK" ||
-      (invoice.stripeCheckoutSessionId &&
-        invoice.stripeCheckoutSessionId !== input.sessionId)
-    ) {
+    if (invoice.paymentCollectionMethod !== "PAYMENT_LINK") {
       if (input.paymentIntentId) {
         await this.refundPaymentIntent(input.paymentIntentId);
         return { action: "REFUNDED" as const, invoice };
@@ -1031,17 +1113,6 @@ export const FinancePaymentService = {
       rawProviderPayload: input.rawProviderPayload ?? undefined,
     });
 
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: {
-        stripeCheckoutSessionId: input.sessionId,
-        stripePaymentIntentId: input.paymentIntentId ?? undefined,
-        stripeChargeId: input.chargeId ?? undefined,
-        stripeReceiptUrl: input.receiptUrl ?? undefined,
-        paidAt: new Date(),
-      },
-    });
-
     return { action: "PAID" as const, ...applied };
   },
 
@@ -1053,14 +1124,13 @@ export const FinancePaymentService = {
     currency: string;
     reason?: string;
   }) {
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        ...(input.invoiceId ? { id: input.invoiceId } : {}),
-        ...(input.paymentIntentId
-          ? { stripePaymentIntentId: input.paymentIntentId }
-          : {}),
-      },
-    });
+    const invoice = input.invoiceId
+      ? await prisma.invoice.findFirst({
+          where: { id: input.invoiceId },
+        })
+      : input.paymentIntentId
+        ? await findInvoiceByPaymentIntentId(input.paymentIntentId)
+        : null;
 
     if (!invoice) {
       return { action: "NO_INVOICE" as const };
@@ -1127,14 +1197,13 @@ export const FinancePaymentService = {
     appointmentId?: string | null;
     paymentIntentId?: string | null;
   }) {
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        ...(input.invoiceId ? { id: input.invoiceId } : {}),
-        ...(input.paymentIntentId
-          ? { stripePaymentIntentId: input.paymentIntentId }
-          : {}),
-      },
-    });
+    const invoice = input.invoiceId
+      ? await prisma.invoice.findFirst({
+          where: { id: input.invoiceId },
+        })
+      : input.paymentIntentId
+        ? await findInvoiceByPaymentIntentId(input.paymentIntentId)
+        : null;
 
     if (!invoice) {
       return { action: "NO_INVOICE" as const };

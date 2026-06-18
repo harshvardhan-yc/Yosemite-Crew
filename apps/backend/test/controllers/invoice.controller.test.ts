@@ -140,7 +140,7 @@ describe("InvoiceController", () => {
   describe("getInvoiceByPaymentIntentId", () => {
     it("should return 200 and the invoice if found", async () => {
       mockRequest.params = { paymentIntentId: "pi_123" };
-      const mockInvoice = { id: "inv_123", stripePaymentIntentId: "pi_123" };
+      const mockInvoice = { id: "inv_123" };
       (InvoiceService.getByPaymentIntentId as jest.Mock).mockResolvedValue(
         mockInvoice,
       );

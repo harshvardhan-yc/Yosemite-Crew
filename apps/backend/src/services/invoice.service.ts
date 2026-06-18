@@ -196,14 +196,6 @@ const toInvoiceRecord = (row: InvoiceWithCreditNotes): Invoice => {
     visitBillingStage: row.visitBillingStage as InvoiceVisitBillingStage,
     depositTargetAmount: row.depositTargetAmount,
     depositCollectedAmount: row.depositCollectedAmount,
-    stripePaymentIntentId: row.stripePaymentIntentId ?? undefined,
-    stripePaymentLinkId: row.stripePaymentLinkId ?? undefined,
-    stripeInvoiceId: row.stripeInvoiceId ?? undefined,
-    stripeCustomerId: row.stripeCustomerId ?? undefined,
-    stripeChargeId: row.stripeChargeId ?? undefined,
-    stripeReceiptUrl: row.stripeReceiptUrl ?? undefined,
-    stripeCheckoutSessionId: row.stripeCheckoutSessionId ?? undefined,
-    stripeCheckoutUrl: row.stripeCheckoutUrl ?? undefined,
     paymentCollectionMethod: row.paymentCollectionMethod,
     status: row.status as Invoice["status"],
     creditNotes,
@@ -458,13 +450,7 @@ const resolveCatalogSelectionSafe = async (
   }
 };
 
-const resolveOrganisationCurrency = async (organisationId: string) => {
-  const billing = await prisma.organizationBilling.findUnique({
-    where: { orgId: organisationId },
-    select: { currency: true },
-  });
-  return billing?.currency ?? "usd";
-};
+const resolveOrganisationCurrency = (): string => "usd";
 
 const toStripeAddress = (
   address?: {
@@ -623,7 +609,7 @@ export const InvoiceService = {
       );
     }
 
-    const currency = await resolveOrganisationCurrency(input.organisationId);
+    const currency = resolveOrganisationCurrency();
     const taxContext = await resolveInvoiceTaxContext(
       input.organisationId,
       parentId,
@@ -706,9 +692,7 @@ export const InvoiceService = {
       throw new InvoiceServiceError("Appointment not found", 404);
     }
 
-    const currency = await resolveOrganisationCurrency(
-      appointment.organisationId,
-    );
+    const currency = resolveOrganisationCurrency();
     const { patientId, parentId } = getAppointmentLinks(appointment);
     if (!patientId || !parentId) {
       throw new InvoiceServiceError(
@@ -810,36 +794,7 @@ export const InvoiceService = {
     return toInvoiceRecord(invoice);
   },
 
-  async attachStripeDetails(invoiceId: string, updates: Partial<Invoice>) {
-    const updated = await prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        stripePaymentIntentId: updates.stripePaymentIntentId ?? undefined,
-        stripePaymentLinkId: updates.stripePaymentLinkId ?? undefined,
-        stripeInvoiceId: updates.stripeInvoiceId ?? undefined,
-        stripeCustomerId: updates.stripeCustomerId ?? undefined,
-        stripeChargeId: updates.stripeChargeId ?? undefined,
-        stripeReceiptUrl: updates.stripeReceiptUrl ?? undefined,
-        stripeCheckoutSessionId: updates.stripeCheckoutSessionId ?? undefined,
-        stripeCheckoutUrl: updates.stripeCheckoutUrl ?? undefined,
-        status: updates.status as PrismaInvoiceStatus | undefined,
-        paymentCollectionMethod: updates.paymentCollectionMethod as
-          | PaymentCollectionMethod
-          | undefined,
-        paidAt: updates.paidAt ?? undefined,
-        metadata: updates.metadata as unknown as Prisma.InputJsonValue,
-      },
-    });
-
-    return updated;
-  },
-
-  async markInvoicePaid(params: {
-    invoiceId: string;
-    stripePaymentIntentId?: string;
-    stripeChargeId?: string;
-    stripeReceiptUrl?: string;
-  }) {
+  async markInvoicePaid(params: { invoiceId: string }) {
     const existing = await prisma.invoice.findUnique({
       where: { id: params.invoiceId },
     });
@@ -853,9 +808,6 @@ export const InvoiceService = {
         status: "PAID",
         paidAt: new Date(),
         visitBillingStage: "SETTLED",
-        stripePaymentIntentId: params.stripePaymentIntentId ?? undefined,
-        stripeChargeId: params.stripeChargeId ?? undefined,
-        stripeReceiptUrl: params.stripeReceiptUrl ?? undefined,
       },
     });
 
@@ -1452,16 +1404,6 @@ export const InvoiceService = {
         taxTotal: totals.taxTotal,
         taxPercent: totals.taxPercent,
         totalAmount: totals.totalAmount,
-        stripeCheckoutSessionId:
-          invoice.paymentCollectionMethod === "PAYMENT_LINK" &&
-          invoice.stripeCheckoutSessionId
-            ? null
-            : invoice.stripeCheckoutSessionId,
-        stripeCheckoutUrl:
-          invoice.paymentCollectionMethod === "PAYMENT_LINK" &&
-          invoice.stripeCheckoutSessionId
-            ? null
-            : invoice.stripeCheckoutUrl,
         taxSnapshot: {
           upsert: {
             create: totals.taxSnapshot,
@@ -1685,13 +1627,47 @@ export const InvoiceService = {
   },
 
   async getByPaymentIntentId(paymentIntentId: string, organisationId?: string) {
-    const doc = await prisma.invoice.findFirst({
+    const paymentAttempt = await prisma.paymentAttempt.findFirst({
       where: {
-        stripePaymentIntentId: paymentIntentId,
-        ...(organisationId ? { organisationId } : {}),
+        providerPaymentIntentId: paymentIntentId,
+      },
+      select: {
+        invoiceId: true,
       },
     });
+
+    const payment = paymentAttempt
+      ? null
+      : await prisma.payment.findFirst({
+          where: {
+            providerPaymentId: paymentIntentId,
+            ...(organisationId
+              ? {
+                  invoice: {
+                    organisationId,
+                  },
+                }
+              : {}),
+          },
+          select: {
+            invoiceId: true,
+          },
+        });
+
+    const doc = paymentAttempt
+      ? await prisma.invoice.findUnique({
+          where: { id: paymentAttempt.invoiceId },
+        })
+      : payment
+        ? await prisma.invoice.findUnique({
+            where: { id: payment.invoiceId },
+          })
+        : null;
+
     if (!doc) {
+      return null;
+    }
+    if (organisationId && doc.organisationId !== organisationId) {
       return null;
     }
     return toInvoiceRecord(doc);

@@ -19,6 +19,7 @@ jest.mock("src/config/prisma", () => ({
     paymentAttempt: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       findFirst: jest.fn(),
     },
     payment: {
@@ -269,9 +270,6 @@ describe("FinancePaymentService", () => {
       currency: "usd",
       status: "AWAITING_PAYMENT",
       paymentCollectionMethod: "PAYMENT_INTENT",
-      stripePaymentIntentId: null,
-      stripeCheckoutSessionId: null,
-      stripeCheckoutUrl: null,
       organisationId: "org_1",
       appointmentId: "appt_1",
       parentId: "parent_1",
@@ -303,7 +301,7 @@ describe("FinancePaymentService", () => {
     (prisma.paymentAttempt.create as jest.Mock).mockResolvedValueOnce({
       id: "pa_6",
     });
-    (prisma.invoice.updateMany as jest.Mock).mockResolvedValueOnce({
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
       count: 1,
     });
 
@@ -337,11 +335,10 @@ describe("FinancePaymentService", () => {
         }),
       }),
     );
-    expect(prisma.invoice.updateMany).toHaveBeenCalledWith(
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "inv_6" },
         data: expect.objectContaining({
-          stripeCheckoutSessionId: "cs_1",
           paymentCollectionMethod: "PAYMENT_LINK",
         }),
       }),
@@ -364,9 +361,6 @@ describe("FinancePaymentService", () => {
         currency: "usd",
         status: "AWAITING_PAYMENT",
         paymentCollectionMethod: "PAYMENT_LINK",
-        stripeCheckoutSessionId: "sess_old",
-        stripeCheckoutUrl: "https://old",
-        stripePaymentIntentId: null,
         organisationId: "org_1",
         appointmentId: "appt_1",
         parentId: "parent_1",
@@ -378,9 +372,6 @@ describe("FinancePaymentService", () => {
         currency: "usd",
         status: "AWAITING_PAYMENT",
         paymentCollectionMethod: "PAYMENT_INTENT",
-        stripeCheckoutSessionId: null,
-        stripeCheckoutUrl: null,
-        stripePaymentIntentId: null,
         organisationId: "org_1",
         appointmentId: "appt_1",
         parentId: "parent_1",
@@ -398,9 +389,6 @@ describe("FinancePaymentService", () => {
     });
     (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
       id: "inv_10",
-    });
-    (prisma.invoice.updateMany as jest.Mock).mockResolvedValueOnce({
-      count: 1,
     });
 
     const result =
@@ -421,6 +409,14 @@ describe("FinancePaymentService", () => {
         }),
       }),
     );
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inv_10" },
+        data: expect.objectContaining({
+          paymentCollectionMethod: "PAYMENT_INTENT",
+        }),
+      }),
+    );
     expect(result).toEqual({
       paymentIntentId: "pi_10",
       clientSecret: "cs_10",
@@ -436,12 +432,16 @@ describe("FinancePaymentService", () => {
       currency: "usd",
       status: "AWAITING_PAYMENT",
       paymentCollectionMethod: "PAYMENT_LINK",
-      stripePaymentIntentId: null,
-      stripeCheckoutSessionId: "cs_existing",
-      stripeCheckoutUrl: "https://existing",
       organisationId: "org_1",
       items: [],
     });
+    (prisma.paymentAttempt.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "pa_existing",
+        providerCheckoutSessionId: "cs_existing",
+        rawProviderPayload: { url: "https://existing" },
+      });
 
     const result =
       await FinancePaymentService.createCheckoutSessionForInvoice("inv_7");
@@ -449,12 +449,12 @@ describe("FinancePaymentService", () => {
     expect(
       (prisma.organization.findUnique as jest.Mock).mock.calls,
     ).toHaveLength(0);
-    expect((prisma.invoice.updateMany as jest.Mock).mock.calls).toHaveLength(0);
+    expect((prisma.invoice.update as jest.Mock).mock.calls).toHaveLength(0);
     expect(prisma.paymentAttempt.create).not.toHaveBeenCalled();
     expect(result).toEqual({
       sessionId: "cs_existing",
       url: "https://existing",
-      paymentAttemptId: null,
+      paymentAttemptId: "pa_existing",
     });
   });
 
@@ -465,9 +465,6 @@ describe("FinancePaymentService", () => {
       currency: "usd",
       status: "AWAITING_PAYMENT",
       paymentCollectionMethod: "PAYMENT_AT_CLINIC",
-      stripePaymentIntentId: null,
-      stripeCheckoutSessionId: null,
-      stripeCheckoutUrl: null,
       organisationId: "org_1",
       items: [],
     });
@@ -593,8 +590,6 @@ describe("FinancePaymentService", () => {
       currency: "usd",
       status: "PENDING",
       paymentCollectionMethod: "PAYMENT_INTENT",
-      stripePaymentIntentId: null,
-      stripeCheckoutSessionId: null,
       metadata: {},
       payments: [],
     });
@@ -604,8 +599,6 @@ describe("FinancePaymentService", () => {
       currency: "usd",
       status: "PENDING",
       paymentCollectionMethod: "PAYMENT_INTENT",
-      stripePaymentIntentId: null,
-      stripeCheckoutSessionId: null,
       metadata: {},
       payments: [],
     });
@@ -651,15 +644,6 @@ describe("FinancePaymentService", () => {
       }),
     );
     expect(result.action).toBe("PAID");
-    expect(prisma.invoice.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          stripePaymentIntentId: "pi_webhook_1",
-          stripeChargeId: "ch_webhook_1",
-          stripeReceiptUrl: "https://receipt",
-        }),
-      }),
-    );
   });
 
   it("normalizes a Stripe checkout session completion into invoice payment rows", async () => {
@@ -669,7 +653,6 @@ describe("FinancePaymentService", () => {
       currency: "usd",
       status: "PENDING",
       paymentCollectionMethod: "PAYMENT_LINK",
-      stripeCheckoutSessionId: "cs_webhook_2",
       metadata: {},
       payments: [],
     });
@@ -679,7 +662,6 @@ describe("FinancePaymentService", () => {
       currency: "usd",
       status: "PENDING",
       paymentCollectionMethod: "PAYMENT_LINK",
-      stripeCheckoutSessionId: "cs_webhook_2",
       metadata: {},
       payments: [],
     });
@@ -724,21 +706,12 @@ describe("FinancePaymentService", () => {
       }),
     );
     expect(result.action).toBe("PAID");
-    expect(prisma.invoice.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          stripeCheckoutSessionId: "cs_webhook_2",
-          stripePaymentIntentId: "pi_webhook_2",
-        }),
-      }),
-    );
   });
 
   it("normalizes a refund webhook into invoice refund rows", async () => {
     (prisma.invoice.findFirst as jest.Mock).mockResolvedValueOnce({
       id: "inv_webhook_3",
       status: "PAID",
-      stripePaymentIntentId: "pi_webhook_3",
       metadata: {},
       payments: [],
     });
@@ -797,9 +770,13 @@ describe("FinancePaymentService", () => {
       totalAmount: 90,
       currency: "usd",
       status: "PAID",
-      stripePaymentIntentId: "pi_9",
       metadata: {},
       payments: [],
+    });
+    (prisma.paymentAttempt.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: "pa_9",
+      invoiceId: "inv_9",
+      providerPaymentIntentId: "pi_9",
     });
     (stripeClient.paymentIntents.retrieve as jest.Mock).mockResolvedValueOnce({
       latest_charge: { id: "ch_9" },

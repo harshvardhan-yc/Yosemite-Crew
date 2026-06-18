@@ -129,6 +129,9 @@ jest.mock("src/config/prisma", () => ({
       create: jest.fn(),
       updateMany: jest.fn(),
     },
+    paymentAttempt: {
+      findFirst: jest.fn(),
+    },
     userOrganization: {
       count: jest.fn(),
     },
@@ -550,8 +553,9 @@ describe("StripeService", () => {
     });
 
     it("should refund and mark invoice", async () => {
-      (prisma.invoice.findFirst as jest.Mock).mockResolvedValueOnce({
+      (prisma.paymentAttempt.findFirst as jest.Mock).mockResolvedValueOnce({
         id: "inv_1",
+        invoiceId: "inv_1",
       });
       (
         FinancePaymentService.refundInvoicePayment as jest.Mock
@@ -605,7 +609,7 @@ describe("StripeService", () => {
       ).mockResolvedValueOnce({
         orgName: "Test Org",
         connectAccountId: "acct_1",
-        stripeCustomerId: null,
+        externalCustomerId: null,
         priceId: "price_month_mock",
         seats: 3,
       });
@@ -634,7 +638,7 @@ describe("StripeService", () => {
         FinanceSubscriptionService.recordBusinessCheckoutCustomer,
       ).toHaveBeenCalledWith({
         orgId: "org_1",
-        stripeCustomerId: "cus_1",
+        externalCustomerId: "cus_1",
       });
       expect(mStripe.checkout.sessions.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -663,7 +667,7 @@ describe("StripeService", () => {
       ).mockResolvedValueOnce({
         orgName: "Test Org",
         connectAccountId: "acct_1",
-        stripeCustomerId: "cus_existing",
+        externalCustomerId: "cus_existing",
         priceId: "price_year_mock",
         seats: 4,
       });
@@ -710,10 +714,10 @@ describe("StripeService", () => {
       process.env.READ_FROM_POSTGRES = originalReadFromPostgres;
     });
 
-    it("should throw if no stripeCustomerId", async () => {
+    it("should throw if no externalCustomerId", async () => {
       (
         FinanceSubscriptionService.resolveBillingCustomerId as jest.Mock
-      ).mockResolvedValueOnce({ stripeCustomerId: null });
+      ).mockResolvedValueOnce({ externalCustomerId: null });
 
       await expect(
         StripeService.createCustomerPortalSession("org_1"),
@@ -725,7 +729,7 @@ describe("StripeService", () => {
     it("should create portal session", async () => {
       (
         FinanceSubscriptionService.resolveBillingCustomerId as jest.Mock
-      ).mockResolvedValueOnce({ stripeCustomerId: "cus_123" });
+      ).mockResolvedValueOnce({ externalCustomerId: "cus_123" });
       mStripe.billingPortal.sessions.create.mockResolvedValueOnce({
         url: "http://portal.url",
       });
@@ -892,6 +896,9 @@ describe("StripeService", () => {
       (prisma.invoice.findFirst as jest.Mock)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null);
+      (prisma.invoice.create as jest.Mock).mockResolvedValueOnce({
+        id: "inv_new",
+      });
       mStripe.charges.retrieve.mockResolvedValueOnce({
         id: "ch_1",
         receipt_url: "receipt",
@@ -925,6 +932,9 @@ describe("StripeService", () => {
         id: "inv_open",
         status: "AWAITING_PAYMENT",
       });
+      (prisma.paymentAttempt.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: "pa_open",
+      });
       mStripe.charges.retrieve.mockResolvedValueOnce({
         id: "ch_1",
         receipt_url: "receipt",
@@ -937,7 +947,7 @@ describe("StripeService", () => {
         metadata: { appointmentId: "appt_1" },
       } as any);
 
-      expect(prisma.invoice.updateMany).toHaveBeenCalled();
+      expect(prisma.appointment.updateMany).toHaveBeenCalled();
       expect(prisma.invoice.create).not.toHaveBeenCalled();
     });
 
@@ -1073,7 +1083,6 @@ describe("StripeService", () => {
         id: "inv_1",
         status: "PENDING",
         paymentCollectionMethod: "PAYMENT_LINK",
-        stripeCheckoutSessionId: "cs_1",
         appointmentId: "appt_1",
         parentId: "par_1",
         totalAmount: 10,

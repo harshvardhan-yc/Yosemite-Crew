@@ -149,7 +149,7 @@ export const StripeService = {
         interval,
       );
 
-    if (!checkoutContext.stripeCustomerId) {
+    if (!checkoutContext.externalCustomerId) {
       const customer = await stripe.customers.create({
         name: checkoutContext.orgName,
         metadata: {
@@ -160,9 +160,9 @@ export const StripeService = {
 
       await FinanceSubscriptionService.recordBusinessCheckoutCustomer({
         orgId,
-        stripeCustomerId: customer.id,
+        externalCustomerId: customer.id,
       });
-      checkoutContext.stripeCustomerId = customer.id;
+      checkoutContext.externalCustomerId = customer.id;
     }
 
     const successUrl = `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}`;
@@ -170,7 +170,7 @@ export const StripeService = {
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: checkoutContext.stripeCustomerId ?? undefined,
+      customer: checkoutContext.externalCustomerId ?? undefined,
       line_items: [
         {
           price: checkoutContext.priceId,
@@ -212,12 +212,12 @@ export const StripeService = {
     const billing =
       await FinanceSubscriptionService.resolveBillingCustomerId(orgId);
 
-    if (!billing.stripeCustomerId) {
+    if (!billing.externalCustomerId) {
       throw new Error("No billing customer found. Upgrade to Business first.");
     }
 
     const session = await stripe.billingPortal.sessions.create({
-      customer: billing.stripeCustomerId,
+      customer: billing.externalCustomerId,
       return_url: `${process.env.APP_URL}/organization`,
     });
 
@@ -341,13 +341,16 @@ export const StripeService = {
   },
 
   async refundPaymentIntent(paymentIntentId: string) {
-    const invoice = await prisma.invoice.findFirst({
-      where: { stripePaymentIntentId: paymentIntentId },
+    const invoice = await prisma.paymentAttempt.findFirst({
+      where: { providerPaymentIntentId: paymentIntentId },
+      select: { invoiceId: true },
     });
     if (!invoice) throw new Error("Invoice not found");
 
-    const result = await FinancePaymentService.refundInvoicePayment(invoice.id);
-    await InvoiceService.markRefunded(invoice.id);
+    const result = await FinancePaymentService.refundInvoicePayment(
+      invoice.invoiceId,
+    );
+    await InvoiceService.markRefunded(invoice.invoiceId);
 
     return {
       refundId: result.refund.refundId,
@@ -541,19 +544,16 @@ export const StripeService = {
       const chargeId = pi.latest_charge as string;
       const charge = await getStripeClient().charges.retrieve(chargeId);
 
-      await prisma.invoice.updateMany({
-        where: {
-          id: openInvoice.id,
-          status: { in: ["AWAITING_PAYMENT", "PENDING"] },
-        },
-        data: {
-          status: "PAID",
-          stripePaymentIntentId: pi.id,
-          stripeChargeId: charge.id,
-          stripeReceiptUrl: charge.receipt_url ?? undefined,
-          paymentCollectionMethod: "PAYMENT_INTENT",
-          updatedAt: new Date(),
-        },
+      await FinancePaymentService.handleInvoicePaymentIntentSucceeded({
+        invoiceId: openInvoice.id,
+        paymentIntentId: pi.id,
+        chargeId: charge.id,
+        currency: pi.currency ?? null,
+        rawProviderPayload: {
+          paymentIntentId: pi.id,
+          chargeId: charge.id,
+          source: "stripe._handleAppointmentBookingPayment",
+        } as Prisma.InputJsonValue,
       });
 
       await prisma.appointment.updateMany({
@@ -589,7 +589,7 @@ export const StripeService = {
 
     const { parentId, patientId } = extractAppointmentPatientRefs(appointment);
 
-    await prisma.invoice.create({
+    const createdInvoice = await prisma.invoice.create({
       data: {
         appointmentId,
         organisationId: appointment.organisationId,
@@ -610,10 +610,19 @@ export const StripeService = {
         discountTotal: 0,
         taxTotal: 0,
         totalAmount: service.cost,
-        stripePaymentIntentId: pi.id,
-        stripeChargeId: charge.id,
-        stripeReceiptUrl: charge.receipt_url ?? undefined,
       },
+    });
+
+    await FinancePaymentService.handleInvoicePaymentIntentSucceeded({
+      invoiceId: createdInvoice.id,
+      paymentIntentId: pi.id,
+      chargeId: charge.id,
+      currency: pi.currency ?? null,
+      rawProviderPayload: {
+        paymentIntentId: pi.id,
+        chargeId: charge.id,
+        source: "stripe._handleAppointmentBookingPayment",
+      } as Prisma.InputJsonValue,
     });
 
     await prisma.appointment.updateMany({

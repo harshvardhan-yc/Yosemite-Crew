@@ -4,9 +4,6 @@ import { BillingInterval, SubscriptionStatus } from "@prisma/client";
 import Stripe from "stripe";
 import { FinanceEventService } from "./events";
 
-const addDays = (date: Date, days: number) =>
-  new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-
 const toSubscriptionStatus = (
   value?: string | null,
 ): SubscriptionStatus | undefined => {
@@ -86,18 +83,18 @@ type BusinessCheckoutInterval = "month" | "year";
 type BusinessCheckoutContext = {
   orgName: string;
   connectAccountId?: string | null;
-  stripeCustomerId?: string | null;
+  externalCustomerId?: string | null;
   priceId: string;
   seats: number;
 };
 
 type CheckoutCustomerInput = {
   orgId: string;
-  stripeCustomerId: string;
+  externalCustomerId: string;
 };
 
 type BillingCustomerLookup = {
-  stripeCustomerId: string | null;
+  externalCustomerId: string | null;
 };
 
 type SeatSyncPlan = {
@@ -309,10 +306,23 @@ export const FinanceSubscriptionService = {
     orgId: string,
     interval: BusinessCheckoutInterval,
   ): Promise<BusinessCheckoutContext> {
-    const org = await prisma.organization.findUnique({
-      where: { id: orgId },
-      select: { name: true, stripeAccountId: true },
-    });
+    const [org, providerLink] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { name: true, stripeAccountId: true },
+      }),
+      prisma.financeProviderLink.findUnique({
+        where: {
+          orgId_provider: {
+            orgId,
+            provider: "STRIPE",
+          },
+        },
+        select: {
+          externalCustomerId: true,
+        },
+      }),
+    ]);
     if (!org) throw new Error("Organisation not found");
 
     const priceId =
@@ -320,27 +330,6 @@ export const FinanceSubscriptionService = {
         ? process.env.STRIPE_PRICE_BUSINESS_MONTH
         : process.env.STRIPE_PRICE_BUSINESS_YEAR;
     if (!priceId) throw new Error("Missing STRIPE_PRICE_BUSINESS_* env vars");
-
-    let billingRow = await prisma.organizationBilling.upsert({
-      where: { orgId },
-      create: { orgId },
-      update: {},
-      select: {
-        connectAccountId: true,
-        stripeCustomerId: true,
-      },
-    });
-
-    if (!billingRow.connectAccountId && org.stripeAccountId) {
-      billingRow = await prisma.organizationBilling.update({
-        where: { orgId },
-        data: { connectAccountId: org.stripeAccountId },
-        select: {
-          connectAccountId: true,
-          stripeCustomerId: true,
-        },
-      });
-    }
 
     const seats = await prisma.userOrganization.count({
       where: {
@@ -356,8 +345,8 @@ export const FinanceSubscriptionService = {
 
     return {
       orgName: org.name,
-      connectAccountId: billingRow.connectAccountId ?? org.stripeAccountId,
-      stripeCustomerId: billingRow.stripeCustomerId ?? null,
+      connectAccountId: org.stripeAccountId,
+      externalCustomerId: providerLink?.externalCustomerId ?? null,
       priceId,
       seats,
     };
@@ -369,15 +358,10 @@ export const FinanceSubscriptionService = {
     await this.upsertSubscriptionProviderLink({
       orgId: input.orgId,
       provider: "STRIPE",
-      externalCustomerId: input.stripeCustomerId,
+      externalCustomerId: input.externalCustomerId,
       metadata: {
         source: "business_checkout",
       },
-    });
-
-    await prisma.organizationBilling.update({
-      where: { orgId: input.orgId },
-      data: { stripeCustomerId: input.stripeCustomerId },
     });
   },
 
@@ -398,21 +382,12 @@ export const FinanceSubscriptionService = {
 
     if (providerLink?.externalCustomerId) {
       return {
-        stripeCustomerId: providerLink.externalCustomerId,
+        externalCustomerId: providerLink.externalCustomerId,
       };
     }
 
-    const billing = await prisma.organizationBilling.upsert({
-      where: { orgId },
-      create: { orgId },
-      update: {},
-      select: {
-        stripeCustomerId: true,
-      },
-    });
-
     return {
-      stripeCustomerId: billing.stripeCustomerId ?? null,
+      externalCustomerId: null,
     };
   },
 
@@ -464,41 +439,7 @@ export const FinanceSubscriptionService = {
       };
     }
 
-    const billingRow = await prisma.organizationBilling.findUnique({
-      where: { orgId },
-      select: {
-        plan: true,
-        stripeSubscriptionItemId: true,
-        subscriptionStatus: true,
-        seatQuantity: true,
-      },
-    });
-
-    if (!billingRow || billingRow.plan !== "business") return null;
-
-    const subscriptionItemId = billingRow.stripeSubscriptionItemId;
-    if (!subscriptionItemId) return null;
-
-    const subscriptionStatus = billingRow.subscriptionStatus ?? "none";
-    if (!["active", "trialing", "past_due"].includes(subscriptionStatus)) {
-      return null;
-    }
-
-    const newSeats = await prisma.userOrganization.count({
-      where: {
-        organizationReference: orgId,
-        active: true,
-      },
-    });
-    const oldSeats = billingRow.seatQuantity ?? 0;
-    if (newSeats === oldSeats) return null;
-
-    return {
-      subscriptionItemId,
-      oldSeats,
-      newSeats,
-      prorationBehavior: newSeats > oldSeats ? "create_prorations" : "none",
-    };
+    return null;
   },
 
   async recordSeatUsage({ orgId, seats }: SeatUsageInput) {
@@ -525,14 +466,6 @@ export const FinanceSubscriptionService = {
       update: { usersActiveCount: seats, usersBillableCount: seats },
     });
 
-    await prisma.organizationBilling.update({
-      where: { orgId },
-      data: {
-        seatQuantity: seats,
-        seatQuantityUpdatedAt: new Date(),
-      },
-    });
-
     await this.captureUsageSnapshot({
       orgId,
       snapshotType: "SEAT_SYNC",
@@ -545,7 +478,7 @@ export const FinanceSubscriptionService = {
   },
 
   async recordBusinessCheckoutCompleted(input: BusinessCheckoutCompletedInput) {
-    const billingRows =
+    const rows =
       (await prisma.financeProviderLink.findMany({
         where: {
           provider: "STRIPE",
@@ -553,36 +486,6 @@ export const FinanceSubscriptionService = {
         },
         select: { orgId: true },
       })) ?? [];
-    const rows: Array<{ orgId: string }> =
-      billingRows.length > 0
-        ? billingRows
-        : ((await prisma.organizationBilling.findMany({
-            where: { stripeCustomerId: input.customerId },
-            select: { orgId: true },
-          })) ?? []);
-
-    await prisma.organizationBilling.updateMany({
-      where: { stripeCustomerId: input.customerId },
-      data: {
-        plan: "business",
-        accessState: "active",
-        upgradedAt: new Date(),
-        stripeSubscriptionId: input.subscriptionId,
-        stripeSubscriptionItemId: input.subscriptionItemId,
-        stripePriceId: input.priceId,
-        stripeProductId: input.productId ?? null,
-        billingInterval: input.billingInterval ?? null,
-        joinedAt: new Date(),
-        subscriptionStatus: input.subscriptionStatus ?? "none",
-        cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
-        seatQuantity: input.seatQuantity ?? 0,
-        seatQuantityUpdatedAt: new Date(),
-        currentPeriodStart: input.currentPeriodStart ?? undefined,
-        currentPeriodEnd: input.currentPeriodEnd ?? undefined,
-        stripeLivemode: input.livemode ?? false,
-        gracePeriodEndsAt: null,
-      },
-    });
 
     await Promise.all(
       rows.map((row) =>
@@ -643,26 +546,7 @@ export const FinanceSubscriptionService = {
   },
 
   async recordSubscriptionUpdated(input: SubscriptionUpdatedInput) {
-    const data: Record<string, unknown> = {
-      subscriptionStatus: input.subscriptionStatus ?? "none",
-      cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
-      seatQuantity: input.seatQuantity ?? 0,
-    };
-
-    if (input.canceledAt !== undefined) {
-      data.canceledAt = input.canceledAt;
-    }
-    if (input.currentPeriodStart !== undefined) {
-      data.currentPeriodStart = input.currentPeriodStart;
-    }
-    if (input.currentPeriodEnd !== undefined) {
-      data.currentPeriodEnd = input.currentPeriodEnd;
-    }
-
-    const billingRows: Array<{
-      orgId: string;
-      metadata?: Prisma.JsonValue | null;
-    }> =
+    const rows =
       (await prisma.financeProviderLink.findMany({
         where: {
           provider: "STRIPE",
@@ -670,18 +554,6 @@ export const FinanceSubscriptionService = {
         },
         select: { orgId: true, metadata: true },
       })) ?? [];
-    const rows: Array<{ orgId: string }> =
-      billingRows.length > 0
-        ? billingRows
-        : ((await prisma.organizationBilling.findMany({
-            where: { stripeSubscriptionId: input.subscriptionId },
-            select: { orgId: true },
-          })) ?? []);
-
-    await prisma.organizationBilling.updateMany({
-      where: { stripeSubscriptionId: input.subscriptionId },
-      data,
-    });
 
     await Promise.all(
       rows.map((row) =>
@@ -806,36 +678,12 @@ export const FinanceSubscriptionService = {
   },
 
   async recordSubscriptionDeleted(subscriptionId: string) {
-    const billingRows = await prisma.financeProviderLink.findMany({
+    const rows = await prisma.financeProviderLink.findMany({
       where: {
         provider: "STRIPE",
         externalSubscriptionId: subscriptionId,
       },
       select: { orgId: true },
-    });
-    const rows =
-      billingRows.length > 0
-        ? billingRows
-        : await prisma.organizationBilling.findMany({
-            where: { stripeSubscriptionId: subscriptionId },
-            select: { orgId: true },
-          });
-
-    await prisma.organizationBilling.updateMany({
-      where: { stripeSubscriptionId: subscriptionId },
-      data: {
-        plan: "free",
-        accessState: "free",
-        downgradedAt: new Date(),
-        subscriptionStatus: "canceled",
-        billingInterval: null,
-        stripeSubscriptionItemId: null,
-        stripePriceId: null,
-        cancelAtPeriodEnd: false,
-        currentPeriodStart: null,
-        currentPeriodEnd: null,
-        gracePeriodEndsAt: null,
-      },
     });
 
     await Promise.all(
@@ -910,17 +758,6 @@ export const FinanceSubscriptionService = {
         select: { orgId: true },
       })) ?? [];
 
-    await prisma.organizationBilling.updateMany({
-      where: { stripeSubscriptionId: input.subscriptionId },
-      data: {
-        lastInvoiceId: input.invoiceId ?? undefined,
-        lastPaymentStatus: "paid",
-        lastPaymentAt: new Date(),
-        accessState: "active",
-        gracePeriodEndsAt: null,
-      },
-    });
-
     await Promise.all(
       rows.map((row) =>
         this.upsertSubscriptionProviderLink({
@@ -946,6 +783,17 @@ export const FinanceSubscriptionService = {
         paymentStatus: "paid",
       },
     });
+
+    await FinanceEventService.recordEvent({
+      organisationId: rows[0]?.orgId ?? input.subscriptionId,
+      eventType: "SUBSCRIPTION_RENEWED",
+      entityType: "SUBSCRIPTION",
+      entityId: input.subscriptionId,
+      payload: {
+        invoiceId: input.invoiceId ?? null,
+        paymentStatus: "paid",
+      },
+    });
   },
 
   async recordSubscriptionInvoiceFailed(input: SubscriptionLifecycleInput) {
@@ -957,16 +805,6 @@ export const FinanceSubscriptionService = {
         },
         select: { orgId: true },
       })) ?? [];
-
-    await prisma.organizationBilling.updateMany({
-      where: { stripeSubscriptionId: input.subscriptionId },
-      data: {
-        lastInvoiceId: input.invoiceId ?? undefined,
-        lastPaymentStatus: "failed",
-        accessState: "past_due",
-        gracePeriodEndsAt: addDays(new Date(), 7),
-      },
-    });
 
     await Promise.all(
       rows.map((row) =>

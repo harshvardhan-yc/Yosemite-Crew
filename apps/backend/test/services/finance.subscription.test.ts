@@ -27,13 +27,6 @@ jest.mock("src/config/prisma", () => ({
     organizationUsageCounter: {
       upsert: jest.fn(),
     },
-    organizationBilling: {
-      upsert: jest.fn(),
-      findUnique: jest.fn(),
-      findMany: jest.fn(),
-      update: jest.fn(),
-      updateMany: jest.fn(),
-    },
     userOrganization: {
       count: jest.fn(),
     },
@@ -68,7 +61,7 @@ describe("FinanceSubscriptionService", () => {
     jest.useRealTimers();
   });
 
-  it("records seat usage in org billing and usage counters", async () => {
+  it("records seat usage and usage counters", async () => {
     (prisma.usageEvent.create as jest.Mock).mockResolvedValueOnce({
       id: "usage_evt_1",
       quantity: 4,
@@ -87,7 +80,6 @@ describe("FinanceSubscriptionService", () => {
     (prisma.organizationUsageCounter.upsert as jest.Mock).mockResolvedValueOnce(
       {},
     );
-    (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({});
 
     await FinanceSubscriptionService.recordSeatUsage({
       orgId: "org_1",
@@ -112,13 +104,6 @@ describe("FinanceSubscriptionService", () => {
       },
       update: { usersActiveCount: 4, usersBillableCount: 4 },
     });
-    expect(prisma.organizationBilling.update).toHaveBeenCalledWith({
-      where: { orgId: "org_1" },
-      data: {
-        seatQuantity: 4,
-        seatQuantityUpdatedAt: new Date("2026-06-18T00:00:00.000Z"),
-      },
-    });
     expect(prisma.usageSnapshot.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         orgId: "org_1",
@@ -134,19 +119,13 @@ describe("FinanceSubscriptionService", () => {
       name: "Clinic One",
       stripeAccountId: "acct_1",
     });
-    (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-      connectAccountId: null,
-      stripeCustomerId: null,
-    });
-    (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({
-      connectAccountId: "acct_1",
-      stripeCustomerId: null,
+    (prisma.financeProviderLink.findUnique as jest.Mock).mockResolvedValueOnce({
+      externalCustomerId: "cus_1",
     });
     (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(3);
     (prisma.organizationUsageCounter.upsert as jest.Mock).mockResolvedValueOnce(
       {},
     );
-    (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({});
 
     const context =
       await FinanceSubscriptionService.prepareBusinessCheckoutSession(
@@ -157,31 +136,25 @@ describe("FinanceSubscriptionService", () => {
     expect(context).toEqual({
       orgName: "Clinic One",
       connectAccountId: "acct_1",
-      stripeCustomerId: null,
+      externalCustomerId: "cus_1",
       priceId: "price_month_mock",
       seats: 3,
-    });
-    expect(prisma.organizationBilling.upsert).toHaveBeenCalledWith({
-      where: { orgId: "org_1" },
-      create: { orgId: "org_1" },
-      update: {},
-      select: {
-        connectAccountId: true,
-        stripeCustomerId: true,
-      },
-    });
-    expect(prisma.organizationBilling.update).toHaveBeenCalledWith({
-      where: { orgId: "org_1" },
-      data: { connectAccountId: "acct_1" },
-      select: {
-        connectAccountId: true,
-        stripeCustomerId: true,
-      },
     });
     expect(prisma.userOrganization.count).toHaveBeenCalledWith({
       where: {
         organizationReference: "org_1",
         active: true,
+      },
+    });
+    expect(prisma.financeProviderLink.findUnique).toHaveBeenCalledWith({
+      where: {
+        orgId_provider: {
+          orgId: "org_1",
+          provider: "STRIPE",
+        },
+      },
+      select: {
+        externalCustomerId: true,
       },
     });
     expect(prisma.organizationUsageCounter.upsert).toHaveBeenCalledWith({
@@ -197,11 +170,10 @@ describe("FinanceSubscriptionService", () => {
 
   it("records the stripe customer id for business checkout", async () => {
     (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
-    (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({});
 
     await FinanceSubscriptionService.recordBusinessCheckoutCustomer({
       orgId: "org_1",
-      stripeCustomerId: "cus_1",
+      externalCustomerId: "cus_1",
     });
 
     expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith({
@@ -230,29 +202,28 @@ describe("FinanceSubscriptionService", () => {
         metadata: { source: "business_checkout" },
       },
     });
-    expect(prisma.organizationBilling.update).toHaveBeenCalledWith({
-      where: { orgId: "org_1" },
-      data: { stripeCustomerId: "cus_1" },
-    });
   });
 
   it("resolves the stripe customer id for customer portal sessions", async () => {
-    (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-      stripeCustomerId: "cus_1",
+    (prisma.financeProviderLink.findUnique as jest.Mock).mockResolvedValueOnce({
+      externalCustomerId: "cus_1",
     });
 
     await expect(
       FinanceSubscriptionService.resolveBillingCustomerId("org_1"),
     ).resolves.toEqual({
-      stripeCustomerId: "cus_1",
+      externalCustomerId: "cus_1",
     });
 
-    expect(prisma.organizationBilling.upsert).toHaveBeenCalledWith({
-      where: { orgId: "org_1" },
-      create: { orgId: "org_1" },
-      update: {},
+    expect(prisma.financeProviderLink.findUnique).toHaveBeenCalledWith({
+      where: {
+        orgId_provider: {
+          orgId: "org_1",
+          provider: "STRIPE",
+        },
+      },
       select: {
-        stripeCustomerId: true,
+        externalCustomerId: true,
       },
     });
   });
@@ -289,10 +260,9 @@ describe("FinanceSubscriptionService", () => {
       name: "Clinic One",
       stripeAccountId: "acct_1",
     });
-    (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-      connectAccountId: "acct_1",
-      stripeCustomerId: null,
-    });
+    (prisma.financeProviderLink.findUnique as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
     (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(0);
 
     await expect(
@@ -304,19 +274,21 @@ describe("FinanceSubscriptionService", () => {
   });
 
   it("resolves a seat sync plan only when business subscription is active", async () => {
-    (prisma.organizationBilling.findUnique as jest.Mock)
+    (prisma.financeProviderLink.findUnique as jest.Mock)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
-        plan: "free",
-        stripeSubscriptionItemId: null,
-        subscriptionStatus: "none",
-        seatQuantity: 0,
+        externalSubscriptionItemId: null,
+        metadata: {
+          subscriptionStatus: "none",
+          seatQuantity: 0,
+        },
       })
       .mockResolvedValueOnce({
-        plan: "business",
-        stripeSubscriptionItemId: "item_1",
-        subscriptionStatus: "active",
-        seatQuantity: 2,
+        externalSubscriptionItemId: "item_1",
+        metadata: {
+          subscriptionStatus: "active",
+          seatQuantity: 2,
+        },
       });
     (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(5);
 
@@ -340,14 +312,8 @@ describe("FinanceSubscriptionService", () => {
     (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
       { orgId: "org_1" },
     ]);
-    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
-      {},
-    );
     (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
     (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
-      {},
-    );
-    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
       {},
     );
 
@@ -366,23 +332,6 @@ describe("FinanceSubscriptionService", () => {
       livemode: false,
     });
 
-    expect(prisma.organizationBilling.updateMany).toHaveBeenCalledWith({
-      where: { stripeCustomerId: "cus_1" },
-      data: expect.objectContaining({
-        plan: "business",
-        accessState: "active",
-        stripeSubscriptionId: "sub_1",
-        stripeSubscriptionItemId: "item_1",
-        stripePriceId: "price_1",
-        stripeProductId: "prod_1",
-        billingInterval: "month",
-        subscriptionStatus: "active",
-        cancelAtPeriodEnd: true,
-        seatQuantity: 2,
-        stripeLivemode: false,
-        gracePeriodEndsAt: null,
-      }),
-    });
     expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith({
       where: {
         orgId_provider: {
@@ -428,14 +377,8 @@ describe("FinanceSubscriptionService", () => {
     (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
       { orgId: "org_1" },
     ]);
-    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
-      {},
-    );
     (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
     (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
-      {},
-    );
-    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
       {},
     );
 
@@ -466,22 +409,6 @@ describe("FinanceSubscriptionService", () => {
       } as any,
     });
 
-    expect(prisma.organizationBilling.updateMany).toHaveBeenCalledWith({
-      where: { stripeCustomerId: "cus_1" },
-      data: expect.objectContaining({
-        plan: "business",
-        accessState: "active",
-        stripeSubscriptionId: "sub_1",
-        stripeSubscriptionItemId: "item_1",
-        stripePriceId: "price_1",
-        stripeProductId: "prod_1",
-        billingInterval: "month",
-        subscriptionStatus: "active",
-        cancelAtPeriodEnd: false,
-        seatQuantity: 2,
-        stripeLivemode: false,
-      }),
-    });
     expect(prisma.financeProviderLink.upsert).toHaveBeenCalled();
     expect(prisma.subscriptionEntitlement.upsert).toHaveBeenCalled();
   });
@@ -490,9 +417,6 @@ describe("FinanceSubscriptionService", () => {
     (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
       { orgId: "org_1", metadata: null },
     ]);
-    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
-      {},
-    );
     (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
     (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
       {},
@@ -507,16 +431,6 @@ describe("FinanceSubscriptionService", () => {
       currentPeriodEnd: new Date("2026-07-18T00:00:00.000Z"),
     });
 
-    expect(prisma.organizationBilling.updateMany).toHaveBeenCalledWith({
-      where: { stripeSubscriptionId: "sub_1" },
-      data: expect.objectContaining({
-        subscriptionStatus: "past_due",
-        cancelAtPeriodEnd: false,
-        seatQuantity: 6,
-        currentPeriodStart: new Date("2026-06-18T00:00:00.000Z"),
-        currentPeriodEnd: new Date("2026-07-18T00:00:00.000Z"),
-      }),
-    });
     expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith({
       where: {
         orgId_provider: {
@@ -554,7 +468,8 @@ describe("FinanceSubscriptionService", () => {
   });
 
   it("normalizes stripe subscription updates into finance writes", async () => {
-    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
+    (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
+    (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
       {},
     );
 
@@ -573,28 +488,12 @@ describe("FinanceSubscriptionService", () => {
         ],
       },
     } as any);
-
-    expect(prisma.organizationBilling.updateMany).toHaveBeenCalledWith({
-      where: { stripeSubscriptionId: "sub_1" },
-      data: expect.objectContaining({
-        subscriptionStatus: "active",
-        cancelAtPeriodEnd: false,
-        seatQuantity: 6,
-        currentPeriodStart: new Date("2024-06-18T00:00:00.000Z"),
-        currentPeriodEnd: new Date("2024-07-18T00:00:00.000Z"),
-      }),
-    });
   });
 
   it("records subscription lifecycle changes", async () => {
     (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
       { orgId: "org_1" },
     ]);
-    (prisma.organizationBilling.updateMany as jest.Mock)
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({});
     (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
     (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
       {},
@@ -619,19 +518,6 @@ describe("FinanceSubscriptionService", () => {
       invoiceId: "inv_2",
     });
 
-    expect(prisma.organizationBilling.updateMany).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        where: { stripeSubscriptionId: "sub_1" },
-        data: expect.objectContaining({
-          plan: "free",
-          accessState: "free",
-          subscriptionStatus: "canceled",
-          stripeSubscriptionItemId: null,
-          stripePriceId: null,
-        }),
-      }),
-    );
     expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith({
       where: {
         orgId_provider: {
@@ -672,26 +558,12 @@ describe("FinanceSubscriptionService", () => {
         snapshotType: "SUBSCRIPTION_TERMINATED",
       }),
     });
-    expect(prisma.organizationBilling.updateMany).toHaveBeenNthCalledWith(
-      2,
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { stripeSubscriptionId: "sub_1" },
         data: expect.objectContaining({
-          lastInvoiceId: "inv_1",
-          lastPaymentStatus: "paid",
-          accessState: "active",
-          gracePeriodEndsAt: null,
-        }),
-      }),
-    );
-    expect(prisma.organizationBilling.updateMany).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        where: { stripeSubscriptionId: "sub_1" },
-        data: expect.objectContaining({
-          lastInvoiceId: "inv_2",
-          lastPaymentStatus: "failed",
-          accessState: "past_due",
+          eventType: "SUBSCRIPTION_RENEWED",
+          entityType: "SUBSCRIPTION",
+          entityId: "sub_1",
         }),
       }),
     );

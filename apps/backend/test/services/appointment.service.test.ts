@@ -43,6 +43,7 @@ jest.mock("../../src/services/invoice.service", () => ({
     createDraftForAppointment: jest.fn(),
     getOrCreateDraftForAppointment: jest.fn(),
     handleAppointmentCancellation: jest.fn(),
+    setInvoiceDepositTarget: jest.fn(),
   },
 }));
 
@@ -498,7 +499,7 @@ describe("AppointmentService", () => {
       (AppointmentModel.create as jest.Mock).mockResolvedValue(mockCreated);
       (
         InvoiceService.getOrCreateDraftForAppointment as jest.Mock
-      ).mockResolvedValue({ id: "inv_123" });
+      ).mockResolvedValue({ id: "inv_123", totalAmount: 25 });
       (
         StripeService.createPaymentIntentForInvoice as jest.Mock
       ).mockResolvedValue("pi_123");
@@ -1080,7 +1081,7 @@ describe("AppointmentService", () => {
       });
       (
         InvoiceService.getOrCreateDraftForAppointment as jest.Mock
-      ).mockResolvedValue({ id: "inv_1" });
+      ).mockResolvedValue({ id: "inv_1", totalAmount: 25 });
       prisma.invoice.findMany.mockResolvedValue([
         { appointmentId: "appt_1", status: "PAID" },
       ]);
@@ -1105,6 +1106,10 @@ describe("AppointmentService", () => {
 
       expect(prisma.appointment.create).toHaveBeenCalled();
       expect(prisma.organizationUsageCounter.update).toHaveBeenCalled();
+      expect(InvoiceService.setInvoiceDepositTarget).toHaveBeenCalledWith(
+        "inv_1",
+        25,
+      );
       expect(result.paymentIntent).toEqual({ id: "pi_1" });
     });
 
@@ -1156,7 +1161,7 @@ describe("AppointmentService", () => {
       );
       (
         InvoiceService.getOrCreateDraftForAppointment as jest.Mock
-      ).mockResolvedValue({ id: "inv_2" });
+      ).mockResolvedValue({ id: "inv_2", totalAmount: 25 });
       prisma.invoice.findMany.mockResolvedValue([]);
 
       (
@@ -1178,6 +1183,10 @@ describe("AppointmentService", () => {
       const result = await AppointmentService.createRequestedFromMobile(dto);
 
       expect((result.appointment as any).formIds).toEqual([]);
+      expect(InvoiceService.setInvoiceDepositTarget).toHaveBeenCalledWith(
+        "inv_2",
+        25,
+      );
     });
 
     it("should use catalog billing items and persist productItemId when catalog selection exists", async () => {
