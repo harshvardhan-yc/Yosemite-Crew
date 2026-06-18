@@ -75,6 +75,7 @@ jest.mock("../../src/services/finance/subscription", () => ({
     recordBusinessCheckoutCustomer: jest.fn(),
     recordSeatUsage: jest.fn(),
     recordBusinessCheckoutCompleted: jest.fn(),
+    recordStripeSubscriptionUpdated: jest.fn(),
     recordSubscriptionUpdated: jest.fn(),
     recordSubscriptionDeleted: jest.fn(),
     recordSubscriptionInvoicePaid: jest.fn(),
@@ -805,7 +806,7 @@ describe("StripeService", () => {
 
     it("handles account/subscription/invoice updates", async () => {
       (
-        FinanceSubscriptionService.recordSubscriptionUpdated as jest.Mock
+        FinanceSubscriptionService.recordStripeSubscriptionUpdated as jest.Mock
       ).mockResolvedValueOnce(undefined);
       (
         FinanceSubscriptionService.recordSubscriptionDeleted as jest.Mock
@@ -863,13 +864,9 @@ describe("StripeService", () => {
       } as any);
 
       expect(
-        FinanceSubscriptionService.recordSubscriptionUpdated,
+        FinanceSubscriptionService.recordStripeSubscriptionUpdated,
       ).toHaveBeenCalledWith(
-        expect.objectContaining({
-          subscriptionId: "sub_1",
-          subscriptionStatus: "active",
-          seatQuantity: 2,
-        }),
+        expect.objectContaining({ id: "sub_1", status: "active" }),
       );
       expect(
         FinanceSubscriptionService.recordSubscriptionDeleted,

@@ -503,19 +503,9 @@ export const StripeService = {
   },
 
   async _handleSubscriptionUpdated(subscription: Stripe.Subscription) {
-    const item = subscription.items.data[0];
-
-    await FinanceSubscriptionService.recordSubscriptionUpdated({
-      subscriptionId: subscription.id,
-      subscriptionStatus: toSubscriptionStatus(subscription.status) ?? "none",
-      cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-      canceledAt: subscription.canceled_at
-        ? new Date(subscription.canceled_at * 1000)
-        : null,
-      seatQuantity: item?.quantity ?? 0,
-      currentPeriodStart: new Date(item.current_period_start * 1000),
-      currentPeriodEnd: new Date(item.current_period_end * 1000),
-    });
+    await FinanceSubscriptionService.recordStripeSubscriptionUpdated(
+      subscription,
+    );
   },
 
   async _handleSubscriptionDeleted(subscription: Stripe.Subscription) {

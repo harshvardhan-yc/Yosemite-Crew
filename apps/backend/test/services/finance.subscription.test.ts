@@ -287,6 +287,39 @@ describe("FinanceSubscriptionService", () => {
     });
   });
 
+  it("normalizes stripe subscription updates into finance writes", async () => {
+    (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
+
+    await FinanceSubscriptionService.recordStripeSubscriptionUpdated({
+      id: "sub_1",
+      status: "active",
+      cancel_at_period_end: false,
+      canceled_at: null,
+      items: {
+        data: [
+          {
+            quantity: 6,
+            current_period_start: 1718668800,
+            current_period_end: 1721260800,
+          },
+        ],
+      },
+    } as any);
+
+    expect(prisma.organizationBilling.updateMany).toHaveBeenCalledWith({
+      where: { stripeSubscriptionId: "sub_1" },
+      data: expect.objectContaining({
+        subscriptionStatus: "active",
+        cancelAtPeriodEnd: false,
+        seatQuantity: 6,
+        currentPeriodStart: new Date("2024-06-18T00:00:00.000Z"),
+        currentPeriodEnd: new Date("2024-07-18T00:00:00.000Z"),
+      }),
+    });
+  });
+
   it("records subscription lifecycle changes", async () => {
     (prisma.organizationBilling.updateMany as jest.Mock)
       .mockResolvedValueOnce({})

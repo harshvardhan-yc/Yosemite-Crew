@@ -1,8 +1,25 @@
 import { prisma } from "src/config/prisma";
 import { BillingInterval, SubscriptionStatus } from "@prisma/client";
+import Stripe from "stripe";
 
 const addDays = (date: Date, days: number) =>
   new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+
+const toSubscriptionStatus = (
+  value?: string | null,
+): SubscriptionStatus | undefined => {
+  if (!value) return undefined;
+  if (value === "none") return "none";
+  if (value === "trialing") return "trialing";
+  if (value === "active") return "active";
+  if (value === "past_due") return "past_due";
+  if (value === "unpaid") return "unpaid";
+  if (value === "canceled") return "canceled";
+  if (value === "incomplete") return "incomplete";
+  if (value === "incomplete_expired") return "incomplete_expired";
+  if (value === "paused") return "paused";
+  return undefined;
+};
 
 type SeatUsageInput = {
   orgId: string;
@@ -55,6 +72,8 @@ type SubscriptionUpdatedInput = {
   currentPeriodStart?: Date | null;
   currentPeriodEnd?: Date | null;
 };
+
+type StripeSubscriptionUpdatedInput = Stripe.Subscription;
 
 type SubscriptionLifecycleInput = {
   subscriptionId: string;
@@ -234,6 +253,30 @@ export const FinanceSubscriptionService = {
     await prisma.organizationBilling.updateMany({
       where: { stripeSubscriptionId: input.subscriptionId },
       data,
+    });
+  },
+
+  async recordStripeSubscriptionUpdated(
+    subscription: StripeSubscriptionUpdatedInput,
+  ) {
+    const item = subscription.items.data[0];
+
+    await this.recordSubscriptionUpdated({
+      subscriptionId: subscription.id,
+      subscriptionStatus: toSubscriptionStatus(subscription.status) ?? "none",
+      cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
+      canceledAt: subscription.canceled_at
+        ? new Date(subscription.canceled_at * 1000)
+        : null,
+      seatQuantity: item?.quantity ?? 0,
+      currentPeriodStart:
+        item?.current_period_start !== undefined
+          ? new Date(item.current_period_start * 1000)
+          : null,
+      currentPeriodEnd:
+        item?.current_period_end !== undefined
+          ? new Date(item.current_period_end * 1000)
+          : null,
     });
   },
 
