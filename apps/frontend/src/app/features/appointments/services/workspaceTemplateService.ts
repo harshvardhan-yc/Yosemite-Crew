@@ -144,6 +144,16 @@ export const applyInpatientScheduleTemplate = async (
   return res.data;
 };
 
+export const getInpatientScheduleForEncounter = async (
+  organisationId: string,
+  encounterId: string
+) => {
+  const res = await getData<FhirTask>(
+    `/fhir/v1/task-schedule/organisation/${organisationId}/encounter/${encounterId}`
+  );
+  return res.data;
+};
+
 const taskScheduleAction = async (
   organisationId: string,
   instanceId: string,
@@ -180,3 +190,40 @@ export const regenerateInpatientScheduleTemplate = (
   instanceId: string,
   options: { notify?: boolean; deferUntil?: string } = {}
 ) => taskScheduleAction(organisationId, instanceId, '$regenerate', options);
+
+const scheduleAction = async (
+  organisationId: string,
+  scheduleId: string,
+  action: '$pause' | '$resume' | '$cancel' | '$regenerate',
+  options: { notify?: boolean; deferUntil?: string } = {}
+) => {
+  const res = await postData<FhirTask>(
+    `/fhir/v1/task-schedule/organisation/${organisationId}/schedule/${scheduleId}/${action}`,
+    parametersBody(options)
+  );
+  return res.data;
+};
+
+export const pauseInpatientSchedule = (
+  organisationId: string,
+  scheduleId: string,
+  options: { notify?: boolean; deferUntil?: string } = {}
+) => scheduleAction(organisationId, scheduleId, '$pause', options);
+
+export const resumeInpatientSchedule = (
+  organisationId: string,
+  scheduleId: string,
+  options: { notify?: boolean; deferUntil?: string } = {}
+) => scheduleAction(organisationId, scheduleId, '$resume', options);
+
+export const cancelInpatientSchedule = (
+  organisationId: string,
+  scheduleId: string,
+  options: { notify?: boolean; deferUntil?: string } = {}
+) => scheduleAction(organisationId, scheduleId, '$cancel', options);
+
+export const regenerateInpatientSchedule = (
+  organisationId: string,
+  scheduleId: string,
+  options: { notify?: boolean; deferUntil?: string } = {}
+) => scheduleAction(organisationId, scheduleId, '$regenerate', options);

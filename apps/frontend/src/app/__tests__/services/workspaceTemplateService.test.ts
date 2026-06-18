@@ -2,13 +2,18 @@ import type { TemplateLike } from '@yosemite-crew/types';
 import {
   applyInpatientScheduleTemplate,
   cancelInpatientScheduleTemplate,
+  cancelInpatientSchedule,
   createWorkspaceTemplateInstance,
   getWorkspaceTemplateById,
+  getInpatientScheduleForEncounter,
   listSoapTemplatesForWorkspace,
   listWorkspaceTemplates,
   pauseInpatientScheduleTemplate,
+  pauseInpatientSchedule,
   regenerateInpatientScheduleTemplate,
+  regenerateInpatientSchedule,
   resumeInpatientScheduleTemplate,
+  resumeInpatientSchedule,
   submitWorkspaceTemplateInstance,
   templateToSoapTemplate,
   updateWorkspaceTemplateCatalogLinks,
@@ -230,6 +235,46 @@ describe('workspaceTemplateService', () => {
     expect(postDataMock).toHaveBeenNthCalledWith(
       4,
       '/fhir/v1/task-schedule/organisation/org-1/template-instance/instance-1/$regenerate',
+      {
+        resourceType: 'Parameters',
+        parameter: [{ name: 'deferUntil', valueDateTime: '2026-04-25T09:00:00.000Z' }],
+      }
+    );
+  });
+
+  it('calls encounter schedule read and schedule-id lifecycle operations', async () => {
+    getDataMock.mockResolvedValueOnce({ data: { resourceType: 'Task', id: 'schedule-1' } });
+    postDataMock.mockResolvedValue({ data: { resourceType: 'Task', id: 'schedule-1' } });
+
+    await getInpatientScheduleForEncounter('org-1', 'enc-1');
+    await pauseInpatientSchedule('org-1', 'schedule-1');
+    await resumeInpatientSchedule('org-1', 'schedule-1', { notify: true });
+    await cancelInpatientSchedule('org-1', 'schedule-1');
+    await regenerateInpatientSchedule('org-1', 'schedule-1', {
+      deferUntil: '2026-04-25T09:00:00.000Z',
+    });
+
+    expect(getDataMock).toHaveBeenCalledWith(
+      '/fhir/v1/task-schedule/organisation/org-1/encounter/enc-1'
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      1,
+      '/fhir/v1/task-schedule/organisation/org-1/schedule/schedule-1/$pause',
+      { resourceType: 'Parameters', parameter: [] }
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      2,
+      '/fhir/v1/task-schedule/organisation/org-1/schedule/schedule-1/$resume',
+      { resourceType: 'Parameters', parameter: [{ name: 'notify', valueBoolean: true }] }
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      3,
+      '/fhir/v1/task-schedule/organisation/org-1/schedule/schedule-1/$cancel',
+      { resourceType: 'Parameters', parameter: [] }
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      4,
+      '/fhir/v1/task-schedule/organisation/org-1/schedule/schedule-1/$regenerate',
       {
         resourceType: 'Parameters',
         parameter: [{ name: 'deferUntil', valueDateTime: '2026-04-25T09:00:00.000Z' }],

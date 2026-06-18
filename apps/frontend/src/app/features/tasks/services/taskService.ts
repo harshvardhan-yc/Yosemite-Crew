@@ -1,6 +1,6 @@
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useTaskStore } from '@/app/stores/taskStore';
-import { Task, TaskLibrary, TaskTemplate } from '@/app/features/tasks/types/task';
+import { Task, TaskKind, TaskLibrary, TaskTemplate } from '@/app/features/tasks/types/task';
 import { deleteData, getData, patchData, postData, putData } from '@/app/services/axios';
 import { loadTemplateForms } from '@/app/features/forms/services/templateFormsService';
 import type { TemplateLike } from '@yosemite-crew/types';
@@ -9,10 +9,26 @@ type TaskStatusFilter = Task['status'] | Task['status'][];
 
 export type TaskListFilters = {
   userId?: string;
+  appointmentId?: string;
+  encounterId?: string;
+  episodeOfCareId?: string;
+  admissionId?: string;
   companionId?: string;
+  clientId?: string;
+  templateInstanceId?: string;
+  scheduleId?: string;
+  audience?: Task['audience'];
+  assignedTo?: string;
+  assignedRole?: string;
   fromDueAt?: string | Date;
   toDueAt?: string | Date;
+  dueFrom?: string | Date;
+  dueTo?: string | Date;
   status?: TaskStatusFilter;
+  category?: string;
+  subcategory?: string;
+  kind?: TaskKind;
+  includeCompleted?: boolean;
 };
 
 export type CompanionTaskListFilters = Omit<TaskListFilters, 'userId' | 'companionId'> & {
@@ -31,6 +47,8 @@ const taskListQuery = (filters: TaskListFilters | CompanionTaskListFilters = {})
     status,
     fromDueAt: toIsoQueryValue(filters.fromDueAt),
     toDueAt: toIsoQueryValue(filters.toDueAt),
+    dueFrom: toIsoQueryValue(filters.dueFrom),
+    dueTo: toIsoQueryValue(filters.dueTo),
   };
 };
 
