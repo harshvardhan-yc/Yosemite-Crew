@@ -1299,6 +1299,12 @@ enum RefundStatus {
   CANCELED
 }
 
+enum CreditNoteStatus {
+  DRAFT
+  ISSUED
+  VOIDED
+}
+
 enum BillingCollectionMode {
   PREPAY_AT_BOOKING
   PAY_AT_VISIT_END
@@ -2728,6 +2734,7 @@ model Invoice {
   taxSnapshot              InvoiceTaxSnapshot?
   paymentAttempts          PaymentAttempt[]
   payments                 Payment[]
+  creditNotes              CreditNote[]
 
   @@index([parentId])
   @@index([organisationId])
@@ -2839,5 +2846,22 @@ model Refund {
   @@index([paymentId])
   @@index([provider])
   @@index([providerRefundId])
+  @@index([status])
+}
+
+model CreditNote {
+  id               String           @id @default(uuid())
+  invoiceId        String
+  creditNoteNumber String           @unique
+  reason           String?
+  amount           Float
+  status           CreditNoteStatus @default(DRAFT)
+  metadata         Json?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  invoice          Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
   @@index([status])
 }

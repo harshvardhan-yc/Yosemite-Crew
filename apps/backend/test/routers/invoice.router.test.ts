@@ -24,6 +24,7 @@ const InvoiceController = {
   bootstrapInvoiceForAppointment: jest.fn(),
   markInvoicePaidManually: jest.fn(),
   updatePaymentCollectionMethod: jest.fn(),
+  issueCreditNote: jest.fn(),
 };
 
 jest.mock("../../src/middlewares/auth", () => ({
@@ -83,6 +84,7 @@ describe("invoice.router", () => {
       "/organisation/:organisationId/list",
       "get",
     );
+    const creditNoteRoute = findRoute("/:invoiceId/credit-notes", "post");
 
     expect(addChargesRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
@@ -96,10 +98,14 @@ describe("invoice.router", () => {
     expect(organisationListRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
+    expect(creditNoteRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
 
     expect(withAppointmentOrgPermissions).toHaveBeenCalledTimes(3);
     expect(withPaymentIntentOrgPermissions).toHaveBeenCalledTimes(1);
     expect(withOrgPermissions).toHaveBeenCalledTimes(1);
+    expect(withInvoiceOrgPermissions).toHaveBeenCalledTimes(3);
     expect(requirePermission).toHaveBeenCalledWith("billing:edit:any");
     expect(requirePermission).toHaveBeenCalledWith("billing:view:any");
   });

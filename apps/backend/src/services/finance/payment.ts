@@ -18,6 +18,12 @@ type PaymentLineSummary = {
   status: PrismaPaymentStatus;
 };
 
+type InvoiceFinancialSummary = {
+  paid: number;
+  credited: number;
+  balance: number;
+};
+
 type StripeCheckoutSessionClient = {
   checkout: {
     sessions: {
@@ -119,18 +125,43 @@ export type PaymentIntentResult = {
   currency: string;
 };
 
+export const getInvoiceFinancialSummary = async (
+  invoiceId: string,
+  totalAmount: number,
+): Promise<InvoiceFinancialSummary> => {
+  const [payments, creditNotes] = await Promise.all([
+    prisma.payment.findMany({
+      where: { invoiceId, status: "SUCCEEDED" },
+      select: { amount: true },
+    }),
+    prisma.creditNote.findMany({
+      where: { invoiceId, status: "ISSUED" },
+      select: { amount: true },
+    }),
+  ]);
+
+  const paid = roundMoney(
+    payments.reduce((sum, payment) => sum + payment.amount, 0),
+  );
+  const credited = roundMoney(
+    creditNotes.reduce((sum, creditNote) => sum + creditNote.amount, 0),
+  );
+
+  return {
+    paid,
+    credited,
+    balance: roundMoney(Math.max(0, totalAmount - paid - credited)),
+  };
+};
+
 const getOutstandingBalance = async (
   invoiceId: string,
   totalAmount: number,
 ) => {
-  const payments = await prisma.payment.findMany({
-    where: { invoiceId, status: "SUCCEEDED" },
-    select: { amount: true },
-  });
-  const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const summary = await getInvoiceFinancialSummary(invoiceId, totalAmount);
   return {
-    paid: roundMoney(paid),
-    balance: roundMoney(Math.max(0, totalAmount - paid)),
+    paid: summary.paid,
+    balance: summary.balance,
   };
 };
 
@@ -253,6 +284,14 @@ export const FinancePaymentService = {
       throw new FinancePaymentError("Invoice missing organisation", 500);
     }
 
+    const summary = await getInvoiceFinancialSummary(
+      invoiceId,
+      invoice.totalAmount,
+    );
+    if (summary.balance <= 0) {
+      throw new FinancePaymentError("Invoice has no outstanding balance", 409);
+    }
+
     const organisation = await prisma.organization.findUnique({
       where: { id: invoice.organisationId },
       select: { stripeAccountId: true },
@@ -264,31 +303,51 @@ export const FinancePaymentService = {
       );
     }
 
+    const invoiceCurrency = invoice.currency || "usd";
+
     const items = Array.isArray(invoice.items) ? invoice.items : [];
     if (items.length === 0) {
       throw new FinancePaymentError("Invoice items are missing", 400);
     }
 
+    const useBalanceLineItem =
+      summary.balance < roundMoney(invoice.totalAmount) ||
+      summary.paid > 0 ||
+      summary.credited > 0;
+    const lineItems = useBalanceLineItem
+      ? [
+          {
+            price_data: {
+              currency: invoiceCurrency,
+              product_data: {
+                name: `Outstanding balance for invoice ${invoice.id}`,
+              },
+              unit_amount: Math.round(summary.balance * 100),
+            },
+            quantity: 1,
+          },
+        ]
+      : items.map((item) => ({
+          price_data: {
+            currency: invoiceCurrency,
+            product_data: {
+              name: (item as { name?: string }).name ?? "Service",
+              description:
+                (item as { description?: string }).description ?? undefined,
+            },
+            unit_amount: Math.round(
+              (item as { unitPrice: number }).unitPrice * 100,
+            ),
+          },
+          quantity: (item as { quantity: number }).quantity,
+        }));
+
     const stripe = getStripeClient();
-    const invoiceCurrency = invoice.currency || "usd";
     const expiresAt = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      line_items: items.map((item) => ({
-        price_data: {
-          currency: invoiceCurrency,
-          product_data: {
-            name: (item as { name?: string }).name ?? "Service",
-            description:
-              (item as { description?: string }).description ?? undefined,
-          },
-          unit_amount: Math.round(
-            (item as { unitPrice: number }).unitPrice * 100,
-          ),
-        },
-        quantity: (item as { quantity: number }).quantity,
-      })),
+      line_items: lineItems,
       metadata: {
         type: "INVOICE_PAYMENT",
         invoiceId: invoice.id,
@@ -318,7 +377,7 @@ export const FinancePaymentService = {
         settlementChannel: "STRIPE",
         providerCheckoutSessionId: session.id,
         status: "REQUIRES_ACTION",
-        amountRequested: invoice.totalAmount,
+        amountRequested: summary.balance,
         amountCaptured: 0,
         amountApplied: 0,
         currency: invoiceCurrency,
@@ -391,12 +450,24 @@ export const FinancePaymentService = {
     }
 
     if (invoice.stripePaymentIntentId) {
+      const summary = await getInvoiceFinancialSummary(
+        invoiceId,
+        invoice.totalAmount,
+      );
       return {
         paymentIntentId: invoice.stripePaymentIntentId,
         clientSecret: null,
-        amount: invoice.totalAmount,
+        amount: summary.balance,
         currency: invoice.currency,
       };
+    }
+
+    const summary = await getInvoiceFinancialSummary(
+      invoiceId,
+      invoice.totalAmount,
+    );
+    if (summary.balance <= 0) {
+      throw new FinancePaymentError("Invoice has no outstanding balance", 409);
     }
 
     if (!invoice.organisationId) {
@@ -416,7 +487,7 @@ export const FinancePaymentService = {
 
     const stripe = getStripeClient();
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(invoice.totalAmount * 100),
+      amount: Math.round(summary.balance * 100),
       currency: invoice.currency || "usd",
       metadata: {
         type: "INVOICE_PAYMENT",
@@ -435,7 +506,7 @@ export const FinancePaymentService = {
       status: "REQUIRES_ACTION",
       settlementChannel: "STRIPE",
       providerPaymentIntentId: paymentIntent.id,
-      amountRequested: invoice.totalAmount,
+      amountRequested: summary.balance,
       amountCaptured: 0,
       amountApplied: 0,
       currency: invoice.currency || "usd",
@@ -460,7 +531,7 @@ export const FinancePaymentService = {
     return {
       paymentIntentId: paymentIntent.id,
       clientSecret: paymentIntent.client_secret,
-      amount: invoice.totalAmount,
+      amount: summary.balance,
       currency: invoice.currency || "usd",
     };
   },

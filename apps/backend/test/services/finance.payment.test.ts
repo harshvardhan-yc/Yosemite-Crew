@@ -31,6 +31,9 @@ jest.mock("src/config/prisma", () => ({
       create: jest.fn(),
       findFirst: jest.fn(),
     },
+    creditNote: {
+      findMany: jest.fn(),
+    },
     financeEvent: {
       create: jest.fn(),
     },
@@ -40,6 +43,8 @@ jest.mock("src/config/prisma", () => ({
 describe("FinancePaymentService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    (prisma.payment.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.creditNote.findMany as jest.Mock).mockResolvedValue([]);
     __setFinanceStripeClientForTests({
       checkout: { sessions: { create: jest.fn() } },
       paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
@@ -282,6 +287,9 @@ describe("FinancePaymentService", () => {
     (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
       stripeAccountId: "acct_1",
     });
+    (prisma.creditNote.findMany as jest.Mock).mockResolvedValueOnce([
+      { amount: 30 },
+    ]);
     const stripeClient = {
       checkout: { sessions: { create: jest.fn() } },
       paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
@@ -305,6 +313,14 @@ describe("FinancePaymentService", () => {
     expect(stripeClient.checkout.sessions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: "payment",
+        line_items: [
+          expect.objectContaining({
+            quantity: 1,
+            price_data: expect.objectContaining({
+              unit_amount: 7000,
+            }),
+          }),
+        ],
         payment_intent_data: expect.objectContaining({
           transfer_data: { destination: "acct_1" },
         }),
@@ -317,7 +333,7 @@ describe("FinancePaymentService", () => {
           provider: "STRIPE",
           providerCheckoutSessionId: "cs_1",
           status: "REQUIRES_ACTION",
-          amountRequested: 100,
+          amountRequested: 70,
         }),
       }),
     );

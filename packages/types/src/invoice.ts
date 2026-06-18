@@ -14,6 +14,8 @@ export type InvoiceStatus =
   | 'CANCELLED'
   | 'REFUNDED';
 
+export type CreditNoteStatus = 'DRAFT' | 'ISSUED' | 'VOIDED';
+
 export type PaymentCollectionMethod = 'PAYMENT_INTENT' | 'PAYMENT_LINK' | 'PAYMENT_AT_CLINIC';
 
 export type BillingCollectionMode =
@@ -69,9 +71,22 @@ export type Invoice = {
   stripeCheckoutUrl?: string;
 
   status: InvoiceStatus;
+  creditNotes?: CreditNote[];
 
   metadata?: Record<string, string | number | boolean>;
   paidAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreditNote = {
+  id: string;
+  invoiceId: string;
+  creditNoteNumber: string;
+  reason?: string;
+  amount: number;
+  status: CreditNoteStatus;
+  metadata?: Record<string, string | number | boolean>;
   createdAt: Date;
   updatedAt: Date;
 };

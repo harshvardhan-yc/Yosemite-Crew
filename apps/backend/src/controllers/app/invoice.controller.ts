@@ -15,6 +15,12 @@ type UpdatePaymentCollectionMethodBody = {
   paymentCollectionMethod?: unknown;
 };
 
+type IssueCreditNoteBody = {
+  amount?: unknown;
+  reason?: unknown;
+  metadata?: unknown;
+};
+
 const isInvoiceItem = (item: unknown): item is InvoiceItem => {
   if (!item || typeof item !== "object") return false;
   const candidate = item as Partial<InvoiceItem>;
@@ -40,6 +46,21 @@ const isInvoiceItem = (item: unknown): item is InvoiceItem => {
 
 const isInvoiceItemArray = (items: unknown): items is InvoiceItem[] =>
   Array.isArray(items) && items.every(isInvoiceItem);
+
+const isCreditNoteMetadata = (
+  metadata: unknown,
+): metadata is Record<string, string | number | boolean> => {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return false;
+  }
+
+  return Object.values(metadata).every(
+    (value) =>
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean",
+  );
+};
 
 export const InvoiceController = {
   async listInvoicesForAppointment(this: void, req: Request, res: Response) {
@@ -264,6 +285,61 @@ export const InvoiceController = {
       return res.status(200).json(invoice);
     } catch (err) {
       logger.error("Error updating payment collection method", err);
+
+      const statusCode =
+        err instanceof InvoiceServiceError ? err.statusCode : 500;
+      const message =
+        err instanceof InvoiceServiceError
+          ? err.message
+          : "Internal server error";
+
+      return res.status(statusCode).json({ message });
+    }
+  },
+
+  async issueCreditNote(
+    this: void,
+    req: Request<{ invoiceId: string }, unknown, IssueCreditNoteBody>,
+    res: Response,
+  ) {
+    try {
+      const orgReq = req as OrgRequest;
+      const organisationId = orgReq.organisationId;
+      const invoiceId = req.params.invoiceId;
+      if (!invoiceId) {
+        return res.status(400).json({ message: "Invoice Id is required" });
+      }
+
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const amount = req.body.amount;
+      if (
+        typeof amount !== "number" ||
+        !Number.isFinite(amount) ||
+        amount <= 0
+      ) {
+        return res
+          .status(400)
+          .json({ message: "Credit note amount is required" });
+      }
+
+      const reason =
+        typeof req.body.reason === "string" ? req.body.reason : undefined;
+      const metadata = isCreditNoteMetadata(req.body.metadata)
+        ? req.body.metadata
+        : undefined;
+
+      const creditNote = await InvoiceService.issueCreditNote(invoiceId, {
+        amount,
+        reason,
+        metadata,
+      });
+
+      return res.status(201).json(creditNote);
+    } catch (err) {
+      logger.error("Error issuing credit note", err);
 
       const statusCode =
         err instanceof InvoiceServiceError ? err.statusCode : 500;

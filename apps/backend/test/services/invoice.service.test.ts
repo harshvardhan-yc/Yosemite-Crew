@@ -22,6 +22,9 @@ jest.mock("src/config/prisma", () => ({
     financeEvent: {
       create: jest.fn(),
     },
+    creditNote: {
+      create: jest.fn(),
+    },
     service: { findUnique: jest.fn() },
     organizationBilling: { findUnique: jest.fn() },
     organization: { findUnique: jest.fn() },
@@ -331,6 +334,57 @@ describe("InvoiceService", () => {
       }),
     );
     expect(updated?.depositTargetAmount).toBe(20);
+  });
+
+  it("issues a credit note and records a finance event", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_credit_1",
+      organisationId,
+      totalAmount: 100,
+      status: "PAID",
+      metadata: {},
+      createdAt: new Date("2026-06-18T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-18T00:00:00.000Z"),
+      creditNotes: [],
+    });
+    (prisma.creditNote.create as jest.Mock).mockResolvedValueOnce({
+      id: "cn_1",
+      invoiceId: "inv_credit_1",
+      creditNoteNumber: "CN-INV_CRED-ABC",
+      reason: "Pricing correction",
+      amount: 25,
+      status: "ISSUED",
+      metadata: { source: "manual" },
+      createdAt: new Date("2026-06-18T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-18T00:00:00.000Z"),
+    });
+
+    const result = await InvoiceService.issueCreditNote("inv_credit_1", {
+      amount: 25,
+      reason: "Pricing correction",
+      metadata: { source: "manual" },
+    });
+
+    expect(prisma.creditNote.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          invoiceId: "inv_credit_1",
+          amount: 25,
+          status: "ISSUED",
+          reason: "Pricing correction",
+        }),
+      }),
+    );
+    expect(prisma.financeEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: "CREDIT_NOTE_ISSUED",
+          entityType: "CREDIT_NOTE",
+          entityId: "cn_1",
+        }),
+      }),
+    );
+    expect(result.creditNoteNumber).toBe("CN-INV_CRED-ABC");
   });
 
   it("updates invoice totals when adding items", async () => {

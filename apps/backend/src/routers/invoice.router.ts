@@ -99,6 +99,15 @@ router.patch(
   InvoiceController.updatePaymentCollectionMethod,
 );
 
+// Issue credit note for invoice corrections
+router.post(
+  "/:invoiceId/credit-notes",
+  authorizeCognito,
+  withInvoiceOrgPermissions(),
+  requirePermission("billing:edit:any"),
+  InvoiceController.issueCreditNote,
+);
+
 // Get invoice by ID
 router.get("/:invoiceId", authorizeCognito, InvoiceController.getInvoiceById);
 

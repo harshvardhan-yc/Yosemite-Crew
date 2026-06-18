@@ -23,6 +23,7 @@ jest.mock("../../../src/services/invoice.service", () => {
       listForOrganisation: jest.fn(),
       markInvoicePaidManually: jest.fn(),
       updatePaymentCollectionMethod: jest.fn(),
+      issueCreditNote: jest.fn(),
     },
   };
 });
@@ -570,6 +571,72 @@ describe("InvoiceController", () => {
 
       expect(statusMock).toHaveBeenCalledWith(422);
       expect(jsonMock).toHaveBeenCalledWith({ message: "Bad" });
+    });
+  });
+
+  describe("issueCreditNote", () => {
+    it("should 400 if invoiceId missing", async () => {
+      (req as any).organisationId = "org1";
+      req.params = {};
+      req.body = { amount: 10 };
+
+      await InvoiceController.issueCreditNote(req as any, res as Response);
+
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(jsonMock).toHaveBeenCalledWith({
+        message: "Invoice Id is required",
+      });
+    });
+
+    it("should 400 if amount is invalid", async () => {
+      (req as any).organisationId = "org1";
+      req.params = { invoiceId: "inv1" };
+      req.body = { amount: 0 };
+
+      await InvoiceController.issueCreditNote(req as any, res as Response);
+
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(jsonMock).toHaveBeenCalledWith({
+        message: "Credit note amount is required",
+      });
+    });
+
+    it("should success (201)", async () => {
+      (req as any).organisationId = "org1";
+      req.params = { invoiceId: "inv1" };
+      req.body = {
+        amount: 25,
+        reason: "Billing correction",
+        metadata: { source: "manual" },
+      };
+      mockedInvoiceService.issueCreditNote.mockResolvedValue({
+        id: "cn_1",
+      } as any);
+
+      await InvoiceController.issueCreditNote(req as any, res as Response);
+
+      expect(mockedInvoiceService.issueCreditNote).toHaveBeenCalledWith(
+        "inv1",
+        {
+          amount: 25,
+          reason: "Billing correction",
+          metadata: { source: "manual" },
+        },
+      );
+      expect(statusMock).toHaveBeenCalledWith(201);
+      expect(jsonMock).toHaveBeenCalledWith({ id: "cn_1" });
+    });
+
+    it("should handle service error with custom status", async () => {
+      (req as any).organisationId = "org1";
+      req.params = { invoiceId: "inv1" };
+      req.body = { amount: 25 };
+      mockServiceError("issueCreditNote", 409, "Too much");
+
+      await InvoiceController.issueCreditNote(req as any, res as Response);
+
+      expect(statusMock).toHaveBeenCalledWith(409);
+      expect(jsonMock).toHaveBeenCalledWith({ message: "Too much" });
     });
   });
 });

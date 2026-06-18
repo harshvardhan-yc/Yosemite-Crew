@@ -6,7 +6,11 @@ import {
   PaymentCollectionMethod,
   TaxBehavior as PrismaTaxBehavior,
 } from "@prisma/client";
-import { Invoice, InvoiceItem } from "@yosemite-crew/types";
+import {
+  CreditNote as FinanceCreditNote,
+  Invoice,
+  InvoiceItem,
+} from "@yosemite-crew/types";
 import {
   calculateInvoicePricing,
   roundMoney,
@@ -52,6 +56,24 @@ type AppointmentLink = {
 
 type InvoiceMetadata = Record<string, string | number | boolean>;
 
+type CreditNoteMetadata = Record<string, string | number | boolean>;
+
+type PrismaCreditNote = {
+  id: string;
+  invoiceId: string;
+  creditNoteNumber: string;
+  reason: string | null;
+  amount: number;
+  status: string;
+  metadata: Prisma.JsonValue | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type InvoiceWithCreditNotes = PrismaInvoice & {
+  creditNotes?: PrismaCreditNote[];
+};
+
 type DraftInvoiceItemInput = {
   description: string;
   quantity: number;
@@ -71,6 +93,12 @@ type CreateInvoiceInput = {
     | "PAYMENT_INTENT"
     | "PAYMENT_LINK"
     | "PAYMENT_AT_CLINIC";
+};
+
+type IssueCreditNoteInput = {
+  amount: number;
+  reason?: string;
+  metadata?: CreditNoteMetadata;
 };
 
 const resolveBillingCollectionMode = (
@@ -101,13 +129,49 @@ const normalizeInvoiceMetadata = (
   }, {});
 };
 
-const toInvoiceRecord = (row: PrismaInvoice): Invoice => {
+const normalizeCreditNoteMetadata = (
+  value: Prisma.JsonValue | null | undefined,
+): CreditNoteMetadata | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return Object.entries(
+    value as Record<string, unknown>,
+  ).reduce<CreditNoteMetadata>((acc, [key, raw]) => {
+    if (
+      typeof raw === "string" ||
+      typeof raw === "number" ||
+      typeof raw === "boolean"
+    ) {
+      acc[key] = raw;
+    }
+    return acc;
+  }, {});
+};
+
+const toCreditNoteRecord = (row: PrismaCreditNote): FinanceCreditNote => ({
+  id: row.id,
+  invoiceId: row.invoiceId,
+  creditNoteNumber: row.creditNoteNumber,
+  reason: row.reason ?? undefined,
+  amount: row.amount,
+  status: row.status as FinanceCreditNote["status"],
+  metadata: normalizeCreditNoteMetadata(row.metadata),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+const toInvoiceRecord = (row: InvoiceWithCreditNotes): Invoice => {
   const items = Array.isArray(row.items)
     ? (row.items as InvoiceItem[]).map((item) => ({
         ...item,
         description: item.description ?? undefined,
       }))
     : [];
+  const creditNotes = Array.isArray(row.creditNotes)
+    ? row.creditNotes.map((creditNote) => toCreditNoteRecord(creditNote))
+    : undefined;
 
   return {
     id: row.id,
@@ -136,6 +200,7 @@ const toInvoiceRecord = (row: PrismaInvoice): Invoice => {
     stripeCheckoutUrl: row.stripeCheckoutUrl ?? undefined,
     paymentCollectionMethod: row.paymentCollectionMethod,
     status: row.status as Invoice["status"],
+    creditNotes,
     metadata: normalizeInvoiceMetadata(row.metadata),
     paidAt: row.paidAt ?? undefined,
     createdAt: row.createdAt,
@@ -467,6 +532,9 @@ const cancelUnpaidInvoice = async (invoice: PrismaInvoice, reason: string) =>
 
       return updated;
     });
+
+const generateCreditNoteNumber = (invoiceId: string) =>
+  `CN-${invoiceId.slice(0, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
 
 const normalizeCreateInput = async (
   input: CreateInvoiceInput,
@@ -918,6 +986,83 @@ export const InvoiceService = {
     return toInvoiceRecord(doc);
   },
 
+  async issueCreditNote(invoiceId: string, input: IssueCreditNoteInput) {
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      throw new InvoiceServiceError(
+        "Credit note amount must be greater than zero",
+        400,
+      );
+    }
+
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        creditNotes: {
+          where: { status: "ISSUED" },
+          select: {
+            amount: true,
+          },
+        },
+      },
+    });
+
+    if (!invoice) {
+      throw new InvoiceServiceError("Invoice not found.", 404);
+    }
+
+    if (["CANCELLED", "REFUNDED"].includes(invoice.status)) {
+      throw new InvoiceServiceError("Invoice cannot accept credit notes.", 409);
+    }
+
+    const issuedCreditTotal = roundMoney(
+      (invoice.creditNotes ?? []).reduce(
+        (sum, creditNote) => sum + creditNote.amount,
+        0,
+      ),
+    );
+    const remainingCreditable = roundMoney(
+      Math.max(0, invoice.totalAmount - issuedCreditTotal),
+    );
+    const creditAmount = roundMoney(input.amount);
+
+    if (creditAmount > remainingCreditable) {
+      throw new InvoiceServiceError(
+        "Credit note amount exceeds invoice remaining amount",
+        409,
+      );
+    }
+
+    const creditNote = await prisma.creditNote.create({
+      data: {
+        invoiceId: invoice.id,
+        creditNoteNumber: generateCreditNoteNumber(invoice.id),
+        reason: input.reason ?? undefined,
+        amount: creditAmount,
+        status: "ISSUED",
+        metadata: input.metadata
+          ? (input.metadata as unknown as Prisma.InputJsonValue)
+          : undefined,
+      },
+    });
+
+    await FinanceEventService.recordEvent({
+      organisationId: invoice.organisationId ?? null,
+      eventType: "CREDIT_NOTE_ISSUED",
+      entityType: "CREDIT_NOTE",
+      entityId: creditNote.id,
+      payload: {
+        invoiceId: invoice.id,
+        creditNoteNumber: creditNote.creditNoteNumber,
+        amount: creditNote.amount,
+        reason: creditNote.reason ?? null,
+        status: creditNote.status,
+      },
+      occurredAt: creditNote.createdAt,
+    });
+
+    return toCreditNoteRecord(creditNote);
+  },
+
   async updateStatus(invoiceId: string, status: PrismaInvoiceStatus) {
     const invoice = await prisma.invoice.update({
       where: { id: invoiceId },
@@ -1130,7 +1275,14 @@ export const InvoiceService = {
   },
 
   async getById(id: string) {
-    const doc = await prisma.invoice.findUnique({ where: { id } });
+    const doc = await prisma.invoice.findUnique({
+      where: { id },
+      include: {
+        creditNotes: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
     if (!doc) {
       throw new InvoiceServiceError("Invoice not found.", 404);
     }
