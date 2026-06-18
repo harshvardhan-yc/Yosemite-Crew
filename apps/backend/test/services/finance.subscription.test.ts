@@ -143,6 +143,27 @@ describe("FinanceSubscriptionService", () => {
     });
   });
 
+  it("resolves the stripe customer id for customer portal sessions", async () => {
+    (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
+      stripeCustomerId: "cus_1",
+    });
+
+    await expect(
+      FinanceSubscriptionService.resolveBillingCustomerId("org_1"),
+    ).resolves.toEqual({
+      stripeCustomerId: "cus_1",
+    });
+
+    expect(prisma.organizationBilling.upsert).toHaveBeenCalledWith({
+      where: { orgId: "org_1" },
+      create: { orgId: "org_1" },
+      update: {},
+      select: {
+        stripeCustomerId: true,
+      },
+    });
+  });
+
   it("throws when organisation is missing", async () => {
     (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce(null);
 

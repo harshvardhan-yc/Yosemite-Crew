@@ -209,14 +209,8 @@ export const StripeService = {
 
   async createCustomerPortalSession(orgId: string) {
     const stripe = getStripeClient();
-    const billing = await prisma.organizationBilling.upsert({
-      where: { orgId },
-      create: { orgId },
-      update: {},
-      select: {
-        stripeCustomerId: true,
-      },
-    });
+    const billing =
+      await FinanceSubscriptionService.resolveBillingCustomerId(orgId);
 
     if (!billing.stripeCustomerId) {
       throw new Error("No billing customer found. Upgrade to Business first.");

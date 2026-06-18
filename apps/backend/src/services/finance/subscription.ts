@@ -48,6 +48,10 @@ type CheckoutCustomerInput = {
   stripeCustomerId: string;
 };
 
+type BillingCustomerLookup = {
+  stripeCustomerId: string | null;
+};
+
 type SeatSyncPlan = {
   subscriptionItemId: string;
   oldSeats: number;
@@ -159,6 +163,23 @@ export const FinanceSubscriptionService = {
       where: { orgId: input.orgId },
       data: { stripeCustomerId: input.stripeCustomerId },
     });
+  },
+
+  async resolveBillingCustomerId(
+    orgId: string,
+  ): Promise<BillingCustomerLookup> {
+    const billing = await prisma.organizationBilling.upsert({
+      where: { orgId },
+      create: { orgId },
+      update: {},
+      select: {
+        stripeCustomerId: true,
+      },
+    });
+
+    return {
+      stripeCustomerId: billing.stripeCustomerId ?? null,
+    };
   },
 
   async resolveSubscriptionSeatSyncPlan(

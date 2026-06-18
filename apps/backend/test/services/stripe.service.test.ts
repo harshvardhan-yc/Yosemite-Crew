@@ -73,6 +73,7 @@ jest.mock("../../src/services/finance/subscription", () => ({
     prepareBusinessCheckoutSession: jest.fn(),
     resolveSubscriptionSeatSyncPlan: jest.fn(),
     recordBusinessCheckoutCustomer: jest.fn(),
+    resolveBillingCustomerId: jest.fn(),
     recordSeatUsage: jest.fn(),
     recordBusinessCheckoutCompleted: jest.fn(),
     recordStripeSubscriptionUpdated: jest.fn(),
@@ -710,13 +711,9 @@ describe("StripeService", () => {
     });
 
     it("should throw if no stripeCustomerId", async () => {
-      (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-        orgId: "org_1",
-        stripeCustomerId: null,
-      });
       (
-        prisma.organizationUsageCounter.upsert as jest.Mock
-      ).mockResolvedValueOnce({ orgId: "org_1" });
+        FinanceSubscriptionService.resolveBillingCustomerId as jest.Mock
+      ).mockResolvedValueOnce({ stripeCustomerId: null });
 
       await expect(
         StripeService.createCustomerPortalSession("org_1"),
@@ -726,19 +723,18 @@ describe("StripeService", () => {
     });
 
     it("should create portal session", async () => {
-      (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-        orgId: "org_1",
-        stripeCustomerId: "cus_123",
-      });
       (
-        prisma.organizationUsageCounter.upsert as jest.Mock
-      ).mockResolvedValueOnce({ orgId: "org_1" });
+        FinanceSubscriptionService.resolveBillingCustomerId as jest.Mock
+      ).mockResolvedValueOnce({ stripeCustomerId: "cus_123" });
       mStripe.billingPortal.sessions.create.mockResolvedValueOnce({
         url: "http://portal.url",
       });
 
       const result = await StripeService.createCustomerPortalSession("org_1");
       expect(result).toEqual({ url: "http://portal.url" });
+      expect(
+        FinanceSubscriptionService.resolveBillingCustomerId,
+      ).toHaveBeenCalledWith("org_1");
     });
   });
 
