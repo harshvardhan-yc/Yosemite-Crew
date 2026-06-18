@@ -147,6 +147,20 @@ type SubscriptionLifecycleInput = {
 const toPositiveInteger = (value: number) =>
   Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 
+const toIsoString = (value?: Date | null) =>
+  value ? value.toISOString() : null;
+
+const readJsonRecord = (value: Prisma.JsonValue | null | undefined) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+};
+
+const readString = (value: unknown) =>
+  typeof value === "string" && value.length > 0 ? value : null;
+
+const readNumber = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
 export const FinanceSubscriptionService = {
   async recordUsageEvent(input: UsageEventInput) {
     return prisma.usageEvent.create({
@@ -369,6 +383,51 @@ export const FinanceSubscriptionService = {
   async resolveSubscriptionSeatSyncPlan(
     orgId: string,
   ): Promise<SeatSyncPlan | null> {
+    const providerRow = await prisma.financeProviderLink.findUnique({
+      where: {
+        orgId_provider: {
+          orgId,
+          provider: "STRIPE",
+        },
+      },
+      select: {
+        externalSubscriptionItemId: true,
+        metadata: true,
+      },
+    });
+
+    const providerState = readJsonRecord(providerRow?.metadata);
+    const providerSubscriptionStatus = readString(
+      providerState.subscriptionStatus,
+    );
+    const providerSeatQuantity = readNumber(providerState.seatQuantity);
+
+    if (providerRow?.externalSubscriptionItemId) {
+      if (
+        !["active", "trialing", "past_due"].includes(
+          providerSubscriptionStatus ?? "",
+        )
+      ) {
+        return null;
+      }
+
+      const newSeats = await prisma.userOrganization.count({
+        where: {
+          organizationReference: orgId,
+          active: true,
+        },
+      });
+      const oldSeats = providerSeatQuantity ?? 0;
+      if (newSeats === oldSeats) return null;
+
+      return {
+        subscriptionItemId: providerRow.externalSubscriptionItemId,
+        oldSeats,
+        newSeats,
+        prorationBehavior: newSeats > oldSeats ? "create_prorations" : "none",
+      };
+    }
+
     const billingRow = await prisma.organizationBilling.findUnique({
       where: { orgId },
       select: {
@@ -450,20 +509,21 @@ export const FinanceSubscriptionService = {
   },
 
   async recordBusinessCheckoutCompleted(input: BusinessCheckoutCompletedInput) {
-    const billingRows = await prisma.financeProviderLink.findMany({
-      where: {
-        provider: "STRIPE",
-        externalCustomerId: input.customerId,
-      },
-      select: { orgId: true },
-    });
-    const rows =
+    const billingRows =
+      (await prisma.financeProviderLink.findMany({
+        where: {
+          provider: "STRIPE",
+          externalCustomerId: input.customerId,
+        },
+        select: { orgId: true },
+      })) ?? [];
+    const rows: Array<{ orgId: string }> =
       billingRows.length > 0
         ? billingRows
-        : await prisma.organizationBilling.findMany({
+        : ((await prisma.organizationBilling.findMany({
             where: { stripeCustomerId: input.customerId },
             select: { orgId: true },
-          });
+          })) ?? []);
 
     await prisma.organizationBilling.updateMany({
       where: { stripeCustomerId: input.customerId },
@@ -521,6 +581,9 @@ export const FinanceSubscriptionService = {
             metadata: {
               subscriptionStatus: input.subscriptionStatus ?? "none",
               cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+              currentPeriodStart: toIsoString(input.currentPeriodStart),
+              currentPeriodEnd: toIsoString(input.currentPeriodEnd),
+              seatQuantity: input.seatQuantity ?? 0,
             },
           }),
         ]),
@@ -545,10 +608,78 @@ export const FinanceSubscriptionService = {
       data.currentPeriodEnd = input.currentPeriodEnd;
     }
 
+    const billingRows: Array<{
+      orgId: string;
+      metadata?: Prisma.JsonValue | null;
+    }> =
+      (await prisma.financeProviderLink.findMany({
+        where: {
+          provider: "STRIPE",
+          externalSubscriptionId: input.subscriptionId,
+        },
+        select: { orgId: true, metadata: true },
+      })) ?? [];
+    const rows: Array<{ orgId: string }> =
+      billingRows.length > 0
+        ? billingRows
+        : ((await prisma.organizationBilling.findMany({
+            where: { stripeSubscriptionId: input.subscriptionId },
+            select: { orgId: true },
+          })) ?? []);
+
     await prisma.organizationBilling.updateMany({
       where: { stripeSubscriptionId: input.subscriptionId },
       data,
     });
+
+    await Promise.all(
+      rows.map((row) =>
+        Promise.all([
+          this.upsertSubscriptionProviderLink({
+            orgId: row.orgId,
+            provider: "STRIPE",
+            externalSubscriptionId: input.subscriptionId,
+            metadata: {
+              subscriptionStatus: input.subscriptionStatus ?? "none",
+              cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+              seatQuantity: input.seatQuantity ?? 0,
+              currentPeriodStart: toIsoString(input.currentPeriodStart),
+              currentPeriodEnd: toIsoString(input.currentPeriodEnd),
+            },
+          }),
+          prisma.subscriptionEntitlement.upsert({
+            where: {
+              orgId_code: {
+                orgId: row.orgId,
+                code: "BUSINESS_PLAN",
+              },
+            },
+            create: {
+              orgId: row.orgId,
+              code: "BUSINESS_PLAN",
+              name: "Business subscription",
+              source: "STRIPE",
+              status:
+                input.subscriptionStatus === "canceled" ? "INACTIVE" : "ACTIVE",
+              grantedAt: new Date(),
+              metadata: {
+                subscriptionStatus: input.subscriptionStatus ?? "none",
+                cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+              },
+            },
+            update: {
+              source: "STRIPE",
+              status:
+                input.subscriptionStatus === "canceled" ? "INACTIVE" : "ACTIVE",
+              metadata: {
+                subscriptionStatus: input.subscriptionStatus ?? "none",
+                cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+              },
+            },
+          }),
+        ]),
+      ),
+    );
   },
 
   async recordStripeSubscriptionUpdated(
@@ -650,13 +781,35 @@ export const FinanceSubscriptionService = {
             externalSubscriptionId: subscriptionId,
             metadata: {
               status: "canceled",
+              canceledAt: new Date().toISOString(),
             },
           }),
-          prisma.subscriptionEntitlement.updateMany({
-            where: { orgId: row.orgId, code: "BUSINESS_PLAN" },
-            data: {
+          prisma.subscriptionEntitlement.upsert({
+            where: {
+              orgId_code: {
+                orgId: row.orgId,
+                code: "BUSINESS_PLAN",
+              },
+            },
+            create: {
+              orgId: row.orgId,
+              code: "BUSINESS_PLAN",
+              name: "Business subscription",
+              source: "STRIPE",
+              status: "INACTIVE",
+              grantedAt: new Date(),
+              expiresAt: new Date(),
+              metadata: {
+                status: "canceled",
+              },
+            },
+            update: {
+              source: "STRIPE",
               status: "INACTIVE",
               expiresAt: new Date(),
+              metadata: {
+                status: "canceled",
+              },
             },
           }),
           this.captureUsageSnapshot({
@@ -672,6 +825,15 @@ export const FinanceSubscriptionService = {
   },
 
   async recordSubscriptionInvoicePaid(input: SubscriptionLifecycleInput) {
+    const rows: Array<{ orgId: string }> =
+      (await prisma.financeProviderLink.findMany({
+        where: {
+          provider: "STRIPE",
+          externalSubscriptionId: input.subscriptionId,
+        },
+        select: { orgId: true },
+      })) ?? [];
+
     await prisma.organizationBilling.updateMany({
       where: { stripeSubscriptionId: input.subscriptionId },
       data: {
@@ -682,9 +844,33 @@ export const FinanceSubscriptionService = {
         gracePeriodEndsAt: null,
       },
     });
+
+    await Promise.all(
+      rows.map((row) =>
+        this.upsertSubscriptionProviderLink({
+          orgId: row.orgId,
+          provider: "STRIPE",
+          externalSubscriptionId: input.subscriptionId,
+          metadata: {
+            lastInvoiceId: input.invoiceId ?? null,
+            lastPaymentStatus: "paid",
+            lastPaymentAt: new Date().toISOString(),
+          },
+        }),
+      ),
+    );
   },
 
   async recordSubscriptionInvoiceFailed(input: SubscriptionLifecycleInput) {
+    const rows: Array<{ orgId: string }> =
+      (await prisma.financeProviderLink.findMany({
+        where: {
+          provider: "STRIPE",
+          externalSubscriptionId: input.subscriptionId,
+        },
+        select: { orgId: true },
+      })) ?? [];
+
     await prisma.organizationBilling.updateMany({
       where: { stripeSubscriptionId: input.subscriptionId },
       data: {
@@ -694,5 +880,20 @@ export const FinanceSubscriptionService = {
         gracePeriodEndsAt: addDays(new Date(), 7),
       },
     });
+
+    await Promise.all(
+      rows.map((row) =>
+        this.upsertSubscriptionProviderLink({
+          orgId: row.orgId,
+          provider: "STRIPE",
+          externalSubscriptionId: input.subscriptionId,
+          metadata: {
+            lastInvoiceId: input.invoiceId ?? null,
+            lastPaymentStatus: "failed",
+            lastPaymentAt: new Date().toISOString(),
+          },
+        }),
+      ),
+    );
   },
 };

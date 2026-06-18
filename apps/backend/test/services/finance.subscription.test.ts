@@ -456,7 +456,14 @@ describe("FinanceSubscriptionService", () => {
   });
 
   it("records subscription updates and omits absent timestamps", async () => {
+    (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
+      { orgId: "org_1", metadata: null },
+    ]);
     (prisma.organizationBilling.updateMany as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
+    (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
+    (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
       {},
     );
 
@@ -477,6 +484,40 @@ describe("FinanceSubscriptionService", () => {
         seatQuantity: 6,
         currentPeriodStart: new Date("2026-06-18T00:00:00.000Z"),
         currentPeriodEnd: new Date("2026-07-18T00:00:00.000Z"),
+      }),
+    });
+    expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith({
+      where: {
+        orgId_provider: {
+          orgId: "org_1",
+          provider: "STRIPE",
+        },
+      },
+      create: expect.objectContaining({
+        orgId: "org_1",
+        provider: "STRIPE",
+        externalSubscriptionId: "sub_1",
+      }),
+      update: expect.objectContaining({
+        externalSubscriptionId: "sub_1",
+      }),
+    });
+    expect(prisma.subscriptionEntitlement.upsert).toHaveBeenCalledWith({
+      where: {
+        orgId_code: {
+          orgId: "org_1",
+          code: "BUSINESS_PLAN",
+        },
+      },
+      create: expect.objectContaining({
+        orgId: "org_1",
+        code: "BUSINESS_PLAN",
+        source: "STRIPE",
+        status: "ACTIVE",
+      }),
+      update: expect.objectContaining({
+        source: "STRIPE",
+        status: "ACTIVE",
       }),
     });
   });
@@ -524,9 +565,9 @@ describe("FinanceSubscriptionService", () => {
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
     (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({});
-    (
-      prisma.subscriptionEntitlement.updateMany as jest.Mock
-    ).mockResolvedValueOnce({});
+    (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
     (prisma.usageSnapshot.create as jest.Mock).mockResolvedValueOnce({});
 
     await FinanceSubscriptionService.recordSubscriptionDeleted("sub_1");
@@ -568,9 +609,21 @@ describe("FinanceSubscriptionService", () => {
         externalSubscriptionId: "sub_1",
       }),
     });
-    expect(prisma.subscriptionEntitlement.updateMany).toHaveBeenCalledWith({
-      where: { orgId: "org_1", code: "BUSINESS_PLAN" },
-      data: expect.objectContaining({
+    expect(prisma.subscriptionEntitlement.upsert).toHaveBeenCalledWith({
+      where: {
+        orgId_code: {
+          orgId: "org_1",
+          code: "BUSINESS_PLAN",
+        },
+      },
+      create: expect.objectContaining({
+        orgId: "org_1",
+        code: "BUSINESS_PLAN",
+        source: "STRIPE",
+        status: "INACTIVE",
+      }),
+      update: expect.objectContaining({
+        source: "STRIPE",
         status: "INACTIVE",
       }),
     });
