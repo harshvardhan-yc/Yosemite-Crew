@@ -70,6 +70,9 @@ jest.mock("../../src/services/finance/payment", () => ({
 jest.mock("../../src/services/finance/subscription", () => ({
   __esModule: true,
   FinanceSubscriptionService: {
+    prepareBusinessCheckoutSession: jest.fn(),
+    resolveSubscriptionSeatSyncPlan: jest.fn(),
+    recordBusinessCheckoutCustomer: jest.fn(),
     recordSeatUsage: jest.fn(),
     recordBusinessCheckoutCompleted: jest.fn(),
     recordSubscriptionUpdated: jest.fn(),
@@ -584,72 +587,25 @@ describe("StripeService", () => {
       process.env.READ_FROM_POSTGRES = originalReadFromPostgres;
     });
 
-    it("should throw if org not found", async () => {
-      (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce(null);
-
+    it("should surface finance helper errors", async () => {
+      (
+        FinanceSubscriptionService.prepareBusinessCheckoutSession as jest.Mock
+      ).mockRejectedValueOnce(new Error("Organisation not found"));
       await expect(
         StripeService.createBusinessCheckoutSession("org_1", "month"),
       ).rejects.toThrow("Organisation not found");
     });
 
-    it("should throw if no users found", async () => {
-      (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: "org_1",
-        name: "Test Org",
-      });
-      (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-        orgId: "org_1",
-      });
+    it("should create customer and checkout session when no customer exists", async () => {
       (
-        prisma.organizationUsageCounter.upsert as jest.Mock
-      ).mockResolvedValueOnce({ orgId: "org_1" });
-      (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(0);
-
-      await expect(
-        StripeService.createBusinessCheckoutSession("org_1", "month"),
-      ).rejects.toThrow(
-        "No users found. Add at least 1 user to start Business.",
-      );
-    });
-
-    it("should throw if missing priceId vars", async () => {
-      const originalPrice = process.env.STRIPE_PRICE_BUSINESS_MONTH;
-      delete process.env.STRIPE_PRICE_BUSINESS_MONTH;
-
-      (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: "org_1",
-        name: "Test Org",
+        FinanceSubscriptionService.prepareBusinessCheckoutSession as jest.Mock
+      ).mockResolvedValueOnce({
+        orgName: "Test Org",
+        connectAccountId: "acct_1",
+        stripeCustomerId: null,
+        priceId: "price_month_mock",
+        seats: 3,
       });
-
-      await expect(
-        StripeService.createBusinessCheckoutSession("org_1", "month"),
-      ).rejects.toThrow("Missing STRIPE_PRICE_BUSINESS_* env vars");
-
-      process.env.STRIPE_PRICE_BUSINESS_MONTH = originalPrice;
-    });
-
-    it("should create customer and checkout session", async () => {
-      (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: "org_1",
-        name: "Test Org",
-        stripeAccountId: "acct_1",
-      });
-      (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-        orgId: "org_1",
-        connectAccountId: null,
-      });
-      (prisma.organizationBilling.update as jest.Mock)
-        .mockResolvedValueOnce({
-          orgId: "org_1",
-          connectAccountId: "acct_1",
-          stripeCustomerId: null,
-        })
-        .mockResolvedValueOnce({
-          orgId: "org_1",
-          connectAccountId: "acct_1",
-          stripeCustomerId: "cus_1",
-        });
-      (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(3);
       mStripe.customers.create.mockResolvedValueOnce({ id: "cus_1" });
       mStripe.checkout.sessions.create.mockResolvedValueOnce({
         url: "http://checkout.url",
@@ -661,11 +617,81 @@ describe("StripeService", () => {
       );
 
       expect(result).toEqual({ url: "http://checkout.url" });
-      expect(prisma.organizationBilling.update).toHaveBeenCalled();
-      expect(FinanceSubscriptionService.recordSeatUsage).toHaveBeenCalledWith({
-        orgId: "org_1",
-        seats: 3,
+      expect(
+        FinanceSubscriptionService.prepareBusinessCheckoutSession,
+      ).toHaveBeenCalledWith("org_1", "month");
+      expect(mStripe.customers.create).toHaveBeenCalledWith({
+        name: "Test Org",
+        metadata: {
+          orgId: "org_1",
+          connectAccountId: "acct_1",
+        },
       });
+      expect(
+        FinanceSubscriptionService.recordBusinessCheckoutCustomer,
+      ).toHaveBeenCalledWith({
+        orgId: "org_1",
+        stripeCustomerId: "cus_1",
+      });
+      expect(mStripe.checkout.sessions.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: "subscription",
+          customer: "cus_1",
+          line_items: [
+            {
+              price: "price_month_mock",
+              quantity: 3,
+            },
+          ],
+          automatic_tax: { enabled: true },
+          tax_id_collection: { enabled: true },
+          metadata: {
+            orgId: "org_1",
+            interval: "month",
+            seats: "3",
+          },
+        }),
+      );
+    });
+
+    it("should reuse an existing stripe customer", async () => {
+      (
+        FinanceSubscriptionService.prepareBusinessCheckoutSession as jest.Mock
+      ).mockResolvedValueOnce({
+        orgName: "Test Org",
+        connectAccountId: "acct_1",
+        stripeCustomerId: "cus_existing",
+        priceId: "price_year_mock",
+        seats: 4,
+      });
+      mStripe.checkout.sessions.create.mockResolvedValueOnce({
+        url: "http://checkout.url",
+      });
+
+      const result = await StripeService.createBusinessCheckoutSession(
+        "org_1",
+        "year",
+      );
+
+      expect(result).toEqual({ url: "http://checkout.url" });
+      expect(mStripe.customers.create).not.toHaveBeenCalled();
+      expect(prisma.organizationBilling.update).not.toHaveBeenCalled();
+      expect(mStripe.checkout.sessions.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customer: "cus_existing",
+          line_items: [
+            {
+              price: "price_year_mock",
+              quantity: 4,
+            },
+          ],
+          metadata: {
+            orgId: "org_1",
+            interval: "year",
+            seats: "4",
+          },
+        }),
+      );
     });
   });
 
@@ -726,18 +752,9 @@ describe("StripeService", () => {
     });
 
     it("should return no_change when seats match", async () => {
-      (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-        orgId: "org_1",
-      });
       (
-        prisma.organizationBilling.findUnique as jest.Mock
-      ).mockResolvedValueOnce({
-        plan: "business",
-        stripeSubscriptionItemId: "item_1",
-        subscriptionStatus: "active",
-        seatQuantity: 4,
-      });
-      (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(4);
+        FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan as jest.Mock
+      ).mockResolvedValueOnce(null);
 
       const result = await StripeService.syncSubscriptionSeats("org_1");
       expect(result).toEqual({ updated: false, reason: "no_change" });
@@ -745,18 +762,14 @@ describe("StripeService", () => {
     });
 
     it("should sync seats when increased", async () => {
-      (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
-        orgId: "org_1",
-      });
       (
-        prisma.organizationBilling.findUnique as jest.Mock
+        FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan as jest.Mock
       ).mockResolvedValueOnce({
-        plan: "business",
-        stripeSubscriptionItemId: "item_1",
-        subscriptionStatus: "active",
-        seatQuantity: 2,
+        subscriptionItemId: "item_1",
+        oldSeats: 2,
+        newSeats: 5,
+        prorationBehavior: "create_prorations",
       });
-      (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(5);
 
       const result = await StripeService.syncSubscriptionSeats("org_1");
       expect(result).toEqual({
@@ -773,6 +786,9 @@ describe("StripeService", () => {
         orgId: "org_1",
         seats: 5,
       });
+      expect(
+        FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan,
+      ).toHaveBeenCalledWith("org_1");
     });
   });
 

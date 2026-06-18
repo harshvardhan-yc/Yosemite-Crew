@@ -3,12 +3,20 @@ import { prisma } from "src/config/prisma";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
+    organization: {
+      findUnique: jest.fn(),
+    },
     organizationUsageCounter: {
       upsert: jest.fn(),
     },
     organizationBilling: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
+    },
+    userOrganization: {
+      count: jest.fn(),
     },
   },
 }));
@@ -18,6 +26,8 @@ describe("FinanceSubscriptionService", () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     jest.setSystemTime(new Date("2026-06-18T00:00:00.000Z"));
+    process.env.STRIPE_PRICE_BUSINESS_MONTH = "price_month_mock";
+    process.env.STRIPE_PRICE_BUSINESS_YEAR = "price_year_mock";
   });
 
   afterEach(() => {
@@ -50,6 +60,165 @@ describe("FinanceSubscriptionService", () => {
         seatQuantity: 4,
         seatQuantityUpdatedAt: new Date("2026-06-18T00:00:00.000Z"),
       },
+    });
+  });
+
+  it("prepares business checkout context and records seat usage", async () => {
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+      name: "Clinic One",
+      stripeAccountId: "acct_1",
+    });
+    (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
+      connectAccountId: null,
+      stripeCustomerId: null,
+    });
+    (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({
+      connectAccountId: "acct_1",
+      stripeCustomerId: null,
+    });
+    (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(3);
+    (prisma.organizationUsageCounter.upsert as jest.Mock).mockResolvedValueOnce(
+      {},
+    );
+    (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({});
+
+    const context =
+      await FinanceSubscriptionService.prepareBusinessCheckoutSession(
+        "org_1",
+        "month",
+      );
+
+    expect(context).toEqual({
+      orgName: "Clinic One",
+      connectAccountId: "acct_1",
+      stripeCustomerId: null,
+      priceId: "price_month_mock",
+      seats: 3,
+    });
+    expect(prisma.organizationBilling.upsert).toHaveBeenCalledWith({
+      where: { orgId: "org_1" },
+      create: { orgId: "org_1" },
+      update: {},
+      select: {
+        connectAccountId: true,
+        stripeCustomerId: true,
+      },
+    });
+    expect(prisma.organizationBilling.update).toHaveBeenCalledWith({
+      where: { orgId: "org_1" },
+      data: { connectAccountId: "acct_1" },
+      select: {
+        connectAccountId: true,
+        stripeCustomerId: true,
+      },
+    });
+    expect(prisma.userOrganization.count).toHaveBeenCalledWith({
+      where: {
+        organizationReference: "org_1",
+        active: true,
+      },
+    });
+    expect(prisma.organizationUsageCounter.upsert).toHaveBeenCalledWith({
+      where: { orgId: "org_1" },
+      create: {
+        orgId: "org_1",
+        usersActiveCount: 3,
+        usersBillableCount: 3,
+      },
+      update: { usersActiveCount: 3, usersBillableCount: 3 },
+    });
+  });
+
+  it("records the stripe customer id for business checkout", async () => {
+    (prisma.organizationBilling.update as jest.Mock).mockResolvedValueOnce({});
+
+    await FinanceSubscriptionService.recordBusinessCheckoutCustomer({
+      orgId: "org_1",
+      stripeCustomerId: "cus_1",
+    });
+
+    expect(prisma.organizationBilling.update).toHaveBeenCalledWith({
+      where: { orgId: "org_1" },
+      data: { stripeCustomerId: "cus_1" },
+    });
+  });
+
+  it("throws when organisation is missing", async () => {
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(
+      FinanceSubscriptionService.prepareBusinessCheckoutSession(
+        "org_1",
+        "month",
+      ),
+    ).rejects.toThrow("Organisation not found");
+  });
+
+  it("throws when business pricing env vars are missing", async () => {
+    delete process.env.STRIPE_PRICE_BUSINESS_MONTH;
+
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+      name: "Clinic One",
+      stripeAccountId: "acct_1",
+    });
+
+    await expect(
+      FinanceSubscriptionService.prepareBusinessCheckoutSession(
+        "org_1",
+        "month",
+      ),
+    ).rejects.toThrow("Missing STRIPE_PRICE_BUSINESS_* env vars");
+  });
+
+  it("throws when there are no active users", async () => {
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+      name: "Clinic One",
+      stripeAccountId: "acct_1",
+    });
+    (prisma.organizationBilling.upsert as jest.Mock).mockResolvedValueOnce({
+      connectAccountId: "acct_1",
+      stripeCustomerId: null,
+    });
+    (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(0);
+
+    await expect(
+      FinanceSubscriptionService.prepareBusinessCheckoutSession(
+        "org_1",
+        "month",
+      ),
+    ).rejects.toThrow("No users found. Add at least 1 user to start Business.");
+  });
+
+  it("resolves a seat sync plan only when business subscription is active", async () => {
+    (prisma.organizationBilling.findUnique as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        plan: "free",
+        stripeSubscriptionItemId: null,
+        subscriptionStatus: "none",
+        seatQuantity: 0,
+      })
+      .mockResolvedValueOnce({
+        plan: "business",
+        stripeSubscriptionItemId: "item_1",
+        subscriptionStatus: "active",
+        seatQuantity: 2,
+      });
+    (prisma.userOrganization.count as jest.Mock).mockResolvedValueOnce(5);
+
+    await expect(
+      FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan("org_1"),
+    ).resolves.toBeNull();
+    await expect(
+      FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan("org_1"),
+    ).resolves.toBeNull();
+    await expect(
+      FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan("org_1"),
+    ).resolves.toEqual({
+      subscriptionItemId: "item_1",
+      oldSeats: 2,
+      newSeats: 5,
+      prorationBehavior: "create_prorations",
     });
   });
 

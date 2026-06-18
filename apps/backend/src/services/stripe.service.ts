@@ -96,16 +96,6 @@ async function ensureBillingDocs(
   };
 }
 
-async function computeBillableSeats(orgId: string): Promise<number> {
-  // Every active user in this org is billable
-  return prisma.userOrganization.count({
-    where: {
-      organizationReference: orgId,
-      active: true,
-    },
-  });
-}
-
 export const StripeService = {
   // ----------------------------
   // CONNECT (existing + improved)
@@ -195,62 +185,38 @@ export const StripeService = {
     interval: "month" | "year",
   ) {
     const stripe = getStripeClient();
-    const org = await prisma.organization.findUnique({
-      where: { id: orgId },
-    });
-    if (!org) throw new Error("Organisation not found");
+    const checkoutContext =
+      await FinanceSubscriptionService.prepareBusinessCheckoutSession(
+        orgId,
+        interval,
+      );
 
-    const priceId =
-      interval === "month"
-        ? process.env.STRIPE_PRICE_BUSINESS_MONTH
-        : process.env.STRIPE_PRICE_BUSINESS_YEAR;
-
-    if (!priceId) throw new Error("Missing STRIPE_PRICE_BUSINESS_* env vars");
-
-    let billingRow = await prisma.organizationBilling.upsert({
-      where: { orgId },
-      create: { orgId },
-      update: {},
-    });
-
-    if (!billingRow.connectAccountId && org.stripeAccountId) {
-      billingRow = await prisma.organizationBilling.update({
-        where: { orgId },
-        data: { connectAccountId: org.stripeAccountId },
-      });
-    }
-
-    const seats = await computeBillableSeats(orgId);
-    if (seats < 1)
-      throw new Error("No users found. Add at least 1 user to start Business.");
-
-    await FinanceSubscriptionService.recordSeatUsage({ orgId, seats });
-
-    if (!billingRow.stripeCustomerId) {
+    if (!checkoutContext.stripeCustomerId) {
       const customer = await stripe.customers.create({
-        name: org.name,
+        name: checkoutContext.orgName,
         metadata: {
           orgId: String(orgId),
-          connectAccountId: String(billingRow.connectAccountId ?? ""),
+          connectAccountId: String(checkoutContext.connectAccountId ?? ""),
         },
       });
 
-      billingRow = await prisma.organizationBilling.update({
-        where: { orgId },
-        data: { stripeCustomerId: customer.id },
+      await FinanceSubscriptionService.recordBusinessCheckoutCustomer({
+        orgId,
+        stripeCustomerId: customer.id,
       });
+      checkoutContext.stripeCustomerId = customer.id;
     }
 
-    const successUrl = `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`;
-    const cancelUrl = `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`;
+    const successUrl = `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${process.env.APP_URL}/organization`;
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: billingRow.stripeCustomerId ?? undefined,
+      customer: checkoutContext.stripeCustomerId ?? undefined,
       line_items: [
         {
-          price: priceId,
-          quantity: seats,
+          price: checkoutContext.priceId,
+          quantity: checkoutContext.seats,
         },
       ],
       success_url: successUrl,
@@ -259,7 +225,7 @@ export const StripeService = {
       subscription_data: {
         metadata: {
           orgId: String(orgId),
-          connectAccountId: String(billingRow.connectAccountId ?? ""),
+          connectAccountId: String(checkoutContext.connectAccountId ?? ""),
         },
       },
       tax_id_collection: {
@@ -272,7 +238,7 @@ export const StripeService = {
       metadata: {
         orgId: String(orgId),
         interval,
-        seats: String(seats),
+        seats: String(checkoutContext.seats),
       },
       customer_update: {
         name: "auto",
@@ -301,40 +267,28 @@ export const StripeService = {
 
   async syncSubscriptionSeats(orgId: string) {
     const stripe = getStripeClient();
-    const billingRow = await prisma.organizationBilling.findUnique({
-      where: { orgId },
-    });
-
-    if (!billingRow) return { updated: false, reason: "not_business" };
-    if (billingRow.plan !== "business")
-      return { updated: false, reason: "not_business" };
-    const subscriptionItemId = billingRow.stripeSubscriptionItemId;
-    if (!subscriptionItemId)
-      return { updated: false, reason: "missing_item_id" };
-
-    const subscriptionStatus = billingRow.subscriptionStatus ?? "none";
-    if (!["active", "trialing", "past_due"].includes(subscriptionStatus)) {
-      return { updated: false, reason: "subscription_not_syncable" };
+    const plan =
+      await FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan(orgId);
+    if (!plan) {
+      return { updated: false, reason: "no_change" };
     }
 
-    const newSeats = await computeBillableSeats(orgId);
-    const oldSeats = billingRow.seatQuantity ?? 0;
-    if (newSeats === oldSeats) return { updated: false, reason: "no_change" };
-
-    const prorationBehavior =
-      newSeats > oldSeats ? "create_prorations" : "none";
-
-    await stripe.subscriptionItems.update(subscriptionItemId, {
-      quantity: newSeats,
-      proration_behavior: prorationBehavior,
+    await stripe.subscriptionItems.update(plan.subscriptionItemId, {
+      quantity: plan.newSeats,
+      proration_behavior: plan.prorationBehavior,
     });
 
     await FinanceSubscriptionService.recordSeatUsage({
       orgId,
-      seats: newSeats,
+      seats: plan.newSeats,
     });
 
-    return { updated: true, oldSeats, newSeats, prorationBehavior };
+    return {
+      updated: true,
+      oldSeats: plan.oldSeats,
+      newSeats: plan.newSeats,
+      prorationBehavior: plan.prorationBehavior,
+    };
   },
 
   // ----------------------------
