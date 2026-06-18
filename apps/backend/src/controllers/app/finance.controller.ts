@@ -4,6 +4,8 @@ import {
   FinancePaymentError,
   FinancePaymentService,
 } from "src/services/finance/payment";
+import { FinanceSubscriptionService } from "src/services/finance/subscription";
+import { FinanceEventService } from "src/services/finance/events";
 import { StripeController } from "src/controllers/web/stripe.controller";
 import {
   InvoiceService,
@@ -50,6 +52,132 @@ const FinalizeInvoiceBodySchema = z.object({
 const PreviewTaxBodySchema = z.object({
   taxProvider: z.string().trim().min(1).optional(),
 });
+
+const CurrentSubscriptionQuerySchema = z.object({
+  organisationId: z.string().trim().min(1),
+});
+
+const UpsertSubscriptionBodySchema = z.object({
+  organisationId: z.string().trim().min(1),
+  planCode: z.string().trim().min(1),
+  provider: z.string().trim().min(1),
+  providerSubscriptionId: z.string().trim().min(1),
+  quantity: z.number().int().nonnegative(),
+});
+
+const UsageSnapshotsQuerySchema = z.object({
+  organisationId: z.string().trim().min(1),
+  subscriptionId: z.string().trim().min(1).optional(),
+  featureKey: z.string().trim().min(1).optional(),
+});
+
+const VisitMilestoneBodySchema = z.object({
+  milestone: z.enum([
+    "BOOKED",
+    "CHECKED_IN",
+    "IN_PROGRESS",
+    "ADDITIONAL_CHARGE_ADDED",
+    "READY_FOR_BILLING",
+    "VISIT_ENDED",
+    "DISCHARGED",
+    "HOSPITALIZATION_STARTED",
+    "HOSPITALIZATION_EXTENDED",
+    "HOSPITALIZATION_DISCHARGED",
+  ]),
+  organisationId: z.string().trim().min(1),
+  appointmentId: z.string().trim().min(1).optional(),
+  patientId: z.string().trim().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+const ReadyForBillingBodySchema = z.object({
+  visitId: z.string().trim().min(1).optional(),
+  notes: z.string().trim().min(1).optional(),
+});
+
+const ProviderParamsSchema = z.object({
+  provider: z.string().trim().min(1),
+});
+
+const SubscriptionCustomerBodySchema = z.object({
+  externalCustomerId: z.string().trim().min(1),
+});
+
+const SubscriptionCheckoutCompletedBodySchema = z.object({
+  customerId: z.string().trim().min(1),
+  subscriptionId: z.string().trim().min(1),
+  subscriptionItemId: z.string().trim().min(1),
+  priceId: z.string().trim().min(1),
+  productId: z.string().trim().min(1).optional(),
+  billingInterval: z.enum(["month", "year"]).optional(),
+  subscriptionStatus: z
+    .enum([
+      "none",
+      "trialing",
+      "active",
+      "past_due",
+      "unpaid",
+      "canceled",
+      "incomplete",
+      "incomplete_expired",
+      "paused",
+    ])
+    .optional(),
+  cancelAtPeriodEnd: z.boolean().optional(),
+  currentPeriodStart: z.string().datetime().optional(),
+  currentPeriodEnd: z.string().datetime().optional(),
+  livemode: z.boolean().optional(),
+  seatQuantity: z.number().int().nonnegative().optional(),
+});
+
+const SubscriptionUpdatedBodySchema = z.object({
+  subscriptionId: z.string().trim().min(1),
+  subscriptionStatus: z
+    .enum([
+      "none",
+      "trialing",
+      "active",
+      "past_due",
+      "unpaid",
+      "canceled",
+      "incomplete",
+      "incomplete_expired",
+      "paused",
+    ])
+    .optional(),
+  cancelAtPeriodEnd: z.boolean().optional(),
+  canceledAt: z.string().datetime().optional(),
+  seatQuantity: z.number().int().nonnegative().optional(),
+  currentPeriodStart: z.string().datetime().optional(),
+  currentPeriodEnd: z.string().datetime().optional(),
+});
+
+const SubscriptionLifecycleBodySchema = z.object({
+  subscriptionId: z.string().trim().min(1),
+  invoiceId: z.string().trim().min(1).optional(),
+});
+
+const UsageEventBodySchema = z.object({
+  usageKey: z.string().trim().min(1),
+  quantity: z.number().int().positive(),
+  billableQuantity: z.number().int().positive().optional(),
+  source: z.string().trim().min(1),
+  referenceType: z.string().trim().min(1).optional(),
+  referenceId: z.string().trim().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  occurredAt: z.string().datetime().optional(),
+});
+
+const UsageSnapshotBodySchema = z.object({
+  snapshotType: z.string().trim().min(1).optional(),
+  seatsActive: z.number().int().nonnegative().optional(),
+  seatsBillable: z.number().int().nonnegative().optional(),
+  appointmentsUsed: z.number().int().nonnegative().optional(),
+  toolsUsed: z.number().int().nonnegative().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  snapshotAt: z.string().datetime().optional(),
+});
+
 const RecordInvoicePaymentBodySchema = z.object({
   provider: z.string().trim().min(1).optional(),
   settlementChannel: z.string().trim().min(1).optional(),
@@ -81,6 +209,9 @@ const ListInvoicesQuerySchema = z.object({
 
 const normalizeProvider = (value?: string) =>
   value?.trim().toUpperCase() ?? "STRIPE";
+
+const isSupportedSubscriptionProvider = (provider: string) =>
+  provider === "STRIPE";
 
 const toFinanceSuccess = <T>(data: T) => ({
   data,
@@ -417,6 +548,560 @@ export const FinanceController = {
 
       logger.error("Error previewing invoice tax", error);
       return res.status(statusCode).json({ message });
+    }
+  },
+
+  async getSubscriptionOverview(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const overview =
+        await FinanceSubscriptionService.getSubscriptionOverview(
+          organisationId,
+        );
+      return res.status(200).json(toFinanceSuccess(overview));
+    } catch (error) {
+      logger.error("Error fetching subscription overview", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async getSubscriptionSeatSyncPlan(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const plan =
+        await FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan(
+          organisationId,
+        );
+      return res.status(200).json(toFinanceSuccess(plan));
+    } catch (error) {
+      logger.error("Error resolving subscription seat sync plan", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async getUsageOverview(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const overview =
+        await FinanceSubscriptionService.getUsageOverview(organisationId);
+      return res.status(200).json(toFinanceSuccess(overview));
+    } catch (error) {
+      logger.error("Error fetching usage overview", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async getCurrentSubscription(this: void, req: Request, res: Response) {
+    try {
+      const query = CurrentSubscriptionQuerySchema.safeParse(req.query);
+      if (!query.success) {
+        return res.status(400).json({ message: "Invalid request query" });
+      }
+
+      const current = await FinanceSubscriptionService.getCurrentSubscription(
+        query.data.organisationId,
+      );
+
+      return res.status(200).json(toFinanceSuccess(current));
+    } catch (error) {
+      logger.error("Error fetching current subscription", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async upsertSubscription(this: void, req: Request, res: Response) {
+    try {
+      const body = UpsertSubscriptionBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      const subscription = await FinanceSubscriptionService.upsertSubscription({
+        orgId: body.data.organisationId,
+        planCode: body.data.planCode,
+        provider: body.data.provider,
+        providerSubscriptionId: body.data.providerSubscriptionId,
+        quantity: body.data.quantity,
+      });
+
+      return res.status(201).json(toFinanceSuccess(subscription));
+    } catch (error) {
+      logger.error("Error upserting subscription", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async getUsageSnapshots(this: void, req: Request, res: Response) {
+    try {
+      const query = UsageSnapshotsQuerySchema.safeParse(req.query);
+      if (!query.success) {
+        return res.status(400).json({ message: "Invalid request query" });
+      }
+
+      const snapshots = await FinanceSubscriptionService.listUsageSnapshots(
+        query.data.organisationId,
+        {
+          subscriptionId: query.data.subscriptionId ?? null,
+          featureKey: query.data.featureKey ?? null,
+        },
+      );
+
+      return res.status(200).json(toFinanceSuccess(snapshots));
+    } catch (error) {
+      logger.error("Error fetching usage snapshots", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async recordSubscriptionCustomer(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const providerResult = ProviderParamsSchema.safeParse(req.params);
+      if (!providerResult.success) {
+        return res.status(400).json({ message: "Invalid provider" });
+      }
+
+      const provider = normalizeProvider(providerResult.data.provider);
+      if (!isSupportedSubscriptionProvider(provider)) {
+        return res.status(400).json({ message: "Unsupported provider" });
+      }
+
+      const body = SubscriptionCustomerBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      await FinanceSubscriptionService.recordBusinessCheckoutCustomer({
+        orgId: organisationId,
+        externalCustomerId: body.data.externalCustomerId,
+      });
+
+      return res.status(200).json(
+        toFinanceSuccess({
+          organisationId,
+          provider,
+          externalCustomerId: body.data.externalCustomerId,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error recording subscription customer", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async recordVisitMilestone(this: void, req: Request, res: Response) {
+    try {
+      const visitId = req.params.visitId;
+      if (!visitId) {
+        return res.status(400).json({ message: "Visit Id is required" });
+      }
+
+      const body = VisitMilestoneBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      const appointmentId = body.data.appointmentId ?? visitId;
+      const shouldReadyForBilling = body.data.milestone === "READY_FOR_BILLING";
+      const invoice = shouldReadyForBilling
+        ? await InvoiceService.markAppointmentReadyForBilling(appointmentId)
+        : null;
+
+      if (shouldReadyForBilling && !invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      await FinanceEventService.recordEvent({
+        organisationId: body.data.organisationId,
+        eventType: "VISIT_MILESTONE_RECORDED",
+        entityType: "VISIT",
+        entityId: visitId,
+        payload: {
+          milestone: body.data.milestone,
+          appointmentId,
+          patientId: body.data.patientId ?? null,
+          metadata: body.data.metadata ?? null,
+        },
+      });
+
+      return res.status(201).json(
+        toFinanceSuccess({
+          visitId,
+          appointmentId,
+          milestone: body.data.milestone,
+          billingState: invoice?.visitBillingStage ?? null,
+          invoiceId: invoice?.id ?? null,
+          collectionMode: invoice?.billingCollectionMode ?? null,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error recording visit milestone", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async markAppointmentReadyForBilling(
+    this: void,
+    req: Request,
+    res: Response,
+  ) {
+    try {
+      const appointmentId = req.params.appointmentId;
+      if (!appointmentId) {
+        return res.status(400).json({ message: "Appointment Id is required" });
+      }
+
+      const body = ReadyForBillingBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      const invoice =
+        await InvoiceService.markAppointmentReadyForBilling(appointmentId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      await FinanceEventService.recordEvent({
+        organisationId: (req as OrgRequest).organisationId ?? null,
+        eventType: "APPOINTMENT_READY_FOR_BILLING",
+        entityType: "APPOINTMENT",
+        entityId: appointmentId,
+        payload: {
+          visitId: body.data.visitId ?? null,
+          notes: body.data.notes ?? null,
+          invoiceId: invoice.id,
+          billingState: invoice.visitBillingStage,
+          collectionMode: invoice.billingCollectionMode ?? null,
+        },
+      });
+
+      return res.status(200).json(
+        toFinanceSuccess({
+          appointmentId,
+          billingState: invoice.visitBillingStage,
+          invoiceId: invoice.id,
+          collectionMode: invoice.billingCollectionMode ?? null,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error marking appointment ready for billing", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async recordSubscriptionCheckoutCompleted(
+    this: void,
+    req: Request,
+    res: Response,
+  ) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const providerResult = ProviderParamsSchema.safeParse(req.params);
+      if (!providerResult.success) {
+        return res.status(400).json({ message: "Invalid provider" });
+      }
+
+      const provider = normalizeProvider(providerResult.data.provider);
+      if (!isSupportedSubscriptionProvider(provider)) {
+        return res.status(400).json({ message: "Unsupported provider" });
+      }
+
+      const body = SubscriptionCheckoutCompletedBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      await FinanceSubscriptionService.recordBusinessCheckoutCompleted({
+        customerId: body.data.customerId,
+        subscriptionId: body.data.subscriptionId,
+        subscriptionItemId: body.data.subscriptionItemId,
+        priceId: body.data.priceId,
+        productId: body.data.productId ?? null,
+        billingInterval: body.data.billingInterval ?? null,
+        subscriptionStatus: body.data.subscriptionStatus ?? null,
+        cancelAtPeriodEnd: body.data.cancelAtPeriodEnd ?? null,
+        currentPeriodStart: body.data.currentPeriodStart
+          ? new Date(body.data.currentPeriodStart)
+          : null,
+        currentPeriodEnd: body.data.currentPeriodEnd
+          ? new Date(body.data.currentPeriodEnd)
+          : null,
+        livemode: body.data.livemode ?? null,
+        seatQuantity: body.data.seatQuantity ?? null,
+      });
+
+      return res.status(201).json(
+        toFinanceSuccess({
+          organisationId,
+          provider,
+          subscriptionId: body.data.subscriptionId,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error recording subscription checkout completion", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async recordSubscriptionUpdated(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const providerResult = ProviderParamsSchema.safeParse(req.params);
+      if (!providerResult.success) {
+        return res.status(400).json({ message: "Invalid provider" });
+      }
+
+      const provider = normalizeProvider(providerResult.data.provider);
+      if (!isSupportedSubscriptionProvider(provider)) {
+        return res.status(400).json({ message: "Unsupported provider" });
+      }
+
+      const body = SubscriptionUpdatedBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      await FinanceSubscriptionService.recordSubscriptionUpdated({
+        subscriptionId: body.data.subscriptionId,
+        subscriptionStatus: body.data.subscriptionStatus ?? null,
+        cancelAtPeriodEnd: body.data.cancelAtPeriodEnd ?? null,
+        canceledAt: body.data.canceledAt
+          ? new Date(body.data.canceledAt)
+          : null,
+        seatQuantity: body.data.seatQuantity ?? null,
+        currentPeriodStart: body.data.currentPeriodStart
+          ? new Date(body.data.currentPeriodStart)
+          : null,
+        currentPeriodEnd: body.data.currentPeriodEnd
+          ? new Date(body.data.currentPeriodEnd)
+          : null,
+      });
+
+      return res.status(200).json(
+        toFinanceSuccess({
+          organisationId,
+          provider,
+          subscriptionId: body.data.subscriptionId,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error recording subscription update", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async recordSubscriptionDeleted(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const providerResult = ProviderParamsSchema.safeParse(req.params);
+      if (!providerResult.success) {
+        return res.status(400).json({ message: "Invalid provider" });
+      }
+
+      const provider = normalizeProvider(providerResult.data.provider);
+      if (!isSupportedSubscriptionProvider(provider)) {
+        return res.status(400).json({ message: "Unsupported provider" });
+      }
+
+      const body = SubscriptionLifecycleBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      await FinanceSubscriptionService.recordSubscriptionDeleted(
+        body.data.subscriptionId,
+      );
+
+      return res.status(200).json(
+        toFinanceSuccess({
+          organisationId,
+          provider,
+          subscriptionId: body.data.subscriptionId,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error recording subscription deletion", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async recordSubscriptionInvoicePaid(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const providerResult = ProviderParamsSchema.safeParse(req.params);
+      if (!providerResult.success) {
+        return res.status(400).json({ message: "Invalid provider" });
+      }
+
+      const provider = normalizeProvider(providerResult.data.provider);
+      if (!isSupportedSubscriptionProvider(provider)) {
+        return res.status(400).json({ message: "Unsupported provider" });
+      }
+
+      const body = SubscriptionLifecycleBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      await FinanceSubscriptionService.recordSubscriptionInvoicePaid({
+        subscriptionId: body.data.subscriptionId,
+        invoiceId: body.data.invoiceId ?? null,
+      });
+
+      return res.status(200).json(
+        toFinanceSuccess({
+          organisationId,
+          provider,
+          subscriptionId: body.data.subscriptionId,
+          invoiceId: body.data.invoiceId ?? null,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error recording subscription invoice paid", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async recordSubscriptionInvoiceFailed(
+    this: void,
+    req: Request,
+    res: Response,
+  ) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const providerResult = ProviderParamsSchema.safeParse(req.params);
+      if (!providerResult.success) {
+        return res.status(400).json({ message: "Invalid provider" });
+      }
+
+      const provider = normalizeProvider(providerResult.data.provider);
+      if (!isSupportedSubscriptionProvider(provider)) {
+        return res.status(400).json({ message: "Unsupported provider" });
+      }
+
+      const body = SubscriptionLifecycleBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      await FinanceSubscriptionService.recordSubscriptionInvoiceFailed({
+        subscriptionId: body.data.subscriptionId,
+        invoiceId: body.data.invoiceId ?? null,
+      });
+
+      return res.status(200).json(
+        toFinanceSuccess({
+          organisationId,
+          provider,
+          subscriptionId: body.data.subscriptionId,
+          invoiceId: body.data.invoiceId ?? null,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error recording subscription invoice failure", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async recordUsageEvent(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const body = UsageEventBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      const event = await FinanceSubscriptionService.recordUsageEvent({
+        orgId: organisationId,
+        usageKey: body.data.usageKey,
+        quantity: body.data.quantity,
+        billableQuantity: body.data.billableQuantity,
+        source: body.data.source,
+        referenceType: body.data.referenceType ?? null,
+        referenceId: body.data.referenceId ?? null,
+        metadata: body.data.metadata,
+        occurredAt: body.data.occurredAt
+          ? new Date(body.data.occurredAt)
+          : undefined,
+      });
+
+      return res.status(201).json(toFinanceSuccess(event));
+    } catch (error) {
+      logger.error("Error recording usage event", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
+  async captureUsageSnapshot(this: void, req: Request, res: Response) {
+    try {
+      const organisationId = req.params.organisationId;
+      if (!organisationId) {
+        return res.status(400).json({ message: "Organisation Id is required" });
+      }
+
+      const body = UsageSnapshotBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+
+      const snapshot = await FinanceSubscriptionService.captureUsageSnapshot({
+        orgId: organisationId,
+        snapshotType: body.data.snapshotType,
+        seatsActive: body.data.seatsActive,
+        seatsBillable: body.data.seatsBillable,
+        appointmentsUsed: body.data.appointmentsUsed,
+        toolsUsed: body.data.toolsUsed,
+        metadata: body.data.metadata,
+        snapshotAt: body.data.snapshotAt
+          ? new Date(body.data.snapshotAt)
+          : undefined,
+      });
+
+      return res.status(201).json(toFinanceSuccess(snapshot));
+    } catch (error) {
+      logger.error("Error capturing usage snapshot", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
   },
 

@@ -55,6 +55,11 @@ type UsageSnapshotInput = {
   snapshotAt?: Date;
 };
 
+type UsageSnapshotQuery = {
+  subscriptionId?: string | null;
+  featureKey?: string | null;
+};
+
 type SubscriptionEntitlementInput = {
   orgId: string;
   code: string;
@@ -76,6 +81,14 @@ type SubscriptionProviderLinkInput = {
   externalPriceId?: string | null;
   externalProductId?: string | null;
   metadata?: Record<string, unknown> | null;
+};
+
+type UpsertSubscriptionInput = {
+  orgId: string;
+  planCode: string;
+  provider: string;
+  providerSubscriptionId: string;
+  quantity: number;
 };
 
 type BusinessCheckoutInterval = "month" | "year";
@@ -142,6 +155,83 @@ type SubscriptionLifecycleInput = {
   invoiceId?: string | null;
 };
 
+type SubscriptionOverview = {
+  organisationId: string;
+  providerLinks: Array<{
+    provider: string;
+    externalCustomerId: string | null;
+    externalSubscriptionId: string | null;
+    externalSubscriptionItemId: string | null;
+    externalPriceId: string | null;
+    externalProductId: string | null;
+    metadata: Prisma.JsonValue | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+  entitlements: Array<{
+    id: string;
+    code: string;
+    name: string | null;
+    value: Prisma.JsonValue | null;
+    source: string;
+    status: string;
+    grantedAt: Date;
+    expiresAt: Date | null;
+    metadata: Prisma.JsonValue | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+  usageCounter: {
+    id: string;
+    orgId: string;
+    usersActiveCount: number | null;
+    usersBillableCount: number | null;
+    appointmentsUsed: number | null;
+    toolsUsed: number | null;
+    freeUsersLimit: number | null;
+    freeAppointmentsLimit: number | null;
+    freeToolsLimit: number | null;
+    freeLimitReachedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
+  latestSnapshot: {
+    id: string;
+    orgId: string;
+    snapshotType: string;
+    snapshotAt: Date;
+    seatsActive: number;
+    seatsBillable: number;
+    appointmentsUsed: number;
+    toolsUsed: number;
+    metadata: Prisma.JsonValue | null;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
+  recentUsageEvents: Array<{
+    id: string;
+    orgId: string;
+    usageKey: string;
+    quantity: number;
+    billableQuantity: number;
+    source: string;
+    referenceType: string | null;
+    referenceId: string | null;
+    metadata: Prisma.JsonValue | null;
+    occurredAt: Date;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+};
+
+type CurrentSubscription = {
+  organisationId: string;
+  providerLink: SubscriptionOverview["providerLinks"][number] | null;
+  entitlement: SubscriptionOverview["entitlements"][number] | null;
+  usageCounter: SubscriptionOverview["usageCounter"];
+  latestSnapshot: SubscriptionOverview["latestSnapshot"];
+};
+
 const toPositiveInteger = (value: number) =>
   Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 
@@ -158,6 +248,14 @@ const readString = (value: unknown) =>
 
 const readNumber = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const normalizePlanCode = (planCode: string) => {
+  const cleaned = planCode
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_");
+  return cleaned.endsWith("_PLAN") ? cleaned : `${cleaned}_PLAN`;
+};
 
 export const FinanceSubscriptionService = {
   async recordUsageEvent(input: UsageEventInput) {
@@ -198,6 +296,94 @@ export const FinanceSubscriptionService = {
     return event;
   },
 
+  async getSubscriptionOverview(orgId: string): Promise<SubscriptionOverview> {
+    const [
+      providerLinks,
+      entitlements,
+      usageCounter,
+      latestSnapshot,
+      recentUsageEvents,
+    ] = await Promise.all([
+      prisma.financeProviderLink.findMany({
+        where: { orgId },
+        orderBy: { updatedAt: "desc" },
+      }),
+      prisma.subscriptionEntitlement.findMany({
+        where: { orgId },
+        orderBy: [{ status: "asc" }, { grantedAt: "desc" }],
+      }),
+      prisma.organizationUsageCounter.findUnique({
+        where: { orgId },
+      }),
+      prisma.usageSnapshot.findFirst({
+        where: { orgId },
+        orderBy: { snapshotAt: "desc" },
+      }),
+      prisma.usageEvent.findMany({
+        where: { orgId },
+        orderBy: { occurredAt: "desc" },
+        take: 25,
+      }),
+    ]);
+
+    return {
+      organisationId: orgId,
+      providerLinks,
+      entitlements,
+      usageCounter,
+      latestSnapshot,
+      recentUsageEvents,
+    };
+  },
+
+  async getUsageOverview(
+    orgId: string,
+  ): Promise<
+    Pick<
+      SubscriptionOverview,
+      "organisationId" | "usageCounter" | "latestSnapshot" | "recentUsageEvents"
+    >
+  > {
+    const [usageCounter, latestSnapshot, recentUsageEvents] = await Promise.all(
+      [
+        prisma.organizationUsageCounter.findUnique({
+          where: { orgId },
+        }),
+        prisma.usageSnapshot.findFirst({
+          where: { orgId },
+          orderBy: { snapshotAt: "desc" },
+        }),
+        prisma.usageEvent.findMany({
+          where: { orgId },
+          orderBy: { occurredAt: "desc" },
+          take: 50,
+        }),
+      ],
+    );
+
+    return {
+      organisationId: orgId,
+      usageCounter,
+      latestSnapshot,
+      recentUsageEvents,
+    };
+  },
+
+  async getCurrentSubscription(orgId: string): Promise<CurrentSubscription> {
+    const overview = await this.getSubscriptionOverview(orgId);
+
+    return {
+      organisationId: overview.organisationId,
+      providerLink: overview.providerLinks[0] ?? null,
+      entitlement:
+        overview.entitlements.find((entry) => entry.status === "ACTIVE") ??
+        overview.entitlements[0] ??
+        null,
+      usageCounter: overview.usageCounter,
+      latestSnapshot: overview.latestSnapshot,
+    };
+  },
+
   async captureUsageSnapshot(input: UsageSnapshotInput) {
     const snapshot = await prisma.usageSnapshot.create({
       data: {
@@ -230,6 +416,37 @@ export const FinanceSubscriptionService = {
     });
 
     return snapshot;
+  },
+
+  async listUsageSnapshots(orgId: string, query: UsageSnapshotQuery = {}) {
+    const snapshots = await prisma.usageSnapshot.findMany({
+      where: { orgId },
+      orderBy: { snapshotAt: "desc" },
+    });
+
+    return snapshots.filter((snapshot) => {
+      if (!query.subscriptionId && !query.featureKey) return true;
+
+      const metadata = readJsonRecord(snapshot.metadata);
+      const metadataSubscriptionId = readString(metadata.subscriptionId);
+      const metadataFeatureKey =
+        readString(metadata.featureKey) ??
+        readString(metadata.usageKey) ??
+        snapshot.snapshotType;
+
+      if (
+        query.subscriptionId &&
+        metadataSubscriptionId !== query.subscriptionId
+      ) {
+        return false;
+      }
+
+      if (query.featureKey && metadataFeatureKey !== query.featureKey) {
+        return false;
+      }
+
+      return true;
+    });
   },
 
   async upsertSubscriptionEntitlement(input: SubscriptionEntitlementInput) {
@@ -265,6 +482,61 @@ export const FinanceSubscriptionService = {
           | undefined,
       },
     });
+  },
+
+  async upsertSubscription(input: UpsertSubscriptionInput) {
+    const provider = input.provider.trim().toUpperCase();
+    const planCode = input.planCode.trim();
+    const entitlementCode = normalizePlanCode(planCode);
+
+    const [providerLink, entitlement] = await Promise.all([
+      this.upsertSubscriptionProviderLink({
+        orgId: input.orgId,
+        provider,
+        externalSubscriptionId: input.providerSubscriptionId,
+        metadata: {
+          planCode,
+          quantity: input.quantity,
+        },
+      }),
+      this.upsertSubscriptionEntitlement({
+        orgId: input.orgId,
+        code: entitlementCode,
+        name: `${planCode} subscription`,
+        value: {
+          planCode,
+          provider,
+          providerSubscriptionId: input.providerSubscriptionId,
+          quantity: input.quantity,
+        },
+        source: provider,
+        status: "ACTIVE",
+        grantedAt: new Date(),
+        metadata: {
+          providerSubscriptionId: input.providerSubscriptionId,
+          quantity: input.quantity,
+        },
+      }),
+    ]);
+
+    await FinanceEventService.recordEvent({
+      organisationId: input.orgId,
+      eventType: "SUBSCRIPTION_UPSERTED",
+      entityType: "SUBSCRIPTION",
+      entityId: input.providerSubscriptionId,
+      payload: {
+        planCode,
+        provider,
+        providerSubscriptionId: input.providerSubscriptionId,
+        quantity: input.quantity,
+      },
+    });
+
+    return {
+      organisationId: input.orgId,
+      providerLink,
+      entitlement,
+    };
   },
 
   async upsertSubscriptionProviderLink(input: SubscriptionProviderLinkInput) {
@@ -491,7 +763,7 @@ export const FinanceSubscriptionService = {
       rows.map((row) =>
         Promise.all([
           this.upsertSubscriptionProviderLink({
-            orgId: row.orgId,
+            orgId: row.orgId ?? input.customerId,
             provider: "STRIPE",
             externalCustomerId: input.customerId,
             externalSubscriptionId: input.subscriptionId,
@@ -504,7 +776,7 @@ export const FinanceSubscriptionService = {
             },
           }),
           this.upsertSubscriptionEntitlement({
-            orgId: row.orgId,
+            orgId: row.orgId ?? input.customerId,
             code: "BUSINESS_PLAN",
             name: "Business subscription",
             value: {

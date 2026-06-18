@@ -9,7 +9,6 @@ import {
   withPaymentIntentOrgPermissions,
 } from "src/middlewares/rbac";
 import { FinanceController } from "src/controllers/app/finance.controller";
-import { InvoiceController } from "src/controllers/app/invoice.controller";
 
 const router = Router();
 
@@ -17,6 +16,110 @@ router.post(
   "/webhooks/:provider",
   bodyParser.raw({ type: "application/json" }),
   FinanceController.webhook,
+);
+
+router.get(
+  "/organisation/:organisationId/subscription/seat-sync-plan",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:view:any"),
+  FinanceController.getSubscriptionSeatSyncPlan,
+);
+
+router.post(
+  "/organisation/:organisationId/subscription/provider/:provider/customer",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:edit:any"),
+  FinanceController.recordSubscriptionCustomer,
+);
+
+router.post(
+  "/organisation/:organisationId/subscription/provider/:provider/checkout/completed",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:edit:any"),
+  FinanceController.recordSubscriptionCheckoutCompleted,
+);
+
+router.post(
+  "/organisation/:organisationId/subscription/provider/:provider/updated",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:edit:any"),
+  FinanceController.recordSubscriptionUpdated,
+);
+
+router.post(
+  "/organisation/:organisationId/subscription/provider/:provider/deleted",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:edit:any"),
+  FinanceController.recordSubscriptionDeleted,
+);
+
+router.post(
+  "/organisation/:organisationId/subscription/provider/:provider/invoice-paid",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:edit:any"),
+  FinanceController.recordSubscriptionInvoicePaid,
+);
+
+router.post(
+  "/organisation/:organisationId/subscription/provider/:provider/invoice-failed",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:edit:any"),
+  FinanceController.recordSubscriptionInvoiceFailed,
+);
+
+router.get(
+  "/subscriptions/current",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:view:any"),
+  FinanceController.getCurrentSubscription,
+);
+
+router.post(
+  "/subscriptions",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:edit:any"),
+  FinanceController.upsertSubscription,
+);
+
+router.post(
+  "/usage-events",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:edit:any"),
+  FinanceController.recordUsageEvent,
+);
+
+router.get(
+  "/usage-snapshots",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("subscription:view:any"),
+  FinanceController.getUsageSnapshots,
+);
+
+router.post(
+  "/visits/:visitId/milestones",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("billing:edit:any"),
+  FinanceController.recordVisitMilestone,
+);
+
+router.post(
+  "/appointments/:appointmentId/ready-for-billing",
+  authorizeCognito,
+  withAppointmentOrgPermissions(),
+  requirePermission("billing:edit:any"),
+  FinanceController.markAppointmentReadyForBilling,
 );
 
 router.get("/invoices", authorizeCognito, FinanceController.listInvoices);
@@ -45,54 +148,6 @@ router.get(
   withPaymentIntentOrgPermissions(),
   requirePermission("billing:view:any"),
   FinanceController.getInvoiceByPaymentIntentId,
-);
-
-router.get(
-  "/appointments/:appointmentId/invoices",
-  authorizeCognito,
-  withAppointmentOrgPermissions(),
-  requirePermission("billing:view:any"),
-  FinanceController.listInvoicesForAppointment,
-);
-
-router.post(
-  "/appointments/:appointmentId/charges",
-  authorizeCognito,
-  withAppointmentOrgPermissions(),
-  requirePermission("billing:edit:any"),
-  InvoiceController.addChargesToAppointment,
-);
-
-router.post(
-  "/appointment/:appointmentId",
-  authorizeCognito,
-  withAppointmentOrgPermissions(),
-  requirePermission("billing:view:any"),
-  FinanceController.listInvoicesForAppointment,
-);
-
-router.post(
-  "/appointments/:appointmentId/bootstrap",
-  authorizeCognito,
-  withAppointmentOrgPermissions(),
-  requirePermission("billing:edit:any"),
-  FinanceController.bootstrapInvoiceForAppointment,
-);
-
-router.post(
-  "/pms/appointment/:appointmentId/bootstrap",
-  authorizeCognito,
-  withAppointmentOrgPermissions(),
-  requirePermission("billing:edit:any"),
-  FinanceController.bootstrapInvoiceForAppointment,
-);
-
-router.get(
-  "/organisation/:organisationId/list",
-  authorizeCognito,
-  withOrgPermissions(),
-  requirePermission("billing:view:any"),
-  FinanceController.listInvoicesForOrganisation,
 );
 
 router.post(
@@ -136,20 +191,6 @@ router.post(
 );
 
 router.post(
-  "/:invoiceId/checkout-session",
-  authorizeCognito,
-  InvoiceController.createCheckoutSessionForInvoice,
-);
-
-router.post(
-  "/:invoiceId/mark-paid",
-  authorizeCognito,
-  withInvoiceOrgPermissions(),
-  requirePermission("billing:edit:any"),
-  FinanceController.recordInvoicePayment,
-);
-
-router.post(
   "/invoices/:invoiceId/payments",
   authorizeCognito,
   withInvoiceOrgPermissions(),
@@ -161,30 +202,6 @@ router.post(
   "/invoices/:invoiceId/payments/sessions",
   authorizeCognito,
   FinanceController.createInvoicePaymentSession,
-);
-
-router.patch(
-  "/:invoiceId/payment-collection-method",
-  authorizeCognito,
-  withInvoiceOrgPermissions(),
-  requirePermission("billing:edit:any"),
-  InvoiceController.updatePaymentCollectionMethod,
-);
-
-router.post(
-  "/:invoiceId/credit-notes",
-  authorizeCognito,
-  withInvoiceOrgPermissions(),
-  requirePermission("billing:edit:any"),
-  InvoiceController.issueCreditNote,
-);
-
-router.post(
-  "/:invoiceId/credit-notes/:creditNoteId/void",
-  authorizeCognito,
-  withInvoiceOrgPermissions(),
-  requirePermission("billing:edit:any"),
-  InvoiceController.voidCreditNote,
 );
 
 router.get("/:invoiceId", authorizeCognito, FinanceController.getInvoiceById);

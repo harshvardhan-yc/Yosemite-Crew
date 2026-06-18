@@ -548,6 +548,7 @@ export const StripeService = {
         invoiceId: openInvoice.id,
         paymentIntentId: pi.id,
         chargeId: charge.id,
+        receiptUrl: charge.receipt_url ?? null,
         currency: pi.currency ?? null,
         rawProviderPayload: {
           paymentIntentId: pi.id,
@@ -617,6 +618,7 @@ export const StripeService = {
       invoiceId: createdInvoice.id,
       paymentIntentId: pi.id,
       chargeId: charge.id,
+      receiptUrl: charge.receipt_url ?? null,
       currency: pi.currency ?? null,
       rawProviderPayload: {
         paymentIntentId: pi.id,
@@ -641,12 +643,18 @@ export const StripeService = {
     const invoiceId = pi.metadata?.invoiceId;
     if (!invoiceId) return;
 
+    const chargeId =
+      typeof pi.latest_charge === "string" ? pi.latest_charge : null;
+    const charge = chargeId
+      ? await getStripeClient().charges.retrieve(chargeId)
+      : null;
+
     const result =
       await FinancePaymentService.handleInvoicePaymentIntentSucceeded({
         invoiceId,
         paymentIntentId: pi.id,
-        chargeId:
-          typeof pi.latest_charge === "string" ? pi.latest_charge : null,
+        chargeId,
+        receiptUrl: charge?.receipt_url ?? null,
         currency: pi.currency ?? null,
         rawProviderPayload: {
           paymentIntentId: pi.id,

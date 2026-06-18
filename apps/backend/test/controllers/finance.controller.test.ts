@@ -1,5 +1,7 @@
 import { FinanceController } from "../../src/controllers/app/finance.controller";
 import { FinancePaymentService } from "../../src/services/finance/payment";
+import { FinanceSubscriptionService } from "../../src/services/finance/subscription";
+import { FinanceEventService } from "../../src/services/finance/events";
 import { StripeController } from "../../src/controllers/web/stripe.controller";
 import { InvoiceService } from "../../src/services/invoice.service";
 import { AuthUserMobileService } from "../../src/services/authUserMobile.service";
@@ -35,6 +37,23 @@ jest.mock("../../src/services/invoice.service", () => ({
     handleInvoiceCancellation: jest.fn(),
     addItemsToInvoice: jest.fn(),
     addChargesToAppointment: jest.fn(),
+    markAppointmentReadyForBilling: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/finance/subscription", () => ({
+  __esModule: true,
+  FinanceSubscriptionService: {
+    getCurrentSubscription: jest.fn(),
+    upsertSubscription: jest.fn(),
+    listUsageSnapshots: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/finance/events", () => ({
+  __esModule: true,
+  FinanceEventService: {
+    recordEvent: jest.fn(),
   },
 }));
 
@@ -457,6 +476,179 @@ describe("FinanceController", () => {
       meta: null,
       error: null,
     });
+  });
+
+  it("returns the current subscription summary", async () => {
+    (
+      FinanceSubscriptionService.getCurrentSubscription as jest.Mock
+    ).mockResolvedValueOnce({
+      organisationId: "org_1",
+      providerLink: { provider: "STRIPE" },
+      entitlement: { code: "BUSINESS_PLAN" },
+    });
+
+    const req = {
+      query: { organisationId: "org_1" },
+    } as unknown as Request;
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as Response;
+
+    await FinanceController.getCurrentSubscription(req, res);
+
+    expect(
+      FinanceSubscriptionService.getCurrentSubscription,
+    ).toHaveBeenCalledWith("org_1");
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      data: {
+        organisationId: "org_1",
+        providerLink: { provider: "STRIPE" },
+        entitlement: { code: "BUSINESS_PLAN" },
+      },
+      meta: null,
+      error: null,
+    });
+  });
+
+  it("upserts a subscription from the finance api", async () => {
+    (
+      FinanceSubscriptionService.upsertSubscription as jest.Mock
+    ).mockResolvedValueOnce({
+      organisationId: "org_1",
+      providerLink: { provider: "STRIPE" },
+      entitlement: { code: "BUSINESS_PLAN" },
+    });
+
+    const req = {
+      body: {
+        organisationId: "org_1",
+        planCode: "business",
+        provider: "stripe",
+        providerSubscriptionId: "sub_1",
+        quantity: 3,
+      },
+    } as unknown as Request;
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as Response;
+
+    await FinanceController.upsertSubscription(req, res);
+
+    expect(FinanceSubscriptionService.upsertSubscription).toHaveBeenCalledWith({
+      orgId: "org_1",
+      planCode: "business",
+      provider: "stripe",
+      providerSubscriptionId: "sub_1",
+      quantity: 3,
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it("returns usage snapshots with query filters", async () => {
+    (
+      FinanceSubscriptionService.listUsageSnapshots as jest.Mock
+    ).mockResolvedValueOnce([{ id: "snap_1" }]);
+
+    const req = {
+      query: {
+        organisationId: "org_1",
+        subscriptionId: "sub_1",
+        featureKey: "appointments",
+      },
+    } as unknown as Request;
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as Response;
+
+    await FinanceController.getUsageSnapshots(req, res);
+
+    expect(FinanceSubscriptionService.listUsageSnapshots).toHaveBeenCalledWith(
+      "org_1",
+      {
+        subscriptionId: "sub_1",
+        featureKey: "appointments",
+      },
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("marks an appointment ready for billing from the finance route", async () => {
+    (
+      InvoiceService.markAppointmentReadyForBilling as jest.Mock
+    ).mockResolvedValueOnce({
+      id: "inv_ready",
+      visitBillingStage: "READY_FOR_BILLING",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+    });
+    (FinanceEventService.recordEvent as jest.Mock).mockResolvedValueOnce({});
+
+    const req = {
+      params: { appointmentId: "appt_1" },
+      body: { visitId: "visit_1", notes: "Ready" },
+      organisationId: "org_1",
+    } as unknown as Request;
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as Response;
+
+    await FinanceController.markAppointmentReadyForBilling(req, res);
+
+    expect(InvoiceService.markAppointmentReadyForBilling).toHaveBeenCalledWith(
+      "appt_1",
+    );
+    expect(FinanceEventService.recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId: "org_1",
+        eventType: "APPOINTMENT_READY_FOR_BILLING",
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("records a visit milestone and auto-readies billing when requested", async () => {
+    (
+      InvoiceService.markAppointmentReadyForBilling as jest.Mock
+    ).mockResolvedValueOnce({
+      id: "inv_visit",
+      visitBillingStage: "READY_FOR_BILLING",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+    });
+    (FinanceEventService.recordEvent as jest.Mock).mockResolvedValueOnce({});
+
+    const req = {
+      params: { visitId: "visit_1" },
+      body: {
+        milestone: "READY_FOR_BILLING",
+        organisationId: "org_1",
+        appointmentId: "appt_1",
+        metadata: { reason: "done" },
+      },
+    } as unknown as Request;
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as Response;
+
+    await FinanceController.recordVisitMilestone(req, res);
+
+    expect(InvoiceService.markAppointmentReadyForBilling).toHaveBeenCalledWith(
+      "appt_1",
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          visitId: "visit_1",
+          milestone: "READY_FOR_BILLING",
+          billingState: "READY_FOR_BILLING",
+        }),
+      }),
+    );
   });
 
   it("refunds payment records", async () => {

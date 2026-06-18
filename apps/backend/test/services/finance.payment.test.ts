@@ -644,6 +644,13 @@ describe("FinancePaymentService", () => {
         }),
       }),
     );
+    expect(prisma.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          receiptUrl: "https://receipt",
+        }),
+      }),
+    );
     expect(result.action).toBe("PAID");
   });
 

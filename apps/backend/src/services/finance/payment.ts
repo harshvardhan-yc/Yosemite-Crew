@@ -1188,6 +1188,7 @@ export const FinancePaymentService = {
       settlementChannel: "STRIPE",
       providerPaymentId: input.paymentIntentId,
       paymentAttemptId: paymentAttempt?.id ?? null,
+      reference: input.receiptUrl ?? undefined,
       rawProviderPayload: input.rawProviderPayload ?? undefined,
     });
 
@@ -1241,6 +1242,7 @@ export const FinancePaymentService = {
       settlementChannel: "STRIPE",
       providerPaymentId: input.paymentIntentId ?? null,
       paymentAttemptId: paymentAttempt?.id ?? null,
+      reference: input.receiptUrl ?? undefined,
       rawProviderPayload: input.rawProviderPayload ?? undefined,
     });
 

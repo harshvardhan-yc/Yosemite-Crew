@@ -975,6 +975,10 @@ describe("StripeService", () => {
         action: "REFUNDED",
         invoice: { id: "inv_3", parentId: "par_1" },
       });
+      mStripe.charges.retrieve.mockResolvedValueOnce({
+        id: "ch_1",
+        receipt_url: "receipt",
+      });
 
       await StripeService._handleInvoicePayment({
         id: "pi_1",
@@ -1001,6 +1005,7 @@ describe("StripeService", () => {
         expect.objectContaining({
           invoiceId: "inv_1",
           paymentIntentId: "pi_1",
+          receiptUrl: "receipt",
         }),
       );
       expect(

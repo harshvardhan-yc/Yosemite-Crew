@@ -8,6 +8,7 @@ jest.mock("src/config/prisma", () => ({
     },
     subscriptionEntitlement: {
       upsert: jest.fn(),
+      findMany: jest.fn(),
       updateMany: jest.fn(),
     },
     financeProviderLink: {
@@ -15,17 +16,21 @@ jest.mock("src/config/prisma", () => ({
       findMany: jest.fn(),
       findUnique: jest.fn(),
     },
-    usageEvent: {
-      create: jest.fn(),
-    },
     usageSnapshot: {
       create: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+    },
+    usageEvent: {
+      create: jest.fn(),
+      findMany: jest.fn(),
     },
     financeEvent: {
       create: jest.fn(),
     },
     organizationUsageCounter: {
       upsert: jest.fn(),
+      findUnique: jest.fn(),
     },
     userOrganization: {
       count: jest.fn(),
@@ -112,6 +117,126 @@ describe("FinanceSubscriptionService", () => {
         seatsBillable: 4,
       }),
     });
+  });
+
+  it("returns the current subscription summary", async () => {
+    (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        provider: "STRIPE",
+        externalCustomerId: "cus_1",
+        externalSubscriptionId: "sub_1",
+        externalSubscriptionItemId: "item_1",
+        externalPriceId: "price_1",
+        externalProductId: "prod_1",
+        metadata: {},
+        createdAt: new Date("2026-06-17T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-18T00:00:00.000Z"),
+      },
+    ]);
+    (
+      prisma.subscriptionEntitlement.findMany as jest.Mock
+    ).mockResolvedValueOnce([
+      {
+        id: "ent_1",
+        code: "BUSINESS_PLAN",
+        name: "Business subscription",
+        value: {},
+        source: "STRIPE",
+        status: "ACTIVE",
+        grantedAt: new Date("2026-06-18T00:00:00.000Z"),
+        expiresAt: null,
+        metadata: {},
+        createdAt: new Date("2026-06-18T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-18T00:00:00.000Z"),
+      },
+    ]);
+    (
+      prisma.organizationUsageCounter.findUnique as jest.Mock
+    ).mockResolvedValueOnce(null);
+    (prisma.usageSnapshot.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    (prisma.usageEvent.findMany as jest.Mock).mockResolvedValueOnce([]);
+
+    const result =
+      await FinanceSubscriptionService.getCurrentSubscription("org_1");
+
+    expect(result.organisationId).toBe("org_1");
+    expect(result.providerLink?.provider).toBe("STRIPE");
+    expect(result.entitlement?.code).toBe("BUSINESS_PLAN");
+  });
+
+  it("upserts a subscription and records a finance event", async () => {
+    (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValueOnce({
+      provider: "STRIPE",
+      externalSubscriptionId: "sub_1",
+    });
+    (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValueOnce({
+      code: "BUSINESS_PLAN",
+    });
+    (prisma.financeEvent.create as jest.Mock).mockResolvedValueOnce({});
+
+    const result = await FinanceSubscriptionService.upsertSubscription({
+      orgId: "org_1",
+      planCode: "business",
+      provider: "stripe",
+      providerSubscriptionId: "sub_1",
+      quantity: 3,
+    });
+
+    expect(prisma.financeProviderLink.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          orgId_provider: {
+            orgId: "org_1",
+            provider: "STRIPE",
+          },
+        },
+      }),
+    );
+    expect(prisma.subscriptionEntitlement.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          orgId_code: {
+            orgId: "org_1",
+            code: "BUSINESS_PLAN",
+          },
+        },
+      }),
+    );
+    expect(prisma.financeEvent.create).toHaveBeenCalled();
+    expect(result.organisationId).toBe("org_1");
+  });
+
+  it("lists usage snapshots with metadata filters", async () => {
+    (prisma.usageSnapshot.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "snap_1",
+        orgId: "org_1",
+        snapshotType: "SEAT_SYNC",
+        snapshotAt: new Date("2026-06-18T00:00:00.000Z"),
+        metadata: {
+          subscriptionId: "sub_1",
+          featureKey: "appointments",
+        },
+      },
+      {
+        id: "snap_2",
+        orgId: "org_1",
+        snapshotType: "OTHER",
+        snapshotAt: new Date("2026-06-17T00:00:00.000Z"),
+        metadata: {
+          subscriptionId: "sub_2",
+          featureKey: "tools",
+        },
+      },
+    ]);
+
+    const snapshots = await FinanceSubscriptionService.listUsageSnapshots(
+      "org_1",
+      { subscriptionId: "sub_1", featureKey: "appointments" },
+    );
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.id).toBe("snap_1");
   });
 
   it("prepares business checkout context and records seat usage", async () => {

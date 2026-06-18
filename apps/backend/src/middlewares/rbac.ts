@@ -24,9 +24,15 @@ export interface OrgRequest extends AuthenticatedRequest {
  */
 function extractOrgId(req: Request): string | null {
   const body = (req as { body?: unknown }).body;
+  const query = (req as { query?: unknown }).query;
   const bodyOrgId =
     typeof body === "object" && body !== null && !Array.isArray(body)
       ? (body as Record<string, unknown>).organisationId
+      : undefined;
+  const queryOrgId =
+    typeof query === "object" && query !== null && !Array.isArray(query)
+      ? ((query as Record<string, unknown>).organisationId ??
+        (query as Record<string, unknown>).organizationId)
       : undefined;
 
   if (Array.isArray(body)) {
@@ -49,6 +55,7 @@ function extractOrgId(req: Request): string | null {
     req.params.organisationId ||
     req.params.organizationId ||
     (req.headers["x-org-id"] as string) ||
+    (typeof queryOrgId === "string" ? queryOrgId : null) ||
     (typeof bodyOrgId === "string" ? bodyOrgId : null) ||
     null
   );
