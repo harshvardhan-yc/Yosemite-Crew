@@ -89,7 +89,7 @@ It's the same PIMS your team knows, plus the things only a native app can do: it
 
 ## ⬇️ Download
 
-Grab the latest signed build from the [**Releases page**](https://github.com/YosemiteCrew/Yosemite-Crew/releases):
+Get the newest signed build from the [**latest release**](https://github.com/YosemiteCrew/Yosemite-Crew/releases/latest), or browse [all releases](https://github.com/YosemiteCrew/Yosemite-Crew/releases):
 
 | Platform | File |
 | --- | --- |
@@ -97,10 +97,10 @@ Grab the latest signed build from the [**Releases page**](https://github.com/Yos
 | **Windows** | `Yosemite Crew PIMS-<version>-win-x64-setup.exe` (or the portable `.exe`) |
 | **Linux** | `Yosemite Crew PIMS-<version>-linux-<arch>.AppImage` |
 
-- **macOS** — open the `.dmg`, drag the app to Applications. Builds are **signed with a Developer ID and notarized**, so Gatekeeper opens them without warnings.
-- **Windows** — run the installer. Builds are **Authenticode-signed** (publisher: *DuneXploration UG*). New certificates accrue SmartScreen reputation over time; if you see a "not commonly downloaded" prompt on day one, choose **More info → Run anyway**.
+- **macOS** — open the `.dmg`, drag the app to Applications. Builds are **signed with a Developer ID and notarized by Apple**, so Gatekeeper opens them without warnings.
+- **Windows** — run the installer. Builds are **code-signed via Azure Artifact Signing** (publisher: *DuneXploration UG (haftungsbeschränkt)*). A brand-new certificate accrues SmartScreen reputation over time; if you see a "not commonly downloaded" prompt early on, choose **More info → Run anyway**.
 
-The app updates itself after install — no need to re-download for new versions.
+The app **updates itself** after install — no need to re-download for new versions.
 
 ## 🚀 Build from source
 
