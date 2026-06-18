@@ -124,6 +124,15 @@ router.patch(
   AppointmentController.checkInAppointmentForPMS,
 );
 
+// Mark appointment ready for billing
+router.patch(
+  "/pms/:organisationId/:appointmentId/ready-for-billing",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  AppointmentController.markReadyForBillingForPMS,
+);
+
 // Update appointment
 router.patch(
   "/pms/:organisationId/:appointmentId",

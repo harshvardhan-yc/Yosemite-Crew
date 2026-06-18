@@ -16,6 +16,15 @@ export type InvoiceStatus =
 
 export type PaymentCollectionMethod = 'PAYMENT_INTENT' | 'PAYMENT_LINK' | 'PAYMENT_AT_CLINIC';
 
+export type BillingCollectionMode =
+  | 'PREPAY_AT_BOOKING'
+  | 'PAY_AT_VISIT_END'
+  | 'STAGED_DURING_VISIT'
+  | 'DEPOSIT_THEN_SETTLE'
+  | 'MANUAL_OFFLINE';
+
+export type InvoiceVisitBillingStage = 'DRAFT' | 'READY_FOR_BILLING' | 'SETTLED';
+
 export type InvoiceItem = {
   id?: string;
   name: string;
@@ -39,6 +48,11 @@ export type Invoice = {
   totalAmount: number;
 
   paymentCollectionMethod: PaymentCollectionMethod;
+
+  billingCollectionMode?: BillingCollectionMode;
+  visitBillingStage?: InvoiceVisitBillingStage;
+  depositTargetAmount?: number;
+  depositCollectedAmount?: number;
 
   currency: Currency;
 

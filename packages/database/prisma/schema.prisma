@@ -1170,6 +1170,12 @@ enum PaymentCollectionMethod {
   PAYMENT_AT_CLINIC
 }
 
+enum InvoiceVisitBillingStage {
+  DRAFT
+  READY_FOR_BILLING
+  SETTLED
+}
+
 enum PaymentProvider {
   STRIPE
   MANUAL
@@ -2606,6 +2612,10 @@ model Invoice {
   totalAmount              Float
   currency                 String
   paymentCollectionMethod  PaymentCollectionMethod  @default(PAYMENT_INTENT)
+  billingCollectionMode    BillingCollectionMode    @default(PREPAY_AT_BOOKING)
+  visitBillingStage        InvoiceVisitBillingStage  @default(DRAFT)
+  depositTargetAmount      Float                    @default(0)
+  depositCollectedAmount   Float                    @default(0)
   stripePaymentIntentId    String?
   stripePaymentLinkId      String?
   stripeInvoiceId          String?
@@ -2632,6 +2642,8 @@ model Invoice {
   @@index([status])
   @@index([stripeCheckoutSessionId])
   @@index([paymentCollectionMethod])
+  @@index([billingCollectionMode])
+  @@index([visitBillingStage])
   @@index([taxProvider])
 }
 

@@ -745,13 +745,50 @@ export const FinancePaymentService = {
       },
     });
 
+    const isDepositPayment =
+      input.collectionMode === "DEPOSIT_THEN_SETTLE" ||
+      input.settlementChannel === "DEPOSIT" ||
+      invoice.billingCollectionMode === "DEPOSIT_THEN_SETTLE";
+    const nextDepositCollectedAmount = isDepositPayment
+      ? roundMoney(
+          invoice.depositTargetAmount > 0
+            ? Math.min(
+                (invoice.depositCollectedAmount ?? 0) + appliedAmount,
+                invoice.depositTargetAmount,
+              )
+            : (invoice.depositCollectedAmount ?? 0) + appliedAmount,
+        )
+      : roundMoney(invoice.depositCollectedAmount ?? 0);
+
     const updatedInvoice =
       appliedAmount >= balance
         ? await prisma.invoice.update({
             where: { id: invoiceId },
-            data: { status: "PAID", paidAt: receivedAt },
+            data: {
+              status: "PAID",
+              paidAt: receivedAt,
+              visitBillingStage: "SETTLED",
+              depositCollectedAmount: nextDepositCollectedAmount,
+              ...(isDepositPayment
+                ? {
+                    billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+                  }
+                : {}),
+            },
           })
-        : invoice;
+        : isDepositPayment
+          ? await prisma.invoice.update({
+              where: { id: invoiceId },
+              data: {
+                depositCollectedAmount: nextDepositCollectedAmount,
+                billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+                visitBillingStage:
+                  invoice.visitBillingStage === "SETTLED"
+                    ? "SETTLED"
+                    : "READY_FOR_BILLING",
+              },
+            })
+          : invoice;
 
     const summary = await getOutstandingBalance(
       invoiceId,

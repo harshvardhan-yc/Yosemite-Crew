@@ -128,6 +128,10 @@ describe("InvoiceService", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           taxProvider: "STRIPE",
+          billingCollectionMode: "PREPAY_AT_BOOKING",
+          visitBillingStage: "DRAFT",
+          depositTargetAmount: 0,
+          depositCollectedAmount: 0,
           invoiceDiscountType: "FIXED_AMOUNT",
           invoiceDiscountValue: 12,
           invoiceDiscountTotal: 12,
@@ -197,6 +201,10 @@ describe("InvoiceService", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           taxProvider: "STRIPE",
+          billingCollectionMode: "STAGED_DURING_VISIT",
+          visitBillingStage: "READY_FOR_BILLING",
+          depositTargetAmount: 0,
+          depositCollectedAmount: 0,
           taxSnapshot: expect.objectContaining({
             create: expect.objectContaining({
               provider: "STRIPE",
@@ -207,6 +215,110 @@ describe("InvoiceService", () => {
       }),
     );
     expect((result as { id: string }).id).toBe("inv_extra");
+  });
+
+  it("marks visit-based invoices ready for billing and leaves prepay invoices alone", async () => {
+    (prisma.invoice.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: "inv_visit",
+        appointmentId,
+        status: "AWAITING_PAYMENT",
+        billingCollectionMode: "PAY_AT_VISIT_END",
+        visitBillingStage: "DRAFT",
+        depositTargetAmount: 0,
+        depositCollectedAmount: 0,
+        totalAmount: 100,
+        currency: "usd",
+        paymentCollectionMethod: "PAYMENT_AT_CLINIC",
+      })
+      .mockResolvedValueOnce({
+        id: "inv_prepay",
+        appointmentId,
+        status: "AWAITING_PAYMENT",
+        billingCollectionMode: "PREPAY_AT_BOOKING",
+        visitBillingStage: "DRAFT",
+        depositTargetAmount: 0,
+        depositCollectedAmount: 0,
+        totalAmount: 100,
+        currency: "usd",
+        paymentCollectionMethod: "PAYMENT_LINK",
+      });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_visit",
+      appointmentId,
+      status: "AWAITING_PAYMENT",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+      visitBillingStage: "READY_FOR_BILLING",
+      depositTargetAmount: 0,
+      depositCollectedAmount: 0,
+      totalAmount: 100,
+      currency: "usd",
+      paymentCollectionMethod: "PAYMENT_AT_CLINIC",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const updated =
+      await InvoiceService.markAppointmentReadyForBilling(appointmentId);
+    const skipped =
+      await InvoiceService.markAppointmentReadyForBilling(appointmentId);
+
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inv_visit" },
+        data: expect.objectContaining({
+          billingCollectionMode: "PAY_AT_VISIT_END",
+          visitBillingStage: "READY_FOR_BILLING",
+        }),
+      }),
+    );
+    expect(updated?.visitBillingStage).toBe("READY_FOR_BILLING");
+    expect(skipped?.billingCollectionMode).toBe("PREPAY_AT_BOOKING");
+  });
+
+  it("sets deposit targets explicitly on invoices", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_deposit",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+      visitBillingStage: "DRAFT",
+      depositTargetAmount: 0,
+      depositCollectedAmount: 12,
+      totalAmount: 100,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_deposit",
+      billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+      visitBillingStage: "READY_FOR_BILLING",
+      depositTargetAmount: 20,
+      depositCollectedAmount: 12,
+      totalAmount: 100,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const updated = await InvoiceService.setInvoiceDepositTarget(
+      "inv_deposit",
+      20,
+    );
+
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inv_deposit" },
+        data: expect.objectContaining({
+          billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+          visitBillingStage: "READY_FOR_BILLING",
+          depositTargetAmount: 20,
+          depositCollectedAmount: 12,
+        }),
+      }),
+    );
+    expect(updated?.depositTargetAmount).toBe(20);
   });
 
   it("updates invoice totals when adding items", async () => {

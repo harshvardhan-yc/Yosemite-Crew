@@ -129,6 +129,122 @@ describe("FinancePaymentService", () => {
     expect(result.appliedAmount).toBe(25);
   });
 
+  it("tracks deposit payments against the invoice without closing it", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_2d",
+      totalAmount: 100,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+      visitBillingStage: "DRAFT",
+      depositTargetAmount: 50,
+      depositCollectedAmount: 0,
+    });
+    (prisma.payment.findMany as jest.Mock)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ amount: 25 }]);
+    (prisma.paymentAttempt.create as jest.Mock).mockResolvedValueOnce({
+      id: "pa_2d",
+    });
+    (prisma.payment.create as jest.Mock).mockResolvedValueOnce({
+      id: "pay_2d",
+      amount: 25,
+      status: "SUCCEEDED",
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_2d",
+      totalAmount: 100,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+      visitBillingStage: "READY_FOR_BILLING",
+      depositTargetAmount: 50,
+      depositCollectedAmount: 25,
+    });
+
+    const result = await FinancePaymentService.recordInvoicePayment("inv_2d", {
+      provider: "MANUAL",
+      amount: 25,
+      settlementChannel: "DEPOSIT",
+      collectionMode: "DEPOSIT_THEN_SETTLE",
+      currency: "usd",
+      receivedAt: new Date("2026-06-18T10:00:00.000Z"),
+      rawProviderPayload: { source: "front-desk" },
+    });
+
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inv_2d" },
+        data: expect.objectContaining({
+          billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+          visitBillingStage: "READY_FOR_BILLING",
+          depositCollectedAmount: 25,
+        }),
+      }),
+    );
+    expect(result.balanceAfterPayment).toBe(75);
+    expect(result.appliedAmount).toBe(25);
+  });
+
+  it("marks deposit invoices settled when fully paid", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_2f",
+      totalAmount: 100,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+      visitBillingStage: "READY_FOR_BILLING",
+      depositTargetAmount: 50,
+      depositCollectedAmount: 25,
+    });
+    (prisma.payment.findMany as jest.Mock)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ amount: 100 }]);
+    (prisma.paymentAttempt.create as jest.Mock).mockResolvedValueOnce({
+      id: "pa_2f",
+    });
+    (prisma.payment.create as jest.Mock).mockResolvedValueOnce({
+      id: "pay_2f",
+      amount: 100,
+      status: "SUCCEEDED",
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_2f",
+      totalAmount: 100,
+      currency: "usd",
+      status: "PAID",
+      paidAt: new Date("2026-06-18T10:00:00.000Z"),
+      billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+      visitBillingStage: "SETTLED",
+      depositTargetAmount: 50,
+      depositCollectedAmount: 50,
+    });
+
+    const result = await FinancePaymentService.recordInvoicePayment("inv_2f", {
+      provider: "MANUAL",
+      amount: 100,
+      settlementChannel: "DEPOSIT",
+      collectionMode: "DEPOSIT_THEN_SETTLE",
+      currency: "usd",
+      receivedAt: new Date("2026-06-18T10:00:00.000Z"),
+      rawProviderPayload: { source: "front-desk" },
+    });
+
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inv_2f" },
+        data: expect.objectContaining({
+          status: "PAID",
+          visitBillingStage: "SETTLED",
+          billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+          depositCollectedAmount: 50,
+        }),
+      }),
+    );
+    expect(result.invoice.status).toBe("PAID");
+    expect(result.balanceAfterPayment).toBe(0);
+  });
+
   it("creates a checkout session and payment attempt for payable invoices", async () => {
     (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
       id: "inv_6",

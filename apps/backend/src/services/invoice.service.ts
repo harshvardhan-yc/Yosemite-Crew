@@ -1,6 +1,7 @@
 import {
   Prisma,
   Invoice as PrismaInvoice,
+  BillingCollectionMode as PrismaBillingCollectionMode,
   InvoiceStatus as PrismaInvoiceStatus,
   PaymentCollectionMethod,
   TaxBehavior as PrismaTaxBehavior,
@@ -41,6 +42,8 @@ export class InvoiceServiceError extends Error {
 const SUPPORT_EMAIL_ADDRESS =
   process.env.SUPPORT_EMAIL_ADDRESS ?? "support@yosemitecrew.com";
 
+type InvoiceVisitBillingStage = "DRAFT" | "READY_FOR_BILLING" | "SETTLED";
+
 type AppointmentLink = {
   patientId?: string;
   parentId?: string;
@@ -68,6 +71,13 @@ type CreateInvoiceInput = {
     | "PAYMENT_LINK"
     | "PAYMENT_AT_CLINIC";
 };
+
+const resolveBillingCollectionMode = (
+  paymentCollectionMethod: CreateInvoiceInput["paymentCollectionMethod"],
+): PrismaBillingCollectionMode =>
+  paymentCollectionMethod === "PAYMENT_AT_CLINIC"
+    ? "PAY_AT_VISIT_END"
+    : "PREPAY_AT_BOOKING";
 
 const normalizeInvoiceMetadata = (
   value: Prisma.JsonValue | null | undefined,
@@ -111,6 +121,10 @@ const toInvoiceRecord = (row: PrismaInvoice): Invoice => {
     currency: row.currency,
     taxTotal: row.taxTotal,
     discountTotal: row.discountTotal,
+    billingCollectionMode: row.billingCollectionMode ?? undefined,
+    visitBillingStage: row.visitBillingStage as InvoiceVisitBillingStage,
+    depositTargetAmount: row.depositTargetAmount,
+    depositCollectedAmount: row.depositCollectedAmount,
     stripePaymentIntentId: row.stripePaymentIntentId ?? undefined,
     stripePaymentLinkId: row.stripePaymentLinkId ?? undefined,
     stripeInvoiceId: row.stripeInvoiceId ?? undefined,
@@ -471,6 +485,12 @@ const normalizeCreateInput = async (
       currency,
       status: "AWAITING_PAYMENT" as const,
       paymentCollectionMethod: input.paymentCollectionMethod,
+      billingCollectionMode: resolveBillingCollectionMode(
+        input.paymentCollectionMethod,
+      ),
+      visitBillingStage: "DRAFT" as const,
+      depositTargetAmount: 0,
+      depositCollectedAmount: 0,
       taxProvider: totals.taxSnapshot.provider,
       items: items as unknown as Prisma.InputJsonValue,
       subtotal: totals.subtotal,
@@ -622,6 +642,10 @@ export const InvoiceService = {
         currency,
         status: "AWAITING_PAYMENT",
         paymentCollectionMethod: "PAYMENT_LINK",
+        billingCollectionMode: "STAGED_DURING_VISIT",
+        visitBillingStage: "READY_FOR_BILLING" as const,
+        depositTargetAmount: 0,
+        depositCollectedAmount: 0,
         taxProvider: totals.taxSnapshot.provider,
         items: buildInvoiceLineSnapshots(
           items,
@@ -709,6 +733,7 @@ export const InvoiceService = {
       data: {
         status: "PAID",
         paidAt: new Date(),
+        visitBillingStage: "SETTLED",
         stripePaymentIntentId: params.stripePaymentIntentId ?? undefined,
         stripeChargeId: params.stripeChargeId ?? undefined,
         stripeReceiptUrl: params.stripeReceiptUrl ?? undefined,
@@ -811,7 +836,10 @@ export const InvoiceService = {
   async updateStatus(invoiceId: string, status: PrismaInvoiceStatus) {
     const invoice = await prisma.invoice.update({
       where: { id: invoiceId },
-      data: { status },
+      data: {
+        status,
+        visitBillingStage: status === "PAID" ? "SETTLED" : undefined,
+      },
     });
 
     await recordInvoiceAuditForRow(invoice, "INVOICE_UPDATED", invoice.id, {
@@ -819,6 +847,75 @@ export const InvoiceService = {
     });
 
     return invoice;
+  },
+
+  async markAppointmentReadyForBilling(appointmentId: string) {
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        appointmentId,
+        status: { in: ["AWAITING_PAYMENT", "PENDING"] },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!invoice) {
+      return null;
+    }
+
+    if (
+      invoice.billingCollectionMode === "PREPAY_AT_BOOKING" ||
+      invoice.visitBillingStage === "READY_FOR_BILLING" ||
+      invoice.visitBillingStage === "SETTLED"
+    ) {
+      return toInvoiceRecord(invoice);
+    }
+
+    const updated = await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        billingCollectionMode:
+          invoice.billingCollectionMode ?? "PAY_AT_VISIT_END",
+        visitBillingStage: "READY_FOR_BILLING",
+      },
+    });
+
+    return toInvoiceRecord(updated);
+  },
+
+  async setInvoiceDepositTarget(
+    invoiceId: string,
+    depositTargetAmount: number,
+  ) {
+    if (depositTargetAmount < 0) {
+      throw new InvoiceServiceError(
+        "Deposit target amount must be greater than or equal to zero",
+        400,
+      );
+    }
+
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+    if (!invoice) {
+      throw new InvoiceServiceError("Invoice not found", 404);
+    }
+
+    const targetAmount = roundMoney(depositTargetAmount);
+    const collectedAmount = roundMoney(
+      Math.min(invoice.depositCollectedAmount ?? 0, targetAmount),
+    );
+
+    const updated = await prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+        visitBillingStage: "READY_FOR_BILLING",
+        depositTargetAmount: targetAmount,
+        depositCollectedAmount: collectedAmount,
+      },
+    });
+
+    return toInvoiceRecord(updated);
   },
 
   async getByAppointmentId(appId: string, organisationId?: string) {
