@@ -5,6 +5,7 @@ import type { Appointment } from '@yosemite-crew/types';
 import WorkspaceRoute from '@/app/features/appointments/pages/AppointmentWorkspace/WorkspaceRoute';
 import { useAppointmentStore } from '@/app/stores/appointmentStore';
 import { isAppointmentRevampEnabled } from '@/app/lib/featureFlags';
+import { getAppointmentCompanion } from '@/app/lib/appointments';
 import {
   useAppointmentsForPrimaryOrg,
   useLoadAppointmentsForPrimaryOrg,
@@ -29,7 +30,7 @@ jest.mock('@/app/hooks/useAppointments', () => ({
 jest.mock('@/app/features/appointments/pages/AppointmentWorkspace', () => ({
   __esModule: true,
   default: ({ appointment }: { appointment: Appointment }) => (
-    <div data-testid="workspace">Workspace for {appointment.companion.name}</div>
+    <div data-testid="workspace">Workspace for {getAppointmentCompanion(appointment).name}</div>
   ),
 }));
 
@@ -39,6 +40,13 @@ jest.mock('@/app/ui/overlays/Loader', () => ({
 
 const makeAppointment = (id = 'appt-1'): Appointment => ({
   id,
+  patient: {
+    id: 'comp-1',
+    name: 'Gigi',
+    species: 'Canine',
+    breed: 'Mixed',
+    parent: { id: 'parent-1', name: 'Rachel' },
+  },
   companion: {
     id: 'comp-1',
     name: 'Gigi',

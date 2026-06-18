@@ -198,7 +198,7 @@ describe('taskService', () => {
     expect(templates).toEqual([]);
     expect(library).toEqual([]);
     expect(loadTemplateFormsMock).toHaveBeenCalledWith('org-1', {
-      kind: 'TASK_TEMPLATE',
+      kind: 'TASK_ASSIGNMENT',
       status: 'PUBLISHED',
     });
   });
@@ -256,7 +256,7 @@ describe('taskService', () => {
         organisationId: 'org-1',
         name: 'Generic communication',
         description: 'Call parent',
-        kind: 'TASK_TEMPLATE',
+        kind: 'TASK_ASSIGNMENT',
         status: 'PUBLISHED',
         rules: {
           category: 'COMMUNICATION',

@@ -56,12 +56,12 @@ const resolveParentMongoId = (parent: {
 export const CoParentInviteService = {
   async sendInvite({
     email,
-    companionId,
+    patientId,
     invitedByParentId,
     inviteeName,
   }: {
     email: string;
-    companionId: string;
+    patientId: string;
     invitedByParentId: string;
     inviteeName?: string;
   }) {
@@ -69,8 +69,8 @@ export const CoParentInviteService = {
       throw new CoParentInviteServiceError("Email is required.", 400);
     }
 
-    if (!isReadFromPostgres() && !Types.ObjectId.isValid(companionId)) {
-      throw new CoParentInviteServiceError("Invalid companionId.", 400);
+    if (!isReadFromPostgres() && !Types.ObjectId.isValid(patientId)) {
+      throw new CoParentInviteServiceError("Invalid patientId.", 400);
     }
 
     if (!isReadFromPostgres() && !Types.ObjectId.isValid(invitedByParentId)) {
@@ -83,10 +83,10 @@ export const CoParentInviteService = {
     );
 
     if (isReadFromPostgres()) {
-      const inviterOwnershipLink = await prisma.parentCompanion.findFirst({
+      const inviterOwnershipLink = await prisma.parentPatient.findFirst({
         where: {
           parentId: invitedByParentId,
-          companionId,
+          patientId: patientId,
           role: "PRIMARY",
           status: "ACTIVE",
         },
@@ -103,7 +103,7 @@ export const CoParentInviteService = {
       const inviterOwnershipLink = await ParentCompanionModel.findOne(
         {
           parentId: new Types.ObjectId(invitedByParentId),
-          companionId: new Types.ObjectId(companionId),
+          patientId: new Types.ObjectId(patientId),
           role: "PRIMARY",
           status: "ACTIVE",
         },
@@ -124,7 +124,7 @@ export const CoParentInviteService = {
         data: {
           email: email.toLowerCase(),
           inviteeName: inviteeName ?? undefined,
-          companionId,
+          patientId: patientId,
           invitedByParentId,
           inviteToken,
           expiresAt,
@@ -144,7 +144,7 @@ export const CoParentInviteService = {
 
     const doc = (await CoParentInviteModel.create({
       email: email.toLowerCase(),
-      companionId: new Types.ObjectId(companionId),
+      patientId: new Types.ObjectId(patientId),
       invitedByParentId: new Types.ObjectId(invitedByParentId),
       inviteToken,
       expiresAt,
@@ -158,7 +158,7 @@ export const CoParentInviteService = {
             id: doc._id.toString(),
             email: email.toLowerCase(),
             inviteeName: inviteeName ?? undefined,
-            companionId,
+            patientId: patientId,
             invitedByParentId,
             inviteToken,
             expiresAt,
@@ -214,8 +214,8 @@ export const CoParentInviteService = {
         throw new CoParentInviteServiceError("Inviter parent not found.", 404);
       }
 
-      const companion = await prisma.companion.findUnique({
-        where: { id: invite.companionId },
+      const companion = await prisma.patient.findUnique({
+        where: { id: invite.patientId },
       });
       if (!companion) {
         throw new CoParentInviteServiceError("Companion not found.", 404);
@@ -239,6 +239,11 @@ export const CoParentInviteService = {
           profileImageUrl: inviter.profileImageUrl || null,
         },
         companion: {
+          id: companion.id,
+          name: companion.name,
+          photoUrl: companion.photoUrl || null,
+        },
+        patient: {
           id: companion.id,
           name: companion.name,
           photoUrl: companion.photoUrl || null,
@@ -273,7 +278,7 @@ export const CoParentInviteService = {
     }
 
     // 5. Fetch companion
-    const companion = await CompanionModel.findById(invite.companionId);
+    const companion = await CompanionModel.findById(invite.patientId);
     if (!companion) {
       throw new CoParentInviteServiceError("Companion not found.", 404);
     }
@@ -299,6 +304,11 @@ export const CoParentInviteService = {
       },
 
       companion: {
+        id: companion._id.toString(),
+        name: companion.name,
+        photoUrl: companion.photoUrl || null,
+      },
+      patient: {
         id: companion._id.toString(),
         name: companion.name,
         photoUrl: companion.photoUrl || null,
@@ -337,10 +347,10 @@ export const CoParentInviteService = {
         );
       }
 
-      const existingLink = await prisma.parentCompanion.findFirst({
+      const existingLink = await prisma.parentPatient.findFirst({
         where: {
           parentId,
-          companionId: invite.companion.id,
+          patientId: invite.patient.id,
           status: { in: ["ACTIVE", "PENDING"] },
         },
         select: { id: true },
@@ -353,10 +363,10 @@ export const CoParentInviteService = {
         );
       }
 
-      await prisma.parentCompanion.create({
+      await prisma.parentPatient.create({
         data: {
           parentId,
-          companionId: invite.companion.id,
+          patientId: invite.patient.id,
           role: "CO_PARENT",
           status: "ACTIVE",
           permissions:
@@ -377,7 +387,7 @@ export const CoParentInviteService = {
       return {
         message: "Invite accepted successfully.",
         parentId,
-        companionId: invite.companion.id,
+        patientId: invite.patient.id,
         invitedByParentId: invite.invitedBy.id,
       };
     }
@@ -406,7 +416,7 @@ export const CoParentInviteService = {
 
     const existingLink = await ParentCompanionModel.findOne({
       parentId: parentMongoId,
-      companionId: invite.companion.id,
+      patientId: invite.patient.id,
       status: { $in: ["ACTIVE", "PENDING"] },
     });
 
@@ -420,7 +430,7 @@ export const CoParentInviteService = {
     // 4. Create CO_PARENT link (as ACTIVE)
     await ParentCompanionService.linkParent({
       parentId: parentMongoId,
-      companionId: new Types.ObjectId(String(invite.companion.id)),
+      patientId: new Types.ObjectId(String(invite.patient.id)),
       role: "CO_PARENT",
       status: "ACTIVE",
       invitedByParentId: new Types.ObjectId(String(invite.invitedBy.id)),
@@ -454,7 +464,7 @@ export const CoParentInviteService = {
     return {
       message: "Invite accepted successfully.",
       parentId,
-      companionId: invite.companion.id,
+      patientId: invite.patient.id,
       invitedByParentId: invite.invitedBy.id,
     };
   },
@@ -495,7 +505,7 @@ export const CoParentInviteService = {
       return {
         message: "Invite declined successfully.",
         email: updated.email,
-        companionId: updated.companionId,
+        patientId: updated.patientId,
         invitedByParentId: updated.invitedByParentId,
       };
     }
@@ -543,7 +553,7 @@ export const CoParentInviteService = {
     return {
       message: "Invite declined successfully.",
       email: invite.email,
-      companionId: invite.companionId.toString(),
+      patientId: invite.patientId.toString(),
       invitedByParentId: invite.invitedByParentId.toString(),
     };
   },
@@ -577,8 +587,8 @@ export const CoParentInviteService = {
         });
         if (!inviter) continue;
 
-        const companion = await prisma.companion.findUnique({
-          where: { id: invite.companionId },
+        const companion = await prisma.patient.findUnique({
+          where: { id: invite.patientId },
         });
         if (!companion) continue;
 
@@ -636,9 +646,7 @@ export const CoParentInviteService = {
       }
 
       // Fetch companion
-      const companion = await CompanionModel.findById(
-        invite.companionId,
-      ).lean();
+      const companion = await CompanionModel.findById(invite.patientId).lean();
       if (!companion) {
         // Also skip if companion does not exist anymore
         continue;

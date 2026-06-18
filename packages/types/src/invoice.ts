@@ -29,6 +29,7 @@ export type InvoiceItem = {
 export type Invoice = {
   id?: string;
   parentId?: string;
+  patientId?: string;
   companionId?: string;
   organisationId?: string;
   appointmentId?: string;
@@ -345,11 +346,12 @@ export function toFHIRInvoice(invoice: Invoice): FHIRInvoice {
     resourceType: 'Invoice',
     id: invoice.id,
     status: statusMap[invoice.status] ?? 'draft',
-    subject: invoice.companionId
-      ? {
-          reference: `Patient/${invoice.companionId}`,
-        }
-      : undefined,
+    subject:
+      (invoice.patientId ?? invoice.companionId)
+        ? {
+            reference: `Patient/${invoice.patientId ?? invoice.companionId}`,
+          }
+        : undefined,
     recipient: {
       reference: `RelatedPerson/${invoice.parentId}`,
     },
@@ -517,6 +519,7 @@ export function fromFHIRInvoice(fhirInvoice: FHIRInvoice): Invoice {
   return {
     id: fhirInvoice.id ?? '',
     parentId: getIdFromReference(fhirInvoice.recipient?.reference) ?? '',
+    patientId: getIdFromReference(fhirInvoice.subject?.reference),
     companionId: getIdFromReference(fhirInvoice.subject?.reference),
     organisationId: getIdFromReference(fhirInvoice.issuer?.reference) ?? '',
     appointmentId:

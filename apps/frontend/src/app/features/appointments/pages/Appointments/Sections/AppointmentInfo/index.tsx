@@ -1118,9 +1118,14 @@ const AppoitmentInfo = ({
     scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
   }, [activeLabel, activeSubLabel]);
 
+  if (!activeAppointment) {
+    return null;
+  }
+
+  const companion = activeAppointment.companion ?? activeAppointment.patient;
   const companionImageSrc = getSafeImageUrl(
-    getAppointmentCompanionPhotoUrl(activeAppointment?.companion),
-    resolveCompanionImageType(activeAppointment?.companion?.species)
+    getAppointmentCompanionPhotoUrl(companion),
+    resolveCompanionImageType(companion.species)
   );
 
   return (
@@ -1146,17 +1151,14 @@ const AppoitmentInfo = ({
                       router.push(
                         buildAppointmentCompanionHistoryHref(
                           activeAppointment?.id,
-                          activeAppointment?.companion?.id,
+                          companion.id,
                           '/appointments'
                         )
                       );
                       setShowModal(false);
                     }}
                   >
-                    {formatCompanionNameWithOwnerLastName(
-                      activeAppointment?.companion.name,
-                      activeAppointment?.companion.parent
-                    )}
+                    {formatCompanionNameWithOwnerLastName(companion.name, companion.parent)}
                   </button>
                   {activeAppointment ? (
                     <AppointmentStatusPill
@@ -1165,9 +1167,7 @@ const AppoitmentInfo = ({
                     />
                   ) : null}
                 </div>
-                <div className="text-body-4 text-text-primary mt-1">
-                  {activeAppointment?.companion.breed}
-                </div>
+                <div className="text-body-4 text-text-primary mt-1">{companion.breed}</div>
                 <div className="mt-2 max-w-3xl rounded-2xl border border-card-border bg-card-bg px-3 py-2 text-caption-1 text-text-secondary">
                   <span className="font-medium text-text-primary">{statusLabel}:</span>{' '}
                   {statusSummary}

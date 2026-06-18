@@ -64,7 +64,7 @@ export const listSoapTemplatesForWorkspace = async (
 
 export const listInpatientScheduleTemplates = async (organisationId: string) =>
   listWorkspaceTemplates(organisationId, {
-    kind: 'CARE_PATHWAY',
+    kind: 'INPATIENT_SCHEDULE',
     status: 'PUBLISHED',
   });
 

@@ -250,7 +250,7 @@ export const getTaskTemplatesForPrimaryOrg = async (): Promise<TaskTemplate[]> =
   try {
     const [legacyResult, templateResult] = await Promise.allSettled([
       getData<TaskTemplate[]>('/v1/task/pms/templates/organisation/' + primaryOrgId),
-      loadTemplateForms(primaryOrgId, { kind: 'TASK_TEMPLATE', status: 'PUBLISHED' }),
+      loadTemplateForms(primaryOrgId, { kind: 'TASK_ASSIGNMENT', status: 'PUBLISHED' }),
     ]);
     if (legacyResult.status === 'rejected' && templateResult.status === 'rejected') {
       throw legacyResult.reason;

@@ -73,6 +73,13 @@ const appointmentFormsResponse = {
 
 const appointment: Appointment = {
   id: APPT,
+  patient: {
+    id: 'comp-9',
+    name: 'Gigi',
+    species: 'Canine',
+    breed: 'Mixed',
+    parent: { id: 'parent-1', name: 'Rachel' },
+  },
   companion: {
     id: 'comp-9',
     name: 'Gigi',

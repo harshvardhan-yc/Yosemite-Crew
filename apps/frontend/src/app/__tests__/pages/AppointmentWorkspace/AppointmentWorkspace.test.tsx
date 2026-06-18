@@ -105,6 +105,13 @@ jest.mock('@/app/features/appointments/services/workspaceTemplateService', () =>
 
 const makeAppointment = (startTime: Date, inpatient = false): Appointment => ({
   id: 'appt-workspace',
+  patient: {
+    id: 'comp-1',
+    name: 'Gigi',
+    species: 'Canine',
+    breed: 'Mixed',
+    parent: { id: 'parent-1', name: 'Rachel' },
+  },
   companion: {
     id: 'comp-1',
     name: 'Gigi',

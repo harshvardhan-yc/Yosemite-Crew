@@ -41,16 +41,21 @@ const extractAppointmentTypeId = (
 
 const extractCompanionRefs = (
   value: Prisma.JsonValue,
-): { companionId?: string; parentId?: string } => {
+): { patientId?: string; parentId?: string } => {
   if (!value || typeof value !== "object") return {};
   const companion = value as Record<string, unknown>;
-  const companionId =
-    typeof companion.id === "string" ? companion.id : undefined;
+  const patientId = typeof companion.id === "string" ? companion.id : undefined;
   const parent = companion.parent as Record<string, unknown> | undefined;
   const parentId =
     parent && typeof parent.id === "string" ? parent.id : undefined;
-  return { companionId, parentId };
+  return { patientId, parentId };
 };
+
+const extractAppointmentPatientRefs = (appointment: {
+  patient?: Prisma.JsonValue | null;
+  companion?: Prisma.JsonValue | null;
+}) =>
+  extractCompanionRefs(appointment.patient ?? appointment.companion ?? null);
 
 type OrgBillingDoc = {
   _id?: IdLike;
@@ -798,7 +803,7 @@ export const StripeService = {
           status: true,
           organisationId: true,
           appointmentType: true,
-          companion: true,
+          patient: true,
         },
       });
       if (!appointment) throw new Error("Appointment not found");
@@ -823,9 +828,8 @@ export const StripeService = {
       if (!organisation?.stripeAccountId)
         throw new Error("Organisation has no Stripe account");
 
-      const { parentId, companionId } = extractCompanionRefs(
-        appointment.companion,
-      );
+      const { parentId, patientId } =
+        extractAppointmentPatientRefs(appointment);
 
       const amount = toStripeAmount(service.cost);
       const currency = await getOrgBillingCurrency(appointment.organisationId);
@@ -838,7 +842,8 @@ export const StripeService = {
           appointmentId,
           organisationId: appointment.organisationId,
           parentId: parentId ?? "",
-          companionId: companionId ?? "",
+          patientId: patientId ?? "",
+          companionId: patientId ?? "",
         },
         transfer_data: { destination: organisation.stripeAccountId },
       });
@@ -875,6 +880,8 @@ export const StripeService = {
     const amount = toStripeAmount(service.cost);
     const currency = await getOrgBillingCurrency(appointment.organisationId);
 
+    const { parentId, patientId } = extractAppointmentPatientRefs(appointment);
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency,
@@ -882,8 +889,8 @@ export const StripeService = {
         type: "APPOINTMENT_BOOKING",
         appointmentId,
         organisationId: appointment.organisationId,
-        parentId: appointment.companion.parent.id,
-        companionId: appointment.companion.id,
+        parentId: parentId ?? "",
+        patientId: patientId ?? "",
       },
       transfer_data: { destination: organisation.stripeAccountId },
     });
@@ -964,7 +971,7 @@ export const StripeService = {
           appointmentId: invoice.appointmentId || "",
           organisationId: invoice.organisationId ?? "",
           parentId: invoice.parentId ?? "",
-          companionId: invoice.companionId ?? "",
+          patientId: invoice.patientId ?? "",
         },
         description: `Payment for Invoice ${invoiceId}`,
         transfer_data: { destination: organisation.stripeAccountId },
@@ -1058,7 +1065,7 @@ export const StripeService = {
         appointmentId: invoice.appointmentId || "",
         organisationId: invoice.organisationId ?? "",
         parentId: invoice.parentId ?? "",
-        companionId: invoice.companionId ?? "",
+        patientId: invoice.patientId ?? "",
       },
       description: `Payment for Invoice ${invoiceId}`,
       transfer_data: { destination: organisation.stripeAccountId },
@@ -1739,7 +1746,7 @@ export const StripeService = {
           id: true,
           appointmentType: true,
           organisationId: true,
-          companion: true,
+          patient: true,
         },
       });
       if (!appointment) return;
@@ -1802,16 +1809,15 @@ export const StripeService = {
       });
       if (!service) return;
 
-      const { parentId, companionId } = extractCompanionRefs(
-        appointment.companion,
-      );
+      const { parentId, patientId } =
+        extractAppointmentPatientRefs(appointment);
 
       await prisma.invoice.create({
         data: {
           appointmentId,
           organisationId: appointment.organisationId,
           parentId: parentId ?? undefined,
-          companionId: companionId ?? undefined,
+          patientId: patientId ?? undefined,
           currency: pi.currency ?? "usd",
           status: "PAID",
           items: [
@@ -1915,8 +1921,12 @@ export const StripeService = {
     const invoice = await InvoiceModel.create({
       appointmentId,
       organisationId: appointment.organisationId,
-      parentId: appointment.companion.parent.id,
-      companionId: appointment.companion.id,
+      parentId:
+        extractAppointmentPatientRefs(appointment).parentId ??
+        appointment.patient?.parent?.id,
+      patientId:
+        extractAppointmentPatientRefs(appointment).patientId ??
+        appointment.patient?.id,
       currency: pi.currency,
 
       status: "PAID",
@@ -1945,8 +1955,12 @@ export const StripeService = {
             id: invoice._id.toString(),
             appointmentId,
             organisationId: appointment.organisationId,
-            parentId: appointment.companion.parent.id,
-            companionId: appointment.companion.id,
+            parentId:
+              extractAppointmentPatientRefs(appointment).parentId ??
+              appointment.patient?.parent?.id,
+            patientId:
+              extractAppointmentPatientRefs(appointment).patientId ??
+              appointment.patient?.id,
             currency: pi.currency,
             status: "PAID",
             items: invoice.items as unknown as Prisma.InputJsonValue,

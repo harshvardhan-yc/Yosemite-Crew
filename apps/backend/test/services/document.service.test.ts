@@ -63,6 +63,14 @@ jest.mock("../../src/models/companion-organisation", () => ({
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
+    parentPatient: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    patientOrganisation: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
     parentCompanion: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -87,7 +95,7 @@ jest.mock("src/config/prisma", () => ({
 const createMockDoc = (overrides: any = {}) => {
   const data = {
     _id: new Types.ObjectId(),
-    companionId: new Types.ObjectId(),
+    patientId: new Types.ObjectId(),
     category: "HEALTH",
     title: "Test Doc",
     attachments: [],
@@ -104,7 +112,7 @@ const createMockDoc = (overrides: any = {}) => {
 
 const createPrismaDoc = (overrides: any = {}) => ({
   id: new Types.ObjectId().toHexString(),
-  companionId: new Types.ObjectId().toHexString(),
+  patientId: new Types.ObjectId().toHexString(),
   appointmentId: null,
   category: "HEALTH",
   subcategory: null,
@@ -182,13 +190,13 @@ describe("DocumentService", () => {
     mockParentCompanionExec.mockResolvedValue([
       {
         _id: new Types.ObjectId(),
-        companionId: new Types.ObjectId(validObjectIdStr),
+        patientId: new Types.ObjectId(validObjectIdStr),
       },
     ]);
     mockCompanionOrganisationExec.mockResolvedValue([
       {
         _id: new Types.ObjectId(),
-        companionId: new Types.ObjectId(validObjectIdStr),
+        patientId: new Types.ObjectId(validObjectIdStr),
       },
     ]);
   });
@@ -210,21 +218,21 @@ describe("DocumentService", () => {
       (prisma.document.findMany as jest.Mock).mockReset();
       (prisma.document.findUnique as jest.Mock).mockReset();
       (prisma.documentAttachment.findMany as jest.Mock).mockReset();
-      (prisma.parentCompanion.findFirst as jest.Mock).mockReset();
-      (prisma.parentCompanion.findMany as jest.Mock).mockReset();
-      (prisma.companionOrganisation.findFirst as jest.Mock).mockReset();
-      (prisma.companionOrganisation.findMany as jest.Mock).mockReset();
-      (prisma.parentCompanion.findFirst as jest.Mock).mockResolvedValue({
+      (prisma.parentPatient.findFirst as jest.Mock).mockReset();
+      (prisma.parentPatient.findMany as jest.Mock).mockReset();
+      (prisma.patientOrganisation.findFirst as jest.Mock).mockReset();
+      (prisma.patientOrganisation.findMany as jest.Mock).mockReset();
+      (prisma.parentPatient.findFirst as jest.Mock).mockResolvedValue({
         id: "pc1",
       });
-      (prisma.parentCompanion.findMany as jest.Mock).mockResolvedValue([
-        { companionId: validObjectIdStr },
+      (prisma.parentPatient.findMany as jest.Mock).mockResolvedValue([
+        { patientId: validObjectIdStr },
       ]);
-      (prisma.companionOrganisation.findFirst as jest.Mock).mockResolvedValue({
+      (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue({
         id: "co1",
       });
-      (prisma.companionOrganisation.findMany as jest.Mock).mockResolvedValue([
-        { companionId: validObjectIdStr },
+      (prisma.patientOrganisation.findMany as jest.Mock).mockResolvedValue([
+        { patientId: validObjectIdStr },
       ]);
     });
 
@@ -238,7 +246,7 @@ describe("DocumentService", () => {
       ]);
 
       const res = await DocumentService.listForParent({
-        companionId: validObjectIdStr,
+        patientId: validObjectIdStr,
         parentId: validObjectIdStr,
       });
       expect(res).toHaveLength(1);
@@ -251,7 +259,7 @@ describe("DocumentService", () => {
       ]);
 
       const res = await DocumentService.listForPms({
-        companionId: validObjectIdStr,
+        patientId: validObjectIdStr,
         organisationId: validObjectIdStr,
       });
       expect(res).toHaveLength(1);
@@ -327,7 +335,7 @@ describe("DocumentService", () => {
         createPrismaDoc({ title: "Vaccination" }),
       ]);
       const res = await DocumentService.searchByTitleForParent({
-        companionId: validObjectIdStr,
+        patientId: validObjectIdStr,
         parentId: validObjectIdStr,
         title: "Vacc",
       });
@@ -358,7 +366,7 @@ describe("DocumentService", () => {
 
   describe("create & Internal Mappers (mapDocumentToDto, buildPersistableDocument)", () => {
     const baseInput: CreateDocumentInput = {
-      companionId: validObjectIdStr,
+      patientId: validObjectIdStr,
       category: "HEALTH",
       title: "Valid Title",
       attachments: [{ key: "k1", mimeType: "image/png", size: 100 }],
@@ -386,20 +394,20 @@ describe("DocumentService", () => {
       );
     });
 
-    it("should throw if companionId is invalid (ensureObjectId helper)", async () => {
+    it("should throw if patientId is invalid (ensureObjectId helper)", async () => {
       await expect(
         DocumentService.create(
-          { ...baseInput, companionId: "invalid" },
+          { ...baseInput, patientId: "invalid" },
           { parentId: validObjectIdStr },
         ),
-      ).rejects.toThrow(new DocumentServiceError("Invalid companionId", 400));
+      ).rejects.toThrow(new DocumentServiceError("Invalid patientId", 400));
     });
 
     it("should allow Types.ObjectId directly without throwing (ensureObjectId helper)", async () => {
       (DocumentModel.create as jest.Mock).mockResolvedValue(createMockDoc());
 
       await DocumentService.create(
-        { ...baseInput, companionId: validObjectId }, // Passing ObjectId directly
+        { ...baseInput, patientId: validObjectId }, // Passing ObjectId directly
         { parentId: validObjectId },
       );
 
@@ -543,7 +551,7 @@ describe("DocumentService", () => {
       // Mock an object missing every optional field to hit all ?? null branches
       const mockDoc = {
         _id: new Types.ObjectId(),
-        companionId: new Types.ObjectId(),
+        patientId: new Types.ObjectId(),
         category: "HEALTH",
         title: "Minimal Doc",
         pmsVisible: true,
@@ -578,14 +586,14 @@ describe("DocumentService", () => {
       mockExec.mockResolvedValue([mockDoc]);
 
       const result = await DocumentService.listForParent({
-        companionId: validObjectIdStr,
+        patientId: validObjectIdStr,
         parentId: validObjectIdStr,
         category: "HEALTH",
         subcategory: "HOSPITAL_VISITS",
       });
 
       expect(DocumentModel.find).toHaveBeenCalledWith({
-        companionId: new Types.ObjectId(validObjectIdStr),
+        patientId: new Types.ObjectId(validObjectIdStr),
         category: "HEALTH",
         subcategory: "HOSPITAL_VISITS",
       });
@@ -601,7 +609,7 @@ describe("DocumentService", () => {
       mockExec.mockResolvedValue([mockDoc]);
 
       const result = await DocumentService.listForPms({
-        companionId: validObjectIdStr,
+        patientId: validObjectIdStr,
         organisationId: validObjectIdStr,
         category: "HEALTH",
         subcategory: "HOSPITAL_VISITS",
@@ -609,7 +617,7 @@ describe("DocumentService", () => {
       });
 
       expect(DocumentModel.find).toHaveBeenCalledWith({
-        companionId: new Types.ObjectId(validObjectIdStr),
+        patientId: new Types.ObjectId(validObjectIdStr),
         pmsVisible: true,
         category: "HEALTH",
         subcategory: "HOSPITAL_VISITS",
@@ -640,7 +648,7 @@ describe("DocumentService", () => {
       expect(ParentCompanionModel.findOne).toHaveBeenCalledWith(
         {
           parentId: new Types.ObjectId(validObjectIdStr),
-          companionId: mockDoc.companionId,
+          patientId: mockDoc.patientId,
           status: { $in: ["ACTIVE", "PENDING"] },
         },
         { _id: 1 },
@@ -710,18 +718,18 @@ describe("DocumentService", () => {
       });
       expect(DocumentModel.find).toHaveBeenCalledWith({
         appointmentId: new Types.ObjectId(validObjectIdStr),
-        companionId: { $in: [new Types.ObjectId(validObjectIdStr)] },
+        patientId: { $in: [new Types.ObjectId(validObjectIdStr)] },
       });
     });
 
-    it("listForAppointmentPms should query by appointmentId, companionId, and pmsVisible", async () => {
+    it("listForAppointmentPms should query by appointmentId, patientId, and pmsVisible", async () => {
       mockExec.mockResolvedValue([createMockDoc()]);
       await DocumentService.listForAppointmentPms({
         appointmentId: validObjectIdStr,
         organisationId: validObjectIdStr,
       });
       expect(DocumentModel.find).toHaveBeenCalledWith({
-        companionId: { $in: [new Types.ObjectId(validObjectIdStr)] },
+        patientId: { $in: [new Types.ObjectId(validObjectIdStr)] },
         appointmentId: new Types.ObjectId(validObjectIdStr),
         pmsVisible: true,
       });
@@ -972,7 +980,7 @@ describe("DocumentService", () => {
     it("should throw 400 if title is missing or not a string", async () => {
       await expect(
         DocumentService.searchByTitleForParent({
-          companionId: validObjectIdStr,
+          patientId: validObjectIdStr,
           parentId: validObjectIdStr,
           title: "",
         }),
@@ -982,7 +990,7 @@ describe("DocumentService", () => {
 
       await expect(
         DocumentService.searchByTitleForParent({
-          companionId: validObjectIdStr,
+          patientId: validObjectIdStr,
           parentId: validObjectIdStr,
           title: 123 as any,
         }),
@@ -996,14 +1004,14 @@ describe("DocumentService", () => {
       mockExec.mockResolvedValue([mockDoc]);
 
       const result = await DocumentService.searchByTitleForParent({
-        companionId: validObjectIdStr,
+        patientId: validObjectIdStr,
         parentId: validObjectIdStr,
         title: " test ",
       });
 
       expect(DocumentModel.find).toHaveBeenCalledWith(
         expect.objectContaining({
-          companionId: new Types.ObjectId(validObjectIdStr),
+          patientId: new Types.ObjectId(validObjectIdStr),
           title: { $regex: expect.any(RegExp) }, // Tests RegExp generation
         }),
       );
@@ -1016,7 +1024,7 @@ describe("DocumentService", () => {
 
       await expect(
         DocumentService.searchByTitleForParent({
-          companionId: validObjectIdStr,
+          patientId: validObjectIdStr,
           parentId: validObjectIdStr,
           title: "test",
         }),

@@ -38,7 +38,7 @@ jest.mock('@yosemite-crew/types', () => ({
   })),
   templateMapper: {
     isPlanDefinitionResourceKind: jest.fn(
-      (kind) => kind === 'TASK_TEMPLATE' || kind === 'CARE_PATHWAY'
+      (kind) => kind === 'TASK_ASSIGNMENT' || kind === 'INPATIENT_SCHEDULE'
     ),
     templateToPlanDefinition: jest.fn((template) => ({
       resourceType: 'PlanDefinition',
@@ -167,8 +167,8 @@ describe('Forms Utils', () => {
       expect(templateKindToCategory('VITAL_RECORD')).toBe('Vitals');
       expect(templateKindToCategory('PRESCRIPTION')).toBe('Prescription Template');
       expect(templateKindToCategory('DISCHARGE_SUMMARY')).toBe('Discharge Form');
-      expect(templateKindToCategory('TASK_TEMPLATE')).toBe('Task Template');
-      expect(templateKindToCategory('CARE_PATHWAY')).toBe('Inpatient Schedule');
+      expect(templateKindToCategory('TASK_ASSIGNMENT')).toBe('Task Template');
+      expect(templateKindToCategory('INPATIENT_SCHEDULE')).toBe('Inpatient Schedule');
       expect(templateKindToCategory()).toBe('Custom');
     });
 
@@ -177,8 +177,8 @@ describe('Forms Utils', () => {
       expect(categoryToTemplateKind('Vitals')).toBe('VITAL_RECORD');
       expect(categoryToTemplateKind('Prescription Template')).toBe('PRESCRIPTION');
       expect(categoryToTemplateKind('Discharge Form')).toBe('DISCHARGE_SUMMARY');
-      expect(categoryToTemplateKind('Task Template')).toBe('TASK_TEMPLATE');
-      expect(categoryToTemplateKind('Inpatient Schedule')).toBe('CARE_PATHWAY');
+      expect(categoryToTemplateKind('Task Template')).toBe('TASK_ASSIGNMENT');
+      expect(categoryToTemplateKind('Inpatient Schedule')).toBe('INPATIENT_SCHEDULE');
       expect(categoryToTemplateKind('Consent form')).toBe('FORM');
       expect(categoryToTemplateKind('Boarder - Schedule' as any)).toBeNull();
     });
@@ -362,7 +362,7 @@ describe('Forms Utils', () => {
         organisationId: 'org-1',
         ownerUserId: 'user-1',
         ownership: 'USER_TEMPLATE',
-        kind: 'CARE_PATHWAY',
+        kind: 'INPATIENT_SCHEDULE',
         name: 'Post-op pathway',
         description: null,
         status: 'DRAFT',

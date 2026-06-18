@@ -449,7 +449,7 @@ describe('TreatmentStep', () => {
       {
         id: 'tpl-care',
         name: 'Post-op care pathway',
-        kind: 'CARE_PATHWAY',
+        kind: 'INPATIENT_SCHEDULE',
         status: 'PUBLISHED',
       },
     ]);

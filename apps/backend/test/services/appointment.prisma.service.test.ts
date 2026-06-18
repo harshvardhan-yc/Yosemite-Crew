@@ -88,6 +88,16 @@ const baseDomain = {
       name: "Parent One",
     },
   },
+  patient: {
+    id: "comp_1",
+    name: "Buddy",
+    species: "Dog",
+    breed: "Labrador",
+    parent: {
+      id: "parent_1",
+      name: "Parent One",
+    },
+  },
   lead: {
     id: "lead_1",
     name: "Dr Vet",
@@ -117,6 +127,7 @@ const baseDomain = {
 const makeRow = (overrides: Record<string, unknown> = {}): any => ({
   id: "appt_1",
   companion: baseDomain.companion,
+  patient: baseDomain.patient,
   lead: baseDomain.lead,
   supportStaff: baseDomain.supportStaff,
   room: baseDomain.room,
@@ -168,7 +179,7 @@ describe("AppointmentPrismaService", () => {
     mockedPrisma.case.findUnique.mockResolvedValue({
       id: "case_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
     } as any);
     mockedPrisma.template.findFirst.mockResolvedValue({
       id: "tmpl_soap",
@@ -256,7 +267,7 @@ describe("AppointmentPrismaService", () => {
     mockedPrisma.case.findUnique.mockResolvedValue({
       id: "case_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
     } as any);
     mockedPrisma.template.findFirst.mockResolvedValue({
       id: "tmpl_bound",
@@ -328,7 +339,7 @@ describe("AppointmentPrismaService", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           organisationId: "org_1",
-          companionId: "comp_1",
+          patientId: "comp_1",
           appointmentKind: "INPATIENT",
           status: "active",
         }),
@@ -348,7 +359,7 @@ describe("AppointmentPrismaService", () => {
     mockedPrisma.case.findUnique.mockResolvedValue({
       id: "case_1",
       organisationId: "org_1",
-      companionId: "comp_1",
+      patientId: "comp_1",
     } as any);
     mockedPrisma.appointment.create.mockResolvedValue(
       makeRow({ status: "UPCOMING", caseId: "case_1" }),
@@ -431,6 +442,10 @@ describe("AppointmentPrismaService", () => {
           ...baseDomain.companion,
           parent: { id: "other_parent", name: "Other" },
         },
+        patient: {
+          ...baseDomain.patient,
+          parent: { id: "other_parent", name: "Other" },
+        },
       }),
     );
 
@@ -468,7 +483,7 @@ describe("AppointmentPrismaService", () => {
         data: expect.objectContaining({
           caseId: "case_1",
           organisationId: "org_1",
-          companionId: "comp_1",
+          patientId: "comp_1",
           status: "arrived",
           encounterClass: "IMP",
         }),
@@ -497,7 +512,7 @@ describe("AppointmentPrismaService", () => {
       create: {
         encounterId: "enc_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         admittedAt: baseDomain.startTime,
       },
     });

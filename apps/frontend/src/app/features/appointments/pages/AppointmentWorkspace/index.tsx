@@ -12,7 +12,7 @@ import {
 } from '@/app/lib/appointmentWorkspace';
 import { WORKSPACE_STEPS, type WorkspaceStep } from '@/app/features/appointments/types/workspace';
 import { resolveLockHours } from '@/app/lib/appointmentLockWindow';
-import { normalizeAppointmentStatus } from '@/app/lib/appointments';
+import { getAppointmentCompanion, normalizeAppointmentStatus } from '@/app/lib/appointments';
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
 import { useLoadCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
@@ -87,7 +87,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const rooms = useRoomsForPrimaryOrg() as WorkspaceRoom[];
   const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
   const roomUnitIdsByRoomId = useOrganisationRoomStore((s) => s.roomUnitIdsByRoomId);
-  const companionRecord = useCompanionStore((s) => s.companionsById[appointment.companion.id]);
+  const companion = getAppointmentCompanion(appointment);
+  const companionRecord = useCompanionStore((s) => s.companionsById[companion.id]);
 
   const appointmentId = appointment.id ?? '';
   const initialMode = useMemo(() => resolveEncounterMode(appointment), [appointment]);
@@ -187,14 +188,14 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     () =>
       buildCompanionDetails(
         {
-          id: appointment.companion.id,
-          name: appointment.companion.name,
-          species: appointment.companion.species,
-          breed: appointment.companion.breed,
+          id: companion.id,
+          name: companion.name,
+          species: companion.species,
+          breed: companion.breed,
         },
         companionRecord
       ),
-    [appointment.companion, companionRecord]
+    [companion, companionRecord]
   );
   // Clinical encounter — the time-based "Appointment lock window" freezes the
   // legal record (SOAP + Discharge/Summary). This is what the lock exists for.
@@ -371,7 +372,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       <div className="-mx-4 -mt-5 flex flex-col gap-5 bg-(--status-in-progress-bg) px-4 pt-5 pb-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <WorkspaceHeader
           appointment={appointment}
-          companionName={appointment.companion.name}
+          companionName={companion.name}
           alerts={effectiveEncounter.alerts}
           onBack={() => router.push('/appointments')}
           onQuickActions={() => setActiveSideAction('RECORD')}
@@ -381,15 +382,13 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         />
 
         <CompanionContextCard
-          name={appointment.companion.name}
+          name={companion.name}
           photoUrl={companionRecord?.photoUrl}
-          speciesType={companionRecord?.type ?? appointment.companion.species}
+          speciesType={companionRecord?.type ?? companion.species}
           details={companionDetails}
           mode={encounterMode}
           onViewDetails={() =>
-            router.push(
-              buildAppointmentCompanionHistoryHref(appointmentId, appointment.companion.id)
-            )
+            router.push(buildAppointmentCompanionHistoryHref(appointmentId, companion.id))
           }
         />
 
@@ -475,7 +474,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
 
       <AddAlertModal
         open={isAddAlertOpen}
-        companionName={appointment.companion.name}
+        companionName={companion.name}
         onClose={() => setIsAddAlertOpen(false)}
         onAdd={(alert) => addAlert(appointmentId, alert)}
       />

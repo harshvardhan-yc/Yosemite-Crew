@@ -119,11 +119,11 @@ describe('fhirTemplateService', () => {
     (getData as jest.Mock).mockResolvedValue({ data: { resourceType: 'Bundle', entry: [] } });
     (postData as jest.Mock).mockResolvedValue({ data: planDefinition });
 
-    await listFhirTemplateLibrary('plan-definition', { kind: 'CARE_PATHWAY' });
+    await listFhirTemplateLibrary('plan-definition', { kind: 'INPATIENT_SCHEDULE' });
     await createFhirTemplate('plan-definition', planDefinition);
 
     expect(getData).toHaveBeenCalledWith('/fhir/v1/template/plan-definition/library', {
-      kind: 'CARE_PATHWAY',
+      kind: 'INPATIENT_SCHEDULE',
     });
     expect(postData).toHaveBeenCalledWith('/fhir/v1/template/plan-definition', planDefinition);
   });

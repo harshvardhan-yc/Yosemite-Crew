@@ -29,6 +29,7 @@ import { useCanMoreForPrimaryOrg, useCurrencyForPrimaryOrg } from '@/app/hooks/u
 import { loadInvoicesForOrgPrimaryOrg } from '@/app/features/billing/services/invoiceService';
 import { EMPTY_APPOINTMENT } from '@/app/features/appointments/constants/emptyAppointment';
 import { AppointmentDraftPrefill } from '@/app/features/appointments/types/calendar';
+import { AppointmentWithCompanion } from '@/app/features/appointments/types/appointments';
 import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 import { ServiceRevamp } from '@/app/features/organization/types/revamp';
 
@@ -294,7 +295,7 @@ type ApplyPrefillSlotCtx = {
   getLeadOptionsForSlot: (slot: Slot) => LeadOption[];
   normalizeId: (value?: string) => string;
   getLeadProfileUrl: (id: string) => string | undefined;
-  setFormData: React.Dispatch<React.SetStateAction<Appointment>>;
+  setFormData: React.Dispatch<React.SetStateAction<AppointmentWithCompanion>>;
 };
 
 const applyPrefillSlot = (
@@ -341,7 +342,9 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
   );
   const { refetch: refetchData } = useSubscriptionCounterUpdate();
 
-  const [formData, setFormData] = useState<Appointment>(EMPTY_APPOINTMENT);
+  const [formData, setFormData] = useState<AppointmentWithCompanion>(
+    EMPTY_APPOINTMENT as AppointmentWithCompanion
+  );
   const [formDataErrors, setFormDataErrors] = useState<AppointmentFormErrors>({});
   const currentLeadIdRef = useRef<string>('');
   const selectedSlotRef = useRef<Slot | null>(null);
@@ -1025,7 +1028,7 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
   }, [formData.appointmentType, services]);
 
   const resetForm = useCallback(() => {
-    setFormData(EMPTY_APPOINTMENT);
+    setFormData(EMPTY_APPOINTMENT as AppointmentWithCompanion);
     setSelectedDate(new Date());
     setTimeSlots([]);
     setSelectedSlot(null);

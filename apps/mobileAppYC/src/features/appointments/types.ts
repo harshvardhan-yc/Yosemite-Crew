@@ -41,6 +41,7 @@ export interface VetEmployee {
 
 export interface VetService {
   id: string;
+  productItemId?: string | null;
   businessId: string;
   specialty: string;
   specialityId?: string | null;
@@ -193,6 +194,25 @@ export interface Invoice {
   stripeReceiptUrl?: string | null;
   stripeCheckoutSessionId?: string | null;
   stripeCheckoutUrl?: string | null;
+}
+
+export interface PackageBreakdownItem {
+  id: string;
+  name: string;
+  price: number;
+  currency?: string;
+}
+
+export interface VetPackage {
+  id: string;
+  businessId: string;
+  name: string;
+  description?: string;
+  totalPrice: number;
+  currency?: string;
+  specialty?: string;
+  specialityId?: string;
+  items: PackageBreakdownItem[];
 }
 
 export interface AppointmentsState {

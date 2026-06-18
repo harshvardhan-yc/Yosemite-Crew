@@ -20,6 +20,7 @@ import ChatPanel from '@/app/features/appointments/pages/AppointmentWorkspace/si
 import ActivityPanel from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/panels/ActivityPanel';
 import MsdPanel from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/panels/MsdPanel';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
+import { getAppointmentCompanion } from '@/app/lib/appointments';
 
 type QuickActionsModalProps = {
   appointment: Appointment;
@@ -100,6 +101,7 @@ const QuickActionsModal = ({
   onClose,
 }: QuickActionsModalProps) => {
   const open = activeAction != null;
+  const companion = getAppointmentCompanion(appointment);
 
   return (
     <Modal
@@ -169,7 +171,7 @@ const QuickActionsModal = ({
           )}
           {activeAction === 'TASKS' && <TasksPanel appointmentId={appointmentId} />}
           {activeAction === 'DOCUMENTS' && (
-            <DocumentsPanel appointmentId={appointmentId} companionId={appointment.companion.id} />
+            <DocumentsPanel appointmentId={appointmentId} companionId={companion.id} />
           )}
           {activeAction === 'CHAT' && <ChatPanel appointment={appointment} />}
           {activeAction === 'ACTIVITY' && <ActivityPanel appointment={appointment} />}

@@ -145,7 +145,7 @@ const createMockDoc = (overrides = {}) => {
   const data = {
     _id: new Types.ObjectId(),
     parentId: new Types.ObjectId(),
-    companionId: new Types.ObjectId(),
+    patientId: new Types.ObjectId(),
     organisationId: new Types.ObjectId(),
     appointmentId: new Types.ObjectId(),
     items: [] as any[], // Explicit cast to prevent "never[]" errors
@@ -197,7 +197,7 @@ describe("InvoiceService", () => {
           appointmentId: validId,
           parentId: validId,
           organisationId: validId,
-          companionId: validId,
+          patientId: validId,
           items: [],
           paymentCollectionMethod: "PAYMENT_LINK",
         }),
@@ -217,7 +217,7 @@ describe("InvoiceService", () => {
         appointmentId: validId,
         parentId: validId,
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
         paymentCollectionMethod: "PAYMENT_LINK" as const,
         items: [
           {
@@ -264,7 +264,7 @@ describe("InvoiceService", () => {
         appointmentId: validId,
         parentId: validId,
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
         items: [],
         paymentCollectionMethod: "PAYMENT_LINK",
       });
@@ -291,7 +291,7 @@ describe("InvoiceService", () => {
       (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
         id: validId,
         organisationId: "org_1",
-        companion: { id: "comp_1" },
+        patient: { id: "comp_1", parent: { id: "parent_1" } },
       });
       (prisma.organizationBilling.findUnique as jest.Mock).mockResolvedValue({
         currency: "usd",
@@ -299,7 +299,7 @@ describe("InvoiceService", () => {
       (prisma.invoice.create as jest.Mock).mockResolvedValue({
         id: "inv_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         status: "AWAITING_PAYMENT",
         totalAmount: 120,
         currency: "usd",
@@ -309,7 +309,7 @@ describe("InvoiceService", () => {
         appointmentId: validId,
         parentId: "parent_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         items: [{ description: "Consult", quantity: 1, unitPrice: 120 }],
         paymentCollectionMethod: "PAYMENT_LINK",
       });
@@ -330,46 +330,34 @@ describe("InvoiceService", () => {
           appointmentId: validId,
           parentId: validId,
           organisationId: validId,
-          companionId: validId,
+          patientId: validId,
           items: [],
           paymentCollectionMethod: "PAYMENT_LINK",
         }),
       ).rejects.toThrow(new InvoiceServiceError("Appointment not found", 404));
     });
 
-    it("should allow missing companion data and omit companionId", async () => {
+    it("should throw when patient links are missing", async () => {
       (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
         id: validId,
         organisationId: "org_1",
-        companion: "invalid",
-      });
-      (prisma.organizationBilling.findUnique as jest.Mock).mockResolvedValue({
-        currency: "usd",
-      });
-      (prisma.invoice.create as jest.Mock).mockResolvedValue({
-        id: "inv_2",
-        organisationId: "org_1",
-        companionId: null,
-        status: "AWAITING_PAYMENT",
-        totalAmount: 120,
-        currency: "usd",
+        patient: "invalid",
       });
 
-      await InvoiceService.createDraftForAppointment({
-        appointmentId: validId,
-        parentId: "parent_1",
-        organisationId: "org_1",
-        companionId: "comp_1",
-        items: [{ description: "Consult", quantity: 1, unitPrice: 120 }],
-        paymentCollectionMethod: "PAYMENT_LINK",
-      });
-
-      expect(prisma.invoice.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            companionId: undefined,
-          }),
+      await expect(
+        InvoiceService.createDraftForAppointment({
+          appointmentId: validId,
+          parentId: "parent_1",
+          organisationId: "org_1",
+          patientId: "comp_1",
+          items: [{ description: "Consult", quantity: 1, unitPrice: 120 }],
+          paymentCollectionMethod: "PAYMENT_LINK",
         }),
+      ).rejects.toThrow(
+        new InvoiceServiceError(
+          "Appointment missing parent or patient links",
+          500,
+        ),
       );
     });
   });
@@ -398,7 +386,7 @@ describe("InvoiceService", () => {
         id: "inv_extra",
         appointmentId: "appt_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         parentId: "parent_1",
         status: "AWAITING_PAYMENT",
         totalAmount: 25,
@@ -439,7 +427,7 @@ describe("InvoiceService", () => {
         id: "inv_extra_2",
         appointmentId: "appt_2",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         parentId: null,
         status: "AWAITING_PAYMENT",
         totalAmount: 25,
@@ -495,7 +483,7 @@ describe("InvoiceService", () => {
       (prisma.invoice.update as jest.Mock).mockResolvedValue({
         id: "inv_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         status: "AWAITING_PAYMENT",
         totalAmount: 10,
         currency: "usd",
@@ -523,7 +511,7 @@ describe("InvoiceService", () => {
         id: "inv_2",
         status: "AWAITING_PAYMENT",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         totalAmount: 50,
         currency: "usd",
       });
@@ -531,7 +519,7 @@ describe("InvoiceService", () => {
         id: "inv_2",
         status: "PAID",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         totalAmount: 50,
         currency: "usd",
       });
@@ -551,7 +539,7 @@ describe("InvoiceService", () => {
         status: "PAID",
         appointmentId: "appt_1",
         organisationId: null,
-        companionId: null,
+        patientId: null,
         totalAmount: 20,
         currency: "usd",
       });
@@ -564,7 +552,7 @@ describe("InvoiceService", () => {
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
         expect.objectContaining({
           organisationId: "org_1",
-          companionId: "comp_1",
+          patientId: "comp_1",
         }),
       );
     });
@@ -579,7 +567,7 @@ describe("InvoiceService", () => {
         status: "PAID",
         appointmentId: "appt_2",
         organisationId: null,
-        companionId: null,
+        patientId: null,
         totalAmount: 20,
         currency: "usd",
       });
@@ -687,7 +675,7 @@ describe("InvoiceService", () => {
         ],
         metadata: { ok: "yes", count: 2, flag: true, bad: { nested: 1 } },
         parentId: null,
-        companionId: null,
+        patientId: null,
         appointmentId: null,
         subtotal: 10,
         totalAmount: 10,
@@ -722,7 +710,7 @@ describe("InvoiceService", () => {
         id: "inv_5",
         status: "FAILED",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         totalAmount: 5,
         currency: "usd",
       });
@@ -736,7 +724,7 @@ describe("InvoiceService", () => {
         id: "inv_6",
         status: "REFUNDED",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         totalAmount: 5,
         currency: "usd",
       });
@@ -751,7 +739,7 @@ describe("InvoiceService", () => {
         id: "inv_7",
         status: "PENDING",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
       });
 
       await InvoiceService.updateStatus("inv_7", "PENDING");
@@ -768,7 +756,7 @@ describe("InvoiceService", () => {
         stripeCheckoutSessionId: "sess_1",
         stripeCheckoutUrl: "url",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         totalAmount: 10,
         currency: "usd",
       });
@@ -780,7 +768,7 @@ describe("InvoiceService", () => {
         totalAmount: 10,
         currency: "usd",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
       });
 
       await InvoiceService.addItemsToInvoice("inv_8", [
@@ -802,7 +790,7 @@ describe("InvoiceService", () => {
         status: "PAID",
         stripePaymentIntentId: "pi_9",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         currency: "usd",
         totalAmount: 20,
       });
@@ -814,7 +802,7 @@ describe("InvoiceService", () => {
         id: "inv_9",
         status: "REFUNDED",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         currency: "usd",
         totalAmount: 20,
       });
@@ -831,14 +819,14 @@ describe("InvoiceService", () => {
         id: "inv_10",
         status: "AWAITING_PAYMENT",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         metadata: {},
       });
       (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
         id: "inv_10",
         status: "CANCELLED",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         metadata: {},
       });
 
@@ -979,7 +967,7 @@ describe("InvoiceService", () => {
     it("should resolve audit targets directly from invoice if org/comp exist", async () => {
       const mockInvoice = createMockDoc({
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
       });
       (InvoiceModel.findOneAndUpdate as jest.Mock).mockResolvedValue(
         mockInvoice,
@@ -989,7 +977,7 @@ describe("InvoiceService", () => {
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
         expect.objectContaining({
           organisationId: validId,
-          companionId: validId,
+          patientId: validId,
         }),
       );
     });
@@ -997,7 +985,7 @@ describe("InvoiceService", () => {
     it("should fetch from appointment if invoice missing org/comp", async () => {
       const mockInvoice = createMockDoc({
         organisationId: null,
-        companionId: null,
+        patientId: null,
         appointmentId: validId,
       });
       (InvoiceModel.findOneAndUpdate as jest.Mock).mockResolvedValue(
@@ -1015,7 +1003,7 @@ describe("InvoiceService", () => {
       expect(AuditTrailService.recordSafely).toHaveBeenCalledWith(
         expect.objectContaining({
           organisationId: "org_app",
-          companionId: "comp_app",
+          patientId: "comp_app",
         }),
       );
     });
@@ -1023,7 +1011,7 @@ describe("InvoiceService", () => {
     it("should skip audit when targets are missing", async () => {
       const mockInvoice = createMockDoc({
         organisationId: null,
-        companionId: null,
+        patientId: null,
         appointmentId: null,
       });
       (InvoiceModel.findOneAndUpdate as jest.Mock).mockResolvedValue(
@@ -1046,7 +1034,7 @@ describe("InvoiceService", () => {
     it("should update status to FAILED and audit", async () => {
       const mockDoc = createMockDoc({
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
       });
       (InvoiceModel.findByIdAndUpdate as jest.Mock).mockResolvedValue(mockDoc);
 
@@ -1071,7 +1059,7 @@ describe("InvoiceService", () => {
     it("should update status to REFUNDED, audit, and return mapped domain object", async () => {
       const mockDoc = createMockDoc({
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
       });
       (InvoiceModel.findByIdAndUpdate as jest.Mock).mockResolvedValue(mockDoc);
 
@@ -1097,7 +1085,7 @@ describe("InvoiceService", () => {
     it("should update status, save, and audit", async () => {
       const mockDoc = createMockDoc({
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
       });
       (InvoiceModel.findById as jest.Mock).mockResolvedValue(mockDoc);
 
@@ -1169,7 +1157,7 @@ describe("InvoiceService", () => {
     it("should recalculate totals and push items", async () => {
       const doc = createMockDoc({
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
       });
       (InvoiceModel.findById as jest.Mock).mockResolvedValue(doc);
 
@@ -1298,7 +1286,7 @@ describe("InvoiceService", () => {
         status: "AWAITING_PAYMENT",
         metadata: {},
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
       });
       (InvoiceModel.findOne as jest.Mock).mockResolvedValue(doc);
 
@@ -1336,7 +1324,7 @@ describe("InvoiceService", () => {
         stripePaymentIntentId: "pi_123",
         metadata: {},
         organisationId: validId,
-        companionId: validId,
+        patientId: validId,
       });
       (InvoiceModel.findOne as jest.Mock).mockResolvedValue(doc);
       (StripeService.refundPaymentIntent as jest.Mock).mockResolvedValue({
@@ -1529,7 +1517,7 @@ describe("InvoiceService", () => {
       ).mockResolvedValueOnce({
         _id: new Types.ObjectId(),
         organisationId: new Types.ObjectId(),
-        companionId: new Types.ObjectId(),
+        patientId: new Types.ObjectId(),
         appointmentId: new Types.ObjectId(),
         items: [
           { id: "i1", name: "Item", quantity: 1, unitPrice: 10, total: 10 },
@@ -1545,7 +1533,7 @@ describe("InvoiceService", () => {
         toObject: () => ({
           _id: { toString: () => "inv_1" },
           parentId: { toString: () => "parent_1" },
-          companionId: { toString: () => "comp_1" },
+          patientId: { toString: () => "comp_1" },
           organisationId: { toString: () => "org_1" },
           appointmentId: { toString: () => "appt_1" },
           items: [
@@ -1648,7 +1636,7 @@ describe("InvoiceService", () => {
         id: "inv_new",
         appointmentId: "appt_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         status: "AWAITING_PAYMENT",
         items: [],
         subtotal: 50,
@@ -1716,7 +1704,7 @@ describe("InvoiceService", () => {
         id: "inv_new",
         appointmentId: "appt_1",
         organisationId: "org_1",
-        companionId: "comp_1",
+        patientId: "comp_1",
         status: "AWAITING_PAYMENT",
         items: [],
         subtotal: 330,

@@ -35,12 +35,13 @@ const templateStatusToLabelMap: Record<TemplateStatus, FormsStatus> = {
 
 const templateKindToCategoryMap: Record<TemplateKind, FormsCategory> = {
   FORM: 'Custom',
+  CONSENT: 'Consent form',
   SOAP_NOTE: 'SOAP',
   VITAL_RECORD: 'Vitals',
   PRESCRIPTION: 'Prescription Template',
   DISCHARGE_SUMMARY: 'Discharge Form',
-  TASK_TEMPLATE: 'Task Template',
-  CARE_PATHWAY: 'Inpatient Schedule',
+  TASK_ASSIGNMENT: 'Task Template',
+  INPATIENT_SCHEDULE: 'Inpatient Schedule',
 };
 
 const labelToStatusMap: Record<FormsStatus, Form['status']> = {
@@ -93,9 +94,9 @@ export const categoryToTemplateKind = (category?: FormsCategory): TemplateKind |
     case 'Discharge Form':
       return 'DISCHARGE_SUMMARY';
     case 'Task Template':
-      return 'TASK_TEMPLATE';
+      return 'TASK_ASSIGNMENT';
     case 'Inpatient Schedule':
-      return 'CARE_PATHWAY';
+      return 'INPATIENT_SCHEDULE';
     case 'Custom':
     case 'Consent form':
       return 'FORM';
@@ -565,7 +566,7 @@ const clinicalBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> 
 };
 
 const workflowBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> = {
-  TASK_TEMPLATE: {
+  TASK_ASSIGNMENT: {
     sections: [
       {
         id: 'definition',
@@ -647,7 +648,7 @@ const workflowBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> 
       },
     ],
   },
-  CARE_PATHWAY: {
+  INPATIENT_SCHEDULE: {
     sections: [
       {
         id: 'admission',
@@ -738,7 +739,7 @@ export const buildTemplatePayload = (
     kind,
     name: form.name,
     description: form.description,
-    scope: kind === 'CARE_PATHWAY' ? 'INPATIENT' : 'ORGANISATION',
+    scope: kind === 'INPATIENT_SCHEDULE' ? 'INPATIENT' : 'ORGANISATION',
     rules: {
       species: form.species ?? [],
       requiredSigner: form.requiredSigner,
