@@ -1741,6 +1741,7 @@ describe("CatalogService", () => {
       {
         id: "prod_1",
         name: "Consult",
+        kind: "CONSULTATION",
         specialityId: "spec_1",
         organisationId: "org_near",
         prices: [{ unitPrice: 150 }],
@@ -1764,7 +1765,67 @@ describe("CatalogService", () => {
             services: [
               expect.objectContaining({
                 id: "prod_1",
+                kind: "CONSULTATION",
                 cost: 150,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("falls back to all organisations when coordinates are omitted", async () => {
+    (prisma.organization.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "org_1",
+        name: "Org",
+        imageUrl: null,
+        phoneNo: "12345",
+        type: "CLINIC",
+        appointmentCheckInBufferMinutes: null,
+        appointmentCheckInRadiusMeters: null,
+        address: {
+          addressLine: "1 Main St",
+          country: "US",
+          city: "Austin",
+          state: "TX",
+          postalCode: "73301",
+          latitude: 40,
+          longitude: -74,
+        },
+      },
+    ]);
+    (prisma.speciality.findMany as jest.Mock).mockResolvedValueOnce([
+      { id: "spec_1", name: "General", organisationId: "org_1" },
+    ]);
+    (prisma.productItem.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "prod_1",
+        name: "Checkup",
+        kind: "CONSULTATION",
+        specialityId: "spec_1",
+        organisationId: "org_1",
+        prices: [{ unitPrice: 50 }],
+      },
+    ]);
+
+    const result =
+      await CatalogService.listOrganisationsProvidingServiceNearby();
+
+    expect(prisma.organization.findMany).toHaveBeenCalledTimes(1);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        id: "org_1",
+        specialities: [
+          expect.objectContaining({
+            id: "spec_1",
+            services: [
+              expect.objectContaining({
+                id: "prod_1",
+                kind: "CONSULTATION",
+                cost: 50,
               }),
             ],
           }),
@@ -1780,19 +1841,8 @@ describe("CatalogService", () => {
     jest.spyOn(CatalogService, "getProductById").mockResolvedValue({
       id: "pkg_1",
       version: 2,
-      kind: "PACKAGE",
+      kind: "CONSULTATION",
       organisationId: "org_1",
-      packageItems: [
-        {
-          childProductItemId: "prod_1",
-          quantity: 1,
-          pricingMode: "INHERITED_PRICE",
-          overridePrice: null,
-          discountPercent: null,
-          sortOrder: 0,
-          isOptional: false,
-        },
-      ],
     } as never);
     (prisma.productItem.findMany as jest.Mock).mockResolvedValue([
       {
@@ -2085,6 +2135,7 @@ describe("CatalogService", () => {
         {
           id: "prod_1",
           name: "Checkup",
+          kind: "CONSULTATION",
           specialityId: "spec_1",
           organisationId: "org_1",
           prices: [{ unitPrice: 50 }],
@@ -2107,6 +2158,7 @@ describe("CatalogService", () => {
                 expect.objectContaining({
                   id: "prod_1",
                   name: "Checkup",
+                  kind: "CONSULTATION",
                   cost: 50,
                 }),
               ],
@@ -2144,6 +2196,7 @@ describe("CatalogService", () => {
         {
           id: "prod_1",
           name: "Checkup",
+          kind: "PACKAGE",
           specialityId: "spec_1",
           organisationId: "org_1",
           prices: [{ unitPrice: 50 }],
@@ -2165,6 +2218,7 @@ describe("CatalogService", () => {
                 expect.objectContaining({
                   id: "prod_1",
                   name: "Checkup",
+                  kind: "PACKAGE",
                   cost: 50,
                 }),
               ],

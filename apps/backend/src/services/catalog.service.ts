@@ -28,6 +28,7 @@ import {
   addCachedPromise,
   type CachedPromise,
 } from "src/utils/cached-promise-cache";
+import logger from "src/utils/logger";
 import {
   buildBookableWindowsForVets,
   mapOrganisationWithAddress,
@@ -2338,34 +2339,55 @@ export const CatalogService = {
   },
 
   async listOrganisationsProvidingServiceNearby(
-    lat: number,
-    lng: number,
+    lat?: number,
+    lng?: number,
     radius = 5000,
   ) {
-    const { latDelta, lngDelta } = getBoundingDeltas(lat, radius);
+    const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng);
+    let candidateOrgs: Array<
+      Awaited<ReturnType<typeof prisma.organization.findMany>>[number]
+    > = [];
 
-    const organisations = await prisma.organization.findMany({
-      where: {
-        isVerified: true,
-        isActive: true,
-        address: {
-          is: {
-            latitude: { gte: lat - latDelta, lte: lat + latDelta },
-            longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
+    if (hasCoordinates) {
+      const safeLat = lat as number;
+      const safeLng = lng as number;
+      const { latDelta, lngDelta } = getBoundingDeltas(safeLat, radius);
+
+      const organisations = await prisma.organization.findMany({
+        where: {
+          isVerified: true,
+          isActive: true,
+          address: {
+            is: {
+              latitude: { gte: safeLat - latDelta, lte: safeLat + latDelta },
+              longitude: { gte: safeLng - lngDelta, lte: safeLng + lngDelta },
+            },
           },
         },
-      },
-      include: { address: true },
-    });
+        include: { address: true },
+      });
 
-    const nearbyOrgs = filterWithinRadius(organisations, lat, lng, radius);
+      const nearbyOrgs = filterWithinRadius(
+        organisations,
+        safeLat,
+        safeLng,
+        radius,
+      );
 
-    const candidateOrgs =
-      nearbyOrgs.length > 0
-        ? nearbyOrgs
-        : await prisma.organization.findMany({
-            include: { address: true },
-          });
+      candidateOrgs =
+        nearbyOrgs.length > 0
+          ? nearbyOrgs
+          : await prisma.organization.findMany({
+              include: { address: true },
+            });
+    } else {
+      logger.warn(
+        "No coordinates provided for catalog nearby search, returning all organisations",
+      );
+      candidateOrgs = await prisma.organization.findMany({
+        include: { address: true },
+      });
+    }
 
     if (!candidateOrgs.length) {
       return [];
@@ -2389,6 +2411,7 @@ export const CatalogService = {
       select: {
         id: true,
         name: true,
+        kind: true,
         specialityId: true,
         organisationId: true,
         prices: {
@@ -2412,6 +2435,7 @@ export const CatalogService = {
           .map((product) => ({
             id: product.id,
             name: product.name,
+            kind: product.kind,
             cost: product.prices?.[0]?.unitPrice ?? 0,
             specialityId: product.specialityId,
             organisationId: product.organisationId,
