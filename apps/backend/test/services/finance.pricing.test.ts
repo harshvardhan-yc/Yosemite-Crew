@@ -32,26 +32,26 @@ describe("finance/pricing", () => {
 
     expect(pricing.subtotal).toBe(250);
     expect(pricing.lineDiscountTotal).toBe(20);
-    expect(pricing.taxableSubtotal).toBe(230);
-    expect(pricing.taxTotal).toBe(41.4);
-    expect(pricing.invoiceDiscountTotal).toBe(13.57);
+    expect(pricing.taxableSubtotal).toBe(218.5);
+    expect(pricing.taxTotal).toBe(39.33);
+    expect(pricing.invoiceDiscountTotal).toBe(11.5);
     expect(pricing.totalAmount).toBe(257.83);
     expect(pricing.lines).toEqual([
       {
         grossAmount: 200,
         lineDiscountAmount: 20,
         netAmount: 180,
-        taxableAmount: 180,
-        taxAmount: 32.4,
-        totalAmount: 212.4,
+        taxableAmount: 171,
+        taxAmount: 30.78,
+        totalAmount: 201.78,
       },
       {
         grossAmount: 50,
         lineDiscountAmount: 0,
         netAmount: 50,
-        taxableAmount: 50,
-        taxAmount: 9,
-        totalAmount: 59,
+        taxableAmount: 47.5,
+        taxAmount: 8.55,
+        totalAmount: 56.05,
       },
     ]);
   });

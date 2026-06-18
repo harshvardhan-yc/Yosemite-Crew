@@ -8,6 +8,7 @@ import {
 import { Invoice, InvoiceItem } from "@yosemite-crew/types";
 import {
   calculateInvoicePricing,
+  roundMoney,
   type InvoiceDiscountInput as PricingInvoiceDiscountInput,
 } from "./finance/pricing";
 import {
@@ -25,6 +26,7 @@ import logger from "src/utils/logger";
 import type { AuditEventType } from "src/models/audit-trail";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
 import { assertSafeString } from "src/utils/sanitize";
+import type Stripe from "stripe";
 
 export class InvoiceServiceError extends Error {
   constructor(
@@ -145,13 +147,18 @@ const toTaxLineItems = (items: DraftInvoiceItemInput[]) =>
     discountPercent: item.discountPercent,
   }));
 
-const resolveInvoiceTotals = (
+const resolveInvoiceTotals = async (
   items: DraftInvoiceItemInput[],
   taxPercent = 0,
   invoiceDiscount?: PricingInvoiceDiscountInput,
   taxBehavior: PrismaTaxBehavior = DEFAULT_TAX_BEHAVIOR,
+  currency = "usd",
   provider?: string | null,
   mode: "preview" | "finalize" = "preview",
+  taxContext?: {
+    customerAddress?: Stripe.AddressParam | null;
+    liabilityAccountId?: string | null;
+  },
 ) => {
   const pricing = calculateInvoicePricing({
     lines: items.map((item) => ({
@@ -165,32 +172,46 @@ const resolveInvoiceTotals = (
     invoiceDiscount,
   });
   const adapter = getInvoiceTaxProviderAdapter(provider);
+  const taxSnapshot =
+    mode === "finalize"
+      ? await adapter.finalize({
+          provider: adapter.provider,
+          taxBehavior,
+          taxRatePercent: taxPercent,
+          currency,
+          invoiceDiscount,
+          pricing,
+          lineItems: toTaxLineItems(items),
+          customerAddress: taxContext?.customerAddress ?? null,
+          liabilityAccountId: taxContext?.liabilityAccountId ?? null,
+        })
+      : await adapter.preview({
+          provider: adapter.provider,
+          taxBehavior,
+          taxRatePercent: taxPercent,
+          currency,
+          invoiceDiscount,
+          pricing,
+          lineItems: toTaxLineItems(items),
+          customerAddress: taxContext?.customerAddress ?? null,
+          liabilityAccountId: taxContext?.liabilityAccountId ?? null,
+        });
 
   return {
     subtotal: pricing.subtotal,
     discountTotal: pricing.lineDiscountTotal,
     invoiceDiscountTotal: pricing.invoiceDiscountTotal,
-    taxTotal: pricing.taxTotal,
-    taxPercent: taxPercent ?? 0,
-    totalAmount: pricing.totalAmount,
-    taxSnapshot:
-      mode === "finalize"
-        ? adapter.finalize({
-            provider: adapter.provider,
-            taxBehavior,
-            taxRatePercent: taxPercent,
-            invoiceDiscount,
-            pricing,
-            lineItems: toTaxLineItems(items),
-          })
-        : adapter.preview({
-            provider: adapter.provider,
-            taxBehavior,
-            taxRatePercent: taxPercent,
-            invoiceDiscount,
-            pricing,
-            lineItems: toTaxLineItems(items),
-          }),
+    taxTotal: taxSnapshot.taxAmount,
+    taxPercent:
+      taxSnapshot.taxableSubtotal > 0
+        ? roundMoney(
+            (taxSnapshot.taxAmount / taxSnapshot.taxableSubtotal) * 100,
+          )
+        : (taxPercent ?? 0),
+    totalAmount: roundMoney(
+      pricing.totalAmount - pricing.taxTotal + taxSnapshot.taxAmount,
+    ),
+    taxSnapshot,
   };
 };
 
@@ -359,6 +380,51 @@ const resolveOrganisationCurrency = async (organisationId: string) => {
   return billing?.currency ?? "usd";
 };
 
+const toStripeAddress = (
+  address?: {
+    addressLine?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+  } | null,
+): Stripe.AddressParam | undefined => {
+  if (!address?.country) {
+    return undefined;
+  }
+
+  return {
+    line1: address.addressLine ?? undefined,
+    city: address.city ?? undefined,
+    state: address.state ?? undefined,
+    postal_code: address.postalCode ?? undefined,
+    country: address.country,
+  };
+};
+
+const resolveInvoiceTaxContext = async (
+  organisationId: string,
+  parentId?: string | null,
+) => {
+  const [organisation, parent] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: organisationId },
+      select: { stripeAccountId: true },
+    }),
+    parentId
+      ? prisma.parent.findUnique({
+          where: { id: parentId },
+          select: { address: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    customerAddress: toStripeAddress(parent?.address ?? null),
+    liabilityAccountId: organisation?.stripeAccountId ?? null,
+  };
+};
+
 const cancelUnpaidInvoice = async (invoice: PrismaInvoice, reason: string) =>
   prisma.invoice.update({
     where: { id: invoice.id },
@@ -371,19 +437,27 @@ const cancelUnpaidInvoice = async (invoice: PrismaInvoice, reason: string) =>
     },
   });
 
-const normalizeCreateInput = (
+const normalizeCreateInput = async (
   input: CreateInvoiceInput,
   patientId: string,
   parentId: string,
   currency: string,
   taxBehavior: PrismaTaxBehavior = DEFAULT_TAX_BEHAVIOR,
+  taxContext?: {
+    customerAddress?: Stripe.AddressParam | null;
+    liabilityAccountId?: string | null;
+  },
 ) => {
   const items = buildInvoiceLineSnapshots(input.items);
-  const totals = resolveInvoiceTotals(
+  const totals = await resolveInvoiceTotals(
     input.items,
     0,
     input.invoiceDiscount,
     taxBehavior,
+    currency,
+    undefined,
+    "preview",
+    taxContext,
   );
 
   return {
@@ -439,11 +513,17 @@ export const InvoiceService = {
     }
 
     const currency = await resolveOrganisationCurrency(input.organisationId);
-    const { data, taxSnapshot } = normalizeCreateInput(
+    const taxContext = await resolveInvoiceTaxContext(
+      input.organisationId,
+      parentId,
+    );
+    const { data, taxSnapshot } = await normalizeCreateInput(
       input,
       patientId,
       parentId,
       currency,
+      DEFAULT_TAX_BEHAVIOR,
+      taxContext,
     );
     const createdInvoice = await prisma.invoice.create({
       data: {
@@ -518,7 +598,20 @@ export const InvoiceService = {
       unitPrice: item.unitPrice,
       discountPercent: item.discountPercent ?? undefined,
     }));
-    const totals = resolveInvoiceTotals(items, 0, input.invoiceDiscount);
+    const taxContext = await resolveInvoiceTaxContext(
+      appointment.organisationId,
+      parentId,
+    );
+    const totals = await resolveInvoiceTotals(
+      items,
+      0,
+      input.invoiceDiscount,
+      DEFAULT_TAX_BEHAVIOR,
+      currency,
+      undefined,
+      "preview",
+      taxContext,
+    );
 
     const invoice = await prisma.invoice.create({
       data: {
@@ -918,7 +1011,11 @@ export const InvoiceService = {
       discountPercent: item.discountPercent ?? undefined,
     }));
     const mergedItems = [...existingItems, ...newItems];
-    const totals = resolveInvoiceTotals(
+    const taxContext = await resolveInvoiceTaxContext(
+      invoice.organisationId ?? "",
+      invoice.parentId ?? null,
+    );
+    const totals = await resolveInvoiceTotals(
       mergedItems,
       invoice.taxPercent,
       invoice.invoiceDiscountType && invoice.invoiceDiscountValue != null
@@ -928,6 +1025,10 @@ export const InvoiceService = {
           }
         : undefined,
       invoice.taxSnapshot?.taxBehavior ?? DEFAULT_TAX_BEHAVIOR,
+      invoice.currency,
+      invoice.taxSnapshot?.provider,
+      "preview",
+      taxContext,
     );
 
     const updated = await prisma.invoice.update({
@@ -1004,13 +1105,19 @@ export const InvoiceService = {
             value: invoice.invoiceDiscountValue,
           }
         : undefined;
-    const totals = resolveInvoiceTotals(
+    const taxContext = await resolveInvoiceTaxContext(
+      invoice.organisationId ?? "",
+      invoice.parentId ?? null,
+    );
+    const totals = await resolveInvoiceTotals(
       items,
       invoice.taxPercent,
       invoiceDiscount,
       invoice.taxSnapshot?.taxBehavior ?? DEFAULT_TAX_BEHAVIOR,
+      invoice.currency,
       taxProvider ?? invoice.taxSnapshot?.provider,
       "finalize",
+      taxContext,
     );
 
     const finalizedAt = new Date();
