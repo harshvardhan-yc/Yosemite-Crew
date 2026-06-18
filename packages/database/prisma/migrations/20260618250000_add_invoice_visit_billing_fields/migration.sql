@@ -16,12 +16,12 @@ SET
   "billingCollectionMode" = CASE
     WHEN "paymentCollectionMethod" = 'PAYMENT_AT_CLINIC' THEN 'PAY_AT_VISIT_END'
     ELSE 'PREPAY_AT_BOOKING'
-  END,
+  END::"BillingCollectionMode",
   "visitBillingStage" = CASE
     WHEN "status" IN ('PAID', 'REFUNDED') THEN 'SETTLED'
     WHEN "paymentCollectionMethod" = 'PAYMENT_AT_CLINIC' THEN 'READY_FOR_BILLING'
     ELSE 'DRAFT'
-  END,
+  END::"InvoiceVisitBillingStage",
   "depositTargetAmount" = 0,
   "depositCollectedAmount" = 0;
 
