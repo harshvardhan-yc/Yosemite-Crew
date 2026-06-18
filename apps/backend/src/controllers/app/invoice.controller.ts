@@ -66,6 +66,12 @@ const isCreditNoteMetadata = (
   );
 };
 
+const toFinanceEnvelope = <T>(data: T) => ({
+  data,
+  meta: null,
+  error: null,
+});
+
 export const InvoiceController = {
   async listInvoicesForAppointment(this: void, req: Request, res: Response) {
     try {
@@ -75,7 +81,7 @@ export const InvoiceController = {
         appointmentId,
         organisationId,
       );
-      return res.status(200).json(invoices);
+      return res.status(200).json(toFinanceEnvelope(invoices));
     } catch (err) {
       logger.error("Error fetching appointment invoices", err);
       return res.status(500).json({ message: "Internal server error" });
@@ -88,7 +94,7 @@ export const InvoiceController = {
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
-      return res.status(200).json(invoice);
+      return res.status(200).json(toFinanceEnvelope(invoice));
     } catch (err) {
       logger.error("Error fetching invoice by ID", err);
       return res.status(500).json({ message: "Internal server error" });
@@ -105,7 +111,7 @@ export const InvoiceController = {
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
-      return res.status(200).json(invoice);
+      return res.status(200).json(toFinanceEnvelope(invoice));
     } catch (err) {
       logger.error("Error fetching invoice by Payment Intent ID", err);
       return res.status(500).json({ message: "Internal server error" });
@@ -124,7 +130,7 @@ export const InvoiceController = {
 
       const result =
         await InvoiceService.createCheckoutSessionAndEmailParent(invoiceId);
-      return res.status(200).json(result);
+      return res.status(200).json(toFinanceEnvelope(result));
     } catch (err) {
       logger.error("Error creating invoice checkout session", err);
 
@@ -159,7 +165,7 @@ export const InvoiceController = {
         organisationId,
       );
 
-      return res.status(200).json(invoice);
+      return res.status(200).json(toFinanceEnvelope(invoice));
     } catch (err) {
       logger.error("Error adding charges to appointment", err);
 
@@ -181,7 +187,7 @@ export const InvoiceController = {
         return res.status(400).json({ message: "Organisation Id is reqired." });
 
       const invoices = await InvoiceService.listForOrganisation(organisationId);
-      return res.status(200).json(invoices);
+      return res.status(200).json(toFinanceEnvelope(invoices));
     } catch (err) {
       logger.error("Error fetching appointment invoices", err);
       return res.status(500).json({ message: "Internal server error" });
@@ -201,7 +207,7 @@ export const InvoiceController = {
 
       const invoice =
         await InvoiceService.bootstrapForAppointment(appointmentId);
-      return res.status(200).json(invoice);
+      return res.status(200).json(toFinanceEnvelope(invoice));
     } catch (err) {
       logger.error("Error bootstrapping appointment invoice", err);
 
@@ -237,7 +243,7 @@ export const InvoiceController = {
         return res.status(409).json({ message: "Invoice already paid." });
       }
 
-      return res.status(200).json(invoice);
+      return res.status(200).json(toFinanceEnvelope(invoice));
     } catch (err) {
       logger.error("Error marking invoice paid", err);
 
@@ -286,7 +292,7 @@ export const InvoiceController = {
         paymentCollectionMethod,
       );
 
-      return res.status(200).json(invoice);
+      return res.status(200).json(toFinanceEnvelope(invoice));
     } catch (err) {
       logger.error("Error updating payment collection method", err);
 
@@ -341,7 +347,7 @@ export const InvoiceController = {
         metadata,
       });
 
-      return res.status(201).json(creditNote);
+      return res.status(201).json(toFinanceEnvelope(creditNote));
     } catch (err) {
       logger.error("Error issuing credit note", err);
 
@@ -391,7 +397,7 @@ export const InvoiceController = {
         reason,
       );
 
-      return res.status(200).json(creditNote);
+      return res.status(200).json(toFinanceEnvelope(creditNote));
     } catch (err) {
       logger.error("Error voiding credit note", err);
 

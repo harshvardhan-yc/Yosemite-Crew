@@ -44,7 +44,7 @@ type StripeCheckoutSessionClient = {
     ) => Promise<{ latest_charge?: { id: string } | string | null }>;
   };
   refunds: {
-    create: (input: { charge: string }) => Promise<{
+    create: (input: { charge: string; amount?: number }) => Promise<{
       id: string;
       status: string;
       amount: number;
@@ -108,6 +108,19 @@ export type InvoicePaymentInput = {
 export type RefundInvoiceResult = {
   invoice: Prisma.InvoiceGetPayload<{
     include: { payments: true };
+  }>;
+  refund: {
+    refundId: string;
+    providerRefundId?: string | null;
+    status: string;
+    amountRefunded: number;
+    paymentId: string;
+  };
+};
+
+export type RefundPaymentResult = {
+  payment: Prisma.PaymentGetPayload<{
+    include: { invoice: true };
   }>;
   refund: {
     refundId: string;
@@ -811,6 +824,124 @@ export const FinancePaymentService = {
     }
 
     return this.refundInvoicePayment(paymentAttempt.invoiceId, reason);
+  },
+
+  async refundPaymentById(
+    paymentId: string,
+    input: { reason?: string; amount?: number } = {},
+  ): Promise<RefundPaymentResult> {
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { invoice: true },
+    });
+
+    if (!payment) {
+      throw new FinancePaymentError("Payment not found", 404);
+    }
+
+    if (!payment.invoice) {
+      throw new FinancePaymentError("Payment is missing invoice", 500);
+    }
+
+    const refundAmount = roundMoney(
+      Math.min(input.amount ?? payment.amount, payment.amount),
+    );
+
+    if (refundAmount <= 0) {
+      throw new FinancePaymentError(
+        "Refund amount must be greater than zero",
+        400,
+      );
+    }
+
+    let providerRefundId: string | null = null;
+    let refundStatus = "succeeded";
+
+    if (payment.provider === "STRIPE") {
+      const paymentIntentId = payment.providerPaymentId;
+      if (!paymentIntentId) {
+        throw new FinancePaymentError(
+          "Payment has no Stripe payment intent to refund",
+          409,
+        );
+      }
+
+      const stripe = getStripeClient();
+      const paymentIntent = await stripe.paymentIntents.retrieve(
+        paymentIntentId,
+        {
+          expand: ["latest_charge"],
+        },
+      );
+      const charge = paymentIntent?.latest_charge;
+      const chargeId =
+        typeof charge === "string" ? charge : (charge?.id ?? null);
+      if (!chargeId) {
+        throw new FinancePaymentError("No charge found for refund", 409);
+      }
+
+      const refund = await stripe.refunds.create({
+        charge: chargeId,
+        amount: Math.round(refundAmount * 100),
+      });
+
+      providerRefundId = refund.id;
+      refundStatus = refund.status;
+    }
+
+    const refund = await prisma.refund.create({
+      data: {
+        paymentId: payment.id,
+        provider: payment.provider,
+        providerRefundId,
+        amount: refundAmount,
+        currency: payment.currency,
+        status: mapRefundStatus(refundStatus),
+        reason: input.reason ?? undefined,
+        rawProviderPayload: {
+          source: "finance.refundPaymentById",
+          paymentId: payment.id,
+          providerRefundId,
+          refundStatus,
+          amount: refundAmount,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status:
+          refundAmount >= payment.amount ? "REFUNDED" : "PARTIALLY_REFUNDED",
+      },
+    });
+
+    await FinanceEventService.recordEvent({
+      organisationId: payment.invoice.organisationId ?? null,
+      eventType: "PAYMENT_REFUNDED",
+      entityType: "PAYMENT",
+      entityId: payment.id,
+      payload: {
+        paymentId: payment.id,
+        refundId: refund.id,
+        providerRefundId,
+        refundStatus,
+        amountRefunded: refundAmount,
+        reason: input.reason ?? null,
+      },
+      occurredAt: new Date(),
+    });
+
+    return {
+      payment,
+      refund: {
+        refundId: providerRefundId ?? refund.id,
+        providerRefundId,
+        status: refund.status,
+        amountRefunded: refundAmount,
+        paymentId: payment.id,
+      },
+    };
   },
 
   async recordManualPayment(invoiceId: string, input: ManualPaymentInput = {}) {

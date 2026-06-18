@@ -673,6 +673,50 @@ describe("InvoiceService", () => {
     ).rejects.toThrow("Cannot modify a finalized invoice");
   });
 
+  it("previews invoice tax snapshots without mutating the invoice", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_preview",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [
+        {
+          name: "Consult",
+          description: "Consult",
+          quantity: 1,
+          unitPrice: 100,
+          total: 100,
+        },
+      ],
+      subtotal: 100,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 18,
+      taxPercent: 18,
+      taxSnapshot: {
+        provider: "STRIPE",
+        taxBehavior: "EXCLUSIVE",
+      },
+      finalizedAt: null,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const preview = await InvoiceService.previewTaxForInvoice("inv_preview");
+
+    expect(prisma.invoice.update).not.toHaveBeenCalled();
+    expect(preview.invoice.id).toBe("inv_preview");
+    expect(preview.taxProvider).toBe("STRIPE");
+    expect(preview.taxTotal).toBe(18);
+  });
+
   it("marks paid invoices and supports manual settlement", async () => {
     (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
       id: "inv_3",

@@ -1517,6 +1517,49 @@ export const InvoiceService = {
     return toInvoiceRecord(updated);
   },
 
+  async previewTaxForInvoice(invoiceId: string, taxProvider?: string | null) {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { taxSnapshot: true },
+    });
+    if (!invoice) {
+      throw new InvoiceServiceError("Invoice not found", 404);
+    }
+
+    const items = Array.isArray(invoice.items)
+      ? (invoice.items as unknown as DraftInvoiceItemInput[])
+      : [];
+    const invoiceDiscount =
+      invoice.invoiceDiscountType && invoice.invoiceDiscountValue != null
+        ? {
+            type: invoice.invoiceDiscountType as PricingInvoiceDiscountInput["type"],
+            value: invoice.invoiceDiscountValue,
+          }
+        : undefined;
+    const taxContext = await resolveInvoiceTaxContext(
+      invoice.organisationId ?? "",
+      invoice.parentId ?? null,
+    );
+    const totals = await resolveInvoiceTotals(
+      items,
+      invoice.taxPercent,
+      invoiceDiscount,
+      invoice.taxSnapshot?.taxBehavior ?? DEFAULT_TAX_BEHAVIOR,
+      invoice.currency,
+      taxProvider ?? invoice.taxSnapshot?.provider,
+      "preview",
+      taxContext,
+    );
+
+    return {
+      invoice: toInvoiceRecord(invoice),
+      taxProvider: totals.taxSnapshot.provider,
+      taxSnapshot: totals.taxSnapshot,
+      taxTotal: totals.taxTotal,
+      totalAmount: totals.totalAmount,
+    };
+  },
+
   async addChargesToAppointment(
     appointmentId: string,
     items: InvoiceItem[],

@@ -27,6 +27,7 @@ jest.mock("src/config/prisma", () => ({
       findMany: jest.fn(),
       update: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
     },
     refund: {
       create: jest.fn(),
@@ -838,6 +839,51 @@ describe("FinancePaymentService", () => {
     );
     expect(result.refund.refundId).toBe("re_9");
     expect(result.invoice.status).toBe("REFUNDED");
+  });
+
+  it("refunds a payment by payment id", async () => {
+    (prisma.payment.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "pay_10",
+      invoiceId: "inv_10",
+      provider: "MANUAL",
+      providerPaymentId: null,
+      amount: 50,
+      currency: "usd",
+      invoice: {
+        organisationId: "org_1",
+      },
+    });
+    (prisma.refund.create as jest.Mock).mockResolvedValueOnce({
+      id: "refund_10",
+    });
+    (prisma.payment.update as jest.Mock).mockResolvedValueOnce({
+      id: "pay_10",
+      status: "REFUNDED",
+    });
+
+    const result = await FinancePaymentService.refundPaymentById("pay_10", {
+      amount: 20,
+      reason: "SERVICE_NOT_RENDERED",
+    });
+
+    expect(prisma.refund.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentId: "pay_10",
+          amount: 20,
+          provider: "MANUAL",
+        }),
+      }),
+    );
+    expect(prisma.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "pay_10" },
+        data: expect.objectContaining({
+          status: "PARTIALLY_REFUNDED",
+        }),
+      }),
+    );
+    expect(result.refund.amountRefunded).toBe(20);
   });
 
   it("lists invoice payments in creation order", async () => {
