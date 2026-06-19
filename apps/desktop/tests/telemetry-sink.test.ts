@@ -53,11 +53,14 @@ describe('telemetry http sink', () => {
   test('keeps events queued and backs off when upload fails', async () => {
     const warn = jest.fn();
     const fetchImpl = jest.fn(() => Promise.resolve({ ok: false, status: 503 } as Response));
+    // Freeze `now` so the remaining-delay calculation is deterministic: no time
+    // has elapsed since the failure, so the full window is reported.
     const sink = createTelemetryHttpSink({
       endpoint: 'https://telemetry.example.test/events',
       fetchImpl,
       logger: { warn },
       baseBackoffMs: 250,
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
     });
 
     sink.send(event);
@@ -69,6 +72,39 @@ describe('telemetry http sink', () => {
     expect(warn).toHaveBeenCalledWith('telemetry_http_upload_failed', expect.any(Object));
     expect(await sink.flush()).toBe(false);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('resumes flushing once the backoff window elapses', async () => {
+    let clock = new Date('2026-01-01T00:00:00.000Z').getTime();
+    const fetchImpl = jest
+      .fn()
+      // First attempt fails, arming the backoff window.
+      .mockResolvedValueOnce({ ok: false, status: 503 } as Response)
+      // Second attempt (after the window passes) succeeds.
+      .mockResolvedValueOnce({ ok: true, status: 200 } as Response);
+    const sink = createTelemetryHttpSink({
+      endpoint: 'https://telemetry.example.test/events',
+      fetchImpl,
+      baseBackoffMs: 250,
+      now: () => new Date(clock),
+    });
+
+    sink.send(event);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Backoff is active immediately after the failure: flush is short-circuited.
+    expect(sink.pendingCount()).toBe(1);
+    expect(sink.nextDelayMs()).toBe(250);
+    expect(await sink.flush()).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    // Advance past the backoff window — the queue must flush again.
+    clock += 300;
+    expect(sink.nextDelayMs()).toBe(0);
+    expect(await sink.flush()).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sink.pendingCount()).toBe(0);
   });
 
   test('flush returns true when upload succeeds', async () => {

@@ -16,7 +16,7 @@ type RescheduleRequestBody = {
 
 type CancelBody = { reason?: string };
 
-type UploadUrlBody = { companionId?: string; mimeType?: string };
+type UploadUrlBody = { patientId?: string; mimeType?: string };
 type AttachFormsBody = { formIds?: string[] };
 
 type ErrorWithStatus = Error & { statusCode?: number };
@@ -306,12 +306,12 @@ export const AppointmentController = {
   },
 
   listByCompanion: async (
-    req: Request<{ companionId: string }>,
+    req: Request<{ patientId: string }>,
     res: Response,
   ) => {
     try {
       const data = await AppointmentPrismaService.getAppointmentsForCompanion(
-        req.params.companionId,
+        req.params.patientId,
       );
       return res.status(200).json({ data });
     } catch (err: unknown) {
@@ -321,13 +321,13 @@ export const AppointmentController = {
   },
 
   listByCompanionForOrganisation: async (
-    req: Request<{ organisationId: string; companionId: string }>,
+    req: Request<{ organisationId: string; patientId: string }>,
     res: Response,
   ) => {
     try {
       const data =
         await AppointmentPrismaService.getAppointmentsForCompanionByOrganisation(
-          req.params.companionId,
+          req.params.patientId,
           req.params.organisationId,
         );
       return res.status(200).json({ data });
@@ -411,21 +411,21 @@ export const AppointmentController = {
     res: Response,
   ) => {
     try {
-      const { companionId, mimeType } = req.body;
+      const { patientId, mimeType } = req.body;
       const authUserId = resolveUserIdFromRequest(req);
       if (!authUserId) {
         return res.status(401).json({ message: "User not authenticated" });
       }
-      if (!companionId || !mimeType) {
+      if (!patientId || !mimeType) {
         return res
           .status(400)
-          .json({ message: "companionId and mimeType are required" });
+          .json({ message: "patientId and mimeType are required" });
       }
 
       const upload = await generatePresignedUrl(
         mimeType,
         "custom",
-        `appointments/${companionId}`,
+        `appointments/${patientId}`,
       );
 
       return res.status(200).json({ data: upload });

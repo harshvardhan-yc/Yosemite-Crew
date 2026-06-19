@@ -82,6 +82,31 @@ describe('readManagedConfig', () => {
     expect(config).toEqual({});
   });
 
+  test('parses a macOS .plist managed-preferences file', () => {
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>startUrl</key>
+  <string>https://plist.example.com/signin</string>
+  <key>updateChannel</key>
+  <string>beta</string>
+  <key>idleLockMinutes</key>
+  <integer>20</integer>
+  <key>disableUpdates</key>
+  <true/>
+</dict>
+</plist>`;
+    const config = readManagedConfig({
+      existsSync: (p: string) => p.endsWith('.plist'),
+      readFileSync: () => plist,
+    });
+    expect(config.startUrl).toBe('https://plist.example.com/signin');
+    expect(config.updateChannel).toBe('beta');
+    expect(config.idleLockMinutes).toBe(20);
+    expect(config.disableUpdates).toBe(true);
+  });
+
   test('tries custom path from env first', () => {
     let triedPath = '';
     readManagedConfig({

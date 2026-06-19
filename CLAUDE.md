@@ -95,7 +95,7 @@ Additional commit rules:
 - Never skip pre-commit hooks (`--no-verify` is forbidden).
 - All pre-commit hooks must pass before the user commits — if lint/type/test checks fail, fix them first.
 - Before suggesting any commit message, validate the scope against `commitlint.config.cjs`.
-- Allowed scopes are exactly: `backend`, `frontend`, `mobile`, `dev-docs`, `types`, `fhir`, `repo`, `ci`, `docs`.
+- Allowed scopes are exactly: `backend`, `frontend`, `mobile`, `desktop`, `dev-docs`, `types`, `fhir`, `repo`, `ci`, `docs`, `lib`, `auth`, `database`.
 - If changes span multiple workspaces, use `repo`.
 
 Issue + PR draft workflow (only on explicit user request):
@@ -144,7 +144,7 @@ Conventional commits are enforced by `commitlint`:
 <type>(<scope>): <subject>
 
 Types: feat | fix | chore | refactor | test | docs | style | perf | ci
-Scope: backend | frontend | mobile | dev-docs | types | fhir | repo | ci | docs
+Scope: backend | frontend | mobile | desktop | dev-docs | types | fhir | repo | ci | docs | lib | auth | database
 
 Examples:
   feat(frontend): add recurring appointment support

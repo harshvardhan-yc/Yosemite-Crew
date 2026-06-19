@@ -693,7 +693,7 @@ describe("FormService", () => {
       await FormService.submitFHIR({
         formId: validId,
         appointmentId: validId,
-        companionId: validId,
+        patientId: validId,
         parentId: validId, // triggers PARENT actor
       } as any);
 
@@ -723,7 +723,7 @@ describe("FormService", () => {
       await FormService.submitFHIR(
         {
           formId: validId,
-          companionId: validId, // No parentId
+          patientId: validId, // No parentId
         } as any,
         [],
       ); // empty schema
@@ -780,7 +780,7 @@ describe("FormService", () => {
         {
           formId: validId,
           appointmentId: validId,
-          companionId: validId,
+          patientId: validId,
           parentId: validId,
         } as any,
         [],
@@ -1389,7 +1389,7 @@ describe("FormService", () => {
 
 describe("FormService.listSubmissionsForCompanionInOrganisation", () => {
   const organisationId = "507f1f77bcf86cd799439011";
-  const companionId = "507f191e810c19729de860ea";
+  const patientId = "507f191e810c19729de860ea";
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1408,7 +1408,7 @@ describe("FormService.listSubmissionsForCompanionInOrganisation", () => {
           formId: matchingFormId,
           formVersion: 1,
           appointmentId,
-          companionId,
+          patientId,
           submittedBy: "parent-1",
           answers: { note: "ok" },
           submittedAt: new Date("2024-01-02T10:00:00.000Z"),
@@ -1418,7 +1418,7 @@ describe("FormService.listSubmissionsForCompanionInOrganisation", () => {
           formId: otherFormId,
           formVersion: 1,
           appointmentId: undefined,
-          companionId,
+          patientId,
           submittedBy: "parent-2",
           answers: { note: "skip" },
           submittedAt: new Date("2024-01-01T10:00:00.000Z"),
@@ -1457,7 +1457,7 @@ describe("FormService.listSubmissionsForCompanionInOrganisation", () => {
     const results = await FormService.listSubmissionsForCompanionInOrganisation(
       {
         organisationId,
-        companionId,
+        patientId: patientId,
       },
     );
 

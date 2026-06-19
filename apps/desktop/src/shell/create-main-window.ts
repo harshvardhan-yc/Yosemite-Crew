@@ -175,12 +175,63 @@ export const createMainWindow = async (
     }
   };
 
+  // Populate the offline cache from a finished page load. Shared between the main
+  // window and tab WebContentsViews so cached content is identical regardless of
+  // where the page rendered. Only successful internal documents are stored.
+  const cachePageFromContents = (
+    wc: Electron.WebContents,
+    httpStatus: number,
+  ): void => {
+    const loadedUrl = wc.getURL() || "";
+    const statusOk = httpStatus >= 200 && httpStatus < 300;
+    if (
+      !deps.offlineCache ||
+      !statusOk ||
+      classifyNavigation(loadedUrl, deps.config).disposition !== "internal"
+    ) {
+      return;
+    }
+    if (wc.isDestroyed()) return;
+    wc.executeJavaScript(
+      "({ title: document.title, html: document.documentElement.outerHTML })",
+      false,
+    )
+      .then((result: unknown) => {
+        if (!result || typeof result !== "object") return;
+        const { title, html } = result as { title?: unknown; html?: unknown };
+        if (typeof html !== "string") return;
+        const safeTitle = typeof title === "string" ? title : "";
+        const MAX_CACHED_HTML_BYTES = 5 * 1024 * 1024;
+        if (Buffer.byteLength(html, "utf8") > MAX_CACHED_HTML_BYTES) {
+          deps.logger.debug("nav_cache_skipped_too_large", { url: loadedUrl });
+          return;
+        }
+        const strategy = getCacheStrategy(loadedUrl);
+        deps.logger.debug("offline_cache_navigation", {
+          url: loadedUrl,
+          title: safeTitle,
+          bytes: Buffer.byteLength(html, "utf8"),
+          strategy,
+        });
+        deps.offlineCache?.set(
+          createCacheEntry(loadedUrl, html, "text/html", 200, {
+            "x-yc-title": safeTitle,
+            "x-cache-strategy": strategy,
+          }),
+        );
+      })
+      .catch((err) => {
+        deps.logger.warn("nav_cache_failed", { error: String(err) });
+      });
+  };
+
   const webPrefs = secureWebPreferences(desktopPreloadPath());
   const tabViewHost = createTabViewHost({
     logger: deps.logger,
     webPreferences: webPrefs!,
     onWindowOpen: handleWindowOpen,
     onNavigate: handleMainNavigation,
+    onDidFinishLoad: (_id, wc, httpStatus) => cachePageFromContents(wc, httpStatus),
     onUpdate: (id, meta) => {
       tabManager?.updateMeta(id, meta);
       // The web app — where the user actually signs in and out — lives in the
@@ -305,54 +356,8 @@ export const createMainWindow = async (
 
     // Only cache successful documents — never a 4xx/5xx error or maintenance
     // page, which would then be served verbatim while offline.
-    const statusOk = lastMainFrameStatus >= 200 && lastMainFrameStatus < 300;
-    if (
-      deps.offlineCache &&
-      statusOk &&
-      classifyNavigation(loadedUrl, deps.config).disposition === "internal"
-    ) {
-      const wc = mainWindow?.webContents;
-      if (wc && !wc.isDestroyed()) {
-        wc.executeJavaScript(
-          "({ title: document.title, html: document.documentElement.outerHTML })",
-          false,
-        )
-          .then((result: unknown) => {
-            if (!result || typeof result !== "object") return;
-            const { title, html } = result as {
-              title?: unknown;
-              html?: unknown;
-            };
-            if (typeof html !== "string") return;
-            // Only accept a real string title; `String(obj)` would yield
-            // '[object Object]' if the page returned a non-string.
-            const safeTitle = typeof title === "string" ? title : "";
-            const MAX_CACHED_HTML_BYTES = 5 * 1024 * 1024;
-            if (Buffer.byteLength(html, "utf8") > MAX_CACHED_HTML_BYTES) {
-              deps.logger.debug("nav_cache_skipped_too_large", {
-                url: loadedUrl,
-              });
-              return;
-            }
-            const strategy = getCacheStrategy(loadedUrl);
-            deps.logger.debug("offline_cache_navigation", {
-              url: loadedUrl,
-              title: safeTitle,
-              bytes: Buffer.byteLength(html, "utf8"),
-              strategy,
-            });
-            deps.offlineCache?.set(
-              createCacheEntry(loadedUrl, html, "text/html", 200, {
-                "x-yc-title": safeTitle,
-                "x-cache-strategy": strategy,
-              }),
-            );
-          })
-          .catch((err) => {
-            deps.logger.warn("nav_cache_failed", { error: String(err) });
-          });
-      }
-    }
+    const wc = mainWindow?.webContents;
+    if (wc) cachePageFromContents(wc, lastMainFrameStatus);
   });
 
   const onAuthNavigation = (_event: unknown, url: string) => {

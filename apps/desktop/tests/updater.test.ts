@@ -79,6 +79,19 @@ describe('pure helpers', () => {
     expect(betaUpdater).toEqual({ channel: 'beta', allowPrerelease: true });
   });
 
+  test('honors an explicit preferred channel over env', () => {
+    const updater: { channel?: string; allowPrerelease?: boolean } = {};
+    // env says beta, but the persisted preference (latest) wins.
+    expect(configureUpdateChannel(updater, { [UPDATE_CHANNEL_ENV]: 'beta' }, 'latest')).toBe(
+      'latest'
+    );
+    expect(updater).toEqual({ channel: 'latest', allowPrerelease: false });
+
+    const betaUpdater: { channel?: string; allowPrerelease?: boolean } = {};
+    expect(configureUpdateChannel(betaUpdater, {}, 'beta')).toBe('beta');
+    expect(betaUpdater).toEqual({ channel: 'beta', allowPrerelease: true });
+  });
+
   test('accepts both named and default electron-updater exports', () => {
     const named = makeFakeUpdater();
     const nested = makeFakeUpdater();

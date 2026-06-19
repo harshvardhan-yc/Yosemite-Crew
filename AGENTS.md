@@ -49,7 +49,7 @@ Conventional commits enforced by `commitlint`:
 ```
 <type>(<scope>): <subject>
 Types: feat | fix | chore | refactor | test | docs | style | perf | ci
-Scopes: backend | frontend | mobile | dev-docs | types | fhir | repo | ci | docs
+Scopes: backend | frontend | mobile | desktop | dev-docs | types | fhir | repo | ci | docs | lib | auth | database
 ```
 
 For cross-workspace changes use `repo`. PR title must match the same pattern.

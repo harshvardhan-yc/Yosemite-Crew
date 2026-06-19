@@ -112,7 +112,10 @@ export const createSecondaryDisplayManager = (deps: DisplayDeps = {}): Secondary
   const closeWindow = deps.closeWindow || (() => true);
   const generateId = deps.generateId || defaultGenerateId;
 
-  const openDisplays = new Map<string, { config: DisplayConfig; status: 'open' | 'closed' }>();
+  const openDisplays = new Map<
+    string,
+    { config: DisplayConfig; status: 'open' | 'closed'; windowId: string }
+  >();
 
   const findNonPrimaryDisplay = (): DisplayInfo | undefined =>
     getDisplays().find((d) => !d.isPrimary);
@@ -120,7 +123,9 @@ export const createSecondaryDisplayManager = (deps: DisplayDeps = {}): Secondary
   const openDisplay = (config: DisplayConfig): string => {
     const id = generateId();
     const display = getDisplays()[config.displayIndex] || findNonPrimaryDisplay();
-    createWindow(
+    // Keep the id returned by createWindow: production's closeWindow looks the
+    // BrowserWindow up by that real id, not by the generated display id.
+    const windowId = createWindow(
       config,
       display || {
         id: 'default',
@@ -129,20 +134,21 @@ export const createSecondaryDisplayManager = (deps: DisplayDeps = {}): Secondary
         scaleFactor: 1,
       }
     );
-    openDisplays.set(id, { config, status: 'open' });
+    openDisplays.set(id, { config, status: 'open', windowId });
     return id;
   };
 
   const closeDisplay = (id: string): boolean => {
-    if (!openDisplays.has(id)) return false;
-    closeWindow(id);
+    const entry = openDisplays.get(id);
+    if (!entry) return false;
+    closeWindow(entry.windowId);
     openDisplays.delete(id);
     return true;
   };
 
   const closeAll = (): void => {
-    for (const id of openDisplays.keys()) {
-      closeWindow(id);
+    for (const entry of openDisplays.values()) {
+      closeWindow(entry.windowId);
     }
     openDisplays.clear();
   };
@@ -153,7 +159,12 @@ export const createSecondaryDisplayManager = (deps: DisplayDeps = {}): Secondary
     id: string;
     config: DisplayConfig;
     status: 'open' | 'closed';
-  }[] => Array.from(openDisplays.entries()).map(([id, state]) => ({ id, ...state }));
+  }[] =>
+    Array.from(openDisplays.entries()).map(([id, state]) => ({
+      id,
+      config: state.config,
+      status: state.status,
+    }));
 
   return {
     openDisplay,

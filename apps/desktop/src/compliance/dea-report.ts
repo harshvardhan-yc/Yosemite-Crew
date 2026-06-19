@@ -55,6 +55,57 @@ const netInventoryChange = (txs: CsTransaction[]): number =>
     }
   }, 0);
 
+interface WindowTotals {
+  received: number;
+  dispensed: number;
+  administered: number;
+  wasted: number;
+  transferIn: number;
+  transferOut: number;
+}
+
+const groupByDrug = (txs: CsTransaction[]): Map<string, CsTransaction[]> => {
+  const byDrug = new Map<string, CsTransaction[]>();
+  for (const tx of txs) {
+    const list = byDrug.get(tx.drugName);
+    if (list) list.push(tx);
+    else byDrug.set(tx.drugName, [tx]);
+  }
+  return byDrug;
+};
+
+const tallyWindowTotals = (txs: CsTransaction[]): WindowTotals => {
+  const t: WindowTotals = {
+    received: 0,
+    dispensed: 0,
+    administered: 0,
+    wasted: 0,
+    transferIn: 0,
+    transferOut: 0,
+  };
+  for (const tx of txs) {
+    switch (tx.action) {
+      case 'receive':
+        t.received += tx.quantity;
+        break;
+      case 'dispense':
+        t.dispensed += tx.quantity;
+        break;
+      case 'administer':
+        t.administered += tx.quantity;
+        break;
+      case 'waste':
+        t.wasted += tx.quantity;
+        break;
+      case 'transfer':
+        if (tx.quantity > 0) t.transferIn += tx.quantity;
+        else t.transferOut += Math.abs(tx.quantity);
+        break;
+    }
+  }
+  return t;
+};
+
 export const generateDeaReport = (deps: DeaDeps): DeaInventoryReport => {
   const now = deps.now || (() => Date.now());
   const endDate = new Date(now());
@@ -70,51 +121,17 @@ export const generateDeaReport = (deps: DeaDeps): DeaInventoryReport => {
     .getTransactions({ since: startTs })
     .filter((tx) => tx.timestamp <= endTs);
 
-  const priorByDrug = new Map<string, CsTransaction[]>();
-  for (const tx of deps.logbook.getTransactions()) {
-    if (tx.timestamp >= startTs) continue;
-    const list = priorByDrug.get(tx.drugName);
-    if (list) list.push(tx);
-    else priorByDrug.set(tx.drugName, [tx]);
-  }
-
-  const byDrug = new Map<string, CsTransaction[]>();
-  for (const tx of allTx) {
-    if (!byDrug.has(tx.drugName)) byDrug.set(tx.drugName, []);
-    byDrug.get(tx.drugName)!.push(tx);
-  }
+  const priorByDrug = groupByDrug(
+    deps.logbook.getTransactions().filter((tx) => tx.timestamp < startTs)
+  );
+  const byDrug = groupByDrug(allTx);
 
   const drugs: DeaDrugEntry[] = [];
   for (const [drugName, txs] of byDrug) {
     const drugClass = txs[0]?.drugClass || 'CIII';
     const beginningInventory = netInventoryChange(priorByDrug.get(drugName) || []);
-    let received = 0;
-    let dispensed = 0;
-    let administered = 0;
-    let wasted = 0;
-    let transferIn = 0;
-    let transferOut = 0;
-
-    for (const tx of txs) {
-      switch (tx.action) {
-        case 'receive':
-          received += tx.quantity;
-          break;
-        case 'dispense':
-          dispensed += tx.quantity;
-          break;
-        case 'administer':
-          administered += tx.quantity;
-          break;
-        case 'waste':
-          wasted += tx.quantity;
-          break;
-        case 'transfer':
-          if (tx.quantity > 0) transferIn += tx.quantity;
-          else transferOut += Math.abs(tx.quantity);
-          break;
-      }
-    }
+    const { received, dispensed, administered, wasted, transferIn, transferOut } =
+      tallyWindowTotals(txs);
 
     const endingInventory =
       beginningInventory + received + transferIn - dispensed - administered - wasted - transferOut;

@@ -87,6 +87,12 @@ export interface IpcServices {
   setTabOrientation: (mode: 'horizontal' | 'vertical') => void;
   saveSession: () => void;
 
+  // Navigation policy shared with the main window / tab views, applied to any
+  // standalone window the IPC layer opens (e.g. a detached tab) so it can't be
+  // redirected to an external/blocked URL while staying in the desktop shell.
+  onNavigate: (event: { preventDefault: () => void }, url: string) => void;
+  onWindowOpen: (url: string) => Electron.WindowOpenHandlerResponse;
+
   // UI windows
   commandPaletteWindow: BrowserWindow | null;
   settingsWindow: BrowserWindow | null;
@@ -861,6 +867,14 @@ export const registerIpc = (services: IpcServices, ipc: IpcMainType = ipcMain): 
       minHeight: 300,
       webPreferences: secureWebPreferences(path.join(services.localFileRoot, 'preload.js')),
     });
+    // Apply the same navigation policy the main window and tab views use, so the
+    // detached window can't be redirected to an external/blocked URL in place or
+    // spawn an uncontrolled popup.
+    detachWin.webContents.on('will-navigate', services.onNavigate);
+    detachWin.webContents.on('will-redirect', services.onNavigate);
+    detachWin.webContents.setWindowOpenHandler(({ url: targetUrl }) =>
+      services.onWindowOpen(targetUrl)
+    );
     void detachWin.loadURL(detachUrl);
     return { ok: true };
   });

@@ -29,6 +29,23 @@ interface MdmDeps {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+// Minimal parser for a macOS managed-preferences plist (a single top-level
+// <dict> of scalar values). Uses a LINEAR regex (no backtracking/`[\s\S]*?`) to
+// avoid ReDoS on attacker-controlled file content.
+export const parsePlistDict = (xml: string): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  const re =
+    /<key>([^<]*)<\/key>\s*(?:<(string|integer|real)>([^<]*)<\/(?:string|integer|real)>|<(true|false)\s*\/>)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) {
+    const key = (m[1] ?? '').trim();
+    if (m[4] !== undefined) out[key] = m[4] === 'true';
+    else if (m[2] === 'string') out[key] = m[3] ?? '';
+    else out[key] = Number(m[3] ?? '');
+  }
+  return out;
+};
+
 export const normalizeManagedConfig = (raw: unknown): ManagedConfig => {
   if (!isRecord(raw)) return {};
   const config: ManagedConfig = {};
@@ -80,7 +97,7 @@ export const readManagedConfig = (deps: MdmDeps = {}): ManagedConfig => {
     try {
       if (existsSync(filePath)) {
         const raw = readFileSync(filePath, 'utf8');
-        const parsed = JSON.parse(raw);
+        const parsed = filePath.endsWith('.plist') ? parsePlistDict(raw) : JSON.parse(raw);
         return normalizeManagedConfig(parsed);
       }
     } catch {

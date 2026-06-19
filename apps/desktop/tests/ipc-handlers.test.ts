@@ -9,7 +9,7 @@ const childWindow = {
   loadURL: jest.fn(() => Promise.resolve()),
   setTitle: jest.fn(),
   on: jest.fn(),
-  webContents: { on: jest.fn() },
+  webContents: { on: jest.fn(), setWindowOpenHandler: jest.fn() },
 };
 const BrowserWindowMock = jest.fn(() => childWindow);
 
@@ -79,6 +79,8 @@ const makeServices = (overrides: Partial<IpcServices> = {}): IpcServices => {
       getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }),
     } as never,
     activeContents: () => wc as never,
+    onNavigate: jest.fn(),
+    onWindowOpen: jest.fn(() => ({ action: 'deny' as const })),
     loadStartUrl: jest.fn(),
     enterTabMode: jest.fn(),
     exitTabMode: jest.fn(),
@@ -382,6 +384,21 @@ describe('ipc-handlers — happy paths', () => {
     services.splitId = 't2';
     expect(await call('yc:tab-close', 't2')).toMatchObject({ ok: true });
     expect(services.setSplitTab).toHaveBeenCalledWith(null);
+  });
+
+  test('yc:tab-detach installs the navigation policy on the detached window', async () => {
+    const services = makeServices();
+    const call = register(services);
+    childWindow.webContents.on.mockClear();
+    childWindow.webContents.setWindowOpenHandler.mockClear();
+
+    expect(await call('yc:tab-detach', 't1')).toMatchObject({ ok: true });
+
+    const navEvents = childWindow.webContents.on.mock.calls.map((c: unknown[]) => c[0]);
+    expect(navEvents).toContain('will-navigate');
+    expect(navEvents).toContain('will-redirect');
+    expect(childWindow.webContents.setWindowOpenHandler).toHaveBeenCalledTimes(1);
+    expect(childWindow.loadURL).toHaveBeenCalled();
   });
 
   test('yc:window-drag-by forwards finite deltas and ignores invalid ones', () => {
