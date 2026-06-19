@@ -47,7 +47,7 @@ const HoursField = ({
 /**
  * Org appointment lock/edit window — how long after an appointment's start time
  * its clinical workspace stays editable before it locks to read-only. Consumed
- * by `isPastLockWindow` in the appointment workspace. Stored locally (mock-first).
+ * by `isPastLockWindow` in the appointment workspace.
  */
 const AppointmentLockWindowPreference = () => {
   const { notify } = useNotify();

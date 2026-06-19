@@ -1,4 +1,8 @@
 import { InventoryFormConfig } from '@/app/features/inventory/components/AddInventory/InventoryConfig';
+import {
+  CategoryOptionsByBusiness,
+  SubCategoryOptions,
+} from '@/app/features/inventory/pages/Inventory/types';
 import { BusinessType } from '@/app/features/organization/types/org';
 
 describe('InventoryFormConfig', () => {
@@ -45,6 +49,42 @@ describe('InventoryFormConfig', () => {
         'imageUrl',
       ];
       expect(basicInfoFields).toEqual(expectedFields);
+    });
+
+    it('uses the current hospital inventory category taxonomy', () => {
+      expect(CategoryOptionsByBusiness.HOSPITAL).toEqual([
+        'Medicine',
+        'Vaccine',
+        'Consumable',
+        'Surgical supply',
+        'IV / Fluid therapy',
+        'Diagnostic kit',
+        'Laboratory',
+        'Food',
+        'Supplement',
+        'Equipment',
+        'Cleaning supply',
+        'Imaging consumable',
+        'Wound care',
+      ]);
+      expect(SubCategoryOptions).toEqual(
+        expect.arrayContaining([
+          'Antibiotic',
+          'NSAID',
+          'Core vaccine',
+          'IV catheter',
+          'Suture',
+          'Fluid bag',
+          'Rapid test',
+          'Sample tube',
+          'Prescription diet',
+          'Joint support',
+          'Reusable instrument',
+          'Surface cleaner',
+          'Ultrasound gel',
+          'Wound spray',
+        ])
+      );
     });
 
     it('should have the correct field structure in the classification section', () => {
