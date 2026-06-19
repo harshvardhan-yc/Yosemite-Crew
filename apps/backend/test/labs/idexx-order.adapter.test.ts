@@ -1,17 +1,6 @@
-import { Types } from "mongoose";
 import { IdexxOrderAdapter } from "src/labs/idexx/idexx-order.adapter";
 import { prisma } from "src/config/prisma";
-import { isReadFromPostgres } from "src/config/read-switch";
-import CompanionModel from "src/models/companion";
-import ParentCompanionModel from "src/models/parent-companion";
-import { ParentModel } from "src/models/parent";
-import CodeMappingModel from "src/models/code-mapping";
-import CodeEntryModel from "src/models/code-entry";
 import { IntegrationService } from "src/services/integration.service";
-
-jest.mock("src/config/read-switch", () => ({
-  isReadFromPostgres: jest.fn(),
-}));
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -20,32 +9,7 @@ jest.mock("src/config/prisma", () => ({
     patient: { findFirst: jest.fn(), findUnique: jest.fn() },
     parent: { findFirst: jest.fn(), findUnique: jest.fn() },
     parentPatient: { findFirst: jest.fn() },
-    parentCompanion: { findFirst: jest.fn() },
   },
-}));
-
-jest.mock("src/models/companion", () => ({
-  __esModule: true,
-  default: { findById: jest.fn() },
-}));
-
-jest.mock("src/models/parent-companion", () => ({
-  __esModule: true,
-  default: { findOne: jest.fn() },
-}));
-
-jest.mock("src/models/parent", () => ({
-  ParentModel: { findById: jest.fn() },
-}));
-
-jest.mock("src/models/code-mapping", () => ({
-  __esModule: true,
-  default: { findOne: jest.fn() },
-}));
-
-jest.mock("src/models/code-entry", () => ({
-  __esModule: true,
-  default: { countDocuments: jest.fn() },
 }));
 
 jest.mock("src/services/integration.service", () => ({
@@ -77,7 +41,6 @@ jest.mock("src/integrations/idexx/idexx.client", () => ({
 }));
 
 describe("IdexxOrderAdapter", () => {
-  const mockReadSwitch = isReadFromPostgres as jest.Mock;
   const prismaMock = prisma as any;
 
   const adapter = new IdexxOrderAdapter();
@@ -113,8 +76,6 @@ describe("IdexxOrderAdapter", () => {
     process.env.IDEXX_PIMS_ID = "pims";
     process.env.IDEXX_PIMS_VERSION = "1.0";
 
-    mockReadSwitch.mockReturnValue(true);
-
     (IntegrationService.requireAccount as jest.Mock).mockResolvedValue({
       credentials: {
         username: "user",
@@ -127,9 +88,9 @@ describe("IdexxOrderAdapter", () => {
       targetCode: "IDX",
     } as any);
     prismaMock.codeEntry.count.mockResolvedValue(1 as any);
-    prismaMock.patient.findFirst.mockResolvedValue(baseCompanion as any);
-    prismaMock.parent.findFirst.mockResolvedValue(baseParent as any);
-    prismaMock.parentCompanion.findFirst.mockResolvedValue({
+    prismaMock.patient.findUnique.mockResolvedValue(baseCompanion as any);
+    prismaMock.parent.findUnique.mockResolvedValue(baseParent as any);
+    prismaMock.parentPatient.findFirst.mockResolvedValue({
       parentId: "parent-1",
     } as any);
 
@@ -151,7 +112,7 @@ describe("IdexxOrderAdapter", () => {
   });
 
   it("errors when primary parent is missing", async () => {
-    prismaMock.parentCompanion.findFirst.mockResolvedValueOnce(null as any);
+    prismaMock.parentPatient.findFirst.mockResolvedValueOnce(null as any);
 
     await expect(
       adapter.createOrder({
@@ -186,7 +147,7 @@ describe("IdexxOrderAdapter", () => {
   });
 
   it("errors when companion is missing", async () => {
-    prismaMock.patient.findFirst.mockResolvedValueOnce(null as any);
+    prismaMock.patient.findUnique.mockResolvedValueOnce(null as any);
 
     await expect(
       adapter.createOrder({
@@ -199,7 +160,7 @@ describe("IdexxOrderAdapter", () => {
   });
 
   it("errors when parent is missing", async () => {
-    prismaMock.parent.findFirst.mockResolvedValueOnce(null as any);
+    prismaMock.parent.findUnique.mockResolvedValueOnce(null as any);
 
     await expect(
       adapter.createOrder({
@@ -212,7 +173,7 @@ describe("IdexxOrderAdapter", () => {
   });
 
   it("errors when parent last name is missing", async () => {
-    prismaMock.parent.findFirst.mockResolvedValueOnce({
+    prismaMock.parent.findUnique.mockResolvedValueOnce({
       ...baseParent,
       lastName: null,
     } as any);
@@ -228,7 +189,7 @@ describe("IdexxOrderAdapter", () => {
   });
 
   it("errors when companion species or breed is missing", async () => {
-    prismaMock.patient.findFirst.mockResolvedValueOnce({
+    prismaMock.patient.findUnique.mockResolvedValueOnce({
       ...baseCompanion,
       breedCode: null,
     } as any);
@@ -366,117 +327,6 @@ describe("IdexxOrderAdapter", () => {
     expect(result.status).toBe("CANCELLED");
   });
 
-  it("uses mongo models when read from postgres is false", async () => {
-    mockReadSwitch.mockReturnValue(false);
-
-    const patientId = "507f1f77bcf86cd799439011";
-    const parentId = "507f1f77bcf86cd799439012";
-
-    (CompanionModel.findById as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: { toString: () => "mongo-comp" },
-        name: "Buddy",
-        speciesCode: "DOG",
-        breedCode: "LAB",
-        gender: "female",
-        isNeutered: false,
-        microchipNumber: "999",
-        dateOfBirth: new Date("2020-01-01"),
-      }),
-    });
-
-    (ParentModel.findById as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: { toString: () => "mongo-parent" },
-        firstName: "Pat",
-        lastName: "Smith",
-        address: { addressLine: "123 Main" },
-      }),
-    });
-
-    (CodeMappingModel.findOne as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ targetCode: "IDX" }),
-    });
-
-    (CodeEntryModel.countDocuments as jest.Mock).mockResolvedValue(1);
-
-    const result = await adapter.updateOrder("IDX-77", {
-      organisationId: "org-1",
-      patientId,
-      parentId,
-      tests: ["T1"],
-      modality: "REFERENCE_LAB",
-    } as any);
-
-    expect(result.status).toBe("RUNNING");
-    expect(mockIdexxClient.updateOrder).toHaveBeenCalledWith(
-      "IDX-77",
-      expect.objectContaining({
-        patients: expect.any(Array),
-        tests: ["T1"],
-        ivls: undefined,
-      }),
-    );
-    expect(CompanionModel.findById).toHaveBeenCalledWith(
-      new Types.ObjectId(patientId),
-    );
-  });
-
-  it("uses mongo parent link when parentId is missing", async () => {
-    mockReadSwitch.mockReturnValue(false);
-
-    const patientId = "507f1f77bcf86cd799439013";
-
-    (ParentCompanionModel.findOne as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ parentId: "mongo-parent" }),
-    });
-
-    (CompanionModel.findById as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: { toString: () => "mongo-comp" },
-        name: "Buddy",
-        speciesCode: "DOG",
-        breedCode: "LAB",
-        gender: "other",
-        isNeutered: null,
-        dateOfBirth: new Date("2020-01-01"),
-      }),
-    });
-
-    (ParentModel.findById as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: { toString: () => "mongo-parent" },
-        firstName: "Pat",
-        lastName: "Smith",
-        address: { addressLine: "123 Main" },
-      }),
-    });
-
-    (CodeMappingModel.findOne as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ targetCode: "IDX" }),
-    });
-
-    (CodeEntryModel.countDocuments as jest.Mock).mockResolvedValue(1);
-
-    await adapter.createOrder({
-      organisationId: "org-1",
-      patientId,
-      tests: ["T1"],
-      modality: "REFERENCE_LAB",
-    } as any);
-
-    expect(ParentCompanionModel.findOne).toHaveBeenCalled();
-    expect(mockIdexxClient.createOrder).toHaveBeenCalledWith(
-      expect.objectContaining({
-        patients: [
-          expect.objectContaining({
-            genderCode: "UNKNOWN",
-          }),
-        ],
-      }),
-    );
-  });
-
   it("coerces numeric order ids to strings", async () => {
     mockIdexxClient.createOrder.mockResolvedValueOnce({
       status: "complete",
@@ -510,7 +360,7 @@ describe("IdexxOrderAdapter", () => {
   });
 
   it("throws when companion document is missing an id", async () => {
-    prismaMock.patient.findFirst.mockResolvedValueOnce({
+    prismaMock.patient.findUnique.mockResolvedValueOnce({
       name: "Buddy",
       speciesCode: "DOG",
       breedCode: "LAB",

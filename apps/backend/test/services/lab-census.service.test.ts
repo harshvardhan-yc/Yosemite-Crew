@@ -1,24 +1,14 @@
 import { LabCensusService } from "../../src/services/lab-census.service";
 import { prisma } from "../../src/config/prisma";
-import { isReadFromPostgres } from "../../src/config/read-switch";
 import { IntegrationService } from "../../src/services/integration.service";
 import { IdexxClient } from "../../src/integrations/idexx/idexx.client";
-import CompanionOrganisationModel from "../../src/models/companion-organisation";
-import ParentCompanionModel from "../../src/models/parent-companion";
-
-jest.mock("../../src/config/read-switch", () => ({
-  isReadFromPostgres: jest.fn(),
-}));
 
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
     codeMapping: { findFirst: jest.fn() },
-    companion: { findUnique: jest.fn() },
     parent: { findUnique: jest.fn() },
     patient: { findUnique: jest.fn() },
     patientOrganisation: { findFirst: jest.fn() },
-    companionOrganisation: { findFirst: jest.fn() },
-    parentCompanion: { findFirst: jest.fn() },
     parentPatient: { findFirst: jest.fn() },
   },
 }));
@@ -33,52 +23,7 @@ jest.mock("../../src/integrations/idexx/idexx.client", () => ({
   IdexxClient: jest.fn(),
 }));
 
-jest.mock("../../src/models/companion-organisation", () => ({
-  __esModule: true,
-  default: {
-    findOne: jest.fn(),
-  },
-}));
-
-jest.mock("../../src/models/parent-companion", () => ({
-  __esModule: true,
-  default: {
-    findOne: jest.fn(),
-  },
-}));
-
-jest.mock("../../src/models/companion", () => ({
-  __esModule: true,
-  default: {
-    findById: jest.fn(),
-  },
-}));
-
-jest.mock("../../src/models/parent", () => ({
-  ParentModel: {
-    findById: jest.fn(),
-  },
-}));
-
-jest.mock("../../src/models/code-mapping", () => ({
-  __esModule: true,
-  default: {
-    findOne: jest.fn(),
-  },
-}));
-
-const mongoQuery = <T>(result: T) => {
-  const exec = jest.fn().mockResolvedValue(result);
-  const query: any = {};
-  query.setOptions = jest.fn().mockReturnValue(query);
-  query.select = jest.fn().mockReturnValue(query);
-  query.lean = jest.fn().mockReturnValue({ exec });
-  query.exec = exec;
-  return query;
-};
-
 describe("LabCensusService", () => {
-  const readSwitch = isReadFromPostgres as jest.Mock;
   const organisationId = "507f1f77bcf86cd799439011";
   const patientId = "507f191e810c19729de860ea";
   const parentId = "507f191e810c19729de860eb";
@@ -90,36 +35,7 @@ describe("LabCensusService", () => {
   });
 
   describe("addCensusPatient", () => {
-    it("rejects invalid organisationId before any DB calls (mongo)", async () => {
-      readSwitch.mockReturnValue(false);
-
-      await expect(
-        LabCensusService.addCensusPatient("IDEXX", {} as unknown as string, {
-          patientId: patientId,
-          parentId,
-        }),
-      ).rejects.toThrow("Invalid organisationId.");
-
-      expect(CompanionOrganisationModel.findOne).not.toHaveBeenCalled();
-      expect(ParentCompanionModel.findOne).not.toHaveBeenCalled();
-    });
-
-    it("rejects invalid patientId before any DB calls (mongo)", async () => {
-      readSwitch.mockReturnValue(false);
-
-      await expect(
-        LabCensusService.addCensusPatient("IDEXX", organisationId, {
-          patientId: {} as unknown as string,
-          parentId,
-        }),
-      ).rejects.toThrow("Invalid patientId.");
-
-      expect(CompanionOrganisationModel.findOne).not.toHaveBeenCalled();
-      expect(ParentCompanionModel.findOne).not.toHaveBeenCalled();
-    });
-
-    it("rejects when companion is not linked to organisation (postgres)", async () => {
-      readSwitch.mockReturnValue(true);
+    it("rejects when companion is not linked to organisation", async () => {
       (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue(
         null,
       );
@@ -138,8 +54,7 @@ describe("LabCensusService", () => {
       expect(IdexxClient).not.toHaveBeenCalled();
     });
 
-    it("rejects when parent is not linked to companion (postgres)", async () => {
-      readSwitch.mockReturnValue(true);
+    it("rejects when parent is not linked to companion", async () => {
       (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue({
         id: "link-1",
       });
@@ -156,28 +71,7 @@ describe("LabCensusService", () => {
       expect(IdexxClient).not.toHaveBeenCalled();
     });
 
-    it("rejects when companion is not linked to organisation (mongo)", async () => {
-      readSwitch.mockReturnValue(false);
-      (CompanionOrganisationModel.findOne as jest.Mock).mockReturnValue(
-        mongoQuery(null),
-      );
-      (ParentCompanionModel.findOne as jest.Mock).mockReturnValue(
-        mongoQuery({ _id: "link-1" }),
-      );
-
-      await expect(
-        LabCensusService.addCensusPatient("IDEXX", organisationId, {
-          patientId: patientId,
-          parentId,
-        }),
-      ).rejects.toThrow("Companion not found.");
-
-      expect(IntegrationService.requireAccount).not.toHaveBeenCalled();
-      expect(IdexxClient).not.toHaveBeenCalled();
-    });
-
-    it("builds census payload and submits to IDEXX (postgres)", async () => {
-      readSwitch.mockReturnValue(true);
+    it("builds census payload and submits to IDEXX", async () => {
       (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue({
         id: "link-1",
       });

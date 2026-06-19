@@ -1,13 +1,6 @@
 import { LabOrderService } from "../../src/services/lab-order.service";
 import { prisma } from "../../src/config/prisma";
-import { isReadFromPostgres } from "../../src/config/read-switch";
 import { getLabOrderAdapter } from "../../src/labs";
-import LabOrderModel from "../../src/models/lab-order";
-import CodeEntryModel from "../../src/models/code-entry";
-
-jest.mock("../../src/config/read-switch", () => ({
-  isReadFromPostgres: jest.fn(),
-}));
 
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
@@ -29,24 +22,7 @@ jest.mock("../../src/labs", () => {
   };
 });
 
-jest.mock("../../src/models/lab-order", () => ({
-  __esModule: true,
-  default: {
-    findOne: jest.fn(),
-    find: jest.fn(),
-  },
-}));
-
-jest.mock("../../src/models/code-entry", () => ({
-  __esModule: true,
-  default: {
-    countDocuments: jest.fn(),
-    find: jest.fn(),
-  },
-}));
-
 describe("LabOrderService", () => {
-  const readSwitch = isReadFromPostgres as jest.Mock;
   const adapter = {
     createOrder: jest.fn(),
     getOrder: jest.fn(),
@@ -56,7 +32,6 @@ describe("LabOrderService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    readSwitch.mockReturnValue(true);
     (getLabOrderAdapter as jest.Mock).mockReturnValue(adapter);
     adapter.createOrder.mockResolvedValue({
       idexxOrderId: "id-1",
@@ -144,42 +119,8 @@ describe("LabOrderService", () => {
     ).rejects.toThrow("Unsupported lab provider.");
   });
 
-  it("rejects updateOrder when status is not CREATED", async () => {
-    readSwitch.mockReturnValue(false);
-    (LabOrderModel.findOne as jest.Mock).mockReturnValue({
-      setOptions: jest.fn().mockResolvedValue({
-        status: "SUBMITTED",
-      }),
-    });
-
-    await expect(
-      LabOrderService.updateOrder("IDEXX", "org-1", "id-1", {
-        tests: ["T1"],
-      }),
-    ).rejects.toThrow("Only CREATED orders can be updated.");
-  });
-
-  it("throws when cancelOrder cannot find order", async () => {
-    readSwitch.mockReturnValue(false);
-    (LabOrderModel.findOne as jest.Mock).mockReturnValue({
-      setOptions: jest.fn().mockResolvedValue(null),
-    });
-
-    await expect(
-      LabOrderService.cancelOrder("IDEXX", "org-1", "id-1"),
-    ).rejects.toThrow("Lab order not found.");
-  });
-
-  it("lists orders using mongo", async () => {
-    readSwitch.mockReturnValue(false);
-    const mockQuery = {
-      sort: jest.fn().mockReturnThis(),
-      setOptions: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      exec: jest.fn().mockResolvedValue([]),
-    };
-    (LabOrderModel.find as jest.Mock).mockReturnValue(mockQuery);
+  it("lists orders using postgres", async () => {
+    (prisma.labOrder.findMany as jest.Mock).mockResolvedValue([]);
 
     const result = await LabOrderService.listOrders({
       organisationId: "org-1",
@@ -187,6 +128,10 @@ describe("LabOrderService", () => {
     });
 
     expect(result).toEqual([]);
-    expect(LabOrderModel.find).toHaveBeenCalled();
+    expect(prisma.labOrder.findMany).toHaveBeenCalledWith({
+      where: { organisationId: "org-1" },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
   });
 });
