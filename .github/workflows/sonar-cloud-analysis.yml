@@ -145,14 +145,14 @@ jobs:
         with:
           fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
 
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
-      - uses: pnpm/action-setup@v4
-        with:
-          run_install: false
 
       - run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_ENV
 
@@ -181,7 +181,7 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: ${{ matrix.dir }}
-        run: pnpm test:coverage -- --ci --maxWorkers=2 --cacheDirectory=.jest-cache
+        run: pnpm run test --coverage --ci --maxWorkers=2 --cacheDirectory=.jest-cache
 
       - name: Sonar Scan
         uses: SonarSource/sonarqube-scan-action@v6
