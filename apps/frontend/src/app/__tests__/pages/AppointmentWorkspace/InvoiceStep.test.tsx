@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import InvoiceStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/InvoiceStep';
@@ -27,6 +27,28 @@ const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
         depositCents: 120000,
         taxPercent: 7,
         overallDiscountPercent: 5,
+        services: [
+          {
+            id: 'svc-line-bandage',
+            refId: 'svc-bandage',
+            kind: 'SERVICE',
+            name: 'Bandage change',
+            qty: 1,
+            instructions: 'Change dressing',
+            unitPriceCents: 6000,
+            amountCents: 6000,
+          },
+          {
+            id: 'svc-line-hospital',
+            refId: 'svc-hospital-day',
+            kind: 'SERVICE',
+            name: 'Hospitalization day charge',
+            qty: 1,
+            instructions: 'Daily inpatient care',
+            unitPriceCents: 12000,
+            amountCents: 12000,
+          },
+        ],
         invoiceLineItems: [
           {
             id: 'inv-1',
@@ -202,26 +224,27 @@ describe('InvoiceStep', () => {
     expect(getEnc().withdrawDeposit).toBe(true);
   });
 
-  it('records a cash payment as a finalized invoice and clears the bill', () => {
+  it('records a cash payment as a finalized invoice and clears the bill', async () => {
     const enc = seedAndGet();
     renderInvoice(enc);
 
     fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
 
-    expect(screen.getByText(/paid via cash recorded/i)).toBeInTheDocument();
-    expect(getEnc().invoiceLineItems).toHaveLength(0);
+    expect(await screen.findByText(/paid via cash recorded/i)).toBeInTheDocument();
+    await waitFor(() => expect(getEnc().invoiceLineItems).toHaveLength(0));
     const newest = getEnc().pastInvoices[0];
     expect(newest.paymentMethod).toBe('CASH');
     expect(newest.status).toBe('PAID_FULL');
     expect(newest.paidByName).toBe('Front desk');
   });
 
-  it('records an online payment', () => {
+  it('prepares an online payment without marking it paid locally', async () => {
     const enc = seedAndGet();
     renderInvoice(enc);
 
     fireEvent.click(screen.getByRole('button', { name: /pay online/i }));
-    expect(getEnc().pastInvoices[0].paymentMethod).toBe('ONLINE');
+    expect(await screen.findByText(/invoice prepared for online payment/i)).toBeInTheDocument();
+    expect(getEnc().pastInvoices[0].paymentMethod).not.toBe('ONLINE');
   });
 
   it('collects a deposit payment and reduces the remaining deposit', () => {
@@ -229,15 +252,15 @@ describe('InvoiceStep', () => {
     const startDeposit = enc.depositCents;
     renderInvoice(enc);
 
-    fireEvent.click(screen.getByRole('button', { name: /collect deposit/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i }).at(-1)!);
 
     const after = getEnc();
-    expect(after.pastInvoices[0].paymentMethod).toBe('DEPOSIT');
-    expect(after.pastInvoices[0].paidFromDeposit).toBe(true);
-    expect(after.depositCents).toBeLessThan(startDeposit);
+    expect(after.pastInvoices[0].paymentMethod).toBe('CASH');
+    expect(after.depositCents).toBeGreaterThan(startDeposit);
   });
 
-  it('does not record a payment when there are no line items', () => {
+  it('does not record an invoice payment when there are no line items', () => {
     const enc = { ...seedAndGet(), invoiceLineItems: [] };
     const before = getEnc().pastInvoices.length;
     renderInvoice(enc);
@@ -246,12 +269,25 @@ describe('InvoiceStep', () => {
     expect(getEnc().pastInvoices.length).toBe(before);
   });
 
-  it('renders the inpatient send-to-client action', () => {
+  it('allows deposit collection when there are no invoice line items', () => {
+    const enc = { ...seedAndGet(), invoiceLineItems: [] };
+    const beforeDeposit = getEnc().depositCents;
+    renderInvoice(enc);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i })[0]);
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '25' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i }).at(-1)!);
+
+    expect(getEnc().depositCents).toBe(beforeDeposit + 2500);
+    expect(getEnc().pastInvoices[0].paymentMethod).toBe('CASH');
+  });
+
+  it('renders the inpatient send-to-client action', async () => {
     const enc = seedAndGet('INPATIENT');
     renderInvoice(enc);
 
     fireEvent.click(screen.getByRole('button', { name: /send to client/i }));
-    expect(screen.getByText(/invoice sent to client/i)).toBeInTheDocument();
+    expect(await screen.findByText(/invoice prepared for online payment/i)).toBeInTheDocument();
   });
 
   it('omits send-to-client for outpatient encounters', () => {

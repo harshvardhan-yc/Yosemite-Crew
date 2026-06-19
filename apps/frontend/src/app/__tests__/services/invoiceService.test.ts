@@ -14,6 +14,7 @@ type InvoiceState = {
   startLoading: jest.Mock;
   setInvoicesForOrg: jest.Mock;
   upsertInvoice: jest.Mock;
+  getInvoicesByOrgId: jest.Mock;
   status: 'idle' | 'loading' | 'loaded' | 'error';
 };
 
@@ -49,6 +50,7 @@ describe('invoiceService', () => {
       startLoading: jest.fn(),
       setInvoicesForOrg: jest.fn(),
       upsertInvoice: jest.fn(),
+      getInvoicesByOrgId: jest.fn().mockReturnValue([]),
       status: 'idle',
     };
     orgState = { primaryOrgId: 'org-1' };
@@ -123,15 +125,29 @@ describe('invoiceService', () => {
   });
 
   it('calls mark-paid endpoint', async () => {
+    (getData as jest.Mock).mockResolvedValue({
+      data: {
+        data: { id: 'inv-1', organisationId: 'org-1', totalAmount: 125, currency: 'usd' },
+        meta: null,
+        error: null,
+      },
+    });
+
     await markInvoicePaid('inv-1');
 
-    expect(postData).toHaveBeenCalledWith('/fhir/v1/invoice/inv-1/mark-paid', {});
+    expect(postData).toHaveBeenCalledWith('/v1/finance/invoices/inv-1/payments', {
+      provider: 'MANUAL',
+      settlementChannel: 'CASH',
+      amount: 125,
+      currency: 'usd',
+      receivedAt: expect.any(String),
+    });
   });
 
   it('updates payment collection method before offline settlement', async () => {
     await updateInvoicePaymentCollectionMethod('inv-1', 'PAYMENT_AT_CLINIC');
 
-    expect(patchData).toHaveBeenCalledWith('/fhir/v1/invoice/inv-1/payment-collection-method', {
+    expect(patchData).toHaveBeenCalledWith('/v1/finance/invoices/inv-1/payment-collection-method', {
       paymentCollectionMethod: 'PAYMENT_AT_CLINIC',
     });
   });
@@ -143,7 +159,7 @@ describe('invoiceService', () => {
   });
 
   it('loads invoices for appointment and upserts them', async () => {
-    (postData as jest.Mock).mockResolvedValue({
+    (getData as jest.Mock).mockResolvedValue({
       data: [
         { id: 'inv-1', resourceType: 'Invoice', organisationId: 'org-1', appointmentId: 'apt-1' },
       ],
@@ -151,7 +167,10 @@ describe('invoiceService', () => {
 
     await loadInvoicesForAppointment('apt-1');
 
-    expect(postData).toHaveBeenCalledWith('/fhir/v1/invoice/appointment/apt-1', {});
+    expect(getData).toHaveBeenCalledWith('/v1/finance/invoices', {
+      organisationId: 'org-1',
+      appointmentId: 'apt-1',
+    });
     expect(invoiceState.upsertInvoice).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'inv-1', appointmentId: 'apt-1' })
     );
@@ -166,9 +185,17 @@ describe('invoiceService', () => {
   });
 
   it('adds line items successfully', async () => {
+    invoiceState.getInvoicesByOrgId = jest.fn().mockReturnValue([
+      {
+        id: 'inv-1',
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        status: 'AWAITING_PAYMENT',
+      },
+    ]);
     await addLineItemsToAppointments([{ id: 'li-1' } as any], 'appt-1', 'USD');
     expect(postData).toHaveBeenCalledWith(
-      '/fhir/v1/invoice/appointment/appt-1/charges',
+      '/v1/finance/invoices/inv-1/lines',
       expect.objectContaining({ currency: 'usd' })
     );
   });
@@ -191,10 +218,16 @@ describe('invoiceService', () => {
 
   it('gets payment link successfully', async () => {
     (postData as jest.Mock).mockResolvedValue({
-      data: { checkout: { url: 'https://stripe.test' } },
+      data: {
+        data: { checkoutUrl: 'https://stripe.test' },
+        meta: null,
+        error: null,
+      },
     });
     const result = await getPaymentLink('inv-1');
-    expect(postData).toHaveBeenCalledWith('/fhir/v1/invoice/inv-1/checkout-session');
+    expect(postData).toHaveBeenCalledWith('/v1/finance/invoices/inv-1/payments/sessions', {
+      provider: 'STRIPE',
+    });
     expect(result).toBe('https://stripe.test');
   });
 

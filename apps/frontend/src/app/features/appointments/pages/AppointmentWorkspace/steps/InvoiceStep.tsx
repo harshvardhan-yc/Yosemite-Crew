@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   LuArrowRight,
   LuBanknote,
@@ -14,6 +14,8 @@ import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import TotalBillContainer from '@/app/features/appointments/pages/AppointmentWorkspace/components/TotalBillContainer';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
+import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
+import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type {
   AppointmentEncounter,
@@ -24,9 +26,20 @@ import type {
 } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
+import {
+  addLineItemsToAppointments,
+  createFinanceInvoice,
+  finalizeFinanceInvoice,
+  getPaymentLink,
+  recordManualInvoicePayment,
+  seedAppointmentInvoice,
+} from '@/app/features/billing/services/invoiceService';
 
 type InvoiceStepProps = {
   appointmentId: string;
+  organisationId?: string;
+  patientId?: string;
+  parentId?: string;
   encounter: AppointmentEncounter;
   hideBillBuilder?: boolean;
   onOpenSummary: () => void;
@@ -52,6 +65,57 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 };
 
 const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
+
+const toFinanceLineItems = (items: InvoiceLineItem[]) =>
+  items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.name,
+    quantity: item.qty,
+    unitPrice: item.unitPriceCents,
+    total: item.amountCents,
+  }));
+
+const toInvoiceCandidate = (name: string, amountCents: number): Omit<InvoiceLineItem, 'id'> => ({
+  name,
+  unitPriceCents: amountCents,
+  qty: 1,
+  grossCents: amountCents,
+  discountCents: 0,
+  amountCents,
+});
+
+const buildBillableItems = (encounter: AppointmentEncounter): Omit<InvoiceLineItem, 'id'>[] => {
+  const existingNames = new Set(
+    encounter.invoiceLineItems.map((item) => item.name.trim().toLowerCase())
+  );
+  const serviceItems = encounter.services
+    .filter((item) => !item.billed && item.amountCents > 0)
+    .filter((item) => !existingNames.has(item.name.trim().toLowerCase()))
+    .map((item) => toInvoiceCandidate(item.name, item.amountCents));
+  const prescriptionItems = encounter.prescription
+    .filter(
+      (item) =>
+        !item.billed &&
+        item.fulfillment === 'IN_HOUSE' &&
+        typeof item.priceCents === 'number' &&
+        item.priceCents > 0
+    )
+    .filter((item) => !existingNames.has(item.medicineName.trim().toLowerCase()))
+    .map((item) => toInvoiceCandidate(item.medicineName, item.priceCents ?? 0));
+  return [...serviceItems, ...prescriptionItems];
+};
+
+const computeInvoiceTotalCents = (encounter: AppointmentEncounter): number => {
+  const subtotalCents = encounter.invoiceLineItems.reduce((sum, item) => sum + item.grossCents, 0);
+  const lineDiscountCents = encounter.invoiceLineItems.reduce(
+    (sum, item) => sum + item.discountCents,
+    0
+  );
+  const overallDiscountCents = Math.round((subtotalCents * encounter.overallDiscountPercent) / 100);
+  const discountedCents = Math.max(0, subtotalCents - lineDiscountCents - overallDiscountCents);
+  return discountedCents + Math.round((discountedCents * encounter.taxPercent) / 100);
+};
 
 const invoiceDateFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
@@ -261,12 +325,14 @@ const InvoicesSection = ({
 /** Payment actions below the Total Bill (Collect Deposit / Collect Cash / Pay Online). */
 const PaymentActions = ({
   isInpatient,
-  disabled,
+  depositDisabled,
+  paymentDisabled,
   onCollect,
   onSendToClient,
 }: {
   isInpatient: boolean;
-  disabled: boolean;
+  depositDisabled: boolean;
+  paymentDisabled: boolean;
   onCollect: (method: PaymentMethod) => void;
   onSendToClient: () => void;
 }) => (
@@ -276,7 +342,7 @@ const PaymentActions = ({
       icon={<LuCreditCard aria-hidden="true" />}
       iconPosition="right"
       onClick={() => onCollect('DEPOSIT')}
-      isDisabled={disabled}
+      isDisabled={depositDisabled}
     />
     <div className="flex flex-wrap items-center gap-3">
       {isInpatient && (
@@ -285,7 +351,7 @@ const PaymentActions = ({
           icon={<LuUpload aria-hidden="true" />}
           iconPosition="right"
           onClick={onSendToClient}
-          isDisabled={disabled}
+          isDisabled={paymentDisabled}
         />
       )}
       <Secondary
@@ -293,21 +359,123 @@ const PaymentActions = ({
         icon={<LuBanknote aria-hidden="true" />}
         iconPosition="right"
         onClick={() => onCollect('CASH')}
-        isDisabled={disabled}
+        isDisabled={paymentDisabled}
       />
       <Primary
         text="Pay Online"
         icon={<LuBanknote aria-hidden="true" />}
         iconPosition="right"
         onClick={() => onCollect('ONLINE')}
-        isDisabled={disabled}
+        isDisabled={paymentDisabled}
       />
     </div>
   </div>
 );
 
+const DepositModal = ({
+  open,
+  saving,
+  generatedLink,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  saving: boolean;
+  generatedLink: string | null;
+  onClose: () => void;
+  onSubmit: (input: {
+    amount: number;
+    method: PaymentMethod;
+    reference: string;
+    notes: string;
+  }) => void;
+}) => {
+  const [amount, setAmount] = useState('100');
+  const [method, setMethod] = useState<PaymentMethod>('CASH');
+  const [reference, setReference] = useState('');
+  const [notes, setNotes] = useState('');
+  const amountNumber = Math.max(0, Number.parseFloat(amount) || 0);
+
+  return (
+    <CenterModal
+      showModal={open}
+      setShowModal={(next) => !next && onClose()}
+      onClose={onClose}
+      containerClassName="sm:w-[560px]"
+    >
+      <ModalHeader title="Collect deposit" onClose={onClose} />
+      <div className="flex flex-col gap-4 px-2 pb-2">
+        <p className="text-body-4 text-text-secondary">
+          Record an upfront visit deposit. Cash and card-present deposits are marked collected now;
+          online deposits generate a payment link.
+        </p>
+        <label className="flex flex-col gap-1 text-body-4 text-text-primary">
+          <span>Amount</span>
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            className="h-12 rounded-2xl border border-input-border-default px-4 focus-visible:border-input-border-active focus-visible:outline-none"
+          />
+        </label>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {(['CASH', 'CARD', 'ONLINE'] as PaymentMethod[]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setMethod(option)}
+              className={`rounded-2xl border px-4 py-3 text-body-4 ${
+                method === option
+                  ? 'border-primary-500 bg-primary-100 text-text-brand'
+                  : 'border-card-border text-text-primary'
+              }`}
+            >
+              {option === 'CARD' ? 'Card present' : option === 'ONLINE' ? 'Online link' : 'Cash'}
+            </button>
+          ))}
+        </div>
+        <label className="flex flex-col gap-1 text-body-4 text-text-primary">
+          <span>Reference</span>
+          <input
+            type="text"
+            value={reference}
+            onChange={(event) => setReference(event.target.value)}
+            className="h-12 rounded-2xl border border-input-border-default px-4 focus-visible:border-input-border-active focus-visible:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-body-4 text-text-primary">
+          <span>Notes</span>
+          <textarea
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            className="min-h-20 rounded-2xl border border-input-border-default px-4 py-3 focus-visible:border-input-border-active focus-visible:outline-none"
+          />
+        </label>
+        {generatedLink && (
+          <p role="status" className="rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
+            Payment link generated: {generatedLink}
+          </p>
+        )}
+        <div className="flex justify-end gap-3">
+          <Secondary text="Cancel" onClick={onClose} />
+          <Primary
+            text={saving ? 'Saving...' : method === 'ONLINE' ? 'Generate link' : 'Collect deposit'}
+            isDisabled={saving || amountNumber <= 0}
+            onClick={() => onSubmit({ amount: amountNumber, method, reference, notes })}
+          />
+        </div>
+      </div>
+    </CenterModal>
+  );
+};
+
 const InvoiceStep = ({
   appointmentId,
+  organisationId,
+  patientId,
+  parentId,
   encounter,
   hideBillBuilder = false,
   onOpenSummary,
@@ -320,24 +488,142 @@ const InvoiceStep = ({
   const updateInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.updateInvoiceLineItem);
   const removeInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.removeInvoiceLineItem);
   const recordInvoicePayment = useAppointmentWorkspaceStore((s) => s.recordInvoicePayment);
+  const recordDepositCollection = useAppointmentWorkspaceStore((s) => s.recordDepositCollection);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [depositPaymentLink, setDepositPaymentLink] = useState<string | null>(null);
   const readOnly = encounter.viewOnly;
   const isInpatient = encounter.mode === 'INPATIENT';
   const hasItems = encounter.invoiceLineItems.length > 0;
   const canBuildBill = !readOnly && !hideBillBuilder;
+  const billableItems = useMemo(() => buildBillableItems(encounter), [encounter]);
 
-  const handleCollect = (method: PaymentMethod) => {
-    if (!hasItems) return;
-    recordInvoicePayment(appointmentId, {
-      method,
-      byName: encounter.leadName ?? 'Front desk',
-    });
-    setConfirmation(`${PAYMENT_LABELS[method]} recorded`);
+  const persistCurrentInvoice = async () => {
+    if (!organisationId) return undefined;
+    const invoice = await seedAppointmentInvoice(appointmentId);
+    await addLineItemsToAppointments(
+      toFinanceLineItems(encounter.invoiceLineItems),
+      appointmentId,
+      'USD'
+    );
+    if (invoice.id) {
+      await finalizeFinanceInvoice(invoice.id);
+    }
+    return invoice;
   };
 
-  const handleSendToClient = () => {
-    setConfirmation('Invoice sent to client');
+  const handleCollect = async (method: PaymentMethod) => {
+    if (method === 'DEPOSIT') {
+      setDepositPaymentLink(null);
+      setIsDepositModalOpen(true);
+      return;
+    }
+    if (!hasItems) return;
+    setErrorMessage(null);
+    setIsProcessingPayment(true);
+    try {
+      const invoice = await persistCurrentInvoice();
+      if (method === 'ONLINE') {
+        if (!invoice?.id) {
+          setConfirmation('Invoice prepared for online payment');
+        } else {
+          const url = await getPaymentLink(invoice.id);
+          setConfirmation(url ? `Payment link generated: ${url}` : 'Payment link generated');
+        }
+        return;
+      }
+      if (invoice?.id) {
+        await recordManualInvoicePayment(invoice.id, {
+          provider: 'MANUAL',
+          settlementChannel: method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
+          amount: computeInvoiceTotalCents(encounter),
+          currency: 'usd',
+          receivedAt: new Date().toISOString(),
+        });
+      }
+      recordInvoicePayment(appointmentId, {
+        method,
+        byName: encounter.leadName ?? 'Front desk',
+      });
+      setConfirmation(`${PAYMENT_LABELS[method]} recorded`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to process payment.');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const handleDepositSubmit = async (input: {
+    amount: number;
+    method: PaymentMethod;
+    reference: string;
+    notes: string;
+  }) => {
+    const amountCents = Math.round(input.amount * 100);
+    setErrorMessage(null);
+    setIsProcessingPayment(true);
+    try {
+      let checkoutUrl: string | undefined;
+      if (organisationId) {
+        const invoice = await createFinanceInvoice({
+          appointmentId,
+          parentId,
+          patientId,
+          organisationId,
+          paymentCollectionMethod: input.method === 'ONLINE' ? 'PAYMENT_LINK' : 'PAYMENT_AT_CLINIC',
+          items: [
+            {
+              name: 'Visit deposit',
+              description: 'Upfront visit deposit',
+              quantity: 1,
+              unitPrice: amountCents,
+              total: amountCents,
+            },
+          ],
+          notes: input.notes || 'Visit deposit',
+        });
+        if (invoice.id && input.method === 'ONLINE') {
+          checkoutUrl = await getPaymentLink(invoice.id);
+        } else if (invoice.id) {
+          await recordManualInvoicePayment(invoice.id, {
+            provider: 'MANUAL',
+            settlementChannel: input.method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
+            amount: amountCents,
+            currency: 'usd',
+            reference: input.reference || undefined,
+            receivedAt: new Date().toISOString(),
+            notes: input.notes || undefined,
+          });
+        }
+      }
+      if (input.method === 'ONLINE') {
+        setDepositPaymentLink(checkoutUrl ?? null);
+        setConfirmation(
+          checkoutUrl
+            ? `Deposit payment link generated: ${checkoutUrl}`
+            : 'Deposit payment link generated'
+        );
+        return;
+      }
+      recordDepositCollection(appointmentId, {
+        amountCents,
+        method: input.method,
+        byName: encounter.leadName ?? 'Front desk',
+      });
+      setConfirmation(`${PAYMENT_LABELS[input.method]} deposit recorded`);
+      setIsDepositModalOpen(false);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to collect deposit.');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const handleSendToClient = async () => {
+    await handleCollect('ONLINE');
   };
 
   const handleFinishInvoice = () => {
@@ -357,6 +643,7 @@ const InvoiceStep = ({
         <>
           <TotalBillContainer
             items={encounter.invoiceLineItems}
+            billableItems={billableItems}
             depositCents={encounter.depositCents}
             withdrawDeposit={encounter.withdrawDeposit}
             taxPercent={encounter.taxPercent}
@@ -370,10 +657,17 @@ const InvoiceStep = ({
 
           <PaymentActions
             isInpatient={isInpatient}
-            disabled={!hasItems}
+            depositDisabled={isProcessingPayment}
+            paymentDisabled={isProcessingPayment || !hasItems}
             onCollect={handleCollect}
             onSendToClient={handleSendToClient}
           />
+
+          {errorMessage && (
+            <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">
+              {errorMessage}
+            </p>
+          )}
 
           {confirmation && (
             <p role="status" className="rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
@@ -382,6 +676,14 @@ const InvoiceStep = ({
           )}
         </>
       )}
+
+      <DepositModal
+        open={isDepositModalOpen}
+        saving={isProcessingPayment}
+        generatedLink={depositPaymentLink}
+        onClose={() => setIsDepositModalOpen(false)}
+        onSubmit={handleDepositSubmit}
+      />
 
       <InvoicesSection invoices={encounter.pastInvoices} readOnly={readOnly} />
 
