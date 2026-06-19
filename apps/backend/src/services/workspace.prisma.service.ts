@@ -128,6 +128,18 @@ type OrganizationLockWindowRow = {
   appointmentLockWindowInpatientMinutes: number | null;
 };
 
+type InvoiceVisitBillingStage = "DRAFT" | "READY_FOR_BILLING" | "SETTLED";
+
+type WorkspaceBootstrapBillingState = {
+  invoice: {
+    id: string;
+    visitBillingStage: InvoiceVisitBillingStage;
+  } | null;
+  visitBillingStage: InvoiceVisitBillingStage | null;
+  readyForBilling: boolean;
+  readyForDischarge: boolean;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -264,6 +276,49 @@ const resolveWorkspaceLock = (input: {
 
   const lockAt = startAt.getTime() + windowMinutes * 60 * 1000;
   return (input.now ?? new Date()).getTime() >= lockAt;
+};
+
+const loadBootstrapBillingState = async (input: {
+  organisationId: string;
+  appointmentId?: string;
+  encounter: Encounter | null;
+}): Promise<WorkspaceBootstrapBillingState> => {
+  const readyForDischarge = input.encounter?.status === "onleave";
+
+  if (!input.appointmentId) {
+    return {
+      invoice: null,
+      visitBillingStage: null,
+      readyForBilling: false,
+      readyForDischarge,
+    };
+  }
+
+  const invoice = (await prisma.invoice.findFirst({
+    where: {
+      organisationId: input.organisationId,
+      appointmentId: input.appointmentId,
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+  })) as {
+    id: string;
+    visitBillingStage: InvoiceVisitBillingStage;
+  } | null;
+
+  const visitBillingStage = invoice?.visitBillingStage ?? null;
+
+  return {
+    invoice:
+      invoice != null
+        ? {
+            id: invoice.id,
+            visitBillingStage: invoice.visitBillingStage,
+          }
+        : null,
+    visitBillingStage,
+    readyForBilling: visitBillingStage === "READY_FOR_BILLING",
+    readyForDischarge,
+  };
 };
 
 const buildLocks = (locked: boolean): WorkspaceLockState => ({
@@ -1345,6 +1400,11 @@ const buildBootstrapAggregate = async (
     encounter: context.encounter,
     organisation,
   });
+  const billingState = await loadBootstrapBillingState({
+    organisationId: input.organisationId,
+    appointmentId,
+    encounter: context.encounter,
+  });
 
   return {
     organisationId: input.organisationId,
@@ -1411,6 +1471,10 @@ const buildBootstrapAggregate = async (
     documents,
     locks: buildLocks(locked),
     permissions: buildPermissionSnapshot(permissions),
+    invoice: billingState.invoice,
+    visitBillingStage: billingState.visitBillingStage,
+    readyForBilling: billingState.readyForBilling,
+    readyForDischarge: billingState.readyForDischarge,
     primaryAction: buildPrimaryAction({
       forms: forms.items,
       tasks,
@@ -1422,7 +1486,7 @@ const buildBootstrapAggregate = async (
       })),
       labSummary,
     }),
-  };
+  } as WorkspaceBootstrapResponse;
 };
 
 export const WorkspaceService = {
