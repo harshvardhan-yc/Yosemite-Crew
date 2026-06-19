@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, jest, it } from "@jest/globals";
 import { AppointmentPrismaService } from "../../src/services/appointment.prisma.service";
 import { prisma } from "../../src/config/prisma";
 import { InvoiceService } from "../../src/services/invoice.service";
+import { AuditTrailService } from "../../src/services/audit-trail.service";
 
 jest.mock("@yosemite-crew/types", () => ({
   ...(jest.requireActual("@yosemite-crew/types") as unknown as Record<
@@ -34,6 +35,12 @@ jest.mock("../../src/services/invoice.service", () => ({
     createCheckoutSessionAndEmailParent: jest.fn(),
     markAppointmentReadyForBilling: jest.fn(),
     setInvoiceDepositTarget: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/audit-trail.service", () => ({
+  AuditTrailService: {
+    recordSafely: jest.fn(),
   },
 }));
 
@@ -108,6 +115,9 @@ const mockedInvoiceService = InvoiceService as unknown as {
   createCheckoutSessionAndEmailParent: jest.Mock;
   markAppointmentReadyForBilling: jest.Mock;
   setInvoiceDepositTarget: jest.Mock;
+};
+const mockedAuditTrailService = AuditTrailService as unknown as {
+  recordSafely: jest.Mock;
 };
 
 const baseDomain = {
@@ -302,6 +312,14 @@ describe("AppointmentPrismaService", () => {
         source: "ORGANISATION_DEFAULT",
       }),
     ]);
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "APPOINTMENT_REQUESTED",
+        actorType: "PARENT",
+        entityType: "APPOINTMENT",
+        entityId: "appt_1",
+      }),
+    );
   });
 
   it("prefers explicit catalog template bindings over catalog kind defaults", async () => {
@@ -458,6 +476,14 @@ describe("AppointmentPrismaService", () => {
       mockedInvoiceService.createCheckoutSessionAndEmailParent,
     ).toHaveBeenCalledWith("inv_1");
     expect(result.status).toBe("UPCOMING");
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "APPOINTMENT_CREATED",
+        actorType: "SYSTEM",
+        entityType: "APPOINTMENT",
+        entityId: "appt_1",
+      }),
+    );
   });
 
   it("rejects PMS online payment creation for in-clinic collection", async () => {
@@ -516,6 +542,15 @@ describe("AppointmentPrismaService", () => {
     );
     expect(mockedPrisma.occupancy.deleteMany).toHaveBeenCalled();
     expect(result.status).toBe("REQUESTED");
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "APPOINTMENT_RESCHEDULED",
+        actorType: "PARENT",
+        actorId: "parent_1",
+        entityType: "APPOINTMENT",
+        entityId: "appt_1",
+      }),
+    );
   });
 
   it("blocks reschedule when parent does not own appointment", async () => {
@@ -600,6 +635,14 @@ describe("AppointmentPrismaService", () => {
       },
     });
     expect((result as any).encounterId).toBe("enc_1");
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "APPOINTMENT_CHECKED_IN",
+        actorType: "SYSTEM",
+        entityType: "APPOINTMENT",
+        entityId: "appt_1",
+      }),
+    );
   });
 
   it("admits a checked-in outpatient appointment into inpatient care", async () => {

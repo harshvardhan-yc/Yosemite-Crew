@@ -29,7 +29,7 @@ import { NotificationService } from "./notification.service";
 import { AuditTrailService } from "./audit-trail.service";
 import { sendEmailTemplate } from "src/utils/email";
 import logger from "src/utils/logger";
-import type { AuditEventType } from "src/models/audit-trail";
+import type { AuditEventType } from "@prisma/client";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
 import { assertSafeString } from "src/utils/sanitize";
 import type Stripe from "stripe";

@@ -17,6 +17,7 @@ import { prisma } from "src/config/prisma";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
 import { InvoiceService } from "./invoice.service";
 import { FinancePaymentService } from "./finance/payment";
+import { AuditTrailService } from "./audit-trail.service";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
 
 type AppointmentStatus = AppointmentDomain["status"];
@@ -245,6 +246,36 @@ type AppointmentListFilters = {
   status?: AppointmentStatus[];
   startDate?: Date;
   endDate?: Date;
+};
+
+type AppointmentAuditEventType =
+  | "APPOINTMENT_REQUESTED"
+  | "APPOINTMENT_CREATED"
+  | "APPOINTMENT_APPROVED"
+  | "APPOINTMENT_CANCELLED"
+  | "APPOINTMENT_CHECKED_IN"
+  | "APPOINTMENT_RESCHEDULED"
+  | "FORM_ATTACHED";
+
+const recordAppointmentAudit = async (params: {
+  organisationId: string;
+  patientId: string;
+  eventType: AppointmentAuditEventType;
+  actorType: "PARENT" | "SYSTEM";
+  actorId?: string | null;
+  entityId: string;
+  metadata?: Record<string, unknown>;
+}) => {
+  await AuditTrailService.recordSafely({
+    organisationId: params.organisationId,
+    patientId: params.patientId,
+    eventType: params.eventType,
+    actorType: params.actorType,
+    actorId: params.actorId ?? undefined,
+    entityType: params.eventType === "FORM_ATTACHED" ? "FORM" : "APPOINTMENT",
+    entityId: params.entityId,
+    metadata: params.metadata,
+  });
 };
 
 const DEFAULT_KIND: AppointmentKind = "OUTPATIENT";
@@ -1068,6 +1099,12 @@ const getLeadIdFromRow = (row: AppointmentRow): string | undefined => {
 const createAppointment = async (
   dto: AppointmentRequestDTO,
   status: AppointmentStatus,
+  audit?: {
+    eventType: Exclude<AppointmentAuditEventType, "FORM_ATTACHED">;
+    actorType: "PARENT" | "SYSTEM";
+    actorId?: string | null;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<AppointmentResponseDTO> => {
   const input = fromAppointmentRequestDTO(dto);
   const appointmentKind = normalizeAppointmentKind(input.appointmentKind);
@@ -1156,6 +1193,18 @@ const createAppointment = async (
     return appointment;
   });
 
+  if (audit) {
+    await recordAppointmentAudit({
+      organisationId: input.organisationId,
+      patientId: getPatientId(input.patient),
+      eventType: audit.eventType,
+      actorType: audit.actorType,
+      actorId: audit.actorId ?? undefined,
+      entityId: created.id,
+      metadata: audit.metadata,
+    });
+  }
+
   return toResponse(created as AppointmentRow);
 };
 
@@ -1213,7 +1262,16 @@ const applyDtoPatch = (
 
 export const AppointmentPrismaService = {
   async createRequestedFromMobile(dto: AppointmentRequestDTO) {
-    return createAppointment(dto, "REQUESTED");
+    const input = fromAppointmentRequestDTO(dto);
+    return createAppointment(dto, "REQUESTED", {
+      eventType: "APPOINTMENT_REQUESTED",
+      actorType: "PARENT",
+      actorId: getParentIdFromPatient(input.patient),
+      metadata: {
+        status: "REQUESTED",
+        formIds: input.formIds ?? [],
+      },
+    });
   },
 
   async createAppointmentFromPms(
@@ -1236,7 +1294,15 @@ export const AppointmentPrismaService = {
       );
     }
 
-    const appointment = await createAppointment(dto, "UPCOMING");
+    const input = fromAppointmentRequestDTO(dto);
+    const appointment = await createAppointment(dto, "UPCOMING", {
+      eventType: "APPOINTMENT_CREATED",
+      actorType: "SYSTEM",
+      metadata: {
+        status: "UPCOMING",
+        formIds: input.formIds ?? [],
+      },
+    });
     const appointmentId =
       typeof appointment.id === "string" ? appointment.id : undefined;
     if (!appointmentId) {
@@ -1330,6 +1396,17 @@ export const AppointmentPrismaService = {
       });
     });
 
+    await recordAppointmentAudit({
+      organisationId: updated.organisationId,
+      patientId: getPatientId(updated.patient),
+      eventType: "APPOINTMENT_APPROVED",
+      actorType: "SYSTEM",
+      entityId: updated.id,
+      metadata: {
+        status: updated.status,
+      },
+    });
+
     return toResponse(updated as AppointmentRow);
   },
 
@@ -1354,6 +1431,17 @@ export const AppointmentPrismaService = {
     const updated = await prisma.appointment.update({
       where: { id: appointmentId },
       data: { status: "CANCELLED", updatedAt: new Date() },
+    });
+
+    await recordAppointmentAudit({
+      organisationId: updated.organisationId,
+      patientId: getPatientId(updated.patient),
+      eventType: "APPOINTMENT_CANCELLED",
+      actorType: "SYSTEM",
+      entityId: updated.id,
+      metadata: {
+        status: updated.status,
+      },
     });
 
     return toResponse(updated as AppointmentRow);
@@ -1405,6 +1493,18 @@ export const AppointmentPrismaService = {
       });
     });
 
+    await recordAppointmentAudit({
+      organisationId: updated.organisationId,
+      patientId: getPatientId(updated.patient),
+      eventType: "APPOINTMENT_CHECKED_IN",
+      actorType: "PARENT",
+      actorId: parentId,
+      entityId: updated.id,
+      metadata: {
+        status: updated.status,
+      },
+    });
+
     return toResponse(updated as AppointmentRow);
   },
 
@@ -1440,6 +1540,17 @@ export const AppointmentPrismaService = {
     });
 
     await InvoiceService.markAppointmentReadyForBilling(appointmentId);
+
+    await recordAppointmentAudit({
+      organisationId: updated.organisationId,
+      patientId: getPatientId(updated.patient),
+      eventType: "APPOINTMENT_CHECKED_IN",
+      actorType: "SYSTEM",
+      entityId: updated.id,
+      metadata: {
+        status: updated.status,
+      },
+    });
 
     return toResponse(updated as AppointmentRow);
   },
@@ -1839,6 +1950,20 @@ export const AppointmentPrismaService = {
       });
     });
 
+    await recordAppointmentAudit({
+      organisationId: updated.organisationId,
+      patientId: getPatientId(updated.patient),
+      eventType: "APPOINTMENT_RESCHEDULED",
+      actorType: "PARENT",
+      actorId: parentId,
+      entityId: updated.id,
+      metadata: {
+        status: updated.status,
+        startTime: updated.startTime,
+        endTime: updated.endTime,
+      },
+    });
+
     return toResponse(updated as AppointmentRow);
   },
 
@@ -1947,6 +2072,19 @@ export const AppointmentPrismaService = {
       });
     });
 
+    if (patch.status === "UPCOMING" && row.status === "REQUESTED") {
+      await recordAppointmentAudit({
+        organisationId: updated.organisationId,
+        patientId: getPatientId(updated.patient),
+        eventType: "APPOINTMENT_APPROVED",
+        actorType: "SYSTEM",
+        entityId: updated.id,
+        metadata: {
+          status: updated.status,
+        },
+      });
+    }
+
     if (patch.status === "COMPLETED") {
       await InvoiceService.markAppointmentReadyForBilling(appointmentId);
     }
@@ -2003,6 +2141,18 @@ export const AppointmentPrismaService = {
       });
     });
 
+    await recordAppointmentAudit({
+      organisationId: updated.organisationId,
+      patientId: getPatientId(updated.patient),
+      eventType: "APPOINTMENT_CANCELLED",
+      actorType: "PARENT",
+      actorId: parentId,
+      entityId: updated.id,
+      metadata: {
+        status: updated.status,
+      },
+    });
+
     return toResponse(updated as AppointmentRow);
   },
 
@@ -2034,6 +2184,17 @@ export const AppointmentPrismaService = {
         where: { id: appointmentId },
         data: { status: "CANCELLED", updatedAt: new Date() },
       });
+    });
+
+    await recordAppointmentAudit({
+      organisationId: updated.organisationId,
+      patientId: getPatientId(updated.patient),
+      eventType: "APPOINTMENT_CANCELLED",
+      actorType: "SYSTEM",
+      entityId: updated.id,
+      metadata: {
+        status: updated.status,
+      },
     });
 
     return toResponse(updated as AppointmentRow);
@@ -2182,14 +2343,31 @@ export const AppointmentPrismaService = {
       current as AppointmentRow | null,
       "Appointment not found",
     );
+    const existingFormIds = new Set((row.formIds ?? []).map(String));
+    const newFormIds = Array.from(new Set(formIds ?? [])).filter(
+      (formId) => !existingFormIds.has(formId),
+    );
     const nextFormIds = Array.from(
-      new Set([...(row.formIds ?? []), ...(formIds ?? [])]),
+      new Set([...(row.formIds ?? []), ...newFormIds]),
     ).filter(Boolean);
 
     const updated = await prisma.appointment.update({
       where: { id: appointmentId },
       data: { formIds: nextFormIds, updatedAt: new Date() },
     });
+
+    for (const formId of newFormIds) {
+      await recordAppointmentAudit({
+        organisationId: updated.organisationId,
+        patientId: getPatientId(updated.patient),
+        eventType: "FORM_ATTACHED",
+        actorType: "SYSTEM",
+        entityId: formId,
+        metadata: {
+          appointmentId: updated.id,
+        },
+      });
+    }
 
     return toResponse(updated as AppointmentRow);
   },

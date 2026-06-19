@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { AuditEntityType, AuditEventType } from "src/models/audit-trail";
+import { AuditEntityType, AuditEventType } from "@prisma/client";
 import {
   AuditTrailService,
   AuditTrailServiceError,
