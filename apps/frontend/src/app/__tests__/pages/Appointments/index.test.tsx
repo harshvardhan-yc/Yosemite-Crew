@@ -39,6 +39,7 @@ jest.mock('next/dynamic', () => ({
 }));
 
 const useAppointmentsMock = jest.fn();
+const useLoadAppointmentsForPrimaryOrgMock = jest.fn();
 const useCompanionsForPrimaryOrgMock = jest.fn();
 const useCompanionsParentsForPrimaryOrgMock = jest.fn();
 const useLoadCompanionsForPrimaryOrgMock = jest.fn();
@@ -68,6 +69,7 @@ jest.mock('@/app/ui/layout/guards/OrgGuard', () => ({
 }));
 
 jest.mock('@/app/hooks/useAppointments', () => ({
+  useLoadAppointmentsForPrimaryOrg: () => useLoadAppointmentsForPrimaryOrgMock(),
   useAppointmentsForPrimaryOrg: () => useAppointmentsMock(),
 }));
 
@@ -223,6 +225,7 @@ describe('Appointments page', () => {
     );
     useCompanionsForPrimaryOrgMock.mockReturnValue([]);
     useCompanionsParentsForPrimaryOrgMock.mockReturnValue([]);
+    useLoadAppointmentsForPrimaryOrgMock.mockReturnValue(undefined);
     useAppointmentsMock.mockReturnValue([
       {
         id: 'a1',
@@ -250,6 +253,7 @@ describe('Appointments page', () => {
   it('renders calendar view by default and toggles to list/board', async () => {
     await renderAppointments();
 
+    expect(useLoadAppointmentsForPrimaryOrgMock).toHaveBeenCalled();
     expect(screen.getByTestId('appointment-calendar')).toBeInTheDocument();
     expect(calendarSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -507,7 +511,12 @@ describe('Appointments page', () => {
 
     expect(calendarSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        allAppointments: [expect.objectContaining({ id: 'a1' })],
+        allAppointments: [
+          expect.objectContaining({
+            id: 'a1',
+            companion: expect.objectContaining({ photoUrl: 'photo.jpg' }),
+          }),
+        ],
       })
     );
   });

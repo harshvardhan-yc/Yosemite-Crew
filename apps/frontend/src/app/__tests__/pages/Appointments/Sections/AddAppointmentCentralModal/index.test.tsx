@@ -1,7 +1,8 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AddAppointmentCentralModal from '@/app/features/appointments/pages/Appointments/Sections/AddAppointmentCentralModal';
+import { useAppointmentForm } from '@/app/hooks/useAppointmentForm';
 
 // ── React 19 createPortal mock ──────────────────────────────────────────────
 jest.mock('react-dom', () => ({
@@ -37,6 +38,7 @@ const mockFormData = {
   supportStaff: [],
   notes: '',
   isEmergency: false,
+  appointmentKind: 'OUTPATIENT' as 'OUTPATIENT' | 'INPATIENT',
   startTime: null,
   endTime: null,
   companion: { id: '', name: '' },
@@ -464,6 +466,21 @@ describe('AddAppointmentCentralModal', () => {
     render(<AddAppointmentCentralModal {...defaultProps} />);
     // LabelDropdown for visit type is rendered
     expect(screen.getAllByTestId(/label-dropdown/).length).toBeGreaterThan(0);
+  });
+
+  it('keeps the visit type synced to the selected service appointment kind', async () => {
+    mockAppointmentForm.formData = {
+      ...mockFormData,
+      appointmentKind: 'INPATIENT',
+    };
+
+    render(<AddAppointmentCentralModal {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(useAppointmentForm).toHaveBeenLastCalledWith(
+        expect.objectContaining({ appointmentKind: 'INPATIENT' })
+      );
+    });
   });
 
   it('renders time slot dropdown button', () => {

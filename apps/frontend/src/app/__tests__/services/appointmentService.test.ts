@@ -295,6 +295,41 @@ describe('Appointment Service', () => {
       expect(mockAppointmentStoreUpsertAppointment).toHaveBeenCalledWith(returnedAppointment);
     });
 
+    it('uses selected companion as canonical patient when appointment patient is empty', async () => {
+      const appointment = makeBaseAppointment({
+        patient: {
+          id: '',
+          name: '',
+          species: '',
+          parent: { id: '', name: '' },
+        },
+        companion: {
+          id: 'companion-selected',
+          name: 'Luna',
+          species: 'Feline',
+          parent: { id: 'parent-selected', name: 'Mia Chen' },
+        },
+      });
+
+      mockedToAppointmentDTO.mockReturnValue({ fhir: true });
+      mockedPostData.mockResolvedValue({
+        data: { data: { appointment: { id: 'returned-dto' } as AppointmentResponseDTO } },
+      });
+      mockedFromAppointmentDTO.mockReturnValue(makeBaseAppointment({ id: 'appt-created' }));
+
+      await createAppointment(appointment);
+
+      expect(mockedToAppointmentDTO).toHaveBeenCalledWith(
+        expect.objectContaining({
+          patient: expect.objectContaining({
+            id: 'companion-selected',
+            name: 'Luna',
+            parent: expect.objectContaining({ id: 'parent-selected', name: 'Mia Chen' }),
+          }),
+        })
+      );
+    });
+
     it('handles alternate response shape at data.appointment', async () => {
       const appointment = makeBaseAppointment();
       const returnedDTO = { id: 'returned-dto-alt' } as any as AppointmentResponseDTO;

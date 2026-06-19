@@ -740,14 +740,6 @@ const AppointmentCalendar = ({
     ]
   );
 
-  const myAppointments = useMemo(() => {
-    const currentLeadId = normalizeId(getCurrentUserPractitionerId() || authUserId);
-    if (!currentLeadId) return filteredList;
-    return filteredList.filter(
-      (appointment) => normalizeId(appointment.lead?.id) === currentLeadId
-    );
-  }, [authUserId, filteredList, getCurrentUserPractitionerId, normalizeId]);
-
   const dayEvents = useMemo(
     () =>
       filteredList.filter((event) =>
@@ -756,16 +748,9 @@ const AppointmentCalendar = ({
     [filteredList, currentDate]
   );
 
-  const myDayEvents = useMemo(
-    () =>
-      myAppointments.filter((event) =>
-        isOnPreferredTimeZoneCalendarDay(event.startTime, currentDate)
-      ),
-    [myAppointments, currentDate]
-  );
   const weekEvents = useMemo(
-    () => filterAppointmentsForWeek(myAppointments, weekStart),
-    [myAppointments, weekStart]
+    () => filterAppointmentsForWeek(filteredList, weekStart),
+    [filteredList, weekStart]
   );
 
   return (
@@ -794,7 +779,7 @@ const AppointmentCalendar = ({
       ) : null}
       {activeCalendar === 'day' && (
         <DayCalendar
-          events={myDayEvents}
+          events={dayEvents}
           date={currentDate}
           zoomMode={zoomMode}
           handleViewAppointment={handleViewAppointment}

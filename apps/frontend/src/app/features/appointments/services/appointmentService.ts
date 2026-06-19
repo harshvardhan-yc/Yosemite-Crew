@@ -73,6 +73,18 @@ const getOrgIdForAppointment = (appointment: Appointment) => {
   return primaryOrgId ?? appointment.organisationId;
 };
 
+const hasPatientIdentity = (patient?: Appointment['patient']) =>
+  Boolean(patient?.id?.trim() || patient?.name?.trim());
+
+const withCanonicalPatient = (appointment: Appointment): Appointment => {
+  if (hasPatientIdentity(appointment.patient)) return appointment;
+  if (!appointment.companion) return appointment;
+  return {
+    ...appointment,
+    patient: appointment.companion,
+  };
+};
+
 const extractAppointmentDTO = (response: any): AppointmentResponseDTO | null => {
   const candidates = [
     response?.data?.data,
@@ -158,7 +170,7 @@ export const createAppointment = async (appointment: Appointment) => {
       ...appointment,
       organisationId: primaryOrgId,
     };
-    const fhirAppointment = toAppointmentResponseDTO(payload);
+    const fhirAppointment = toAppointmentResponseDTO(withCanonicalPatient(payload));
     const res = await postData<{
       data: { appointment: AppointmentResponseDTO };
     }>('/fhir/v1/appointment/pms?createPayment=true', fhirAppointment);
@@ -181,10 +193,12 @@ export const updateAppointment = async (payload: Appointment) => {
     return;
   }
   try {
-    const fhirAppointment = toAppointmentResponseDTO({
-      ...payload,
-      organisationId: organisationIdForRequest,
-    });
+    const fhirAppointment = toAppointmentResponseDTO(
+      withCanonicalPatient({
+        ...payload,
+        organisationId: organisationIdForRequest,
+      })
+    );
     const res = await patchData<{
       data: AppointmentResponseDTO;
     }>('/fhir/v1/appointment/pms/' + organisationIdForRequest + '/' + payload.id, fhirAppointment);
@@ -389,7 +403,7 @@ const performAppointmentAction = async (
       };
     }
 
-    const fhirAppointment = toAppointmentResponseDTO(appointmentPayload);
+    const fhirAppointment = toAppointmentResponseDTO(withCanonicalPatient(appointmentPayload));
     const res = await patchData<{
       data: { appointment: AppointmentResponseDTO };
     }>(

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Appointment, Service } from '@yosemite-crew/types';
+import { Appointment, AppointmentKind, Service } from '@yosemite-crew/types';
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import { useSpecialitiesForPrimaryOrg } from '@/app/hooks/useSpecialities';
 import { useServiceStore } from '@/app/stores/serviceStore';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
+import { useAppointmentStore } from '@/app/stores/appointmentStore';
 import { Slot } from '@/app/features/appointments/types/appointments';
 import {
   CalendarPrefillSlotMatch,
@@ -48,6 +49,7 @@ export type UseAppointmentFormOptions = {
   onSuccess?: (createdAppointment?: Appointment) => void | Promise<void>;
   initialPrefill?: AppointmentDraftPrefill | null;
   calendarSlotFlow?: boolean;
+  appointmentKind?: AppointmentKind;
 };
 
 type SlotScopedMatch = {
@@ -62,7 +64,10 @@ type LeadOption = { value: string; label: string };
 type AppointmentCatalogService = Pick<
   Service,
   'id' | 'name' | 'description' | 'durationMinutes' | 'cost' | 'maxDiscount' | 'specialityId'
->;
+> & {
+  isBookable?: boolean;
+  isInpatientPreferred?: boolean;
+};
 
 const mapRevampServiceForAppointment = (service: ServiceRevamp): AppointmentCatalogService => ({
   id: service.id,
@@ -72,7 +77,25 @@ const mapRevampServiceForAppointment = (service: ServiceRevamp): AppointmentCata
   cost: service.grossAmount,
   maxDiscount: service.maxDiscount,
   specialityId: service.specialityId,
+  isBookable: service.isBookable,
+  isInpatientPreferred: service.isInpatientPreferred,
 });
+
+const supportsAppointmentKind = (
+  service: AppointmentCatalogService,
+  appointmentKind: AppointmentKind
+) => {
+  if (appointmentKind === 'INPATIENT') return service.isInpatientPreferred === true;
+  return service.isBookable !== false;
+};
+
+const resolveServiceAppointmentKind = (
+  service: AppointmentCatalogService | undefined,
+  fallback: AppointmentKind
+): AppointmentKind => {
+  if (service?.isInpatientPreferred === true) return 'INPATIENT';
+  return fallback;
+};
 
 const mergeServicesById = (
   primary: AppointmentCatalogService[],
@@ -326,7 +349,12 @@ const applyPrefillSlot = (
 };
 
 export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
-  const { onSuccess, initialPrefill, calendarSlotFlow = false } = options;
+  const {
+    onSuccess,
+    initialPrefill,
+    calendarSlotFlow = false,
+    appointmentKind = 'OUTPATIENT',
+  } = options;
   const terminologyText = useCompanionTerminologyText();
 
   const teams = useTeamForPrimaryOrg();
@@ -955,22 +983,64 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
     return getAppointmentServicesBySpecialityId(specialityId);
   }, [formData.appointmentType?.speciality.id, getAppointmentServicesBySpecialityId]);
 
+  const bookableServices = useMemo(
+    () => services.filter((service) => supportsAppointmentKind(service, appointmentKind)),
+    [appointmentKind, services]
+  );
+
   const ServicesOptions = useMemo(() => {
     if (calendarSlotFlow) {
       const specialityId = formData.appointmentType?.speciality.id;
       if (!specialityId) return [];
       return slotScopedServicesBySpecialityId[specialityId] ?? [];
     }
-    return services?.map((service) => ({
+    return bookableServices.map((service) => ({
       label: service.name,
       value: service.id,
     }));
   }, [
+    bookableServices,
     calendarSlotFlow,
     formData.appointmentType?.speciality.id,
-    services,
     slotScopedServicesBySpecialityId,
   ]);
+
+  useEffect(() => {
+    const selectedServiceId = formData.appointmentType?.id;
+    if (!selectedServiceId) return;
+    const selectedService = services.find((service) => service.id === selectedServiceId);
+    const serviceAppointmentKind = resolveServiceAppointmentKind(selectedService, appointmentKind);
+    if (selectedService && serviceAppointmentKind !== appointmentKind) {
+      setFormData((prev) => ({
+        ...prev,
+        appointmentKind: serviceAppointmentKind,
+      }));
+      return;
+    }
+    if (!selectedService || supportsAppointmentKind(selectedService, appointmentKind)) return;
+    setSelectedSlot(null);
+    setTimeSlots([]);
+    slotMetaByRef.current = new WeakMap();
+    setFormData((prev) => ({
+      ...prev,
+      appointmentKind,
+      appointmentType: {
+        id: '',
+        name: '',
+        speciality: prev.appointmentType?.speciality ?? { id: '', name: '' },
+      },
+      lead: undefined,
+    }));
+    setFormDataErrors((prev) => ({
+      ...prev,
+      serviceId:
+        appointmentKind === 'INPATIENT'
+          ? 'Select an inpatient bookable service.'
+          : 'Select a bookable outpatient service.',
+      slot: undefined,
+      leadId: undefined,
+    }));
+  }, [appointmentKind, formData.appointmentType?.id, services]);
 
   useEffect(() => {
     if (!calendarSlotFlow || !slotScopedSpecialityIds.length) return;
@@ -1063,6 +1133,16 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
       }
       if (!formData.appointmentType?.id) {
         errors.serviceId = 'Please select a service';
+      } else {
+        const selectedService = services.find(
+          (service) => service.id === formData.appointmentType?.id
+        );
+        if (selectedService && !supportsAppointmentKind(selectedService, appointmentKind)) {
+          errors.serviceId =
+            appointmentKind === 'INPATIENT'
+              ? 'Select an inpatient bookable service.'
+              : 'Select a bookable outpatient service.';
+        }
       }
       if (!formData.concern?.trim()) {
         errors.concern = 'Please describe the concern';
@@ -1077,7 +1157,17 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
       );
       return errors;
     },
-    [canMore, reason, formData, getLeadOptionsForSlot, selectedDate, selectedSlot, terminologyText]
+    [
+      appointmentKind,
+      canMore,
+      reason,
+      formData,
+      getLeadOptionsForSlot,
+      selectedDate,
+      selectedSlot,
+      services,
+      terminologyText,
+    ]
   );
 
   const handleCreate = useCallback(
@@ -1101,6 +1191,9 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
         if (rejectedSync) {
           console.error('Appointment created but follow-up refresh failed:', rejectedSync.reason);
         }
+        if (createdAppointment?.id) {
+          useAppointmentStore.getState().upsertAppointment(createdAppointment);
+        }
         if (onSuccess) {
           await onSuccess(createdAppointment);
         } else {
@@ -1121,35 +1214,58 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
     [validateForm, formData, refetchData, resetForm, onSuccess]
   );
 
-  const handleSpecialitySelect = useCallback((option: { label: string; value: string }) => {
-    setFormData((prev) => ({
-      ...prev,
-      appointmentType: {
-        id: '',
-        name: '',
-        speciality: {
-          id: option.value,
-          name: option.label,
-        },
-      },
-    }));
-    setFormDataErrors((prev) => ({ ...prev, specialityId: undefined, serviceId: undefined }));
-  }, []);
-
-  const handleServiceSelect = useCallback((option: { label: string; value: string }) => {
-    setFormData((prev) => ({
-      ...prev,
-      appointmentType: {
-        id: option.value,
-        name: option.label,
-        speciality: prev.appointmentType?.speciality ?? {
+  const handleSpecialitySelect = useCallback(
+    (option: { label: string; value: string }) => {
+      setFormData((prev) => ({
+        ...prev,
+        appointmentKind,
+        appointmentType: {
           id: '',
           name: '',
+          speciality: {
+            id: option.value,
+            name: option.label,
+          },
         },
-      },
-    }));
-    setFormDataErrors((prev) => ({ ...prev, serviceId: undefined, slot: undefined }));
-  }, []);
+      }));
+      setFormDataErrors((prev) => ({ ...prev, specialityId: undefined, serviceId: undefined }));
+    },
+    [appointmentKind]
+  );
+
+  const handleServiceSelect = useCallback(
+    (option: { label: string; value: string }) => {
+      const selectedService = services.find((service) => service.id === option.value);
+      const serviceAppointmentKind = resolveServiceAppointmentKind(
+        selectedService,
+        appointmentKind
+      );
+      if (selectedService && !supportsAppointmentKind(selectedService, serviceAppointmentKind)) {
+        setFormDataErrors((prev) => ({
+          ...prev,
+          serviceId:
+            serviceAppointmentKind === 'INPATIENT'
+              ? 'Select an inpatient bookable service.'
+              : 'Select a bookable outpatient service.',
+        }));
+        return;
+      }
+      setFormData((prev) => ({
+        ...prev,
+        appointmentKind: serviceAppointmentKind,
+        appointmentType: {
+          id: option.value,
+          name: option.label,
+          speciality: prev.appointmentType?.speciality ?? {
+            id: '',
+            name: '',
+          },
+        },
+      }));
+      setFormDataErrors((prev) => ({ ...prev, serviceId: undefined, slot: undefined }));
+    },
+    [appointmentKind, services]
+  );
 
   const handleLeadSelect = useCallback(
     (option: { label: string; value: string }) => {

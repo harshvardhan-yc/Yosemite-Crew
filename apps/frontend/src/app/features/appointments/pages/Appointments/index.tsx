@@ -27,7 +27,10 @@ const ViewAppointmentOverviewModal = React.lazy(
 import TitleCalendar from '@/app/ui/widgets/TitleCalendar';
 import { startOfDay } from '@/app/features/appointments/components/Calendar/weekHelpers';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
-import { useAppointmentsForPrimaryOrg } from '@/app/hooks/useAppointments';
+import {
+  useAppointmentsForPrimaryOrg,
+  useLoadAppointmentsForPrimaryOrg,
+} from '@/app/hooks/useAppointments';
 import {
   useCompanionsParentsForPrimaryOrg,
   useLoadCompanionsForPrimaryOrg,
@@ -107,6 +110,7 @@ const normalizeLeadId = (value?: string | null) =>
 
 const Appointments = () => {
   const router = useRouter();
+  useLoadAppointmentsForPrimaryOrg();
   const rawAppointments = useAppointmentsForPrimaryOrg();
   useLoadCompanionsForPrimaryOrg();
   const companions = useCompanionsParentsForPrimaryOrg();
