@@ -240,7 +240,11 @@ describe("CatalogController", () => {
     expect(res.json).toHaveBeenCalledWith([{ id: "org_1", name: "Clinic" }]);
   });
 
-  it("rejects nearby organisation requests without coordinates", async () => {
+  it("allows nearby organisation requests without coordinates", async () => {
+    (
+      CatalogService.listOrganisationsProvidingServiceNearby as jest.Mock
+    ).mockResolvedValue([{ id: "org_1", name: "Clinic" }]);
+
     const req = {
       params: { organisationId: "org_1" },
       query: {},
@@ -254,12 +258,9 @@ describe("CatalogController", () => {
 
     expect(
       CatalogService.listOrganisationsProvidingServiceNearby,
-    ).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      message: "Invalid catalog nearby search query.",
-      errors: expect.any(Object),
-    });
+    ).toHaveBeenCalledWith(undefined, undefined, 5000);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith([{ id: "org_1", name: "Clinic" }]);
   });
 
   it("returns catalog bookable slots", async () => {

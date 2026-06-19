@@ -689,6 +689,7 @@ model Organization {
   type                        OrganizationType
   petNamePreference           PetNamePreference? @default(PATIENT)
   phoneNo                     String
+  email                       String?
   website                     String?
   documensoTeamId             String?
   documensoApiKey             String?
@@ -941,6 +942,100 @@ model OrganizationBilling {
   @@map("OrgBilling")
 }
 
+model SubscriptionEntitlement {
+  id            String   @id @default(uuid())
+  orgId         String
+  code          String
+  name          String?
+  value         Json?
+  source        String   @default("MANUAL")
+  status        String   @default("ACTIVE")
+  grantedAt     DateTime @default(now())
+  expiresAt     DateTime?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([orgId, code])
+  @@index([orgId, status])
+  @@map("OrgSubscriptionEntitlements")
+}
+
+model FinanceProviderLink {
+  id                     String   @id @default(uuid())
+  orgId                  String
+  provider               String
+  externalCustomerId     String?
+  externalSubscriptionId String?
+  externalSubscriptionItemId String?
+  externalPriceId        String?
+  externalProductId      String?
+  metadata               Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([orgId, provider])
+  @@index([externalSubscriptionId])
+  @@index([externalCustomerId])
+  @@map("OrgSubscriptionProviderLinks")
+}
+
+model UsageEvent {
+  id                String   @id @default(uuid())
+  orgId             String
+  usageKey          String
+  quantity          Int      @default(1)
+  billableQuantity  Int      @default(1)
+  source            String
+  referenceType     String?
+  referenceId       String?
+  metadata          Json?
+  occurredAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([orgId, usageKey, occurredAt])
+  @@index([orgId, referenceType, referenceId])
+  @@map("OrgUsageEvents")
+}
+
+model UsageSnapshot {
+  id               String   @id @default(uuid())
+  orgId            String
+  snapshotType     String   @default("snapshot")
+  snapshotAt       DateTime @default(now())
+  seatsActive      Int      @default(0)
+  seatsBillable    Int      @default(0)
+  appointmentsUsed Int      @default(0)
+  toolsUsed        Int      @default(0)
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([orgId, snapshotAt])
+  @@map("OrgUsageSnapshots")
+}
+
+model FinanceEvent {
+  id            String   @id @default(uuid())
+  organisationId String?
+  eventType     String
+  entityType    String
+  entityId      String
+  payload       Json
+  occurredAt    DateTime @default(now())
+  processedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([organisationId])
+  @@index([eventType])
+  @@index([entityType, entityId])
+  @@index([occurredAt])
+  @@index([processedAt])
+  @@map("FinanceEvents")
+}
+
 model OrganizationDocument {
   id              String                @id @default(uuid())
   organisationId  String
@@ -1167,6 +1262,73 @@ enum PaymentCollectionMethod {
   PAYMENT_INTENT
   PAYMENT_LINK
   PAYMENT_AT_CLINIC
+}
+
+enum InvoiceVisitBillingStage {
+  DRAFT
+  READY_FOR_BILLING
+  SETTLED
+}
+
+enum PaymentProvider {
+  STRIPE
+  MANUAL
+}
+
+enum PaymentAttemptStatus {
+  REQUIRES_ACTION
+  REQUIRES_PAYMENT_METHOD
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum CreditNoteStatus {
+  DRAFT
+  ISSUED
+  VOIDED
+}
+
+enum BillingCollectionMode {
+  PREPAY_AT_BOOKING
+  PAY_AT_VISIT_END
+  STAGED_DURING_VISIT
+  DEPOSIT_THEN_SETTLE
+  MANUAL_OFFLINE
+}
+
+enum SettlementChannel {
+  STRIPE
+  CASH
+  BANK_TRANSFER
+  CARD_PRESENT
+  DEPOSIT
+  OTHER
+}
+
+enum TaxProvider {
+  STRIPE
+}
+
+enum TaxBehavior {
+  INCLUSIVE
+  EXCLUSIVE
 }
 
 enum FormVisibilityType {
@@ -2541,30 +2703,155 @@ model Invoice {
   items                    Json
   subtotal                 Float
   discountTotal            Float                    @default(0)
+  invoiceDiscountType      String?
+  invoiceDiscountValue     Float?
+  invoiceDiscountTotal     Float                    @default(0)
   taxTotal                 Float                    @default(0)
   taxPercent               Float                    @default(0)
+  taxProvider              TaxProvider?
   totalAmount              Float
   currency                 String
   paymentCollectionMethod  PaymentCollectionMethod  @default(PAYMENT_INTENT)
-  stripePaymentIntentId    String?
-  stripePaymentLinkId      String?
-  stripeInvoiceId          String?
-  stripeCustomerId         String?
-  stripeChargeId           String?
-  stripeReceiptUrl         String?
-  stripeCheckoutSessionId  String?
-  stripeCheckoutUrl        String?
+  billingCollectionMode    BillingCollectionMode    @default(PREPAY_AT_BOOKING)
+  visitBillingStage        InvoiceVisitBillingStage  @default(DRAFT)
+  depositTargetAmount      Float                    @default(0)
+  depositCollectedAmount   Float                    @default(0)
   status                   InvoiceStatus            @default(PENDING)
   metadata                 Json?
   paidAt                   DateTime?
+  finalizedAt              DateTime?
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
+
+  taxSnapshot              InvoiceTaxSnapshot?
+  paymentAttempts          PaymentAttempt[]
+  payments                 Payment[]
+  creditNotes              CreditNote[]
 
   @@index([parentId])
   @@index([organisationId])
   @@index([appointmentId])
-  @@index([stripePaymentIntentId])
   @@index([status])
-  @@index([stripeCheckoutSessionId])
   @@index([paymentCollectionMethod])
+  @@index([billingCollectionMode])
+  @@index([visitBillingStage])
+  @@index([taxProvider])
+}
+
+model InvoiceTaxSnapshot {
+  id                  String       @id @default(uuid())
+  invoiceId           String       @unique
+  provider            TaxProvider
+  providerReferenceId String?
+  jurisdictionCountry String?
+  jurisdictionState   String?
+  taxBehavior         TaxBehavior?
+  taxableSubtotal     Float        @default(0)
+  taxAmount           Float        @default(0)
+  taxBreakdown        Json?
+  rawProviderPayload  Json?
+  calculatedAt        DateTime     @default(now())
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  invoice             Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model PaymentAttempt {
+  id                      String               @id @default(uuid())
+  invoiceId               String
+  provider                PaymentProvider
+  settlementChannel       SettlementChannel?
+  providerPaymentIntentId String?
+  providerCheckoutSessionId String?
+  providerPaymentLinkId   String?
+  status                  PaymentAttemptStatus @default(REQUIRES_PAYMENT_METHOD)
+  amountRequested         Float                @default(0)
+  amountCaptured          Float                @default(0)
+  amountApplied           Float                @default(0)
+  currency                String
+  failureCode             String?
+  failureMessage          String?
+  collectionMode          BillingCollectionMode?
+  isOffline               Boolean              @default(false)
+  isPartial               Boolean              @default(false)
+  rawProviderPayload      Json?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+
+  invoice                 Invoice              @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payment                 Payment?
+
+  @@index([invoiceId])
+  @@index([provider])
+  @@index([providerPaymentIntentId])
+  @@index([providerCheckoutSessionId])
+  @@index([providerPaymentLinkId])
+  @@index([status])
+}
+
+model Payment {
+  id                    String          @id @default(uuid())
+  invoiceId             String
+  paymentAttemptId      String?         @unique
+  provider              PaymentProvider
+  settlementChannel     SettlementChannel?
+  collectionMode        BillingCollectionMode?
+  providerPaymentId     String?
+  amount                Float
+  currency              String
+  status                PaymentStatus   @default(PENDING)
+  paidAt                DateTime?
+  receiptUrl            String?
+  rawProviderPayload    Json?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  invoice               Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  paymentAttempt        PaymentAttempt? @relation(fields: [paymentAttemptId], references: [id])
+  refunds               Refund[]
+
+  @@index([invoiceId])
+  @@index([paymentAttemptId])
+  @@index([provider])
+  @@index([providerPaymentId])
+  @@index([status])
+}
+
+model Refund {
+  id                    String         @id @default(uuid())
+  paymentId             String
+  provider              PaymentProvider
+  providerRefundId      String?
+  amount                Float
+  currency              String
+  status                RefundStatus   @default(PENDING)
+  reason                String?
+  rawProviderPayload    Json?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  payment               Payment        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([provider])
+  @@index([providerRefundId])
+  @@index([status])
+}
+
+model CreditNote {
+  id               String           @id @default(uuid())
+  invoiceId        String
+  creditNoteNumber String           @unique
+  reason           String?
+  amount           Float
+  status           CreditNoteStatus @default(DRAFT)
+  metadata         Json?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  invoice          Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([status])
 }

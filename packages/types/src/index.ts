@@ -270,7 +270,14 @@ export {
   fromRoomUnitRequestDTO,
   toRoomUnitResponseDTO,
 } from './dto/room-unit.dto';
-export type { Invoice, InvoiceItem, InvoiceStatus, PaymentCollectionMethod } from './invoice';
+export type {
+  CreditNote,
+  CreditNoteStatus,
+  Invoice,
+  InvoiceItem,
+  InvoiceStatus,
+  PaymentCollectionMethod,
+} from './invoice';
 export type { Appointment, AppointmentPaymentStatus } from './appointment';
 export { toFHIRInvoice, fromFHIRInvoice } from './invoice';
 export { toFHIRAppointment, fromFHIRAppointment } from './appointment';

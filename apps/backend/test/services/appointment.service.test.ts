@@ -2,6 +2,15 @@ import mongoose, { Types } from "mongoose";
 import {
   AppointmentService,
   AppointmentServiceError,
+  assertAppointmentStatusTransition,
+  buildUsageCounterPayload,
+  requireBaseAppointmentInput,
+  resolveCatalogSelectionSafe,
+  resolvePaymentStatusByAppointmentIds,
+  resolvePaymentStatusByAppointmentIdsFromMongo,
+  resolvePaymentStatusByAppointmentIdsFromPostgres,
+  validateAppointmentFromPmsInput,
+  validateRequestedFromMobileInput,
 } from "../../src/services/appointment.service";
 import AppointmentModel from "../../src/models/appointment";
 import ServiceModel from "src/models/service";
@@ -43,6 +52,7 @@ jest.mock("../../src/services/invoice.service", () => ({
     createDraftForAppointment: jest.fn(),
     getOrCreateDraftForAppointment: jest.fn(),
     handleAppointmentCancellation: jest.fn(),
+    setInvoiceDepositTarget: jest.fn(),
   },
 }));
 
@@ -318,6 +328,123 @@ describe("AppointmentService", () => {
     );
   });
 
+  it("covers appointment helper validation and status branches", async () => {
+    expect(
+      buildUsageCounterPayload({
+        appointmentsUsed: null,
+        toolsUsed: undefined,
+        usersActiveCount: null,
+        usersBillableCount: undefined,
+        freeAppointmentsLimit: null,
+        freeToolsLimit: undefined,
+        freeUsersLimit: null,
+      }),
+    ).toEqual({
+      appointmentsUsed: 0,
+      toolsUsed: 0,
+      usersActiveCount: 0,
+      usersBillableCount: 0,
+      freeAppointmentsLimit: 120,
+      freeToolsLimit: 200,
+      freeUsersLimit: 10,
+      freeLimitReachedAt: undefined,
+      updatedAt: undefined,
+    });
+
+    expect(() =>
+      assertAppointmentStatusTransition("REQUESTED", "REQUESTED", "test"),
+    ).not.toThrow();
+    expect(() =>
+      assertAppointmentStatusTransition("REQUESTED", "COMPLETED", "test"),
+    ).toThrow(
+      new AppointmentServiceError(
+        "Appointment cannot transition from REQUESTED to COMPLETED in test.",
+        409,
+      ),
+    );
+
+    expect(() =>
+      requireBaseAppointmentInput({} as any, {
+        organisation: "organisation missing",
+        patient: "patient missing",
+        timing: "timing missing",
+      }),
+    ).toThrow(new AppointmentServiceError("organisation missing", 400));
+
+    expect(() =>
+      requireBaseAppointmentInput(
+        {
+          organisationId: "org_1",
+          patient: { id: "patient_1" },
+        } as any,
+        {
+          organisation: "organisation missing",
+          patient: "patient missing",
+          timing: "timing missing",
+        },
+      ),
+    ).toThrow(new AppointmentServiceError("patient missing", 400));
+
+    expect(() =>
+      requireBaseAppointmentInput(
+        {
+          organisationId: "org_1",
+          patient: { id: "patient_1", parent: { id: "parent_1" } },
+        } as any,
+        {
+          organisation: "organisation missing",
+          patient: "patient missing",
+          timing: "timing missing",
+        },
+      ),
+    ).toThrow(new AppointmentServiceError("timing missing", 400));
+
+    (CatalogService.resolveSelection as jest.Mock).mockRejectedValueOnce(
+      new CatalogServiceError("Not found", 404),
+    );
+    await expect(
+      resolveCatalogSelectionSafe("svc_1", "org_1"),
+    ).resolves.toBeNull();
+
+    (CatalogService.resolveSelection as jest.Mock).mockRejectedValueOnce(
+      new CatalogServiceError("Boom", 500),
+    );
+    await expect(
+      resolveCatalogSelectionSafe("svc_1", "org_1"),
+    ).rejects.toMatchObject({ statusCode: 500 });
+  });
+
+  it("covers payment status helpers for postgres, mongo, and empty inputs", async () => {
+    (prisma.invoice.findMany as jest.Mock).mockResolvedValueOnce([
+      { appointmentId: "appt_1", status: "PAID" },
+      { appointmentId: "appt_1", status: "PENDING" },
+      { appointmentId: null, status: "PAID" },
+    ]);
+    const postgresMap = await resolvePaymentStatusByAppointmentIdsFromPostgres([
+      "appt_1",
+    ]);
+    expect(postgresMap.get("appt_1")).toBe("UNPAID");
+
+    // Empty input branch
+    await expect(resolvePaymentStatusByAppointmentIds([])).resolves.toEqual(
+      new Map(),
+    );
+
+    process.env.READ_FROM_POSTGRES = "false";
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { default: InvoiceModel } = await import("src/models/invoice");
+    (InvoiceModel.aggregate as jest.Mock).mockResolvedValueOnce([
+      { _id: "appt_2", hasPaid: 1, hasUnpaid: 0 },
+      { _id: "appt_3", hasPaid: 1, hasUnpaid: 1 },
+    ]);
+    const mongoMap = await resolvePaymentStatusByAppointmentIdsFromMongo([
+      "appt_2",
+      "appt_3",
+    ]);
+    expect(mongoMap.get("appt_2")).toBe("PAID");
+    expect(mongoMap.get("appt_3")).toBe("UNPAID");
+  });
+
   describe("AppointmentServiceError & ensureObjectId", () => {
     it("should configure error properties correctly", () => {
       const err = new AppointmentServiceError("Test", 400);
@@ -385,6 +512,20 @@ describe("AppointmentService", () => {
 
     it("should throw 404 if service is invalid", async () => {
       (ServiceModel.findOne as jest.Mock).mockResolvedValue(null);
+      await expect(
+        AppointmentService.createRequestedFromMobile(baseDto as any),
+      ).rejects.toThrow(
+        new AppointmentServiceError("Invalid service selected", 404),
+      );
+    });
+
+    it("should treat a 404 catalog lookup as a missing selection in postgres", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (CatalogService.resolveSelection as jest.Mock).mockRejectedValueOnce(
+        new CatalogServiceError("Not found", 404),
+      );
+      (prisma.service.findFirst as jest.Mock).mockResolvedValue(null);
+
       await expect(
         AppointmentService.createRequestedFromMobile(baseDto as any),
       ).rejects.toThrow(
@@ -498,7 +639,7 @@ describe("AppointmentService", () => {
       (AppointmentModel.create as jest.Mock).mockResolvedValue(mockCreated);
       (
         InvoiceService.getOrCreateDraftForAppointment as jest.Mock
-      ).mockResolvedValue({ id: "inv_123" });
+      ).mockResolvedValue({ id: "inv_123", totalAmount: 25 });
       (
         StripeService.createPaymentIntentForInvoice as jest.Mock
       ).mockResolvedValue("pi_123");
@@ -510,6 +651,29 @@ describe("AppointmentService", () => {
       expect(res.paymentIntent).toBe("pi_123");
       expect(AuditTrailService.recordSafely).toHaveBeenCalled();
       expect(TaskService.createCustom).toHaveBeenCalled(); // Because OBSERVATION_TOOL
+    });
+
+    it("should reject catalog selections that are not bookable for outpatient visits", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (CatalogService.resolveSelection as jest.Mock).mockResolvedValue({
+        productItemId: "prod_1",
+        legacyServiceId: "svc_1",
+        isBookable: false,
+        appointmentKinds: [],
+      });
+      (prisma.service.findFirst as jest.Mock).mockResolvedValue({
+        _id: validObjId,
+        serviceType: "STANDARD",
+      });
+
+      await expect(
+        AppointmentService.createRequestedFromMobile(baseDto as any),
+      ).rejects.toThrow(
+        new AppointmentServiceError(
+          "Selected product is not bookable for outpatient appointments.",
+          400,
+        ),
+      );
     });
 
     it("should release usage reservation if creation fails", async () => {
@@ -616,6 +780,23 @@ describe("AppointmentService", () => {
       (ServiceModel.findOne as jest.Mock).mockReturnValue(
         createQueryChain(null),
       );
+      await expect(
+        AppointmentService.createAppointmentFromPms(basePmsDto as any, false),
+      ).rejects.toThrow(
+        new AppointmentServiceError(
+          "Invalid or inactive service for this organisation.",
+          404,
+        ),
+      );
+    });
+
+    it("should treat a 404 catalog lookup as a missing selection for PMS requests", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (CatalogService.resolveSelection as jest.Mock).mockRejectedValueOnce(
+        new CatalogServiceError("Not found", 404),
+      );
+      (prisma.service.findFirst as jest.Mock).mockResolvedValue(null);
+
       await expect(
         AppointmentService.createAppointmentFromPms(basePmsDto as any, false),
       ).rejects.toThrow(
@@ -1080,7 +1261,7 @@ describe("AppointmentService", () => {
       });
       (
         InvoiceService.getOrCreateDraftForAppointment as jest.Mock
-      ).mockResolvedValue({ id: "inv_1" });
+      ).mockResolvedValue({ id: "inv_1", totalAmount: 25 });
       prisma.invoice.findMany.mockResolvedValue([
         { appointmentId: "appt_1", status: "PAID" },
       ]);
@@ -1105,6 +1286,10 @@ describe("AppointmentService", () => {
 
       expect(prisma.appointment.create).toHaveBeenCalled();
       expect(prisma.organizationUsageCounter.update).toHaveBeenCalled();
+      expect(InvoiceService.setInvoiceDepositTarget).toHaveBeenCalledWith(
+        "inv_1",
+        25,
+      );
       expect(result.paymentIntent).toEqual({ id: "pi_1" });
     });
 
@@ -1156,7 +1341,7 @@ describe("AppointmentService", () => {
       );
       (
         InvoiceService.getOrCreateDraftForAppointment as jest.Mock
-      ).mockResolvedValue({ id: "inv_2" });
+      ).mockResolvedValue({ id: "inv_2", totalAmount: 25 });
       prisma.invoice.findMany.mockResolvedValue([]);
 
       (
@@ -1178,6 +1363,10 @@ describe("AppointmentService", () => {
       const result = await AppointmentService.createRequestedFromMobile(dto);
 
       expect((result.appointment as any).formIds).toEqual([]);
+      expect(InvoiceService.setInvoiceDepositTarget).toHaveBeenCalledWith(
+        "inv_2",
+        25,
+      );
     });
 
     it("should use catalog billing items and persist productItemId when catalog selection exists", async () => {
@@ -2505,6 +2694,28 @@ describe("AppointmentService", () => {
       ]);
       (prisma.invoice.findMany as jest.Mock).mockResolvedValue([]);
 
+      const orgRes = await AppointmentService.getAppointmentsForOrganisation(
+        "org_1",
+        {
+          status: ["UPCOMING"],
+          startDate: new Date("2026-02-01T10:00:00Z"),
+          endDate: new Date("2026-02-01T11:00:00Z"),
+        },
+      );
+      expect(orgRes).toHaveLength(1);
+      expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organisationId: "org_1",
+            status: { in: ["UPCOMING"] },
+            startTime: {
+              gte: new Date("2026-02-01T10:00:00Z"),
+              lte: new Date("2026-02-01T11:00:00Z"),
+            },
+          }),
+        }),
+      );
+
       const leadRes = await AppointmentService.getAppointmentsForLead("vet_1");
       expect(leadRes).toHaveLength(1);
 
@@ -2534,12 +2745,20 @@ describe("AppointmentService", () => {
         parentId: "parent_1",
         leadId: "vet_1",
         staffId: "staff_1",
+        startDate: new Date("2026-02-01T10:00:00Z"),
+        endDate: new Date("2026-02-01T11:00:00Z"),
       });
 
       expect(res).toHaveLength(1);
       expect(prisma.appointment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ AND: expect.any(Array) }),
+          where: expect.objectContaining({
+            AND: expect.any(Array),
+            startTime: {
+              gte: new Date("2026-02-01T10:00:00Z"),
+              lte: new Date("2026-02-01T11:00:00Z"),
+            },
+          }),
         }),
       );
     });

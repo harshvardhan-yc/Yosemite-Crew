@@ -193,8 +193,8 @@ const itemSearchQuerySchema = z.object({
 });
 
 const catalogNearbySearchQuerySchema = z.object({
-  lat: z.coerce.number(),
-  lng: z.coerce.number(),
+  lat: z.coerce.number().optional(),
+  lng: z.coerce.number().optional(),
   radius: z.coerce.number().positive().optional(),
 });
 

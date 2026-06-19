@@ -650,7 +650,7 @@ describe("WorkspaceService", () => {
       expect.arrayContaining([
         expect.objectContaining({
           documentId: "doc-1",
-          sourceKind: "FORM_SUBMISSION",
+          sourceKind: "DOCUMENT",
         }),
       ]),
     );

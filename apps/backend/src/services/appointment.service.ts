@@ -76,7 +76,7 @@ const APPOINTMENT_STATUS_TRANSITIONS: Record<
   NO_SHOW: [],
 };
 
-const assertAppointmentStatusTransition = (
+export const assertAppointmentStatusTransition = (
   current: LegacyAppointmentStatus,
   next: AppointmentStatus,
   context: string,
@@ -93,7 +93,7 @@ const assertAppointmentStatusTransition = (
   }
 };
 
-const buildUsageCounterPayload = (doc: {
+export const buildUsageCounterPayload = (doc: {
   appointmentsUsed?: number | null;
   toolsUsed?: number | null;
   usersActiveCount?: number | null;
@@ -129,7 +129,7 @@ const assertRequestedAppointment = (
   assertAppointmentStatusTransition(status, "UPCOMING", context);
 };
 
-const resolvePaymentStatusByAppointmentIds = async (
+export const resolvePaymentStatusByAppointmentIds = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> => {
   const uniqueIds = Array.from(new Set(appointmentIds.filter(Boolean)));
@@ -145,7 +145,7 @@ const resolvePaymentStatusByAppointmentIds = async (
   return resolvePaymentStatusByAppointmentIdsFromMongo(uniqueIds);
 };
 
-const resolvePaymentStatusByAppointmentIdsFromPostgres = async (
+export const resolvePaymentStatusByAppointmentIdsFromPostgres = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> => {
   const statusMap = new Map<string, AppointmentPaymentStatus>();
@@ -192,7 +192,7 @@ const resolvePaymentStatusByAppointmentIdsFromPostgres = async (
   return statusMap;
 };
 
-const resolvePaymentStatusByAppointmentIdsFromMongo = async (
+export const resolvePaymentStatusByAppointmentIdsFromMongo = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> => {
   const statusMap = new Map<string, AppointmentPaymentStatus>();
@@ -280,7 +280,7 @@ const mapLegacyServiceToDraftItems = (
   },
 ];
 
-const resolveCatalogSelectionSafe = async (
+export const resolveCatalogSelectionSafe = async (
   selectionId: string,
   organisationId: string,
 ) => {
@@ -294,7 +294,7 @@ const resolveCatalogSelectionSafe = async (
   }
 };
 
-const requireBaseAppointmentInput = (
+export const requireBaseAppointmentInput = (
   input: AppointmentRequestInput,
   messages: {
     organisation: string;
@@ -313,7 +313,9 @@ const requireBaseAppointmentInput = (
   }
 };
 
-const validateRequestedFromMobileInput = (input: AppointmentRequestInput) => {
+export const validateRequestedFromMobileInput = (
+  input: AppointmentRequestInput,
+) => {
   requireBaseAppointmentInput(input, {
     organisation: "organisationId is required",
     patient: "Companion and parent details are required",
@@ -321,7 +323,9 @@ const validateRequestedFromMobileInput = (input: AppointmentRequestInput) => {
   });
 };
 
-const validateAppointmentFromPmsInput = (input: AppointmentRequestInput) => {
+export const validateAppointmentFromPmsInput = (
+  input: AppointmentRequestInput,
+) => {
   requireBaseAppointmentInput(input, {
     organisation: "organisationId is required.",
     patient: "Companion and parent information is required.",
@@ -1690,7 +1694,7 @@ const mapAppointmentsFromDocs = async (
   });
 };
 
-const attachPaymentStatus = (
+export const attachPaymentStatus = (
   appointment: Appointment,
   paymentStatus: AppointmentPaymentStatus | undefined,
 ): Appointment => {
@@ -1700,7 +1704,7 @@ const attachPaymentStatus = (
   return appointment;
 };
 
-const buildPaymentStatusMapForDocs = async (
+export const buildPaymentStatusMapForDocs = async (
   docs: AppointmentMongo[],
 ): Promise<Map<string, AppointmentPaymentStatus>> => {
   const appointmentIds = docs
@@ -1711,12 +1715,12 @@ const buildPaymentStatusMapForDocs = async (
   return resolvePaymentStatusByAppointmentIds(appointmentIds);
 };
 
-const buildPaymentStatusMapForAppointments = async (
+export const buildPaymentStatusMapForAppointments = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> =>
   resolvePaymentStatusByAppointmentIds(appointmentIds);
 
-const resolvePaymentStatusForAppointment = async (
+export const resolvePaymentStatusForAppointment = async (
   appointmentId: string,
 ): Promise<AppointmentPaymentStatus> => {
   const map = await resolvePaymentStatusByAppointmentIds([appointmentId]);
@@ -1991,6 +1995,13 @@ export const AppointmentService = {
         typeof (invoice as { id?: string }).id === "string"
           ? (invoice as { id: string }).id
           : (invoice as { _id?: Types.ObjectId })._id?.toString();
+
+      if (invoiceId) {
+        await InvoiceService.setInvoiceDepositTarget(
+          invoiceId,
+          invoice.totalAmount,
+        );
+      }
 
       const paymentIntent = invoiceId
         ? await StripeService.createPaymentIntentForInvoice(invoiceId)

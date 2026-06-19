@@ -12,11 +12,8 @@ router.get(
   (req, res) => TemplateController.resolve(req, res),
 );
 
-router.get(
-  "/pms/templates/library",
-  authorizeCognito,
-  requirePermission(["forms:view:any"]),
-  (req, res) => TemplateController.listLibrary(req, res),
+router.get("/pms/templates/library", authorizeCognito, (req, res) =>
+  TemplateController.listLibrary(req, res),
 );
 
 router.get(
