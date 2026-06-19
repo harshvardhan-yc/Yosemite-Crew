@@ -12,7 +12,6 @@ import CompanionOrganisationModel from "../../src/models/companion-organisation"
 import { prisma } from "../../src/config/prisma";
 import { isReadFromPostgres } from "../../src/config/read-switch";
 import logger from "../../src/utils/logger";
-import { fromFHIRInvoice } from "@yosemite-crew/types";
 
 jest.mock("../../src/services/appointment.service");
 jest.mock("../../src/services/task.service");
@@ -31,10 +30,6 @@ jest.mock("../../src/config/prisma", () => ({
   prisma: {
     patientOrganisation: { findFirst: jest.fn(), findMany: jest.fn() },
   },
-}));
-jest.mock("@yosemite-crew/types", () => ({
-  ...jest.requireActual("@yosemite-crew/types"),
-  fromFHIRInvoice: jest.fn(),
 }));
 
 const mockLean = (result: any) => ({
@@ -67,7 +62,6 @@ describe("CompanionHistoryService", () => {
     (LabResultService.list as jest.Mock).mockResolvedValue([]);
     (LabOrderService.listOrders as jest.Mock).mockResolvedValue([]);
     (InvoiceService.listForCompanion as jest.Mock).mockResolvedValue([]);
-    (fromFHIRInvoice as jest.Mock).mockImplementation((value) => value);
   });
 
   it("merges entries, sorts by occurredAt desc, and paginates with cursor", async () => {
@@ -431,28 +425,25 @@ describe("CompanionHistoryService", () => {
     expect(result.entries[0].link.appointmentId).toBe("apt-1");
   });
 
-  it("builds invoice entries from FHIR invoices", async () => {
+  it("builds invoice entries from Postgres invoices", async () => {
     (InvoiceService.listForCompanion as jest.Mock).mockResolvedValue([
-      { id: "inv-1" },
-      { id: "inv-2" },
-    ]);
-    (fromFHIRInvoice as jest.Mock)
-      .mockReturnValueOnce({
+      {
         id: "inv-1",
         organisationId,
         status: "PAID",
         totalAmount: 100,
         currency: "USD",
         createdAt: new Date("2024-01-01T00:00:00.000Z"),
-      })
-      .mockReturnValueOnce({
+      },
+      {
         id: "inv-2",
         organisationId: "other",
         status: "PAID",
         totalAmount: 50,
         currency: "USD",
         createdAt: new Date("2024-01-01T00:00:00.000Z"),
-      });
+      },
+    ]);
 
     const result = await CompanionHistoryService.listForCompanion({
       organisationId,

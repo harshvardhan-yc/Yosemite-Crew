@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AppointmentRequestDTO } from "@yosemite-crew/types";
 import { AppointmentPrismaService } from "src/services/appointment.prisma.service";
+import { InvoiceService } from "src/services/invoice.service";
 import { AuthUserMobileService } from "src/services/authUserMobile.service";
 import logger from "src/utils/logger";
 import { generatePresignedUrl } from "src/middlewares/upload";
@@ -211,6 +212,27 @@ export const AppointmentController = {
     } catch (err: unknown) {
       logger.error("Appointment check-in error", err);
       return sendAppointmentError(res, err, "Failed to check-in appointment");
+    }
+  },
+
+  markReadyForBillingForPMS: async (
+    req: Request<{ appointmentId: string }>,
+    res: Response,
+  ) => {
+    try {
+      await InvoiceService.markAppointmentReadyForBilling(
+        req.params.appointmentId,
+      );
+      return res
+        .status(200)
+        .json({ message: "Appointment marked ready for billing" });
+    } catch (err: unknown) {
+      logger.error("Appointment billing readiness error", err);
+      return sendAppointmentError(
+        res,
+        err,
+        "Failed to mark appointment ready for billing",
+      );
     }
   },
 

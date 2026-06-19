@@ -20,7 +20,9 @@ import {
   toFHIRQuestionnaireResponse,
   toFHIRQuestionnaire,
 } from "@yosemite-crew/types";
+import { templateMapper } from "src/services/fhir-template.mapper";
 import { buildPdfViewModel, renderPdf } from "./formPDF.service";
+import { FormAssignmentService } from "src/services/form-assignment.service";
 import AppointmentModel from "src/models/appointment";
 import OrganizationModel from "src/models/organization";
 import { DocumensoService } from "./documenso.service";
@@ -36,6 +38,7 @@ import {
 import { prisma } from "src/config/prisma";
 import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
 import { isReadFromPostgres } from "src/config/read-switch";
+import { TemplateService } from "src/services/template.service";
 
 export class FormServiceError extends Error {
   constructor(
@@ -112,6 +115,69 @@ const ensureNonEmptyString = (value: unknown, label: string) => {
     throw new FormServiceError(`Invalid ${label}`, 400);
   }
   return value.trim();
+};
+
+type AppointmentLookupRecord = {
+  organisationId: string;
+  formIds?: string[] | undefined;
+  patient?: unknown;
+};
+
+type AppointmentLookupResult = {
+  appointment: AppointmentLookupRecord;
+  source: "postgres" | "mongo";
+};
+
+const normalizeAppointmentId = (appointmentId: string) =>
+  ensureNonEmptyString(appointmentId, "appointmentId");
+
+const parseAppointmentObjectId = (appointmentId: string) =>
+  Types.ObjectId.isValid(appointmentId)
+    ? new Types.ObjectId(appointmentId)
+    : null;
+
+const loadAppointmentForFormsRecord = async (
+  appointmentId: string,
+): Promise<AppointmentLookupResult | null> => {
+  const normalizedId = normalizeAppointmentId(appointmentId);
+
+  const postgresAppointment = await prisma.appointment.findUnique({
+    where: { id: normalizedId },
+    select: { organisationId: true, formIds: true, patient: true },
+  });
+  if (postgresAppointment) {
+    return {
+      appointment: postgresAppointment,
+      source: "postgres",
+    };
+  }
+
+  const mongoObjectId = parseAppointmentObjectId(normalizedId);
+  if (!mongoObjectId) {
+    return null;
+  }
+
+  const mongoAppointment =
+    await AppointmentModel.findById(mongoObjectId).lean();
+  if (!mongoAppointment) {
+    return null;
+  }
+
+  const companion =
+    mongoAppointment.companion && typeof mongoAppointment.companion === "object"
+      ? (mongoAppointment.companion as { id?: string | null })
+      : null;
+
+  return {
+    appointment: {
+      organisationId: mongoAppointment.organisationId,
+      formIds: Array.isArray(mongoAppointment.formIds)
+        ? mongoAppointment.formIds.map(String)
+        : undefined,
+      patient: companion ?? null,
+    },
+    source: "mongo",
+  };
 };
 
 type NormalizableObjectId =
@@ -647,19 +713,6 @@ const recordFormSubmittedAuditTrailInMongo = async (params: {
   });
 };
 
-const loadAppointmentForForms = async (appointmentId: string) => {
-  if (isReadFromPostgres()) {
-    return prisma.appointment.findUnique({
-      where: { id: appointmentId },
-      select: { organisationId: true, patient: true },
-    });
-  }
-
-  return AppointmentModel.findById(appointmentId)
-    .select({ organisationId: 1, companion: 1 })
-    .lean();
-};
-
 const assertSoapAppointmentAccess = (params: {
   appointment: { organisationId: string; patient?: unknown };
   requesterOrgId?: string;
@@ -880,6 +933,87 @@ const buildAppointmentFormItems = async (params: {
   }
 
   return items;
+};
+
+const buildTemplateAppointmentFormItems = async (params: {
+  appointmentId: string;
+  organisationId: string;
+  isPMS?: boolean;
+}) => {
+  if (!isReadFromPostgres()) {
+    return null;
+  }
+
+  const assignments = await FormAssignmentService.listForAppointment(
+    params.organisationId,
+    params.appointmentId,
+  );
+
+  if (!assignments.length) {
+    return null;
+  }
+
+  const uniqueTemplateIds = [
+    ...new Set(assignments.map((item) => item.templateId)),
+  ];
+  const templates = await Promise.all(
+    uniqueTemplateIds.map(
+      async (templateId) =>
+        [
+          templateId,
+          await TemplateService.getById(templateId, params.organisationId),
+        ] as const,
+    ),
+  );
+  const templateMap = new Map(templates);
+
+  const instances = await prisma.templateInstance.findMany({
+    where: {
+      organisationId: params.organisationId,
+      appointmentId: params.appointmentId,
+      templateId: { in: uniqueTemplateIds },
+    },
+  });
+
+  const instanceMap = new Map(
+    instances.map((instance) => [
+      `${instance.templateId}:${instance.templateVersion}`,
+      instance,
+    ]),
+  );
+
+  const includeQuestionnaire = !params.isPMS;
+  const items = assignments
+    .map((assignment) => {
+      const template = templateMap.get(assignment.templateId);
+      if (!template) return null;
+
+      const questionnaire = includeQuestionnaire
+        ? templateMapper.templateToQuestionnaire(template)
+        : undefined;
+      const instance = instanceMap.get(
+        `${assignment.templateId}:${assignment.templateVersion}`,
+      );
+      const questionnaireResponse = instance
+        ? templateMapper.templateInstanceToQuestionnaireResponse(
+            instance,
+            template,
+          )
+        : undefined;
+
+      return {
+        ...assignment,
+        status: questionnaireResponse ? "completed" : "pending",
+        questionnaire,
+        questionnaireResponse,
+      };
+    })
+    .filter((item) => item !== null);
+
+  return {
+    appointmentId: params.appointmentId,
+    items,
+  };
 };
 
 const resolveAppointmentParentId = (
@@ -1920,16 +2054,14 @@ export const FormService = {
       requesterParentId?: string;
     },
   ) {
-    const appointmentObjectId = ensureObjectId(
-      appointmentId,
-      "appointmentId",
-    ).toString();
+    const appointmentLookup =
+      await loadAppointmentForFormsRecord(appointmentId);
 
-    const appointment = await loadAppointmentForForms(appointmentObjectId);
-
-    if (!appointment) {
+    if (!appointmentLookup) {
       throw new FormServiceError("Appointment not found", 404);
     }
+    const appointment = appointmentLookup.appointment;
+    const appointmentKey = normalizeAppointmentId(appointmentId);
 
     assertSoapAppointmentAccess({
       appointment,
@@ -1940,17 +2072,17 @@ export const FormService = {
     const orgType = await resolveOrganizationType(appointment.organisationId);
     if (orgType && orgType !== "HOSPITAL") {
       return {
-        appointmentId: appointmentObjectId,
+        appointmentId: appointmentKey,
         soapNotes: {},
       };
     }
 
-    const submissions = await loadSoapSubmissions(appointmentObjectId);
+    const submissions = await loadSoapSubmissions(appointmentKey);
     const grouped = initSoapGroup();
 
     if (!submissions.length) {
       return {
-        appointmentId: appointmentObjectId,
+        appointmentId: appointmentKey,
         soapNotes: grouped,
       };
     }
@@ -1964,7 +2096,7 @@ export const FormService = {
     });
 
     return {
-      appointmentId: appointmentObjectId,
+      appointmentId: appointmentKey,
       soapNotes,
     };
   },
@@ -2147,20 +2279,14 @@ export const FormService = {
     isPMS?: boolean;
     viewerParentId?: string;
   }) {
-    const appointmentId = ensureObjectId(
+    const appointmentLookup = await loadAppointmentForFormsRecord(
       params.appointmentId,
-      "appointmentId",
-    ).toString();
-
-    const appointment = isReadFromPostgres()
-      ? await prisma.appointment.findUnique({
-          where: { id: appointmentId },
-          select: { organisationId: true, formIds: true, patient: true },
-        })
-      : await AppointmentModel.findById(appointmentId).lean();
-    if (!appointment) {
+    );
+    if (!appointmentLookup) {
       throw new FormServiceError("Appointment not found", 404);
     }
+    const appointment = appointmentLookup.appointment;
+    const appointmentId = normalizeAppointmentId(params.appointmentId);
     if (params.viewerParentId) {
       const appointmentParentId = resolveAppointmentParentId(appointment);
       if (
@@ -2172,6 +2298,19 @@ export const FormService = {
     }
 
     const orgType = await resolveOrganizationType(appointment.organisationId);
+
+    const templateBackedForms =
+      appointmentLookup.source === "postgres"
+        ? await buildTemplateAppointmentFormItems({
+            appointmentId,
+            organisationId: appointment.organisationId,
+            isPMS: params.isPMS,
+          })
+        : null;
+
+    if (templateBackedForms) {
+      return templateBackedForms;
+    }
 
     const attachedFormIds = (appointment.formIds ?? []).map(String);
     const submissionFormIdStrings =

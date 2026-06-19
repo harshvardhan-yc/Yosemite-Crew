@@ -15,6 +15,7 @@ import {
 } from "@yosemite-crew/types";
 import { prisma } from "src/config/prisma";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
+import { InvoiceService } from "./invoice.service";
 
 type AppointmentStatus = AppointmentDomain["status"];
 
@@ -1144,6 +1145,8 @@ export const AppointmentPrismaService = {
       });
     });
 
+    await InvoiceService.markAppointmentReadyForBilling(appointmentId);
+
     return toResponse(updated as AppointmentRow);
   },
 
@@ -1275,7 +1278,7 @@ export const AppointmentPrismaService = {
       organisationId: row.organisationId,
     });
     assertSelectionSupportsAppointmentKind(selection, appointmentKind);
-    const patch = applyDtoPatch(row, dto, row.status);
+    const patch = applyDtoPatch(row, dto, input.status ?? row.status);
     const updated = await prisma.$transaction(async (tx) => {
       const patientId = getPatientId(input.patient);
       const resolvedCaseId = await resolveCaseContext({
@@ -1340,6 +1343,10 @@ export const AppointmentPrismaService = {
         },
       });
     });
+
+    if (patch.status === "COMPLETED") {
+      await InvoiceService.markAppointmentReadyForBilling(appointmentId);
+    }
 
     return toResponse(updated as AppointmentRow);
   },

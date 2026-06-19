@@ -91,6 +91,9 @@ describe("template.router", () => {
     expect(libraryRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
+    expect(libraryRoute?.stack.map((layer) => layer.handle)).not.toContain(
+      requirePermission.mock.results[0].value,
+    );
     expect(organisationRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );

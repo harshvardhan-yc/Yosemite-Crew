@@ -2,8 +2,9 @@ import { Request, Response } from "express";
 import {
   ExpenseService,
   ExternalExpenseServiceError,
+  type ExternalExpenseInput,
+  type ExternalExpenseUpdateInput,
 } from "../../services/expense.service";
-import type { ExternalExpenseMongo } from "src/models/expense";
 import logger from "src/utils/logger";
 
 export const ExpenseController = {
@@ -24,10 +25,7 @@ export const ExpenseController = {
 
   createExpense: async (req: Request, res: Response) => {
     try {
-      const expenseData = req.body as Omit<
-        ExternalExpenseMongo,
-        "createdAt" | "updatedAt"
-      >;
+      const expenseData = req.body as ExternalExpenseInput;
       const newExpense = await ExpenseService.createExpense(expenseData);
       res.status(201).json(newExpense);
     } catch (error) {
@@ -42,7 +40,7 @@ export const ExpenseController = {
   updateExpense: async (req: Request, res: Response) => {
     try {
       const { expenseId } = req.params;
-      const updateData = req.body as Partial<ExternalExpenseMongo>;
+      const updateData = req.body as ExternalExpenseUpdateInput;
       const updatedExpense = await ExpenseService.updateExpense(
         expenseId,
         updateData,
