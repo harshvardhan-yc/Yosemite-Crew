@@ -7,6 +7,7 @@ import {
 import { FinanceSubscriptionService } from "src/services/finance/subscription";
 import { FinanceEventService } from "src/services/finance/events";
 import { StripeController } from "src/controllers/web/stripe.controller";
+import { StripeService } from "src/services/stripe.service";
 import {
   InvoiceService,
   InvoiceServiceError,
@@ -437,7 +438,7 @@ export const FinanceController = {
     }
   },
 
-  async getInvoiceByPaymentIntentId(this: void, req: Request, res: Response) {
+  async retrievePaymentIntent(this: void, req: Request, res: Response) {
     try {
       const paymentIntentId = req.params.paymentIntentId;
       if (!paymentIntentId) {
@@ -446,19 +447,12 @@ export const FinanceController = {
           .json({ message: "Payment Intent Id is required" });
       }
 
-      const organisationId = (req as OrgRequest).organisationId;
-      const invoice = await InvoiceService.getByPaymentIntentId(
-        paymentIntentId,
-        organisationId,
-      );
+      const paymentIntent =
+        await StripeService.retrievePaymentIntent(paymentIntentId);
 
-      if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
-      }
-
-      return res.status(200).json(toFinanceSuccess(invoice));
+      return res.status(200).json(toFinanceSuccess(paymentIntent));
     } catch (error) {
-      logger.error("Error fetching invoice by payment intent", error);
+      logger.error("Error retrieving payment intent", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   },

@@ -39,7 +39,7 @@ const FinanceController = {
   createInvoice: jest.fn(),
   addInvoiceItems: jest.fn(),
   getInvoiceById: jest.fn(),
-  getInvoiceByPaymentIntentId: jest.fn(),
+  retrievePaymentIntent: jest.fn(),
   listInvoicesForAppointment: jest.fn(),
   listInvoicesForParent: jest.fn(),
   bootstrapInvoiceForAppointment: jest.fn(),
@@ -139,6 +139,11 @@ describe("finance.router", () => {
     expect(sessionRoute?.stack.map((layer) => layer.handle)).toContain(
       FinanceController.createInvoicePaymentSession,
     );
+    expect(
+      findRoute("/invoices/payment-intent/:paymentIntentId", "get")?.stack.map(
+        (layer) => layer.handle,
+      ),
+    ).toContain(FinanceController.retrievePaymentIntent);
     expect(paymentRoute?.stack.map((layer) => layer.handle)).toContain(
       FinanceController.recordInvoicePayment,
     );
@@ -175,6 +180,11 @@ describe("finance.router", () => {
     expect(
       mobilePaymentSessionRoute?.stack.map((layer) => layer.handle),
     ).toContain(FinanceController.createMobileInvoicePaymentSession);
+    expect(
+      findRoute("/mobile/payment-intent/:paymentIntentId", "get")?.stack.map(
+        (layer) => layer.handle,
+      ),
+    ).toContain(FinanceController.retrievePaymentIntent);
     expect(rateLimit).toHaveBeenCalledTimes(1);
     expect(requirePermission).toHaveBeenCalledWith("billing:view:any");
     expect(requirePermission).toHaveBeenCalledWith("billing:edit:any");

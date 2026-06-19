@@ -171,7 +171,7 @@ router.get(
   authorizeCognito,
   withPaymentIntentOrgPermissions(),
   requirePermission("billing:view:any"),
-  FinanceController.getInvoiceByPaymentIntentId,
+  FinanceController.retrievePaymentIntent,
 );
 
 router.post(
@@ -258,7 +258,7 @@ router.post(
 router.get(
   "/mobile/payment-intent/:paymentIntentId",
   authorizeCognitoMobile,
-  FinanceController.getInvoiceByPaymentIntentId,
+  FinanceController.retrievePaymentIntent,
 );
 
 router.get(

@@ -253,6 +253,10 @@ describe("finance tax helpers", () => {
 
     expect(createPreview).toHaveBeenCalledWith(
       expect.objectContaining({
+        issuer: expect.objectContaining({
+          type: "account",
+          account: "acct_1",
+        }),
         automatic_tax: expect.objectContaining({
           liability: expect.objectContaining({
             type: "account",
