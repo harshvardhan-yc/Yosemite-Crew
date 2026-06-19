@@ -1036,6 +1036,58 @@ describe("FinancePaymentService", () => {
     });
   });
 
+  it("charges the current invoice balance when discounts change the raw item total", async () => {
+    const stripeClient = {
+      checkout: { sessions: { create: jest.fn() } },
+      paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
+      refunds: { create: jest.fn() },
+    };
+    __setFinanceStripeClientForTests(stripeClient);
+
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_discounted",
+      totalAmount: 90,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      organisationId: "org_1",
+      items: [{ name: "Consult", unitPrice: 100, quantity: 1 }],
+    });
+    (prisma.paymentAttempt.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    (prisma.payment.findMany as jest.Mock).mockResolvedValueOnce([]);
+    (prisma.creditNote.findMany as jest.Mock).mockResolvedValueOnce([]);
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+      stripeAccountId: "acct_discounted",
+    });
+    (stripeClient.checkout.sessions.create as jest.Mock).mockResolvedValueOnce({
+      id: "cs_discounted",
+      url: "https://checkout",
+    });
+    (prisma.paymentAttempt.create as jest.Mock).mockResolvedValueOnce({
+      id: "pa_discounted",
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_discounted",
+    });
+
+    await FinancePaymentService.createCheckoutSessionForInvoice(
+      "inv_discounted",
+    );
+
+    expect(stripeClient.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({ unit_amount: 9000 }),
+            quantity: 1,
+          }),
+        ],
+      }),
+    );
+  });
+
   it("covers payment intent branches", async () => {
     (prisma.invoice.findUnique as jest.Mock)
       .mockResolvedValueOnce({

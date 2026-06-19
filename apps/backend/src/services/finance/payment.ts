@@ -404,8 +404,21 @@ export const FinancePaymentService = {
       throw new FinancePaymentError("Invoice items are missing", 400);
     }
 
+    const rawItemTotal = roundMoney(
+      items.reduce((sum: number, item) => {
+        const unitPrice =
+          typeof (item as { unitPrice?: unknown }).unitPrice === "number"
+            ? (item as { unitPrice: number }).unitPrice
+            : 0;
+        const quantity =
+          typeof (item as { quantity?: unknown }).quantity === "number"
+            ? (item as { quantity: number }).quantity
+            : 0;
+        return sum + unitPrice * quantity;
+      }, 0),
+    );
     const useBalanceLineItem =
-      summary.balance < roundMoney(invoice.totalAmount) ||
+      rawItemTotal !== roundMoney(summary.balance) ||
       summary.paid > 0 ||
       summary.credited > 0;
     const lineItems = useBalanceLineItem
