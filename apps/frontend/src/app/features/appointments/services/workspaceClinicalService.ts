@@ -205,7 +205,11 @@ const soapNoteFromComposition = (
     assessment: String(input.assessment ?? ''),
     plan: String(input.plan ?? ''),
     templateId: input.templateId,
-    status: resource.status === 'final' ? 'COMPLETED' : 'IN_PROGRESS',
+    // A SOAP note that came back from the backend is a saved record and belongs in the
+    // "All SOAP notes" history, not the active draft. The backend stores saved notes as
+    // `preliminary` (only `$finalize` flips it to `final`), so persisted id — not status —
+    // is the signal that this is a past entry.
+    status: resource.id ? 'COMPLETED' : 'IN_PROGRESS',
     signedAt: resource.date,
     createdAt: resource.date ?? new Date().toISOString(),
   };
@@ -318,7 +322,11 @@ export const saveSoapNote = async (context: ClinicalContext, note: SoapNoteEntry
     ])
   );
   const endpoint = `/fhir/v1/clinical-artifact/organisation/${context.organisationId}/soap-note`;
-  const res = isPersistedArtifactId(note.id)
+  // SOAP notes are a legal medical record: a signed (COMPLETED/final) note is immutable and is
+  // never PATCHed — corrections go through a separate amendment ($amend). Only an unsigned draft
+  // that was already persisted may be PATCHed; everything else creates a new finalized note.
+  const canPatchDraft = isPersistedArtifactId(note.id) && note.status !== 'COMPLETED';
+  const res = canPatchDraft
     ? await patchData<Composition>(`${endpoint}/${note.id}`, body)
     : await postData<Composition>(endpoint, body);
   return res.data;
@@ -415,9 +423,10 @@ export const saveDischargeSummaryArtifact = async (
     ])
   );
   const endpoint = `/fhir/v1/clinical-artifact/organisation/${context.organisationId}/discharge-summary`;
-  const res = isPersistedArtifactId(context.dischargeSummaryId)
-    ? await patchData<Composition>(`${endpoint}/${context.dischargeSummaryId}`, body)
-    : await postData<Composition>(endpoint, body);
+  // A persisted discharge summary is a saved clinical record; saving again creates a new one
+  // (append-only) rather than PATCHing a record the backend treats as immutable. Only an
+  // explicitly editable draft (not yet persisted) is created here.
+  const res = await postData<Composition>(endpoint, body);
   return res.data;
 };
 

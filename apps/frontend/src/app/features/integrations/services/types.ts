@@ -3,7 +3,9 @@ export type IntegrationProvider = 'IDEXX' | 'MERCK_MANUALS';
 export type IntegrationStatus = 'enabled' | 'disabled' | 'error' | 'pending';
 
 export type OrgIntegration = {
-  _id: string;
+  /** Backend now returns `id`; `_id` retained for backward compatibility with older payloads. */
+  id?: string;
+  _id?: string;
   organisationId: string;
   provider: IntegrationProvider;
   status: IntegrationStatus;

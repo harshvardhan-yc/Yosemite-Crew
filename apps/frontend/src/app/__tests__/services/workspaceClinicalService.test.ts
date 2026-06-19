@@ -297,9 +297,8 @@ describe('workspaceClinicalService', () => {
     expect(vital.id).toBe('vital-enc');
   });
 
-  it('creates and updates discharge summaries through clinical artifacts', async () => {
-    postDataMock.mockResolvedValueOnce({ data: { resourceType: 'Composition', id: 'dc-1' } });
-    patchDataMock.mockResolvedValueOnce({ data: { resourceType: 'Composition', id: 'dc-1' } });
+  it('always creates (append-only) discharge summaries through clinical artifacts', async () => {
+    postDataMock.mockResolvedValue({ data: { resourceType: 'Composition', id: 'dc-1' } });
 
     await saveDischargeSummaryArtifact(
       {
@@ -310,6 +309,8 @@ describe('workspaceClinicalService', () => {
       '<p>Go home</p>',
       '2026-04-25T09:00:00.000Z'
     );
+    // Even with a persisted id, a saved discharge summary is immutable: saving again POSTs a new
+    // record rather than PATCHing the existing one (which the backend rejects as not-found).
     await saveDischargeSummaryArtifact(
       {
         organisationId: 'org-1',
@@ -324,10 +325,8 @@ describe('workspaceClinicalService', () => {
       '/fhir/v1/clinical-artifact/organisation/org-1/discharge-summary',
       expect.objectContaining({ resourceType: 'Composition', appointmentId: 'appt-1' })
     );
-    expect(patchDataMock).toHaveBeenCalledWith(
-      '/fhir/v1/clinical-artifact/organisation/org-1/discharge-summary/dc-1',
-      expect.objectContaining({ resourceType: 'Composition' })
-    );
+    expect(postDataMock).toHaveBeenCalledTimes(2);
+    expect(patchDataMock).not.toHaveBeenCalled();
   });
 
   it('loads encounter-scoped discharge summaries and gets a discharge summary by id', async () => {
