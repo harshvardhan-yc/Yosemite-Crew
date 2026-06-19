@@ -1112,6 +1112,7 @@ export const InvoiceService = {
         status: { in: ["AWAITING_PAYMENT", "PENDING"] },
       },
       orderBy: { createdAt: "desc" },
+      include: { taxSnapshot: true },
     });
 
     if (!invoice) {
@@ -1124,6 +1125,13 @@ export const InvoiceService = {
       invoice.visitBillingStage === "SETTLED"
     ) {
       return toInvoiceRecord(invoice);
+    }
+
+    if (!invoice.finalizedAt) {
+      await this.finalizeTaxForInvoice(
+        invoice.id,
+        invoice.taxSnapshot?.provider ?? undefined,
+      );
     }
 
     const updated = await prisma.invoice.update({
@@ -1187,7 +1195,10 @@ export const InvoiceService = {
     return docs.map((d) => toInvoiceRecord(d));
   },
 
-  async bootstrapForAppointment(appointmentId: string) {
+  async bootstrapForAppointment(
+    appointmentId: string,
+    paymentCollectionMethod: CreateInvoiceInput["paymentCollectionMethod"] = "PAYMENT_LINK",
+  ) {
     const appointment = await prisma.appointment.findUnique({
       where: { id: appointmentId },
       select: {
@@ -1286,7 +1297,7 @@ export const InvoiceService = {
       organisationId: appointment.organisationId,
       items,
       notes: appointment.concern ?? undefined,
-      paymentCollectionMethod: "PAYMENT_LINK",
+      paymentCollectionMethod,
     });
   },
 
@@ -1476,7 +1487,12 @@ export const InvoiceService = {
       data: {
         finalizedAt,
         taxProvider: totals.taxSnapshot.provider,
+        subtotal: totals.subtotal,
+        discountTotal: totals.discountTotal,
+        invoiceDiscountTotal: totals.invoiceDiscountTotal,
         taxTotal: totals.taxTotal,
+        taxPercent: totals.taxPercent,
+        totalAmount: totals.totalAmount,
         taxSnapshot: {
           upsert: {
             create: {

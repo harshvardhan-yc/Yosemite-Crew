@@ -262,6 +262,42 @@ describe("InvoiceService", () => {
         currency: "usd",
         paymentCollectionMethod: "PAYMENT_LINK",
       });
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_visit",
+      appointmentId,
+      status: "AWAITING_PAYMENT",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+      visitBillingStage: "DRAFT",
+      depositTargetAmount: 0,
+      depositCollectedAmount: 0,
+      totalAmount: 100,
+      currency: "usd",
+      paymentCollectionMethod: "PAYMENT_AT_CLINIC",
+      items: [
+        {
+          name: "Consult",
+          description: "Consult",
+          quantity: 1,
+          unitPrice: 100,
+          total: 100,
+        },
+      ],
+      subtotal: 100,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 18,
+      taxPercent: 18,
+      taxSnapshot: {
+        provider: "STRIPE",
+        taxBehavior: "EXCLUSIVE",
+      },
+      finalizedAt: null,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
       id: "inv_visit",
       appointmentId,
@@ -270,9 +306,37 @@ describe("InvoiceService", () => {
       visitBillingStage: "READY_FOR_BILLING",
       depositTargetAmount: 0,
       depositCollectedAmount: 0,
-      totalAmount: 100,
+      totalAmount: 118,
       currency: "usd",
       paymentCollectionMethod: "PAYMENT_AT_CLINIC",
+      subtotal: 100,
+      discountTotal: 0,
+      invoiceDiscountTotal: 0,
+      taxTotal: 18,
+      taxPercent: 18,
+      taxProvider: "STRIPE",
+      finalizedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_visit",
+      appointmentId,
+      status: "AWAITING_PAYMENT",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+      visitBillingStage: "READY_FOR_BILLING",
+      depositTargetAmount: 0,
+      depositCollectedAmount: 0,
+      totalAmount: 118,
+      currency: "usd",
+      paymentCollectionMethod: "PAYMENT_AT_CLINIC",
+      subtotal: 100,
+      discountTotal: 0,
+      invoiceDiscountTotal: 0,
+      taxTotal: 18,
+      taxPercent: 18,
+      taxProvider: "STRIPE",
+      finalizedAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -292,6 +356,7 @@ describe("InvoiceService", () => {
       }),
     );
     expect(updated?.visitBillingStage).toBe("READY_FOR_BILLING");
+    expect(updated?.totalAmount).toBe(118);
     expect(skipped?.billingCollectionMode).toBe("PREPAY_AT_BOOKING");
   });
 
@@ -606,7 +671,10 @@ describe("InvoiceService", () => {
         data: expect.objectContaining({
           finalizedAt: expect.any(Date),
           taxProvider: "STRIPE",
+          subtotal: 100,
+          totalAmount: 118,
           taxTotal: 18,
+          taxPercent: 18,
           taxSnapshot: expect.objectContaining({
             upsert: expect.objectContaining({
               create: expect.objectContaining({
