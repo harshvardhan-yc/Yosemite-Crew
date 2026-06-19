@@ -195,6 +195,29 @@ export function withInvoiceOrgPermissions() {
   };
 }
 
+export function withPaymentOrgPermissions() {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const paymentId = req.params.paymentId;
+    if (!paymentId) {
+      return res.status(400).json({ message: "Missing paymentId" });
+    }
+
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: { invoice: { select: { organisationId: true } } },
+    });
+
+    const organisationId = payment?.invoice?.organisationId ?? null;
+    if (!organisationId) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    req.params.organisationId = organisationId.toString();
+
+    return withOrgPermissions()(req, res, next);
+  };
+}
+
 export function withPaymentIntentOrgPermissions() {
   return async (req: Request, res: Response, next: NextFunction) => {
     const paymentIntentId = req.params.paymentIntentId;

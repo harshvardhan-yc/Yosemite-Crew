@@ -1,22 +1,34 @@
 import { Router } from "express";
-import bodyParser from "body-parser";
+import rateLimit from "express-rate-limit";
 import { authorizeCognito, authorizeCognitoMobile } from "src/middlewares/auth";
 import {
   requirePermission,
   withOrgPermissions,
   withAppointmentOrgPermissions,
   withInvoiceOrgPermissions,
+  withPaymentOrgPermissions,
   withPaymentIntentOrgPermissions,
 } from "src/middlewares/rbac";
 import { FinanceController } from "src/controllers/app/finance.controller";
 
 const router = Router();
 
-router.post(
-  "/webhooks/:provider",
-  bodyParser.raw({ type: "application/json" }),
-  FinanceController.webhook,
-);
+const financeAppointmentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const orgId =
+      (req.params.organisationId as string | undefined) ??
+      (req.headers["x-org-id"] as string | undefined) ??
+      "unknown-org";
+    const userId = (req as { userId?: string }).userId ?? "unknown-user";
+    const appointmentId = req.params.appointmentId ?? "unknown-appointment";
+
+    return `${orgId}:${userId}:${appointmentId}`;
+  },
+});
 
 router.get(
   "/organisation/:organisationId/subscription/seat-sync-plan",
@@ -122,9 +134,21 @@ router.post(
   FinanceController.markAppointmentReadyForBilling,
 );
 
-router.get("/invoices", authorizeCognito, FinanceController.listInvoices);
+router.get(
+  "/invoices",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("billing:view:any"),
+  FinanceController.listInvoices,
+);
 
-router.post("/invoices", authorizeCognito, FinanceController.createInvoice);
+router.post(
+  "/invoices",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("billing:edit:any"),
+  FinanceController.createInvoice,
+);
 
 router.post(
   "/invoices/:invoiceId/lines",
@@ -212,9 +236,10 @@ router.get(
   FinanceController.listInvoicesForParent,
 );
 
-router.get(
+router.post(
   "/mobile/appointments/:appointmentId/invoices",
   authorizeCognitoMobile,
+  financeAppointmentLimiter,
   FinanceController.listInvoicesForAppointment,
 );
 
@@ -239,7 +264,7 @@ router.get(
 router.post(
   "/payments/:paymentId/refunds",
   authorizeCognito,
-  withInvoiceOrgPermissions(),
+  withPaymentOrgPermissions(),
   requirePermission("billing:edit:any"),
   FinanceController.refundPayment,
 );

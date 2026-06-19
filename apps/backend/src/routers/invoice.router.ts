@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { InvoiceController } from "../controllers/app/invoice.controller";
 import { authorizeCognito, authorizeCognitoMobile } from "src/middlewares/auth";
 import {
@@ -8,14 +9,34 @@ import {
   withInvoiceOrgPermissions,
   withPaymentIntentOrgPermissions,
 } from "src/middlewares/rbac";
+import type { OrgRequest } from "src/middlewares/rbac";
 
 const router = Router();
+
+const invoiceActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const orgId =
+      (req as OrgRequest).organisationId ??
+      (req.headers["x-org-id"] as string | undefined) ??
+      "unknown-org";
+    const userId = (req as { userId?: string }).userId ?? "unknown-user";
+    const invoiceId = req.params.invoiceId ?? "unknown-invoice";
+    const appointmentId = req.params.appointmentId ?? "unknown-appointment";
+
+    return `${orgId}:${userId}:${invoiceId}:${appointmentId}`;
+  },
+});
 
 // Routes for Mobile
 
 router.post(
   "/mobile/appointment/:appointmentId",
   authorizeCognitoMobile,
+  invoiceActionLimiter,
   InvoiceController.listInvoicesForAppointment,
 );
 
@@ -44,6 +65,7 @@ router.post(
 router.post(
   "/appointment/:appointmentId",
   authorizeCognito,
+  invoiceActionLimiter,
   withAppointmentOrgPermissions(),
   requirePermission("billing:view:any"),
   InvoiceController.listInvoicesForAppointment,
@@ -103,6 +125,7 @@ router.patch(
 router.post(
   "/:invoiceId/credit-notes",
   authorizeCognito,
+  invoiceActionLimiter,
   withInvoiceOrgPermissions(),
   requirePermission("billing:edit:any"),
   InvoiceController.issueCreditNote,
@@ -111,6 +134,7 @@ router.post(
 router.post(
   "/:invoiceId/credit-notes/:creditNoteId/void",
   authorizeCognito,
+  invoiceActionLimiter,
   withInvoiceOrgPermissions(),
   requirePermission("billing:edit:any"),
   InvoiceController.voidCreditNote,

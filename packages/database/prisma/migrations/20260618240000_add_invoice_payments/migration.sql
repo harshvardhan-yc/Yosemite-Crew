@@ -98,3 +98,147 @@ FOREIGN KEY ("paymentAttemptId") REFERENCES "PaymentAttempt"("id") ON DELETE SET
 ALTER TABLE "Refund"
 ADD CONSTRAINT "Refund_paymentId_fkey"
 FOREIGN KEY ("paymentId") REFERENCES "Payment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'Invoice'
+      AND column_name = 'stripePaymentIntentId'
+  ) THEN
+    INSERT INTO "PaymentAttempt" (
+      "id",
+      "invoiceId",
+      "provider",
+      "settlementChannel",
+      "providerPaymentIntentId",
+      "providerCheckoutSessionId",
+      "providerPaymentLinkId",
+      "status",
+      "amountRequested",
+      "amountCaptured",
+      "amountApplied",
+      "currency",
+      "collectionMode",
+      "isOffline",
+      "isPartial",
+      "rawProviderPayload",
+      "createdAt",
+      "updatedAt"
+    )
+    SELECT
+      CONCAT('legacy-payment-attempt-', i."id"),
+      i."id",
+      'STRIPE'::"PaymentProvider",
+      'STRIPE'::"SettlementChannel",
+      i."stripePaymentIntentId",
+      i."stripeCheckoutSessionId",
+      i."stripePaymentLinkId",
+      CASE
+        WHEN i."stripeChargeId" IS NOT NULL THEN 'SUCCEEDED'::"PaymentAttemptStatus"
+        WHEN i."stripePaymentIntentId" IS NOT NULL
+          OR i."stripeCheckoutSessionId" IS NOT NULL
+          OR i."stripePaymentLinkId" IS NOT NULL
+          THEN 'PROCESSING'::"PaymentAttemptStatus"
+        ELSE 'REQUIRES_PAYMENT_METHOD'::"PaymentAttemptStatus"
+      END,
+      CASE WHEN i."stripeChargeId" IS NOT NULL THEN i."totalAmount" ELSE 0 END,
+      CASE WHEN i."stripeChargeId" IS NOT NULL THEN i."totalAmount" ELSE 0 END,
+      CASE WHEN i."stripeChargeId" IS NOT NULL THEN i."totalAmount" ELSE 0 END,
+      i."currency",
+      i."billingCollectionMode",
+      FALSE,
+      FALSE,
+      jsonb_strip_nulls(
+        jsonb_build_object(
+          'source', 'legacy-invoice-stripe-columns',
+          'invoiceId', i."id",
+          'stripePaymentIntentId', i."stripePaymentIntentId",
+          'stripePaymentLinkId', i."stripePaymentLinkId",
+          'stripeInvoiceId', i."stripeInvoiceId",
+          'stripeCustomerId', i."stripeCustomerId",
+          'stripeChargeId', i."stripeChargeId",
+          'stripeReceiptUrl', i."stripeReceiptUrl",
+          'stripeCheckoutSessionId', i."stripeCheckoutSessionId",
+          'stripeCheckoutUrl', i."stripeCheckoutUrl"
+        )
+      ),
+      i."createdAt",
+      i."updatedAt"
+    FROM "Invoice" i
+    WHERE i."stripePaymentIntentId" IS NOT NULL
+      OR i."stripePaymentLinkId" IS NOT NULL
+      OR i."stripeInvoiceId" IS NOT NULL
+      OR i."stripeCustomerId" IS NOT NULL
+      OR i."stripeChargeId" IS NOT NULL
+      OR i."stripeReceiptUrl" IS NOT NULL
+      OR i."stripeCheckoutSessionId" IS NOT NULL
+      OR i."stripeCheckoutUrl" IS NOT NULL
+    ON CONFLICT ("id") DO NOTHING;
+
+    INSERT INTO "Payment" (
+      "id",
+      "invoiceId",
+      "paymentAttemptId",
+      "provider",
+      "settlementChannel",
+      "collectionMode",
+      "providerPaymentId",
+      "amount",
+      "currency",
+      "status",
+      "paidAt",
+      "receiptUrl",
+      "rawProviderPayload",
+      "createdAt",
+      "updatedAt"
+    )
+    SELECT
+      CONCAT('legacy-payment-', i."id"),
+      i."id",
+      CONCAT('legacy-payment-attempt-', i."id"),
+      'STRIPE'::"PaymentProvider",
+      'STRIPE'::"SettlementChannel",
+      i."billingCollectionMode",
+      i."stripeChargeId",
+      i."totalAmount",
+      i."currency",
+      CASE
+        WHEN i."status" = 'REFUNDED' THEN 'REFUNDED'::"PaymentStatus"
+        ELSE 'SUCCEEDED'::"PaymentStatus"
+      END,
+      COALESCE(i."paidAt", i."updatedAt"),
+      i."stripeReceiptUrl",
+      jsonb_strip_nulls(
+        jsonb_build_object(
+          'source', 'legacy-invoice-stripe-columns',
+          'invoiceId', i."id",
+          'stripePaymentIntentId', i."stripePaymentIntentId",
+          'stripePaymentLinkId', i."stripePaymentLinkId",
+          'stripeInvoiceId', i."stripeInvoiceId",
+          'stripeCustomerId', i."stripeCustomerId",
+          'stripeChargeId', i."stripeChargeId",
+          'stripeReceiptUrl', i."stripeReceiptUrl",
+          'stripeCheckoutSessionId', i."stripeCheckoutSessionId",
+          'stripeCheckoutUrl', i."stripeCheckoutUrl"
+        )
+      ),
+      i."createdAt",
+      i."updatedAt"
+    FROM "Invoice" i
+    WHERE i."stripeChargeId" IS NOT NULL
+    ON CONFLICT ("id") DO NOTHING;
+  END IF;
+END $$;
+
+ALTER TABLE "Invoice"
+  DROP COLUMN IF EXISTS "stripePaymentIntentId",
+  DROP COLUMN IF EXISTS "stripePaymentLinkId",
+  DROP COLUMN IF EXISTS "stripeInvoiceId",
+  DROP COLUMN IF EXISTS "stripeCustomerId",
+  DROP COLUMN IF EXISTS "stripeChargeId",
+  DROP COLUMN IF EXISTS "stripeReceiptUrl",
+  DROP COLUMN IF EXISTS "stripeCheckoutSessionId",
+  DROP COLUMN IF EXISTS "stripeCheckoutUrl";

@@ -2,17 +2,36 @@ import type { Router } from "express";
 
 const authorizeCognito = jest.fn((_req, _res, next) => next());
 const authorizeCognitoMobile = jest.fn((_req, _res, next) => next());
-const withOrgPermissions = jest.fn(() => jest.fn((_req, _res, next) => next()));
-const withAppointmentOrgPermissions = jest.fn(() =>
-  jest.fn((_req, _res, next) => next()),
+const financeAppointmentLimiter = jest.fn((_req, _res, next) => next());
+const withOrgPermissionsMiddleware = jest.fn((_req, _res, next) => next());
+const withAppointmentOrgPermissionsMiddleware = jest.fn((_req, _res, next) =>
+  next(),
 );
-const withInvoiceOrgPermissions = jest.fn(() =>
-  jest.fn((_req, _res, next) => next()),
+const withInvoiceOrgPermissionsMiddleware = jest.fn((_req, _res, next) =>
+  next(),
 );
-const withPaymentIntentOrgPermissions = jest.fn(() =>
-  jest.fn((_req, _res, next) => next()),
+const withPaymentOrgPermissionsMiddleware = jest.fn((_req, _res, next) =>
+  next(),
 );
-const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
+const withPaymentIntentOrgPermissionsMiddleware = jest.fn((_req, _res, next) =>
+  next(),
+);
+const requirePermissionMiddleware = jest.fn((_req, _res, next) => next());
+
+const withOrgPermissions = jest.fn(() => withOrgPermissionsMiddleware);
+const withAppointmentOrgPermissions = jest.fn(
+  () => withAppointmentOrgPermissionsMiddleware,
+);
+const withInvoiceOrgPermissions = jest.fn(
+  () => withInvoiceOrgPermissionsMiddleware,
+);
+const withPaymentOrgPermissions = jest.fn(
+  () => withPaymentOrgPermissionsMiddleware,
+);
+const withPaymentIntentOrgPermissions = jest.fn(
+  () => withPaymentIntentOrgPermissionsMiddleware,
+);
+const requirePermission = jest.fn(() => requirePermissionMiddleware);
 
 const FinanceController = {
   webhook: jest.fn(),
@@ -49,15 +68,20 @@ const FinanceController = {
   markAppointmentReadyForBilling: jest.fn(),
 };
 
+const rateLimit = jest.fn(() => financeAppointmentLimiter);
+
 jest.mock("../../src/middlewares/auth", () => ({
   authorizeCognito,
   authorizeCognitoMobile,
 }));
 
+jest.mock("express-rate-limit", () => rateLimit);
+
 jest.mock("../../src/middlewares/rbac", () => ({
   withOrgPermissions,
   withAppointmentOrgPermissions,
   withInvoiceOrgPermissions,
+  withPaymentOrgPermissions,
   withPaymentIntentOrgPermissions,
   requirePermission,
 }));
@@ -96,9 +120,15 @@ describe("finance.router", () => {
     );
     const paymentRoute = findRoute("/invoices/:invoiceId/payments", "post");
     const refundRoute = findRoute("/payments/:paymentId/refunds", "post");
+    const listInvoicesRoute = findRoute("/invoices", "get");
+    const createInvoiceRoute = findRoute("/invoices", "post");
     const mobileParentRoute = findRoute(
       "/mobile/parents/:parentId/invoices",
       "get",
+    );
+    const mobileAppointmentRoute = findRoute(
+      "/mobile/appointments/:appointmentId/invoices",
+      "post",
     );
 
     expect(sessionRoute?.stack.map((layer) => layer.handle)).toContain(
@@ -110,9 +140,33 @@ describe("finance.router", () => {
     expect(refundRoute?.stack.map((layer) => layer.handle)).toContain(
       FinanceController.refundPayment,
     );
+    expect(refundRoute?.stack.map((layer) => layer.handle)).toContain(
+      withPaymentOrgPermissionsMiddleware,
+    );
+    expect(listInvoicesRoute?.stack.map((layer) => layer.handle)).toContain(
+      withOrgPermissionsMiddleware,
+    );
+    expect(createInvoiceRoute?.stack.map((layer) => layer.handle)).toContain(
+      withOrgPermissionsMiddleware,
+    );
+    expect(listInvoicesRoute?.stack.map((layer) => layer.handle)).toContain(
+      FinanceController.listInvoices,
+    );
+    expect(createInvoiceRoute?.stack.map((layer) => layer.handle)).toContain(
+      FinanceController.createInvoice,
+    );
     expect(mobileParentRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognitoMobile,
     );
+    expect(
+      mobileAppointmentRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognitoMobile);
+    expect(
+      mobileAppointmentRoute?.stack.map((layer) => layer.handle),
+    ).toContain(financeAppointmentLimiter);
+    expect(rateLimit).toHaveBeenCalledTimes(1);
+    expect(requirePermission).toHaveBeenCalledWith("billing:view:any");
+    expect(requirePermission).toHaveBeenCalledWith("billing:edit:any");
   });
 
   it("exposes the remaining finance contract routes", () => {
@@ -124,9 +178,6 @@ describe("finance.router", () => {
     ).toBeUndefined();
     expect(
       findRoute("/organisation/:organisationId/usage/snapshots", "post"),
-    ).toBeUndefined();
-    expect(
-      findRoute("/organisation/:organisationId/list", "get"),
     ).toBeUndefined();
     expect(
       findRoute("/appointments/:appointmentId/charges", "post"),
@@ -146,6 +197,18 @@ describe("finance.router", () => {
     expect(
       findRoute("/:invoiceId/credit-notes/:creditNoteId/void", "post"),
     ).toBeUndefined();
+    expect(
+      findRoute("/invoices", "get")?.stack.map((layer) => layer.handle),
+    ).toContain(withOrgPermissionsMiddleware);
+    expect(
+      findRoute("/invoices", "get")?.stack.map((layer) => layer.handle),
+    ).toContain(FinanceController.listInvoices);
+    expect(
+      findRoute("/invoices", "post")?.stack.map((layer) => layer.handle),
+    ).toContain(withOrgPermissionsMiddleware);
+    expect(
+      findRoute("/invoices", "post")?.stack.map((layer) => layer.handle),
+    ).toContain(FinanceController.createInvoice);
 
     expect(
       findRoute("/subscriptions/current", "get")?.stack.map(
