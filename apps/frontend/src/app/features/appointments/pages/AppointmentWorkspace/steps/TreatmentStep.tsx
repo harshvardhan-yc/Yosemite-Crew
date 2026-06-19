@@ -15,6 +15,7 @@ import {
 import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { useTaskStore } from '@/app/stores/taskStore';
+import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
 import type { Task } from '@/app/features/tasks/types/task';
 import {
@@ -23,6 +24,16 @@ import {
   listInpatientScheduleTemplates,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import type { TemplateLike } from '@yosemite-crew/types';
+import type {
+  PackageBreakdownItem,
+  PackageRevamp,
+  ServiceRevamp,
+} from '@/app/features/organization/types/revamp';
+import {
+  computePackageBreakdownItem,
+  computePackageTotals,
+  computeServiceTotal,
+} from '@/app/features/organization/services/catalogCalculations';
 
 type TreatmentStepProps = {
   appointmentId: string;
@@ -66,6 +77,48 @@ const inventoryToPrescriptionItem = (item: InventoryItem) => ({
   stockQty: getAvailableStock(item),
   lowStock: isLowStock(item),
 });
+
+const moneyToCents = (amount: number): number => Math.max(0, Math.round(amount * 100));
+
+const breakdownToLineItem = (item: PackageBreakdownItem) => {
+  const { net } = computePackageBreakdownItem(item);
+  return {
+    id: item.id,
+    name: item.name,
+    qty: item.quantity,
+    instructions: item.type,
+    amountCents: moneyToCents(net),
+  };
+};
+
+const serviceToLineItem = (service: ServiceRevamp) => {
+  const { total } = computeServiceTotal(service);
+  const amountCents = moneyToCents(total);
+  return {
+    refId: service.id,
+    kind: 'SERVICE' as const,
+    name: service.name,
+    qty: 1,
+    instructions: service.description || service.type,
+    unitPriceCents: amountCents,
+    amountCents,
+  };
+};
+
+const packageToLineItem = (pkg: PackageRevamp) => {
+  const { totalCost } = computePackageTotals(pkg);
+  const amountCents = moneyToCents(totalCost);
+  return {
+    refId: pkg.id,
+    kind: 'PACKAGE' as const,
+    name: pkg.name,
+    qty: 1,
+    instructions: pkg.description || `Package with ${pkg.breakdown.length} item(s)`,
+    unitPriceCents: amountCents,
+    amountCents,
+    breakdown: pkg.breakdown.map(breakdownToLineItem),
+  };
+};
 
 const taskStatusToScheduleStatus = (status: Task['status']) => {
   if (status === 'COMPLETED') return 'COMPLETED' as const;
@@ -112,6 +165,12 @@ const TreatmentStep = ({
   const inventoryById = useInventoryStore((s) => s.itemsById);
   const setInventoryForOrg = useInventoryStore((s) => s.setInventoryForOrg);
   const tasksById = useTaskStore((s) => s.tasksById);
+  const catalogSpecialities = useRevampCatalogStore((s) => s.specialities);
+  const catalogServices = useRevampCatalogStore((s) => s.services);
+  const catalogPackages = useRevampCatalogStore((s) => s.packages);
+  const loadOrganisationCatalog = useRevampCatalogStore((s) => s.loadOrganisationCatalog);
+  const loadSpecialityCatalog = useRevampCatalogStore((s) => s.loadSpecialityCatalog);
+  const hydratePackageDetail = useRevampCatalogStore((s) => s.hydratePackageDetail);
   const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
   const [scheduleTemplates, setScheduleTemplates] = useState<TemplateLike[]>([]);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
@@ -125,6 +184,16 @@ const TreatmentStep = ({
     () => (organisationId ? (itemIdsByOrgId[organisationId] ?? []) : []),
     [itemIdsByOrgId, organisationId]
   );
+  const catalogSpecialityIds = useMemo(
+    () =>
+      organisationId
+        ? catalogSpecialities
+            .filter((speciality) => speciality.organisationId === organisationId)
+            .map((speciality) => speciality.id)
+        : [],
+    [catalogSpecialities, organisationId]
+  );
+  const catalogSpecialityKey = catalogSpecialityIds.join('|');
   const appointmentEmployeeTasks = useMemo(
     () =>
       Object.values(tasksById)
@@ -136,6 +205,39 @@ const TreatmentStep = ({
     () => [...encounter.schedule, ...appointmentEmployeeTasks],
     [appointmentEmployeeTasks, encounter.schedule]
   );
+
+  useEffect(() => {
+    if (!organisationId) return;
+    loadOrganisationCatalog(organisationId).catch((error) => {
+      console.error('Failed to load treatment catalog specialities:', error);
+    });
+  }, [loadOrganisationCatalog, organisationId]);
+
+  useEffect(() => {
+    if (!organisationId || catalogSpecialityIds.length === 0) return;
+    Promise.all(
+      catalogSpecialityIds.map((specialityId) =>
+        loadSpecialityCatalog(organisationId, specialityId)
+      )
+    ).catch((error) => {
+      console.error('Failed to load treatment service/package catalog:', error);
+    });
+  }, [catalogSpecialityIds, catalogSpecialityKey, loadSpecialityCatalog, organisationId]);
+
+  useEffect(() => {
+    const packageIdsNeedingDetail = catalogPackages
+      .filter(
+        (pkg) =>
+          pkg.organisationId === organisationId &&
+          pkg.status === 'ACTIVE' &&
+          pkg.breakdown.length === 0
+      )
+      .map((pkg) => pkg.id);
+    if (packageIdsNeedingDetail.length === 0) return;
+    Promise.all(packageIdsNeedingDetail.map((id) => hydratePackageDetail(id))).catch((error) => {
+      console.error('Failed to hydrate treatment package details:', error);
+    });
+  }, [catalogPackages, hydratePackageDetail, organisationId]);
 
   useEffect(() => {
     if (!organisationId) return;
@@ -192,6 +294,17 @@ const TreatmentStep = ({
     [inventoryById, inventoryIds]
   );
 
+  const servicePackageCatalogItems = useMemo(() => {
+    if (!organisationId) return [];
+    const serviceItems = catalogServices
+      .filter((service) => service.organisationId === organisationId && service.status === 'ACTIVE')
+      .map(serviceToLineItem);
+    const packageItems = catalogPackages
+      .filter((pkg) => pkg.organisationId === organisationId && pkg.status === 'ACTIVE')
+      .map(packageToLineItem);
+    return [...serviceItems, ...packageItems];
+  }, [catalogPackages, catalogServices, organisationId]);
+
   const handleAddPrescription = async (item: Parameters<typeof addPrescription>[1]) => {
     setPrescriptionError(null);
     if (!organisationId) {
@@ -199,11 +312,11 @@ const TreatmentStep = ({
       return;
     }
     try {
-      await savePrescriptionArtifact(
+      const savedRx = await savePrescriptionArtifact(
         { organisationId, appointmentId, encounterId, authorId },
         item
       );
-      addPrescription(appointmentId, item);
+      addPrescription(appointmentId, item, (savedRx as { id?: string } | undefined)?.id);
     } catch (error) {
       console.error('Failed to save prescription', error);
       setPrescriptionError('Unable to add prescription. Please try again.');
@@ -231,6 +344,7 @@ const TreatmentStep = ({
 
       <ServicesPackagesEditor
         items={encounter.services}
+        catalogItems={servicePackageCatalogItems}
         readOnly={readOnly}
         deleteLocked={billedTreatmentLocked}
         onAddItem={(item) => addLineItem(appointmentId, item)}

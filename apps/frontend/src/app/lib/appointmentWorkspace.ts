@@ -52,8 +52,8 @@ export const getWorkspaceBlockedMessage = (status?: string | null): string => {
 /**
  * Derive the encounter mode used by the workspace.
  * The backend does not yet carry an explicit inpatient flag, so we treat an
- * appointment that has a room assigned as inpatient (the mock heuristic);
- * a future `careType` field can replace this without touching callers.
+ * appointment that has a room assigned as inpatient. A future explicit backend
+ * care-type field can replace this without touching callers.
  */
 export const resolveEncounterMode = (appointment: Pick<Appointment, 'room'>): EncounterMode =>
   appointment.room?.id ? 'INPATIENT' : 'OUTPATIENT';

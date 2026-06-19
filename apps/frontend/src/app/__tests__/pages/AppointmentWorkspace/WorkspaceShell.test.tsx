@@ -294,6 +294,31 @@ describe('WorkspaceMetaBar', () => {
     expect(screen.getByText('Ready for Discharge')).toBeInTheDocument();
   });
 
+  it('renders lead and support profile photos when appointment metadata provides them', () => {
+    const props = baseProps('INPATIENT');
+    const encounter = {
+      ...props.encounter,
+      leadName: 'Dr Lead',
+      nurseName: 'Nurse Tim',
+    };
+    render(
+      <WorkspaceMetaBar
+        {...props}
+        encounter={encounter}
+        leadPhotoUrl="https://example.com/lead.jpg"
+        supportPhotoUrl="https://example.com/support.jpg"
+      />
+    );
+    expect(screen.getByAltText('Dr Lead')).toHaveAttribute(
+      'src',
+      expect.stringContaining('lead.jpg')
+    );
+    expect(screen.getByAltText('Nurse Tim')).toHaveAttribute(
+      'src',
+      expect.stringContaining('support.jpg')
+    );
+  });
+
   it('shows a custom primary CTA when provided', () => {
     const props = baseProps('OUTPATIENT');
     const onClick = jest.fn();

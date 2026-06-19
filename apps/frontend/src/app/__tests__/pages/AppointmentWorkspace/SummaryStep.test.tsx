@@ -1,11 +1,16 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import SummaryStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/SummaryStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
+import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
+
+jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
+  listDischargeSummaryTemplates: jest.fn(),
+}));
 
 expect.extend(toHaveNoViolations);
 
@@ -37,6 +42,11 @@ jest.mock('@/app/ui/inputs/Datepicker', () => ({
 }));
 
 const APPT = 'appt-summary';
+const appointment = {
+  id: APPT,
+  organisationId: 'org-1',
+  encounterId: 'enc-1',
+} as any;
 
 const reset = () => {
   useAppointmentWorkspaceStore.setState({
@@ -50,6 +60,7 @@ const reset = () => {
     pending: false,
     submissionId: null,
   });
+  (listDischargeSummaryTemplates as jest.Mock).mockResolvedValue([]);
 };
 
 const seedAndGet = () => {
@@ -98,14 +109,31 @@ describe('SummaryStep', () => {
     expect(editor.compareDocumentPosition(followUp)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it('applies a discharge template from search', () => {
+  it('applies a discharge template from search', async () => {
+    (listDischargeSummaryTemplates as jest.Mock).mockResolvedValue([
+      {
+        id: 'tpl-discharge-1',
+        name: 'Post-operative discharge',
+        schemaSnapshot: {
+          sections: [
+            {
+              id: 'instructions',
+              title: 'Care instructions',
+              fields: [{ key: 'rest', label: 'Keep the patient rested' }],
+            },
+          ],
+        },
+      },
+    ]);
     const enc = seedAndGet();
-    renderSummary(enc);
+    await act(async () => {
+      render(<SummaryStep appointmentId={APPT} appointment={appointment} encounter={enc} />);
+    });
 
     fireEvent.change(screen.getByLabelText(/search discharge templates/i), {
       target: { value: 'post' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /post-operative discharge/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /post-operative discharge/i }));
 
     expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.dischargeSummary).toContain(
       'Keep the patient rested'

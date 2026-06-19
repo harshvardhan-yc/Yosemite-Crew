@@ -68,6 +68,18 @@ export const listInpatientScheduleTemplates = async (organisationId: string) =>
     status: 'PUBLISHED',
   });
 
+export const listVitalsTemplates = async (organisationId: string) =>
+  listWorkspaceTemplates(organisationId, {
+    kind: 'VITAL_RECORD',
+    status: 'PUBLISHED',
+  });
+
+export const listDischargeSummaryTemplates = async (organisationId: string) =>
+  listWorkspaceTemplates(organisationId, {
+    kind: 'DISCHARGE_SUMMARY',
+    status: 'PUBLISHED',
+  });
+
 export const getWorkspaceTemplateById = async (organisationId: string, templateId: string) => {
   const res = await getData<TemplateLike>(
     `/v1/templates/pms/templates/organisation/${organisationId}/${templateId}`
@@ -190,40 +202,3 @@ export const regenerateInpatientScheduleTemplate = (
   instanceId: string,
   options: { notify?: boolean; deferUntil?: string } = {}
 ) => taskScheduleAction(organisationId, instanceId, '$regenerate', options);
-
-const scheduleAction = async (
-  organisationId: string,
-  scheduleId: string,
-  action: '$pause' | '$resume' | '$cancel' | '$regenerate',
-  options: { notify?: boolean; deferUntil?: string } = {}
-) => {
-  const res = await postData<FhirTask>(
-    `/fhir/v1/task-schedule/organisation/${organisationId}/schedule/${scheduleId}/${action}`,
-    parametersBody(options)
-  );
-  return res.data;
-};
-
-export const pauseInpatientSchedule = (
-  organisationId: string,
-  scheduleId: string,
-  options: { notify?: boolean; deferUntil?: string } = {}
-) => scheduleAction(organisationId, scheduleId, '$pause', options);
-
-export const resumeInpatientSchedule = (
-  organisationId: string,
-  scheduleId: string,
-  options: { notify?: boolean; deferUntil?: string } = {}
-) => scheduleAction(organisationId, scheduleId, '$resume', options);
-
-export const cancelInpatientSchedule = (
-  organisationId: string,
-  scheduleId: string,
-  options: { notify?: boolean; deferUntil?: string } = {}
-) => scheduleAction(organisationId, scheduleId, '$cancel', options);
-
-export const regenerateInpatientSchedule = (
-  organisationId: string,
-  scheduleId: string,
-  options: { notify?: boolean; deferUntil?: string } = {}
-) => scheduleAction(organisationId, scheduleId, '$regenerate', options);

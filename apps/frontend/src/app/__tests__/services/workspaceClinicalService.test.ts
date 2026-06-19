@@ -1,4 +1,12 @@
 import {
+  amendDischargeSummary,
+  amendPrescriptionArtifact,
+  amendSoapNote,
+  amendVitalRecord,
+  finalizeDischargeSummary,
+  finalizePrescriptionArtifact,
+  finalizeSoapNote,
+  finalizeVitalRecord,
   getDischargeSummaryArtifact,
   getPrescriptionArtifact,
   getSoapNote,
@@ -16,6 +24,10 @@ import {
   listVitalRecordsForEncounter,
   listObservationSubmissionsForAppointment,
   loadWorkspaceClinicalArtifacts,
+  reopenDischargeSummary,
+  reopenPrescriptionArtifact,
+  reopenSoapNote,
+  reopenVitalRecord,
   saveDischargeSummaryArtifact,
   savePrescriptionArtifact,
   saveSoapNote,
@@ -161,6 +173,54 @@ describe('workspaceClinicalService', () => {
     );
     expect(notes[0].id).toBe('soap-enc');
     expect(note.id).toBe('soap-enc');
+  });
+
+  it('calls clinical artifact lifecycle actions for supported artifact families', async () => {
+    postDataMock.mockResolvedValue({ data: { id: 'artifact-1' } });
+
+    await finalizeSoapNote('org-1', 'soap-1');
+    await reopenSoapNote('org-1', 'soap-1');
+    await amendSoapNote('org-1', 'soap-1', { reason: 'Correction' });
+    await finalizePrescriptionArtifact('org-1', 'rx-1');
+    await reopenPrescriptionArtifact('org-1', 'rx-1');
+    await amendPrescriptionArtifact('org-1', 'rx-1', { reason: 'Dose correction' });
+    await finalizeDischargeSummary('org-1', 'dc-1');
+    await reopenDischargeSummary('org-1', 'dc-1');
+    await amendDischargeSummary('org-1', 'dc-1', { reason: 'Follow-up change' });
+    await finalizeVitalRecord('org-1', 'vital-1');
+    await reopenVitalRecord('org-1', 'vital-1');
+    await amendVitalRecord('org-1', 'vital-1', { reason: 'Unit correction' });
+
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      1,
+      '/fhir/v1/clinical-artifact/organisation/org-1/soap-note/soap-1/$finalize',
+      {}
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      2,
+      '/fhir/v1/clinical-artifact/organisation/org-1/soap-note/soap-1/$reopen',
+      {}
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      3,
+      '/fhir/v1/clinical-artifact/organisation/org-1/soap-note/soap-1/$amend',
+      { reason: 'Correction' }
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      6,
+      '/fhir/v1/clinical-artifact/organisation/org-1/prescription/rx-1/$amend',
+      { reason: 'Dose correction' }
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      9,
+      '/fhir/v1/clinical-artifact/organisation/org-1/discharge-summary/dc-1/$amend',
+      { reason: 'Follow-up change' }
+    );
+    expect(postDataMock).toHaveBeenNthCalledWith(
+      12,
+      '/fhir/v1/clinical-artifact/organisation/org-1/vital-record/vital-1/$amend',
+      { reason: 'Unit correction' }
+    );
   });
 
   it('saves vitals as a FHIR Observation with appointment context', async () => {

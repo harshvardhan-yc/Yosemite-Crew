@@ -20,9 +20,10 @@ const items: SoapNoteListItem[] = [
 ];
 
 describe('SoapNotesList', () => {
-  it('renders nothing when there are no notes', () => {
-    const { container } = render(<SoapNotesList items={[]} onPrint={jest.fn()} />);
-    expect(container).toBeEmptyDOMElement();
+  it('renders an empty state when there are no notes', () => {
+    render(<SoapNotesList items={[]} onPrint={jest.fn()} />);
+    expect(screen.getByText('All SOAP notes')).toBeInTheDocument();
+    expect(screen.getByText('No SOAP notes recorded yet.')).toBeInTheDocument();
   });
 
   it('renders a floating-label container with one row per note', () => {

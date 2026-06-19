@@ -40,6 +40,7 @@ import {
 } from '@/app/features/appointments/services/appointmentService';
 import { loadWorkspaceClinicalArtifacts } from '@/app/features/appointments/services/workspaceClinicalService';
 import { listSoapTemplatesForWorkspace } from '@/app/features/appointments/services/workspaceTemplateService';
+import { markAppointmentReadyForBilling } from '@/app/features/billing/services/invoiceService';
 
 type AppointmentWorkspaceProps = {
   appointment: Appointment;
@@ -108,20 +109,23 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const addAlert = useAppointmentWorkspaceStore((s) => s.addAlert);
   const [isAddAlertOpen, setIsAddAlertOpen] = useState(false);
   const [isHospitalizeOpen, setIsHospitalizeOpen] = useState(false);
+  const supportStaffMember = useMemo(() => {
+    const leadName = (appointment.lead?.name ?? '').trim();
+    return (appointment.supportStaff ?? []).find(
+      (staff) => (staff.name ?? '').trim() && staff.name?.trim() !== leadName
+    );
+  }, [appointment.lead?.name, appointment.supportStaff]);
 
   useEffect(() => {
     if (!appointmentId) return;
     const leadName = (appointment.lead?.name ?? '').trim();
-    const supportMember = (appointment.supportStaff ?? []).find(
-      (staff) => (staff.name ?? '').trim() && staff.name?.trim() !== leadName
-    );
     initEncounter(appointmentId, initialMode, {
       leadId: appointment.lead?.id,
       leadName,
-      nurseId: supportMember?.id,
-      nurseName: supportMember?.name?.trim(),
+      nurseId: supportStaffMember?.id,
+      nurseName: supportStaffMember?.name?.trim(),
     });
-  }, [appointmentId, initialMode, initEncounter, appointment.lead, appointment.supportStaff]);
+  }, [appointmentId, initialMode, initEncounter, appointment.lead, supportStaffMember]);
 
   const hydratedClinicalRef = useRef<string | null>(null);
   useEffect(() => {
@@ -335,6 +339,25 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     toggleReadyForDischarge,
   ]);
 
+  const handleReadyForBillingToggle = useCallback(async () => {
+    const nextReady = !(encounter?.readyForBilling.value ?? false);
+    if (nextReady) {
+      await markAppointmentReadyForBilling(appointmentId, {
+        organisationId: appointment.organisationId,
+        visitId: appointment.encounterId,
+        notes: 'Ready for billing from appointment workspace',
+      });
+    }
+    toggleReadyForBilling(appointmentId, actor);
+  }, [
+    actor,
+    appointment.encounterId,
+    appointment.organisationId,
+    appointmentId,
+    encounter?.readyForBilling.value,
+    toggleReadyForBilling,
+  ]);
+
   useEffect(() => {
     if (!appointmentId || !encounter || encounter.roomId || !appointment.room?.id) return;
     const firstUnit = getRoomUnits(appointment.room.id, roomUnitsById, roomUnitIdsByRoomId)[0]?.id;
@@ -402,12 +425,14 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       <WorkspaceMetaBar
         encounter={effectiveEncounter}
         activeStep={activeStep}
+        leadPhotoUrl={appointment.lead?.profileUrl}
+        supportPhotoUrl={(supportStaffMember as { profileUrl?: string } | undefined)?.profileUrl}
         roomOptions={roomOptions}
         unitOptions={unitOptions}
         onSelectRoom={handleRoomSelect}
         onSelectUnit={handleUnitSelect}
         onSaveAndNext={handleSaveAndNext}
-        onToggleReadyForBilling={() => toggleReadyForBilling(appointmentId, actor)}
+        onToggleReadyForBilling={handleReadyForBillingToggle}
         onToggleReadyForDischarge={handleReadyForDischargeToggle}
         billingTogglesLocked={encounter?.viewOnly ?? false}
         dischargeTogglesLocked={(encounter?.viewOnly ?? false) || lockedByWindow}
@@ -447,6 +472,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         {activeStep === 'INVOICE' && (
           <InvoiceStep
             appointmentId={appointmentId}
+            organisationId={appointment.organisationId}
+            patientId={companion.id}
+            parentId={companion.parent.id}
             encounter={operationalEncounter}
             hideBillBuilder={isCompletedAppointment}
             onOpenSummary={() => handleStepChange('SUMMARY')}

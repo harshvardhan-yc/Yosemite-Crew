@@ -10,8 +10,10 @@ import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceS
 import type { SideAction } from '@/app/features/appointments/types/workspace';
 import { fetchAppointmentForms } from '@/app/features/forms/services/appointmentFormsService';
 import { saveVitalRecord } from '@/app/features/appointments/services/workspaceClinicalService';
+import { listVitalsTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
 import { createTask, loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
 import { useTaskStore } from '@/app/stores/taskStore';
+import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 
 // Heavy leaf components are exercised by their own suites; here we stub them so
 // the wrapper panels (Chat / Activity / MSD / Records) stay fast and focused.
@@ -37,6 +39,12 @@ jest.mock('@/app/features/forms/services/appointmentFormsService', () => ({
 }));
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
   saveVitalRecord: jest.fn(),
+}));
+jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
+  listVitalsTemplates: jest.fn(),
+}));
+jest.mock('@/app/hooks/useTeam', () => ({
+  useTeamForPrimaryOrg: jest.fn(),
 }));
 jest.mock('@/app/features/tasks/services/taskService', () => ({
   createTask: jest.fn().mockResolvedValue(undefined),
@@ -153,6 +161,8 @@ describe('QuickActionsModal shell', () => {
     reset();
     seed();
     (fetchAppointmentForms as jest.Mock).mockReturnValue(new Promise(() => undefined));
+    (listVitalsTemplates as jest.Mock).mockReturnValue(new Promise(() => undefined));
+    (useTeamForPrimaryOrg as jest.Mock).mockReturnValue([]);
   });
 
   it('renders all six nav items and routes between panels', () => {
@@ -238,6 +248,10 @@ describe('RecordPanel', () => {
       resourceType: 'Observation',
       id: 'vital-1',
     });
+    (listVitalsTemplates as jest.Mock).mockReturnValue(new Promise(() => undefined));
+    (useTeamForPrimaryOrg as jest.Mock).mockReturnValue([
+      { _id: 'usr-sarah', name: 'Sarah Mitchell', practionerId: 'prac-sarah' },
+    ]);
   });
 
   it('returns null without an encounter', () => {
@@ -250,7 +264,7 @@ describe('RecordPanel', () => {
   it('records a new vital and lists it', async () => {
     render(<RecordPanel appointmentId={APPT} organisationId="org-1" encounterId="enc-1" />);
     fireEvent.click(screen.getByRole('button', { name: /new vital/i }));
-    fireEvent.change(screen.getByLabelText('Heart Rate'), { target: { value: '88' } });
+    fireEvent.change(screen.getByLabelText('Heart rate'), { target: { value: '88' } });
     fireEvent.change(screen.getByLabelText('Weight'), { target: { value: 'abc' } });
     fireEvent.click(screen.getByRole('button', { name: /save vitals/i }));
 
@@ -260,6 +274,39 @@ describe('RecordPanel', () => {
     // Non-numeric weight parses to undefined.
     expect(vitals[0].weightLbs).toBeUndefined();
     expect(screen.getByText('VT-001')).toBeInTheDocument();
+  });
+
+  it('loads a custom vitals template before recording values', async () => {
+    (listVitalsTemplates as jest.Mock).mockResolvedValue([
+      {
+        id: 'tpl-vitals-1',
+        name: 'Post-op vitals',
+        schemaSnapshot: {
+          sections: [
+            {
+              id: 'vitals',
+              title: 'Vitals',
+              fields: [
+                { key: 'tempF', label: 'Post-op temperature', rules: { unit: '°F' } },
+                { key: 'painScore', label: 'Pain score', rules: { unit: '/ 10' } },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+    await act(async () => {
+      render(<RecordPanel appointmentId={APPT} organisationId="org-1" encounterId="enc-1" />);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /new vital/i }));
+    fireEvent.change(screen.getByLabelText(/search vitals templates/i), {
+      target: { value: 'post' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /post-op vitals/i }));
+
+    expect(screen.getByLabelText('Post-op temperature')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pain score')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Heart rate')).not.toBeInTheDocument();
   });
 
   it('discards a draft vital without recording', () => {
@@ -385,7 +432,7 @@ describe('TasksPanel', () => {
 
     // Pick a different assignee from the row dropdown.
     fireEvent.click(screen.getAllByRole('button', { name: /assigned to/i })[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Dr. Tim Apple' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Dr. Tim Apple' }));
     expect(
       useAppointmentWorkspaceStore.getState().getEncounter(APPT)!.schedule[0].assignedToId
     ).toBe('usr-tim');

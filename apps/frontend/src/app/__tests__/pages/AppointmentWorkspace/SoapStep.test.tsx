@@ -63,6 +63,12 @@ describe('SoapStep', () => {
     expect(screen.getAllByText('Plan').length).toBeGreaterThan(0);
   });
 
+  it('shows an empty state when no SOAP notes have been recorded', () => {
+    renderSoapStep();
+    expect(screen.getByText('All SOAP notes')).toBeInTheDocument();
+    expect(screen.getByText('No SOAP notes recorded yet.')).toBeInTheDocument();
+  });
+
   it('keeps SOAP template search between chief complaint and subjective', () => {
     renderSoapStep();
     const chiefComplaint = screen.getByText('Chief Complaint');

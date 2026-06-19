@@ -10,39 +10,13 @@ import { formatMoney } from '@/app/lib/money';
 
 type ServicesPackagesEditorProps = {
   items: LineItem[];
+  catalogItems: Omit<LineItem, 'id'>[];
   readOnly: boolean;
   deleteLocked?: boolean;
   onAddItem: (item: Omit<LineItem, 'id'>) => void;
   onUpdateItem: (id: string, patch: Partial<LineItem>) => void;
   onRemoveItem: (id: string) => void;
 };
-
-/** Searchable catalog — results only surface as the user types (no chips up front). */
-const CATALOG_ITEMS: Omit<LineItem, 'id'>[] = [
-  {
-    refId: 'svc-physical-exam',
-    kind: 'SERVICE',
-    name: 'Physical examination',
-    qty: 1,
-    instructions: 'Assess mobility and pain response',
-    unitPriceCents: 8500,
-    amountCents: 8500,
-  },
-  {
-    refId: 'pkg-arthritis-care',
-    kind: 'PACKAGE',
-    name: 'Arthritis care package',
-    qty: 1,
-    instructions: 'Includes exam, injection and follow-up',
-    unitPriceCents: 18500,
-    amountCents: 18500,
-    breakdown: [
-      { id: 'pkg-bd-1', name: 'Mobility exam', qty: 1, instructions: '-', amountCents: 8500 },
-      { id: 'pkg-bd-2', name: 'SC Injection', qty: 1, instructions: '-', amountCents: 7000 },
-      { id: 'pkg-bd-3', name: 'Care instructions', qty: 1, instructions: '-', amountCents: 3000 },
-    ],
-  },
-];
 
 const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
 
@@ -122,6 +96,7 @@ const QtyInput = ({
 
 const ServicesPackagesEditor = ({
   items,
+  catalogItems,
   readOnly,
   deleteLocked = readOnly,
   onAddItem,
@@ -134,8 +109,8 @@ const ServicesPackagesEditor = ({
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return [];
-    return CATALOG_ITEMS.filter((item) => item.name.toLowerCase().includes(query));
-  }, [search]);
+    return catalogItems.filter((item) => item.name.toLowerCase().includes(query));
+  }, [catalogItems, search]);
 
   const handleTogglePackage = (id: string) => {
     setExpandedPackageId((current) => (current === id ? null : id));

@@ -1,13 +1,23 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LuCheck, LuEye, LuEyeOff } from 'react-icons/lu';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
+import Search from '@/app/ui/inputs/Search';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type { Vitals } from '@/app/features/appointments/types/workspace';
 import { formatStampDate } from '@/app/lib/appointmentWorkspace';
 import { saveVitalRecord } from '@/app/features/appointments/services/workspaceClinicalService';
+import { listVitalsTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
+import { getCategoryTemplate } from '@/app/lib/forms';
+import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
+import type { FormField } from '@/app/features/forms/types/forms';
+import type {
+  TemplateFieldDefinition,
+  TemplateLike,
+  TemplateSchemaSnapshot,
+} from '@yosemite-crew/types';
 
 type VitalsFormProps = {
   appointmentId: string;
@@ -16,11 +26,6 @@ type VitalsFormProps = {
   authorId?: string;
   vitals: Vitals[];
 };
-
-const RECORDER_OPTIONS = [
-  { label: 'Sarah Mitchell', value: 'usr-sarah' },
-  { label: 'Dr. Tim Apple', value: 'usr-tim' },
-];
 
 type Field = {
   key: keyof DraftVitals;
@@ -50,16 +55,104 @@ const EMPTY_DRAFT: DraftVitals = {
   bcs: '',
 };
 
-const FIELDS: Field[] = [
-  { key: 'weightLbs', label: 'Weight', unit: 'lbs' },
-  { key: 'tempF', label: 'Temperature', unit: '°F' },
-  { key: 'heartRateBpm', label: 'Heart Rate', unit: 'bpm' },
-  { key: 'respRateBpm', label: 'Respiratory rate', unit: 'bpm' },
-  { key: 'crtSec', label: 'CRT', unit: 'sec' },
-  { key: 'mucousMembrane', label: 'Mucous membrane', unit: 'mm' },
-  { key: 'painScore', label: 'Pain score', unit: '/ 10' },
-  { key: 'bcs', label: 'BCS', unit: '/ 9' },
+const FIELD_FALLBACKS: Record<keyof DraftVitals, Field> = {
+  weightLbs: { key: 'weightLbs', label: 'Weight', unit: 'lbs' },
+  tempF: { key: 'tempF', label: 'Temperature', unit: '°F' },
+  heartRateBpm: { key: 'heartRateBpm', label: 'Heart rate', unit: 'bpm' },
+  respRateBpm: { key: 'respRateBpm', label: 'Respiratory rate', unit: 'bpm' },
+  crtSec: { key: 'crtSec', label: 'CRT', unit: 'sec' },
+  mucousMembrane: { key: 'mucousMembrane', label: 'Mucous membrane', unit: '' },
+  painScore: { key: 'painScore', label: 'Pain score', unit: '/ 10' },
+  bcs: { key: 'bcs', label: 'BCS', unit: '/ 9' },
+};
+
+const DEFAULT_FIELDS: Field[] = [
+  FIELD_FALLBACKS.weightLbs,
+  FIELD_FALLBACKS.tempF,
+  FIELD_FALLBACKS.heartRateBpm,
+  FIELD_FALLBACKS.respRateBpm,
+  FIELD_FALLBACKS.crtSec,
+  FIELD_FALLBACKS.mucousMembrane,
+  FIELD_FALLBACKS.painScore,
+  FIELD_FALLBACKS.bcs,
 ];
+
+const normalizeKey = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
+
+const resolveDraftKey = (field: { key?: string; id?: string; label?: string }) => {
+  const value = normalizeKey([field.key, field.id, field.label].filter(Boolean).join(' '));
+  if (value.includes('weight')) return 'weightLbs';
+  if (value.includes('temp')) return 'tempF';
+  if (value.includes('heart') || value.includes('pulse')) return 'heartRateBpm';
+  if (value.includes('resp')) return 'respRateBpm';
+  if (value.includes('crt')) return 'crtSec';
+  if (value.includes('mucous') || value.includes('membrane')) return 'mucousMembrane';
+  if (value.includes('pain')) return 'painScore';
+  if (value.includes('bcs') || value.includes('bodyscore')) return 'bcs';
+  return undefined;
+};
+
+const hasTemplateSchemaSnapshot = (value: unknown): value is TemplateSchemaSnapshot =>
+  Boolean(
+    value && typeof value === 'object' && Array.isArray((value as { sections?: unknown }).sections)
+  );
+
+const getTemplateSchemaSnapshot = (template: TemplateLike): TemplateSchemaSnapshot | undefined => {
+  const rootSnapshot = (template as TemplateLike & { schemaSnapshot?: unknown }).schemaSnapshot;
+  if (hasTemplateSchemaSnapshot(rootSnapshot)) return rootSnapshot;
+  const version = template.versions?.find(
+    (item) => item.version === template.publishedVersion || item.version === template.latestVersion
+  );
+  return hasTemplateSchemaSnapshot(version?.schemaSnapshot) ? version.schemaSnapshot : undefined;
+};
+
+const flattenFormFields = (fields: FormField[] = []): FormField[] =>
+  fields.flatMap((field) =>
+    field.type === 'group' ? flattenFormFields(field.fields ?? []) : [field]
+  );
+
+const defaultVitalFieldsFromFormsSchema = (): Field[] => {
+  const fields = flattenFormFields(getCategoryTemplate('Vitals'));
+  const mapped = fields.flatMap((field) => {
+    const key = resolveDraftKey({ id: field.id, label: field.label });
+    if (!key) return [];
+    return [
+      {
+        ...FIELD_FALLBACKS[key],
+        label: field.label || FIELD_FALLBACKS[key].label,
+        unit:
+          typeof field.meta === 'object' &&
+          field.meta !== null &&
+          typeof (field.meta as { unit?: unknown }).unit === 'string'
+            ? (field.meta as { unit: string }).unit
+            : FIELD_FALLBACKS[key].unit,
+      },
+    ];
+  });
+  return mapped.length > 0 ? mapped : DEFAULT_FIELDS;
+};
+
+const templateToVitalFields = (template: TemplateLike): Field[] => {
+  const fields =
+    getTemplateSchemaSnapshot(template)?.sections.flatMap((section) => section.fields) ?? [];
+  const mapped = fields.flatMap((field: TemplateFieldDefinition) => {
+    const key = resolveDraftKey(field);
+    if (!key) return [];
+    return [
+      {
+        ...FIELD_FALLBACKS[key],
+        label: field.label || FIELD_FALLBACKS[key].label,
+        unit:
+          typeof field.rules === 'object' &&
+          field.rules !== null &&
+          typeof (field.rules as { unit?: unknown }).unit === 'string'
+            ? (field.rules as { unit: string }).unit
+            : FIELD_FALLBACKS[key].unit,
+      },
+    ];
+  });
+  return mapped.length > 0 ? mapped : defaultVitalFieldsFromFormsSchema();
+};
 
 const VitalsField = ({
   field,
@@ -147,12 +240,51 @@ const VitalsForm = ({
   vitals,
 }: VitalsFormProps) => {
   const addVitals = useAppointmentWorkspaceStore((s) => s.addVitals);
+  const team = useTeamForPrimaryOrg();
+  const recorderOptions = useMemo(() => {
+    const members = team ?? [];
+    return members.flatMap((member) => {
+      const value = member.practionerId || member._id;
+      const label = member.name || value;
+      return value && label ? [{ label, value }] : [];
+    });
+  }, [team]);
   const [draft, setDraft] = useState<DraftVitals>(EMPTY_DRAFT);
   const [notes, setNotes] = useState('');
-  const [recorder, setRecorder] = useState(RECORDER_OPTIONS[0]);
+  const [recorder, setRecorder] = useState<{ label: string; value: string } | null>(null);
+  const [templateQuery, setTemplateQuery] = useState('');
+  const [templateState, setTemplateState] = useState<{
+    templates: TemplateLike[];
+    error: string | null;
+  }>({ templates: [], error: null });
+  const [activeFields, setActiveFields] = useState<Field[]>(defaultVitalFieldsFromFormsSchema);
   const [creating, setCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (recorder || recorderOptions.length === 0) return;
+    setRecorder(recorderOptions[0]);
+  }, [recorder, recorderOptions]);
+
+  useEffect(() => {
+    listVitalsTemplates(organisationId)
+      .then((items) => {
+        setTemplateState({ templates: items, error: null });
+      })
+      .catch((error) => {
+        console.error('Failed to load vitals templates:', error);
+        setTemplateState({ templates: [], error: 'Unable to load vitals templates.' });
+      });
+  }, [organisationId]);
+
+  const templateMatches = useMemo(() => {
+    const query = templateQuery.trim().toLowerCase();
+    if (!query) return [];
+    return templateState.templates.filter((template) =>
+      template.name.toLowerCase().includes(query)
+    );
+  }, [templateQuery, templateState.templates]);
 
   const updateField = (key: keyof DraftVitals, value: string) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -168,17 +300,17 @@ const VitalsForm = ({
       painScore: parseNumber(draft.painScore),
       bcs: parseNumber(draft.bcs),
       notes: notes || undefined,
-      recordedByName: recorder.label,
+      recordedByName: recorder?.label ?? 'Clinician',
       recordedAt: new Date().toISOString(),
     };
     setIsSaving(true);
     setSaveError(null);
     try {
-      await saveVitalRecord(
-        { organisationId, appointmentId, encounterId, authorId: authorId ?? recorder.value },
+      const savedVital = await saveVitalRecord(
+        { organisationId, appointmentId, encounterId, authorId: authorId ?? recorder?.value },
         nextVitals
       );
-      addVitals(appointmentId, nextVitals);
+      addVitals(appointmentId, nextVitals, (savedVital as { id?: string } | undefined)?.id);
     } catch (error) {
       console.error('Failed to save vitals', error);
       setSaveError('Unable to save vitals. Please try again.');
@@ -225,8 +357,43 @@ const VitalsForm = ({
   return (
     <div className="flex flex-col gap-4">
       <h3 className="text-body-2 font-bold text-text-primary">New vitals</h3>
+      <div className="relative">
+        <Search
+          value={templateQuery}
+          setSearch={setTemplateQuery}
+          placeholder="Search vitals templates"
+          label="Search vitals templates"
+          className="w-full!"
+        />
+        {templateMatches.length > 0 && (
+          <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+            {templateMatches.map((template) => (
+              <li key={template.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveFields(templateToVitalFields(template));
+                    setTemplateQuery('');
+                  }}
+                  className="flex w-full items-center px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
+                >
+                  {template.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {templateQuery.trim() && templateMatches.length === 0 && !templateState.error && (
+          <p className="absolute z-20 mt-1 w-full rounded-2xl border border-card-border bg-neutral-0 px-4 py-3 text-body-4 text-text-secondary shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+            No vitals templates match this search.
+          </p>
+        )}
+        {templateState.error && (
+          <p className="mt-2 text-caption-1 text-danger-600">{templateState.error}</p>
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-3">
-        {FIELDS.map((field) => (
+        {activeFields.map((field) => (
           <VitalsField
             key={field.key}
             field={field}
@@ -248,8 +415,8 @@ const VitalsForm = ({
       <div className="w-full sm:max-w-60">
         <LabelDropdown
           placeholder="Recorded by"
-          options={RECORDER_OPTIONS}
-          defaultOption={recorder.value}
+          options={recorderOptions}
+          defaultOption={recorder?.value}
           searchable={false}
           onSelect={(option) => setRecorder({ label: option.label, value: option.value })}
         />

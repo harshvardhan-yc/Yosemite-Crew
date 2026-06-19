@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import type { Appointment } from '@yosemite-crew/types';
+import React, { useEffect, useMemo, useState } from 'react';
+import type { Appointment, TemplateLike, TemplateSchemaSnapshot } from '@yosemite-crew/types';
 import {
   LuDownload,
   LuEye,
@@ -25,6 +25,7 @@ import type {
 } from '@/app/features/appointments/types/workspace';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
 import { saveDischargeSummaryArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
+import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
 
 type SummaryStepProps = {
   appointmentId: string;
@@ -32,23 +33,45 @@ type SummaryStepProps = {
   encounter: AppointmentEncounter;
 };
 
-const DISCHARGE_TEMPLATES = [
-  {
-    id: 'tpl-post-op',
-    name: 'Post-operative discharge',
-    html: '<p>Keep the patient rested for 7 days. Monitor appetite, incision site, and medication tolerance.</p>',
-  },
-  {
-    id: 'tpl-medication',
-    name: 'Medication discharge',
-    html: '<p>Continue prescribed medication as directed. Contact the clinic if vomiting, diarrhea, or lethargy develops.</p>',
-  },
-];
-
 const formatDateTime = (iso: string): string => {
   const date = formatStampDate(iso);
   const time = formatStampTime(iso);
   return [date, time].filter(Boolean).join(', ');
+};
+
+const escapeHtml = (value: string): string =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const hasTemplateSchemaSnapshot = (value: unknown): value is TemplateSchemaSnapshot =>
+  Boolean(
+    value && typeof value === 'object' && Array.isArray((value as { sections?: unknown }).sections)
+  );
+
+const getTemplateSchemaSnapshot = (template: TemplateLike): TemplateSchemaSnapshot | undefined => {
+  const rootSnapshot = (template as TemplateLike & { schemaSnapshot?: unknown }).schemaSnapshot;
+  if (hasTemplateSchemaSnapshot(rootSnapshot)) return rootSnapshot;
+  const version = template.versions?.find(
+    (item) => item.version === template.publishedVersion || item.version === template.latestVersion
+  );
+  return hasTemplateSchemaSnapshot(version?.schemaSnapshot) ? version.schemaSnapshot : undefined;
+};
+
+const templateToDischargeHtml = (template: TemplateLike): string => {
+  const sections = getTemplateSchemaSnapshot(template)?.sections ?? [];
+  if (sections.length === 0) return '';
+  return sections
+    .map((section) => {
+      const fields = section.fields
+        .map((field) => `<p><strong>${escapeHtml(field.label || field.key)}</strong>: </p>`)
+        .join('');
+      return `<h3>${escapeHtml(section.title)}</h3>${fields}`;
+    })
+    .join('');
 };
 
 /** ISO follow-up timestamp ⇄ the Datepicker's `Date | null` value. */
@@ -141,6 +164,10 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
   const openSigningOverlay = useSigningOverlayStore((s) => s.openOverlay);
   const [templateQuery, setTemplateQuery] = useState('');
+  const [templateState, setTemplateState] = useState<{
+    templates: TemplateLike[];
+    error: string | null;
+  }>({ templates: [], error: null });
   const [isSaving, setIsSaving] = useState(false);
   // The discharge summary becomes read-only once saved (or when the encounter
   // itself is view-only).
@@ -150,11 +177,23 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   const templateMatches = useMemo(() => {
     const q = templateQuery.trim().toLowerCase();
     if (!q) return [];
-    return DISCHARGE_TEMPLATES.filter((template) => template.name.toLowerCase().includes(q));
-  }, [templateQuery]);
+    return templateState.templates.filter((template) => template.name.toLowerCase().includes(q));
+  }, [templateQuery, templateState.templates]);
 
-  const handleTemplateSelect = (html: string) => {
-    setDischargeSummary(appointmentId, html);
+  useEffect(() => {
+    if (!appointment?.organisationId) return;
+    listDischargeSummaryTemplates(appointment.organisationId)
+      .then((items) => {
+        setTemplateState({ templates: items, error: null });
+      })
+      .catch((error) => {
+        console.error('Unable to load discharge templates:', error);
+        setTemplateState({ templates: [], error: 'Unable to load discharge templates.' });
+      });
+  }, [appointment?.organisationId]);
+
+  const handleTemplateSelect = (template: TemplateLike) => {
+    setDischargeSummary(appointmentId, templateToDischargeHtml(template));
     setTemplateQuery('');
   };
 
@@ -175,22 +214,25 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   const handleSave = async () => {
     if (isSaving) return;
     setIsSaving(true);
+    let persistedId: string | undefined;
     try {
       if (appointment?.organisationId) {
-        await saveDischargeSummaryArtifact(
+        const saved = await saveDischargeSummaryArtifact(
           {
             organisationId: appointment.organisationId,
             appointmentId,
             encounterId: appointment.encounterId,
+            dischargeSummaryId: encounter.dischargeSummaryId,
           },
           encounter.dischargeSummary,
           encounter.followUpAt
         );
+        persistedId = (saved as { id?: string } | undefined)?.id;
       }
     } catch (error) {
       console.error('Unable to persist discharge summary:', error);
     } finally {
-      saveDischargeSummary(appointmentId, encounter.leadName ?? 'Clinician');
+      saveDischargeSummary(appointmentId, encounter.leadName ?? 'Clinician', persistedId);
       setIsSaving(false);
     }
   };
@@ -222,7 +264,7 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
                 <li key={template.id}>
                   <button
                     type="button"
-                    onClick={() => handleTemplateSelect(template.html)}
+                    onClick={() => handleTemplateSelect(template)}
                     className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
                   >
                     <LuSearch aria-hidden="true" />
@@ -231,6 +273,14 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
                 </li>
               ))}
             </ul>
+          )}
+          {templateQuery.trim() && templateMatches.length === 0 && !templateState.error && (
+            <p className="absolute right-0 z-20 mt-1 w-full rounded-2xl border border-card-border bg-neutral-0 px-4 py-3 text-body-4 text-text-secondary shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+              No discharge templates match this search.
+            </p>
+          )}
+          {templateState.error && (
+            <p className="mt-2 text-caption-1 text-danger-600">{templateState.error}</p>
           )}
         </div>
       </div>

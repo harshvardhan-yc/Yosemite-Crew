@@ -25,7 +25,9 @@ import { buildEmptyEncounter } from '@/app/features/appointments/services/worksp
 let idCounter = 0;
 const nextId = (prefix: string): string => {
   idCounter += 1;
-  return `${prefix}-${Date.now().toString(36)}-${idCounter}`;
+  // Prefix with `local-` so persistence checks (isPersistedArtifactId) can tell
+  // client-generated ids apart from backend-issued ids and POST (not PATCH) them.
+  return `local-${prefix}-${Date.now().toString(36)}-${idCounter}`;
 };
 
 const nowIso = (): string => new Date().toISOString();
@@ -103,9 +105,18 @@ type AppointmentWorkspaceState = {
 
   upsertSoap: (appointmentId: string, patch: Partial<SoapNoteEntry>) => void;
   applySoapTemplate: (appointmentId: string, template: SoapTemplate) => void;
-  signSoap: (appointmentId: string, signedByName: string, offline: boolean) => void;
+  signSoap: (
+    appointmentId: string,
+    signedByName: string,
+    offline: boolean,
+    persistedId?: string
+  ) => void;
 
-  addVitals: (appointmentId: string, vitals: Omit<Vitals, 'id' | 'code'>) => void;
+  addVitals: (
+    appointmentId: string,
+    vitals: Omit<Vitals, 'id' | 'code'>,
+    persistedId?: string
+  ) => void;
   addObservation: (appointmentId: string, record: Omit<ObservationRecord, 'id' | 'code'>) => void;
 
   removeDiagnosticTest: (appointmentId: string, id: string) => void;
@@ -115,7 +126,11 @@ type AppointmentWorkspaceState = {
   updateLineItem: (appointmentId: string, id: string, patch: Partial<LineItem>) => void;
   removeLineItem: (appointmentId: string, id: string) => void;
 
-  addPrescription: (appointmentId: string, item: Omit<PrescriptionItem, 'id'>) => void;
+  addPrescription: (
+    appointmentId: string,
+    item: Omit<PrescriptionItem, 'id'>,
+    persistedId?: string
+  ) => void;
   updatePrescription: (appointmentId: string, id: string, patch: Partial<PrescriptionItem>) => void;
   removePrescription: (appointmentId: string, id: string) => void;
 
@@ -124,7 +139,7 @@ type AppointmentWorkspaceState = {
   setScheduleTaskStatus: (appointmentId: string, id: string, status: ScheduleTaskStatus) => void;
 
   setDischargeSummary: (appointmentId: string, html: string) => void;
-  saveDischargeSummary: (appointmentId: string, byName: string) => void;
+  saveDischargeSummary: (appointmentId: string, byName: string, persistedId?: string) => void;
   reopenDischargeSummary: (appointmentId: string) => void;
   setFollowUp: (appointmentId: string, at: string | undefined) => void;
   addDocument: (appointmentId: string, document: Omit<WorkspaceDocument, 'id'>) => void;
@@ -140,6 +155,10 @@ type AppointmentWorkspaceState = {
   recordInvoicePayment: (
     appointmentId: string,
     payment: { method: PaymentMethod; byName?: string }
+  ) => void;
+  recordDepositCollection: (
+    appointmentId: string,
+    deposit: { amountCents: number; method: PaymentMethod; byName?: string }
   ) => void;
 
   toggleReadyForBilling: (appointmentId: string, actor: ReadyActor) => void;
@@ -325,7 +344,7 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       })
     ),
 
-  signSoap: (appointmentId, signedByName, offline) =>
+  signSoap: (appointmentId, signedByName, offline, persistedId) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => {
         // Sign the active draft and keep it in history; the next upsert starts a
@@ -334,6 +353,8 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
         if (draftIndex < 0) return enc;
         const signed: SoapNoteEntry = {
           ...enc.soap[draftIndex],
+          // Stamp the backend-issued id so a later edit PATCHes instead of POSTing a duplicate.
+          id: persistedId ?? enc.soap[draftIndex].id,
           signedByName,
           signedOffline: offline,
           signedAt: nowIso(),
@@ -349,14 +370,14 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       })
     ),
 
-  addVitals: (appointmentId, vitals) =>
+  addVitals: (appointmentId, vitals, persistedId) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => ({
         ...enc,
         vitals: [
           {
             ...vitals,
-            id: nextId('vt'),
+            id: persistedId ?? nextId('vt'),
             code: `VT-${String(enc.vitals.length + 1).padStart(3, '0')}`,
           },
           ...enc.vitals,
@@ -441,10 +462,10 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       }))
     ),
 
-  addPrescription: (appointmentId, item) =>
+  addPrescription: (appointmentId, item, persistedId) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => {
-        const prescription = { ...item, id: nextId('rx') };
+        const prescription = { ...item, id: persistedId ?? nextId('rx') };
         const generatedTask: ScheduleTask = {
           id: nextId('sch'),
           description: `Administer ${item.medicineName}`,
@@ -506,12 +527,14 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       patchEncounter(state, appointmentId, (enc) => ({ ...enc, dischargeSummary: html }))
     ),
 
-  saveDischargeSummary: (appointmentId, byName) =>
+  saveDischargeSummary: (appointmentId, byName, persistedId) =>
     set((state) =>
       patchEncounter(state, appointmentId, (enc) => ({
         ...enc,
         dischargeSavedAt: new Date().toISOString(),
         dischargeSavedByName: byName,
+        // Keep the backend id so re-saving the summary PATCHes instead of POSTing a duplicate.
+        dischargeSummaryId: persistedId ?? enc.dischargeSummaryId,
       }))
     ),
 
@@ -600,6 +623,40 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
           depositCents: paidFromDeposit
             ? Math.max(0, enc.depositCents - totals.estimatedTotalCents)
             : enc.depositCents,
+        };
+      })
+    ),
+
+  recordDepositCollection: (appointmentId, deposit) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => {
+        const amountCents = Math.max(0, Math.round(deposit.amountCents));
+        if (amountCents <= 0) return enc;
+        const lineItem: InvoiceLineItem = {
+          id: nextId('deposit-line'),
+          name: 'Visit deposit',
+          unitPriceCents: amountCents,
+          qty: 1,
+          grossCents: amountCents,
+          discountCents: 0,
+          amountCents,
+        };
+        const invoice: PastInvoice = {
+          id: nextId('deposit'),
+          createdAt: nowIso(),
+          totalCents: amountCents,
+          outstandingCents: 0,
+          status: 'PAID_FULL',
+          byName: deposit.byName,
+          paidByName: deposit.byName,
+          paidAt: nowIso(),
+          paymentMethod: deposit.method,
+          items: [lineItem],
+        };
+        return {
+          ...enc,
+          depositCents: enc.depositCents + amountCents,
+          pastInvoices: [invoice, ...enc.pastInvoices],
         };
       })
     ),

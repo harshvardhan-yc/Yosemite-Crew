@@ -84,6 +84,8 @@ type ObservationSubmissionListFilters = {
   toDate?: string | Date;
 };
 
+type ClinicalArtifactAction = '$finalize' | '$reopen' | '$amend';
+
 const asIso = (value: unknown) => {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'string') return value;
@@ -277,6 +279,32 @@ export const getSoapNote = async (organisationId: string, soapNoteId: string) =>
   return res.data;
 };
 
+const clinicalArtifactAction = async <T>(
+  organisationId: string,
+  artifactPath: 'soap-note' | 'prescription' | 'discharge-summary' | 'vital-record',
+  artifactId: string,
+  action: ClinicalArtifactAction,
+  body: Record<string, unknown> = {}
+) => {
+  const res = await postData<T>(
+    `/fhir/v1/clinical-artifact/organisation/${organisationId}/${artifactPath}/${artifactId}/${action}`,
+    body
+  );
+  return res.data;
+};
+
+export const finalizeSoapNote = (organisationId: string, soapNoteId: string) =>
+  clinicalArtifactAction<Composition>(organisationId, 'soap-note', soapNoteId, '$finalize');
+
+export const reopenSoapNote = (organisationId: string, soapNoteId: string) =>
+  clinicalArtifactAction<Composition>(organisationId, 'soap-note', soapNoteId, '$reopen');
+
+export const amendSoapNote = (
+  organisationId: string,
+  soapNoteId: string,
+  body: Record<string, unknown> = {}
+) => clinicalArtifactAction<Composition>(organisationId, 'soap-note', soapNoteId, '$amend', body);
+
 export const saveSoapNote = async (context: ClinicalContext, note: SoapNoteEntry) => {
   const body = buildComposition(
     context,
@@ -343,6 +371,35 @@ export const getDischargeSummaryArtifact = async (
   return res.data;
 };
 
+export const finalizeDischargeSummary = (organisationId: string, dischargeSummaryId: string) =>
+  clinicalArtifactAction<Composition>(
+    organisationId,
+    'discharge-summary',
+    dischargeSummaryId,
+    '$finalize'
+  );
+
+export const reopenDischargeSummary = (organisationId: string, dischargeSummaryId: string) =>
+  clinicalArtifactAction<Composition>(
+    organisationId,
+    'discharge-summary',
+    dischargeSummaryId,
+    '$reopen'
+  );
+
+export const amendDischargeSummary = (
+  organisationId: string,
+  dischargeSummaryId: string,
+  body: Record<string, unknown> = {}
+) =>
+  clinicalArtifactAction<Composition>(
+    organisationId,
+    'discharge-summary',
+    dischargeSummaryId,
+    '$amend',
+    body
+  );
+
 export const saveDischargeSummaryArtifact = async (
   context: ClinicalContext,
   html: string,
@@ -407,6 +464,25 @@ export const getVitalRecord = async (organisationId: string, vitalRecordId: stri
   );
   return res.data;
 };
+
+export const finalizeVitalRecord = (organisationId: string, vitalRecordId: string) =>
+  clinicalArtifactAction<Observation>(organisationId, 'vital-record', vitalRecordId, '$finalize');
+
+export const reopenVitalRecord = (organisationId: string, vitalRecordId: string) =>
+  clinicalArtifactAction<Observation>(organisationId, 'vital-record', vitalRecordId, '$reopen');
+
+export const amendVitalRecord = (
+  organisationId: string,
+  vitalRecordId: string,
+  body: Record<string, unknown> = {}
+) =>
+  clinicalArtifactAction<Observation>(
+    organisationId,
+    'vital-record',
+    vitalRecordId,
+    '$amend',
+    body
+  );
 
 export const saveVitalRecord = async (
   context: ClinicalContext,
@@ -622,6 +698,35 @@ export const getPrescriptionArtifact = async (organisationId: string, prescripti
   );
   return res.data;
 };
+
+export const finalizePrescriptionArtifact = (organisationId: string, prescriptionId: string) =>
+  clinicalArtifactAction<MedicationRequest>(
+    organisationId,
+    'prescription',
+    prescriptionId,
+    '$finalize'
+  );
+
+export const reopenPrescriptionArtifact = (organisationId: string, prescriptionId: string) =>
+  clinicalArtifactAction<MedicationRequest>(
+    organisationId,
+    'prescription',
+    prescriptionId,
+    '$reopen'
+  );
+
+export const amendPrescriptionArtifact = (
+  organisationId: string,
+  prescriptionId: string,
+  body: Record<string, unknown> = {}
+) =>
+  clinicalArtifactAction<MedicationRequest>(
+    organisationId,
+    'prescription',
+    prescriptionId,
+    '$amend',
+    body
+  );
 
 export const loadWorkspaceClinicalArtifacts = async (
   context: Pick<ClinicalContext, 'organisationId' | 'appointmentId' | 'encounterId'>

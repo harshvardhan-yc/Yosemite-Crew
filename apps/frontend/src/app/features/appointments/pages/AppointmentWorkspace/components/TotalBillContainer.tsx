@@ -8,6 +8,7 @@ import { formatMoney } from '@/app/lib/money';
 
 type TotalBillContainerProps = {
   items: InvoiceLineItem[];
+  billableItems: Omit<InvoiceLineItem, 'id'>[];
   depositCents: number;
   withdrawDeposit: boolean;
   taxPercent: number;
@@ -18,26 +19,6 @@ type TotalBillContainerProps = {
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
   onRemoveItem: (id: string) => void;
 };
-
-/** Searchable catalog — results only surface as the user types (no chips up front). */
-const BILLABLE_ITEMS: Omit<InvoiceLineItem, 'id'>[] = [
-  {
-    name: 'Bandage change',
-    unitPriceCents: 6500,
-    qty: 1,
-    grossCents: 6500,
-    discountCents: 500,
-    amountCents: 6000,
-  },
-  {
-    name: 'Hospitalization day charge',
-    unitPriceCents: 12000,
-    qty: 1,
-    grossCents: 12000,
-    discountCents: 0,
-    amountCents: 12000,
-  },
-];
 
 const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
 
@@ -372,6 +353,7 @@ const TotalsFooter = ({
 
 const TotalBillContainer = ({
   items,
+  billableItems,
   depositCents,
   withdrawDeposit,
   taxPercent,
@@ -387,8 +369,8 @@ const TotalBillContainer = ({
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return [];
-    return BILLABLE_ITEMS.filter((item) => item.name.toLowerCase().includes(query));
-  }, [search]);
+    return billableItems.filter((item) => item.name.toLowerCase().includes(query));
+  }, [billableItems, search]);
 
   const totals = buildTotals(
     items,

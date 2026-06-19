@@ -5,6 +5,7 @@ import { axe, toHaveNoViolations } from 'jest-axe';
 import TreatmentStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/TreatmentStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useInventoryStore } from '@/app/stores/inventoryStore';
+import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { savePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
 import {
@@ -52,6 +53,78 @@ const resetInventory = () =>
     statusByOrgId: {},
     errorByOrgId: {},
     lastFetchedByOrgId: {},
+  });
+
+const resetCatalog = () =>
+  useRevampCatalogStore.setState({
+    specialities: [
+      {
+        id: 'spec-treatment',
+        name: 'Rehabilitation',
+        organisationId: ORG,
+        teamMemberIds: [],
+      },
+    ],
+    services: [
+      {
+        id: 'svc-physical-exam',
+        code: 'CS-0001',
+        name: 'Physical examination',
+        description: 'Assess mobility and pain response',
+        type: 'CONSULTATION',
+        specialityId: 'spec-treatment',
+        organisationId: ORG,
+        grossAmount: 85,
+        defaultDiscount: 0,
+        maxDiscount: 100,
+        durationMinutes: 30,
+        isBookable: true,
+        isInpatientPreferred: false,
+        status: 'ACTIVE',
+        createdAt: '2026-04-20T10:00:00.000Z',
+      },
+    ],
+    packages: [
+      {
+        id: 'pkg-arthritis-care',
+        code: 'PK-0001',
+        name: 'Arthritis care package',
+        description: 'Includes exam, injection and follow-up',
+        specialityId: 'spec-treatment',
+        organisationId: ORG,
+        durationText: 'Approx. 30 mins',
+        isBookable: true,
+        isInpatientPreferred: false,
+        currency: 'USD',
+        leadCount: 1,
+        supportCount: 0,
+        additionalDiscount: 0,
+        status: 'ACTIVE',
+        createdAt: '2026-04-20T10:00:00.000Z',
+        breakdown: [
+          {
+            id: 'pkg-bd-1',
+            childItemId: 'svc-mobility',
+            type: 'CONSULTATION',
+            name: 'Mobility exam',
+            unitPrice: 85,
+            quantity: 1,
+            discount: 0,
+          },
+          {
+            id: 'pkg-bd-2',
+            childItemId: 'svc-injection',
+            type: 'PROCEDURE',
+            name: 'SC Injection',
+            unitPrice: 70,
+            quantity: 1,
+            discount: 0,
+          },
+        ],
+      },
+    ],
+    status: 'ready',
+    loadedSpecialityIds: ['spec-treatment:active'],
   });
 
 const inventoryItem = (id: string, name: string, category = 'Medicine'): InventoryItem => ({
@@ -189,6 +262,8 @@ describe('TreatmentStep', () => {
   beforeEach(() => {
     reset();
     resetInventory();
+    resetCatalog();
+    seedPrescriptionInventory();
     (savePrescriptionArtifact as jest.Mock).mockClear();
     (savePrescriptionArtifact as jest.Mock).mockResolvedValue({
       resourceType: 'MedicationRequest',
@@ -260,7 +335,14 @@ describe('TreatmentStep', () => {
 
   it('adds and removes services from the workspace store', () => {
     const enc = seedAndGet();
-    render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
 
     // Adding is search-driven: type to surface the result, then click it.
     fireEvent.change(screen.getByLabelText(/search for services and packages/i), {
@@ -294,7 +376,14 @@ describe('TreatmentStep', () => {
 
   it('adds items purely from the search results (no click-to-add box)', () => {
     const enc = { ...seedAndGet(), services: [], prescription: [] };
-    render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
 
     // The dashed "click to search and add" boxes are gone — adding is search-only.
     expect(screen.queryByText(/click to search and add/i)).not.toBeInTheDocument();
@@ -466,7 +555,7 @@ describe('TreatmentStep', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: /load schedule template/i }));
-    fireEvent.click(screen.getByRole('button', { name: /post-op care pathway/i }));
+    fireEvent.click(screen.getByRole('option', { name: /post-op care pathway/i }));
 
     await waitFor(() =>
       expect(createWorkspaceTemplateInstance).toHaveBeenCalledWith(ORG, 'tpl-care', {
@@ -510,7 +599,7 @@ describe('TreatmentStep', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Record' }));
     // Assign the first task via its Assigned-to dropdown.
     fireEvent.click(screen.getAllByRole('button', { name: /assigned to/i })[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Dr. Tim Apple' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Dr. Tim Apple' }));
     expect(
       useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.schedule[0].assignedToName
     ).toBe('Dr. Tim Apple');

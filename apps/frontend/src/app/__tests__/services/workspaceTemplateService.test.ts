@@ -2,18 +2,16 @@ import type { TemplateLike } from '@yosemite-crew/types';
 import {
   applyInpatientScheduleTemplate,
   cancelInpatientScheduleTemplate,
-  cancelInpatientSchedule,
   createWorkspaceTemplateInstance,
   getWorkspaceTemplateById,
   getInpatientScheduleForEncounter,
+  listDischargeSummaryTemplates,
   listSoapTemplatesForWorkspace,
+  listVitalsTemplates,
   listWorkspaceTemplates,
   pauseInpatientScheduleTemplate,
-  pauseInpatientSchedule,
   regenerateInpatientScheduleTemplate,
-  regenerateInpatientSchedule,
   resumeInpatientScheduleTemplate,
-  resumeInpatientSchedule,
   submitWorkspaceTemplateInstance,
   templateToSoapTemplate,
   updateWorkspaceTemplateCatalogLinks,
@@ -96,6 +94,42 @@ describe('workspaceTemplateService', () => {
     await expect(listSoapTemplatesForWorkspace('org-1')).resolves.toEqual([
       expect.objectContaining({ id: 'tpl-2', name: 'Org SOAP' }),
     ]);
+  });
+
+  it('loads published vitals templates for workspace record flows', async () => {
+    getDataMock
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({
+        data: [{ ...template('tpl-vitals', 'Vitals'), kind: 'VITAL_RECORD' }],
+      })
+      .mockResolvedValueOnce({ data: [] });
+
+    await expect(listVitalsTemplates('org-1')).resolves.toEqual([
+      expect.objectContaining({ id: 'tpl-vitals', kind: 'VITAL_RECORD' }),
+    ]);
+
+    expect(getDataMock).toHaveBeenNthCalledWith(1, '/v1/templates/pms/templates/library', {
+      kind: 'VITAL_RECORD',
+      status: 'PUBLISHED',
+    });
+  });
+
+  it('loads published discharge summary templates for workspace summary flows', async () => {
+    getDataMock
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({
+        data: [{ ...template('tpl-discharge', 'Discharge'), kind: 'DISCHARGE_SUMMARY' }],
+      })
+      .mockResolvedValueOnce({ data: [] });
+
+    await expect(listDischargeSummaryTemplates('org-1')).resolves.toEqual([
+      expect.objectContaining({ id: 'tpl-discharge', kind: 'DISCHARGE_SUMMARY' }),
+    ]);
+
+    expect(getDataMock).toHaveBeenNthCalledWith(1, '/v1/templates/pms/templates/library', {
+      kind: 'DISCHARGE_SUMMARY',
+      status: 'PUBLISHED',
+    });
   });
 
   it('maps backend templates to SOAP template options', () => {
@@ -242,43 +276,14 @@ describe('workspaceTemplateService', () => {
     );
   });
 
-  it('calls encounter schedule read and schedule-id lifecycle operations', async () => {
+  it('calls encounter schedule read endpoint', async () => {
     getDataMock.mockResolvedValueOnce({ data: { resourceType: 'Task', id: 'schedule-1' } });
-    postDataMock.mockResolvedValue({ data: { resourceType: 'Task', id: 'schedule-1' } });
 
     await getInpatientScheduleForEncounter('org-1', 'enc-1');
-    await pauseInpatientSchedule('org-1', 'schedule-1');
-    await resumeInpatientSchedule('org-1', 'schedule-1', { notify: true });
-    await cancelInpatientSchedule('org-1', 'schedule-1');
-    await regenerateInpatientSchedule('org-1', 'schedule-1', {
-      deferUntil: '2026-04-25T09:00:00.000Z',
-    });
 
     expect(getDataMock).toHaveBeenCalledWith(
       '/fhir/v1/task-schedule/organisation/org-1/encounter/enc-1'
     );
-    expect(postDataMock).toHaveBeenNthCalledWith(
-      1,
-      '/fhir/v1/task-schedule/organisation/org-1/schedule/schedule-1/$pause',
-      { resourceType: 'Parameters', parameter: [] }
-    );
-    expect(postDataMock).toHaveBeenNthCalledWith(
-      2,
-      '/fhir/v1/task-schedule/organisation/org-1/schedule/schedule-1/$resume',
-      { resourceType: 'Parameters', parameter: [{ name: 'notify', valueBoolean: true }] }
-    );
-    expect(postDataMock).toHaveBeenNthCalledWith(
-      3,
-      '/fhir/v1/task-schedule/organisation/org-1/schedule/schedule-1/$cancel',
-      { resourceType: 'Parameters', parameter: [] }
-    );
-    expect(postDataMock).toHaveBeenNthCalledWith(
-      4,
-      '/fhir/v1/task-schedule/organisation/org-1/schedule/schedule-1/$regenerate',
-      {
-        resourceType: 'Parameters',
-        parameter: [{ name: 'deferUntil', valueDateTime: '2026-04-25T09:00:00.000Z' }],
-      }
-    );
+    expect(postDataMock).not.toHaveBeenCalled();
   });
 });

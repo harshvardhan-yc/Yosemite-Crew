@@ -126,17 +126,19 @@ const SoapStep = ({
   const handleSaveAndNext = async () => {
     if (isSaving) return;
     setIsSaving(true);
+    let persistedId: string | undefined;
     try {
       if (organisationId) {
-        await saveSoapNote(
+        const saved = await saveSoapNote(
           { organisationId, appointmentId, encounterId, authorId, templateId: note.templateId },
           note
         );
+        persistedId = (saved as { id?: string } | undefined)?.id;
       }
     } catch (error) {
       console.error('Unable to persist SOAP note:', error);
     } finally {
-      signSoap(appointmentId, encounter.leadName ?? 'Clinician', false);
+      signSoap(appointmentId, encounter.leadName ?? 'Clinician', false, persistedId);
       setIsSaving(false);
       onSaveAndNext();
     }

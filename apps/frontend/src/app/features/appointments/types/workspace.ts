@@ -318,6 +318,8 @@ export type AppointmentEncounter = {
   /** Set when the discharge summary is saved — drives the read-only saved view. */
   dischargeSavedAt?: string;
   dischargeSavedByName?: string;
+  /** Backend artifact id once persisted, so later saves PATCH instead of POSTing a duplicate. */
+  dischargeSummaryId?: string;
   documents: WorkspaceDocument[];
   readyForBilling: ReadyState;
   readyForDischarge: ReadyState;

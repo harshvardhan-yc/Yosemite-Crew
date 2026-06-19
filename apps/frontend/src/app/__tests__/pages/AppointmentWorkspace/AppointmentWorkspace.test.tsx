@@ -13,6 +13,7 @@ import {
 } from '@/app/features/appointments/services/appointmentService';
 import { loadWorkspaceClinicalArtifacts } from '@/app/features/appointments/services/workspaceClinicalService';
 import { listSoapTemplatesForWorkspace } from '@/app/features/appointments/services/workspaceTemplateService';
+import { markAppointmentReadyForBilling } from '@/app/features/billing/services/invoiceService';
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
@@ -101,6 +102,10 @@ jest.mock('@/app/features/appointments/services/workspaceClinicalService', () =>
 }));
 jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
   listSoapTemplatesForWorkspace: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('@/app/features/billing/services/invoiceService', () => ({
+  markAppointmentReadyForBilling: jest.fn().mockResolvedValue({}),
 }));
 
 const makeAppointment = (startTime: Date, inpatient = false): Appointment => ({
@@ -207,8 +212,12 @@ describe('AppointmentWorkspace container', () => {
     fireEvent.click(screen.getByRole('button', { name: /go back/i }));
     expect(mockPush).toHaveBeenCalledWith('/appointments');
 
-    fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
-    fireEvent.click(screen.getByRole('button', { name: /ready for discharge/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for discharge/i }));
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Mock record vitals' }));
     expect(useAppointmentWorkspaceStore.getState().activeSideAction).toBe('RECORD');
 
@@ -254,7 +263,7 @@ describe('AppointmentWorkspace container', () => {
 
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /room: ward a/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'Ward B' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Ward B' }));
     // Selecting a room auto-selects that room's first unit, so the Unit dropdown
     // now reflects "B" (unit-b) rather than the placeholder.
     expect(screen.getByRole('button', { name: 'Unit: B' })).toBeInTheDocument();
@@ -296,6 +305,35 @@ describe('AppointmentWorkspace container', () => {
       useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForDischarge
         .value
     ).toBe(false);
+  });
+
+  it('notifies finance when an appointment is marked ready for billing', async () => {
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(new Date(), true),
+            encounterId: 'enc-1',
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+
+    await waitFor(() => {
+      expect(markAppointmentReadyForBilling).toHaveBeenCalledWith('appt-workspace', {
+        organisationId: 'org-1',
+        visitId: 'enc-1',
+        notes: 'Ready for billing from appointment workspace',
+      });
+    });
+    expect(
+      useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling.value
+    ).toBe(true);
   });
 
   it('wires active step callbacks from Diagnostics through Invoice', async () => {

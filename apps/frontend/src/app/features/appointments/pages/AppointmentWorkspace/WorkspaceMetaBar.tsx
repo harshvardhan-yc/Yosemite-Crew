@@ -47,6 +47,8 @@ const ConsultationTypeField = ({ mode }: { mode: EncounterMode }) => {
 type WorkspaceMetaBarProps = {
   encounter: AppointmentEncounter;
   activeStep: WorkspaceStep;
+  leadPhotoUrl?: string;
+  supportPhotoUrl?: string;
   roomOptions: DropdownItem[];
   unitOptions: DropdownItem[];
   onSelectRoom: (option: DropdownOption) => void;
@@ -72,6 +74,8 @@ type WorkspaceMetaBarProps = {
 const WorkspaceMetaBar = ({
   encounter,
   activeStep,
+  leadPhotoUrl,
+  supportPhotoUrl,
   roomOptions,
   unitOptions,
   onSelectRoom,
@@ -94,10 +98,10 @@ const WorkspaceMetaBar = ({
   const staffFields = (
     <>
       <div className="w-52">
-        <StaffField label="Assigned Lead" name={encounter.leadName} />
+        <StaffField label="Assigned Lead" name={encounter.leadName} photoUrl={leadPhotoUrl} />
       </div>
       <div className="w-52">
-        <StaffField label="Support Staff" name={encounter.nurseName} />
+        <StaffField label="Support Staff" name={encounter.nurseName} photoUrl={supportPhotoUrl} />
       </div>
       <div className="w-52">
         <ConsultationTypeField mode={encounter.mode} />

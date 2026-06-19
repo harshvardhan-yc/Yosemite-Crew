@@ -25,6 +25,7 @@ export type SoapNoteListItem = {
 
 type SoapNotesListProps = {
   items: SoapNoteListItem[];
+  emptyLabel?: string;
   /** Prints a single past note. */
   onPrint: (item: SoapNoteListItem) => void;
 };
@@ -118,19 +119,28 @@ const SoapNoteRow = ({
  * row per signed note (clipboard icon · "SOAP Note" · By <name> · date · time ·
  * dark eye), expanding into a nested bordered label/value read-out.
  */
-const SoapNotesList = ({ items, onPrint }: SoapNotesListProps) => {
-  if (items.length === 0) return null;
+const SoapNotesList = ({
+  items,
+  emptyLabel = 'No SOAP notes recorded yet.',
+  onPrint,
+}: SoapNotesListProps) => {
   return (
     <SectionContainer
       titleClassName="text-yc-20-b-primary"
       title="All SOAP notes"
       disableFocusBorder
     >
-      <ul className="flex flex-col">
-        {items.map((item) => (
-          <SoapNoteRow key={item.id} item={item} onPrint={onPrint} />
-        ))}
-      </ul>
+      {items.length === 0 ? (
+        <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
+          {emptyLabel}
+        </p>
+      ) : (
+        <ul className="flex flex-col">
+          {items.map((item) => (
+            <SoapNoteRow key={item.id} item={item} onPrint={onPrint} />
+          ))}
+        </ul>
+      )}
     </SectionContainer>
   );
 };
