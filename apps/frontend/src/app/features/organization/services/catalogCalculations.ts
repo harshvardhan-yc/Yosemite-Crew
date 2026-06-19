@@ -47,7 +47,13 @@ export const computePackageTotals = (pkg: PackageRevamp) => {
     return sum + net;
   }, 0);
   const additionalDiscountAmt = (afterItemDiscounts * pkg.additionalDiscount) / 100;
-  const totalCost = afterItemDiscounts - additionalDiscountAmt;
+  const computedTotal = afterItemDiscounts - additionalDiscountAmt;
+  // List rows can arrive without a loaded breakdown (totals collapse to 0). Fall back to the
+  // backend-computed final amount so the package cost still renders correctly everywhere.
+  const totalCost =
+    computedTotal > 0 || pkg.serverFinalAmount === undefined
+      ? computedTotal
+      : pkg.serverFinalAmount;
   return { grossTotal, afterItemDiscounts, additionalDiscountAmt, totalCost };
 };
 

@@ -21,6 +21,10 @@ import {
   ServiceRevamp,
   SpecialityRevamp,
 } from '@/app/features/organization/types/revamp';
+import {
+  computePackageBreakdownItem,
+  computePackageTotals,
+} from '@/app/features/organization/services/catalogCalculations';
 
 type ListResponse<T> = { items?: T[] } | T[];
 type SpecialityRow = {
@@ -127,6 +131,8 @@ type CatalogRowLike = Partial<CatalogListRow> & {
     leadCount?: number | null;
     supportCount?: number | null;
     additionalDiscountPercent?: number | null;
+    finalAmount?: number | null;
+    grossAmount?: number | null;
   } | null;
   packageItems?: PackageDetailItemLike[] | null;
 };
@@ -241,6 +247,7 @@ const mapPackageRow = (
   supportCount: row.package?.supportCount ?? row.supportCount ?? 0,
   additionalDiscount: row.package?.additionalDiscountPercent ?? row.additionalDiscountPercent ?? 0,
   breakdown: mapBreakdown(row.packageItems ?? []),
+  serverFinalAmount: row.package?.finalAmount ?? undefined,
   status: row.isActive === false ? 'ARCHIVED' : 'ACTIVE',
   createdAt: new Date().toISOString(),
   version: row.version,
@@ -297,8 +304,13 @@ const catalogPayloadFromService = (
 const catalogPayloadFromPackage = (
   pkg: Omit<PackageRevamp, 'id' | 'code' | 'createdAt'> &
     Partial<Pick<PackageRevamp, 'id' | 'code' | 'version'>>
-) =>
-  toCatalogResponseDTO({
+) => {
+  const totals = computePackageTotals(pkg as PackageRevamp);
+  const itemDiscountAmount = pkg.breakdown.reduce(
+    (sum, item) => sum + computePackageBreakdownItem(item).discountAmt,
+    0
+  );
+  return toCatalogResponseDTO({
     id: pkg.id ?? '',
     version: pkg.version,
     organisationId: pkg.organisationId,
@@ -310,7 +322,7 @@ const catalogPayloadFromPackage = (
     legacyServiceId: null,
     isActive: pkg.status !== 'ARCHIVED',
     defaultPrice: {
-      unitPrice: 0,
+      unitPrice: totals.totalCost,
       currency: pkg.currency ?? null,
       defaultDiscountPercent: 0,
       maxDiscountPercent: 100,
@@ -324,27 +336,35 @@ const catalogPayloadFromPackage = (
       leadCount: pkg.leadCount,
       supportCount: pkg.supportCount,
       additionalDiscountPercent: pkg.additionalDiscount,
-      grossAmount: 0,
-      itemDiscountAmount: 0,
-      additionalDiscountAmount: 0,
+      grossAmount: totals.grossTotal,
+      itemDiscountAmount,
+      additionalDiscountAmount: totals.additionalDiscountAmt,
       breakdownItemCount: pkg.breakdown.length,
     },
-    packageItems: pkg.breakdown.map((item, index) => ({
-      id: item.id,
-      packageId: pkg.id ?? '',
-      childProductItemId: item.childItemId ?? item.id,
-      quantity: item.quantity,
-      pricingMode: 'INHERITED_PRICE',
-      overridePrice: null,
-      discountPercent: item.discount,
-      sortOrder: index,
-      isOptional: false,
-      childProductCode: item.code ?? null,
-      childProductName: item.name,
-      childProductKind: toProductKind(item.type),
-      currency: item.currency ?? null,
-    })),
+    packageItems: pkg.breakdown.map((item, index) => {
+      const line = computePackageBreakdownItem(item);
+      return {
+        id: item.id,
+        packageId: pkg.id ?? '',
+        childProductItemId: item.childItemId ?? item.id,
+        quantity: item.quantity,
+        pricingMode: 'INHERITED_PRICE',
+        overridePrice: null,
+        discountPercent: item.discount,
+        sortOrder: index,
+        isOptional: false,
+        childProductCode: item.code ?? null,
+        childProductName: item.name,
+        childProductKind: toProductKind(item.type),
+        currency: item.currency ?? null,
+        unitPrice: item.unitPrice,
+        grossAmount: line.gross,
+        discountAmount: line.discountAmt,
+        finalAmount: line.net,
+      };
+    }),
   });
+};
 
 const mapHealthcareService = (
   dto: HealthcareService,

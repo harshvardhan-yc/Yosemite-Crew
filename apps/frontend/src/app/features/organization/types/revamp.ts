@@ -62,6 +62,8 @@ export type PackageRevamp = {
   supportCount: number;
   additionalDiscount: number;
   breakdown: PackageBreakdownItem[];
+  /** Backend pre-computed final amount; used as the total when breakdown is not loaded. */
+  serverFinalAmount?: number;
   status: CatalogItemStatus;
   createdAt: string;
 };
