@@ -97,7 +97,7 @@ logger.error('Payment failed', { error, userId });
 
 ## Gotchas
 
-- Do not refactor backend architecture unless explicitly asked — the user's CLAUDE.md is explicit about this.
+- Do not refactor backend architecture unless explicitly asked — the user's AGENTS.md is explicit about this.
 - Zod `.parse()` throws on invalid input — use `.safeParse()` when you want to handle errors gracefully.
 - BullMQ jobs are persisted in Redis — make job processors idempotent.
 - All Stripe webhook handlers must verify the signature before processing.
