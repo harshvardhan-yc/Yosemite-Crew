@@ -706,6 +706,8 @@ model Organization {
   ratingCount                 Int              @default(0)
   appointmentCheckInBufferMinutes Int          @default(5)
   appointmentCheckInRadiusMeters  Int          @default(200)
+  appointmentLockWindowOutpatientMinutes Int?
+  appointmentLockWindowInpatientMinutes   Int?
   createdAt                   DateTime         @default(now())
   updatedAt                   DateTime         @updatedAt
 

@@ -123,6 +123,11 @@ type WorkspaceContext = {
   client: ParentRow | null;
 };
 
+type OrganizationLockWindowRow = {
+  appointmentLockWindowOutpatientMinutes: number | null;
+  appointmentLockWindowInpatientMinutes: number | null;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -147,6 +152,11 @@ const buildWorkspaceSummaryItem = (input: {
   createdAt: Date;
   updatedAt: Date;
 }): WorkspaceSummaryItem => input;
+
+const normalizeAppointmentKind = (
+  value: string | undefined,
+): "OUTPATIENT" | "INPATIENT" =>
+  value === "INPATIENT" ? "INPATIENT" : "OUTPATIENT";
 
 const mapEncounterRow = (row: EncounterRow): Encounter => ({
   id: row.id,
@@ -219,14 +229,52 @@ const buildPermissionSnapshot = (
   };
 };
 
-const buildLocks = (): WorkspaceLockState => ({
-  appointment: false,
-  encounter: false,
-  episodeOfCare: false,
-  templateInstances: false,
-  clinicalArtifacts: false,
-  prescriptions: false,
-  documents: false,
+const resolveLockWindowMinutes = (
+  organisation: OrganizationLockWindowRow | null,
+  appointmentKind: string | undefined,
+): number | null => {
+  if (!organisation) {
+    return null;
+  }
+
+  const normalizedKind = normalizeAppointmentKind(appointmentKind);
+  const windowMinutes =
+    normalizedKind === "INPATIENT"
+      ? organisation.appointmentLockWindowInpatientMinutes
+      : organisation.appointmentLockWindowOutpatientMinutes;
+
+  return typeof windowMinutes === "number" ? windowMinutes : null;
+};
+
+const resolveWorkspaceLock = (input: {
+  appointment: AppointmentRow | null;
+  encounter: Encounter | null;
+  organisation: OrganizationLockWindowRow | null;
+  now?: Date;
+}): boolean => {
+  const startAt = input.appointment?.startTime ?? input.encounter?.periodStart;
+  const windowMinutes = resolveLockWindowMinutes(
+    input.organisation,
+    input.appointment?.appointmentKind ?? input.encounter?.appointmentKind,
+  );
+
+  if (!startAt || windowMinutes == null || windowMinutes < 0) {
+    return false;
+  }
+
+  const lockAt = startAt.getTime() + windowMinutes * 60 * 1000;
+  return (input.now ?? new Date()).getTime() >= lockAt;
+};
+
+const buildLocks = (locked: boolean): WorkspaceLockState => ({
+  appointment: locked,
+  encounter: locked,
+  episodeOfCare: locked,
+  templateInstances: locked,
+  clinicalArtifacts: locked,
+  prescriptions: locked,
+  documents: locked,
+  treatmentItems: locked,
 });
 
 const buildPrimaryAction = (input: {
@@ -550,6 +598,7 @@ const buildTreatmentItemsFromPrescriptions = (
     artifact: { id: string; status: string; createdAt: Date; updatedAt: Date };
     prescription: { medications: unknown };
   }>,
+  locked = false,
 ): WorkspaceTreatmentItem[] =>
   prescriptions.map((record) => {
     const medications = Array.isArray(record.prescription.medications)
@@ -591,7 +640,7 @@ const buildTreatmentItemsFromPrescriptions = (
       priceSnapshot: {},
       billingStatus: "UNBILLED",
       invoiceRowId: null,
-      lockState: { locked: false },
+      lockState: { locked },
       prescriptionId: record.artifact.id,
       name: medications.length ? "Treatment items" : "Prescription",
       medicationCount: medications.length,
@@ -1214,6 +1263,13 @@ const buildBootstrapAggregate = async (
   options?: { requireAppointment?: boolean },
 ): Promise<WorkspaceBootstrapResponse> => {
   const context = await buildContext(input);
+  const organisation = (await prisma.organization.findUnique({
+    where: { id: input.organisationId },
+    select: {
+      appointmentLockWindowOutpatientMinutes: true,
+      appointmentLockWindowInpatientMinutes: true,
+    },
+  })) as OrganizationLockWindowRow | null;
 
   if (options?.requireAppointment && !context.appointment) {
     throw new WorkspaceServiceError("Appointment not found", 404);
@@ -1284,6 +1340,11 @@ const buildBootstrapAggregate = async (
     ordersAndResults.orders,
     ordersAndResults.results,
   );
+  const locked = resolveWorkspaceLock({
+    appointment: context.appointment,
+    encounter: context.encounter,
+    organisation,
+  });
 
   return {
     organisationId: input.organisationId,
@@ -1329,6 +1390,7 @@ const buildBootstrapAggregate = async (
     treatmentItems: [
       ...buildTreatmentItemsFromPrescriptions(
         clinical.prescriptions as never,
+        locked,
       ).map((item) => ({
         ...item,
         organisationId: input.organisationId,
@@ -1347,7 +1409,7 @@ const buildBootstrapAggregate = async (
     schedules,
     forms: forms.items,
     documents,
-    locks: buildLocks(),
+    locks: buildLocks(locked),
     permissions: buildPermissionSnapshot(permissions),
     primaryAction: buildPrimaryAction({
       forms: forms.items,
