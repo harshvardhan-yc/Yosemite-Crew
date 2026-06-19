@@ -65,7 +65,7 @@ export interface InvoiceTaxProviderAdapter {
 type AutoTaxPreviewLineItem = {
   amount: number;
   description: string;
-  quantity: number;
+  currency: string;
   tax_behavior: "exclusive" | "inclusive";
 };
 
@@ -204,7 +204,7 @@ const buildAutomaticTaxLineItems = (
     return {
       amount: Math.round(discountedAmount * 100),
       description: input.lineItems[index]?.description ?? `Line ${index + 1}`,
-      quantity: input.lineItems[index]?.quantity ?? 1,
+      currency: input.currency,
       tax_behavior:
         (input.taxBehavior ?? DEFAULT_TAX_BEHAVIOR) === "INCLUSIVE"
           ? "inclusive"
