@@ -3133,6 +3133,35 @@ describe("CatalogService", () => {
           specialityId: "spec_1",
           organisationId: "org_1",
           prices: [{ unitPrice: 50 }],
+          package: {
+            items: [
+              {
+                id: "pkg_item_1",
+                childProductItemId: "child_1",
+                quantity: 2,
+                pricingMode: "INCLUDED",
+                overridePrice: null,
+                discountPercent: null,
+                sortOrder: 0,
+                isOptional: false,
+                childProductItem: {
+                  id: "child_1",
+                  name: "Blood Test",
+                  code: "BT-1",
+                  kind: "LAB_TEST",
+                  prices: [
+                    {
+                      unitPrice: 25,
+                      currency: "USD",
+                      defaultDiscountPercent: 10,
+                      maxDiscountPercent: 20,
+                      isDefault: true,
+                    },
+                  ],
+                },
+              },
+            ],
+          },
         },
       ]);
 
@@ -3153,6 +3182,20 @@ describe("CatalogService", () => {
                   name: "Checkup",
                   kind: "PACKAGE",
                   cost: 50,
+                  packageItems: [
+                    expect.objectContaining({
+                      id: "pkg_item_1",
+                      childProductItemId: "child_1",
+                      childProductName: "Blood Test",
+                      childProductKind: "LAB_TEST",
+                      childProductCode: "BT-1",
+                      quantity: 2,
+                      pricingMode: "INCLUDED",
+                      grossAmount: 0,
+                      discountAmount: 0,
+                      finalAmount: 0,
+                    }),
+                  ],
                 }),
               ],
             }),
