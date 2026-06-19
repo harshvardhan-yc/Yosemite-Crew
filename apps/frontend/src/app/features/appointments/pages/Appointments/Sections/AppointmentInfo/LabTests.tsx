@@ -66,6 +66,24 @@ const normalizeOrders = (orders: LabOrder[]): LabOrder[] =>
     return bDate - aDate;
   });
 
+/**
+ * Lists lab orders scoped to the appointment, falling back to companion-only when the labs
+ * provider does not recognise the appointment (e.g. it was never registered as a lab order
+ * context). The clinician still sees the companion's lab history instead of an error.
+ */
+const listIdexxOrdersWithFallback = async (
+  organisationId: string,
+  appointmentId: string,
+  companionId?: string
+): Promise<LabOrder[]> => {
+  try {
+    return await listIdexxOrders({ organisationId, appointmentId, companionId });
+  } catch (error) {
+    if (!companionId) throw error;
+    return listIdexxOrders({ organisationId, companionId });
+  }
+};
+
 const resolveLatestOrder = (prev: LabOrder | null, normalizedOrders: LabOrder[]): LabOrder => {
   if (!prev) return normalizedOrders[0];
   return normalizedOrders.find((order) => order._id === prev._id) ?? normalizedOrders[0];
@@ -587,11 +605,11 @@ export const useLabTests = (activeAppointment: Appointment | null) => {
     setOrdersLoading(true);
     setError(null);
     try {
-      const orders = await listIdexxOrders({
-        organisationId: primaryOrgId,
-        appointmentId: activeAppointment.id,
-        companionId,
-      });
+      const orders = await listIdexxOrdersWithFallback(
+        primaryOrgId,
+        activeAppointment.id,
+        companionId
+      );
       const normalized = normalizeOrders(orders);
       setAppointmentOrders(normalized);
       appointmentOrdersRef.current = normalized;
@@ -700,11 +718,11 @@ export const useLabTests = (activeAppointment: Appointment | null) => {
             }
           }
 
-          const refreshedOrders = await listIdexxOrders({
-            organisationId: primaryOrgId,
-            appointmentId: activeAppointment.id,
-            companionId,
-          });
+          const refreshedOrders = await listIdexxOrdersWithFallback(
+            primaryOrgId,
+            activeAppointment.id,
+            companionId
+          );
           const normalizedOrders = normalizeOrders(refreshedOrders);
           if (normalizedOrders.length > 0) {
             setAppointmentOrders(normalizedOrders);

@@ -646,7 +646,6 @@ const InvoiceStep = ({
             billableItems={billableItems}
             depositCents={encounter.depositCents}
             withdrawDeposit={encounter.withdrawDeposit}
-            taxPercent={encounter.taxPercent}
             overallDiscountPercent={encounter.overallDiscountPercent}
             onToggleWithdrawDeposit={(value) => setWithdrawDeposit(appointmentId, value)}
             onChangeOverallDiscount={(percent) => setOverallDiscountPercent(appointmentId, percent)}

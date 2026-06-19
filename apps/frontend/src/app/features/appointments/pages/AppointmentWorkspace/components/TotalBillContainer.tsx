@@ -11,7 +11,6 @@ type TotalBillContainerProps = {
   billableItems: Omit<InvoiceLineItem, 'id'>[];
   depositCents: number;
   withdrawDeposit: boolean;
-  taxPercent: number;
   overallDiscountPercent: number;
   onToggleWithdrawDeposit: (value: boolean) => void;
   onChangeOverallDiscount: (percent: number) => void;
@@ -22,9 +21,10 @@ type TotalBillContainerProps = {
 
 const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
 
+// Totals are shown exclusive of taxes — taxes are finalised by the finance/tax provider at
+// invoice finalisation, not estimated in the workspace.
 const buildTotals = (
   items: InvoiceLineItem[],
-  taxPercent: number,
   discountPercent: number,
   depositCents: number,
   withdrawDeposit: boolean
@@ -33,15 +33,13 @@ const buildTotals = (
   const lineDiscountCents = items.reduce((sum, item) => sum + item.discountCents, 0);
   const overallDiscountCents = Math.round((subtotalCents * discountPercent) / 100);
   const discountedCents = Math.max(0, subtotalCents - lineDiscountCents - overallDiscountCents);
-  const taxCents = Math.round((discountedCents * taxPercent) / 100);
-  const estimatedTotalCents = discountedCents + taxCents;
+  const estimatedTotalCents = discountedCents;
   const remainingDepositCents = withdrawDeposit
     ? Math.max(0, depositCents - estimatedTotalCents)
     : depositCents;
   return {
     subtotalCents,
     overallDiscountCents,
-    taxCents,
     estimatedTotalCents,
     remainingDepositCents,
   };
@@ -267,7 +265,6 @@ const FooterBreakdownRow = ({
 const TotalsFooter = ({
   totals,
   depositCents,
-  taxPercent,
   overallDiscountPercent,
   withdrawDeposit,
   onToggleWithdrawDeposit,
@@ -275,7 +272,6 @@ const TotalsFooter = ({
 }: {
   totals: ReturnType<typeof buildTotals>;
   depositCents: number;
-  taxPercent: number;
   overallDiscountPercent: number;
   withdrawDeposit: boolean;
   onToggleWithdrawDeposit: (value: boolean) => void;
@@ -342,11 +338,13 @@ const TotalsFooter = ({
           </span>
         }
       />
-      <FooterBreakdownRow label={`Tax (${taxPercent}%):`} value={formatCents(totals.taxCents)} />
       <FooterBreakdownRow
         label="Estimated Total:"
         value={formatCents(totals.estimatedTotalCents)}
       />
+      <p className="text-right" style={FOOTER_HELPER_TEXT_STYLE}>
+        Exclusive of taxes
+      </p>
     </div>
   </div>
 );
@@ -356,7 +354,6 @@ const TotalBillContainer = ({
   billableItems,
   depositCents,
   withdrawDeposit,
-  taxPercent,
   overallDiscountPercent,
   onToggleWithdrawDeposit,
   onChangeOverallDiscount,
@@ -372,13 +369,7 @@ const TotalBillContainer = ({
     return billableItems.filter((item) => item.name.toLowerCase().includes(query));
   }, [billableItems, search]);
 
-  const totals = buildTotals(
-    items,
-    taxPercent,
-    overallDiscountPercent,
-    depositCents,
-    withdrawDeposit
-  );
+  const totals = buildTotals(items, overallDiscountPercent, depositCents, withdrawDeposit);
 
   return (
     <div className="flex flex-col gap-3">
@@ -454,7 +445,6 @@ const TotalBillContainer = ({
         <TotalsFooter
           totals={totals}
           depositCents={depositCents}
-          taxPercent={taxPercent}
           overallDiscountPercent={overallDiscountPercent}
           withdrawDeposit={withdrawDeposit}
           onToggleWithdrawDeposit={onToggleWithdrawDeposit}
