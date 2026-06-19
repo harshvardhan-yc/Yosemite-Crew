@@ -84,6 +84,14 @@ describe("InvoiceController", () => {
     mockedInvoiceService[method].mockRejectedValue(new Error("Boom"));
   };
 
+  const expectFinanceEnvelope = (data: unknown) => {
+    expect(jsonMock).toHaveBeenCalledWith({
+      data,
+      meta: null,
+      error: null,
+    });
+  };
+
   // ----------------------------------------------------------------------
   // 4. Tests
   // ----------------------------------------------------------------------
@@ -103,7 +111,7 @@ describe("InvoiceController", () => {
         undefined,
       );
       expect(statusMock).toHaveBeenCalledWith(200);
-      expect(jsonMock).toHaveBeenCalledWith([]);
+      expectFinanceEnvelope([]);
     });
 
     it("should handle generic error (500)", async () => {
@@ -140,7 +148,7 @@ describe("InvoiceController", () => {
       await InvoiceController.getInvoiceById(req as Request, res as Response);
 
       expect(statusMock).toHaveBeenCalledWith(200);
-      expect(jsonMock).toHaveBeenCalledWith({ id: "inv1" });
+      expectFinanceEnvelope({ id: "inv1" });
     });
 
     it("should handle generic error (500)", async () => {
@@ -394,7 +402,7 @@ describe("InvoiceController", () => {
         mockedInvoiceService.createCheckoutSessionAndEmailParent,
       ).toHaveBeenCalledWith("inv1");
       expect(statusMock).toHaveBeenCalledWith(200);
-      expect(jsonMock).toHaveBeenCalledWith({ sessionId: "cs_1" });
+      expectFinanceEnvelope({ sessionId: "cs_1" });
     });
 
     it("should handle service error with custom status", async () => {
@@ -475,7 +483,7 @@ describe("InvoiceController", () => {
         "org1",
       );
       expect(statusMock).toHaveBeenCalledWith(200);
-      expect(jsonMock).toHaveBeenCalledWith({ id: "inv1" });
+      expectFinanceEnvelope({ id: "inv1" });
     });
 
     it("should handle service error with custom status", async () => {
@@ -556,7 +564,7 @@ describe("InvoiceController", () => {
         mockedInvoiceService.updatePaymentCollectionMethod,
       ).toHaveBeenCalledWith("inv1", "org1", "AUTO");
       expect(statusMock).toHaveBeenCalledWith(200);
-      expect(jsonMock).toHaveBeenCalledWith({ id: "inv1" });
+      expectFinanceEnvelope({ id: "inv1" });
     });
 
     it("should handle service error with custom status", async () => {
@@ -625,7 +633,7 @@ describe("InvoiceController", () => {
         },
       );
       expect(statusMock).toHaveBeenCalledWith(201);
-      expect(jsonMock).toHaveBeenCalledWith({ id: "cn_1" });
+      expectFinanceEnvelope({ id: "cn_1" });
     });
 
     it("should handle service error with custom status", async () => {
@@ -672,7 +680,7 @@ describe("InvoiceController", () => {
         "Entered in error",
       );
       expect(statusMock).toHaveBeenCalledWith(200);
-      expect(jsonMock).toHaveBeenCalledWith({
+      expectFinanceEnvelope({
         id: "cn1",
         status: "VOIDED",
       });

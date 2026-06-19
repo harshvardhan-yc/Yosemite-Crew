@@ -298,7 +298,7 @@ const calendarPrefillCache = new Map<
   CachedPromise<CatalogCalendarPrefillMatch[]>
 >();
 
-const requireSafeString = (value: unknown, field: string) => {
+export const requireSafeString = (value: unknown, field: string) => {
   if (typeof value !== "string") {
     throw new CatalogServiceError(`${field} is required.`, 400);
   }
@@ -315,7 +315,7 @@ const requireSafeString = (value: unknown, field: string) => {
   return trimmed;
 };
 
-const optionalSafeString = (value: unknown): string | null => {
+export const optionalSafeString = (value: unknown): string | null => {
   if (value == null) return null;
   if (typeof value !== "string") {
     throw new CatalogServiceError("Invalid string value.", 400);
@@ -324,7 +324,7 @@ const optionalSafeString = (value: unknown): string | null => {
   return trimmed || null;
 };
 
-const resolveCatalogSchedulingContext = async (
+export const resolveCatalogSchedulingContext = async (
   productItemId: string,
   organisationId: string,
 ): Promise<CatalogSchedulingContext> => {
@@ -387,7 +387,7 @@ const resolveCatalogSchedulingContext = async (
   };
 };
 
-const assertPackageItems = (
+export const assertPackageItems = (
   kind: ProductKind,
   packageItems: CatalogPackageItemInput[] | null | undefined,
 ) => {
@@ -406,7 +406,7 @@ const assertPackageItems = (
   }
 };
 
-const assertBookableConfig = (
+export const assertBookableConfig = (
   bookable: CatalogBookableInput | null | undefined,
 ) => {
   if (!bookable) return;
@@ -432,7 +432,9 @@ const assertBookableConfig = (
   }
 };
 
-const assertPriceConfig = (price: CatalogPricePolicy | null | undefined) => {
+export const assertPriceConfig = (
+  price: CatalogPricePolicy | null | undefined,
+) => {
   if (!price) return;
 
   if (price.unitPrice < 0) {
@@ -468,7 +470,7 @@ const assertPriceConfig = (price: CatalogPricePolicy | null | undefined) => {
   }
 };
 
-const sanitizePackageItems = (
+export const sanitizePackageItems = (
   packageItems: CatalogPackageItemInput[] | null | undefined,
 ) => {
   if (!packageItems) return null;
@@ -533,7 +535,7 @@ const MAX_PACKAGE_NESTING_DEPTH = 3;
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
-const ensureSpecialityExists = async (
+export const ensureSpecialityExists = async (
   organisationId: string,
   specialityId: string | null,
 ) => {
@@ -556,7 +558,7 @@ const ensureSpecialityExists = async (
   }
 };
 
-const ensureCodeUniqueness = async (params: {
+export const ensureCodeUniqueness = async (params: {
   organisationId: string;
   code: string;
   excludeProductId?: string;
@@ -582,7 +584,7 @@ const ensureCodeUniqueness = async (params: {
   }
 };
 
-const assertCatalogVersion = (params: {
+export const assertCatalogVersion = (params: {
   currentVersion: number;
   expectedVersion?: number;
   resourceName: string;
@@ -603,7 +605,7 @@ const assertCatalogVersion = (params: {
   }
 };
 
-const generateProductCode = async (
+export const generateProductCode = async (
   organisationId: string,
   kind: ProductKind,
 ): Promise<string> => {
@@ -629,7 +631,7 @@ const generateProductCode = async (
   return `${prefix}-${String(maxValue + 1).padStart(4, "0")}`;
 };
 
-const buildPackageGraph = async (organisationId: string) => {
+export const buildPackageGraph = async (organisationId: string) => {
   const products = await prisma.productItem.findMany({
     where: {
       organisationId,
@@ -659,7 +661,7 @@ const buildPackageGraph = async (organisationId: string) => {
   return graph;
 };
 
-const getPackageDepth = (
+export const getPackageDepth = (
   graph: Map<string, string[]>,
   productId: string,
   visited = new Set<string>(),
@@ -680,7 +682,7 @@ const getPackageDepth = (
   return maxDepth;
 };
 
-const packageContainsTarget = (
+export const packageContainsTarget = (
   graph: Map<string, string[]>,
   packageId: string,
   targetId: string,
@@ -703,7 +705,7 @@ const packageContainsTarget = (
   return false;
 };
 
-const ensureProductDeletionAllowed = async (
+export const ensureProductDeletionAllowed = async (
   productId: string,
   organisationId?: string,
 ) => {
@@ -766,7 +768,7 @@ const ensureProductDeletionAllowed = async (
   }
 };
 
-const mapSpecialitySummaries = (params: {
+export const mapSpecialitySummaries = (params: {
   specialities: Array<{
     id: string;
     organisationId: string;
@@ -856,7 +858,7 @@ const mapSpecialitySummaries = (params: {
     .sort((left, right) => left.name.localeCompare(right.name));
 };
 
-const sanitizeTeamMemberIds = (value: unknown): string[] => {
+export const sanitizeTeamMemberIds = (value: unknown): string[] => {
   if (value == null) return [];
   if (!Array.isArray(value)) {
     throw new CatalogServiceError("teamMemberIds must be an array.", 400);
@@ -867,7 +869,7 @@ const sanitizeTeamMemberIds = (value: unknown): string[] => {
   );
 };
 
-const ensureSpecialityNameUnique = async (params: {
+export const ensureSpecialityNameUnique = async (params: {
   organisationId: string;
   name: string;
   excludeId?: string;
@@ -894,7 +896,7 @@ const ensureSpecialityNameUnique = async (params: {
   }
 };
 
-const ensurePackageItemsValid = async (params: {
+export const ensurePackageItemsValid = async (params: {
   organisationId: string;
   packageItems: CatalogPackageItemInput[];
   currentProductId?: string;
@@ -1018,7 +1020,7 @@ const ensurePackageItemsValid = async (params: {
   }
 };
 
-const ensureSpecialityDeletionAllowed = async (
+export const ensureSpecialityDeletionAllowed = async (
   specialityId: string,
   organisationId: string,
 ) => {

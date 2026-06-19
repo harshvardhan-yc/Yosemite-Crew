@@ -693,4 +693,144 @@ describe("FinanceSubscriptionService", () => {
       }),
     );
   });
+
+  it("covers subscription status and interval mapping branches", async () => {
+    (prisma.financeProviderLink.upsert as jest.Mock).mockResolvedValue({});
+    (prisma.subscriptionEntitlement.upsert as jest.Mock).mockResolvedValue({});
+    (prisma.financeProviderLink.findMany as jest.Mock).mockResolvedValue([
+      { orgId: "org_1" },
+    ]);
+
+    for (const status of [
+      "none",
+      "trialing",
+      "unpaid",
+      "canceled",
+      "incomplete",
+      "incomplete_expired",
+      "paused",
+    ]) {
+      await FinanceSubscriptionService.recordStripeSubscriptionUpdated({
+        id: `sub_${status}`,
+        status: status as any,
+        cancel_at_period_end: false,
+        canceled_at: null,
+        items: {
+          data: [
+            {
+              quantity: 1,
+              current_period_start: 1718668800,
+              current_period_end: 1721260800,
+            },
+          ],
+        },
+      } as any);
+    }
+
+    await FinanceSubscriptionService.recordStripeSubscriptionCheckoutCompleted({
+      customerId: "cus_1",
+      session: { livemode: true } as any,
+      subscription: {
+        id: "sub_year",
+        status: "active",
+        cancel_at_period_end: true,
+        items: {
+          data: [
+            {
+              id: "item_year",
+              quantity: 2,
+              current_period_start: 1718668800,
+              current_period_end: 1721260800,
+              price: {
+                id: "price_year",
+                recurring: { interval: "year" },
+                product: { id: "prod_year" },
+              },
+            },
+          ],
+        },
+      } as any,
+    });
+
+    await FinanceSubscriptionService.recordStripeSubscriptionCheckoutCompleted({
+      customerId: "cus_2",
+      session: { livemode: false } as any,
+      subscription: {
+        id: "sub_missing",
+        status: "active",
+        cancel_at_period_end: false,
+        items: { data: [] },
+      } as any,
+    });
+  });
+
+  it("covers usage lookup and seat sync branches", async () => {
+    (prisma.financeProviderLink.findUnique as jest.Mock)
+      .mockResolvedValueOnce({
+        externalCustomerId: null,
+      })
+      .mockResolvedValueOnce({
+        externalSubscriptionItemId: "item_1",
+        metadata: {
+          subscriptionStatus: "active",
+          seatQuantity: "not-a-number",
+        },
+      })
+      .mockResolvedValueOnce({
+        externalSubscriptionItemId: "item_1",
+        metadata: {
+          subscriptionStatus: "active",
+          seatQuantity: 2,
+        },
+      });
+    (prisma.userOrganization.count as jest.Mock)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(2);
+    (prisma.usageSnapshot.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "snap_1",
+        orgId: "org_1",
+        snapshotType: "snapshot",
+        snapshotAt: new Date("2026-06-18T00:00:00.000Z"),
+        metadata: null,
+      },
+    ]);
+
+    await expect(
+      FinanceSubscriptionService.resolveBillingCustomerId("org_1"),
+    ).resolves.toEqual({ externalCustomerId: null });
+
+    await expect(
+      FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan("org_1"),
+    ).resolves.toEqual({
+      subscriptionItemId: "item_1",
+      oldSeats: 0,
+      newSeats: 2,
+      prorationBehavior: "create_prorations",
+    });
+
+    await expect(
+      FinanceSubscriptionService.resolveSubscriptionSeatSyncPlan("org_1"),
+    ).resolves.toBeNull();
+
+    await expect(
+      FinanceSubscriptionService.listUsageSnapshots("org_1"),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("covers subscription lifecycle branches with missing checkout data", async () => {
+    (prisma.financeProviderLink.findMany as jest.Mock)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    await FinanceSubscriptionService.recordSubscriptionInvoicePaid({
+      subscriptionId: "sub_empty_paid",
+      invoiceId: "inv_1",
+    });
+
+    await FinanceSubscriptionService.recordSubscriptionInvoiceFailed({
+      subscriptionId: "sub_empty_failed",
+      invoiceId: "inv_2",
+    });
+  });
 });
