@@ -47,6 +47,19 @@ describe('LabelDropdown', () => {
     expect(screen.getByText('Feline')).toBeInTheDocument();
   });
 
+  it('selects an option with arrow keys and enter', () => {
+    const onSelect = jest.fn();
+    render(<LabelDropdown placeholder="Species" options={options} onSelect={onSelect} />);
+
+    const trigger = screen.getByRole('button', { name: /Species/i });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+
+    expect(onSelect).toHaveBeenCalledWith({ label: 'Feline', value: 'cat' });
+    expect(screen.getByText('Feline')).toBeInTheDocument();
+  });
+
   it('preselects default option', () => {
     render(
       <LabelDropdown

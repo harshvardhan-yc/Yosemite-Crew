@@ -53,6 +53,7 @@ const Dropdown = ({
 }: DropdownProps) => {
   const [open, setOpen] = useState(false);
   const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
   const errorId = useId();
@@ -100,6 +101,10 @@ const Dropdown = ({
     }
     return list;
   }, [list, query, search]);
+  const activeOptionId =
+    activeIndex >= 0 && activeIndex < filteredList.length
+      ? `${listboxId}-option-${filteredList[activeIndex].value}`
+      : undefined;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -175,9 +180,89 @@ const Dropdown = ({
   const isActive = open || !!value;
   const selected = list.find((opt: any) => opt.value === value);
 
+  useEffect(() => {
+    if (!open || filteredList.length === 0) {
+      setActiveIndex(-1);
+      return;
+    }
+    setActiveIndex((current) => {
+      if (current >= 0 && current < filteredList.length) return current;
+      const selectedIndex = filteredList.findIndex((option: any) => option.value === value);
+      return selectedIndex >= 0 ? selectedIndex : 0;
+    });
+  }, [filteredList, open, value]);
+
+  useEffect(() => {
+    if (!open || !activeOptionId) return;
+    document.getElementById(activeOptionId)?.scrollIntoView({ block: 'nearest' });
+  }, [activeOptionId, open]);
+
+  const selectOption = useCallback(
+    (option: any) => {
+      const valueToSend: string = option.value ?? option.label ?? '';
+      onChange(returnObject ? option : valueToSend);
+      setOpen(false);
+      setQuery('');
+    },
+    [onChange, returnObject]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (disabled) return;
+      const optionCount = filteredList.length;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (optionCount === 0) return;
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => (current + 1 >= optionCount ? 0 : current + 1));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (optionCount === 0) return;
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => (current <= 0 ? optionCount - 1 : current - 1));
+        return;
+      }
+      if (event.key === 'Home' && open && optionCount > 0) {
+        event.preventDefault();
+        setActiveIndex(0);
+        return;
+      }
+      if (event.key === 'End' && open && optionCount > 0) {
+        event.preventDefault();
+        setActiveIndex(optionCount - 1);
+        return;
+      }
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      if (!open) {
+        event.preventDefault();
+        setOpen(true);
+        return;
+      }
+      if (activeIndex < 0 || activeIndex >= optionCount) return;
+      event.preventDefault();
+      selectOption(filteredList[activeIndex]);
+    },
+    [activeIndex, disabled, filteredList, open, selectOption]
+  );
+
   const panel = (
     <div
       id={listboxId}
+      role="listbox"
       aria-label={placeholder}
       data-portal-dropdown
       className={`select-input-dropdown ${shouldPortal ? 'select-input-dropdown-portal' : ''} ${dropdownClassName ?? ''}`}
@@ -194,6 +279,12 @@ const Dropdown = ({
             aria-label={`Search ${placeholder}`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              handleKeyDown(event);
+            }}
+            aria-controls={listboxId}
+            aria-activedescendant={activeOptionId}
             className="border-0 text-[16px]! w-full px-2 focus-visible:outline-none"
             placeholder={`Search ${placeholder}`}
             autoComplete="off"
@@ -213,14 +304,15 @@ const Dropdown = ({
         return (
           <button
             key={valueToSend || label}
+            id={`${listboxId}-option-${valueToSend}`}
             type="button"
-            aria-pressed={isSelected}
-            className={`select-input-dropdown-item ${index === list.length - 1 ? '' : 'border-b border-grey-light'}`}
-            onClick={() => {
-              onChange(returnObject ? option : valueToSend);
-              setOpen(false);
-              setQuery('');
-            }}
+            role="option"
+            aria-selected={isSelected}
+            className={`select-input-dropdown-item ${index === list.length - 1 ? '' : 'border-b border-grey-light'} ${
+              activeOptionId === `${listboxId}-option-${valueToSend}` ? 'bg-card-hover' : ''
+            }`}
+            onMouseEnter={() => setActiveIndex(index)}
+            onClick={() => selectOption(option)}
           >
             {label}
           </button>
@@ -252,6 +344,7 @@ const Dropdown = ({
           aria-label={selected ? `${placeholder}: ${selected.label}` : placeholder}
           aria-describedby={error ? errorId : undefined}
           disabled={disabled}
+          onKeyDown={handleKeyDown}
         >
           {selected && <div className="select-input-selected">{selected.label}</div>}
           <div className="select-input-drop-icon" aria-hidden="true">

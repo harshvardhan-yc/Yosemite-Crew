@@ -45,23 +45,32 @@ const getFloatingLabelStyle = (isFloated: boolean): React.CSSProperties => {
 };
 
 type MultiSelectPanelProps = {
+  listboxId: string;
   filteredOptions: Option[];
   valueSet: Set<string>;
   searchQuery: string;
+  activeOptionId?: string;
   shouldPortal: boolean;
   portalStyle: React.CSSProperties | null;
+  onActiveIndexChange: (index: number) => void;
   onToggleOption: (option: Option) => void;
 };
 
 const MultiSelectPanel = ({
+  listboxId,
   filteredOptions,
   valueSet,
   searchQuery,
+  activeOptionId,
   shouldPortal,
   portalStyle,
+  onActiveIndexChange,
   onToggleOption,
 }: MultiSelectPanelProps) => (
   <div
+    id={listboxId}
+    role="listbox"
+    aria-multiselectable="true"
     data-portal-dropdown
     className="border-input-text-placeholder-active max-h-50 overflow-y-auto scrollbar-hidden z-200 rounded-b-2xl border border-t bg-white flex flex-col items-stretch w-full px-3 py-2.5"
     style={shouldPortal ? (portalStyle ?? undefined) : undefined}
@@ -72,9 +81,14 @@ const MultiSelectPanel = ({
         return (
           <button
             type="button"
-            aria-pressed={isSelected}
-            className="px-3 py-2 text-left text-body-4 hover:bg-card-hover rounded-lg text-text-primary w-full flex items-center justify-between gap-2"
+            id={`${listboxId}-option-${option.value}`}
+            role="option"
+            aria-selected={isSelected}
+            className={`px-3 py-2 text-left text-body-4 hover:bg-card-hover rounded-lg text-text-primary w-full flex items-center justify-between gap-2 ${
+              activeOptionId === `${listboxId}-option-${option.value}` ? 'bg-card-hover' : ''
+            }`}
             key={option.value}
+            onMouseEnter={() => onActiveIndexChange(filteredOptions.indexOf(option))}
             onClick={() => onToggleOption(option)}
           >
             <span>{option.label}</span>
@@ -103,6 +117,8 @@ const MultiSelectDropdown = ({
   portal = true,
 }: DropdownProps) => {
   const searchId = useId();
+  const listboxId = useId();
+  const [activeIndex, setActiveIndex] = React.useState(-1);
   const {
     open,
     searchQuery,
@@ -132,6 +148,10 @@ const MultiSelectDropdown = ({
 
   const filteredOptions = useFilteredOptions(list, searchQuery);
   const shouldPortal = portal && typeof document !== 'undefined';
+  const activeOptionId =
+    activeIndex >= 0 && activeIndex < filteredOptions.length
+      ? `${listboxId}-option-${filteredOptions[activeIndex].value}`
+      : undefined;
 
   const computeStyle = useCallback(() => {
     const rect = dropdownRef.current?.getBoundingClientRect();
@@ -179,19 +199,92 @@ const MultiSelectDropdown = ({
     };
   }, [closeDropdown, open, portal]);
 
-  const toggleOption = (option: Option) => {
-    const isSelected = valueSet.has(option.value);
-    const next = isSelected ? value.filter((v) => v !== option.value) : [...value, option.value];
-    onChange(next);
-  };
+  useEffect(() => {
+    if (!open || filteredOptions.length === 0) {
+      setActiveIndex(-1);
+      return;
+    }
+    setActiveIndex((current) => {
+      if (current >= 0 && current < filteredOptions.length) return current;
+      const selectedIndex = filteredOptions.findIndex((option) => valueSet.has(option.value));
+      return selectedIndex >= 0 ? selectedIndex : 0;
+    });
+  }, [filteredOptions, open, valueSet]);
+
+  useEffect(() => {
+    if (!open || !activeOptionId) return;
+    document.getElementById(activeOptionId)?.scrollIntoView({ block: 'nearest' });
+  }, [activeOptionId, open]);
+
+  const toggleOption = useCallback(
+    (option: Option) => {
+      const isSelected = valueSet.has(option.value);
+      const next = isSelected ? value.filter((v) => v !== option.value) : [...value, option.value];
+      onChange(next);
+    },
+    [onChange, value, valueSet]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      const optionCount = filteredOptions.length;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDropdown();
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (optionCount === 0) return;
+        if (!open) {
+          openDropdown();
+          return;
+        }
+        setActiveIndex((current) => (current + 1 >= optionCount ? 0 : current + 1));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (optionCount === 0) return;
+        if (!open) {
+          openDropdown();
+          return;
+        }
+        setActiveIndex((current) => (current <= 0 ? optionCount - 1 : current - 1));
+        return;
+      }
+      if (event.key === 'Home' && open && optionCount > 0) {
+        event.preventDefault();
+        setActiveIndex(0);
+        return;
+      }
+      if (event.key === 'End' && open && optionCount > 0) {
+        event.preventDefault();
+        setActiveIndex(optionCount - 1);
+        return;
+      }
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      if (!open) {
+        openDropdown();
+        return;
+      }
+      if (activeIndex < 0 || activeIndex >= optionCount) return;
+      toggleOption(filteredOptions[activeIndex]);
+    },
+    [activeIndex, closeDropdown, filteredOptions, open, openDropdown, toggleOption]
+  );
 
   const panel = (
     <MultiSelectPanel
+      listboxId={listboxId}
       filteredOptions={filteredOptions}
       valueSet={valueSet}
       searchQuery={searchQuery}
+      activeOptionId={activeOptionId}
       shouldPortal={shouldPortal}
       portalStyle={portalStyle}
+      onActiveIndexChange={setActiveIndex}
       onToggleOption={toggleOption}
     />
   );
@@ -203,7 +296,10 @@ const MultiSelectDropdown = ({
           type="button"
           aria-label={hasSelection ? `${placeholder}: ${selectedLabel}` : placeholder}
           aria-expanded={open}
+          aria-haspopup="listbox"
+          aria-controls={open ? listboxId : undefined}
           className={`relative w-full flex min-h-12 items-center px-5 pr-11 py-2.75 min-w-30 border cursor-pointer bg-(--whitebg) ${open ? 'border-input-text-placeholder-active! rounded-t-2xl!' : 'border-input-border-default! rounded-2xl!'} ${!hasSelection && error ? 'border-input-border-error!' : ''}`}
+          onKeyDown={handleKeyDown}
           onClick={() => {
             if (!open) {
               openDropdown();
@@ -217,8 +313,14 @@ const MultiSelectDropdown = ({
               name={searchId}
               type="text"
               aria-label={`Search ${placeholder}`}
+              aria-controls={open ? listboxId : undefined}
+              aria-activedescendant={activeOptionId}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                handleKeyDown(event);
+              }}
               placeholder={hasSelection ? selectedLabel : ''}
               className="w-full bg-transparent text-left text-body-4 text-black-text outline-none placeholder:text-input-text-placeholder"
             />

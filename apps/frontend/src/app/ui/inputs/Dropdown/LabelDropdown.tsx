@@ -67,6 +67,7 @@ const LabelDropdown = ({
 }: DropdownProps) => {
   const [internalSelected, setInternalSelected] = useState<DropdownOption | null>(null);
   const [portalStyle, setPortalStyle] = useState<React.CSSProperties | null>(null);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const listboxId = useId();
   const controlledSelected = findDropdownOption(options, defaultOption);
   const selected = defaultOption === undefined ? internalSelected : controlledSelected;
@@ -85,6 +86,10 @@ const LabelDropdown = ({
   const filteredOptions = useFilteredOptions(options, searchQuery);
   const shouldPortal = portal && typeof document !== 'undefined';
   const isTerminologyLocked = Boolean(dropdownRef.current?.closest(TERMINOLOGY_LOCK_SELECTOR));
+  const activeOptionId =
+    activeIndex >= 0 && activeIndex < filteredOptions.length
+      ? `${listboxId}-option-${filteredOptions[activeIndex].value}`
+      : undefined;
 
   const computeStyle = useCallback(() => {
     const rect = dropdownRef.current?.getBoundingClientRect();
@@ -132,10 +137,89 @@ const LabelDropdown = ({
     };
   }, [closeDropdown, open, portal]);
 
+  useEffect(() => {
+    if (!open || filteredOptions.length === 0) {
+      setActiveIndex(-1);
+      return;
+    }
+    setActiveIndex((current) => {
+      if (current >= 0 && current < filteredOptions.length) return current;
+      const selectedIndex = filteredOptions.findIndex((option) => option.value === selected?.value);
+      return selectedIndex >= 0 ? selectedIndex : 0;
+    });
+  }, [filteredOptions, open, selected?.value]);
+
+  useEffect(() => {
+    if (!open || !activeOptionId) return;
+    const activeElement = document.getElementById(activeOptionId);
+    activeElement?.scrollIntoView({ block: 'nearest' });
+  }, [activeOptionId, open]);
+
+  const selectOption = useCallback(
+    (option: DropdownOption) => {
+      setInternalSelected(option);
+      onSelect(option);
+      closeDropdown();
+    },
+    [closeDropdown, onSelect]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      const optionCount = filteredOptions.length;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDropdown();
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (optionCount === 0) return;
+        if (!open) {
+          openDropdown();
+          return;
+        }
+        setActiveIndex((current) => (current + 1 >= optionCount ? 0 : current + 1));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (optionCount === 0) return;
+        if (!open) {
+          openDropdown();
+          return;
+        }
+        setActiveIndex((current) => (current <= 0 ? optionCount - 1 : current - 1));
+        return;
+      }
+      if (event.key === 'Home' && open && optionCount > 0) {
+        event.preventDefault();
+        setActiveIndex(0);
+        return;
+      }
+      if (event.key === 'End' && open && optionCount > 0) {
+        event.preventDefault();
+        setActiveIndex(optionCount - 1);
+        return;
+      }
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      if (!open) {
+        event.preventDefault();
+        openDropdown();
+        return;
+      }
+      if (activeIndex < 0 || activeIndex >= optionCount) return;
+      event.preventDefault();
+      selectOption(filteredOptions[activeIndex]);
+    },
+    [activeIndex, closeDropdown, filteredOptions, open, openDropdown, selectOption]
+  );
+
   // Same visual style for both portal and inline — connected panel below trigger
   const panel = (
     <div
       id={listboxId}
+      role="listbox"
       aria-label={placeholder}
       data-portal-dropdown
       data-terminology-lock={isTerminologyLocked ? 'true' : undefined}
@@ -146,14 +230,17 @@ const LabelDropdown = ({
         filteredOptions.map((option) => (
           <button
             key={option.value}
+            id={`${listboxId}-option-${option.value}`}
             type="button"
-            aria-pressed={selected?.value === option.value}
-            className="px-5 py-3 text-left text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full"
-            onClick={() => {
-              setInternalSelected(option);
-              onSelect(option);
-              closeDropdown();
-            }}
+            role="option"
+            aria-selected={selected?.value === option.value}
+            className={`px-5 py-3 text-left text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full ${
+              activeOptionId === `${listboxId}-option-${option.value}`
+                ? 'bg-card-hover text-text-primary!'
+                : ''
+            }`}
+            onMouseEnter={() => setActiveIndex(filteredOptions.indexOf(option))}
+            onClick={() => selectOption(option)}
           >
             {option.label}
           </button>
@@ -180,6 +267,8 @@ const LabelDropdown = ({
           aria-label={triggerLabel}
           aria-expanded={open}
           aria-controls={open ? listboxId : undefined}
+          aria-haspopup="listbox"
+          onKeyDown={handleKeyDown}
         >
           {open && searchable && (
             <input
@@ -191,6 +280,12 @@ const LabelDropdown = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={selected ? selected.label : ''}
               aria-label={`Search ${placeholder}`}
+              aria-controls={open ? listboxId : undefined}
+              aria-activedescendant={activeOptionId}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                handleKeyDown(event);
+              }}
               className="w-full min-w-0 bg-transparent text-left text-body-4 text-black-text focus-visible:outline-none placeholder:text-input-text-placeholder"
             />
           )}

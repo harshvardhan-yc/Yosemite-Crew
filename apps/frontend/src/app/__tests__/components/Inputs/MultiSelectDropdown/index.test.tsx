@@ -24,7 +24,7 @@ describe('MultiSelectDropdown', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Select/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'One' }));
+    fireEvent.click(screen.getByRole('option', { name: 'One' }));
     expect(onChange).toHaveBeenCalledWith(['One']);
 
     rerender(
@@ -39,11 +39,30 @@ describe('MultiSelectDropdown', () => {
     expect(screen.getByText('One')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('One'));
-    const oneButtons = screen.getAllByRole('button', { name: 'One' });
+    const oneButtons = screen.getAllByRole('option', { name: 'One' });
     const selectedOption = oneButtons.at(-1);
     expect(selectedOption).toBeDefined();
     fireEvent.click(selectedOption!);
     expect(onChange).toHaveBeenCalledWith([]);
+  });
+
+  it('toggles options with arrow keys and enter', () => {
+    const onChange = jest.fn();
+    render(
+      <MultiSelectDropdown
+        placeholder="Select"
+        value={[]}
+        onChange={onChange}
+        options={['One', 'Two']}
+      />
+    );
+
+    const trigger = screen.getByRole('button', { name: /Select/i });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+
+    expect(onChange).toHaveBeenCalledWith(['Two']);
   });
 
   it('renders selected values inside the input as comma-separated text', () => {
