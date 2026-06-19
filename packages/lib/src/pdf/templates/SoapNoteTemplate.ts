@@ -7,10 +7,13 @@ import {
   renderSpacer,
 } from '../sections/Text.js';
 import { renderDocumentEndBlock } from '../sections/DocumentEndBlock.js';
-import type { SoapNoteDocumentData } from '../types.js';
+import type { ClinicalPdfSignaturePlacement, SoapNoteDocumentData } from '../types.js';
 import { buildKeyValue, formatDateValue } from './shared.js';
 
-export const renderSoapNoteTemplate = (ctx: PdfContext, data: SoapNoteDocumentData): void => {
+export const renderSoapNoteTemplate = (
+  ctx: PdfContext,
+  data: SoapNoteDocumentData
+): ClinicalPdfSignaturePlacement => {
   renderDocumentTitle(ctx, data.title);
   renderKeyValueGrid(
     ctx,
@@ -41,7 +44,7 @@ export const renderSoapNoteTemplate = (ctx: PdfContext, data: SoapNoteDocumentDa
   renderParagraph(ctx, data.plan);
 
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
-  renderDocumentEndBlock(ctx, {
+  return renderDocumentEndBlock(ctx, {
     printedBy: data.printedBy,
     signature: data.signature,
   });

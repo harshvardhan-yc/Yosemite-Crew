@@ -8,13 +8,13 @@ import {
 } from '../sections/Text.js';
 import { renderDocumentEndBlock } from '../sections/DocumentEndBlock.js';
 import { renderTable } from '../sections/Table.js';
-import type { PrescriptionDocumentData } from '../types.js';
+import type { ClinicalPdfSignaturePlacement, PrescriptionDocumentData } from '../types.js';
 import { buildKeyValue, formatDateValue } from './shared.js';
 
 export const renderPrescriptionTemplate = (
   ctx: PdfContext,
   data: PrescriptionDocumentData
-): void => {
+): ClinicalPdfSignaturePlacement => {
   renderDocumentTitle(ctx, data.title);
   renderKeyValueGrid(
     ctx,
@@ -60,7 +60,7 @@ export const renderPrescriptionTemplate = (
   }
 
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
-  renderDocumentEndBlock(ctx, {
+  return renderDocumentEndBlock(ctx, {
     printedBy: data.printedBy,
     signature: data.signature,
   });

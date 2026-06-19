@@ -1,6 +1,7 @@
 import { Documenso } from "@documenso/sdk-typescript";
 import * as errors from "@documenso/sdk-typescript/models/errors/index.js";
 import axios from "axios";
+import type { ClinicalPdfSignaturePlacement } from "@yosemite-crew/lib";
 import { prisma } from "src/config/prisma";
 import logger from "src/utils/logger";
 
@@ -12,6 +13,14 @@ const EXTERNAL_AUTH_SECRET =
   process.env["DOCUMENSO_EXTERNAL_AUTH_SECRET"] ?? "";
 
 const documensoClients = new Map<string, Documenso>();
+
+const DEFAULT_SIGNATURE_PLACEMENT: ClinicalPdfSignaturePlacement = {
+  pageNumber: 1,
+  pageX: 330,
+  pageY: 700,
+  width: 220,
+  height: 96,
+};
 
 const getBaseUrl = () => {
   if (!BASE_URL) {
@@ -100,14 +109,17 @@ export class DocumensoService {
     signerEmail,
     signerName,
     apiKey,
+    signaturePlacement,
   }: {
     pdf: Buffer;
     signerEmail: string;
     signerName?: string;
     apiKey?: string;
+    signaturePlacement?: ClinicalPdfSignaturePlacement;
   }) {
     try {
       const documenso = getDocumensoClient(apiKey);
+      const placement = signaturePlacement ?? DEFAULT_SIGNATURE_PLACEMENT;
       const createDocumentResponse = await documenso.documents.createV0({
         title: "Form Submission",
         recipients: [
@@ -118,11 +130,11 @@ export class DocumensoService {
             fields: [
               {
                 type: "SIGNATURE",
-                pageNumber: 1,
-                pageX: 100,
-                pageY: 100,
-                width: 20,
-                height: 10,
+                pageNumber: placement.pageNumber,
+                pageX: placement.pageX,
+                pageY: placement.pageY,
+                width: placement.width,
+                height: placement.height,
               },
             ],
           },

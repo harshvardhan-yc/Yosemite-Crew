@@ -1,10 +1,5 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 type PdfOperation =
   | { type: "text"; text: string; page: number; x?: number; y?: number }
-  | { type: "image"; path: string; page: number; x?: number; y?: number }
   | { type: "rect"; page: number }
   | { type: "line"; page: number }
   | { type: "addPage"; page: number };
@@ -106,17 +101,6 @@ class FakePdfDocument {
     return this;
   }
 
-  image(imagePath: string, x: number, y: number): this {
-    this.operations.push({
-      type: "image",
-      path: imagePath,
-      page: this.currentPageIndex,
-      x,
-      y,
-    });
-    return this;
-  }
-
   text(text: string, x?: number, y?: number): this {
     this.operations.push({
       type: "text",
@@ -176,7 +160,6 @@ class FakePdfDocument {
 }
 
 const pdfDocumentInstances: FakePdfDocument[] = [];
-const tempSignatureDirs = new Set<string>();
 
 jest.mock("pdfkit", () => ({
   __esModule: true,
@@ -189,21 +172,12 @@ jest.mock("pdfkit", () => ({
 
 import {
   generateClinicalPdf,
+  generateResolvedTemplatePdf,
   type DischargeSummaryDocumentData,
   type InvoiceDocumentData,
   type PrescriptionDocumentData,
   type SoapNoteDocumentData,
 } from "@yosemite-crew/lib";
-
-const writeTempPng = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clinical-signature-"));
-  const filePath = path.join(dir, "signature.png");
-  const pngBase64 =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO3Z1e0AAAAASUVORK5CYII=";
-  fs.writeFileSync(filePath, Buffer.from(pngBase64, "base64"));
-  tempSignatureDirs.add(dir);
-  return filePath;
-};
 
 const baseOrganization = {
   name: "PetVet Clinic",
@@ -217,7 +191,7 @@ const baseOrganization = {
 
 const longDischargeSummaryData: DischargeSummaryDocumentData = {
   title: "Discharge Summary",
-  date: "2026-06-19",
+  date: new Date("2026-06-19T00:00:00.000Z"),
   appointmentId: "AP134534",
   doctorName: "Dr. Tim Apple",
   patientName: "Bella Hadid",
@@ -258,7 +232,7 @@ const longDischargeSummaryData: DischargeSummaryDocumentData = {
 
 const soapNoteData: SoapNoteDocumentData = {
   title: "SOAP Note",
-  date: "2026-06-19",
+  date: new Date("2026-06-19T00:00:00.000Z"),
   appointmentId: "AP-2001",
   doctorName: "Dr. Tim Apple",
   patientName: "Bella Hadid",
@@ -276,7 +250,7 @@ const soapNoteData: SoapNoteDocumentData = {
 
 const prescriptionData: PrescriptionDocumentData = {
   title: "Prescription",
-  date: "2026-06-19",
+  date: new Date("2026-06-19T00:00:00.000Z"),
   prescriptionId: "RX-771",
   doctorName: "Dr. Tim Apple",
   patientName: "Bella Hadid",
@@ -302,15 +276,16 @@ const prescriptionData: PrescriptionDocumentData = {
     signerName: "Dr. Tim Apple",
     signerRole: "Veterinarian",
     signerDegree: "DVM",
-    signedAt: "2026-06-19T09:30:00Z",
+    signedAt: new Date("2026-06-19T10:15:00Z"),
   },
 };
 
 const invoiceData: InvoiceDocumentData = {
   title: "Invoice",
   invoiceNumber: "INV-9001",
-  date: "2026-06-19",
-  dueDate: "2026-06-29",
+  currency: "USD",
+  date: new Date("2026-06-19T00:00:00.000Z"),
+  dueDate: new Date("2026-06-29T00:00:00.000Z"),
   clientName: "Yasmin Hadid",
   clientId: "CL-1001",
   patientName: "Bella Hadid",
@@ -342,17 +317,81 @@ const invoiceData: InvoiceDocumentData = {
     signerName: "Dr. Tim Apple",
     signerRole: "Veterinarian",
     signerDegree: "DVM",
-    signedAt: "2026-06-19T10:15:00Z",
-    signatureImagePath: writeTempPng(),
+    signedAt: new Date("2026-06-19T10:15:00Z"),
+  },
+};
+
+const templateRenderInput = {
+  organization: baseOrganization,
+  template: {
+    templateId: "template-1",
+    templateVersion: 3,
+    templateVersionId: "template-version-1",
+    source: "ORGANISATION" as const,
+    ownerUserId: null,
+    kind: "SOAP_NOTE" as const,
+    name: "SOAP Note",
+    schemaSnapshot: {
+      sections: [
+        {
+          id: "subjective",
+          title: "Subjective",
+          order: 1,
+          description: "Patient-reported information.",
+          fields: [
+            {
+              key: "chiefComplaint",
+              label: "Chief complaint",
+              type: "textarea" as const,
+              order: 1,
+            },
+            {
+              key: "followUp",
+              label: "Follow up",
+              type: "datetime" as const,
+              order: 2,
+            },
+          ],
+        },
+        {
+          id: "plan",
+          title: "Plan",
+          order: 2,
+          fields: [
+            {
+              key: "medications",
+              label: "Medications",
+              type: "medicationLine" as const,
+              order: 1,
+              rules: {
+                columns: ["drug", "dose", "frequency", "duration"],
+              },
+            },
+          ],
+        },
+      ],
+    },
+    renderConfigSnapshot: null,
+    validationSnapshot: null,
+    appliesTo: null,
+    reason: "Resolved from the template module.",
+  },
+  data: {
+    chiefComplaint: "Reduced activity and appetite.",
+    followUp: new Date("2026-06-20T10:00:00.000Z"),
+    medications: [
+      {
+        drug: "Carprofen",
+        dose: "25mg",
+        frequency: "BID",
+        duration: "7 days",
+      },
+    ],
   },
 };
 
 afterEach(() => {
   pdfDocumentInstances.length = 0;
-  tempSignatureDirs.forEach((dir) => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-  tempSignatureDirs.clear();
 });
 
 describe("generateClinicalPdf", () => {
@@ -392,50 +431,53 @@ describe("generateClinicalPdf", () => {
     expect(buffer.subarray(0, 9).toString()).toBe("%PDF-FAKE");
     expect(pdfDocumentInstances[0].pages.length).toBeGreaterThan(1);
     expect(
-      pdfDocumentInstances[0].operations.filter(
-        (op) => op.type === "text" && op.text?.includes("Page "),
-      ).length,
-    ).toBeGreaterThanOrEqual(pdfDocumentInstances[0].pages.length);
-    expect(
       pdfDocumentInstances[0].operations.some(
         (op) => op.type === "text" && op.text === "Pending signature",
       ),
     ).toBe(true);
   });
 
-  it("renders a signed signature image when available and falls back to details", async () => {
-    const signedInvoiceData: InvoiceDocumentData = {
-      ...invoiceData,
-      signature: {
-        ...(invoiceData.signature ?? { status: "SIGNED" as const }),
-        signatureImagePath: writeTempPng(),
-      },
-    };
-
+  it("renders signer metadata for signed documents", async () => {
     const buffer = await generateClinicalPdf({
       documentType: "INVOICE",
       organization: baseOrganization,
-      data: signedInvoiceData,
+      data: invoiceData,
     });
 
     expect(buffer.subarray(0, 9).toString()).toBe("%PDF-FAKE");
     expect(
       pdfDocumentInstances[0].operations.some(
         (op) =>
-          op.type === "image" &&
-          op.path === signedInvoiceData.signature?.signatureImagePath,
-      ),
-    ).toBe(true);
-    expect(
-      pdfDocumentInstances[0].operations.some(
-        (op) =>
-          op.type === "text" &&
-          op.text === signedInvoiceData.signature?.signerName,
+          op.type === "text" && op.text === invoiceData.signature?.signerName,
       ),
     ).toBe(true);
     expect(
       pdfDocumentInstances[0].operations.some(
         (op) => op.type === "text" && op.text?.includes("Signed 19/06/2026"),
+      ),
+    ).toBe(true);
+  });
+
+  it("renders a resolved template snapshot through the shared adapter", async () => {
+    const buffer = await generateResolvedTemplatePdf({
+      ...templateRenderInput,
+      printedBy: "Template Coordinator",
+    });
+
+    expect(buffer.subarray(0, 9).toString()).toBe("%PDF-FAKE");
+    expect(
+      pdfDocumentInstances[0].operations.some(
+        (op) => op.type === "text" && op.text === "SOAP Note",
+      ),
+    ).toBe(true);
+    expect(
+      pdfDocumentInstances[0].operations.some(
+        (op) => op.type === "text" && op.text === "Chief complaint",
+      ),
+    ).toBe(true);
+    expect(
+      pdfDocumentInstances[0].operations.some(
+        (op) => op.type === "text" && op.text === "Carprofen",
       ),
     ).toBe(true);
   });

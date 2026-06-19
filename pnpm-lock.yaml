@@ -1012,6 +1012,9 @@ importers:
 
   packages/lib:
     dependencies:
+      '@yosemite-crew/types':
+        specifier: workspace:^
+        version: link:../types
       axios:
         specifier: 1.17.0
         version: 1.17.0(debug@4.4.3)

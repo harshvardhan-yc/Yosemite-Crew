@@ -6,6 +6,7 @@ import type { PdfDocumentInstance } from './PdfContext.js';
 import type {
   BaseClinicalDocumentData,
   ClinicalDocumentType,
+  ClinicalPdfRenderResult,
   PdfGenerationInput,
   PdfTheme,
 } from './types.js';
@@ -92,20 +93,16 @@ const renderDocumentByType = <TData extends BaseClinicalDocumentData>(
   ctx: PdfContext,
   documentType: ClinicalDocumentType,
   data: TData
-): void => {
+): ClinicalPdfRenderResult['signaturePlacement'] => {
   switch (documentType) {
     case 'DISCHARGE_SUMMARY':
-      renderDischargeSummaryTemplate(ctx, data as never);
-      return;
+      return renderDischargeSummaryTemplate(ctx, data as never);
     case 'SOAP_NOTE':
-      renderSoapNoteTemplate(ctx, data as never);
-      return;
+      return renderSoapNoteTemplate(ctx, data as never);
     case 'PRESCRIPTION':
-      renderPrescriptionTemplate(ctx, data as never);
-      return;
+      return renderPrescriptionTemplate(ctx, data as never);
     case 'INVOICE':
-      renderInvoiceTemplate(ctx, data as never);
-      return;
+      return renderInvoiceTemplate(ctx, data as never);
     default: {
       const exhaustiveCheck: never = documentType;
       throw new Error(`Unsupported clinical document type: ${exhaustiveCheck}`);
@@ -113,9 +110,9 @@ const renderDocumentByType = <TData extends BaseClinicalDocumentData>(
   }
 };
 
-export const generateClinicalPdf = async <TData extends BaseClinicalDocumentData>(
+export const generateClinicalPdfWithMetadata = async <TData extends BaseClinicalDocumentData>(
   input: PdfGenerationInput<TData>
-): Promise<Buffer> => {
+): Promise<ClinicalPdfRenderResult> => {
   const document = createDocument();
   const ctx = new PdfContext({
     document,
@@ -126,8 +123,8 @@ export const generateClinicalPdf = async <TData extends BaseClinicalDocumentData
   const output = collectPdfBuffer(document);
 
   try {
-    renderHeader(ctx);
-    renderDocumentByType(ctx, input.documentType, input.data);
+    await renderHeader(ctx);
+    const signaturePlacement = renderDocumentByType(ctx, input.documentType, input.data);
 
     const pageRange = document.bufferedPageRange();
     for (let index = pageRange.start; index < pageRange.start + pageRange.count; index += 1) {
@@ -136,14 +133,24 @@ export const generateClinicalPdf = async <TData extends BaseClinicalDocumentData
     }
 
     document.end();
+
+    const pdf = await output.promise;
+
+    return {
+      pdf,
+      pageCount: pageRange.count,
+      signaturePlacement,
+    };
   } catch (error) {
     const normalizedError = error instanceof Error ? error : new Error(String(error));
     output.reject(normalizedError);
     throw normalizedError;
   }
-
-  return output.promise;
 };
+
+export const generateClinicalPdf = async <TData extends BaseClinicalDocumentData>(
+  input: PdfGenerationInput<TData>
+): Promise<Buffer> => (await generateClinicalPdfWithMetadata(input)).pdf;
 
 export const createClinicalPdfContext = (
   document: PdfDocumentInstance,

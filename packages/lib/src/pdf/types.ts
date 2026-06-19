@@ -8,7 +8,7 @@ export type OrganizationBranding = {
   addressLine2?: string;
   phone?: string;
   email?: string;
-  logoPath?: string;
+  logoUrl?: string | null;
   legalName?: string;
   footerText?: string;
 };
@@ -18,8 +18,7 @@ export type DocumentSignature = {
   signerName?: string;
   signerRole?: string;
   signerDegree?: string;
-  signedAt?: Date | string;
-  signatureImagePath?: string;
+  signedAt?: Date;
   label?: string;
 };
 
@@ -81,7 +80,7 @@ export type PdfTheme = {
 };
 
 export type DischargeSummaryDocumentData = BaseClinicalDocumentData & {
-  date: Date | string;
+  date: Date;
   appointmentId: string;
   doctorName: string;
   patientName: string;
@@ -101,7 +100,7 @@ export type DischargeSummaryDocumentData = BaseClinicalDocumentData & {
 };
 
 export type SoapNoteDocumentData = BaseClinicalDocumentData & {
-  date: Date | string;
+  date: Date;
   appointmentId?: string;
   doctorName: string;
   patientName: string;
@@ -126,7 +125,7 @@ export type PrescriptionItem = {
 };
 
 export type PrescriptionDocumentData = BaseClinicalDocumentData & {
-  date: Date | string;
+  date: Date;
   prescriptionId?: string;
   doctorName: string;
   patientName: string;
@@ -148,8 +147,9 @@ export type InvoiceItem = {
 
 export type InvoiceDocumentData = BaseClinicalDocumentData & {
   invoiceNumber: string;
-  date: Date | string;
-  dueDate?: Date | string;
+  currency: string;
+  date: Date;
+  dueDate?: Date;
   clientName: string;
   clientId?: string;
   patientName?: string;
@@ -192,4 +192,18 @@ export type RenderHeaderInput = {
 export type RenderFooterInput = {
   organization: OrganizationBranding;
   generatedAt?: Date;
+};
+
+export type ClinicalPdfSignaturePlacement = {
+  pageNumber: number;
+  pageX: number;
+  pageY: number;
+  width: number;
+  height: number;
+};
+
+export type ClinicalPdfRenderResult = {
+  pdf: Buffer;
+  pageCount: number;
+  signaturePlacement: ClinicalPdfSignaturePlacement;
 };

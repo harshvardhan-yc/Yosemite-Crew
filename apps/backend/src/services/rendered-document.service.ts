@@ -21,7 +21,7 @@ import {
 } from "@yosemite-crew/types";
 import { prisma } from "src/config/prisma";
 import { DocumensoService } from "src/services/documenso.service";
-import { renderRenderedDocumentPdf } from "src/services/rendered-document-renderer.service";
+import { renderRenderedDocumentPdfWithMetadata } from "src/services/rendered-document-renderer.service";
 
 export class RenderedDocumentServiceError extends Error {
   constructor(
@@ -265,7 +265,7 @@ export const signPersistedRenderedDocument = async (
     );
   }
 
-  const pdf = await renderRenderedDocumentPdf({
+  const renderedPdf = await renderRenderedDocumentPdfWithMetadata({
     title: existing.title,
     source: {
       sourceKind: existing.sourceKind,
@@ -292,10 +292,11 @@ export const signPersistedRenderedDocument = async (
   });
 
   const doc = await DocumensoService.createDocument({
-    pdf,
+    pdf: renderedPdf.pdf,
     signerEmail: input.signerEmail,
     signerName: input.signerName,
     apiKey,
+    signaturePlacement: renderedPdf.signaturePlacement,
   });
 
   if (!doc || typeof doc.id !== "number") {

@@ -14,7 +14,7 @@ export const dischargeSummaryExampleInput: PdfGenerationInput<DischargeSummaryDo
   },
   data: {
     title: 'Discharge Summary',
-    date: '2026-06-19',
+    date: new Date('2026-06-19T00:00:00.000Z'),
     appointmentId: 'AP134534',
     doctorName: 'Dr. Tim Apple',
     patientName: 'Bella Hadid',

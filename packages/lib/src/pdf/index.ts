@@ -8,6 +8,8 @@ export type {
   DischargeSummaryDocumentData,
   InvoiceDocumentData,
   InvoiceItem,
+  ClinicalPdfRenderResult,
+  ClinicalPdfSignaturePlacement,
   KeyValueItem,
   OrganizationBranding,
   PdfGenerationInput,
@@ -20,4 +22,14 @@ export type {
   TableColumn,
   TableRenderInput,
 } from './types.js';
-export { generateClinicalPdf, createClinicalPdfContext, clinicalPdfTheme } from './PdfEngine.js';
+export {
+  generateClinicalPdf,
+  generateClinicalPdfWithMetadata,
+  createClinicalPdfContext,
+  clinicalPdfTheme,
+} from './PdfEngine.js';
+export {
+  generateResolvedTemplatePdf,
+  generateResolvedTemplatePdfWithMetadata,
+  type ResolvedTemplatePdfInput,
+} from './ResolvedTemplatePdfEngine.js';

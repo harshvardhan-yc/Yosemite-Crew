@@ -1,12 +1,16 @@
 import { TemplateKind } from "@prisma/client";
 import { Prisma } from "@prisma/client";
+import {
+  generateResolvedTemplatePdfWithMetadata,
+  type OrganizationBranding,
+  type ResolvedTemplatePdfInput,
+} from "@yosemite-crew/lib";
 import { prisma } from "src/config/prisma";
 import {
   renderPdf,
   type PdfField,
   type PdfSection,
   type PdfBranding,
-  type PdfTemplateKind,
 } from "src/services/formPDF.service";
 import type { RenderedDocumentSource } from "@yosemite-crew/types";
 
@@ -31,6 +35,13 @@ type TemplateInstanceDocumentSource = {
   template: {
     name: string;
     kind: TemplateKind;
+  };
+  version: {
+    id: string;
+    version: number;
+    schemaSnapshot: Prisma.JsonValue;
+    renderConfigSnapshot: Prisma.JsonValue;
+    validationSnapshot: Prisma.JsonValue;
   };
 };
 
@@ -89,6 +100,7 @@ type OrganizationBrand = {
   name: string;
   imageUrl: string | null;
   phoneNo: string;
+  email: string | null;
   website: string | null;
   address: {
     addressLine: string | null;
@@ -97,6 +109,14 @@ type OrganizationBrand = {
     postalCode: string | null;
     country: string | null;
   } | null;
+};
+
+const DEFAULT_SIGNATURE_PLACEMENT = {
+  pageNumber: 1,
+  pageX: 330,
+  pageY: 700,
+  width: 220,
+  height: 96,
 };
 
 const humanizeLabel = (value: string) =>
@@ -211,30 +231,30 @@ const buildOrganizationBranding = (
   };
 };
 
-const buildTemplateInstanceViewModel = (
-  input: RenderedDocumentPdfSource,
-  record: TemplateInstanceDocumentSource,
-) => ({
-  title: input.title,
-  submittedAt: record.createdAt.toISOString(),
-  sections: [
-    buildDocumentDetailsSection(input.title, input.source, {
-      templateName: record.template.name,
-      templateVersion: record.templateVersion,
-      templateId: record.templateId,
-      templateKind: record.template.kind,
-      appointmentId: record.appointmentId,
-      caseId: record.caseId,
-      encounterId: record.encounterId,
-      authorId: record.authorId,
-      status: record.status,
-    }),
-    {
-      title: "Captured Data",
-      fields: flattenJson(record.data),
-    },
-  ],
-});
+const buildSharedOrganizationBranding = (
+  organization: OrganizationBrand,
+): OrganizationBranding => {
+  const addressLines = [
+    organization.address?.addressLine,
+    [
+      organization.address?.city,
+      organization.address?.state,
+      organization.address?.postalCode,
+    ]
+      .filter((line): line is string => Boolean(line && line.trim()))
+      .join(", "),
+    organization.address?.country,
+  ].filter((line): line is string => Boolean(line && line.trim()));
+
+  return {
+    name: organization.name,
+    addressLine1: addressLines[0] ?? organization.name,
+    addressLine2: addressLines.slice(1).join(" • ") || undefined,
+    phone: organization.phoneNo,
+    email: organization.email ?? undefined,
+    logoUrl: organization.imageUrl,
+  };
+};
 
 const buildFormSubmissionViewModel = (
   input: RenderedDocumentPdfSource,
@@ -260,32 +280,32 @@ const buildFormSubmissionViewModel = (
   ],
 });
 
-const buildClinicalArtifactViewModel = (
-  input: RenderedDocumentPdfSource,
-  record: ClinicalArtifactDocumentSource,
-) => ({
-  title: input.title,
-  submittedAt: record.artifact.createdAt.toISOString(),
-  sections: [
-    buildDocumentDetailsSection(input.title, input.source, {
-      templateVersion: record.artifact.templateVersion,
-      templateVersionId: record.artifact.templateVersionId,
-      templateId: record.artifact.templateId,
-      appointmentId: record.artifact.appointmentId,
-      caseId: record.artifact.caseId,
-      encounterId: record.artifact.encounterId,
-      authorId: record.artifact.authorId,
-      signedBy: record.artifact.signedBy,
-      signedAt: record.artifact.signedAt?.toISOString() ?? "",
-      summary: record.artifact.summary,
-      status: record.artifact.status,
-    }),
-    {
-      title: "Clinical Data",
-      fields: flattenJson(record.data),
+const loadTemplateVersionOrThrow = async (
+  templateId: string,
+  version: number,
+) => {
+  const record = await prisma.templateVersion.findUnique({
+    where: {
+      templateId_version: {
+        templateId,
+        version,
+      },
     },
-  ],
-});
+    select: {
+      id: true,
+      version: true,
+      schemaSnapshot: true,
+      renderConfigSnapshot: true,
+      validationSnapshot: true,
+    },
+  });
+
+  if (!record) {
+    throw new Error("Template version not found");
+  }
+
+  return record;
+};
 
 const loadTemplateInstanceDocument = async (
   source: RenderedDocumentSource,
@@ -310,7 +330,15 @@ const loadTemplateInstanceDocument = async (
     throw new Error("Template instance does not belong to organisation");
   }
 
-  return record as unknown as TemplateInstanceDocumentSource;
+  const version = await loadTemplateVersionOrThrow(
+    record.templateId,
+    record.templateVersion,
+  );
+
+  return {
+    ...record,
+    version,
+  } as unknown as TemplateInstanceDocumentSource;
 };
 
 const loadFormSubmissionDocument = async (
@@ -393,6 +421,7 @@ const loadOrganizationBrand = async (
       name: true,
       imageUrl: true,
       phoneNo: true,
+      email: true,
       website: true,
       address: {
         select: {
@@ -412,6 +441,22 @@ const loadOrganizationBrand = async (
 
   return organization;
 };
+
+const buildResolvedTemplatePdfInput = (
+  input: RenderedDocumentPdfSource,
+  organization: OrganizationBrand,
+  template: ResolvedTemplatePdfInput["template"],
+  data: Record<string, unknown>,
+): ResolvedTemplatePdfInput => ({
+  organization: buildSharedOrganizationBranding(organization),
+  template,
+  data,
+  title: input.title,
+  signature: {
+    status: "PENDING",
+    label: "Signature",
+  },
+});
 
 const loadClinicalArtifactDocument = async (
   source: RenderedDocumentSource,
@@ -536,20 +581,61 @@ const loadClinicalArtifactDocument = async (
   return loader.load(source);
 };
 
-export const renderRenderedDocumentPdf = async (
+export const renderRenderedDocumentPdfWithMetadata = async (
   input: RenderedDocumentPdfSource,
-) => {
+): Promise<{
+  pdf: Buffer;
+  pageCount: number;
+  signaturePlacement: {
+    pageNumber: number;
+    pageX: number;
+    pageY: number;
+    width: number;
+    height: number;
+  };
+}> => {
   switch (input.source.sourceKind) {
     case "TEMPLATE_INSTANCE": {
       const record = await loadTemplateInstanceDocument(input.source);
       const organization = await loadOrganizationBrand(
         input.source.organisationId,
       );
-
-      return renderPdf(buildTemplateInstanceViewModel(input, record), {
-        templateKind: input.source.templateKind as PdfTemplateKind,
-        branding: buildOrganizationBranding(organization),
-      });
+      return generateResolvedTemplatePdfWithMetadata(
+        buildResolvedTemplatePdfInput(
+          input,
+          organization,
+          {
+            templateId: record.templateId,
+            templateVersion: record.templateVersion,
+            templateVersionId: record.version.id,
+            source: "TEMPLATE_INSTANCE",
+            ownerUserId: null,
+            kind: record.template.kind,
+            name: record.template.name,
+            reason: "Rendered from a persisted template instance.",
+            schemaSnapshot: {
+              sections:
+                (
+                  record.version.schemaSnapshot as {
+                    sections?: ResolvedTemplatePdfInput["template"]["schemaSnapshot"]["sections"];
+                  }
+                ).sections ?? [],
+            },
+            renderConfigSnapshot:
+              (record.version.renderConfigSnapshot as Record<
+                string,
+                unknown
+              > | null) ?? null,
+            validationSnapshot:
+              (record.version.validationSnapshot as Record<
+                string,
+                unknown
+              > | null) ?? null,
+            appliesTo: null,
+          },
+          record.data as Record<string, unknown>,
+        ),
+      );
     }
     case "FORM_SUBMISSION": {
       const record = await loadFormSubmissionDocument(input.source);
@@ -557,23 +643,74 @@ export const renderRenderedDocumentPdf = async (
         input.source.organisationId,
       );
 
-      return renderPdf(buildFormSubmissionViewModel(input, record), {
-        templateKind: "FORM",
-        branding: buildOrganizationBranding(organization),
-      });
+      return {
+        pdf: await renderPdf(buildFormSubmissionViewModel(input, record), {
+          templateKind: "FORM",
+          branding: buildOrganizationBranding(organization),
+        }),
+        pageCount: 1,
+        signaturePlacement: DEFAULT_SIGNATURE_PLACEMENT,
+      };
     }
     case "CLINICAL_ARTIFACT": {
       const record = await loadClinicalArtifactDocument(input.source);
       const organization = await loadOrganizationBrand(
         input.source.organisationId,
       );
+      if (
+        !record.artifact.templateId ||
+        record.artifact.templateVersion === null
+      ) {
+        throw new Error("Clinical artifact template version not found");
+      }
 
-      return renderPdf(buildClinicalArtifactViewModel(input, record), {
-        templateKind: input.source.templateKind as PdfTemplateKind,
-        branding: buildOrganizationBranding(organization),
-      });
+      const templateVersion = await loadTemplateVersionOrThrow(
+        record.artifact.templateId,
+        record.artifact.templateVersion,
+      );
+
+      return generateResolvedTemplatePdfWithMetadata(
+        buildResolvedTemplatePdfInput(
+          input,
+          organization,
+          {
+            templateId: record.artifact.templateId,
+            templateVersion: record.artifact.templateVersion,
+            templateVersionId: templateVersion.id,
+            source: "CLINICAL_ARTIFACT",
+            ownerUserId: null,
+            kind: input.source.templateKind as string,
+            name: input.title,
+            reason: "Rendered from a persisted clinical artifact.",
+            schemaSnapshot: {
+              sections:
+                (
+                  templateVersion.schemaSnapshot as {
+                    sections?: ResolvedTemplatePdfInput["template"]["schemaSnapshot"]["sections"];
+                  }
+                ).sections ?? [],
+            },
+            renderConfigSnapshot:
+              (templateVersion.renderConfigSnapshot as Record<
+                string,
+                unknown
+              > | null) ?? null,
+            validationSnapshot:
+              (templateVersion.validationSnapshot as Record<
+                string,
+                unknown
+              > | null) ?? null,
+            appliesTo: null,
+          },
+          record.data,
+        ),
+      );
     }
     default:
       throw new Error("Unsupported rendered document source kind");
   }
 };
+
+export const renderRenderedDocumentPdf = async (
+  input: RenderedDocumentPdfSource,
+) => (await renderRenderedDocumentPdfWithMetadata(input)).pdf;

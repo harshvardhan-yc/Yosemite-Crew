@@ -8,11 +8,14 @@ import {
 } from '../sections/Text.js';
 import { renderDocumentEndBlock } from '../sections/DocumentEndBlock.js';
 import { renderTable } from '../sections/Table.js';
-import type { InvoiceDocumentData } from '../types.js';
+import type { ClinicalPdfSignaturePlacement, InvoiceDocumentData } from '../types.js';
 import { buildKeyValue, formatDateValue, formatMoney } from './shared.js';
 import { ensureSpace } from '../Pagination.js';
 
-export const renderInvoiceTemplate = (ctx: PdfContext, data: InvoiceDocumentData): void => {
+export const renderInvoiceTemplate = (
+  ctx: PdfContext,
+  data: InvoiceDocumentData
+): ClinicalPdfSignaturePlacement => {
   renderDocumentTitle(ctx, data.title);
   renderKeyValueGrid(
     ctx,
@@ -42,8 +45,8 @@ export const renderInvoiceTemplate = (ctx: PdfContext, data: InvoiceDocumentData
       item.name,
       item.description ?? '',
       String(item.quantity),
-      formatMoney(item.unitPrice),
-      formatMoney(item.total),
+      formatMoney(data.currency, item.unitPrice),
+      formatMoney(data.currency, item.total),
     ]),
   });
 
@@ -72,7 +75,7 @@ export const renderInvoiceTemplate = (ctx: PdfContext, data: InvoiceDocumentData
   totals.forEach(([label, value], index) => {
     const y = ctx.cursorY + index * totalLineHeight;
     ctx.document.text(label, totalX, y, { width: totalLabelWidth, align: 'right' });
-    ctx.document.text(formatMoney(value), totalX + totalLabelWidth, y, {
+    ctx.document.text(formatMoney(data.currency, value), totalX + totalLabelWidth, y, {
       width: totalValueWidth,
       align: 'right',
     });
@@ -86,7 +89,7 @@ export const renderInvoiceTemplate = (ctx: PdfContext, data: InvoiceDocumentData
   }
 
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
-  renderDocumentEndBlock(ctx, {
+  return renderDocumentEndBlock(ctx, {
     printedBy: data.printedBy,
     signature: data.signature,
   });

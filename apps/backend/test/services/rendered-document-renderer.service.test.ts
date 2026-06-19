@@ -2,6 +2,7 @@ import { TemplateKind } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { renderRenderedDocumentPdf } from "../../src/services/rendered-document-renderer.service";
 import { renderPdf } from "../../src/services/formPDF.service";
+import { generateResolvedTemplatePdfWithMetadata } from "@yosemite-crew/lib";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -18,6 +19,9 @@ jest.mock("src/config/prisma", () => ({
       findUnique: jest.fn(),
     },
     templateInstance: {
+      findUnique: jest.fn(),
+    },
+    templateVersion: {
       findUnique: jest.fn(),
     },
     soapNote: {
@@ -39,6 +43,10 @@ jest.mock("../../src/services/formPDF.service", () => ({
   renderPdf: jest.fn(),
 }));
 
+jest.mock("@yosemite-crew/lib", () => ({
+  generateResolvedTemplatePdfWithMetadata: jest.fn(),
+}));
+
 describe("rendered-document-renderer service", () => {
   const mockedPrisma = prisma as unknown as {
     organization: { findUnique: jest.Mock };
@@ -46,16 +54,30 @@ describe("rendered-document-renderer service", () => {
     form: { findUnique: jest.Mock };
     formVersion: { findUnique: jest.Mock };
     templateInstance: { findUnique: jest.Mock };
+    templateVersion: { findUnique: jest.Mock };
     soapNote: { findUnique: jest.Mock };
     prescription: { findUnique: jest.Mock };
     dischargeSummary: { findUnique: jest.Mock };
     vitalRecord: { findUnique: jest.Mock };
   };
   const mockedRenderPdf = renderPdf as jest.Mock;
+  const mockedGenerateResolvedTemplatePdfWithMetadata =
+    generateResolvedTemplatePdfWithMetadata as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockedRenderPdf.mockResolvedValue(Buffer.from("pdf"));
+    mockedGenerateResolvedTemplatePdfWithMetadata.mockResolvedValue({
+      pdf: Buffer.from("pdf"),
+      pageCount: 1,
+      signaturePlacement: {
+        pageNumber: 1,
+        pageX: 340,
+        pageY: 710,
+        width: 220,
+        height: 96,
+      },
+    });
   });
 
   it("renders a template instance document pdf view model", async () => {
@@ -94,6 +116,13 @@ describe("rendered-document-renderer service", () => {
         kind: TemplateKind.FORM,
       },
     });
+    mockedPrisma.templateVersion.findUnique.mockResolvedValueOnce({
+      id: "template-version-1",
+      version: 3,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
+    });
 
     await renderRenderedDocumentPdf({
       title: "Intake Consent",
@@ -107,24 +136,23 @@ describe("rendered-document-renderer service", () => {
       },
     });
 
-    expect(mockedRenderPdf).toHaveBeenCalledWith(
+    expect(mockedGenerateResolvedTemplatePdfWithMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Intake Consent",
-        sections: expect.arrayContaining([
-          expect.objectContaining({ title: "Document Details" }),
-          expect.objectContaining({ title: "Captured Data" }),
-        ]),
-      }),
-      expect.objectContaining({
-        templateKind: "FORM",
-        branding: expect.objectContaining({
-          organizationName: "MediCare Hospital",
-          addressLines: expect.arrayContaining([
-            "123 Clinic Road",
-            "Mumbai, MH, 400001",
-            "IN",
-          ]),
+        organization: expect.objectContaining({
+          name: "MediCare Hospital",
+          addressLine1: "123 Clinic Road",
           logoUrl: "https://cdn.example/logo.png",
+        }),
+        template: expect.objectContaining({
+          name: "Intake Consent",
+          source: "TEMPLATE_INSTANCE",
+          schemaSnapshot: expect.objectContaining({
+            sections: [],
+          }),
+        }),
+        signature: expect.objectContaining({
+          status: "PENDING",
         }),
       }),
     );
@@ -235,6 +263,13 @@ describe("rendered-document-renderer service", () => {
         updatedAt: new Date("2026-06-14T00:00:00.000Z"),
       },
     });
+    mockedPrisma.templateVersion.findUnique.mockResolvedValueOnce({
+      id: "template-version-1",
+      version: 2,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
+    });
 
     await renderRenderedDocumentPdf({
       title: "SOAP Note",
@@ -248,16 +283,21 @@ describe("rendered-document-renderer service", () => {
       },
     });
 
-    expect(mockedRenderPdf).toHaveBeenCalledWith(
+    expect(mockedGenerateResolvedTemplatePdfWithMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "SOAP Note",
-        sections: expect.arrayContaining([
-          expect.objectContaining({ title: "Document Details" }),
-          expect.objectContaining({ title: "Clinical Data" }),
-        ]),
-      }),
-      expect.objectContaining({
-        templateKind: "SOAP_NOTE",
+        organization: expect.objectContaining({
+          name: "MediCare Hospital",
+          addressLine1: "123 Clinic Road",
+          logoUrl: "https://cdn.example/logo.png",
+        }),
+        template: expect.objectContaining({
+          source: "CLINICAL_ARTIFACT",
+          name: "SOAP Note",
+        }),
+        signature: expect.objectContaining({
+          status: "PENDING",
+        }),
       }),
     );
   });
@@ -284,9 +324,9 @@ describe("rendered-document-renderer service", () => {
         encounterId: "enc-1",
         kind: "PRESCRIPTION",
         status: "SIGNED",
-        templateId: null,
+        templateId: "template-2",
         templateVersion: 1,
-        templateVersionId: null,
+        templateVersionId: "template-version-2",
         authorId: "author-1",
         signedBy: "user-1",
         signedAt: new Date("2026-06-14T00:00:00.000Z"),
@@ -294,6 +334,13 @@ describe("rendered-document-renderer service", () => {
         createdAt: new Date("2026-06-14T00:00:00.000Z"),
         updatedAt: new Date("2026-06-14T00:00:00.000Z"),
       },
+    });
+    mockedPrisma.templateVersion.findUnique.mockResolvedValueOnce({
+      id: "template-version-2",
+      version: 1,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
     });
 
     await renderRenderedDocumentPdf({
@@ -307,16 +354,21 @@ describe("rendered-document-renderer service", () => {
       },
     });
 
-    expect(mockedRenderPdf).toHaveBeenCalledWith(
+    expect(mockedGenerateResolvedTemplatePdfWithMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Prescription",
-        sections: expect.arrayContaining([
-          expect.objectContaining({ title: "Document Details" }),
-          expect.objectContaining({ title: "Clinical Data" }),
-        ]),
-      }),
-      expect.objectContaining({
-        templateKind: "PRESCRIPTION",
+        organization: expect.objectContaining({
+          name: "MediCare Hospital",
+          addressLine1: "MediCare Hospital",
+          logoUrl: null,
+        }),
+        template: expect.objectContaining({
+          source: "CLINICAL_ARTIFACT",
+          name: "Prescription",
+        }),
+        signature: expect.objectContaining({
+          status: "PENDING",
+        }),
       }),
     );
   });
@@ -350,9 +402,9 @@ describe("rendered-document-renderer service", () => {
         encounterId: null,
         kind: "VITAL_RECORD",
         status: "SIGNED",
-        templateId: null,
+        templateId: "template-3",
         templateVersion: 1,
-        templateVersionId: null,
+        templateVersionId: "template-version-3",
         authorId: "author-1",
         signedBy: "user-1",
         signedAt: new Date("2026-06-14T00:00:00.000Z"),
@@ -360,6 +412,13 @@ describe("rendered-document-renderer service", () => {
         createdAt: new Date("2026-06-14T00:00:00.000Z"),
         updatedAt: new Date("2026-06-14T00:00:00.000Z"),
       },
+    });
+    mockedPrisma.templateVersion.findUnique.mockResolvedValueOnce({
+      id: "template-version-3",
+      version: 1,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
     });
 
     await renderRenderedDocumentPdf({
@@ -373,16 +432,21 @@ describe("rendered-document-renderer service", () => {
       },
     });
 
-    expect(mockedRenderPdf).toHaveBeenCalledWith(
+    expect(mockedGenerateResolvedTemplatePdfWithMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Vital Record",
-        sections: expect.arrayContaining([
-          expect.objectContaining({ title: "Document Details" }),
-          expect.objectContaining({ title: "Clinical Data" }),
-        ]),
-      }),
-      expect.objectContaining({
-        templateKind: "VITAL_RECORD",
+        organization: expect.objectContaining({
+          name: "MediCare Hospital",
+          addressLine1: "123 Clinic Road",
+          logoUrl: null,
+        }),
+        template: expect.objectContaining({
+          source: "CLINICAL_ARTIFACT",
+          name: "Vital Record",
+        }),
+        signature: expect.objectContaining({
+          status: "PENDING",
+        }),
       }),
     );
   });

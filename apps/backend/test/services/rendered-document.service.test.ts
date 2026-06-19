@@ -13,7 +13,7 @@ import {
   signRenderedDocument,
 } from "../../src/services/rendered-document.service";
 import { DocumensoService } from "../../src/services/documenso.service";
-import { renderRenderedDocumentPdf } from "../../src/services/rendered-document-renderer.service";
+import { renderRenderedDocumentPdfWithMetadata } from "../../src/services/rendered-document-renderer.service";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -36,7 +36,7 @@ jest.mock("../../src/services/documenso.service", () => ({
   },
 }));
 jest.mock("../../src/services/rendered-document-renderer.service", () => ({
-  renderRenderedDocumentPdf: jest.fn(),
+  renderRenderedDocumentPdfWithMetadata: jest.fn(),
 }));
 
 describe("rendered-document service", () => {
@@ -57,7 +57,8 @@ describe("rendered-document service", () => {
     distributeDocument: jest.Mock;
     downloadSignedDocument: jest.Mock;
   };
-  const mockedRenderedDocumentRenderer = renderRenderedDocumentPdf as jest.Mock;
+  const mockedRenderedDocumentRenderer =
+    renderRenderedDocumentPdfWithMetadata as jest.Mock;
 
   beforeEach(() => {
     process.env.DOCUMENSO_HOST_URL = "https://documenso.example";
@@ -393,7 +394,17 @@ describe("rendered-document service", () => {
   });
 
   it("persists a rendered document signature and updates the document", async () => {
-    mockedRenderedDocumentRenderer.mockResolvedValueOnce(Buffer.from("pdf"));
+    mockedRenderedDocumentRenderer.mockResolvedValueOnce({
+      pdf: Buffer.from("pdf"),
+      pageCount: 1,
+      signaturePlacement: {
+        pageNumber: 1,
+        pageX: 340,
+        pageY: 710,
+        width: 220,
+        height: 96,
+      },
+    });
     mockedDocumensoService.resolveOrganisationApiKey.mockResolvedValueOnce(
       "api-key-1",
     );
@@ -491,6 +502,11 @@ describe("rendered-document service", () => {
         signerEmail: "user@example.com",
         signerName: "User One",
         apiKey: "api-key-1",
+        signaturePlacement: expect.objectContaining({
+          pageNumber: 1,
+          pageX: 340,
+          pageY: 710,
+        }),
       }),
     );
     expect(mockedDocumensoService.distributeDocument).toHaveBeenCalledWith(

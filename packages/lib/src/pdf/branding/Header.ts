@@ -1,9 +1,25 @@
 import fs from 'node:fs';
+import axios from 'axios';
 import type { PdfContext } from '../PdfContext.js';
 
 const HEADER_LOGO_SIZE = 44;
 
-export const renderHeader = (ctx: PdfContext): void => {
+const resolveLogoSource = async (logoUrl: string): Promise<string | Buffer | null> => {
+  if (/^https?:\/\//i.test(logoUrl)) {
+    const response = await axios.get<ArrayBuffer>(logoUrl, {
+      responseType: 'arraybuffer',
+    });
+    return Buffer.from(response.data);
+  }
+
+  if (fs.existsSync(logoUrl)) {
+    return logoUrl;
+  }
+
+  return null;
+};
+
+export const renderHeader = async (ctx: PdfContext): Promise<void> => {
   const { document } = ctx;
   const top = 18;
   const logoX = ctx.contentLeft;
@@ -13,11 +29,20 @@ export const renderHeader = (ctx: PdfContext): void => {
 
   document.save();
 
-  if (ctx.organization.logoPath && fs.existsSync(ctx.organization.logoPath)) {
+  if (ctx.organization.logoUrl) {
     try {
-      document.image(ctx.organization.logoPath, logoX, logoY, {
-        fit: [HEADER_LOGO_SIZE, HEADER_LOGO_SIZE],
-      });
+      const source = await resolveLogoSource(ctx.organization.logoUrl);
+      if (source) {
+        document.image(source, logoX, logoY, {
+          fit: [HEADER_LOGO_SIZE, HEADER_LOGO_SIZE],
+        });
+      } else {
+        document
+          .lineWidth(1)
+          .strokeColor(ctx.theme.colors.border)
+          .rect(logoX, logoY, HEADER_LOGO_SIZE, HEADER_LOGO_SIZE)
+          .stroke();
+      }
     } catch {
       document
         .lineWidth(1)
