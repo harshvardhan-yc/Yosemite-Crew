@@ -48,6 +48,7 @@ const FinanceController = {
   voidInvoice: jest.fn(),
   supplementInvoice: jest.fn(),
   createInvoicePaymentSession: jest.fn(),
+  createMobileInvoicePaymentSession: jest.fn(),
   recordInvoicePayment: jest.fn(),
   refundPayment: jest.fn(),
   getSubscriptionOverview: jest.fn(),
@@ -130,6 +131,10 @@ describe("finance.router", () => {
       "/mobile/appointments/:appointmentId/invoices",
       "post",
     );
+    const mobilePaymentSessionRoute = findRoute(
+      "/mobile/invoices/:invoiceId/payments/sessions",
+      "post",
+    );
 
     expect(sessionRoute?.stack.map((layer) => layer.handle)).toContain(
       FinanceController.createInvoicePaymentSession,
@@ -164,6 +169,12 @@ describe("finance.router", () => {
     expect(
       mobileAppointmentRoute?.stack.map((layer) => layer.handle),
     ).toContain(financeAppointmentLimiter);
+    expect(
+      mobilePaymentSessionRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognitoMobile);
+    expect(
+      mobilePaymentSessionRoute?.stack.map((layer) => layer.handle),
+    ).toContain(FinanceController.createMobileInvoicePaymentSession);
     expect(rateLimit).toHaveBeenCalledTimes(1);
     expect(requirePermission).toHaveBeenCalledWith("billing:view:any");
     expect(requirePermission).toHaveBeenCalledWith("billing:edit:any");

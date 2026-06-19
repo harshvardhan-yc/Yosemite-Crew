@@ -1323,6 +1323,38 @@ export const FinanceController = {
     }
   },
 
+  async createMobileInvoicePaymentSession(
+    this: void,
+    req: Request,
+    res: Response,
+  ) {
+    try {
+      const invoiceId = req.params.invoiceId;
+      if (!invoiceId) {
+        return res.status(400).json({ message: "Invoice Id is required" });
+      }
+
+      const result =
+        await FinancePaymentService.createPaymentIntentForInvoice(invoiceId);
+
+      return res.status(201).json({
+        data: result,
+        meta: null,
+        error: null,
+      });
+    } catch (error) {
+      logger.error("Error creating mobile invoice payment session", error);
+
+      if (error instanceof FinancePaymentError) {
+        return res.status(error.statusCode).json({
+          message: error.message,
+        });
+      }
+
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  },
+
   async webhook(this: void, req: Request, res: Response) {
     const provider = normalizeProvider(req.params.provider);
     if (provider !== "STRIPE") {

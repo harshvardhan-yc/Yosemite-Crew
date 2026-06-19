@@ -249,6 +249,12 @@ router.post(
   FinanceController.bootstrapInvoiceForAppointment,
 );
 
+router.post(
+  "/mobile/invoices/:invoiceId/payments/sessions",
+  authorizeCognitoMobile,
+  FinanceController.createMobileInvoicePaymentSession,
+);
+
 router.get(
   "/mobile/payment-intent/:paymentIntentId",
   authorizeCognitoMobile,
