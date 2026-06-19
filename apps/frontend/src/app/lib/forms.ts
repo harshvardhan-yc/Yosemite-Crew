@@ -98,8 +98,9 @@ export const categoryToTemplateKind = (category?: FormsCategory): TemplateKind |
     case 'Inpatient Schedule':
       return 'INPATIENT_SCHEDULE';
     case 'Custom':
-    case 'Consent form':
       return 'FORM';
+    case 'Consent form':
+      return 'CONSENT';
     default:
       return null;
   }

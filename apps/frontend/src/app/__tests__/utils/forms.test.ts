@@ -179,7 +179,8 @@ describe('Forms Utils', () => {
       expect(categoryToTemplateKind('Discharge Form')).toBe('DISCHARGE_SUMMARY');
       expect(categoryToTemplateKind('Task Template')).toBe('TASK_ASSIGNMENT');
       expect(categoryToTemplateKind('Inpatient Schedule')).toBe('INPATIENT_SCHEDULE');
-      expect(categoryToTemplateKind('Consent form')).toBe('FORM');
+      expect(categoryToTemplateKind('Consent form')).toBe('CONSENT');
+      expect(categoryToTemplateKind('Custom')).toBe('FORM');
       expect(categoryToTemplateKind('Boarder - Schedule' as any)).toBeNull();
     });
 

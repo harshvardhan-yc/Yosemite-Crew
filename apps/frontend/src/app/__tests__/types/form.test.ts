@@ -17,6 +17,10 @@ describe('Forms Data and Utility Functions', () => {
       'Prescription',
       'SOAP',
       'Discharge Form',
+      'Vitals',
+      'Prescription Template',
+      'Inpatient Schedule',
+      'Task Template',
       'Boarder - Boarding Checklist',
       'Boarder - Dietary Plan',
       'Boarder - Medication Details',
@@ -135,21 +139,31 @@ describe('Forms Data and Utility Functions', () => {
       expect(signatureFields[0].id).toBe('signature');
     });
 
-    it('should verify SOAP template has Subjective, Objective, Assessment, Plan and single signature', () => {
+    it('should verify SOAP template has Subjective, Objective, Assessment and Plan without signature', () => {
       const template = CategoryTemplates['SOAP'];
       expect(template.map((f: any) => f.label)).toEqual([
         'Subjective',
         'Objective',
         'Assessment',
         'Plan',
-        'Signature',
       ]);
       const flatten = (fields: any[]): any[] =>
         fields.flatMap((f) => (f.type === 'group' ? [f, ...flatten(f.fields ?? [])] : [f]));
       const flat = flatten(template as any[]);
       expect(flat.find((f: any) => f.id === 'subjective_history')?.required).toBe(true);
       const signatureFields = template.filter((f: any) => f.type === 'signature');
-      expect(signatureFields).toHaveLength(1);
+      expect(signatureFields).toHaveLength(0);
+    });
+
+    it('should verify Vitals template has structured clinical fields', () => {
+      const template = CategoryTemplates['Vitals'];
+      expect(template.map((f: any) => f.label)).toEqual(['Vitals', 'Notes']);
+      const flatten = (fields: any[]): any[] =>
+        fields.flatMap((f) => (f.type === 'group' ? [f, ...flatten(f.fields ?? [])] : [f]));
+      const flat = flatten(template as any[]);
+      expect(flat.find((f: any) => f.id === 'heartRateBpm')?.type).toBe('number');
+      expect(flat.find((f: any) => f.id === 'tempF')?.meta?.unit).toBe('°F');
+      expect(flat.find((f: any) => f.id === 'painScore')?.meta?.unit).toBe('/ 10');
     });
 
     it('should verify Discharge Form template has discharge section and single signature', () => {

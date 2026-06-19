@@ -86,7 +86,7 @@ const Details = ({
     }
     const template =
       category && shouldApplyTemplate ? getCategoryTemplate(category) : formData.schema;
-    const clinicalCategories = new Set(['Prescription', 'SOAP', 'Discharge Form']);
+    const clinicalCategories = new Set(['Prescription', 'Discharge Form']);
     let normalizedTemplate = template;
     if (clinicalCategories.has(category)) {
       normalizedTemplate = formData.requiredSigner
@@ -97,6 +97,7 @@ const Details = ({
     setFormData((prev) => ({
       ...prev,
       category,
+      requiredSigner: category === 'SOAP' ? '' : prev.requiredSigner,
       schema: normalizedTemplate,
     }));
   };
@@ -210,7 +211,7 @@ const Details = ({
                   if (!nextSigner) {
                     next.schema = removeSignatureFields(next.schema ?? []);
                   } else if (
-                    new Set(['Prescription', 'SOAP', 'Discharge Form']).has(next.category) &&
+                    new Set(['Prescription', 'Discharge Form']).has(next.category) &&
                     !hasSignatureField(next.schema ?? [])
                   ) {
                     next.schema = ensureSingleSignatureAtEnd(next.schema ?? []);
@@ -218,7 +219,11 @@ const Details = ({
                   return next;
                 });
               }}
-              options={RequiredSignerOptions}
+              options={
+                formData.category === 'SOAP'
+                  ? RequiredSignerOptions.filter((option) => option.value === '')
+                  : RequiredSignerOptions
+              }
               error={formDataErrors.requiredSigner}
             />
           </div>
