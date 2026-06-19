@@ -13,6 +13,7 @@ module.exports = {
         'backend',
         'frontend',
         'mobile',
+        'desktop',
         'dev-docs',
         'types',
         'fhir',
