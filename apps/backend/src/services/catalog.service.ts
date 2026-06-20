@@ -2507,6 +2507,7 @@ export const CatalogService = {
               id: product.id,
               name: product.name,
               kind: product.kind,
+              appointmentKinds: toAppointmentKinds(product.bookable),
               cost: product.prices?.[0]?.unitPrice ?? 0,
               specialityId: product.specialityId,
               organisationId: product.organisationId,

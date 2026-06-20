@@ -2637,6 +2637,7 @@ describe("CatalogService", () => {
               expect.objectContaining({
                 id: "prod_1",
                 kind: "CONSULTATION",
+                appointmentKinds: ["OUTPATIENT"],
                 cost: 150,
               }),
             ],
@@ -3112,6 +3113,7 @@ describe("CatalogService", () => {
                   id: "prod_1",
                   name: "Checkup",
                   kind: "CONSULTATION",
+                  appointmentKinds: ["OUTPATIENT"],
                   cost: 50,
                 }),
               ],
@@ -3206,6 +3208,7 @@ describe("CatalogService", () => {
                   id: "prod_1",
                   name: "Checkup",
                   kind: "PACKAGE",
+                  appointmentKinds: ["OUTPATIENT", "INPATIENT"],
                   cost: 50,
                   packageItems: [
                     expect.objectContaining({
@@ -3294,6 +3297,7 @@ describe("CatalogService", () => {
                 expect.objectContaining({
                   id: "prod_bookable",
                   name: "Checkup",
+                  appointmentKinds: ["OUTPATIENT"],
                 }),
               ],
             }),
