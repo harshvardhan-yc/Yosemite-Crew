@@ -240,7 +240,7 @@ export const BusinessDetailsScreen: React.FC = () => {
             fallbackPhoto={fallbackPhoto ?? undefined}
             cta=""
           />
-          {services.length ? (
+          {services.length || packages.length ? (
             <SpecialtyAccordion
               title="Specialties"
               icon={Images.specialityIcon}
