@@ -564,6 +564,7 @@ export const signPersistedRenderedDocument = async (
     signerName: input.signerName,
     apiKey,
     signaturePlacement: renderedPdf.signaturePlacement,
+    title: existing.title,
   });
 
   if (!doc || typeof doc.id !== "number") {

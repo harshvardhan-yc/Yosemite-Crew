@@ -32,13 +32,36 @@ const formatSignedAt = (value?: Date): string | undefined => {
   }).format(value);
 };
 
+const toDocumensoPercent = (value: number, total: number): number => {
+  return Number(((value / total) * 100).toFixed(4));
+};
+
+const getCurrentPageNumber = (ctx: PdfContext): number => {
+  /**
+   * Prefer tracking currentPageNumber in PdfContext if your pagination system supports it.
+   *
+   * Example:
+   * ctx.currentPageNumber = 1 initially
+   * ctx.currentPageNumber += 1 whenever ctx.document.addPage() is called
+   *
+   * Fallback keeps compatibility with your existing implementation.
+   */
+  const maybeCtxWithPageNumber = ctx as PdfContext & {
+    currentPageNumber?: number;
+  };
+
+  return maybeCtxWithPageNumber.currentPageNumber ?? ctx.document.bufferedPageRange().count;
+};
+
 export const renderDocumentEndBlock = (
   ctx: PdfContext,
   input: DocumentEndBlockInput
 ): ClinicalPdfSignaturePlacement => {
   const signature = input.signature ?? { status: 'PENDING' };
+
   const signatureWidth = Math.min(220, ctx.contentWidth * 0.42);
   const leftWidth = ctx.contentWidth - signatureWidth - 28;
+
   const estimatedHeight = Math.max(estimateSignatureHeight(signature), 84);
 
   ensureSpace(ctx, estimatedHeight);
@@ -66,6 +89,7 @@ export const renderDocumentEndBlock = (
     });
 
   const signatureLabel = signature.label ?? 'Signature';
+
   ctx.document
     .font(ctx.theme.fonts.bold)
     .fontSize(ctx.theme.fontSizes.small)
@@ -77,6 +101,19 @@ export const renderDocumentEndBlock = (
 
   const lineY = startY + 22;
   const lineWidth = signatureWidth;
+
+  /**
+   * This is the rectangle where Documenso will place the actual signature field.
+   *
+   * PDFKit coordinates are point-based from top-left.
+   * Documenso expects percentage-based coordinates from top-left.
+   *
+   * Keeping this box tight avoids the signing field overlapping the signer
+   * details text below the line.
+   */
+  const signatureFieldY = lineY;
+  const signatureFieldHeight = 40;
+
   ctx.document
     .moveTo(signatureX, lineY + 24)
     .lineTo(signatureX + lineWidth, lineY + 24)
@@ -85,15 +122,20 @@ export const renderDocumentEndBlock = (
     .stroke();
 
   const details: string[] = [];
+
   if (signature.status === 'SIGNED') {
     if (signature.signerName) {
       details.push(signature.signerName);
     }
+
     const role = [signature.signerRole, signature.signerDegree].filter(Boolean).join(' ');
+
     if (role) {
       details.push(role);
     }
+
     const signedAt = formatSignedAt(signature.signedAt);
+
     if (signedAt) {
       details.push(`Signed ${signedAt}`);
     }
@@ -114,12 +156,15 @@ export const renderDocumentEndBlock = (
   ctx.document.restore();
   ctx.moveDown(estimatedHeight);
 
+  const pageWidth = ctx.document.page.width;
+  const pageHeight = ctx.document.page.height;
+
   return {
-    pageNumber: ctx.document.bufferedPageRange().count,
-    pageX: signatureX,
-    pageY: startY,
-    width: signatureWidth,
-    height: estimatedHeight,
+    pageNumber: getCurrentPageNumber(ctx),
+    pageX: toDocumensoPercent(signatureX, pageWidth),
+    pageY: toDocumensoPercent(signatureFieldY, pageHeight),
+    width: toDocumensoPercent(signatureWidth, pageWidth),
+    height: toDocumensoPercent(signatureFieldHeight, pageHeight),
   };
 };
 

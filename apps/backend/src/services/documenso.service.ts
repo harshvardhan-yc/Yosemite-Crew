@@ -110,18 +110,23 @@ export class DocumensoService {
     signerName,
     apiKey,
     signaturePlacement,
+    title,
   }: {
     pdf: Buffer;
     signerEmail: string;
     signerName?: string;
     apiKey?: string;
     signaturePlacement?: ClinicalPdfSignaturePlacement;
+    title?: string;
   }) {
     try {
       const documenso = getDocumensoClient(apiKey);
       const placement = signaturePlacement ?? DEFAULT_SIGNATURE_PLACEMENT;
+      logger.info("Creating document with signature placement", {
+        placement,
+      });
       const createDocumentResponse = await documenso.documents.createV0({
-        title: "Form Submission",
+        title: title ?? "Form Submission",
         recipients: [
           {
             email: signerEmail,
