@@ -6,6 +6,7 @@ import { StripeController } from "./controllers/web/stripe.controller";
 import { FinanceController } from "./controllers/app/finance.controller";
 import cors from "cors";
 import { DocumensoWebhookController } from "./controllers/web/documenso.controller";
+import mongoSanitize from "express-mongo-sanitize";
 import {
   initSuperTokens,
   registerSuperTokensBeforeRoutes,
@@ -103,6 +104,7 @@ export function createApp() {
   }
 
   app.use(express.json());
+  app.use(mongoSanitize());
 
   registerRoutes(app); // all routes in 1 place
 

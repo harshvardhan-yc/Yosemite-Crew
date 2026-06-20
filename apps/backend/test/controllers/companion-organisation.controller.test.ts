@@ -68,7 +68,7 @@ jest.mock("../../src/utils/logger", () => ({
   },
 }));
 
-describe.skip("CompanionOrganisationController", () => {
+describe("CompanionOrganisationController", () => {
   let req: any;
   let res: any;
   const validObjectId = "507f1f77bcf86cd799439011";

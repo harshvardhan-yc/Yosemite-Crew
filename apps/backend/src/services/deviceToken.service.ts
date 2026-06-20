@@ -1,4 +1,7 @@
+import { DeviceTokenModel } from "src/models/deviceToken";
 import { prisma } from "src/config/prisma";
+import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
+import { isReadFromPostgres } from "src/config/read-switch";
 
 export const DeviceTokenService = {
   async registerToken(
@@ -17,38 +20,63 @@ export const DeviceTokenService = {
       return;
     }
 
-    await prisma.deviceToken.upsert({
-      where: { deviceToken: safeDeviceToken },
-      create: {
-        userId: safeUserId,
-        deviceToken: safeDeviceToken,
-        platform,
-        isActive: true,
-      },
-      update: {
-        userId: safeUserId,
-        platform,
-        isActive: true,
-      },
-    });
+    await DeviceTokenModel.updateOne(
+      { deviceToken: safeDeviceToken },
+      { userId: safeUserId, platform },
+      { upsert: true, sanitizeFilter: true },
+    );
+
+    if (shouldDualWrite) {
+      try {
+        await prisma.deviceToken.upsert({
+          where: { deviceToken: safeDeviceToken },
+          create: {
+            userId: safeUserId,
+            deviceToken: safeDeviceToken,
+            platform,
+            isActive: true,
+          },
+          update: {
+            userId: safeUserId,
+            platform,
+            isActive: true,
+          },
+        });
+      } catch (err) {
+        handleDualWriteError("DeviceToken", err);
+      }
+    }
   },
 
   async getTokensForUser(userId: string) {
-    const tokens = await prisma.deviceToken.findMany({
-      where: { userId },
-    });
-    return tokens.map((token) => ({
-      _id: token.id,
-      userId: token.userId,
-      deviceToken: token.deviceToken,
-      platform: token.platform,
-      isActive: token.isActive,
-      createdAt: token.createdAt,
-      updatedAt: token.updatedAt,
-    }));
+    if (isReadFromPostgres()) {
+      const tokens = await prisma.deviceToken.findMany({
+        where: { userId },
+      });
+      return tokens.map((token) => ({
+        _id: token.id,
+        userId: token.userId,
+        deviceToken: token.deviceToken,
+        platform: token.platform,
+        isActive: token.isActive,
+        createdAt: token.createdAt,
+        updatedAt: token.updatedAt,
+      }));
+    }
+
+    const docs = await DeviceTokenModel.find({ userId }).lean();
+    return docs;
   },
 
   async removeToken(deviceToken: string) {
-    await prisma.deviceToken.deleteMany({ where: { deviceToken } });
+    await DeviceTokenModel.deleteOne({ deviceToken });
+
+    if (shouldDualWrite) {
+      try {
+        await prisma.deviceToken.deleteMany({ where: { deviceToken } });
+      } catch (err) {
+        handleDualWriteError("DeviceToken delete", err);
+      }
+    }
   },
 };

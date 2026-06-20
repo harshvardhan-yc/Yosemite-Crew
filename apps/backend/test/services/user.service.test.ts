@@ -100,7 +100,7 @@ const mockedOccupancyModel = OccupancyModel as unknown as {
   deleteMany: jest.Mock;
 };
 
-describe.skip("UserService", () => {
+describe("UserService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
   });

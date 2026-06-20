@@ -1,5 +1,14 @@
 import { Request, Response } from "express";
 import crypto from "node:crypto";
+import { HydratedDocument, Types } from "mongoose";
+import {
+  FormModel,
+  FormSubmissionDocument,
+  FormSubmissionModel,
+} from "src/models/form";
+import OrganizationModel from "src/models/organization";
+import UserModel from "src/models/user";
+import UserOrganizationModel from "src/models/user-organization";
 import {
   DocumensoExternalRole,
   DocumensoService,
@@ -10,6 +19,7 @@ import type { AuthenticatedRequest } from "src/middlewares/auth";
 import logger from "src/utils/logger";
 import { prisma } from "src/config/prisma";
 import { Prisma } from "@prisma/client";
+import { isReadFromPostgres } from "src/config/read-switch";
 
 interface DocumensoWebhookBody {
   event?: string;
@@ -61,28 +71,49 @@ export const DocumensoWebhookController = {
         return res.status(400).json({ message: "Invalid payload" });
       }
 
-      const submission = await prisma.formSubmission.findFirst({
-        where: {
-          signing: {
-            path: ["documentId"],
-            equals: String(documentId),
-          } as Prisma.JsonFilter,
-        },
-      });
+      if (isReadFromPostgres()) {
+        const submission = await prisma.formSubmission.findFirst({
+          where: {
+            signing: {
+              path: ["documentId"],
+              equals: String(documentId),
+            } as Prisma.JsonFilter,
+          },
+        });
 
-      if (!submission) {
-        logger.warn("[DocumensoWebhook] No submission found for document");
-        return res.status(200).json({ received: true });
-      }
+        if (!submission) {
+          logger.warn("[DocumensoWebhook] No submission found for document");
+          return res.status(200).json({ received: true });
+        }
 
-      switch (eventType) {
-        case "DOCUMENT_COMPLETED":
-          await handleDocumentCompletedPrisma(submission);
-          break;
+        switch (eventType) {
+          case "DOCUMENT_COMPLETED":
+            await handleDocumentCompletedPrisma(submission);
+            break;
 
-        case "DOCUMENT_DELETED":
-          await handleDocumentDeletedPrisma(submission);
-          break;
+          case "DOCUMENT_DELETED":
+            await handleDocumentDeletedPrisma(submission);
+            break;
+        }
+      } else {
+        const submission = await FormSubmissionModel.findOne({
+          "signing.documentId": String(documentId),
+        });
+
+        if (!submission) {
+          logger.warn("[DocumensoWebhook] No submission found for document");
+          return res.status(200).json({ received: true });
+        }
+
+        switch (eventType) {
+          case "DOCUMENT_COMPLETED":
+            await handleDocumentCompleted(submission);
+            break;
+
+          case "DOCUMENT_DELETED":
+            await handleDocumentDeleted(submission);
+            break;
+        }
       }
 
       const renderedDocument = await prisma.renderedDocument.findFirst({
@@ -164,10 +195,21 @@ export const DocumensoAuthController = {
         });
       }
 
-      const resolvedUser = await prisma.user.findFirst({
-        where: { userId },
-        select: { email: true, firstName: true, lastName: true },
-      });
+      const pgUser = isReadFromPostgres()
+        ? await prisma.user.findFirst({
+            where: { userId },
+            select: { email: true, firstName: true, lastName: true },
+          })
+        : null;
+      const user = !isReadFromPostgres()
+        ? await UserModel.findOne(
+            { userId },
+            { email: 1, firstName: 1, lastName: 1 },
+            { sanitizeFilter: true },
+          ).lean()
+        : null;
+
+      const resolvedUser = pgUser ?? user;
       if (!resolvedUser?.email) {
         return res.status(404).json({ message: "User not found." });
       }
@@ -178,16 +220,28 @@ export const DocumensoAuthController = {
         return res.status(404).json({ message: "Organisation not found." });
       }
 
-      const mapping = await prisma.userOrganization.findFirst({
-        where: {
-          practitionerReference: userId,
-          OR: [
-            { organizationReference: orgId },
-            { organizationReference: `Organization/${orgId}` },
-          ],
-        },
-        select: { roleCode: true },
-      });
+      const mapping = isReadFromPostgres()
+        ? await prisma.userOrganization.findFirst({
+            where: {
+              practitionerReference: userId,
+              OR: [
+                { organizationReference: orgId },
+                { organizationReference: `Organization/${orgId}` },
+              ],
+            },
+            select: { roleCode: true },
+          })
+        : await UserOrganizationModel.findOne(
+            {
+              practitionerReference: userId,
+              $or: [
+                { organizationReference: orgId },
+                { organizationReference: `Organization/${orgId}` },
+              ],
+            },
+            { roleCode: 1 },
+            { sanitizeFilter: true },
+          ).lean();
 
       const role = mapRoleToDocumenso(mapping?.roleCode);
 
@@ -214,6 +268,24 @@ export const DocumensoAuthController = {
       });
     }
   },
+};
+
+const buildOrganizationLookupQuery = (reference: string) => {
+  const queries: Array<Record<string, string>> = [];
+
+  if (Types.ObjectId.isValid(reference)) {
+    queries.push({ _id: reference });
+  }
+
+  if (/^[A-Za-z0-9\-.]{1,64}$/.test(reference)) {
+    queries.push({ fhirId: reference });
+  }
+
+  if (!queries.length) {
+    return null;
+  }
+
+  return queries.length === 1 ? queries[0] : { $or: queries };
 };
 
 export const DocumensoKeyController = {
@@ -259,24 +331,50 @@ export const DocumensoKeyController = {
       }
 
       const { orgId } = req.params;
-      const organisation = await prisma.organization.findFirst({
-        where: { OR: [{ id: orgId }, { fhirId: orgId }] },
-      });
+      const query = buildOrganizationLookupQuery(orgId);
 
-      if (!organisation) {
-        logger.warn("Documenso key webhook org not found", { orgId });
-        return res.status(404).json({ message: "Organisation not found." });
+      if (!query) {
+        logger.warn("Documenso key webhook invalid org id", { orgId });
+        return res.status(400).json({ message: "Invalid organisation id." });
       }
 
-      if (organisation.documensoApiKey) {
-        logger.info("Documenso API key already stored", { orgId });
-        return res.status(200).json({ success: true });
-      }
+      if (isReadFromPostgres()) {
+        const organisation = await prisma.organization.findFirst({
+          where: { OR: [{ id: orgId }, { fhirId: orgId }] },
+        });
 
-      await prisma.organization.updateMany({
-        where: { id: organisation.id },
-        data: { documensoApiKey: body.apiToken },
-      });
+        if (!organisation) {
+          logger.warn("Documenso key webhook org not found", { orgId });
+          return res.status(404).json({ message: "Organisation not found." });
+        }
+
+        if (organisation.documensoApiKey) {
+          logger.info("Documenso API key already stored", { orgId });
+          return res.status(200).json({ success: true });
+        }
+
+        await prisma.organization.updateMany({
+          where: { id: organisation.id },
+          data: { documensoApiKey: body.apiToken },
+        });
+      } else {
+        const organisation = await OrganizationModel.findOne(query).lean();
+
+        if (!organisation) {
+          logger.warn("Documenso key webhook org not found", { orgId });
+          return res.status(404).json({ message: "Organisation not found." });
+        }
+
+        if (organisation.documensoApiKey) {
+          logger.info("Documenso API key already stored", { orgId });
+          return res.status(200).json({ success: true });
+        }
+
+        await OrganizationModel.updateOne(
+          { _id: organisation._id },
+          { $set: { documensoApiKey: body.apiToken } },
+        );
+      }
 
       logger.info("Documenso API key stored", { orgId });
       return res.status(200).json({ success: true });
@@ -288,6 +386,55 @@ export const DocumensoKeyController = {
     }
   },
 };
+
+async function handleDocumentCompleted(
+  submission: HydratedDocument<FormSubmissionDocument>,
+) {
+  if (!submission.signing) return;
+  if (submission.signing.status === "SIGNED") return;
+
+  const form = await FormModel.findById(submission.formId).lean();
+
+  if (!form) {
+    throw new Error("Form not found");
+  }
+
+  const documensoApiKey = await DocumensoService.resolveOrganisationApiKey(
+    form.orgId,
+  );
+
+  if (!documensoApiKey) {
+    throw new Error("Documenso API key not configured for organisation");
+  }
+
+  const signedDocument = await DocumensoService.downloadSignedDocument({
+    documentId: Number.parseInt(submission.signing.documentId!, 10),
+    apiKey: documensoApiKey,
+  });
+
+  if (signedDocument) {
+    submission.signing.pdf = {
+      url: signedDocument.downloadUrl,
+    };
+  }
+  submission.signing.status = "SIGNED";
+
+  await submission.save();
+}
+
+async function handleDocumentDeleted(
+  submission: HydratedDocument<FormSubmissionDocument>,
+) {
+  if (!submission.signing) return;
+  if (submission.signing.status === "SIGNED") return;
+
+  submission.signing = {
+    ...submission.signing,
+    status: "NOT_STARTED",
+  };
+
+  await submission.save();
+}
 
 async function handleDocumentCompletedPrisma(submission: {
   id: string;

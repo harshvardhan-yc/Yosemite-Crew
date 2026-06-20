@@ -1,9 +1,9 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
-import { Prisma } from "@prisma/client";
-import { prisma } from "src/config/prisma";
-import logger from "src/utils/logger";
+import mongoose from "mongoose";
+import { CodeService } from "src/services/code.service";
+import type { CodeType } from "src/models/code-entry";
 
 type BreedSeedItem = {
   species: "canine" | "feline" | "equine";
@@ -17,19 +17,15 @@ type BreedSeedItem = {
   flags: { isCross: boolean; isUnspecified: boolean };
 };
 
-type CodeSystem = "YOSEMITECODE" | "VENOM";
-type CodeType = "SPECIES" | "BREED";
-
-const SPECIES_DISPLAY: Record<BreedSeedItem["species"], string> = {
+const SPECIES_DISPLAY: Record<string, string> = {
   canine: "Canine",
   feline: "Feline",
   equine: "Equine",
 };
 
-const buildSpeciesCode = (species: BreedSeedItem["species"]) =>
-  `YSPEC:${species.toUpperCase()}`;
+const buildSpeciesCode = (species: string) => `YSPEC:${species.toUpperCase()}`;
 
-const buildBreedCode = (species: BreedSeedItem["species"], slug: string) =>
+const buildBreedCode = (species: string, slug: string) =>
   `YBREED:${species.toUpperCase()}:${slug.toUpperCase()}`;
 
 const readJson = <T>(filePath: string): T => {
@@ -37,69 +33,14 @@ const readJson = <T>(filePath: string): T => {
   return JSON.parse(raw) as T;
 };
 
-const upsertCodeEntry = async (input: {
-  system: CodeSystem;
-  code: string;
-  display: string;
-  type: CodeType;
-  active: boolean;
-  synonyms: string[];
-  meta: Prisma.InputJsonValue;
-}) => {
-  await prisma.codeEntry.upsert({
-    where: {
-      system_code: {
-        system: input.system,
-        code: input.code,
-      },
-    },
-    create: input,
-    update: {
-      display: input.display,
-      type: input.type,
-      active: input.active,
-      synonyms: input.synonyms as Prisma.InputJsonValue,
-      meta: input.meta,
-    },
-  });
-};
-
-const upsertCodeMapping = async (input: {
-  sourceSystem: CodeSystem;
-  sourceCode: string;
-  targetSystem: Exclude<CodeSystem, "YOSEMITECODE">;
-  targetCode: string;
-  targetDisplay: string | null;
-  targetVersion: string | null;
-  active: boolean;
-}) => {
-  await prisma.codeMapping.upsert({
-    where: {
-      sourceSystem_sourceCode_targetSystem_targetCode: {
-        sourceSystem: input.sourceSystem,
-        sourceCode: input.sourceCode,
-        targetSystem: input.targetSystem,
-        targetCode: input.targetCode,
-      },
-    },
-    create: input,
-    update: {
-      targetDisplay: input.targetDisplay,
-      targetVersion: input.targetVersion,
-      active: input.active,
-    },
-  });
-};
-
-const seedSpecies = async (species: BreedSeedItem["species"]) => {
+const seedSpecies = async (species: string) => {
   const code = buildSpeciesCode(species);
-  const display = SPECIES_DISPLAY[species];
-
-  await upsertCodeEntry({
+  const display = SPECIES_DISPLAY[species] ?? species;
+  await CodeService.upsertEntry({
     system: "YOSEMITECODE",
     code,
     display,
-    type: "SPECIES",
+    type: "SPECIES" as CodeType,
     active: true,
     synonyms: [],
     meta: { source: "seed" },
@@ -113,7 +54,7 @@ const seedBreedsFromFile = async (filePath: string) => {
     const speciesCode = buildSpeciesCode(item.species);
     const breedCode = buildBreedCode(item.species, item.slug);
 
-    await upsertCodeEntry({
+    await CodeService.upsertEntry({
       system: "YOSEMITECODE",
       code: breedCode,
       display: item.name,
@@ -128,7 +69,7 @@ const seedBreedsFromFile = async (filePath: string) => {
       },
     });
 
-    await upsertCodeMapping({
+    await CodeService.upsertMapping({
       sourceSystem: "YOSEMITECODE",
       sourceCode: breedCode,
       targetSystem: "VENOM",
@@ -140,14 +81,26 @@ const seedBreedsFromFile = async (filePath: string) => {
   }
 };
 
-export const seedCodebook = async (inputDir: string) => {
+const main = async () => {
+  const mongoUri = process.env.MONGODB_URI;
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI is required to seed codebook.");
+  }
+
+  const inputDir =
+    process.argv[2] ??
+    process.env.CODEBOOK_INPUT_DIR ??
+    path.join(process.cwd(), "data");
+
   const files = [
     "canine_breeds.json",
     "feline_breeds.json",
     "equine_breeds.json",
   ];
 
-  for (const species of ["canine", "feline", "equine"] as const) {
+  await mongoose.connect(mongoUri);
+
+  for (const species of ["canine", "feline", "equine"]) {
     await seedSpecies(species);
   }
 
@@ -158,25 +111,12 @@ export const seedCodebook = async (inputDir: string) => {
     }
     await seedBreedsFromFile(filePath);
   }
+
+  await mongoose.disconnect();
+  console.log("Codebook seed complete.");
 };
 
-const main = async () => {
-  const inputDir =
-    process.argv[2] ??
-    process.env.CODEBOOK_INPUT_DIR ??
-    path.join(process.cwd(), "data");
-
-  try {
-    await seedCodebook(inputDir);
-    logger.info("Codebook seed complete");
-  } finally {
-    await prisma.$disconnect();
-  }
-};
-
-if (process.env.NODE_ENV !== "test") {
-  main().catch((error) => {
-    logger.error("Codebook seed failed", error);
-    process.exit(1);
-  });
-}
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

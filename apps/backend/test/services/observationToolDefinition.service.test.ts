@@ -2,7 +2,24 @@ import {
   ObservationToolDefinitionService,
   ObservationToolDefinitionServiceError,
 } from "../../src/services/observationToolDefinition.service";
+import { ObservationToolDefinitionModel } from "../../src/models/observationToolDefinition";
+import { Types } from "mongoose";
 import { prisma } from "src/config/prisma";
+import { handleDualWriteError } from "src/utils/dual-write";
+
+jest.mock("../../src/models/observationToolDefinition", () => {
+  const actual = jest.requireActual(
+    "../../src/models/observationToolDefinition",
+  );
+  return {
+    ...actual,
+    ObservationToolDefinitionModel: {
+      create: jest.fn(),
+      findById: jest.fn(),
+      find: jest.fn(),
+    },
+  };
+});
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -11,137 +28,335 @@ jest.mock("src/config/prisma", () => ({
       findFirst: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
+      upsert: jest.fn(),
     },
   },
 }));
 
-const mockedPrisma = prisma as unknown as {
-  observationToolDefinition: {
-    create: jest.Mock;
-    findFirst: jest.Mock;
-    findMany: jest.Mock;
-    update: jest.Mock;
-  };
+jest.mock("src/utils/dual-write", () => ({
+  shouldDualWrite: true,
+  isDualWriteStrict: false,
+  handleDualWriteError: jest.fn(),
+}));
+
+const mockedModel = ObservationToolDefinitionModel as unknown as {
+  create: jest.Mock;
+  findById: jest.Mock;
+  find: jest.Mock;
 };
 
 describe("ObservationToolDefinitionService", () => {
+  const validId = new Types.ObjectId().toString();
+
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.READ_FROM_POSTGRES = "false";
   });
 
-  it("validates required fields", async () => {
-    await expect(
-      ObservationToolDefinitionService.create({
-        name: "",
-        category: "",
-        fields: [],
-      }),
-    ).rejects.toBeInstanceOf(ObservationToolDefinitionServiceError);
-  });
-
-  it("creates a definition in postgres", async () => {
-    mockedPrisma.observationToolDefinition.create.mockResolvedValue({
-      id: "tool-1",
+  describe("create", () => {
+    it("validates required fields", async () => {
+      await expect(
+        ObservationToolDefinitionService.create({
+          name: "",
+          category: "",
+          fields: [],
+        }),
+      ).rejects.toBeInstanceOf(ObservationToolDefinitionServiceError);
     });
 
-    const result = await ObservationToolDefinitionService.create({
-      name: "Tool",
-      description: "Desc",
-      category: "Cat",
-      fields: [
-        {
-          key: "a",
-          label: "A",
-          type: "TEXT",
-          required: true,
-          options: ["x"],
-          scoring: { points: 2 },
-        },
-      ],
-      scoringRules: { sumFields: ["a"] },
-    });
+    it("persists sanitized definition", async () => {
+      const doc = { id: "tool-1" };
+      mockedModel.create.mockResolvedValueOnce(doc);
 
-    expect(mockedPrisma.observationToolDefinition.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+      const result = await ObservationToolDefinitionService.create({
         name: "Tool",
         description: "Desc",
         category: "Cat",
+        fields: [
+          {
+            key: "a",
+            label: "A",
+            type: "TEXT",
+            required: true,
+            options: ["x"],
+            scoring: { points: 2 },
+          },
+        ],
+        scoringRules: { sumFields: ["a"] },
+      });
+
+      expect(mockedModel.create).toHaveBeenCalledWith({
+        name: "Tool",
+        description: "Desc",
+        category: "Cat",
+        fields: [
+          {
+            key: "a",
+            label: "A",
+            type: "TEXT",
+            required: true,
+            options: ["x"],
+            scoring: { points: 2 },
+          },
+        ],
+        scoringRules: { sumFields: ["a"] },
         isActive: true,
-      }),
+      });
+      expect(result).toBe(doc);
     });
-    expect(result).toEqual({ id: "tool-1" });
+
+    it("uses prisma when READ_FROM_POSTGRES is true", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (prisma.observationToolDefinition.create as jest.Mock).mockResolvedValue({
+        id: "pg-1",
+      });
+
+      const result = await ObservationToolDefinitionService.create({
+        name: "Tool",
+        category: "Cat",
+        fields: [{ key: "a", label: "A", type: "TEXT" }],
+      });
+
+      expect(prisma.observationToolDefinition.create).toHaveBeenCalled();
+      expect(result).toEqual({ id: "pg-1" });
+    });
+
+    it("handles dual-write errors", async () => {
+      const doc = {
+        _id: { toString: () => "mongo-1" },
+        name: "Tool",
+        description: undefined,
+        category: "Cat",
+        fields: [],
+        isActive: true,
+        toObject: jest.fn().mockReturnValue({
+          _id: { toString: () => "mongo-1" },
+          name: "Tool",
+          category: "Cat",
+          fields: [],
+          isActive: true,
+        }),
+      };
+      mockedModel.create.mockResolvedValueOnce(doc as any);
+      (prisma.observationToolDefinition.upsert as jest.Mock).mockRejectedValue(
+        new Error("sync fail"),
+      );
+
+      await ObservationToolDefinitionService.create({
+        name: "Tool",
+        category: "Cat",
+        fields: [{ key: "a", label: "A", type: "TEXT" }],
+      });
+
+      expect(handleDualWriteError).toHaveBeenCalledWith(
+        "ObservationToolDefinition",
+        expect.any(Error),
+      );
+    });
   });
 
-  it("updates a definition in postgres", async () => {
-    mockedPrisma.observationToolDefinition.findFirst.mockResolvedValue({
-      id: "tool-1",
-      name: "Old",
-      description: "Old",
-      category: "Old",
-      fields: [],
-      scoringRules: null,
-      isActive: true,
-    });
-    mockedPrisma.observationToolDefinition.update.mockResolvedValue({
-      id: "tool-1",
-      name: "New",
+  describe("update", () => {
+    it("throws when tool is missing", async () => {
+      mockedModel.findById.mockReturnValueOnce({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(
+        ObservationToolDefinitionService.update(validId, {
+          name: "New",
+        }),
+      ).rejects.toBeInstanceOf(ObservationToolDefinitionServiceError);
     });
 
-    const result = await ObservationToolDefinitionService.update("tool-1", {
-      name: "New",
+    it("updates definition fields", async () => {
+      const save = jest.fn();
+      const doc: any = {
+        name: "Old",
+        description: "Old",
+        category: "Old",
+        fields: [],
+        scoringRules: undefined,
+        isActive: true,
+        save,
+      };
+      mockedModel.findById.mockReturnValueOnce({
+        exec: jest.fn().mockResolvedValue(doc),
+      });
+
+      const updated = await ObservationToolDefinitionService.update(validId, {
+        name: "New",
+        description: "New desc",
+        category: "New cat",
+        fields: [{ key: "b", label: "B", type: "BOOLEAN", required: false }],
+        scoringRules: { sumFields: ["b"] },
+        isActive: false,
+      });
+
+      expect(doc.name).toBe("New");
+      expect(doc.description).toBe("New desc");
+      expect(doc.category).toBe("New cat");
+      expect(doc.fields).toEqual([
+        {
+          key: "b",
+          label: "B",
+          type: "BOOLEAN",
+          required: false,
+          options: undefined,
+          scoring: undefined,
+        },
+      ]);
+      expect(doc.scoringRules).toEqual({ sumFields: ["b"] });
+      expect(doc.isActive).toBe(false);
+      expect(save).toHaveBeenCalled();
+      expect(updated).toBe(doc);
     });
 
-    expect(mockedPrisma.observationToolDefinition.update).toHaveBeenCalled();
-    expect(result).toEqual({ id: "tool-1", name: "New" });
+    it("uses prisma when READ_FROM_POSTGRES is true", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (
+        prisma.observationToolDefinition.findFirst as jest.Mock
+      ).mockResolvedValue({
+        id: "pg-1",
+        name: "Old",
+        description: null,
+        category: "Old",
+        fields: [],
+        scoringRules: null,
+        isActive: true,
+      });
+      (prisma.observationToolDefinition.update as jest.Mock).mockResolvedValue({
+        id: "pg-1",
+        name: "New",
+      });
+
+      const result = await ObservationToolDefinitionService.update("pg-1", {
+        name: "New",
+      });
+
+      expect(prisma.observationToolDefinition.update).toHaveBeenCalled();
+      expect(result).toEqual({ id: "pg-1", name: "New" });
+    });
+
+    it("throws for invalid id", async () => {
+      await expect(
+        ObservationToolDefinitionService.update("bad-id", { name: "New" }),
+      ).rejects.toThrow("Invalid id");
+    });
   });
 
-  it("archives a definition in postgres", async () => {
-    mockedPrisma.observationToolDefinition.findFirst.mockResolvedValue({
-      id: "tool-1",
+  describe("archive", () => {
+    it("marks definition inactive", async () => {
+      const save = jest.fn();
+      const doc = { isActive: true, save } as any;
+      mockedModel.findById.mockReturnValueOnce({
+        exec: jest.fn().mockResolvedValue(doc),
+      });
+
+      await ObservationToolDefinitionService.archive(validId);
+
+      expect(doc.isActive).toBe(false);
+      expect(save).toHaveBeenCalled();
     });
 
-    await ObservationToolDefinitionService.archive("tool-1");
+    it("throws when definition is missing", async () => {
+      mockedModel.findById.mockReturnValueOnce({
+        exec: jest.fn().mockResolvedValue(null),
+      });
 
-    expect(mockedPrisma.observationToolDefinition.update).toHaveBeenCalledWith({
-      where: { id: "tool-1" },
-      data: { isActive: false },
+      await expect(
+        ObservationToolDefinitionService.archive(validId),
+      ).rejects.toBeInstanceOf(ObservationToolDefinitionServiceError);
+    });
+
+    it("uses prisma when READ_FROM_POSTGRES is true", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (
+        prisma.observationToolDefinition.findFirst as jest.Mock
+      ).mockResolvedValue({ id: "pg-1" });
+
+      await ObservationToolDefinitionService.archive("pg-1");
+
+      expect(prisma.observationToolDefinition.update).toHaveBeenCalledWith({
+        where: { id: "pg-1" },
+        data: { isActive: false },
+      });
     });
   });
 
-  it("lists definitions with filters", async () => {
-    mockedPrisma.observationToolDefinition.findMany.mockResolvedValue([
-      { id: "tool-1" },
-    ]);
+  describe("list", () => {
+    it("applies filters and sorts results", async () => {
+      const exec = jest.fn().mockResolvedValueOnce([{ id: "1" }]);
+      const sort = jest.fn().mockReturnValue({ exec });
+      mockedModel.find.mockReturnValue({ sort } as any);
 
-    const result = await ObservationToolDefinitionService.list({
-      category: "cat",
-      onlyActive: true,
+      const result = await ObservationToolDefinitionService.list({
+        category: "cat",
+        onlyActive: true,
+      });
+
+      expect(mockedModel.find).toHaveBeenCalledWith({
+        category: "cat",
+        isActive: true,
+      });
+      expect(sort).toHaveBeenCalledWith({ category: 1, name: 1 });
+      expect(result).toEqual([{ id: "1" }]);
     });
 
-    expect(
-      mockedPrisma.observationToolDefinition.findMany,
-    ).toHaveBeenCalledWith({
-      where: { category: "cat", isActive: true },
-      orderBy: [{ category: "asc" }, { name: "asc" }],
+    it("throws for invalid category", async () => {
+      await expect(
+        ObservationToolDefinitionService.list({ category: "   " }),
+      ).rejects.toThrow("Invalid category");
     });
-    expect(result).toEqual([{ id: "tool-1" }]);
+
+    it("uses prisma when READ_FROM_POSTGRES is true", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (
+        prisma.observationToolDefinition.findMany as jest.Mock
+      ).mockResolvedValue([{ id: "pg-1" }]);
+
+      const result = await ObservationToolDefinitionService.list({
+        category: "cat",
+        onlyActive: true,
+      });
+
+      expect(prisma.observationToolDefinition.findMany).toHaveBeenCalledWith({
+        where: { category: "cat", isActive: true },
+        orderBy: [{ category: "asc" }, { name: "asc" }],
+      });
+      expect(result).toEqual([{ id: "pg-1" }]);
+    });
   });
 
-  it("returns tool by id", async () => {
-    mockedPrisma.observationToolDefinition.findFirst.mockResolvedValue({
-      id: "tool-1",
+  describe("getById", () => {
+    it("returns definition when found", async () => {
+      const doc = { id: "1" };
+      mockedModel.findById.mockReturnValueOnce({
+        exec: jest.fn().mockResolvedValue(doc),
+      });
+
+      const result = await ObservationToolDefinitionService.getById(validId);
+
+      expect(result).toBe(doc);
     });
 
-    await expect(
-      ObservationToolDefinitionService.getById("tool-1"),
-    ).resolves.toEqual({ id: "tool-1" });
-  });
+    it("throws when not found", async () => {
+      mockedModel.findById.mockReturnValueOnce({
+        exec: jest.fn().mockResolvedValue(null),
+      });
 
-  it("throws when tool missing", async () => {
-    mockedPrisma.observationToolDefinition.findFirst.mockResolvedValue(null);
+      await expect(
+        ObservationToolDefinitionService.getById(validId),
+      ).rejects.toBeInstanceOf(ObservationToolDefinitionServiceError);
+    });
 
-    await expect(
-      ObservationToolDefinitionService.getById("tool-1"),
-    ).rejects.toBeInstanceOf(ObservationToolDefinitionServiceError);
+    it("uses prisma when READ_FROM_POSTGRES is true", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      (
+        prisma.observationToolDefinition.findFirst as jest.Mock
+      ).mockResolvedValue({ id: "pg-1" });
+
+      const result = await ObservationToolDefinitionService.getById("pg-1");
+      expect(result).toEqual({ id: "pg-1" });
+    });
   });
 });

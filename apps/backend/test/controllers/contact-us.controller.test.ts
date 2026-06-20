@@ -97,7 +97,7 @@ describe("ContactController", () => {
         parentId: { toString: () => "parent-123" },
       });
       mockedContactService.createRequest.mockResolvedValueOnce({
-        id: "contact-1",
+        _id: { toString: () => "contact-1" },
       });
       const req = {
         headers: { "x-user-id": "user-1" },
@@ -192,7 +192,7 @@ describe("ContactController", () => {
   describe("createWeb", () => {
     it("creates a web contact request", async () => {
       mockedContactService.createWebRequest.mockResolvedValueOnce({
-        id: "contact-web-1",
+        _id: { toString: () => "contact-web-1" },
       });
       const req = {
         body: {

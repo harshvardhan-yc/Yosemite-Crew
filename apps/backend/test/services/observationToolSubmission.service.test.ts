@@ -81,7 +81,7 @@ const mockChain = (resolvedValue: any) => {
 // Helper for ObjectIds
 const newId = () => new Types.ObjectId().toString();
 
-describe.skip("ObservationToolSubmissionService", () => {
+describe("ObservationToolSubmissionService", () => {
   const toolId = newId();
   const taskId = newId();
   const companionId = newId();

@@ -55,7 +55,7 @@ const mockedOrgModel = jest.mocked(OrganizationModel);
 const mockedUpload = jest.mocked(UploadMiddleware);
 const mockedLogger = jest.mocked(logger);
 
-describe.skip("CompanionController", () => {
+describe("CompanionController", () => {
   let req: Partial<Request>;
   let res: Partial<Response>;
   let jsonMock: jest.Mock;

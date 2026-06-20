@@ -14,21 +14,31 @@ import {
   DocumensoKeyController,
   DocumensoWebhookController,
 } from "../../../src/controllers/web/documenso.controller";
-import { prisma } from "../../../src/config/prisma";
+import { FormModel, FormSubmissionModel } from "../../../src/models/form";
+import OrganizationModel from "../../../src/models/organization";
+import UserModel from "../../../src/models/user";
+import UserOrganizationModel from "../../../src/models/user-organization";
 import {
   DocumensoService,
   type DocumensoExternalRole,
 } from "../../../src/services/documenso.service";
 import { OrganizationService } from "../../../src/services/organization.service";
 import { completePersistedRenderedDocumentSigning } from "../../../src/services/rendered-document.service";
+import { prisma } from "../../../src/config/prisma";
 import logger from "../../../src/utils/logger";
+
+jest.mock("../../../src/config/read-switch", () => ({
+  isReadFromPostgres: jest.fn(() => process.env.READ_FROM_POSTGRES === "true"),
+}));
 
 jest.mock("../../../src/config/prisma", () => ({
   prisma: {
     form: { findUnique: jest.fn() },
     formSubmission: {
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
     organization: {
       findFirst: jest.fn(),
@@ -37,11 +47,30 @@ jest.mock("../../../src/config/prisma", () => ({
     renderedDocument: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
-      update: jest.fn(),
     },
     user: { findFirst: jest.fn() },
     userOrganization: { findFirst: jest.fn() },
   },
+}));
+
+jest.mock("../../../src/models/form", () => ({
+  FormModel: { findById: jest.fn() },
+  FormSubmissionModel: { findOne: jest.fn() },
+}));
+
+jest.mock("../../../src/models/organization", () => ({
+  __esModule: true,
+  default: { findOne: jest.fn(), updateOne: jest.fn() },
+}));
+
+jest.mock("../../../src/models/user", () => ({
+  __esModule: true,
+  default: { findOne: jest.fn() },
+}));
+
+jest.mock("../../../src/models/user-organization", () => ({
+  __esModule: true,
+  default: { findOne: jest.fn() },
 }));
 
 jest.mock("../../../src/services/documenso.service", () => ({
@@ -64,11 +93,16 @@ jest.mock("../../../src/services/rendered-document.service", () => ({
 
 jest.mock("../../../src/utils/logger");
 
-const mockedPrisma = prisma as any;
+const mockedFormModel = FormModel as any;
+const mockedFormSubmissionModel = FormSubmissionModel as any;
+const mockedOrganizationModel = OrganizationModel as any;
+const mockedUserModel = UserModel as any;
+const mockedUserOrganizationModel = UserOrganizationModel as any;
 const mockedDocumensoService = DocumensoService as any;
 const mockedOrganizationService = OrganizationService as any;
 const mockedCompletePersistedRenderedDocumentSigning =
   completePersistedRenderedDocumentSigning as any;
+const mockedPrisma = prisma as any;
 const mockedLogger = logger as any;
 
 describe("Documenso controllers", () => {
@@ -84,8 +118,15 @@ describe("Documenso controllers", () => {
   const buildSignature = (payload: Buffer, secret: string) =>
     crypto.createHmac("sha256", secret).update(payload).digest("hex");
 
-  const makeWebhookRequest = (event?: string, id = 123) =>
-    Buffer.from(JSON.stringify({ event, payload: { id } }));
+  const makeWebhookRequest = (event?: string, id = 123) => {
+    const payload = Buffer.from(
+      JSON.stringify({
+        event,
+        payload: { id },
+      }),
+    );
+    return payload;
+  };
 
   beforeAll(() => {
     delete process.env.DOCUMENSO_WEBHOOK_SECRET;
@@ -124,6 +165,7 @@ describe("Documenso controllers", () => {
     } as unknown as Response;
 
     jest.clearAllMocks();
+    delete process.env.READ_FROM_POSTGRES;
     delete process.env.DOCUMENSO_WEBHOOK_SECRET;
     delete process.env.DOCUMENSO_PMS_WEBHOOK_SECRET;
   });
@@ -170,7 +212,7 @@ describe("Documenso controllers", () => {
 
     it("returns received when no submission exists", async () => {
       req.body = makeWebhookRequest("DOCUMENT_COMPLETED");
-      mockedPrisma.formSubmission.findFirst.mockResolvedValue(null);
+      mockedFormSubmissionModel.findOne.mockResolvedValue(null);
 
       await DocumensoWebhookController.handle(req as Request, res as Response);
 
@@ -178,14 +220,18 @@ describe("Documenso controllers", () => {
       expect(jsonMock).toHaveBeenCalledWith({ received: true });
     });
 
-    it("handles completed documents in the postgres path", async () => {
+    it("handles completed documents in the mongo branch", async () => {
+      const save = jest.fn(() => Promise.resolve(undefined)) as any;
       req.body = makeWebhookRequest("DOCUMENT_COMPLETED");
-      mockedPrisma.formSubmission.findFirst.mockResolvedValue({
+      mockedFormSubmissionModel.findOne.mockResolvedValue({
         id: "submission-1",
         formId: "form-1",
         signing: { status: "NOT_STARTED", documentId: "123" },
+        save,
       });
-      mockedPrisma.form.findUnique.mockResolvedValue({ orgId: "org-1" });
+      mockedFormModel.findById.mockReturnValueOnce({
+        lean: jest.fn(() => Promise.resolve({ orgId: "org-1" })) as any,
+      });
       mockedDocumensoService.resolveOrganisationApiKey.mockResolvedValue(
         "api-key",
       );
@@ -207,16 +253,13 @@ describe("Documenso controllers", () => {
       expect(
         mockedCompletePersistedRenderedDocumentSigning,
       ).toHaveBeenCalledWith("rendered-1");
-      expect(mockedPrisma.formSubmission.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: "submission-1" },
-        }),
-      );
+      expect(save).toHaveBeenCalledTimes(1);
       expect(statusMock).toHaveBeenCalledWith(200);
     });
 
-    it("updates deleted documents in the postgres path", async () => {
+    it("updates completed documents in the postgres branch", async () => {
       req.body = makeWebhookRequest("DOCUMENT_DELETED");
+      process.env.READ_FROM_POSTGRES = "true";
       mockedPrisma.formSubmission.findFirst.mockResolvedValue({
         id: "submission-2",
         formId: "form-2",
@@ -257,7 +300,9 @@ describe("Documenso controllers", () => {
     it("returns 404 when the user is missing", async () => {
       req.params = { orgId: "org-1" };
       (req as any).userId = "user-1";
-      mockedPrisma.user.findFirst.mockResolvedValue(null);
+      mockedUserModel.findOne.mockReturnValue({
+        lean: jest.fn(() => Promise.resolve(null)) as any,
+      });
 
       await DocumensoAuthController.createRedirectUrl(
         req as Request<{ orgId: string }>,
@@ -271,10 +316,14 @@ describe("Documenso controllers", () => {
     it("returns 404 when the organisation is missing", async () => {
       req.params = { orgId: "org-1" };
       (req as any).userId = "user-1";
-      mockedPrisma.user.findFirst.mockResolvedValue({
-        email: "owner@example.com",
-        firstName: "Owner",
-        lastName: "User",
+      mockedUserModel.findOne.mockReturnValue({
+        lean: jest.fn(() =>
+          Promise.resolve({
+            email: "owner@example.com",
+            firstName: "Owner",
+            lastName: "User",
+          }),
+        ) as any,
       });
       mockedOrganizationService.getById.mockResolvedValue(null);
 
@@ -289,20 +338,24 @@ describe("Documenso controllers", () => {
       });
     });
 
-    it("generates a redirect URL using postgres lookups", async () => {
+    it("generates a redirect URL in the mongo branch", async () => {
       req.params = { orgId: "org-1" };
       (req as any).userId = "user-1";
-      mockedPrisma.user.findFirst.mockResolvedValue({
-        email: "owner@example.com",
-        firstName: "Owner",
-        lastName: "User",
+      mockedUserModel.findOne.mockReturnValue({
+        lean: jest.fn(() =>
+          Promise.resolve({
+            email: "owner@example.com",
+            firstName: "Owner",
+            lastName: "User",
+          }),
+        ) as any,
       });
       mockedOrganizationService.getById.mockResolvedValue({
         id: "org-1",
         name: "Acme Vet",
       });
-      mockedPrisma.userOrganization.findFirst.mockResolvedValue({
-        roleCode: "OWNER",
+      mockedUserOrganizationModel.findOne.mockReturnValue({
+        lean: jest.fn(() => Promise.resolve({ roleCode: "OWNER" })) as any,
       });
       mockedDocumensoService.generateExternalRedirectUrl.mockResolvedValue(
         "https://documenso.example/auth",
@@ -321,6 +374,43 @@ describe("Documenso controllers", () => {
         businessId: "org-1",
         businessName: "Acme Vet",
         role: "ADMIN" satisfies DocumensoExternalRole,
+      });
+      expect(statusMock).toHaveBeenCalledWith(200);
+    });
+
+    it("uses postgres lookups when read-switch is enabled", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
+      req.params = { orgId: "org-1" };
+      (req as any).userId = "user-1";
+      mockedPrisma.user.findFirst.mockResolvedValue({
+        email: "pg-owner@example.com",
+        firstName: "Pg",
+        lastName: "Owner",
+      });
+      mockedOrganizationService.getById.mockResolvedValue({
+        id: "pg-org-1",
+        name: "Pg Vet",
+      });
+      mockedPrisma.userOrganization.findFirst.mockResolvedValue({
+        roleCode: "SUPERVISOR",
+      });
+      mockedDocumensoService.generateExternalRedirectUrl.mockResolvedValue(
+        "https://documenso.example/auth/pg",
+      );
+
+      await DocumensoAuthController.createRedirectUrl(
+        req as Request<{ orgId: string }>,
+        res as Response,
+      );
+
+      expect(
+        mockedDocumensoService.generateExternalRedirectUrl,
+      ).toHaveBeenCalledWith({
+        email: "pg-owner@example.com",
+        name: "Pg Owner",
+        businessId: "pg-org-1",
+        businessName: "Pg Vet",
+        role: "MANAGER",
       });
       expect(statusMock).toHaveBeenCalledWith(200);
     });
@@ -391,8 +481,8 @@ describe("Documenso controllers", () => {
       });
     });
 
-    it("returns 404 when the organisation is missing", async () => {
-      req.params = { orgId: "missing-org" };
+    it("returns 400 for an invalid organisation id", async () => {
+      req.params = { orgId: "not valid!" };
       req.body = { apiToken: "token-1" };
       req.headers = {
         "x-documenso-signature": buildSignature(
@@ -400,20 +490,19 @@ describe("Documenso controllers", () => {
           "key-secret",
         ),
       };
-      mockedPrisma.organization.findFirst.mockResolvedValue(null);
 
       await DocumensoKeyController.storeApiKey(
         req as Request<{ orgId: string }>,
         res as Response,
       );
 
-      expect(statusMock).toHaveBeenCalledWith(404);
+      expect(statusMock).toHaveBeenCalledWith(400);
       expect(jsonMock).toHaveBeenCalledWith({
-        message: "Organisation not found.",
+        message: "Invalid organisation id.",
       });
     });
 
-    it("stores the key in postgres", async () => {
+    it("stores the key in mongo", async () => {
       req.params = { orgId: "org-1" };
       req.body = { apiToken: "token-1" };
       req.headers = {
@@ -422,9 +511,12 @@ describe("Documenso controllers", () => {
           "key-secret",
         ),
       };
-      mockedPrisma.organization.findFirst.mockResolvedValue({
-        id: "org-1",
-        documensoApiKey: null,
+      mockedOrganizationModel.findOne.mockReturnValue({
+        lean: jest.fn(() =>
+          Promise.resolve({
+            _id: "mongo-org-1",
+          }),
+        ) as any,
       });
 
       await DocumensoKeyController.storeApiKey(
@@ -432,14 +524,15 @@ describe("Documenso controllers", () => {
         res as Response,
       );
 
-      expect(mockedPrisma.organization.updateMany).toHaveBeenCalledWith({
-        where: { id: "org-1" },
-        data: { documensoApiKey: "token-1" },
-      });
+      expect(mockedOrganizationModel.updateOne).toHaveBeenCalledWith(
+        { _id: "mongo-org-1" },
+        { $set: { documensoApiKey: "token-1" } },
+      );
       expect(statusMock).toHaveBeenCalledWith(200);
     });
 
-    it("returns success when the key already exists", async () => {
+    it("returns success when the key already exists in postgres", async () => {
+      process.env.READ_FROM_POSTGRES = "true";
       req.params = { orgId: "org-1" };
       req.body = { apiToken: "token-1" };
       req.headers = {

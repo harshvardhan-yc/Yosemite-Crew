@@ -3,7 +3,10 @@ import { NotificationType } from "@prisma/client";
 import logger from "src/utils/logger";
 import { NotificationPayload } from "src/utils/notificationTemplates";
 import { DeviceTokenService } from "./deviceToken.service";
+import { NotificationModel } from "src/models/notification";
 import { prisma } from "src/config/prisma";
+import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
+import { isReadFromPostgres } from "src/config/read-switch";
 
 const createNotificationRecord = async (input: {
   userId: string;
@@ -11,16 +14,50 @@ const createNotificationRecord = async (input: {
   body: string;
   type: string;
 }) => {
-  await prisma.notification.create({
-    data: {
-      userId: input.userId,
-      title: input.title,
-      body: input.body,
-      type: input.type as NotificationType,
-      enabled: true,
-      isSeen: false,
-    },
+  if (isReadFromPostgres()) {
+    await prisma.notification.create({
+      data: {
+        userId: input.userId,
+        title: input.title,
+        body: input.body,
+        type: input.type as NotificationType,
+        enabled: true,
+        isSeen: false,
+      },
+    });
+    return;
+  }
+
+  const doc = await NotificationModel.create({
+    userId: input.userId,
+    title: input.title,
+    body: input.body,
+    type: input.type,
+    enabled: true,
+    isSeen: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
+
+  if (shouldDualWrite) {
+    try {
+      await prisma.notification.create({
+        data: {
+          id: doc._id.toString(),
+          userId: input.userId,
+          title: input.title,
+          body: input.body,
+          type: input.type as NotificationType,
+          enabled: true,
+          isSeen: false,
+          createdAt: doc.createdAt ?? undefined,
+          updatedAt: doc.updatedAt ?? undefined,
+        },
+      });
+    } catch (err) {
+      handleDualWriteError("Notification", err);
+    }
+  }
 };
 
 export type Platform = "ANDROID" | "IOS" | "WEB";
@@ -224,10 +261,18 @@ export const NotificationService = {
       throw new Error("userId is required to list notifications");
     }
 
-    return prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-    });
+    if (isReadFromPostgres()) {
+      return prisma.notification.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+      });
+    }
+
+    const notifications = await NotificationModel.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return notifications;
   },
 
   async markNotificationAsSeen(notificationId: string) {
@@ -235,9 +280,31 @@ export const NotificationService = {
       throw new Error("notificationId is required to mark as seen");
     }
 
-    await prisma.notification.updateMany({
-      where: { id: notificationId },
-      data: { isSeen: true },
-    });
+    if (isReadFromPostgres()) {
+      await prisma.notification.updateMany({
+        where: { id: notificationId },
+        data: { isSeen: true },
+      });
+      return;
+    }
+
+    const notification = await NotificationModel.findById(notificationId);
+    if (!notification) {
+      throw new Error("Notification not found");
+    }
+
+    notification.isSeen = true;
+    await notification.save();
+
+    if (shouldDualWrite) {
+      try {
+        await prisma.notification.updateMany({
+          where: { id: notification._id.toString() },
+          data: { isSeen: true },
+        });
+      } catch (err) {
+        handleDualWriteError("Notification markAsSeen", err);
+      }
+    }
   },
 };

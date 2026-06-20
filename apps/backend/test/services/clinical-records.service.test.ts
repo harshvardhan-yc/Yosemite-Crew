@@ -37,7 +37,7 @@ jest.mock("src/config/prisma", () => ({
   },
 }));
 
-describe.skip("ClinicalArtifactService clinical records", () => {
+describe("ClinicalArtifactService clinical records", () => {
   const organisationId = "org-1";
   const appointmentId = "appt-1";
   const encounterId = "enc-1";

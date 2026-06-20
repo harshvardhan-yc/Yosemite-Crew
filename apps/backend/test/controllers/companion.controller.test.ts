@@ -62,7 +62,7 @@ jest.mock("../../src/utils/logger", () => ({
   },
 }));
 
-describe.skip("CompanionController", () => {
+describe("CompanionController", () => {
   let req: any;
   let res: any;
 

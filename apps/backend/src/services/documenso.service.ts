@@ -2,7 +2,10 @@ import { Documenso } from "@documenso/sdk-typescript";
 import * as errors from "@documenso/sdk-typescript/models/errors/index.js";
 import axios from "axios";
 import type { ClinicalPdfSignaturePlacement } from "@yosemite-crew/lib";
+import { Types } from "mongoose";
+import OrganizationModel from "src/models/organization";
 import { prisma } from "src/config/prisma";
+import { isReadFromPostgres } from "src/config/read-switch";
 import logger from "src/utils/logger";
 
 // Replace with your self-hosted instance's URL, e.g., https://your-documenso-domain.com
@@ -78,6 +81,24 @@ const getDocumensoClient = (apiKeyOverride?: string) => {
   documensoClients.set(apiKey, client);
 
   return client;
+};
+
+const buildOrganizationLookupQuery = (reference: string) => {
+  const queries: Array<Record<string, string>> = [];
+
+  if (Types.ObjectId.isValid(reference)) {
+    queries.push({ _id: reference });
+  }
+
+  if (/^[A-Za-z0-9\-.]{1,64}$/.test(reference)) {
+    queries.push({ fhirId: reference });
+  }
+
+  if (!queries.length) {
+    return null;
+  }
+
+  return queries.length === 1 ? queries[0] : { $or: queries };
 };
 
 async function uploadPdfBuffer(pdf: Buffer, uploadUrl: string) {
@@ -174,10 +195,7 @@ export class DocumensoService {
       const distributeResponse = await documenso.documents.distribute({
         documentId: documentId,
       });
-      logger.info("Documenso distribute response", {
-        documentId,
-        hasResponse: Boolean(distributeResponse),
-      });
+      console.log("Distribute Response:", distributeResponse);
       return distributeResponse;
     } catch (error) {
       if (error instanceof errors.DocumensoError) {
@@ -225,12 +243,26 @@ export class DocumensoService {
   }
 
   static async resolveOrganisationApiKey(organisationId: string) {
-    const organisation = await prisma.organization.findFirst({
-      where: {
-        OR: [{ id: organisationId }, { fhirId: organisationId }],
-      },
-      select: { documensoApiKey: true },
-    });
+    if (isReadFromPostgres()) {
+      const organisation = await prisma.organization.findFirst({
+        where: {
+          OR: [{ id: organisationId }, { fhirId: organisationId }],
+        },
+        select: { documensoApiKey: true },
+      });
+
+      return organisation?.documensoApiKey ?? null;
+    }
+
+    const query = buildOrganizationLookupQuery(organisationId);
+
+    if (!query) {
+      throw new Error("Invalid organisation id");
+    }
+
+    const organisation = await OrganizationModel.findOne(query, {
+      documensoApiKey: 1,
+    }).lean();
 
     return organisation?.documensoApiKey ?? null;
   }

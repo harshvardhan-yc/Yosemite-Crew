@@ -62,7 +62,7 @@ jest.mock("src/config/prisma", () => ({
   },
 }));
 
-describe.skip("DashboardService", () => {
+describe("DashboardService", () => {
   const mockOrgId = "org-123";
 
   beforeEach(() => {

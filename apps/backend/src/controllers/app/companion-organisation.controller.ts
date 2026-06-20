@@ -1,14 +1,20 @@
 import { Request, Response } from "express";
 import logger from "../../utils/logger";
+import { Types } from "mongoose";
 import {
   CompanionOrganisationService,
   CompanionOrganisationServiceError,
 } from "../../services/companion-organisation.service";
 import { ParentService } from "src/services/parent.service";
+import OrganizationModel, {
+  type OrganizationMongo,
+} from "src/models/organization";
 import { prisma } from "src/config/prisma";
+import { isReadFromPostgres } from "src/config/read-switch";
 import { AuthUserMobileService } from "src/services/authUserMobile.service";
 import type { AuthenticatedRequest } from "src/middlewares/auth";
-type OrganisationType = "HOSPITAL" | "BREEDER" | "BOARDER" | "GROOMER";
+
+type OrganisationType = OrganizationMongo["type"];
 
 const ORGANISATION_TYPES = [
   "HOSPITAL",
@@ -174,9 +180,9 @@ export const CompanionOrganisationController = {
           .json({ message: "CompanionId and OrganisationId is required." });
       }
 
-      const organisation = await prisma.organization.findFirst({
-        where: { id: organisationId },
-      });
+      const organisation = isReadFromPostgres()
+        ? await prisma.organization.findFirst({ where: { id: organisationId } })
+        : await OrganizationModel.findById(organisationId);
       if (!organisation || !isOrganisationType(organisation.type)) {
         return res
           .status(404)
@@ -219,7 +225,7 @@ export const CompanionOrganisationController = {
       const { linkId } = req.params;
 
       const updatedLink = await CompanionOrganisationService.parentApproveLink(
-        resolveParentId(requestingParent),
+        new Types.ObjectId(resolveParentId(requestingParent)),
         linkId,
       );
 
@@ -288,7 +294,7 @@ export const CompanionOrganisationController = {
       const { linkId } = req.params;
 
       const updatedLink = await CompanionOrganisationService.parentRejectLink(
-        resolveParentId(requestingParent),
+        new Types.ObjectId(resolveParentId(requestingParent)),
         linkId,
       );
 
