@@ -237,18 +237,36 @@ const resolveInvoiceTotals = async (
     customerAddress?: Stripe.AddressParam | null;
     liabilityAccountId?: string | null;
   },
+  options?: { skipTaxCalculation?: boolean },
 ) => {
   const pricing = calculateInvoicePricing({
     lines: items.map((item) => ({
       quantity: item.quantity,
       unitAmount: item.unitPrice,
-      discountType: item.discountPercent != null ? "PERCENTAGE" : undefined,
+      discountType: item.discountPercent == null ? undefined : "PERCENTAGE",
       discountValue: item.discountPercent ?? undefined,
       taxBehavior,
     })),
     taxRatePercent: taxPercent,
     invoiceDiscount,
   });
+
+  if (options?.skipTaxCalculation) {
+    return {
+      subtotal: pricing.subtotal,
+      discountTotal: pricing.lineDiscountTotal,
+      invoiceDiscountTotal: pricing.invoiceDiscountTotal,
+      taxTotal: 0,
+      taxPercent: 0,
+      totalAmount: roundMoney(
+        pricing.subtotal -
+          pricing.lineDiscountTotal -
+          pricing.invoiceDiscountTotal,
+      ),
+      taxSnapshot: null,
+    };
+  }
+
   const adapter = getInvoiceTaxProviderAdapter(provider);
   const taxSnapshot =
     mode === "finalize"
@@ -542,6 +560,7 @@ const normalizeCreateInput = async (
     customerAddress?: Stripe.AddressParam | null;
     liabilityAccountId?: string | null;
   },
+  options?: { skipTaxCalculation?: boolean },
 ) => {
   const items = buildInvoiceLineSnapshots(input.items);
   const totals = await resolveInvoiceTotals(
@@ -553,6 +572,7 @@ const normalizeCreateInput = async (
     undefined,
     "preview",
     taxContext,
+    options,
   );
 
   return {
@@ -572,7 +592,7 @@ const normalizeCreateInput = async (
       visitBillingStage: "DRAFT" as const,
       depositTargetAmount: 0,
       depositCollectedAmount: 0,
-      taxProvider: totals.taxSnapshot.provider,
+      taxProvider: totals.taxSnapshot?.provider ?? null,
       items: items as unknown as Prisma.InputJsonValue,
       subtotal: totals.subtotal,
       discountTotal: totals.discountTotal,
@@ -614,24 +634,25 @@ export const InvoiceService = {
     }
 
     const currency = resolveOrganisationCurrency();
-    const taxContext = await resolveInvoiceTaxContext(
-      input.organisationId,
-      parentId,
-    );
     const { data, taxSnapshot } = await normalizeCreateInput(
       input,
       patientId,
       parentId,
       currency,
       DEFAULT_TAX_BEHAVIOR,
-      taxContext,
+      undefined,
+      { skipTaxCalculation: true },
     );
     const createdInvoice = await prisma.invoice.create({
       data: {
         ...data,
-        taxSnapshot: {
-          create: taxSnapshot,
-        },
+        ...(taxSnapshot
+          ? {
+              taxSnapshot: {
+                create: taxSnapshot,
+              },
+            }
+          : {}),
       },
     });
 
@@ -711,10 +732,6 @@ export const InvoiceService = {
       unitPrice: item.unitPrice,
       discountPercent: item.discountPercent ?? undefined,
     }));
-    const taxContext = await resolveInvoiceTaxContext(
-      appointment.organisationId,
-      parentId,
-    );
     const totals = await resolveInvoiceTotals(
       items,
       0,
@@ -723,7 +740,8 @@ export const InvoiceService = {
       currency,
       undefined,
       "preview",
-      taxContext,
+      undefined,
+      { skipTaxCalculation: true },
     );
 
     const invoice = await prisma.invoice.create({
@@ -739,7 +757,7 @@ export const InvoiceService = {
         visitBillingStage: "READY_FOR_BILLING" as const,
         depositTargetAmount: 0,
         depositCollectedAmount: 0,
-        taxProvider: totals.taxSnapshot.provider,
+        taxProvider: totals.taxSnapshot?.provider ?? null,
         items: buildInvoiceLineSnapshots(
           items,
         ) as unknown as Prisma.InputJsonValue,
@@ -752,12 +770,16 @@ export const InvoiceService = {
         taxPercent: totals.taxPercent,
         totalAmount: totals.totalAmount,
         metadata: {
-          ...(input.metadata ?? {}),
+          ...input.metadata,
           source: "EXTRA_CHARGES",
         } as unknown as Prisma.InputJsonValue,
-        taxSnapshot: {
-          create: totals.taxSnapshot,
-        },
+        ...(totals.taxSnapshot
+          ? {
+              taxSnapshot: {
+                create: totals.taxSnapshot,
+              },
+            }
+          : {}),
       },
     });
 
@@ -840,7 +862,7 @@ export const InvoiceService = {
 
   async markInvoicePaidManually(invoiceId: string, organisationId: string) {
     const doc = await prisma.invoice.findUnique({ where: { id: invoiceId } });
-    if (!doc || doc.organisationId !== organisationId) {
+    if (doc?.organisationId !== organisationId) {
       throw new InvoiceServiceError("Invoice not found.", 404);
     }
 
@@ -872,7 +894,7 @@ export const InvoiceService = {
     ) as PaymentCollectionMethod;
 
     const doc = await prisma.invoice.findUnique({ where: { id: invoiceId } });
-    if (!doc || doc.organisationId !== organisationId) {
+    if (doc?.organisationId !== organisationId) {
       throw new InvoiceServiceError("Invoice not found.", 404);
     }
 
@@ -1039,7 +1061,7 @@ export const InvoiceService = {
       },
     });
 
-    if (!creditNote || creditNote.invoiceId !== invoiceId) {
+    if (creditNote?.invoiceId !== invoiceId) {
       throw new InvoiceServiceError("Credit note not found.", 404);
     }
 
@@ -1409,7 +1431,7 @@ export const InvoiceService = {
     const updated = await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
-        taxProvider: totals.taxSnapshot.provider,
+        taxProvider: totals.taxSnapshot!.provider,
         items: buildInvoiceLineSnapshots(
           mergedItems,
         ) as unknown as Prisma.InputJsonValue,
@@ -1421,8 +1443,8 @@ export const InvoiceService = {
         totalAmount: totals.totalAmount,
         taxSnapshot: {
           upsert: {
-            create: totals.taxSnapshot,
-            update: totals.taxSnapshot,
+            create: totals.taxSnapshot!,
+            update: totals.taxSnapshot!,
           },
         },
       },
@@ -1490,7 +1512,7 @@ export const InvoiceService = {
       where: { id: invoiceId },
       data: {
         finalizedAt,
-        taxProvider: totals.taxSnapshot.provider,
+        taxProvider: totals.taxSnapshot!.provider,
         subtotal: totals.subtotal,
         discountTotal: totals.discountTotal,
         invoiceDiscountTotal: totals.invoiceDiscountTotal,
@@ -1500,7 +1522,7 @@ export const InvoiceService = {
         taxSnapshot: {
           upsert: {
             create: {
-              ...totals.taxSnapshot,
+              ...totals.taxSnapshot!,
               calculatedAt: finalizedAt,
             },
             update: {
@@ -1573,7 +1595,7 @@ export const InvoiceService = {
 
     return {
       invoice: toInvoiceRecord(invoice),
-      taxProvider: totals.taxSnapshot.provider,
+      taxProvider: totals.taxSnapshot!.provider,
       taxSnapshot: totals.taxSnapshot,
       taxTotal: totals.taxTotal,
       totalAmount: totals.totalAmount,

@@ -135,7 +135,7 @@ describe("InvoiceService", () => {
     expect(prisma.invoice.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          taxProvider: "STRIPE",
+          taxProvider: null,
           billingCollectionMode: "PREPAY_AT_BOOKING",
           visitBillingStage: "DRAFT",
           depositTargetAmount: 0,
@@ -145,13 +145,8 @@ describe("InvoiceService", () => {
           invoiceDiscountTotal: 12,
           subtotal: 120,
           totalAmount: 108,
-          taxSnapshot: expect.objectContaining({
-            create: expect.objectContaining({
-              provider: "STRIPE",
-              taxBehavior: "EXCLUSIVE",
-              taxAmount: 0,
-            }),
-          }),
+          taxTotal: 0,
+          taxPercent: 0,
         }),
       }),
     );
@@ -218,17 +213,13 @@ describe("InvoiceService", () => {
     expect(prisma.invoice.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          taxProvider: "STRIPE",
+          taxProvider: null,
           billingCollectionMode: "STAGED_DURING_VISIT",
           visitBillingStage: "READY_FOR_BILLING",
           depositTargetAmount: 0,
           depositCollectedAmount: 0,
-          taxSnapshot: expect.objectContaining({
-            create: expect.objectContaining({
-              provider: "STRIPE",
-              taxBehavior: "EXCLUSIVE",
-            }),
-          }),
+          taxTotal: 0,
+          taxPercent: 0,
         }),
       }),
     );
