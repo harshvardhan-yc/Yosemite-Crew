@@ -262,6 +262,26 @@ const toTaskStatus = (status: string): string => {
   }
 };
 
+const toClinicalArtifactStatus = (status?: string): ClinicalArtifactStatus => {
+  switch (status) {
+    case 'final':
+    case 'active':
+      return 'COMPLETED';
+    case 'preliminary':
+      return 'IN_PROGRESS';
+    case 'draft':
+      return 'DRAFT';
+    case 'amended':
+    case 'corrected':
+      return 'SIGNED';
+    case 'entered-in-error':
+    case 'cancelled':
+      return 'VOID';
+    default:
+      return 'DRAFT';
+  }
+};
+
 const stringifyMaybe = (value: unknown) => {
   if (value === undefined) return undefined;
   if (typeof value === 'string') return value;
@@ -425,6 +445,7 @@ const compositionToSoapNoteInput = (
   templateId: defaults.templateId,
   templateVersion: defaults.templateVersion,
   templateVersionId: defaults.templateVersionId,
+  status: toClinicalArtifactStatus(resource.status),
   summary: resource.title,
   subjective: parseFlexibleJson(
     getExtensionValue(resource.extension, SOAP_SUBJECTIVE_EXTENSION_URL)
@@ -495,6 +516,7 @@ const medicationRequestToPrescriptionInput = (
     templateId: defaults.templateId,
     templateVersion: defaults.templateVersion,
     templateVersionId: defaults.templateVersionId,
+    status: toClinicalArtifactStatus(resource.status),
     summary: resource.medicationCodeableConcept?.text,
     medications: parseFlexibleJson(
       getExtensionValue(resource.extension, PRESCRIPTION_MEDICATIONS_EXTENSION_URL)
@@ -544,6 +566,7 @@ const compositionToDischargeSummaryInput = (
   templateId: defaults.templateId,
   templateVersion: defaults.templateVersion,
   templateVersionId: defaults.templateVersionId,
+  status: toClinicalArtifactStatus(resource.status),
   summary: resource.title,
   summaryContent: parseFlexibleJson(
     getExtensionValue(resource.extension, DISCHARGE_SUMMARY_CONTENT_EXTENSION_URL)
@@ -618,6 +641,7 @@ const observationToVitalRecordInput = (
   templateId: defaults.templateId,
   templateVersion: defaults.templateVersion,
   templateVersionId: defaults.templateVersionId,
+  status: toClinicalArtifactStatus(resource.status),
   summary: resource.code?.text,
   measuredAt: resource.effectiveDateTime ?? new Date().toISOString(),
   vitals: parseFlexibleJson(getExtensionValue(resource.extension, VITALS_EXTENSION_URL)),

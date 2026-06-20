@@ -12,7 +12,6 @@ const ClinicalArtifactFhirController = {
   createSoapNote: jest.fn(),
   getSoapNote: jest.fn(),
   updateSoapNote: jest.fn(),
-  finalizeSoapNote: jest.fn(),
   reopenSoapNote: jest.fn(),
   amendSoapNote: jest.fn(),
   listPrescriptionsForAppointment: jest.fn(),
@@ -20,7 +19,6 @@ const ClinicalArtifactFhirController = {
   createPrescription: jest.fn(),
   getPrescription: jest.fn(),
   updatePrescription: jest.fn(),
-  finalizePrescription: jest.fn(),
   reopenPrescription: jest.fn(),
   amendPrescription: jest.fn(),
   listDischargeSummariesForAppointment: jest.fn(),
@@ -28,7 +26,6 @@ const ClinicalArtifactFhirController = {
   createDischargeSummary: jest.fn(),
   getDischargeSummary: jest.fn(),
   updateDischargeSummary: jest.fn(),
-  finalizeDischargeSummary: jest.fn(),
   reopenDischargeSummary: jest.fn(),
   amendDischargeSummary: jest.fn(),
   listVitalRecordsForAppointment: jest.fn(),
@@ -36,7 +33,6 @@ const ClinicalArtifactFhirController = {
   createVitalRecord: jest.fn(),
   getVitalRecord: jest.fn(),
   updateVitalRecord: jest.fn(),
-  finalizeVitalRecord: jest.fn(),
   reopenVitalRecord: jest.fn(),
   amendVitalRecord: jest.fn(),
 };
@@ -95,7 +91,6 @@ describe("clinical-artifact.fhir.router", () => {
       ],
       ["/organisation/:organisationId/soap-note", "post"],
       ["/organisation/:organisationId/soap-note/:soapNoteId", "post"],
-      ["/organisation/:organisationId/soap-note/:soapNoteId/$finalize", "post"],
       ["/organisation/:organisationId/soap-note/:soapNoteId/$reopen", "post"],
       ["/organisation/:organisationId/soap-note/:soapNoteId/$amend", "post"],
       ["/organisation/:organisationId/soap-note/:soapNoteId", "patch"],
@@ -109,10 +104,6 @@ describe("clinical-artifact.fhir.router", () => {
       ],
       ["/organisation/:organisationId/prescription", "post"],
       ["/organisation/:organisationId/prescription/:prescriptionId", "post"],
-      [
-        "/organisation/:organisationId/prescription/:prescriptionId/$finalize",
-        "post",
-      ],
       [
         "/organisation/:organisationId/prescription/:prescriptionId/$reopen",
         "post",
@@ -133,10 +124,6 @@ describe("clinical-artifact.fhir.router", () => {
       ["/organisation/:organisationId/discharge-summary", "post"],
       [
         "/organisation/:organisationId/discharge-summary/:dischargeSummaryId",
-        "post",
-      ],
-      [
-        "/organisation/:organisationId/discharge-summary/:dischargeSummaryId/$finalize",
         "post",
       ],
       [
@@ -161,10 +148,6 @@ describe("clinical-artifact.fhir.router", () => {
       ],
       ["/organisation/:organisationId/vital-record", "post"],
       ["/organisation/:organisationId/vital-record/:vitalRecordId", "post"],
-      [
-        "/organisation/:organisationId/vital-record/:vitalRecordId/$finalize",
-        "post",
-      ],
       [
         "/organisation/:organisationId/vital-record/:vitalRecordId/$reopen",
         "post",
@@ -204,7 +187,6 @@ describe("clinical-artifact.fhir.router", () => {
       ],
       ["/organisation/:organisationId/soap-note", "post"],
       ["/organisation/:organisationId/soap-note/:soapNoteId", "post"],
-      ["/organisation/:organisationId/soap-note/:soapNoteId/$finalize", "post"],
       ["/organisation/:organisationId/soap-note/:soapNoteId/$reopen", "post"],
       ["/organisation/:organisationId/soap-note/:soapNoteId/$amend", "post"],
       ["/organisation/:organisationId/soap-note/:soapNoteId", "patch"],
@@ -218,10 +200,6 @@ describe("clinical-artifact.fhir.router", () => {
       ],
       ["/organisation/:organisationId/prescription", "post"],
       ["/organisation/:organisationId/prescription/:prescriptionId", "post"],
-      [
-        "/organisation/:organisationId/prescription/:prescriptionId/$finalize",
-        "post",
-      ],
       [
         "/organisation/:organisationId/prescription/:prescriptionId/$reopen",
         "post",
@@ -242,10 +220,6 @@ describe("clinical-artifact.fhir.router", () => {
       ["/organisation/:organisationId/discharge-summary", "post"],
       [
         "/organisation/:organisationId/discharge-summary/:dischargeSummaryId",
-        "post",
-      ],
-      [
-        "/organisation/:organisationId/discharge-summary/:dischargeSummaryId/$finalize",
         "post",
       ],
       [
@@ -270,10 +244,6 @@ describe("clinical-artifact.fhir.router", () => {
       ],
       ["/organisation/:organisationId/vital-record", "post"],
       ["/organisation/:organisationId/vital-record/:vitalRecordId", "post"],
-      [
-        "/organisation/:organisationId/vital-record/:vitalRecordId/$finalize",
-        "post",
-      ],
       [
         "/organisation/:organisationId/vital-record/:vitalRecordId/$reopen",
         "post",

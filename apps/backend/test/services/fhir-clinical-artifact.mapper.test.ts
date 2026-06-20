@@ -156,6 +156,7 @@ describe("clinicalArtifactFhirMapper", () => {
       { organisationId: "org-1" },
     );
 
+    expect(input.status).toBe("COMPLETED");
     expect(input.subjective).toEqual({ chiefComplaint: "Cough" });
     expect(input.assessment).toEqual({ diagnosis: "Flu" });
   });
@@ -180,13 +181,14 @@ describe("clinicalArtifactFhirMapper", () => {
           medicationCodeableConcept: { text: "Rx summary" },
           medicationReference: { reference: "MedicationRequest/artifact-2" },
           intent: "order",
-          status: "draft",
+          status: "active",
           subject: { reference: "Encounter/enc-1" },
           extension: resource.extension,
         },
         { organisationId: "org-1" },
       );
 
+    expect(input.status).toBe("COMPLETED");
     expect(input.medications).toEqual([{ name: "Amoxicillin" }]);
     expect(input.notes).toBe("after food");
   });
@@ -215,6 +217,7 @@ describe("clinicalArtifactFhirMapper", () => {
       { organisationId: "org-1" },
     );
 
+    expect(input.status).toBe("COMPLETED");
     expect(input.summaryContent).toEqual({ text: "Recovered well" });
     expect(input.followUp).toEqual({ afterDays: 7 });
   });
@@ -242,6 +245,7 @@ describe("clinicalArtifactFhirMapper", () => {
       { organisationId: "org-1", recordedBy: "nurse-1" },
     );
 
+    expect(input.status).toBe("COMPLETED");
     expect(input.vitals).toEqual({ temperature: 39.1, pulse: 120 });
     expect(input.recordedBy).toBe("nurse-1");
   });
