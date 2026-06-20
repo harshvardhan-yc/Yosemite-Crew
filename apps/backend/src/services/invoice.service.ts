@@ -444,19 +444,30 @@ const recordInvoiceAuditForRow = async (
 };
 
 const mapCatalogSelectionToDraftItems = (selection: {
+  productKind: string;
+  name: string;
   billingItems: Array<{
     name: string;
     quantity: number;
     unitPrice: number;
     defaultDiscountPercent?: number | null;
   }>;
+  finalAmount: number;
 }): DraftInvoiceItemInput[] =>
-  selection.billingItems.map((item) => ({
-    description: item.name,
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    discountPercent: item.defaultDiscountPercent ?? undefined,
-  }));
+  selection.productKind === "PACKAGE"
+    ? [
+        {
+          description: selection.name,
+          quantity: 1,
+          unitPrice: selection.finalAmount,
+        },
+      ]
+    : selection.billingItems.map((item) => ({
+        description: item.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discountPercent: item.defaultDiscountPercent ?? undefined,
+      }));
 
 const resolveCatalogSelectionSafe = async (
   selectionId: string,

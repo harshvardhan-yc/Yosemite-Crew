@@ -1587,13 +1587,6 @@ export const AppointmentPrismaService = {
         "Appointment not found",
       );
 
-      if (row.appointmentKind === "INPATIENT") {
-        throw new AppointmentPrismaServiceError(
-          "Appointment is already inpatient.",
-          409,
-        );
-      }
-
       if (!isAppointmentAdmissible(row.status)) {
         throw new AppointmentPrismaServiceError(
           "Only checked-in or in-progress appointments can be admitted.",
