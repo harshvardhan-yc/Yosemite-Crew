@@ -8,7 +8,9 @@ import { LabResultService } from "../../src/services/lab-result.service";
 import { LabOrderService } from "../../src/services/lab-order.service";
 import { InvoiceService } from "../../src/services/invoice.service";
 import { CompanionService } from "../../src/services/companion.service";
+import CompanionOrganisationModel from "../../src/models/companion-organisation";
 import { prisma } from "../../src/config/prisma";
+import { isReadFromPostgres } from "../../src/config/read-switch";
 import logger from "../../src/utils/logger";
 
 jest.mock("../../src/services/appointment.service");
@@ -19,12 +21,21 @@ jest.mock("../../src/services/lab-result.service");
 jest.mock("../../src/services/lab-order.service");
 jest.mock("../../src/services/invoice.service");
 jest.mock("../../src/services/companion.service");
+jest.mock("../../src/models/companion-organisation");
 jest.mock("../../src/utils/logger");
+jest.mock("../../src/config/read-switch", () => ({
+  isReadFromPostgres: jest.fn(),
+}));
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
     patientOrganisation: { findFirst: jest.fn(), findMany: jest.fn() },
   },
 }));
+
+const mockLean = (result: any) => ({
+  select: jest.fn().mockReturnThis(),
+  lean: jest.fn().mockResolvedValue(result),
+});
 
 describe("CompanionHistoryService", () => {
   const organisationId = new Types.ObjectId().toHexString();
@@ -32,10 +43,14 @@ describe("CompanionHistoryService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (isReadFromPostgres as jest.Mock).mockReturnValue(false);
 
     (CompanionService.getById as jest.Mock).mockResolvedValue({
       response: { id: companionId },
     });
+    (CompanionOrganisationModel.findOne as jest.Mock).mockReturnValue(
+      mockLean({ _id: "link-1" }),
+    );
     (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue({
       id: "pg-link",
     });
@@ -214,7 +229,9 @@ describe("CompanionHistoryService", () => {
   });
 
   it("rejects when companion is not visible", async () => {
-    (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue(null);
+    (CompanionOrganisationModel.findOne as jest.Mock).mockReturnValue(
+      mockLean(null),
+    );
 
     await expect(
       CompanionHistoryService.listForCompanion({
@@ -224,7 +241,8 @@ describe("CompanionHistoryService", () => {
     ).rejects.toThrow("Companion not found");
   });
 
-  it("uses postgres visibility", async () => {
+  it("uses postgres visibility when read switch is enabled", async () => {
+    (isReadFromPostgres as jest.Mock).mockReturnValue(true);
     (prisma.patientOrganisation.findFirst as jest.Mock).mockResolvedValue({
       id: "pg-link",
     });
@@ -236,6 +254,7 @@ describe("CompanionHistoryService", () => {
     });
 
     expect(prisma.patientOrganisation.findFirst).toHaveBeenCalled();
+    expect(CompanionOrganisationModel.findOne).not.toHaveBeenCalled();
   });
 
   it("excludes tasks from other organisations", async () => {

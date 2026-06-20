@@ -1,3 +1,4 @@
+import { Types } from "mongoose";
 import { AppointmentService } from "src/services/appointment.service";
 import { TaskService } from "src/services/task.service";
 import { FormService } from "src/services/form.service";
@@ -6,7 +7,9 @@ import { LabResultService } from "src/services/lab-result.service";
 import { LabOrderService } from "src/services/lab-order.service";
 import { InvoiceService } from "src/services/invoice.service";
 import { CompanionService } from "src/services/companion.service";
+import CompanionOrganisationModel from "src/models/companion-organisation";
 import { prisma } from "src/config/prisma";
+import { isReadFromPostgres } from "src/config/read-switch";
 import logger from "src/utils/logger";
 import { type AppointmentResponseDTO } from "@yosemite-crew/types";
 import type { DocumentDto } from "src/services/document.service";
@@ -14,7 +17,7 @@ import type { LabResultMongo } from "src/models/lab-result";
 
 type LabOrderSummary = {
   idexxOrderId?: string | null;
-  appointmentId?: string | null;
+  appointmentId?: string | Types.ObjectId | null;
   pdfUrl?: string | null;
 };
 
@@ -300,14 +303,32 @@ const ensureCompanionVisible = async (
   organisationId: string,
   patientId: string,
 ) => {
-  const link = await prisma.patientOrganisation.findFirst({
-    where: {
-      organisationId,
-      patientId,
-      status: { in: ["ACTIVE", "PENDING"] },
-    },
-    select: { id: true },
-  });
+  if (isReadFromPostgres()) {
+    const link = await prisma.patientOrganisation.findFirst({
+      where: {
+        organisationId,
+        patientId: patientId,
+        status: { in: ["ACTIVE", "PENDING"] },
+      },
+      select: { id: true },
+    });
+    return Boolean(link);
+  }
+
+  if (!Types.ObjectId.isValid(organisationId)) {
+    throw new CompanionHistoryServiceError("Invalid organisationId", 400);
+  }
+  if (!Types.ObjectId.isValid(patientId)) {
+    throw new CompanionHistoryServiceError("Invalid patientId", 400);
+  }
+
+  const link = await CompanionOrganisationModel.findOne({
+    organisationId: new Types.ObjectId(organisationId),
+    patientId: new Types.ObjectId(patientId),
+    status: { $in: ["ACTIVE", "PENDING"] },
+  })
+    .select({ _id: 1 })
+    .lean();
 
   return Boolean(link);
 };

@@ -989,64 +989,6 @@ describe("InvoiceService", () => {
     expect((result as { id: string }).id).toBe("inv_6");
   });
 
-  it("bootsraps from Postgres appointment context with a flat parentId link", async () => {
-    (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
-      id: appointmentId,
-      organisationId,
-      patient: { id: patientId, parentId },
-      companion: { id: patientId, parentId },
-      appointmentType: { id: "svc_1", name: "Consult" },
-      productItemId: null,
-      concern: "checkup",
-    });
-    (prisma.organizationBilling.findUnique as jest.Mock).mockResolvedValue({
-      currency: "usd",
-    });
-    (prisma.invoice.findFirst as jest.Mock)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null);
-    (prisma.service.findUnique as jest.Mock).mockResolvedValue({
-      id: "svc_1",
-      name: "Consult",
-      cost: 100,
-      maxDiscount: 10,
-    });
-    (prisma.invoice.create as jest.Mock).mockResolvedValue({
-      id: "inv_6b",
-      appointmentId,
-      organisationId,
-      patientId,
-      parentId,
-      currency: "usd",
-      status: "AWAITING_PAYMENT",
-      paymentCollectionMethod: "PAYMENT_LINK",
-      items: [],
-      subtotal: 100,
-      discountTotal: 10,
-      invoiceDiscountType: null,
-      invoiceDiscountValue: null,
-      invoiceDiscountTotal: 0,
-      taxTotal: 0,
-      taxPercent: 0,
-      totalAmount: 90,
-      metadata: {},
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    const result = await InvoiceService.bootstrapForAppointment(appointmentId);
-
-    expect((result as { id: string }).id).toBe("inv_6b");
-    expect(prisma.invoice.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          parentId,
-          patientId,
-        }),
-      }),
-    );
-  });
-
   it("uses the package final amount as the invoice line item total", async () => {
     (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
       id: appointmentId,

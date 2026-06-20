@@ -1,5 +1,12 @@
 import { LabResultService } from "../../src/services/lab-result.service";
+import LabResultModel from "../../src/models/lab-result";
+import LabOrderModel from "../../src/models/lab-order";
 import { prisma } from "../../src/config/prisma";
+import { isReadFromPostgres } from "../../src/config/read-switch";
+
+jest.mock("../../src/config/read-switch", () => ({
+  isReadFromPostgres: jest.fn(),
+}));
 
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
@@ -8,9 +15,27 @@ jest.mock("../../src/config/prisma", () => ({
   },
 }));
 
+jest.mock("../../src/models/lab-result", () => ({
+  __esModule: true,
+  default: {
+    find: jest.fn(),
+    findOne: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/models/lab-order", () => ({
+  __esModule: true,
+  default: {
+    find: jest.fn(),
+  },
+}));
+
 describe("LabResultService", () => {
+  const readSwitch = isReadFromPostgres as jest.Mock;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    readSwitch.mockReturnValue(true);
     (prisma.labResult.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.labResult.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.labOrder.findMany as jest.Mock).mockResolvedValue([]);
@@ -64,19 +89,114 @@ describe("LabResultService", () => {
     expect(prisma.labResult.findMany).not.toHaveBeenCalled();
   });
 
-  it("uses patientId as a direct filter in postgres", async () => {
-    await LabResultService.list({ patientId: "bad" });
+  it("rejects invalid patientId in postgres", async () => {
+    await expect(LabResultService.list({ patientId: "bad" })).rejects.toThrow(
+      "Invalid patientId",
+    );
+  });
 
-    expect(prisma.labOrder.findMany).toHaveBeenCalledWith({
-      where: { patientId: "bad" },
-      select: { idexxOrderId: true },
+  it("lists using mongo filters", async () => {
+    readSwitch.mockReturnValue(false);
+
+    const mockQuery = {
+      sort: jest.fn().mockReturnThis(),
+      setOptions: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    };
+    (LabResultModel.find as jest.Mock).mockReturnValue(mockQuery);
+
+    await LabResultService.list({
+      organisationId: "org",
+      provider: "IDEXX",
+      orderId: "order",
+      limit: 5,
     });
+
+    expect(LabResultModel.find).toHaveBeenCalledWith({
+      organisationId: "org",
+      provider: "IDEXX",
+      orderId: "order",
+    });
+    expect(mockQuery.limit).toHaveBeenCalledWith(5);
+    expect(mockQuery.setOptions).toHaveBeenCalledWith({
+      sanitizeFilter: true,
+    });
+  });
+
+  it("uses patientId to derive order ids in mongo", async () => {
+    readSwitch.mockReturnValue(false);
+
+    const mockOrders = {
+      setOptions: jest.fn().mockReturnThis(),
+      lean: jest
+        .fn()
+        .mockResolvedValue([{ idexxOrderId: "o1" }, { idexxOrderId: null }]),
+    };
+    (LabOrderModel.find as jest.Mock).mockReturnValue(mockOrders);
+
+    const mockQuery = {
+      sort: jest.fn().mockReturnThis(),
+      setOptions: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    };
+    (LabResultModel.find as jest.Mock).mockReturnValue(mockQuery);
+
+    await LabResultService.list({
+      patientId: "507f191e810c19729de860ea",
+    });
+
+    expect(LabResultModel.find).toHaveBeenCalledWith({
+      orderId: { $in: ["o1"] },
+    });
+    expect(mockQuery.setOptions).not.toHaveBeenCalled();
+  });
+
+  it("returns empty list when patientId resolves to no orders in mongo", async () => {
+    readSwitch.mockReturnValue(false);
+
+    const mockOrders = {
+      setOptions: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    };
+    (LabOrderModel.find as jest.Mock).mockReturnValue(mockOrders);
+
+    const results = await LabResultService.list({
+      patientId: "507f191e810c19729de860ea",
+    });
+
+    expect(results).toEqual([]);
+    expect(LabResultModel.find).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid patientId in mongo", async () => {
+    readSwitch.mockReturnValue(false);
+    await expect(LabResultService.list({ patientId: "bad" })).rejects.toThrow(
+      "Invalid patientId",
+    );
   });
 
   it("gets by result id in postgres", async () => {
     await LabResultService.getByResultId("org", "IDEXX", "res");
     expect(prisma.labResult.findFirst).toHaveBeenCalledWith({
       where: { organisationId: "org", provider: "IDEXX", resultId: "res" },
+    });
+  });
+
+  it("gets by result id in mongo", async () => {
+    readSwitch.mockReturnValue(false);
+    const mockQuery = {
+      setOptions: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({}),
+    };
+    (LabResultModel.findOne as jest.Mock).mockReturnValue(mockQuery);
+
+    await LabResultService.getByResultId("org", "IDEXX", "res");
+
+    expect(LabResultModel.findOne).toHaveBeenCalledWith({
+      organisationId: "org",
+      provider: "IDEXX",
+      resultId: "res",
     });
   });
 

@@ -1,6 +1,12 @@
+import { Types } from "mongoose";
+import CompanionModel from "src/models/companion";
+import { ParentModel } from "src/models/parent";
+import CompanionOrganisationModel from "src/models/companion-organisation";
+import ParentCompanionModel from "src/models/parent-companion";
 import { normalizeLabProvider } from "src/labs";
 import { LabOrderServiceError } from "src/services/lab-order.service";
 import { prisma } from "src/config/prisma";
+import { isReadFromPostgres } from "src/config/read-switch";
 import {
   buildIdexxClient,
   lookupIdexxMapping,
@@ -16,62 +22,115 @@ const resolveGenderCode = (gender: string, isNeutered?: boolean) => {
   return "UNKNOWN";
 };
 
-const ensureString = (value: unknown, field: string): string => {
-  if (typeof value !== "string" || !value.trim()) {
+type IdLike = Types.ObjectId | string;
+
+const ensureObjectIdString = (value: unknown, field: string): string => {
+  if (value instanceof Types.ObjectId) return value.toString();
+  if (typeof value !== "string" || !Types.ObjectId.isValid(value)) {
     throw new LabOrderServiceError(`Invalid ${field}.`, 400);
   }
-  return value.trim();
+  return value;
 };
 
-const resolveDocId = (doc: { id?: string }) => {
-  if (typeof doc.id === "string") return doc.id;
+const resolveDocId = (doc: { id?: string; _id?: { toString(): string } }) => {
+  if ("id" in doc && typeof doc.id === "string") return doc.id;
+  if ("_id" in doc && doc._id) return doc._id.toString();
   throw new LabOrderServiceError("Missing document id.", 500);
 };
 
 const buildCensusPayload = async (input: {
   organisationId: string;
-  patientId: string;
-  parentId: string;
+  patientId: IdLike;
+  parentId: IdLike;
   veterinarian?: string | null;
   ivls?: Array<{ serialNumber: string }>;
 }) => {
-  const [companionOrgLink, parentCompanionLink] = await Promise.all([
-    prisma.patientOrganisation.findFirst({
-      where: {
-        organisationId: input.organisationId,
-        patientId: input.patientId,
-        status: { in: ["ACTIVE", "PENDING"] },
-      },
-      select: { id: true },
-    }),
-    prisma.parentPatient.findFirst({
-      where: {
-        parentId: input.parentId,
-        patientId: input.patientId,
-        status: { in: ["ACTIVE", "PENDING"] },
-      },
-      select: { id: true },
-    }),
-  ]);
+  const safeCompanionIdString = ensureObjectIdString(
+    input.patientId,
+    "patientId",
+  );
+  const safeParentIdString = ensureObjectIdString(input.parentId, "parentId");
+  const safeCompanionId = new Types.ObjectId(safeCompanionIdString);
+  const safeParentId = new Types.ObjectId(safeParentIdString);
 
-  if (!companionOrgLink) {
-    throw new LabOrderServiceError("Companion not found.", 404);
-  }
-  if (!parentCompanionLink) {
-    throw new LabOrderServiceError("Parent not found.", 404);
+  if (isReadFromPostgres()) {
+    const [companionOrgLink, parentCompanionLink] = await Promise.all([
+      prisma.patientOrganisation.findFirst({
+        where: {
+          organisationId: input.organisationId,
+          patientId: safeCompanionId.toString(),
+          status: { in: ["ACTIVE", "PENDING"] },
+        },
+        select: { id: true },
+      }),
+      prisma.parentPatient.findFirst({
+        where: {
+          parentId: safeParentId.toString(),
+          patientId: safeCompanionId.toString(),
+          status: { in: ["ACTIVE", "PENDING"] },
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!companionOrgLink) {
+      throw new LabOrderServiceError("Companion not found.", 404);
+    }
+    if (!parentCompanionLink) {
+      throw new LabOrderServiceError("Parent not found.", 404);
+    }
+  } else {
+    const safeOrganisationIdString = ensureObjectIdString(
+      input.organisationId,
+      "organisationId",
+    );
+
+    const companionOrgLink = (await CompanionOrganisationModel.findOne({
+      organisationId: { $eq: safeOrganisationIdString },
+      patientId: { $eq: safeCompanionIdString },
+      status: { $in: ["ACTIVE", "PENDING"] },
+    })
+      .setOptions({ sanitizeFilter: true })
+      .select({ _id: 1 })
+      .lean()
+      .exec()) as unknown as { _id: unknown } | null;
+    const parentCompanionLink = (await ParentCompanionModel.findOne({
+      parentId: { $eq: safeParentIdString },
+      patientId: { $eq: safeCompanionIdString },
+      status: { $in: ["ACTIVE", "PENDING"] },
+    })
+      .setOptions({ sanitizeFilter: true })
+      .select({ _id: 1 })
+      .lean()
+      .exec()) as unknown as { _id: unknown } | null;
+
+    if (!companionOrgLink) {
+      throw new LabOrderServiceError("Companion not found.", 404);
+    }
+    if (!parentCompanionLink) {
+      throw new LabOrderServiceError("Parent not found.", 404);
+    }
   }
 
-  const companion = await prisma.patient.findUnique({
-    where: { id: input.patientId },
-  });
+  const companion = isReadFromPostgres()
+    ? await prisma.patient.findUnique({
+        where: { id: safeCompanionId.toString() },
+      })
+    : await CompanionModel.findById(safeCompanionId)
+        .setOptions({ sanitizeFilter: true })
+        .lean();
   if (!companion) {
     throw new LabOrderServiceError("Companion not found.", 404);
   }
 
-  const parent = await prisma.parent.findUnique({
-    where: { id: input.parentId },
-    include: { address: true },
-  });
+  const parent = isReadFromPostgres()
+    ? await prisma.parent.findUnique({
+        where: { id: safeParentId.toString() },
+        include: { address: true },
+      })
+    : await ParentModel.findById(safeParentId)
+        .setOptions({ sanitizeFilter: true })
+        .lean();
   if (!parent) {
     throw new LabOrderServiceError("Parent not found.", 404);
   }
@@ -216,8 +275,8 @@ export const LabCensusService = {
 
     const payload = await buildCensusPayload({
       organisationId,
-      patientId: ensureString(input.patientId, "patientId"),
-      parentId: ensureString(input.parentId, "parentId"),
+      patientId: input.patientId,
+      parentId: input.parentId,
       veterinarian: input.veterinarian ?? undefined,
       ivls: normalizedIvls,
     });

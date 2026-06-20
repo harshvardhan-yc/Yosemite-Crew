@@ -323,12 +323,8 @@ const getAppointmentLinks = (appointment: {
   const companion = value as Record<string, unknown>;
   const patientId = typeof companion.id === "string" ? companion.id : undefined;
   const parent = companion.parent as Record<string, unknown> | undefined;
-  const nestedParentId =
+  const parentId =
     parent && typeof parent.id === "string" ? parent.id : undefined;
-  const legacyParentId =
-    typeof companion.parentId === "string" ? companion.parentId : undefined;
-  const parentId = nestedParentId ?? legacyParentId;
-
   return { patientId, parentId };
 };
 
