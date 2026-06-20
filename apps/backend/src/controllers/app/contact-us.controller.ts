@@ -106,8 +106,7 @@ export const ContactController = {
       };
 
       const doc = await ContactService.createRequest(payload);
-      const id = "_id" in doc ? doc._id.toString() : doc.id;
-      res.status(201).json({ id });
+      res.status(201).json({ id: doc.id });
     } catch (err) {
       if (err instanceof ContactServiceError) {
         return res.status(err.statusCode).json({ message: err.message });
@@ -148,8 +147,7 @@ export const ContactController = {
       };
 
       const doc = await ContactService.createWebRequest(payload);
-      const id = "_id" in doc ? doc._id.toString() : doc.id;
-      res.status(201).json({ id });
+      res.status(201).json({ id: doc.id });
     } catch (err) {
       if (err instanceof ContactServiceError) {
         return res.status(err.statusCode).json({ message: err.message });

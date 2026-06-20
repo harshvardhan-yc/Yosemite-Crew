@@ -112,15 +112,15 @@ describe("scheduling utils", () => {
   });
 
   it("builds bookable windows and merges vet ids by slot", async () => {
-    const referenceDate = new Date("2026-06-20T00:00:00.000Z");
+    const referenceDate = new Date("2026-06-21T00:00:00.000Z");
     const result = await buildBookableWindowsForVets({
       organisationId: "org-1",
       vetIds: ["vet-1", "vet-2"],
       durationMinutes: 30,
       referenceDate,
       getBookableSlotsForDate: async (_organisationId, vetId) => ({
-        date: "2026-06-20",
-        dayOfWeek: "SATURDAY",
+        date: "2026-06-21",
+        dayOfWeek: "SUNDAY",
         windows:
           vetId === "vet-1"
             ? [
@@ -144,7 +144,7 @@ describe("scheduling utils", () => {
 
   it("builds calendar prefill matches for a shared slot", async () => {
     const matches = await buildCalendarPrefillMatches({
-      inputDate: new Date("2026-06-20T00:00:00.000Z"),
+      inputDate: new Date("2026-06-21T00:00:00.000Z"),
       timezone: "UTC",
       minuteOfDay: 540,
       leadId: "vet-1",
@@ -158,8 +158,8 @@ describe("scheduling utils", () => {
       ],
       utcDateShifts: [-1, 0, 1] as const,
       getBookableWindows: async () => ({
-        date: "2026-06-20",
-        dayOfWeek: "SATURDAY",
+        date: "2026-06-21",
+        dayOfWeek: "SUNDAY",
         windows: [
           {
             startTime: "09:00",

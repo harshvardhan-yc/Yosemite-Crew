@@ -69,6 +69,7 @@ describe("ContactService", () => {
         type: "DSAR" as const,
         dsarDetails: {
           requesterType: "SELF" as const,
+          rightsRequested: ["ACCESS_PERSONAL_INFORMATION" as const],
           declarationAccepted: true,
         },
       };
@@ -85,6 +86,7 @@ describe("ContactService", () => {
           ...dsarInput,
           dsarDetails: {
             requesterType: "SELF",
+            rightsRequested: ["ACCESS_PERSONAL_INFORMATION"],
             declarationAccepted: false,
           },
         }),
@@ -101,6 +103,7 @@ describe("ContactService", () => {
         type: "DSAR",
         dsarDetails: {
           requesterType: "SELF",
+          rightsRequested: ["ACCESS_PERSONAL_INFORMATION"],
           declarationAccepted: true,
         },
       });

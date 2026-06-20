@@ -129,6 +129,7 @@ describe("ServiceService", () => {
   });
 
   it("returns empty bookable slots when no vets are configured", async () => {
+    const referenceDate = new Date("2026-06-21T00:00:00.000Z");
     mockedPrisma.service.findFirst.mockResolvedValue({
       id: "svc-1",
       organisationId: "org-1",
@@ -140,10 +141,10 @@ describe("ServiceService", () => {
     });
 
     await expect(
-      ServiceService.getBookableSlotsService("svc-1", "org-1", new Date()),
+      ServiceService.getBookableSlotsService("svc-1", "org-1", referenceDate),
     ).resolves.toEqual({
-      date: "1970-01-01",
-      dayOfWeek: "THURSDAY",
+      date: "2026-06-21",
+      dayOfWeek: "SUNDAY",
       windows: [],
     });
   });
