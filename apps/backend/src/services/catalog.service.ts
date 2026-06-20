@@ -2416,6 +2416,13 @@ export const CatalogService = {
         kind: true,
         specialityId: true,
         organisationId: true,
+        bookable: {
+          select: {
+            durationMinutes: true,
+            supportsOutpatient: true,
+            supportsInpatient: true,
+          },
+        },
         prices: {
           orderBy: [{ isDefault: "desc" as const }],
           select: {
@@ -2471,6 +2478,7 @@ export const CatalogService = {
 
         const orgServices = allProductsForOrgs
           .filter((s) => s.organisationId === org.id)
+          .filter((product) => Boolean(product.bookable))
           .map((product) => {
             const packageItems =
               product.kind === "PACKAGE" && product.package?.items.length
