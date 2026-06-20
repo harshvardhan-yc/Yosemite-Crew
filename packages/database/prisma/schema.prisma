@@ -33,6 +33,12 @@ enum ContactStatus {
   CLOSED
 }
 
+enum PrescriptionDispenseRequestStatus {
+  PENDING
+  NOT_DISPENSED
+  DISPENSED
+}
+
 enum PatientType {
   dog
   cat
@@ -2024,6 +2030,7 @@ model Prescription {
   id              String           @id @default(uuid())
   artifactId      String           @unique
   items           PrescriptionItem[]
+  dispenseRequests PrescriptionDispenseRequest[]
   medications     Json?
   instructions    Json?
   notes           Json?
@@ -2042,6 +2049,7 @@ model PrescriptionItem {
   medication     String
   strength       String?
   dosage         String?
+  route          String?
   frequency      String?
   duration       String?
   quantity       String?
@@ -2053,6 +2061,26 @@ model PrescriptionItem {
   prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
 
   @@index([prescriptionId, sortOrder])
+}
+
+model PrescriptionDispenseRequest {
+  id             String                              @id @default(uuid())
+  prescriptionId String
+  organisationId String
+  status         PrescriptionDispenseRequestStatus   @default(PENDING)
+  medications    Json
+  metadata       Json?
+  requestedBy    String?
+  reviewedBy     String?
+  requestedAt    DateTime                            @default(now())
+  reviewedAt     DateTime?
+  createdAt      DateTime                            @default(now())
+  updatedAt      DateTime                            @updatedAt
+
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId, status, requestedAt])
+  @@index([organisationId, status])
 }
 
 model DischargeSummary {

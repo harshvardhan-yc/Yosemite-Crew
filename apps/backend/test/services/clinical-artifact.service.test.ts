@@ -8,7 +8,9 @@ import { uploadBufferAsFile } from "../../src/middlewares/upload";
 
 jest.mock("../../src/services/inventory-consumption.service", () => ({
   InventoryConsumptionService: {
-    consumePrescription: jest.fn(),
+    approvePrescriptionDispenseRequest: jest.fn(),
+    createPrescriptionDispenseRequest: jest.fn(),
+    markPrescriptionDispenseRequestNotDispensed: jest.fn(),
     releasePrescription: jest.fn(),
   },
 }));
@@ -226,7 +228,7 @@ describe("ClinicalArtifactService", () => {
     });
   };
 
-  it("triggers inventory consumption when a prescription is signed", async () => {
+  it("creates a dispense request when a prescription is signed", async () => {
     mockedPrisma.clinicalArtifact.create.mockResolvedValueOnce({
       id: artifactId,
       organisationId,
@@ -358,7 +360,7 @@ describe("ClinicalArtifactService", () => {
     const { InventoryConsumptionService } =
       await import("../../src/services/inventory-consumption.service");
     expect(
-      InventoryConsumptionService.consumePrescription,
+      InventoryConsumptionService.createPrescriptionDispenseRequest,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         organisationId,
@@ -735,7 +737,17 @@ describe("ClinicalArtifactService", () => {
       templateVersionId: "tmpl-ver-2",
       authorId: "author-1",
       summary: "Rx summary",
-      medications: [{ drug: "Drug A" }],
+      medications: [
+        {
+          sourceLineKey: "line-1",
+          medication: "Drug A",
+          dosage: "250mg",
+          route: "oral",
+          frequency: "BID",
+          quantity: 1,
+          inventoryItemId: "item-1",
+        },
+      ],
       instructions: { text: "Take daily" },
       notes: null,
       metadata: null,
@@ -750,10 +762,38 @@ describe("ClinicalArtifactService", () => {
         }),
       }),
     );
+    expect(mockedPrisma.prescription.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          medications: [
+            expect.objectContaining({
+              sourceLineKey: "line-1",
+              medication: "Drug A",
+              dosage: "250mg",
+              route: "oral",
+              frequency: "BID",
+              quantity: 1,
+              inventoryItemId: "item-1",
+            }),
+          ],
+          items: {
+            create: [
+              expect.objectContaining({
+                medication: "Drug A",
+                dosage: "250mg",
+                route: "oral",
+                frequency: "BID",
+                quantity: "1",
+              }),
+            ],
+          },
+        }),
+      }),
+    );
     expect(result.artifact.kind).toBe("PRESCRIPTION");
   });
 
-  it("releases inventory when a signed prescription is voided", async () => {
+  it("marks the dispense request not dispensed when a signed prescription is voided", async () => {
     const signedMedications = [
       { inventoryItemId: "item-1", quantity: 2, sourceLineKey: "line-1" },
     ];
@@ -823,20 +863,19 @@ describe("ClinicalArtifactService", () => {
     const { InventoryConsumptionService } =
       await import("../../src/services/inventory-consumption.service");
     expect(
-      InventoryConsumptionService.releasePrescription,
+      InventoryConsumptionService.markPrescriptionDispenseRequestNotDispensed,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         organisationId,
         prescriptionId: "prescription-1",
-        medications: signedMedications,
       }),
     );
     expect(
-      InventoryConsumptionService.consumePrescription,
+      InventoryConsumptionService.releasePrescription,
     ).not.toHaveBeenCalled();
   });
 
-  it("reconciles inventory when a signed prescription is revised", async () => {
+  it("marks the dispense request not dispensed when a signed prescription is reopened", async () => {
     mockedPrisma.clinicalArtifact.update.mockReset();
     mockedPrisma.prescription.update.mockReset();
     const originalMedications = [
@@ -877,7 +916,7 @@ describe("ClinicalArtifactService", () => {
       id: artifactId,
       organisationId,
       kind: "PRESCRIPTION",
-      status: "SIGNED",
+      status: "IN_PROGRESS",
       appointmentId: "appt-1",
       caseId: null,
       encounterId: "enc-1",
@@ -915,23 +954,19 @@ describe("ClinicalArtifactService", () => {
     const { InventoryConsumptionService } =
       await import("../../src/services/inventory-consumption.service");
     expect(
-      InventoryConsumptionService.releasePrescription,
+      InventoryConsumptionService.markPrescriptionDispenseRequestNotDispensed,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         organisationId,
         prescriptionId: "prescription-2",
-        medications: originalMedications,
       }),
     );
     expect(
-      InventoryConsumptionService.consumePrescription,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organisationId,
-        prescriptionId: "prescription-2",
-        medications: revisedMedications,
-      }),
-    );
+      InventoryConsumptionService.createPrescriptionDispenseRequest,
+    ).not.toHaveBeenCalled();
+    expect(
+      InventoryConsumptionService.releasePrescription,
+    ).not.toHaveBeenCalled();
   });
 
   it("creates a discharge summary artifact and document draft", async () => {

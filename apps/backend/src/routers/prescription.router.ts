@@ -5,6 +5,22 @@ import { PrescriptionController } from "src/controllers/web/prescription.control
 
 const router = Router();
 
+router.get(
+  "/organisations/:organisationId/prescription-dispense-requests",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission(["inventory:view:any", "prescription:view:any"]),
+  (req, res) => PrescriptionController.listDispenseRequests(req, res),
+);
+
+router.get(
+  "/organisations/:organisationId/prescription-dispense-requests/:dispenseRequestId",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission(["inventory:view:any", "prescription:view:any"]),
+  (req, res) => PrescriptionController.getDispenseRequest(req, res),
+);
+
 router.post(
   "/organisations/:organisationId/:prescriptionId/$reserve",
   authorizeCognito,
@@ -19,6 +35,14 @@ router.post(
   withOrgPermissions(),
   requirePermission(["prescription:edit:any", "inventory:edit:any"]),
   (req, res) => PrescriptionController.dispense(req, res),
+);
+
+router.post(
+  "/organisations/:organisationId/:prescriptionId/$not-dispensed",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission(["prescription:edit:any", "inventory:edit:any"]),
+  (req, res) => PrescriptionController.notDispensed(req, res),
 );
 
 router.post(
