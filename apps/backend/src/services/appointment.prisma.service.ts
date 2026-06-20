@@ -81,6 +81,8 @@ type AdmissionUpsertDelegate = {
     where: { encounterId: string };
     update: {
       unitId?: string | null;
+      admittedAt?: Date;
+      expectedStayDays?: number | null;
     };
     create: {
       encounterId: string;
@@ -1511,13 +1513,6 @@ export const AppointmentPrismaService = {
         );
       }
 
-      if (admission) {
-        throw new AppointmentPrismaServiceError(
-          "Appointment is already admitted.",
-          409,
-        );
-      }
-
       const nextCaseId =
         normalizeOptionalString(row.caseId) ??
         normalizeOptionalString(encounter.caseId);
@@ -1698,7 +1693,13 @@ export const AppointmentPrismaService = {
 
         await admissionDelegate.upsert({
           where: { encounterId },
-          update: { unitId },
+          update: {
+            unitId,
+            admittedAt,
+            ...(input?.expectedStayDays !== undefined
+              ? { expectedStayDays: input.expectedStayDays }
+              : {}),
+          },
           create: {
             encounterId,
             organisationId: row.organisationId,

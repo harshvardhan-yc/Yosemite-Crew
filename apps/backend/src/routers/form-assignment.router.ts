@@ -30,7 +30,7 @@ router.get(
 );
 
 router.post(
-  "/organisations/:organisationId/assignments/:assignmentId/$resend",
+  String.raw`/organisations/:organisationId/assignments/:assignmentId/$resend`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("forms:edit:any"),
@@ -38,7 +38,7 @@ router.post(
 );
 
 router.post(
-  "/organisations/:organisationId/assignments/:assignmentId/$cancel",
+  String.raw`/organisations/:organisationId/assignments/:assignmentId/$cancel`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("forms:edit:any"),
