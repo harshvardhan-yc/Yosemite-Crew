@@ -1610,7 +1610,27 @@ if (gotSingleInstanceLock) {
       }));
       // enterTabMode reads the module window/tab globals assigned just above, so
       // it must run here (not inside createMainWindow) to actually take effect.
-      if (pendingTabModeUrl) enterTabMode(pendingTabModeUrl);
+      if (pendingTabModeUrl) {
+        enterTabMode(pendingTabModeUrl);
+        // Restored tab views are created/attached here while the window is still
+        // hidden (createMainWindow shows it asynchronously via ensureVisible). A
+        // WebContentsView added to a not-yet-shown window does not paint until it
+        // is re-laid-out, so restored tabs would otherwise sit transparent over
+        // the loading page forever. Re-attach + re-layout the active tab once the
+        // window is actually visible so it renders.
+        if (mainWindow && !mainWindow.isVisible()) {
+          mainWindow.once('show', () => {
+            if (attachedTabId && tabViewHost && mainWindow && !mainWindow.isDestroyed()) {
+              const activeView = tabViewHost.get(attachedTabId);
+              if (activeView) {
+                mainWindow.contentView.removeChildView(activeView);
+                mainWindow.contentView.addChildView(activeView);
+              }
+            }
+            layoutTabChrome();
+          });
+        }
+      }
       tray = setupTray({
         productName: PRODUCT_NAME,
         mainWindow,
