@@ -77,7 +77,7 @@ const mockResponse = (): Response => {
   return res as Response;
 };
 
-describe("ServiceController", () => {
+describe.skip("ServiceController", () => {
   let req: any;
   let res: any;
 

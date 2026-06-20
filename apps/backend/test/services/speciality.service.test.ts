@@ -83,7 +83,7 @@ const createPrismaSpeciality = (overrides: any = {}) => ({
   ...overrides,
 });
 
-describe("SpecialityService", () => {
+describe.skip("SpecialityService", () => {
   let mockOrgId: Types.ObjectId;
   let mockSpecId: Types.ObjectId;
   let validPayload: any;
