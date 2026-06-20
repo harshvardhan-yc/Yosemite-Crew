@@ -2,11 +2,17 @@ import { TemplateKind } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { renderRenderedDocumentPdf } from "../../src/services/rendered-document-renderer.service";
 import { renderPdf } from "../../src/services/formPDF.service";
-import { generateResolvedTemplatePdfWithMetadata } from "@yosemite-crew/lib";
+import {
+  generateClinicalPdfWithMetadata,
+  generateResolvedTemplatePdfWithMetadata,
+} from "@yosemite-crew/lib";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
     organization: {
+      findUnique: jest.fn(),
+    },
+    appointment: {
       findUnique: jest.fn(),
     },
     formSubmission: {
@@ -23,18 +29,23 @@ jest.mock("src/config/prisma", () => ({
     },
     templateVersion: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     soapNote: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     prescription: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     dischargeSummary: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     vitalRecord: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
   },
 }));
@@ -44,29 +55,45 @@ jest.mock("../../src/services/formPDF.service", () => ({
 }));
 
 jest.mock("@yosemite-crew/lib", () => ({
+  generateClinicalPdfWithMetadata: jest.fn(),
   generateResolvedTemplatePdfWithMetadata: jest.fn(),
 }));
 
 describe("rendered-document-renderer service", () => {
   const mockedPrisma = prisma as unknown as {
     organization: { findUnique: jest.Mock };
+    appointment: { findUnique: jest.Mock };
     formSubmission: { findUnique: jest.Mock };
     form: { findUnique: jest.Mock };
     formVersion: { findUnique: jest.Mock };
     templateInstance: { findUnique: jest.Mock };
-    templateVersion: { findUnique: jest.Mock };
-    soapNote: { findUnique: jest.Mock };
-    prescription: { findUnique: jest.Mock };
-    dischargeSummary: { findUnique: jest.Mock };
-    vitalRecord: { findUnique: jest.Mock };
+    templateVersion: { findUnique: jest.Mock; findFirst: jest.Mock };
+    soapNote: { findUnique: jest.Mock; findFirst: jest.Mock };
+    prescription: { findUnique: jest.Mock; findFirst: jest.Mock };
+    dischargeSummary: { findUnique: jest.Mock; findFirst: jest.Mock };
+    vitalRecord: { findUnique: jest.Mock; findFirst: jest.Mock };
   };
   const mockedRenderPdf = renderPdf as jest.Mock;
+  const mockedGenerateClinicalPdfWithMetadata =
+    generateClinicalPdfWithMetadata as jest.Mock;
   const mockedGenerateResolvedTemplatePdfWithMetadata =
     generateResolvedTemplatePdfWithMetadata as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockedRenderPdf.mockResolvedValue(Buffer.from("pdf"));
+    mockedPrisma.appointment.findUnique.mockResolvedValue(null);
+    mockedGenerateClinicalPdfWithMetadata.mockResolvedValue({
+      pdf: Buffer.from("pdf"),
+      pageCount: 1,
+      signaturePlacement: {
+        pageNumber: 1,
+        pageX: 340,
+        pageY: 710,
+        width: 220,
+        height: 96,
+      },
+    });
     mockedGenerateResolvedTemplatePdfWithMetadata.mockResolvedValue({
       pdf: Buffer.from("pdf"),
       pageCount: 1,
@@ -310,8 +337,25 @@ describe("rendered-document-renderer service", () => {
       website: "https://medicare.example",
       address: null,
     });
+    mockedPrisma.appointment.findUnique.mockResolvedValueOnce({
+      patient: {
+        name: "Bella Hadid",
+        species: "Canine",
+        breed: "Bulldog",
+        parent: {
+          id: "CL-1001",
+          name: "Yasmin Hadid",
+          phoneNumber: "(512) 555 0111",
+        },
+      },
+      lead: {
+        name: "Dr. Tim Apple",
+      },
+    });
     mockedPrisma.prescription.findUnique.mockResolvedValueOnce({
       id: "rx-1",
+      appointmentId: "appt-1",
+      items: [],
       medications: [{ name: "Carprofen" }],
       instructions: ["Once daily"],
       notes: { note: "with food" },
@@ -319,7 +363,7 @@ describe("rendered-document-renderer service", () => {
       artifact: {
         id: "artifact-2",
         organisationId: "org-1",
-        appointmentId: null,
+        appointmentId: "appt-1",
         caseId: null,
         encounterId: "enc-1",
         kind: "PRESCRIPTION",
@@ -361,6 +405,12 @@ describe("rendered-document-renderer service", () => {
           name: "MediCare Hospital",
           addressLine1: "MediCare Hospital",
           logoUrl: null,
+        }),
+        data: expect.objectContaining({
+          leadName: "Dr. Tim Apple",
+          patientName: "Bella Hadid",
+          clientName: "Yasmin Hadid",
+          clientContact: "(512) 555 0111",
         }),
         template: expect.objectContaining({
           source: "CLINICAL_ARTIFACT",
@@ -451,6 +501,71 @@ describe("rendered-document-renderer service", () => {
     );
   });
 
+  it("renders a clinical artifact without loading template metadata when templateId is missing", async () => {
+    mockedPrisma.organization.findUnique.mockResolvedValueOnce({
+      name: "MediCare Hospital",
+      imageUrl: null,
+      phoneNo: "+91 99999 00000",
+      website: "https://medicare.example",
+      address: null,
+    });
+    mockedPrisma.soapNote.findUnique.mockResolvedValueOnce({
+      id: "soap-plain-1",
+      subjective: { history: "vomiting" },
+      objective: { temp: 38.9 },
+      assessment: { impression: "gastritis" },
+      plan: { treatment: "fluid therapy" },
+      diagnoses: [],
+      metadata: { author: "vet-1" },
+      artifact: {
+        id: "artifact-plain-1",
+        organisationId: "org-1",
+        appointmentId: "appt-1",
+        caseId: null,
+        encounterId: null,
+        kind: "SOAP_NOTE",
+        status: "DRAFT",
+        templateId: null,
+        templateVersion: null,
+        templateVersionId: null,
+        authorId: "author-1",
+        signedBy: null,
+        signedAt: null,
+        summary: "SOAP summary",
+        createdAt: new Date("2026-06-14T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-14T00:00:00.000Z"),
+      },
+    });
+
+    await renderRenderedDocumentPdf({
+      title: "SOAP Note",
+      source: {
+        sourceKind: "CLINICAL_ARTIFACT",
+        sourceId: "soap-plain-1",
+        organisationId: "org-1",
+        templateKind: "SOAP_NOTE",
+      },
+    });
+
+    expect(mockedPrisma.templateVersion.findUnique).not.toHaveBeenCalled();
+    expect(mockedPrisma.templateVersion.findFirst).not.toHaveBeenCalled();
+    expect(mockedGenerateClinicalPdfWithMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentType: "SOAP_NOTE",
+        data: expect.objectContaining({
+          title: "SOAP Note",
+          subjective: { history: "vomiting" },
+          objective: { temp: 38.9 },
+          assessment: { impression: "gastritis" },
+          plan: { treatment: "fluid therapy" },
+          signature: expect.objectContaining({
+            status: "PENDING",
+          }),
+        }),
+      }),
+    );
+  });
+
   it("rejects unsupported source kinds", async () => {
     await expect(
       renderRenderedDocumentPdf({
@@ -502,6 +617,7 @@ describe("rendered-document-renderer service", () => {
 
   it("rejects missing clinical artifact records", async () => {
     mockedPrisma.soapNote.findUnique.mockResolvedValueOnce(null);
+    mockedPrisma.soapNote.findFirst.mockResolvedValueOnce(null);
 
     await expect(
       renderRenderedDocumentPdf({
@@ -515,5 +631,140 @@ describe("rendered-document-renderer service", () => {
         },
       }),
     ).rejects.toThrow("SOAP note not found");
+  });
+
+  it("falls back to artifactId when rendering a persisted clinical artifact", async () => {
+    mockedPrisma.organization.findUnique.mockResolvedValueOnce({
+      name: "MediCare Hospital",
+      imageUrl: null,
+      phoneNo: "+91 99999 00000",
+      website: "https://medicare.example",
+      address: null,
+    });
+    mockedPrisma.prescription.findUnique.mockResolvedValueOnce(null);
+    mockedPrisma.prescription.findFirst.mockResolvedValueOnce({
+      id: "rx-1",
+      items: [],
+      medications: [{ name: "Carprofen" }],
+      instructions: ["Once daily"],
+      notes: { note: "with food" },
+      metadata: { author: "vet-1" },
+      artifact: {
+        id: "artifact-2",
+        organisationId: "org-1",
+        appointmentId: null,
+        caseId: null,
+        encounterId: "enc-1",
+        kind: "PRESCRIPTION",
+        status: "SIGNED",
+        templateId: "template-2",
+        templateVersion: 1,
+        templateVersionId: "template-version-2",
+        authorId: "author-1",
+        signedBy: "user-1",
+        signedAt: new Date("2026-06-14T00:00:00.000Z"),
+        summary: "Prescription summary",
+        createdAt: new Date("2026-06-14T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-14T00:00:00.000Z"),
+      },
+    });
+    mockedPrisma.templateVersion.findUnique.mockResolvedValueOnce({
+      id: "template-version-2",
+      version: 1,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
+    });
+
+    await renderRenderedDocumentPdf({
+      title: "Prescription",
+      source: {
+        sourceKind: "CLINICAL_ARTIFACT",
+        sourceId: "artifact-2",
+        organisationId: "org-1",
+        templateKind: "PRESCRIPTION",
+        templateVersion: 1,
+      },
+    });
+
+    expect(mockedPrisma.prescription.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "artifact-2" } }),
+    );
+    expect(mockedPrisma.prescription.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { artifactId: "artifact-2" },
+      }),
+    );
+    expect(mockedGenerateResolvedTemplatePdfWithMetadata).toHaveBeenCalled();
+  });
+
+  it("uses the latest template version when the artifact version is missing", async () => {
+    mockedPrisma.organization.findUnique.mockResolvedValueOnce({
+      name: "MediCare Hospital",
+      imageUrl: null,
+      phoneNo: "+91 99999 00000",
+      website: "https://medicare.example",
+      address: null,
+    });
+    mockedPrisma.prescription.findUnique.mockResolvedValueOnce(null);
+    mockedPrisma.prescription.findFirst.mockResolvedValueOnce({
+      id: "rx-1",
+      items: [],
+      medications: [{ name: "Carprofen" }],
+      instructions: ["Once daily"],
+      notes: { note: "with food" },
+      metadata: { author: "vet-1" },
+      artifact: {
+        id: "artifact-2",
+        organisationId: "org-1",
+        appointmentId: null,
+        caseId: null,
+        encounterId: "enc-1",
+        kind: "PRESCRIPTION",
+        status: "SIGNED",
+        templateId: "template-2",
+        templateVersion: null,
+        templateVersionId: null,
+        authorId: "author-1",
+        signedBy: "user-1",
+        signedAt: new Date("2026-06-14T00:00:00.000Z"),
+        summary: "Prescription summary",
+        createdAt: new Date("2026-06-14T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-14T00:00:00.000Z"),
+      },
+    });
+    mockedPrisma.templateVersion.findFirst.mockResolvedValueOnce({
+      id: "template-version-latest",
+      version: 9,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
+    });
+
+    await renderRenderedDocumentPdf({
+      title: "Prescription",
+      source: {
+        sourceKind: "CLINICAL_ARTIFACT",
+        sourceId: "artifact-2",
+        organisationId: "org-1",
+        templateKind: "PRESCRIPTION",
+        templateVersion: 1,
+      },
+    });
+
+    expect(mockedPrisma.templateVersion.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { templateId: "template-2" },
+        orderBy: { version: "desc" },
+      }),
+    );
+    expect(mockedGenerateResolvedTemplatePdfWithMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template: expect.objectContaining({
+          templateVersion: 9,
+          templateVersionId: "template-version-latest",
+        }),
+      }),
+    );
   });
 });

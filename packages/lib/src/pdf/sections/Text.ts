@@ -1,5 +1,6 @@
 import type { PdfContext } from '../PdfContext.js';
 import { ensureSpace } from '../Pagination.js';
+import { PDF_COLORS, PDF_FONT_SIZES, PDF_SPACING } from '../layout.js';
 
 export type ParagraphOptions = {
   fontSize?: number;
@@ -102,7 +103,7 @@ export const drawWrappedLines = (
   const fontSize = options.fontSize ?? ctx.theme.fontSizes.body;
   const lineGap = options.lineGap ?? 2;
   const lineHeight = Math.ceil(fontSize * 1.35 + lineGap);
-  const color = options.color ?? ctx.theme.colors.text;
+  const color = options.color ?? PDF_COLORS.text;
   const font = options.font ?? 'regular';
   let y = ctx.cursorY;
 
@@ -125,60 +126,60 @@ export const drawWrappedLines = (
 };
 
 export const renderDocumentTitle = (ctx: PdfContext, title: string): void => {
-  const fontSize = ctx.theme.fontSizes.title;
-  const height = Math.ceil(fontSize * 1.35 + 4);
+  const fontSize = PDF_FONT_SIZES.title;
+  const height = Math.ceil(fontSize * 1.35 + 2);
   ensureSpace(ctx, height);
 
   ctx.document
     .save()
     .font(ctx.theme.fonts.bold)
     .fontSize(fontSize)
-    .fillColor(ctx.theme.colors.brandDark)
+    .fillColor(PDF_COLORS.text)
     .text(title, ctx.contentLeft, ctx.cursorY, {
       width: ctx.contentWidth,
       align: 'center',
     })
     .restore();
 
-  ctx.moveDown(height + ctx.theme.spacing.itemGap);
+  ctx.moveDown(height + PDF_SPACING.itemGap);
 };
 
 export const renderSectionTitle = (ctx: PdfContext, title: string): void => {
-  const fontSize = ctx.theme.fontSizes.sectionTitle;
-  const height = Math.ceil(fontSize * 1.35 + 4);
-  ensureSpace(ctx, height + 8);
+  const fontSize = PDF_FONT_SIZES.sectionTitle;
+  const height = Math.ceil(fontSize * 1.35 + 2);
+  ensureSpace(ctx, height + 12);
 
   ctx.document
     .save()
     .font(ctx.theme.fonts.bold)
     .fontSize(fontSize)
-    .fillColor(ctx.theme.colors.brandDark)
-    .text(title.toUpperCase(), ctx.contentLeft, ctx.cursorY, {
+    .fillColor(PDF_COLORS.text)
+    .text(title, ctx.contentLeft, ctx.cursorY, {
       width: ctx.contentWidth,
     });
 
-  const lineY = ctx.cursorY + height + 2;
+  const lineY = ctx.cursorY + height + 3;
   ctx.document
     .moveTo(ctx.contentLeft, lineY)
     .lineTo(ctx.contentRight, lineY)
     .lineWidth(0.75)
-    .strokeColor(ctx.theme.colors.border)
+    .strokeColor(PDF_COLORS.border)
     .stroke();
 
   ctx.document.restore();
-  ctx.moveDown(height + ctx.theme.spacing.itemGap);
+  ctx.moveDown(height + 12);
 };
 
 export const renderSubTitle = (ctx: PdfContext, title: string): void => {
-  const fontSize = ctx.theme.fontSizes.subtitle;
-  const height = Math.ceil(fontSize * 1.35 + 2);
+  const fontSize = ctx.theme.fontSizes.small;
+  const height = Math.ceil(fontSize * 1.25 + 2);
   ensureSpace(ctx, height);
 
   ctx.document
     .save()
     .font(ctx.theme.fonts.italic)
     .fontSize(fontSize)
-    .fillColor(ctx.theme.colors.muted)
+    .fillColor(PDF_COLORS.muted)
     .text(title, ctx.contentLeft, ctx.cursorY, {
       width: ctx.contentWidth,
     })
@@ -203,7 +204,7 @@ export const renderParagraph = (
     .save()
     .font(ctx.theme.fonts[options.font ?? 'regular'])
     .fontSize(fontSize)
-    .fillColor(options.color ?? ctx.theme.colors.text);
+    .fillColor(options.color ?? PDF_COLORS.text);
 
   for (const line of lines) {
     ensureSpace(ctx, lineHeight);
@@ -236,7 +237,7 @@ export const renderDivider = (ctx: PdfContext, marginY = 0): void => {
     .moveTo(ctx.contentLeft, y)
     .lineTo(ctx.contentRight, y)
     .lineWidth(0.75)
-    .strokeColor(ctx.theme.colors.border)
+    .strokeColor(PDF_COLORS.border)
     .stroke()
     .restore();
 

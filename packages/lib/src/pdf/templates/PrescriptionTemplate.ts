@@ -1,15 +1,11 @@
 import type { PdfContext } from '../PdfContext.js';
 import { renderKeyValueGrid } from '../sections/KeyValueGrid.js';
-import {
-  renderDocumentTitle,
-  renderParagraph,
-  renderSectionTitle,
-  renderSpacer,
-} from '../sections/Text.js';
+import { renderDocumentTitle, renderSectionTitle, renderSpacer } from '../sections/Text.js';
 import { renderDocumentEndBlock } from '../sections/DocumentEndBlock.js';
 import { renderTable } from '../sections/Table.js';
+import { renderRichText } from '../sections/RichText.js';
 import type { ClinicalPdfSignaturePlacement, PrescriptionDocumentData } from '../types.js';
-import { buildKeyValue, formatDateValue } from './shared.js';
+import { buildClinicalHeaderKeyValue } from './shared.js';
 
 export const renderPrescriptionTemplate = (
   ctx: PdfContext,
@@ -18,17 +14,19 @@ export const renderPrescriptionTemplate = (
   renderDocumentTitle(ctx, data.title);
   renderKeyValueGrid(
     ctx,
-    buildKeyValue([
-      ['Date', formatDateValue(data.date)],
-      ['Prescription ID', data.prescriptionId],
-      ['Doctor', data.doctorName],
-      ['Patient', data.patientName],
-      ['Species / Breed', data.speciesBreed],
-      ['Age / Sex', data.ageSex],
-      ['Client', data.clientName],
-      ['Client ID', data.clientId],
-    ]),
-    { columns: 2 }
+    buildClinicalHeaderKeyValue({
+      date: data.date,
+      appointmentId: data.appointmentId,
+      leadLabel: 'Lead',
+      leadName: data.leadName,
+      patientName: data.patientName,
+      clientName: data.clientName,
+      clientId: data.clientId,
+      clientContact: data.clientContact,
+      speciesBreed: data.speciesBreed,
+      ageSex: data.ageSex,
+    }),
+    { columns: 3 }
   );
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
 
@@ -56,7 +54,7 @@ export const renderPrescriptionTemplate = (
 
   if (data.notes) {
     renderSectionTitle(ctx, 'Notes');
-    renderParagraph(ctx, data.notes);
+    renderRichText(ctx, data.notes);
   }
 
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);

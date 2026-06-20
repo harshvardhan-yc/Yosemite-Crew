@@ -1,14 +1,10 @@
 import type { PdfContext } from '../PdfContext.js';
 import { renderKeyValueGrid } from '../sections/KeyValueGrid.js';
-import {
-  renderDocumentTitle,
-  renderParagraph,
-  renderSectionTitle,
-  renderSpacer,
-} from '../sections/Text.js';
+import { renderDocumentTitle, renderSectionTitle, renderSpacer } from '../sections/Text.js';
 import { renderDocumentEndBlock } from '../sections/DocumentEndBlock.js';
+import { renderRichText } from '../sections/RichText.js';
 import type { ClinicalPdfSignaturePlacement, SoapNoteDocumentData } from '../types.js';
-import { buildKeyValue, formatDateValue } from './shared.js';
+import { buildClinicalHeaderKeyValue } from './shared.js';
 
 export const renderSoapNoteTemplate = (
   ctx: PdfContext,
@@ -17,31 +13,32 @@ export const renderSoapNoteTemplate = (
   renderDocumentTitle(ctx, data.title);
   renderKeyValueGrid(
     ctx,
-    buildKeyValue([
-      ['Date', formatDateValue(data.date)],
-      ['Appointment ID', data.appointmentId],
-      ['Doctor', data.doctorName],
-      ['Patient', data.patientName],
-      ['Species / Breed', data.speciesBreed],
-      ['Age / Sex', data.ageSex],
-      ['Client', data.clientName],
-      ['Client ID', data.clientId],
-    ]),
-    { columns: 2 }
+    buildClinicalHeaderKeyValue({
+      date: data.date,
+      appointmentId: data.appointmentId,
+      leadLabel: 'Doctor',
+      leadName: data.doctorName,
+      patientName: data.patientName,
+      clientName: data.clientName,
+      clientId: data.clientId,
+      speciesBreed: data.speciesBreed,
+      ageSex: data.ageSex,
+    }),
+    { columns: 3 }
   );
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
 
   renderSectionTitle(ctx, 'Subjective');
-  renderParagraph(ctx, data.subjective);
+  renderRichText(ctx, data.subjective);
 
   renderSectionTitle(ctx, 'Objective');
-  renderParagraph(ctx, data.objective);
+  renderRichText(ctx, data.objective);
 
   renderSectionTitle(ctx, 'Assessment');
-  renderParagraph(ctx, data.assessment);
+  renderRichText(ctx, data.assessment);
 
   renderSectionTitle(ctx, 'Plan');
-  renderParagraph(ctx, data.plan);
+  renderRichText(ctx, data.plan);
 
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
   return renderDocumentEndBlock(ctx, {

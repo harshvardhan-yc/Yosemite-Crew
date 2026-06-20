@@ -1,5 +1,6 @@
 import type { PdfContext } from '../PdfContext.js';
 import { ensureSpace } from '../Pagination.js';
+import { PDF_COLORS, PDF_FONT_SIZES, PDF_SPACING } from '../layout.js';
 import type { KeyValueItem } from '../types.js';
 import { measureWrappedText, wrapText } from './Text.js';
 
@@ -19,7 +20,7 @@ export const renderKeyValueGrid = (
   const labelWidth = options.labelWidth ?? Math.min(130, columnWidth * 0.42);
   const valueWidth = columnWidth - labelWidth - 10;
   const valueFontSize = options.valueFontSize ?? ctx.theme.fontSizes.body;
-  const labelFontSize = ctx.theme.fontSizes.small;
+  const labelFontSize = PDF_FONT_SIZES.metadataLabel;
   const lineHeight = Math.ceil(valueFontSize * 1.32 + 2);
   const labelHeight = Math.ceil(labelFontSize * 1.25 + 2);
 
@@ -41,15 +42,15 @@ export const renderKeyValueGrid = (
 
       ctx.document
         .save()
-        .font(ctx.theme.fonts.bold)
+        .font(ctx.theme.fonts.regular)
         .fontSize(labelFontSize)
-        .fillColor(ctx.theme.colors.muted)
-        .text(field.label.toUpperCase(), x, y, {
+        .fillColor(PDF_COLORS.muted)
+        .text(field.label, x, y, {
           width: columnWidth - 6,
         })
         .font(ctx.theme.fonts.regular)
         .fontSize(valueFontSize)
-        .fillColor(ctx.theme.colors.text);
+        .fillColor(PDF_COLORS.text);
 
       ctx.document.text(valueLines.join('\n'), x, y + labelHeight + 2, {
         width: valueWidth,
@@ -59,6 +60,6 @@ export const renderKeyValueGrid = (
       ctx.document.restore();
     });
 
-    ctx.moveDown(rowHeight + ctx.theme.spacing.itemGap);
+    ctx.moveDown(rowHeight + PDF_SPACING.itemGap);
   }
 };

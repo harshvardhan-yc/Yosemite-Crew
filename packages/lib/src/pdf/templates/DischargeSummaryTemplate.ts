@@ -1,15 +1,11 @@
 import type { PdfContext } from '../PdfContext.js';
 import { renderBulletList } from '../sections/BulletList.js';
 import { renderKeyValueGrid } from '../sections/KeyValueGrid.js';
-import {
-  renderDocumentTitle,
-  renderParagraph,
-  renderSectionTitle,
-  renderSpacer,
-} from '../sections/Text.js';
+import { renderDocumentTitle, renderSectionTitle, renderSpacer } from '../sections/Text.js';
 import { renderDocumentEndBlock } from '../sections/DocumentEndBlock.js';
+import { renderRichText } from '../sections/RichText.js';
 import type { ClinicalPdfSignaturePlacement, DischargeSummaryDocumentData } from '../types.js';
-import { buildKeyValue, formatDateValue } from './shared.js';
+import { buildClinicalHeaderKeyValue } from './shared.js';
 
 export const renderDischargeSummaryTemplate = (
   ctx: PdfContext,
@@ -18,26 +14,27 @@ export const renderDischargeSummaryTemplate = (
   renderDocumentTitle(ctx, data.title);
   renderKeyValueGrid(
     ctx,
-    buildKeyValue([
-      ['Date', formatDateValue(data.date)],
-      ['Appointment ID', data.appointmentId],
-      ['Doctor', data.doctorName],
-      ['Patient', data.patientName],
-      ['Species / Breed', data.speciesBreed],
-      ['Age / Sex', data.ageSex],
-      ['Client', data.clientName],
-      ['Client ID', data.clientId],
-      ['Contact', data.contact],
-    ]),
-    { columns: 2 }
+    buildClinicalHeaderKeyValue({
+      date: data.date,
+      appointmentId: data.appointmentId,
+      leadLabel: 'Doctor',
+      leadName: data.doctorName,
+      patientName: data.patientName,
+      clientName: data.clientName,
+      clientId: data.clientId,
+      clientContact: data.contact,
+      speciesBreed: data.speciesBreed,
+      ageSex: data.ageSex,
+    }),
+    { columns: 3 }
   );
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
 
   renderSectionTitle(ctx, 'Chief Complaint');
-  renderParagraph(ctx, data.chiefComplaint);
+  renderRichText(ctx, data.chiefComplaint);
 
   renderSectionTitle(ctx, 'Treatment Summary');
-  renderParagraph(ctx, data.treatmentSummary);
+  renderRichText(ctx, data.treatmentSummary);
 
   renderSectionTitle(ctx, 'Procedures');
   renderBulletList(ctx, data.procedures);
@@ -46,7 +43,7 @@ export const renderDischargeSummaryTemplate = (
   renderBulletList(ctx, data.diagnostics);
 
   renderSectionTitle(ctx, 'Discharge Summary');
-  renderParagraph(ctx, data.dischargeSummary);
+  renderRichText(ctx, data.dischargeSummary);
 
   renderSectionTitle(ctx, 'Home Care');
   renderBulletList(ctx, data.homeCare);
@@ -55,7 +52,7 @@ export const renderDischargeSummaryTemplate = (
   renderBulletList(ctx, data.emergencyCare);
 
   renderSectionTitle(ctx, 'Emergency Contact');
-  renderParagraph(ctx, data.emergencyContact);
+  renderRichText(ctx, data.emergencyContact);
 
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
   return renderDocumentEndBlock(ctx, {

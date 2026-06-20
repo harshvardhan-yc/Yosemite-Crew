@@ -1,16 +1,12 @@
 import type { PdfContext } from '../PdfContext.js';
 import { renderKeyValueGrid } from '../sections/KeyValueGrid.js';
-import {
-  renderDocumentTitle,
-  renderParagraph,
-  renderSectionTitle,
-  renderSpacer,
-} from '../sections/Text.js';
+import { renderDocumentTitle, renderSectionTitle, renderSpacer } from '../sections/Text.js';
 import { renderDocumentEndBlock } from '../sections/DocumentEndBlock.js';
 import { renderTable } from '../sections/Table.js';
 import type { ClinicalPdfSignaturePlacement, InvoiceDocumentData } from '../types.js';
 import { buildKeyValue, formatDateValue, formatMoney } from './shared.js';
 import { ensureSpace } from '../Pagination.js';
+import { renderRichText } from '../sections/RichText.js';
 
 export const renderInvoiceTemplate = (
   ctx: PdfContext,
@@ -28,7 +24,7 @@ export const renderInvoiceTemplate = (
       ['Patient', data.patientName],
       ['Doctor', data.doctorName],
     ]),
-    { columns: 2 }
+    { columns: 3 }
   );
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
 
@@ -57,6 +53,8 @@ export const renderInvoiceTemplate = (
     ['Discount', data.discount ?? 0],
     ['Tax', data.tax ?? 0],
     ['Grand Total', data.grandTotal],
+    ['Amount Paid', data.amountPaid ?? 0],
+    ['Balance Due', data.balanceDue ?? Math.max(0, data.grandTotal - (data.amountPaid ?? 0))],
   ];
 
   const totalLabelWidth = 100;
@@ -85,7 +83,7 @@ export const renderInvoiceTemplate = (
 
   if (data.paymentNotes) {
     renderSectionTitle(ctx, 'Payment Notes');
-    renderParagraph(ctx, data.paymentNotes);
+    renderRichText(ctx, data.paymentNotes);
   }
 
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);

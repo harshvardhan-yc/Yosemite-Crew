@@ -71,6 +71,10 @@ class FakePdfDocument {
     return this;
   }
 
+  registerFont(_name: string, _src: string): this {
+    return this;
+  }
+
   strokeColor(_color: string): this {
     return this;
   }
@@ -172,6 +176,7 @@ jest.mock("pdfkit", () => ({
 
 import {
   generateClinicalPdf,
+  generatePdf,
   generateResolvedTemplatePdf,
   type DischargeSummaryDocumentData,
   type InvoiceDocumentData,
@@ -251,13 +256,15 @@ const soapNoteData: SoapNoteDocumentData = {
 const prescriptionData: PrescriptionDocumentData = {
   title: "Prescription",
   date: new Date("2026-06-19T00:00:00.000Z"),
+  appointmentId: "AP134534",
   prescriptionId: "RX-771",
-  doctorName: "Dr. Tim Apple",
+  leadName: "Dr. Tim Apple",
   patientName: "Bella Hadid",
-  speciesBreed: "Canine / Bulldog",
-  ageSex: "2y 4m / MN",
   clientName: "Yasmin Hadid",
   clientId: "CL-1001",
+  clientContact: "(512) 555 0111",
+  speciesBreed: "Canine / Bulldog",
+  ageSex: "2y 4m / MN",
   items: [
     {
       medication: "Carprofen",
@@ -310,6 +317,8 @@ const invoiceData: InvoiceDocumentData = {
   discount: 0,
   tax: 10.22,
   grandTotal: 123.72,
+  amountPaid: 50,
+  balanceDue: 73.72,
   paymentNotes: "Payment due within 10 days.",
   printedBy: "Billing Specialist",
   signature: {
@@ -320,6 +329,36 @@ const invoiceData: InvoiceDocumentData = {
     signedAt: new Date("2026-06-19T10:15:00Z"),
   },
 };
+
+const vitalRecordData = {
+  title: "Vital Records",
+  date: new Date("2026-06-19T00:00:00.000Z"),
+  appointmentId: "AP-2091",
+  recordedBy: "Vet Nurse Carter",
+  patientName: "Bella Hadid",
+  speciesBreed: "Canine / Bulldog",
+  ageSex: "2y 4m / MN",
+  clientName: "Yasmin Hadid",
+  clientId: "CL-1001",
+  contact: "(512) 555 0111",
+  measurements: [
+    {
+      label: "Temperature",
+      value: "101.2",
+      unit: "F",
+      referenceRange: "100.0 - 102.5",
+    },
+    {
+      label: "Heart Rate",
+      value: "96",
+      unit: "bpm",
+      referenceRange: "60 - 120",
+    },
+  ],
+  notes:
+    "Vitals were stable and the patient remained comfortable during the visit.",
+  printedBy: "Front Desk Coordinator",
+} as const;
 
 const templateRenderInput = {
   organization: baseOrganization,
@@ -399,6 +438,7 @@ describe("generateClinicalPdf", () => {
     ["DISCHARGE_SUMMARY", longDischargeSummaryData],
     ["SOAP_NOTE", soapNoteData],
     ["PRESCRIPTION", prescriptionData],
+    ["VITAL_RECORD", vitalRecordData],
     ["INVOICE", invoiceData],
   ] as const)("renders %s clinical PDFs", async (documentType, data) => {
     const buffer = await generateClinicalPdf({
@@ -472,12 +512,52 @@ describe("generateClinicalPdf", () => {
     ).toBe(true);
     expect(
       pdfDocumentInstances[0].operations.some(
-        (op) => op.type === "text" && op.text === "Chief complaint",
+        (op) => op.type === "text" && op.text === "Template Name",
+      ),
+    ).toBe(true);
+    expect(
+      pdfDocumentInstances[0].operations.some(
+        (op) => op.type === "text" && op.text === "Chief complaint:",
+      ),
+    ).toBe(true);
+    expect(
+      pdfDocumentInstances[0].operations.some(
+        (op) =>
+          op.type === "text" && op.text === "Reduced activity and appetite.",
       ),
     ).toBe(true);
     expect(
       pdfDocumentInstances[0].operations.some(
         (op) => op.type === "text" && op.text === "Carprofen",
+      ),
+    ).toBe(true);
+  });
+
+  it("renders a generic pdf config through the reusable template surface", async () => {
+    const buffer = await generatePdf({
+      documentType: "soap-note",
+      title: "SOAP Notes",
+      organization: baseOrganization,
+      metadataGroups: [[{ label: "Date", value: "2026-06-19" }]],
+      sections: [
+        {
+          title: "Subjective",
+          content: [
+            { type: "paragraph", text: "Owner reports improved appetite." },
+          ],
+        },
+      ],
+    });
+
+    expect(buffer.subarray(0, 9).toString()).toBe("%PDF-FAKE");
+    expect(
+      pdfDocumentInstances[0].operations.some(
+        (op) => op.type === "text" && op.text === "SOAP Notes",
+      ),
+    ).toBe(true);
+    expect(
+      pdfDocumentInstances[0].operations.some(
+        (op) => op.type === "text" && op.text === "Subjective",
       ),
     ).toBe(true);
   });

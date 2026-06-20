@@ -1,4 +1,9 @@
-export type ClinicalDocumentType = 'DISCHARGE_SUMMARY' | 'SOAP_NOTE' | 'PRESCRIPTION' | 'INVOICE';
+export type ClinicalDocumentType =
+  | 'DISCHARGE_SUMMARY'
+  | 'SOAP_NOTE'
+  | 'PRESCRIPTION'
+  | 'VITAL_RECORD'
+  | 'INVOICE';
 
 export type DocumentSignatureStatus = 'SIGNED' | 'PENDING';
 
@@ -11,6 +16,7 @@ export type OrganizationBranding = {
   logoUrl?: string | null;
   legalName?: string;
   footerText?: string;
+  timezone?: string;
 };
 
 export type DocumentSignature = {
@@ -32,6 +38,7 @@ export type ClinicalDocumentDataByType = {
   DISCHARGE_SUMMARY: DischargeSummaryDocumentData;
   SOAP_NOTE: SoapNoteDocumentData;
   PRESCRIPTION: PrescriptionDocumentData;
+  VITAL_RECORD: VitalRecordDocumentData;
   INVOICE: InvoiceDocumentData;
 };
 
@@ -126,15 +133,39 @@ export type PrescriptionItem = {
 
 export type PrescriptionDocumentData = BaseClinicalDocumentData & {
   date: Date;
+  appointmentId?: string;
   prescriptionId?: string;
-  doctorName: string;
+  leadName: string;
+  patientName: string;
+  clientName: string;
+  clientId: string;
+  clientContact: string;
+  speciesBreed?: string;
+  ageSex?: string;
+  items: PrescriptionItem[];
+  notes?: string;
+};
+
+export type VitalRecordMeasurement = {
+  label: string;
+  value: string;
+  unit?: string;
+  referenceRange?: string;
+};
+
+export type VitalRecordDocumentData = BaseClinicalDocumentData & {
+  date: Date;
+  appointmentId?: string;
+  recordedBy?: string;
   patientName: string;
   speciesBreed?: string;
   ageSex?: string;
   clientName?: string;
   clientId?: string;
-  items: PrescriptionItem[];
+  contact?: string;
+  measurements: VitalRecordMeasurement[];
   notes?: string;
+  metadata?: unknown;
 };
 
 export type InvoiceItem = {
@@ -159,12 +190,79 @@ export type InvoiceDocumentData = BaseClinicalDocumentData & {
   discount?: number;
   tax?: number;
   grandTotal: number;
+  amountPaid?: number;
+  balanceDue?: number;
   paymentNotes?: string;
 };
 
 export type KeyValueItem = {
   label: string;
   value: string;
+};
+
+export type PdfRichTextRun = {
+  text: string;
+  bold?: boolean;
+};
+
+export type PdfParagraphSectionContent = {
+  type: 'paragraph';
+  text: string;
+};
+
+export type PdfBulletsSectionContent = {
+  type: 'bullets';
+  items: string[];
+};
+
+export type PdfRichTextSectionContent = {
+  type: 'richText';
+  runs: PdfRichTextRun[] | string;
+};
+
+export type PdfTableSectionContent = {
+  type: 'table';
+  columns: TableColumn[];
+  rows: string[][];
+};
+
+export type PdfSectionContent =
+  | PdfParagraphSectionContent
+  | PdfBulletsSectionContent
+  | PdfRichTextSectionContent
+  | PdfTableSectionContent;
+
+export type PdfSectionDefinition = {
+  title: string;
+  content: PdfSectionContent[];
+};
+
+export type GenericInvoiceRenderData = {
+  items: InvoiceItem[];
+  subtotal: number;
+  discount?: number;
+  tax?: number;
+  grandTotal: number;
+  amountPaid?: number;
+  balanceDue?: number;
+};
+
+export type GeneratePdfInput = {
+  documentType:
+    | 'discharge-summary'
+    | 'soap-note'
+    | 'prescription'
+    | 'vital-record'
+    | 'invoice'
+    | string;
+  title: string;
+  organization: OrganizationBranding;
+  metadataGroups?: KeyValueItem[][];
+  sections: PdfSectionDefinition[];
+  signature?: DocumentSignature;
+  invoice?: GenericInvoiceRenderData;
+  generatedAt?: Date;
+  printedBy?: string;
 };
 
 export type TableColumn = {

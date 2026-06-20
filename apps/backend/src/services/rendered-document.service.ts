@@ -2,6 +2,7 @@ import {
   Prisma,
   RenderedDocumentSourceKind as PrismaRenderedDocumentSourceKind,
 } from "@prisma/client";
+import axios from "axios";
 import {
   buildDocumentSignature as buildDocumentSignatureContract,
   buildRenderedDocumentDraft as buildRenderedDocumentDraftContract,
@@ -17,9 +18,12 @@ import {
   type RenderedDocumentKind,
   type RenderedDocumentSignature,
   type RenderedDocumentSigning,
+  type RenderedDocumentSource,
   type SignRenderedDocumentInput,
 } from "@yosemite-crew/types";
+import type { ClinicalPdfSignaturePlacement } from "@yosemite-crew/lib";
 import { prisma } from "src/config/prisma";
+import { uploadBufferAsFile } from "src/middlewares/upload";
 import { DocumensoService } from "src/services/documenso.service";
 import { renderRenderedDocumentPdfWithMetadata } from "src/services/rendered-document-renderer.service";
 
@@ -59,6 +63,12 @@ type RenderedDocumentWriteClient = Pick<
 type PersistedRenderedDocument = Prisma.RenderedDocumentGetPayload<{
   include: { signature: true };
 }>;
+
+export type RenderedDocumentPdfResult = {
+  pdf: Buffer;
+  filename: string;
+  contentType: "application/pdf";
+};
 
 const renderedDocumentClient = prisma as unknown as RenderedDocumentWriteClient;
 
@@ -107,6 +117,163 @@ const normalizeRequiredString = (value: string, fieldName: string): string => {
   }
 
   return normalized;
+};
+
+const downloadPdfBuffer = async (url: string): Promise<Buffer> => {
+  const response = await axios.get<ArrayBuffer>(url, {
+    responseType: "arraybuffer",
+  });
+
+  return Buffer.from(response.data);
+};
+
+type PersistedRenderedDocumentPdfSnapshot = {
+  signaturePlacement?: ClinicalPdfSignaturePlacement | null;
+};
+
+const extractSignaturePlacement = (
+  pdf: Prisma.JsonValue | null | undefined,
+): ClinicalPdfSignaturePlacement | null => {
+  if (!pdf || typeof pdf !== "object" || Array.isArray(pdf)) {
+    return null;
+  }
+
+  const snapshot = pdf as PersistedRenderedDocumentPdfSnapshot;
+  const placement = snapshot.signaturePlacement;
+
+  if (
+    !placement ||
+    typeof placement !== "object" ||
+    Array.isArray(placement) ||
+    typeof placement.pageNumber !== "number" ||
+    typeof placement.pageX !== "number" ||
+    typeof placement.pageY !== "number" ||
+    typeof placement.width !== "number" ||
+    typeof placement.height !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    pageNumber: placement.pageNumber,
+    pageX: placement.pageX,
+    pageY: placement.pageY,
+    width: placement.width,
+    height: placement.height,
+  };
+};
+
+const resolvePersistedRenderedDocumentPdf = async (
+  document: PersistedRenderedDocument,
+): Promise<{
+  pdf: Buffer;
+  signaturePlacement?: ClinicalPdfSignaturePlacement;
+}> => {
+  if (document.pdfUrl) {
+    const signaturePlacement = extractSignaturePlacement(document.pdf);
+
+    if (
+      document.sourceKind === "CLINICAL_ARTIFACT" &&
+      signaturePlacement === null
+    ) {
+      throw new RenderedDocumentServiceError(
+        "Rendered clinical document is missing signature placement metadata",
+        409,
+      );
+    }
+
+    return {
+      pdf: await downloadPdfBuffer(document.pdfUrl),
+      signaturePlacement: signaturePlacement ?? undefined,
+    };
+  }
+
+  if (document.sourceKind === "CLINICAL_ARTIFACT") {
+    throw new RenderedDocumentServiceError(
+      "Rendered clinical document PDF is not available yet",
+      409,
+    );
+  }
+
+  const renderedPdf = await renderRenderedDocumentPdfWithMetadata({
+    title: document.title,
+    source: {
+      sourceKind: document.sourceKind,
+      sourceId: document.sourceId,
+      organisationId: document.organisationId,
+      templateKind: document.kind as RenderedDocumentSource["templateKind"],
+      templateId: document.templateId,
+      templateVersion: document.templateVersion,
+      templateVersionId: document.templateVersionId,
+    },
+  });
+
+  return {
+    pdf: renderedPdf.pdf,
+    signaturePlacement: renderedPdf.signaturePlacement,
+  };
+};
+
+const rerenderAndPersistClinicalRenderedDocumentPdf = async (
+  document: PersistedRenderedDocument,
+  client: RenderedDocumentWriteClient = renderedDocumentClient,
+): Promise<RenderedDocumentPdfResult> => {
+  if (document.sourceKind !== "CLINICAL_ARTIFACT") {
+    throw new RenderedDocumentServiceError(
+      "Rendered document is not a clinical artifact",
+      409,
+    );
+  }
+
+  const renderedPdf = await renderRenderedDocumentPdfWithMetadata({
+    title: document.title,
+    source: {
+      sourceKind: document.sourceKind,
+      sourceId: document.sourceId,
+      organisationId: document.organisationId,
+      templateKind: document.kind as RenderedDocumentSource["templateKind"],
+      templateId: document.templateId,
+      templateVersion: document.templateVersion,
+      templateVersionId: document.templateVersionId,
+    },
+  });
+
+  const upload = await uploadBufferAsFile(renderedPdf.pdf, {
+    folderName: `rendered-documents/${document.organisationId}`,
+    mimeType: "application/pdf",
+    originalName: `${document.kind.toLowerCase().replaceAll("_", "-")}-${document.id}.pdf`,
+  });
+
+  const pdfSnapshot = {
+    ...buildRenderedDocumentPdfSnapshot({
+      title: document.title,
+      kind: document.kind as RenderedDocumentKind,
+      source: {
+        sourceKind: document.sourceKind,
+        sourceId: document.sourceId,
+        organisationId: document.organisationId,
+        templateKind: document.kind as RenderedDocumentSource["templateKind"],
+        templateId: document.templateId,
+        templateVersion: document.templateVersion,
+        templateVersionId: document.templateVersionId,
+      },
+    }),
+    signaturePlacement: renderedPdf.signaturePlacement ?? null,
+  };
+
+  await client.renderedDocument.update({
+    where: { id: document.id },
+    data: {
+      pdfUrl: upload.url,
+      pdf: pdfSnapshot as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  return {
+    pdf: renderedPdf.pdf,
+    filename: `${document.kind.toLowerCase().replaceAll("_", "-")}-${document.id}.pdf`,
+    contentType: "application/pdf",
+  };
 };
 
 export {
@@ -220,6 +387,66 @@ export const getPersistedRenderedDocument = async (
   return normalizePersistedRenderedDocument(document);
 };
 
+export const getPersistedRenderedDocumentPdf = async (
+  renderedDocumentId: string,
+  organisationId?: string,
+  client: RenderedDocumentWriteClient = renderedDocumentClient,
+): Promise<RenderedDocumentPdfResult> => {
+  const document = await getPersistedRenderedDocument(
+    renderedDocumentId,
+    organisationId,
+    client,
+  );
+
+  if (document.pdfUrl) {
+    return {
+      pdf: await downloadPdfBuffer(document.pdfUrl),
+      filename: `${document.kind.toLowerCase().replaceAll("_", "-")}-${document.id}.pdf`,
+      contentType: "application/pdf",
+    };
+  }
+
+  if (document.sourceKind === "CLINICAL_ARTIFACT") {
+    throw new RenderedDocumentServiceError(
+      "Rendered clinical document PDF is not available yet",
+      409,
+    );
+  }
+
+  const renderedPdf = await renderRenderedDocumentPdfWithMetadata({
+    title: document.title,
+    source: {
+      sourceKind: document.sourceKind,
+      sourceId: document.sourceId,
+      organisationId: document.organisationId,
+      templateKind: document.kind as RenderedDocumentSource["templateKind"],
+      templateId: document.templateId,
+      templateVersion: document.templateVersion,
+      templateVersionId: document.templateVersionId,
+    },
+  });
+
+  return {
+    pdf: renderedPdf.pdf,
+    filename: `${document.kind.toLowerCase().replaceAll("_", "-")}-${document.id}.pdf`,
+    contentType: "application/pdf",
+  };
+};
+
+export const rerenderPersistedClinicalRenderedDocumentPdf = async (
+  renderedDocumentId: string,
+  organisationId?: string,
+  client: RenderedDocumentWriteClient = renderedDocumentClient,
+): Promise<RenderedDocumentPdfResult> => {
+  const document = await getPersistedRenderedDocument(
+    renderedDocumentId,
+    organisationId,
+    client,
+  );
+
+  return rerenderAndPersistClinicalRenderedDocumentPdf(document, client);
+};
+
 export const signPersistedRenderedDocument = async (
   input: PersistRenderedDocumentSignatureInput,
   client: RenderedDocumentWriteClient = renderedDocumentClient,
@@ -265,31 +492,23 @@ export const signPersistedRenderedDocument = async (
     );
   }
 
-  const renderedPdf = await renderRenderedDocumentPdfWithMetadata({
-    title: existing.title,
-    source: {
-      sourceKind: existing.sourceKind,
-      sourceId: existing.sourceId,
-      organisationId: existing.organisationId,
-      templateKind: existing.kind as RenderedDocumentKind,
-      templateId: existing.templateId,
-      templateVersion: existing.templateVersion,
-      templateVersionId: existing.templateVersionId,
-    },
-  });
-  const renderedPdfSnapshot = buildRenderedDocumentPdfSnapshot({
-    title: existing.title,
-    kind,
-    source: {
-      sourceKind: existing.sourceKind,
-      sourceId: existing.sourceId,
-      organisationId: existing.organisationId,
-      templateKind: existing.kind as RenderedDocumentKind,
-      templateId: existing.templateId,
-      templateVersion: existing.templateVersion,
-      templateVersionId: existing.templateVersionId,
-    },
-  });
+  const renderedPdf = await resolvePersistedRenderedDocumentPdf(existing);
+  const renderedPdfSnapshot = {
+    ...buildRenderedDocumentPdfSnapshot({
+      title: existing.title,
+      kind,
+      source: {
+        sourceKind: existing.sourceKind,
+        sourceId: existing.sourceId,
+        organisationId: existing.organisationId,
+        templateKind: existing.kind as RenderedDocumentKind,
+        templateId: existing.templateId,
+        templateVersion: existing.templateVersion,
+        templateVersionId: existing.templateVersionId,
+      },
+    }),
+    signaturePlacement: renderedPdf.signaturePlacement ?? null,
+  };
 
   const doc = await DocumensoService.createDocument({
     pdf: renderedPdf.pdf,

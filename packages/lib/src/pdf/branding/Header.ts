@@ -1,69 +1,38 @@
-import fs from 'node:fs';
-import axios from 'axios';
 import type { PdfContext } from '../PdfContext.js';
+import { PDF_COLORS, PDF_FONT_SIZES, PDF_LAYOUT } from '../layout.js';
 
 const HEADER_LOGO_SIZE = 44;
 
-const resolveLogoSource = async (logoUrl: string): Promise<string | Buffer | null> => {
-  if (/^https?:\/\//i.test(logoUrl)) {
-    const response = await axios.get<ArrayBuffer>(logoUrl, {
-      responseType: 'arraybuffer',
-    });
-    return Buffer.from(response.data);
-  }
-
-  if (fs.existsSync(logoUrl)) {
-    return logoUrl;
-  }
-
-  return null;
-};
-
-export const renderHeader = async (ctx: PdfContext): Promise<void> => {
+export const renderHeader = (ctx: PdfContext): void => {
   const { document } = ctx;
-  const top = 18;
-  const logoX = ctx.contentLeft;
-  const logoY = top;
+  const logoX = PDF_LAYOUT.headerLogo.x;
+  const logoY = PDF_LAYOUT.headerLogo.y;
   const textX = logoX + HEADER_LOGO_SIZE + 14;
-  const rightX = ctx.contentRight;
+  const rightX = ctx.pageWidth - PDF_LAYOUT.marginX;
 
   document.save();
 
-  if (ctx.organization.logoUrl) {
-    try {
-      const source = await resolveLogoSource(ctx.organization.logoUrl);
-      if (source) {
-        document.image(source, logoX, logoY, {
-          fit: [HEADER_LOGO_SIZE, HEADER_LOGO_SIZE],
-        });
-      } else {
-        document
-          .lineWidth(1)
-          .strokeColor(ctx.theme.colors.border)
-          .rect(logoX, logoY, HEADER_LOGO_SIZE, HEADER_LOGO_SIZE)
-          .stroke();
-      }
-    } catch {
-      document
-        .lineWidth(1)
-        .strokeColor(ctx.theme.colors.border)
-        .rect(logoX, logoY, HEADER_LOGO_SIZE, HEADER_LOGO_SIZE)
-        .stroke();
-    }
+  if (ctx.logoSource) {
+    document.image(ctx.logoSource, logoX, logoY, {
+      fit: [HEADER_LOGO_SIZE, HEADER_LOGO_SIZE],
+      align: 'center',
+      valign: 'center',
+    });
   } else {
     document
       .lineWidth(1)
-      .strokeColor(ctx.theme.colors.border)
+      .strokeColor(PDF_COLORS.border)
+      .fillColor(PDF_COLORS.panel)
       .rect(logoX, logoY, HEADER_LOGO_SIZE, HEADER_LOGO_SIZE)
-      .stroke();
+      .fillAndStroke(PDF_COLORS.panel, PDF_COLORS.border);
   }
 
   document
-    .fillColor(ctx.theme.colors.brandDark)
+    .fillColor(PDF_COLORS.text)
     .font(ctx.theme.fonts.bold)
-    .fontSize(14)
-    .text(ctx.organization.name, textX, logoY + 1, {
-      width: ctx.contentWidth - HEADER_LOGO_SIZE - 160,
+    .fontSize(PDF_FONT_SIZES.headerOrg)
+    .text(ctx.organization.name, textX, PDF_LAYOUT.headerOrgY, {
+      width: ctx.pageWidth - PDF_LAYOUT.marginX * 2 - HEADER_LOGO_SIZE - 160,
       ellipsis: true,
     });
 
@@ -72,11 +41,11 @@ export const renderHeader = async (ctx: PdfContext): Promise<void> => {
   );
 
   document
-    .fillColor(ctx.theme.colors.muted)
+    .fillColor(PDF_COLORS.muted)
     .font(ctx.theme.fonts.regular)
-    .fontSize(9)
-    .text(addressLines.join('\n'), textX, logoY + 20, {
-      width: ctx.contentWidth - HEADER_LOGO_SIZE - 160,
+    .fontSize(PDF_FONT_SIZES.headerContact)
+    .text(addressLines.join('\n'), textX, PDF_LAYOUT.headerOrgY + 17, {
+      width: ctx.pageWidth - PDF_LAYOUT.marginX * 2 - HEADER_LOGO_SIZE - 160,
       lineGap: 2,
     });
 
@@ -87,19 +56,19 @@ export const renderHeader = async (ctx: PdfContext): Promise<void> => {
 
   document
     .font(ctx.theme.fonts.regular)
-    .fontSize(9)
-    .fillColor(ctx.theme.colors.text)
-    .text(contactLines.join('\n'), rightX - 150, logoY + 2, {
-      width: 150,
+    .fontSize(PDF_FONT_SIZES.headerContact)
+    .fillColor(PDF_COLORS.text)
+    .text(contactLines.join('\n'), PDF_LAYOUT.headerContactX, PDF_LAYOUT.headerContactY + 2, {
+      width: rightX - PDF_LAYOUT.headerContactX,
       align: 'right',
       lineGap: 2,
     });
 
   document
-    .moveTo(ctx.contentLeft, ctx.headerHeight - 2)
-    .lineTo(ctx.contentRight, ctx.headerHeight - 2)
+    .moveTo(PDF_LAYOUT.marginX, PDF_LAYOUT.headerSeparatorY)
+    .lineTo(ctx.pageWidth - PDF_LAYOUT.marginX, PDF_LAYOUT.headerSeparatorY)
     .lineWidth(1)
-    .strokeColor(ctx.theme.colors.border)
+    .strokeColor(PDF_COLORS.border)
     .stroke();
 
   document.restore();

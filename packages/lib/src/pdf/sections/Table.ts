@@ -1,5 +1,6 @@
 import type { PdfContext } from '../PdfContext.js';
 import { ensureSpace } from '../Pagination.js';
+import { PDF_COLORS, PDF_FONT_SIZES, PDF_SPACING } from '../layout.js';
 import type { TableRenderInput } from '../types.js';
 import { wrapText } from './Text.js';
 
@@ -23,7 +24,7 @@ export const renderTable = (ctx: PdfContext, input: TableRenderInput): void => {
   const headerHeight = input.headerHeight ?? 24;
   const rowPaddingY = ctx.theme.spacing.tableCellPaddingY;
   const rowPaddingX = ctx.theme.spacing.tableCellPaddingX;
-  const bodyFontSize = ctx.theme.fontSizes.small;
+  const bodyFontSize = PDF_FONT_SIZES.body;
   const minRowHeight = input.rowHeight ?? 28;
 
   const drawHeader = (): number => {
@@ -31,21 +32,18 @@ export const renderTable = (ctx: PdfContext, input: TableRenderInput): void => {
     const y = ctx.cursorY;
 
     ctx.document.save();
-    ctx.document
-      .lineWidth(0.75)
-      .strokeColor(ctx.theme.colors.border)
-      .fillColor(ctx.theme.colors.panel);
+    ctx.document.lineWidth(0.75).strokeColor(PDF_COLORS.border).fillColor(PDF_COLORS.panel);
 
     let x = ctx.contentLeft;
     input.columns.forEach((column, index) => {
       const width = columnWidths[index];
       ctx.document
         .rect(x, y, width, headerHeight)
-        .fillAndStroke(ctx.theme.colors.panel, ctx.theme.colors.border);
+        .fillAndStroke(PDF_COLORS.panel, PDF_COLORS.border);
       ctx.document
         .font(ctx.theme.fonts.bold)
-        .fontSize(ctx.theme.fontSizes.small)
-        .fillColor(ctx.theme.colors.brandDark)
+        .fontSize(PDF_FONT_SIZES.small)
+        .fillColor(PDF_COLORS.text)
         .text(column.header, x + rowPaddingX, y + 7, {
           width: width - rowPaddingX * 2,
           align: column.align ?? 'left',
@@ -79,7 +77,7 @@ export const renderTable = (ctx: PdfContext, input: TableRenderInput): void => {
     let x = ctx.contentLeft;
 
     ctx.document.save();
-    ctx.document.lineWidth(0.75).strokeColor(ctx.theme.colors.border);
+    ctx.document.lineWidth(0.75).strokeColor(PDF_COLORS.border);
 
     row.forEach((cell, index) => {
       const width = columnWidths[index];
@@ -87,7 +85,7 @@ export const renderTable = (ctx: PdfContext, input: TableRenderInput): void => {
       ctx.document
         .font(ctx.theme.fonts.regular)
         .fontSize(bodyFontSize)
-        .fillColor(ctx.theme.colors.text)
+        .fillColor(PDF_COLORS.text)
         .text(cell, x + rowPaddingX, y + rowPaddingY, {
           width: width - rowPaddingX * 2,
           align: input.columns[index]?.align ?? 'left',

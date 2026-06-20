@@ -1,11 +1,12 @@
 import type { PdfContext } from '../PdfContext.js';
 import { ensureSpace } from '../Pagination.js';
+import { PDF_COLORS, PDF_FONT_SIZES, PDF_SPACING } from '../layout.js';
 import { measureWrappedText, wrapText } from './Text.js';
 
 export const renderBulletList = (ctx: PdfContext, items: string[]): void => {
   const bulletGap = 12;
   const textWidth = ctx.contentWidth - bulletGap;
-  const fontSize = ctx.theme.fontSizes.body;
+  const fontSize = PDF_FONT_SIZES.body;
   const lineHeight = Math.ceil(fontSize * 1.35 + 2);
 
   for (const item of items) {
@@ -16,11 +17,7 @@ export const renderBulletList = (ctx: PdfContext, items: string[]): void => {
     );
     ensureSpace(ctx, estimatedHeight);
 
-    ctx.document
-      .save()
-      .font(ctx.theme.fonts.regular)
-      .fontSize(fontSize)
-      .fillColor(ctx.theme.colors.text);
+    ctx.document.save().font(ctx.theme.fonts.regular).fontSize(fontSize).fillColor(PDF_COLORS.text);
 
     lines.forEach((line, index) => {
       const y = ctx.cursorY;
@@ -37,6 +34,6 @@ export const renderBulletList = (ctx: PdfContext, items: string[]): void => {
     });
 
     ctx.document.restore();
-    ctx.moveDown(ctx.theme.spacing.itemGap);
+    ctx.moveDown(PDF_SPACING.itemGap);
   }
 };

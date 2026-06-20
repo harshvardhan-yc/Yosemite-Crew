@@ -2023,6 +2023,7 @@ model SoapNote {
 model Prescription {
   id              String           @id @default(uuid())
   artifactId      String           @unique
+  items           PrescriptionItem[]
   medications     Json?
   instructions    Json?
   notes           Json?
@@ -2033,6 +2034,25 @@ model Prescription {
   artifact        ClinicalArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
 
   @@index([artifactId])
+}
+
+model PrescriptionItem {
+  id             String       @id @default(uuid())
+  prescriptionId String
+  medication     String
+  strength       String?
+  dosage         String?
+  frequency      String?
+  duration       String?
+  quantity       String?
+  instructions   String?
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId, sortOrder])
 }
 
 model DischargeSummary {

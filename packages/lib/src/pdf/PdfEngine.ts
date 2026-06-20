@@ -1,4 +1,8 @@
+import fs from 'node:fs';
+import axios from 'axios';
 import PDFDocument from 'pdfkit';
+import { registerPdfFonts, type PdfFontFamilies } from './fonts.js';
+import { PDF_COLORS, PDF_FONT_SIZES, PDF_LAYOUT, PDF_PAGE_SIZE, PDF_SPACING } from './layout.js';
 import { renderFooter } from './branding/Footer.js';
 import { renderHeader } from './branding/Header.js';
 import { PdfContext } from './PdfContext.js';
@@ -14,47 +18,44 @@ import { renderDischargeSummaryTemplate } from './templates/DischargeSummaryTemp
 import { renderInvoiceTemplate } from './templates/InvoiceTemplate.js';
 import { renderPrescriptionTemplate } from './templates/PrescriptionTemplate.js';
 import { renderSoapNoteTemplate } from './templates/SoapNoteTemplate.js';
+import { renderVitalRecordTemplate } from './templates/VitalRecordTemplate.js';
 
-const THEME: PdfTheme = {
+const buildTheme = (fonts: PdfFontFamilies): PdfTheme => ({
   colors: {
-    brand: '#0F766E',
-    brandDark: '#134E4A',
-    text: '#1F2937',
-    muted: '#6B7280',
-    border: '#D1D5DB',
-    panel: '#F9FAFB',
-    success: '#16A34A',
+    brand: PDF_COLORS.brand,
+    brandDark: PDF_COLORS.brandDark,
+    text: PDF_COLORS.text,
+    muted: PDF_COLORS.muted,
+    border: PDF_COLORS.border,
+    panel: PDF_COLORS.panel,
+    success: PDF_COLORS.success,
   },
-  fonts: {
-    regular: 'Helvetica',
-    bold: 'Helvetica-Bold',
-    italic: 'Helvetica-Oblique',
-  },
+  fonts,
   fontSizes: {
-    title: 18,
-    sectionTitle: 11.5,
-    subtitle: 10,
-    body: 10.5,
-    small: 9,
+    title: PDF_FONT_SIZES.title,
+    sectionTitle: PDF_FONT_SIZES.sectionTitle,
+    subtitle: PDF_FONT_SIZES.small,
+    body: PDF_FONT_SIZES.body,
+    small: PDF_FONT_SIZES.small,
     tiny: 7.5,
   },
   spacing: {
-    pageMarginX: 42,
-    headerHeight: 92,
-    footerHeight: 66,
-    contentTopGap: 14,
-    contentBottomGap: 16,
-    sectionGap: 10,
-    paragraphGap: 8,
-    itemGap: 8,
-    tableCellPaddingX: 8,
-    tableCellPaddingY: 7,
+    pageMarginX: PDF_LAYOUT.marginX,
+    headerHeight: PDF_LAYOUT.headerSeparatorY,
+    footerHeight: PDF_PAGE_SIZE.height - PDF_LAYOUT.footerSeparatorY,
+    contentTopGap: PDF_SPACING.contentTopGap,
+    contentBottomGap: PDF_SPACING.contentBottomGap,
+    sectionGap: PDF_SPACING.sectionGap,
+    paragraphGap: PDF_SPACING.paragraphGap,
+    itemGap: PDF_SPACING.itemGap,
+    tableCellPaddingX: PDF_SPACING.tableCellPaddingX,
+    tableCellPaddingY: PDF_SPACING.tableCellPaddingY,
   },
-};
+});
 
 const createDocument = (): PdfDocumentInstance =>
   new PDFDocument({
-    size: 'A4',
+    size: [PDF_PAGE_SIZE.width, PDF_PAGE_SIZE.height],
     margin: 0,
     autoFirstPage: true,
     bufferPages: true,
@@ -89,6 +90,33 @@ const collectPdfBuffer = (
   };
 };
 
+const resolveLogoSource = async (logoUrl?: string | null): Promise<string | Buffer | null> => {
+  if (!logoUrl) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(logoUrl)) {
+    const response = await axios.get<ArrayBuffer>(logoUrl, {
+      responseType: 'arraybuffer',
+    });
+    return Buffer.from(response.data);
+  }
+
+  if (fs.existsSync(logoUrl)) {
+    return logoUrl;
+  }
+
+  return null;
+};
+
+const resolveThemeAndFonts = (document: PdfDocumentInstance) => {
+  const fonts = registerPdfFonts(document);
+  return {
+    fonts,
+    theme: buildTheme(fonts),
+  };
+};
+
 const renderDocumentByType = <TData extends BaseClinicalDocumentData>(
   ctx: PdfContext,
   documentType: ClinicalDocumentType,
@@ -101,6 +129,8 @@ const renderDocumentByType = <TData extends BaseClinicalDocumentData>(
       return renderSoapNoteTemplate(ctx, data as never);
     case 'PRESCRIPTION':
       return renderPrescriptionTemplate(ctx, data as never);
+    case 'VITAL_RECORD':
+      return renderVitalRecordTemplate(ctx, data as never);
     case 'INVOICE':
       return renderInvoiceTemplate(ctx, data as never);
     default: {
@@ -114,16 +144,20 @@ export const generateClinicalPdfWithMetadata = async <TData extends BaseClinical
   input: PdfGenerationInput<TData>
 ): Promise<ClinicalPdfRenderResult> => {
   const document = createDocument();
+  const { fonts, theme } = resolveThemeAndFonts(document);
+  const logoSource = await resolveLogoSource(input.organization.logoUrl ?? null);
   const ctx = new PdfContext({
     document,
     organization: input.organization,
-    theme: THEME,
+    theme,
+    fonts,
+    logoSource,
   });
 
   const output = collectPdfBuffer(document);
 
   try {
-    await renderHeader(ctx);
+    renderHeader(ctx);
     const signaturePlacement = renderDocumentByType(ctx, input.documentType, input.data);
 
     const pageRange = document.bufferedPageRange();
@@ -131,7 +165,6 @@ export const generateClinicalPdfWithMetadata = async <TData extends BaseClinical
       document.switchToPage(index);
       renderFooter(ctx, index + 1, pageRange.count, ctx.generatedAt);
     }
-
     document.end();
 
     const pdf = await output.promise;
@@ -156,10 +189,18 @@ export const createClinicalPdfContext = (
   document: PdfDocumentInstance,
   organization: PdfGenerationInput['organization']
 ): PdfContext =>
-  new PdfContext({
-    document,
-    organization,
-    theme: THEME,
-  });
+  (() => {
+    const { fonts, theme } = resolveThemeAndFonts(document);
+    return new PdfContext({
+      document,
+      organization,
+      theme,
+      fonts,
+    });
+  })();
 
-export const clinicalPdfTheme = THEME;
+export const clinicalPdfTheme = buildTheme({
+  regular: 'Helvetica',
+  bold: 'Helvetica-Bold',
+  italic: 'Helvetica-Oblique',
+});

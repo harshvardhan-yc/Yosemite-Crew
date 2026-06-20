@@ -1,24 +1,11 @@
-import PDFDocument from 'pdfkit';
-import { renderFooter } from './branding/Footer.js';
-import { renderHeader } from './branding/Header.js';
-import { PdfContext } from './PdfContext.js';
-import type { PdfDocumentInstance } from './PdfContext.js';
-import { ensureSpace } from './Pagination.js';
-import { renderDocumentEndBlock } from './sections/DocumentEndBlock.js';
-import { renderBulletList } from './sections/BulletList.js';
-import {
-  renderDocumentTitle,
-  renderParagraph,
-  renderSectionTitle,
-  renderSpacer,
-  renderSubTitle,
-} from './sections/Text.js';
-import { renderTable } from './sections/Table.js';
+import { generatePdfWithMetadata } from './GenericPdfEngine.js';
+import { buildKeyValue } from './templates/shared.js';
 import type {
   ClinicalPdfRenderResult,
-  DocumentSignature,
-  OrganizationBranding,
-  PdfTheme,
+  GeneratePdfInput,
+  KeyValueItem,
+  PdfSectionContent,
+  PdfSectionDefinition,
 } from './types.js';
 
 type TemplateFieldDefinitionLike = {
@@ -64,85 +51,13 @@ type ResolvedTemplateLike = {
   [key: string]: unknown;
 };
 
-type ResolvedTemplatePdfInput = {
-  organization: OrganizationBranding;
+export type ResolvedTemplatePdfInput = {
+  organization: GeneratePdfInput['organization'];
   template: ResolvedTemplateLike;
   data: Record<string, unknown>;
   title?: string;
   printedBy?: string;
-  signature?: DocumentSignature;
-};
-
-const createDocument = (): PdfDocumentInstance =>
-  new PDFDocument({
-    size: 'A4',
-    margin: 0,
-    autoFirstPage: true,
-    bufferPages: true,
-  }) as PdfDocumentInstance;
-
-const THEME: PdfTheme = {
-  colors: {
-    brand: '#0F766E',
-    brandDark: '#134E4A',
-    text: '#1F2937',
-    muted: '#6B7280',
-    border: '#D1D5DB',
-    panel: '#F9FAFB',
-    success: '#16A34A',
-  },
-  fonts: {
-    regular: 'Helvetica',
-    bold: 'Helvetica-Bold',
-    italic: 'Helvetica-Oblique',
-  },
-  fontSizes: {
-    title: 18,
-    sectionTitle: 11.5,
-    subtitle: 10,
-    body: 10.5,
-    small: 9,
-    tiny: 7.5,
-  },
-  spacing: {
-    pageMarginX: 42,
-    headerHeight: 92,
-    footerHeight: 66,
-    contentTopGap: 14,
-    contentBottomGap: 16,
-    sectionGap: 10,
-    paragraphGap: 8,
-    itemGap: 8,
-    tableCellPaddingX: 8,
-    tableCellPaddingY: 7,
-  },
-};
-
-const collectPdfBuffer = (
-  document: PdfDocumentInstance
-): {
-  promise: Promise<Buffer>;
-  reject: (error: Error) => void;
-} => {
-  const chunks: Buffer[] = [];
-  let rejectFn: ((error: Error) => void) | undefined;
-
-  const promise = new Promise<Buffer>((resolve, reject) => {
-    rejectFn = reject;
-
-    document.on('data', (chunk: Buffer | Uint8Array | string) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    });
-    document.on('end', () => resolve(Buffer.concat(chunks)));
-    document.on('error', reject);
-  });
-
-  return {
-    promise,
-    reject: (error: Error) => {
-      rejectFn?.(error);
-    },
-  };
+  signature?: GeneratePdfInput['signature'];
 };
 
 const normalizeText = (value: unknown): string => {
@@ -171,14 +86,12 @@ const normalizeText = (value: unknown): string => {
 
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    const commonKeys = ['signerName', 'signerRole', 'signerDegree', 'value', 'label', 'text'];
-    const nested = commonKeys
-      .map((key) => record[key])
-      .map((item) => normalizeText(item))
-      .filter(Boolean);
+    const preferredKeys = ['signerName', 'signerRole', 'signerDegree', 'value', 'label', 'text'];
 
-    if (nested.length > 0) {
-      return nested.join(' ');
+    const preferred = preferredKeys.map((key) => normalizeText(record[key])).filter(Boolean);
+
+    if (preferred.length > 0) {
+      return preferred.join(' ');
     }
 
     try {
@@ -235,159 +148,173 @@ const buildTableRows = (
     columns.map((column) => normalizeText(row[column.header] ?? row[column.header.toLowerCase()]))
   );
 
-const renderTemplateFieldValue = (
-  ctx: PdfContext,
+const buildTemplateMetadata = (template: ResolvedTemplateLike): KeyValueItem[] =>
+  buildKeyValue([
+    ['Template Name', template.name],
+    ['Template Kind', template.kind],
+    ['Template Version', template.templateVersion?.toString()],
+    ['Template ID', template.templateId],
+    ['Template Version ID', template.templateVersionId],
+    ['Source', template.source],
+    ['Owner User ID', template.ownerUserId ?? undefined],
+    ['Reason', template.reason],
+    ['Applies To', normalizeText(template.appliesTo)],
+  ]);
+
+const buildFieldParagraph = (label: string, value: unknown): string =>
+  `${label}: ${normalizeText(value) || '—'}`;
+
+const buildFieldContent = (
   field: TemplateFieldDefinitionLike,
   value: unknown
-): void => {
-  if (value === undefined || value === null || value === '') {
-    renderParagraph(ctx, '—', { fontSize: ctx.theme.fontSizes.body });
-    return;
+): PdfSectionContent[] => {
+  const label = field.label.trim();
+  const normalized = normalizeText(value);
+
+  if (field.type === 'date' || field.type === 'datetime') {
+    return [{ type: 'paragraph', text: buildFieldParagraph(label, toDateString(value)) }];
   }
 
-  switch (field.type) {
-    case 'date':
-    case 'datetime':
-      renderParagraph(ctx, toDateString(value), { fontSize: ctx.theme.fontSizes.body });
-      return;
-    case 'boolean':
-      renderParagraph(ctx, value === true ? 'Yes' : 'No', {
-        fontSize: ctx.theme.fontSizes.body,
-      });
-      return;
-    case 'multiSelect':
-      if (Array.isArray(value)) {
-        renderBulletList(ctx, value.map((item) => normalizeText(item)).filter(Boolean));
-        return;
-      }
-      break;
-    case 'table':
-    case 'repeater':
-    case 'vitalRow':
-    case 'medicationLine':
-      if (isObjectArray(value)) {
-        const columns = buildTableColumns(field, value);
-        renderTable(ctx, {
+  if (field.type === 'boolean') {
+    return [
+      {
+        type: 'paragraph',
+        text: buildFieldParagraph(label, value === true ? 'Yes' : 'No'),
+      },
+    ];
+  }
+
+  if (field.type === 'signature') {
+    return [
+      {
+        type: 'paragraph',
+        text: buildFieldParagraph(label, normalized || 'Signed electronically'),
+      },
+    ];
+  }
+
+  if (
+    field.type === 'table' ||
+    field.type === 'repeater' ||
+    field.type === 'vitalRow' ||
+    field.type === 'medicationLine'
+  ) {
+    if (isObjectArray(value)) {
+      const columns = buildTableColumns(field, value);
+      return [
+        { type: 'paragraph', text: `${label}:` },
+        {
+          type: 'table',
           columns,
           rows: buildTableRows(columns, value),
-        });
-        return;
-      }
-      if (Array.isArray(value)) {
-        renderBulletList(ctx, value.map((item) => normalizeText(item)).filter(Boolean));
-        return;
-      }
-      break;
-    case 'signature':
-      renderParagraph(ctx, 'Signed electronically', { fontSize: ctx.theme.fontSizes.body });
-      return;
-    case 'richText':
-    case 'textarea':
-    case 'instructionBlock':
-    case 'assessmentItem':
-    case 'planItem':
-      if (Array.isArray(value)) {
-        renderBulletList(ctx, value.map((item) => normalizeText(item)).filter(Boolean));
-        return;
-      }
-      renderParagraph(ctx, normalizeText(value), { fontSize: ctx.theme.fontSizes.body });
-      return;
-    default:
-      break;
+        },
+      ];
+    }
+
+    if (Array.isArray(value)) {
+      const items = value.map((item) => normalizeText(item)).filter(Boolean);
+      return [
+        { type: 'paragraph', text: `${label}:` },
+        {
+          type: 'bullets',
+          items: items.length ? items : ['—'],
+        },
+      ];
+    }
+
+    return [{ type: 'paragraph', text: buildFieldParagraph(label, normalized) }];
   }
 
-  renderParagraph(ctx, normalizeText(value), { fontSize: ctx.theme.fontSizes.body });
+  if (field.type === 'multiSelect') {
+    if (Array.isArray(value)) {
+      const items = value.map((item) => normalizeText(item)).filter(Boolean);
+      return [
+        { type: 'paragraph', text: `${label}:` },
+        {
+          type: 'bullets',
+          items: items.length ? items : ['—'],
+        },
+      ];
+    }
+  }
+
+  if (
+    field.type === 'richText' ||
+    field.type === 'textarea' ||
+    field.type === 'instructionBlock' ||
+    field.type === 'assessmentItem' ||
+    field.type === 'planItem'
+  ) {
+    if (normalized) {
+      return [
+        { type: 'paragraph', text: `${label}:` },
+        { type: 'richText', runs: normalized },
+      ];
+    }
+
+    return [{ type: 'paragraph', text: buildFieldParagraph(label, '—') }];
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.map((item) => normalizeText(item)).filter(Boolean);
+    return [
+      { type: 'paragraph', text: `${label}:` },
+      {
+        type: 'bullets',
+        items: items.length ? items : ['—'],
+      },
+    ];
+  }
+
+  return [{ type: 'paragraph', text: buildFieldParagraph(label, normalized) }];
 };
 
-const renderTemplateSection = (
-  ctx: PdfContext,
+const buildTemplateSection = (
   section: TemplateSectionLike,
   data: Record<string, unknown>
-): void => {
-  renderSectionTitle(ctx, section.title);
+): PdfSectionDefinition => {
+  const content: PdfSectionContent[] = [];
+  const fields = [...section.fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
   if (section.description) {
-    renderParagraph(ctx, section.description, {
-      fontSize: ctx.theme.fontSizes.small,
-      color: ctx.theme.colors.muted,
+    content.push({
+      type: 'paragraph',
+      text: section.description,
     });
-    renderSpacer(ctx, 4);
   }
 
-  const fields = [...section.fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   for (const field of fields) {
-    ensureSpace(ctx, 36);
-    renderSubTitle(ctx, field.label);
-    renderTemplateFieldValue(ctx, field, data[field.key]);
-    renderSpacer(ctx, 6);
+    content.push(...buildFieldContent(field, data[field.key]));
   }
+
+  return {
+    title: section.title,
+    content,
+  };
 };
 
-const renderResolvedTemplateBody = (
-  ctx: PdfContext,
-  input: ResolvedTemplatePdfInput
-): ClinicalPdfRenderResult['signaturePlacement'] => {
-  const sections = [...input.template.schemaSnapshot.sections].sort(
-    (a, b) => (a.order ?? 0) - (b.order ?? 0)
-  );
+const buildGeneratePdfInput = (input: ResolvedTemplatePdfInput): GeneratePdfInput => {
+  const template = input.template as ResolvedTemplateLike;
+  const metadataGroups = [buildTemplateMetadata(template)];
+  const sections = [...template.schemaSnapshot.sections]
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((section) => buildTemplateSection(section, input.data));
 
-  renderDocumentTitle(ctx, input.title ?? input.template.name);
-  if (input.template.reason) {
-    renderParagraph(ctx, input.template.reason, {
-      fontSize: ctx.theme.fontSizes.small,
-      color: ctx.theme.colors.muted,
-    });
-    renderSpacer(ctx, 6);
-  }
-
-  for (const section of sections) {
-    renderTemplateSection(ctx, section, input.data);
-  }
-
-  renderSpacer(ctx, ctx.theme.spacing.sectionGap);
-  return renderDocumentEndBlock(ctx, {
+  return {
+    documentType: template.kind ?? 'template',
+    title: input.title ?? template.name,
+    organization: input.organization,
+    metadataGroups,
+    sections,
     printedBy: input.printedBy,
     signature: input.signature,
-  });
+  };
 };
 
 export const generateResolvedTemplatePdfWithMetadata = async (
   input: ResolvedTemplatePdfInput
-): Promise<ClinicalPdfRenderResult> => {
-  const document = createDocument();
-  const ctx = new PdfContext({
-    document,
-    organization: input.organization,
-    theme: THEME,
-  });
-  const output = collectPdfBuffer(document);
-
-  try {
-    await renderHeader(ctx);
-    const signaturePlacement = renderResolvedTemplateBody(ctx, input);
-
-    const pageRange = document.bufferedPageRange();
-    for (let index = pageRange.start; index < pageRange.start + pageRange.count; index += 1) {
-      document.switchToPage(index);
-      renderFooter(ctx, index + 1, pageRange.count, ctx.generatedAt);
-    }
-
-    document.end();
-    const pdf = await output.promise;
-
-    return {
-      pdf,
-      pageCount: pageRange.count,
-      signaturePlacement,
-    };
-  } catch (error) {
-    const normalizedError = error instanceof Error ? error : new Error(String(error));
-    output.reject(normalizedError);
-    throw normalizedError;
-  }
-};
+): Promise<ClinicalPdfRenderResult> => generatePdfWithMetadata(buildGeneratePdfInput(input));
 
 export const generateResolvedTemplatePdf = async (
   input: ResolvedTemplatePdfInput
 ): Promise<Buffer> => (await generateResolvedTemplatePdfWithMetadata(input)).pdf;
-
-export type { ResolvedTemplatePdfInput };
