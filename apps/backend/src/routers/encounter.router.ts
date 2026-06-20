@@ -22,7 +22,7 @@ router.patch(
 );
 
 router.post(
-  String.raw`/:id/\$discharge`,
+  "/:id/$discharge",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:edit:any"),
@@ -30,7 +30,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/:id/\$assign-unit`,
+  "/:id/$assign-unit",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:edit:any"),
@@ -38,7 +38,7 @@ router.post(
 );
 
 router.get(
-  String.raw`/:id/\$unit-assignments`,
+  "/:id/$unit-assignments",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:view:any"),
@@ -46,7 +46,7 @@ router.get(
 );
 
 router.get(
-  String.raw`/:id/\$admission-unit-assignments`,
+  "/:id/$admission-unit-assignments",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:view:any"),
@@ -54,7 +54,7 @@ router.get(
 );
 
 router.post(
-  String.raw`/:id/\$start`,
+  "/:id/$start",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:edit:any"),
@@ -62,7 +62,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/:id/\$ready-for-discharge`,
+  "/:id/$ready-for-discharge",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:edit:any"),
@@ -70,7 +70,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/:id/\$undo-ready-for-discharge`,
+  "/:id/$undo-ready-for-discharge",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:edit:any"),
@@ -78,7 +78,7 @@ router.post(
 );
 
 router.get(
-  String.raw`/\$active-inpatients`,
+  "/$active-inpatients",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:view:any"),

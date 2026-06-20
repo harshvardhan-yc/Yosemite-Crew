@@ -6,7 +6,7 @@ import { PrescriptionController } from "src/controllers/web/prescription.control
 const router = Router();
 
 router.post(
-  String.raw`/organisations/:organisationId/:prescriptionId/\$reserve`,
+  "/organisations/:organisationId/:prescriptionId/$reserve",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["prescription:edit:any", "inventory:edit:any"]),
@@ -14,7 +14,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/organisations/:organisationId/:prescriptionId/\$dispense`,
+  "/organisations/:organisationId/:prescriptionId/$dispense",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["prescription:edit:any", "inventory:edit:any"]),
@@ -22,7 +22,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/organisations/:organisationId/:prescriptionId/\$return`,
+  "/organisations/:organisationId/:prescriptionId/$return",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["prescription:edit:any", "inventory:edit:any"]),
@@ -30,7 +30,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/organisations/:organisationId/:prescriptionId/\$void-dispense`,
+  "/organisations/:organisationId/:prescriptionId/$void-dispense",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["prescription:edit:any", "inventory:edit:any"]),

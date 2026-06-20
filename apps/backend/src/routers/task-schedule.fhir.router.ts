@@ -14,7 +14,7 @@ router.get(
 );
 
 router.post(
-  String.raw`/organisation/:organisationId/template-instance/:instanceId/\$apply`,
+  "/organisation/:organisationId/template-instance/:instanceId/$apply",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["tasks:edit:any", "tasks:edit:own"]),
@@ -22,7 +22,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/organisation/:organisationId/template-instance/:instanceId/\$pause`,
+  "/organisation/:organisationId/template-instance/:instanceId/$pause",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["tasks:edit:any", "tasks:edit:own"]),
@@ -30,7 +30,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/organisation/:organisationId/template-instance/:instanceId/\$resume`,
+  "/organisation/:organisationId/template-instance/:instanceId/$resume",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["tasks:edit:any", "tasks:edit:own"]),
@@ -38,7 +38,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/organisation/:organisationId/template-instance/:instanceId/\$cancel`,
+  "/organisation/:organisationId/template-instance/:instanceId/$cancel",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["tasks:edit:any", "tasks:edit:own"]),
@@ -46,7 +46,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/organisation/:organisationId/template-instance/:instanceId/\$regenerate`,
+  "/organisation/:organisationId/template-instance/:instanceId/$regenerate",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["tasks:edit:any", "tasks:edit:own"]),
