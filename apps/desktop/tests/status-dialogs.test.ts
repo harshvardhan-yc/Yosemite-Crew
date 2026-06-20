@@ -189,6 +189,15 @@ describe('status dialogs — uninitialized / edge branches', () => {
     expect(deps.dialog.showMessageBox).toHaveBeenCalled();
   });
 
+  test('generateDeaReportAction aborts when the format picker Cancel is chosen', () => {
+    const dialog = baseDialog();
+    // Index past the three formats = the appended "Cancel" button.
+    dialog.showMessageBoxSync = jest.fn(() => 3);
+    const deps = makeDeps({ dialog: dialog as never }); // default deaTracker has a registration
+    createStatusDialogService(deps).generateDeaReportAction();
+    expect(deps.logger.info).not.toHaveBeenCalledWith('dea_report_saved', expect.any(Object));
+  });
+
   test('savePageAsPdf no-ops without a window and handles cancel', async () => {
     const noWin = makeDeps({ mainWindow: null });
     await createStatusDialogService(noWin).savePageAsPdf();

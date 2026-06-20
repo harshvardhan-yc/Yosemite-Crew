@@ -86,11 +86,13 @@ export const createPinWindowManager = (deps: PinWindowDeps): PinWindowManager =>
   return { pin, close, closeAll, list, has };
 };
 
+const DEFAULT_PIN_SIZE = { width: 440, height: 720 };
+
 // Pure helper: a floating reference panel anchored to the top-right of the given
 // work area, clamped to the area so it never spawns off-screen.
 export const pinWindowBounds = (
   area: { x: number; y: number; width: number; height: number },
-  size: { width: number; height: number } = { width: 440, height: 720 }
+  size: { width: number; height: number } = DEFAULT_PIN_SIZE
 ): { x: number; y: number; width: number; height: number } => {
   const margin = 24;
   const width = Math.min(size.width, area.width);
