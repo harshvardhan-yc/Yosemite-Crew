@@ -423,6 +423,25 @@ const enterTabMode = (initialUrl: string): void => {
   saveSession();
 };
 
+// A WebContentsView added to a not-yet-shown window does not paint until it is
+// re-laid-out, so a restored/active tab would otherwise sit transparent over the
+// loading splash forever. Re-attach + re-layout the active tab once the window is
+// actually visible. Needed on cold start (restored session) AND on macOS dock
+// reopen — both create the window hidden, then show it asynchronously.
+const repaintActiveTabOnShow = (): void => {
+  if (!mainWindow || mainWindow.isVisible()) return;
+  mainWindow.once('show', () => {
+    if (attachedTabId && tabViewHost && mainWindow && !mainWindow.isDestroyed()) {
+      const activeView = tabViewHost.get(attachedTabId);
+      if (activeView) {
+        mainWindow.contentView.removeChildView(activeView);
+        mainWindow.contentView.addChildView(activeView);
+      }
+    }
+    layoutTabChrome();
+  });
+};
+
 // Make `id` the active tab: swap the content view and re-layout.
 const detachContentView = (id: string): void => {
   if (!tabViewHost || !mainWindow || mainWindow.isDestroyed()) return;
@@ -1612,24 +1631,7 @@ if (gotSingleInstanceLock) {
       // it must run here (not inside createMainWindow) to actually take effect.
       if (pendingTabModeUrl) {
         enterTabMode(pendingTabModeUrl);
-        // Restored tab views are created/attached here while the window is still
-        // hidden (createMainWindow shows it asynchronously via ensureVisible). A
-        // WebContentsView added to a not-yet-shown window does not paint until it
-        // is re-laid-out, so restored tabs would otherwise sit transparent over
-        // the loading page forever. Re-attach + re-layout the active tab once the
-        // window is actually visible so it renders.
-        if (mainWindow && !mainWindow.isVisible()) {
-          mainWindow.once('show', () => {
-            if (attachedTabId && tabViewHost && mainWindow && !mainWindow.isDestroyed()) {
-              const activeView = tabViewHost.get(attachedTabId);
-              if (activeView) {
-                mainWindow.contentView.removeChildView(activeView);
-                mainWindow.contentView.addChildView(activeView);
-              }
-            }
-            layoutTabChrome();
-          });
-        }
+        repaintActiveTabOnShow();
       }
       tray = setupTray({
         productName: PRODUCT_NAME,
@@ -1819,7 +1821,13 @@ if (gotSingleInstanceLock) {
         tabViewHost = output.tabViewHost;
         saveSession = output.saveSession;
         coldStartWatchdog = output.coldStartWatchdog;
-        if (output.enterTabModeUrl) enterTabMode(output.enterTabModeUrl);
+        if (output.enterTabModeUrl) {
+          enterTabMode(output.enterTabModeUrl);
+          // Same hidden-window repaint fix as cold start: the reopened window is
+          // created hidden and shown async, so the restored tab must be re-laid-out
+          // on show or it stays stuck behind the loading splash.
+          repaintActiveTabOnShow();
+        }
       });
     }
   });
