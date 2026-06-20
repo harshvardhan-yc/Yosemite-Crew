@@ -2,6 +2,7 @@ import {
   Prisma,
   RenderedDocumentSourceKind as PrismaRenderedDocumentSourceKind,
 } from "@prisma/client";
+import AWS from "aws-sdk";
 import axios from "axios";
 import {
   buildDocumentSignature as buildDocumentSignatureContract,
@@ -72,6 +73,23 @@ export type RenderedDocumentPdfResult = {
 
 const renderedDocumentClient = prisma as unknown as RenderedDocumentWriteClient;
 
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
+});
+
+const getBucketName = (): string => {
+  const bucket = process.env.AWS_S3_BUCKET_NAME;
+  if (!bucket) {
+    throw new RenderedDocumentServiceError(
+      "AWS_S3_BUCKET_NAME is not defined",
+      500,
+    );
+  }
+  return bucket;
+};
+
 const translateRenderedDocumentContractError = (
   error: unknown,
 ): RenderedDocumentServiceError => {
@@ -120,6 +138,36 @@ const normalizeRequiredString = (value: string, fieldName: string): string => {
 };
 
 const downloadPdfBuffer = async (url: string): Promise<Buffer> => {
+  try {
+    const parsedUrl = new URL(url);
+    const key = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, ""));
+
+    if (key) {
+      const response = await s3
+        .getObject({
+          Bucket: getBucketName(),
+          Key: key,
+        })
+        .promise();
+
+      if (response.Body) {
+        if (Buffer.isBuffer(response.Body)) {
+          return response.Body;
+        }
+
+        if (response.Body instanceof Uint8Array) {
+          return Buffer.from(response.Body);
+        }
+
+        if (typeof response.Body === "string") {
+          return Buffer.from(response.Body);
+        }
+      }
+    }
+  } catch {
+    // Fall back to direct fetch below. This covers public URLs and non-S3 sources.
+  }
+
   const response = await axios.get<ArrayBuffer>(url, {
     responseType: "arraybuffer",
   });
