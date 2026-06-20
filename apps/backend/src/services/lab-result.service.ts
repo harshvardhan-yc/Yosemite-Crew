@@ -50,10 +50,10 @@ export const LabResultService = {
       const orderIds = orders
         .map((o) => o.idexxOrderId)
         .filter(Boolean) as string[];
-      if (!orderIds.length) {
-        return [];
-      }
-      where.orderId = { in: orderIds };
+      where.OR = [
+        { patientId: params.patientId },
+        ...(orderIds.length ? [{ orderId: { in: orderIds } }] : []),
+      ];
     }
 
     return prisma.labResult.findMany({

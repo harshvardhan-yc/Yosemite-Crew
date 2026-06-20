@@ -288,16 +288,17 @@ export const FinanceController = {
         });
       }
 
-      if (resolved.organisationId) {
-        const invoices = await InvoiceService.listForOrganisation(
+      if (resolved.appointmentId) {
+        const invoices = await InvoiceService.getByAppointmentId(
+          resolved.appointmentId,
           resolved.organisationId,
         );
         return res.status(200).json(toFinanceSuccess(invoices));
       }
 
-      if (resolved.appointmentId) {
-        const invoices = await InvoiceService.getByAppointmentId(
-          resolved.appointmentId,
+      if (resolved.organisationId) {
+        const invoices = await InvoiceService.listForOrganisation(
+          resolved.organisationId,
         );
         return res.status(200).json(toFinanceSuccess(invoices));
       }
