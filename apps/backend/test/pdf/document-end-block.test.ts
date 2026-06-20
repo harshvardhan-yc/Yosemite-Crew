@@ -35,10 +35,10 @@ describe("renderDocumentEndBlock", () => {
 
     expect(placement).toEqual({
       pageNumber: 1,
-      pageX: 355,
-      pageY: 553,
-      width: 220,
-      height: 64,
+      pageX: 59.6639,
+      pageY: 64.0143,
+      width: 36.9748,
+      height: 4.7506,
     });
   });
 });
