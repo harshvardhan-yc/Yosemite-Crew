@@ -56,7 +56,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/soap-note/:soapNoteId/$finalize",
+  String.raw`/organisation/:organisationId/soap-note/:soapNoteId/\$finalize`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
@@ -64,7 +64,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/soap-note/:soapNoteId/$reopen",
+  String.raw`/organisation/:organisationId/soap-note/:soapNoteId/\$reopen`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
@@ -72,7 +72,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/soap-note/:soapNoteId/$amend",
+  String.raw`/organisation/:organisationId/soap-note/:soapNoteId/\$amend`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
@@ -80,7 +80,7 @@ router.post(
 );
 
 router.patch(
-  "/organisation/:organisationId/soap-note/:soapNoteId",
+  String.raw`/organisation/:organisationId/soap-note/:soapNoteId`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
@@ -122,7 +122,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/prescription/:prescriptionId/$finalize",
+  String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$finalize`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["prescription:edit:any"]),
@@ -130,7 +130,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/prescription/:prescriptionId/$reopen",
+  String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$reopen`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["prescription:edit:any"]),
@@ -138,7 +138,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/prescription/:prescriptionId/$amend",
+  String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$amend`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["prescription:edit:any"]),
@@ -184,7 +184,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/discharge-summary/:dischargeSummaryId",
+  String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:view:any"]),
@@ -192,7 +192,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/discharge-summary/:dischargeSummaryId/$finalize",
+  String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId/\$finalize`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
@@ -201,7 +201,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/discharge-summary/:dischargeSummaryId/$reopen",
+  String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId/\$reopen`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
@@ -209,7 +209,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/discharge-summary/:dischargeSummaryId/$amend",
+  String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId/\$amend`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
@@ -259,7 +259,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/vital-record/:vitalRecordId/$finalize",
+  String.raw`/organisation/:organisationId/vital-record/:vitalRecordId/\$finalize`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
@@ -275,7 +275,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/vital-record/:vitalRecordId/$amend",
+  String.raw`/organisation/:organisationId/vital-record/:vitalRecordId/\$amend`,
   authorizeCognito,
   withOrgPermissions(),
   requirePermission(["forms:edit:any"]),
