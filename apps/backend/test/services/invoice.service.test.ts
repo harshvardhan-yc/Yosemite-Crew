@@ -989,7 +989,7 @@ describe("InvoiceService", () => {
     expect((result as { id: string }).id).toBe("inv_6");
   });
 
-  it("uses the package final amount as the invoice line item total", async () => {
+  it("uses the package final amount as the invoice line item total even with multiple billing items", async () => {
     (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
       id: appointmentId,
       organisationId,
@@ -1029,6 +1029,21 @@ describe("InvoiceService", () => {
           isPackageComponent: true,
           packageProductItemId: "pkg_1",
         },
+        {
+          productItemId: "child_2",
+          code: "CH-2",
+          name: "Additional item",
+          kind: "LAB",
+          quantity: 1,
+          currency: "usd",
+          unitPrice: 150,
+          discountPercent: 0,
+          grossAmount: 150,
+          discountAmount: 0,
+          finalAmount: 150,
+          isPackageComponent: true,
+          packageProductItemId: "pkg_1",
+        },
       ],
       includedItems: [],
     });
@@ -1065,6 +1080,7 @@ describe("InvoiceService", () => {
               description: "Wellness Package",
               quantity: 1,
               unitPrice: 325,
+              total: 325,
             }),
           ],
           subtotal: 325,
