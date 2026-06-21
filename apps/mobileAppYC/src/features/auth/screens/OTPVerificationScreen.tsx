@@ -33,9 +33,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   PENDING_PROFILE_STORAGE_KEY,
   PENDING_PROFILE_UPDATED_EVENT,
+  DEV_API_MODE_CHANGED_EVENT,
   AUTH_FEATURE_FLAGS,
+  API_CONFIG,
+  DEVELOPMENT_API_BASE_URL,
 } from '@/config/variables';
 import {storeTokens} from '@/features/auth/services/tokenStorage';
+import {updateApiClientBaseConfig} from '@/shared/services/apiClient';
+import {DEMO_API_MODE_KEY} from '@/features/auth/sessionManager';
 
 const DEFAULT_OTP_LENGTH = 4;
 const RESEND_SECONDS = 60;
@@ -212,6 +217,14 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
 
     setIsVerifying(true);
     try {
+      if (isDemoLogin) {
+        API_CONFIG.baseUrl = DEVELOPMENT_API_BASE_URL;
+        API_CONFIG.pmsBaseUrl = DEVELOPMENT_API_BASE_URL;
+        updateApiClientBaseConfig({baseUrl: DEVELOPMENT_API_BASE_URL});
+        await AsyncStorage.setItem(DEMO_API_MODE_KEY, 'true');
+        DeviceEventEmitter.emit(DEV_API_MODE_CHANGED_EVENT, {isDevApi: true});
+        console.log('[API] Switched to dev API for demo login');
+      }
       const completion = await completePasswordlessSignIn(code.trim());
       const shouldIgnoreCompletion = cancellationRef.current;
       if (shouldIgnoreCompletion) {
@@ -414,8 +427,7 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
 
             {isDemoLogin ? (
               <Text style={styles.resendText}>
-                Need credentials? Use {DEMO_LOGIN_PASSWORD} with the review
-                email you entered.
+                Use the credentials provided by the team.
               </Text>
             ) : (
               <View style={styles.resendContainer}>
