@@ -132,8 +132,34 @@ describe("UserController", () => {
   });
 
   describe("getById", () => {
+    it("returns 401 when auth context is missing", async () => {
+      const req = { params: { id: "user-1" }, userId: undefined } as any;
+      const res = createResponse();
+
+      await UserController.getById(req, res as any);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        message: "Missing user identity from token.",
+      });
+      expect(mockedUserService.getById).not.toHaveBeenCalled();
+    });
+
+    it("returns 403 when requesting another user's record", async () => {
+      const req = { params: { id: "user-1" }, userId: "user-2" } as any;
+      const res = createResponse();
+
+      await UserController.getById(req, res as any);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        message: "You can only access your own user record.",
+      });
+      expect(mockedUserService.getById).not.toHaveBeenCalled();
+    });
+
     it("returns 200 when user found", async () => {
-      const req = { params: { id: "user-1" } } as any;
+      const req = { params: { id: "user-1" }, userId: "user-1" } as any;
       const res = createResponse();
       const user = { id: "user-1", email: "user@example.com", isActive: true };
       mockedUserService.getById.mockResolvedValueOnce(user);
@@ -145,7 +171,7 @@ describe("UserController", () => {
     });
 
     it("returns 404 when user missing", async () => {
-      const req = { params: { id: "missing" } } as any;
+      const req = { params: { id: "missing" }, userId: "missing" } as any;
       const res = createResponse();
       mockedUserService.getById.mockResolvedValueOnce(null);
 
@@ -156,7 +182,7 @@ describe("UserController", () => {
     });
 
     it("maps service errors to HTTP responses", async () => {
-      const req = { params: { id: "" } } as any;
+      const req = { params: { id: "user-1" }, userId: "user-1" } as any;
       const res = createResponse();
       mockedUserService.getById.mockRejectedValueOnce(
         new UserServiceError("User id cannot be empty.", 400),
@@ -171,7 +197,7 @@ describe("UserController", () => {
     });
 
     it("logs unexpected errors and returns 500", async () => {
-      const req = { params: { id: "user-1" } } as any;
+      const req = { params: { id: "user-1" }, userId: "user-1" } as any;
       const res = createResponse();
       const error = new Error("db failure");
       mockedUserService.getById.mockRejectedValueOnce(error);
