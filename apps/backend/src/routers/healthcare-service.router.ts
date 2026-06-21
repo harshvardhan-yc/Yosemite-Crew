@@ -59,7 +59,7 @@ router.get(
 );
 
 router.post(
-  String.raw`/$resolve-selection`,
+  String.raw`/\$resolve-selection`,
   authorizeCognito,
   attachOrganisationIdFromQuery,
   withOrgPermissions(),
@@ -68,7 +68,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/$search-components`,
+  String.raw`/\$search-components`,
   authorizeCognito,
   attachOrganisationIdFromQuery,
   withOrgPermissions(),

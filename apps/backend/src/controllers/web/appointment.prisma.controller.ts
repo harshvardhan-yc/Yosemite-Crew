@@ -272,7 +272,6 @@ export const AppointmentController = {
     res: Response,
   ) => {
     try {
-      logger.info("Admitting appointment");
       const body = admitAppointmentSchema.parse(req.body);
 
       const data = await AppointmentPrismaService.admitAppointmentToInpatient(

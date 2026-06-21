@@ -47,25 +47,25 @@ describe("prescription.router", () => {
   it("exposes prescription action routes", () => {
     expect(
       findRoute(
-        "/organisations/:organisationId/:prescriptionId/$reserve",
+        String.raw`/organisations/:organisationId/:prescriptionId/\$reserve`,
         "post",
       ),
     ).toBeDefined();
     expect(
       findRoute(
-        "/organisations/:organisationId/:prescriptionId/$dispense",
+        String.raw`/organisations/:organisationId/:prescriptionId/\$dispense`,
         "post",
       ),
     ).toBeDefined();
     expect(
       findRoute(
-        "/organisations/:organisationId/:prescriptionId/$return",
+        String.raw`/organisations/:organisationId/:prescriptionId/\$return`,
         "post",
       ),
     ).toBeDefined();
     expect(
       findRoute(
-        "/organisations/:organisationId/:prescriptionId/$void-dispense",
+        String.raw`/organisations/:organisationId/:prescriptionId/\$void-dispense`,
         "post",
       ),
     ).toBeDefined();
@@ -73,7 +73,7 @@ describe("prescription.router", () => {
 
   it("protects routes with auth and permission middleware", () => {
     const route = findRoute(
-      "/organisations/:organisationId/:prescriptionId/$dispense",
+      String.raw`/organisations/:organisationId/:prescriptionId/\$dispense`,
       "post",
     );
 
