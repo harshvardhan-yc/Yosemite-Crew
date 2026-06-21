@@ -355,6 +355,110 @@ describe('appointmentWorkspaceStore', () => {
     expect(enc.pastInvoices.map((invoice) => invoice.id)).toEqual(['finance-inv-1', localId]);
   });
 
+  it('seeds the editable bill from the latest open invoice and hides it from history', () => {
+    seed();
+    getStore().hydrateInvoiceBilling(APPT, {
+      depositCents: 0,
+      pastInvoices: [
+        {
+          id: 'paid-old',
+          createdAt: '2026-05-01T09:00:00Z',
+          totalCents: 4000,
+          outstandingCents: 0,
+          status: 'PAID_FULL',
+          items: [
+            {
+              id: 'paid-line',
+              name: 'Old consult',
+              unitPriceCents: 4000,
+              qty: 1,
+              grossCents: 4000,
+              discountCents: 0,
+              amountCents: 4000,
+            },
+          ],
+        },
+        {
+          id: 'open-draft',
+          createdAt: '2026-06-20T19:18:22Z',
+          totalCents: 20565,
+          outstandingCents: 20565,
+          status: 'UNPAID',
+          items: [
+            {
+              id: 'line-proc',
+              name: 'bookable procedure',
+              unitPriceCents: 1000,
+              qty: 1,
+              grossCents: 1000,
+              discountCents: 0,
+              amountCents: 1000,
+            },
+            {
+              id: 'line-idexx',
+              name: 'IDEXX test 3196',
+              unitPriceCents: 19565,
+              qty: 1,
+              grossCents: 19565,
+              discountCents: 0,
+              amountCents: 19565,
+            },
+          ],
+        },
+      ],
+    });
+
+    const enc = getStore().getEncounter(APPT)!;
+    // Open-draft items now populate the editable bill builder…
+    expect(enc.invoiceLineItems.map((item) => item.name)).toEqual([
+      'bookable procedure',
+      'IDEXX test 3196',
+    ]);
+    // …and the seeded invoice is removed from the read-only Invoices breakdown,
+    // while the paid invoice stays in history.
+    expect(enc.pastInvoices.map((invoice) => invoice.id)).toEqual(['paid-old']);
+  });
+
+  it('does not reseed the bill when line items already exist', () => {
+    seed();
+    getStore().addInvoiceLineItem(APPT, {
+      name: 'Manual line',
+      unitPriceCents: 500,
+      qty: 1,
+      grossCents: 500,
+      discountCents: 0,
+      amountCents: 500,
+    });
+    getStore().hydrateInvoiceBilling(APPT, {
+      depositCents: 0,
+      pastInvoices: [
+        {
+          id: 'open-draft',
+          createdAt: '2026-06-20T19:18:22Z',
+          totalCents: 1000,
+          outstandingCents: 1000,
+          status: 'UNPAID',
+          items: [
+            {
+              id: 'line-proc',
+              name: 'bookable procedure',
+              unitPriceCents: 1000,
+              qty: 1,
+              grossCents: 1000,
+              discountCents: 0,
+              amountCents: 1000,
+            },
+          ],
+        },
+      ],
+    });
+
+    const enc = getStore().getEncounter(APPT)!;
+    expect(enc.invoiceLineItems.map((item) => item.name)).toEqual(['Manual line']);
+    // Untouched: the open invoice stays in history because the bill wasn't seeded.
+    expect(enc.pastInvoices.map((invoice) => invoice.id)).toContain('open-draft');
+  });
+
   it('sets the overall discount percent, clamped to 0–100', () => {
     seed();
     getStore().setOverallDiscountPercent(APPT, 15);

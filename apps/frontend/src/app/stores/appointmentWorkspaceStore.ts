@@ -697,9 +697,27 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       // server invoices by id so a refetch doesn't duplicate rows.
       const serverIds = new Set(billing.pastInvoices.map((invoice) => invoice.id));
       const localOnly = enc.pastInvoices.filter((invoice) => !serverIds.has(invoice.id));
+      // Seed the editable bill builder from the latest still-open (unpaid/partial)
+      // invoice so its line items show in the bill, not only in the read-only
+      // Invoices breakdown. Only seed once, when the builder is empty and editable;
+      // paid invoices stay history-only and never repopulate the builder.
+      const openInvoice = [...billing.pastInvoices]
+        .filter((invoice) => invoice.status !== 'PAID_FULL' && invoice.items.length > 0)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      const shouldSeedBill =
+        !enc.viewOnly && enc.invoiceLineItems.length === 0 && openInvoice !== undefined;
+      const invoiceLineItems = shouldSeedBill
+        ? openInvoice.items.map((item) => ({ ...item }))
+        : enc.invoiceLineItems;
+      // The seeded invoice now lives in the editable builder, so drop it from the
+      // read-only Invoices breakdown to avoid showing the same lines twice.
+      const visiblePastInvoices = shouldSeedBill
+        ? billing.pastInvoices.filter((invoice) => invoice.id !== openInvoice.id)
+        : billing.pastInvoices;
       return {
         ...enc,
-        pastInvoices: [...billing.pastInvoices, ...localOnly],
+        invoiceLineItems,
+        pastInvoices: [...visiblePastInvoices, ...localOnly],
         // The collected deposit is authoritative from finance; fall back to the
         // existing local value when the server reports none.
         depositCents: billing.depositCents > 0 ? billing.depositCents : enc.depositCents,
