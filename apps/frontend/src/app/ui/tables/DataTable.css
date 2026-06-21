@@ -17,7 +17,7 @@
    empty. Each class carries its own min-width = sum of its column px widths. */
 .appointments-table-fixed {
   table-layout: fixed;
-  min-width: 1206px; /* 56+140+120+110+100+110+120+110+130+210 */
+  min-width: 1236px; /* 56+140+120+110+130+110+120+110+130+210 */
 }
 .tasks-table-fixed {
   table-layout: fixed;

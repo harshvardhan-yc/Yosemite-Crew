@@ -218,10 +218,22 @@ const AddInventory = ({
       return;
     }
 
-    setFormData((prev) => ({
-      ...prev,
-      [section]: { ...prev[section], ...patch },
-    }));
+    setFormData((prev) => {
+      const nextSection = { ...prev[section], ...patch };
+      // Changing the category invalidates any previously-picked subcategory, which
+      // belongs to a different category's list — clear it so the dropdown reopens
+      // scoped to the new category.
+      if (
+        'category' in patch &&
+        (prev[section] as Record<string, unknown>)?.category !== patch.category
+      ) {
+        (nextSection as Record<string, unknown>).subCategory = '';
+      }
+      return {
+        ...prev,
+        [section]: nextSection,
+      };
+    });
   };
 
   const validateBasicInfo = (): Partial<Record<keyof typeof formData.basicInfo, string>> => {
@@ -414,44 +426,8 @@ const AddInventory = ({
         <div className="flex items-center justify-between border-b border-card-border pb-4">
           <div className="flex min-w-0 flex-col gap-1">
             <div className="text-body-1 text-text-primary">Add item</div>
-            <div className="text-caption-1 text-text-secondary">
-              Create an inventory item with clinical, stock, batch, pricing, and vendor details.
-            </div>
           </div>
           <Close onClick={() => setShowModal(false)} />
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-body-4-emphasis text-text-primary">Visible in Inventory</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={formData.basicInfo.visibleInInventory !== false}
-            aria-label="Visible in Inventory"
-            onClick={() =>
-              setFormData((prev) => ({
-                ...prev,
-                basicInfo: {
-                  ...prev.basicInfo,
-                  visibleInInventory: prev.basicInfo.visibleInInventory === false,
-                },
-              }))
-            }
-            className="inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors"
-            style={{
-              backgroundColor:
-                formData.basicInfo.visibleInInventory === false
-                  ? 'var(--color-neutral-300)'
-                  : 'var(--color-success-bright)',
-            }}
-          >
-            <span
-              aria-hidden="true"
-              className={`block size-6 rounded-full bg-white shadow-sm transition-transform ${
-                formData.basicInfo.visibleInInventory === false ? 'translate-x-0' : 'translate-x-6'
-              }`}
-            />
-          </button>
         </div>
 
         <Labels
@@ -466,6 +442,46 @@ const AddInventory = ({
             businessType={businessType}
             sectionKey={activeLabel}
             sectionTitle={labels.find((l) => l.key === activeLabel)?.name || 'Section'}
+            headerSlot={
+              activeLabel === 'basicInfo' ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-body-4-emphasis text-text-primary">
+                    Visible in Inventory
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.basicInfo.visibleInInventory !== false}
+                    aria-label="Visible in Inventory"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        basicInfo: {
+                          ...prev.basicInfo,
+                          visibleInInventory: prev.basicInfo.visibleInInventory === false,
+                        },
+                      }))
+                    }
+                    className="inline-flex h-8 w-14 shrink-0 items-center rounded-full p-1 transition-colors"
+                    style={{
+                      backgroundColor:
+                        formData.basicInfo.visibleInInventory === false
+                          ? 'var(--color-neutral-300)'
+                          : 'var(--color-success-bright)',
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`block size-6 rounded-full bg-white shadow-sm transition-transform ${
+                        formData.basicInfo.visibleInInventory === false
+                          ? 'translate-x-0'
+                          : 'translate-x-6'
+                      }`}
+                    />
+                  </button>
+                </div>
+              ) : undefined
+            }
             formData={formData}
             errors={errors}
             onFieldChange={(section, name, value, index) =>

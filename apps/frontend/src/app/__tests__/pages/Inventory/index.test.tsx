@@ -422,6 +422,25 @@ describe('Inventory Page', () => {
     });
   });
 
+  it('removes an active filter chip via its cross button', async () => {
+    render(<ProtectedInventory />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Medicine' }));
+
+    const removeChip = screen.getByRole('button', { name: 'Remove Medicine filter' });
+    expect(removeChip).toBeInTheDocument();
+
+    fireEvent.click(removeChip);
+
+    expect(
+      screen.queryByRole('button', { name: 'Remove Medicine filter' })
+    ).not.toBeInTheDocument();
+    expect((screen.getByRole('checkbox', { name: 'Medicine' }) as HTMLInputElement).checked).toBe(
+      false
+    );
+  });
+
   it('filters inventory by status', async () => {
     render(<ProtectedInventory />);
 

@@ -26,7 +26,7 @@ type DetailsProps = {
   formData: FormsProps;
   setFormData: React.Dispatch<React.SetStateAction<FormsProps>>;
   onNext: () => void;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
   registerValidator?: (fn: () => boolean) => void;
 };
 

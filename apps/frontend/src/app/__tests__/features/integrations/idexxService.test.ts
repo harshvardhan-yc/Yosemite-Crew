@@ -301,20 +301,34 @@ describe('listIdexxOrders', () => {
     );
   });
 
-  it('posts companionId, status, and limit when provided', async () => {
+  it('posts patientId, status, and limit when provided', async () => {
     postDataMock.mockResolvedValue({ data: [] });
     await listIdexxOrders({
       organisationId: 'org-1',
-      companionId: 'comp-1',
+      patientId: 'patient-1',
       status: 'SUBMITTED',
       limit: 10,
     });
     expect(postDataMock).toHaveBeenCalledWith(
       '/v1/labs/pms/organisation/org-1/idexx/orders/search',
       {
-        companionId: 'comp-1',
+        patientId: 'patient-1',
         status: 'SUBMITTED',
         limit: 10,
+      }
+    );
+  });
+
+  it('serializes companionId as patientId for existing callers', async () => {
+    postDataMock.mockResolvedValue({ data: [] });
+    await listIdexxOrders({
+      organisationId: 'org-1',
+      companionId: 'comp-1',
+    });
+    expect(postDataMock).toHaveBeenCalledWith(
+      '/v1/labs/pms/organisation/org-1/idexx/orders/search',
+      {
+        patientId: 'comp-1',
       }
     );
   });
@@ -330,7 +344,7 @@ describe('listIdexxOrders', () => {
       '/v1/labs/pms/organisation/org-1/idexx/orders/search',
       {
         appointmentId: 'appt-1',
-        companionId: 'comp-1',
+        patientId: 'comp-1',
       }
     );
   });

@@ -15,6 +15,7 @@ import {
   getMarginPercent,
 } from '@/app/features/inventory/pages/Inventory/utils';
 import { getInventoryStatusStyle } from '@/app/ui/tables/tableUtils';
+import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 
 import './DataTable.css';
 
@@ -29,6 +30,7 @@ type InventoryTableProps = {
   filteredList: InventoryItem[];
   setActiveInventory: (inventory: InventoryItem) => void;
   setViewInventory: (open: boolean) => void;
+  onView?: (inventory: InventoryItem) => void;
   onRestock?: (inventory: InventoryItem) => void;
 };
 
@@ -52,9 +54,14 @@ const InventoryTable = ({
   filteredList,
   setActiveInventory,
   setViewInventory,
+  onView,
   onRestock,
 }: InventoryTableProps) => {
   const handleViewInventory = (inventory: InventoryItem) => {
+    if (onView) {
+      onView(inventory);
+      return;
+    }
     setActiveInventory(inventory);
     setViewInventory(true);
   };
@@ -159,7 +166,7 @@ const InventoryTable = ({
       width: '76px',
       render: (item: InventoryItem) => (
         <div className="appointment-profile-title">
-          {formatCurrencyValue(item.pricing.purchaseCost)}
+          {formatCurrencyValue(item.pricing.purchaseCost, item.currency)}
         </div>
       ),
     },
@@ -168,7 +175,9 @@ const InventoryTable = ({
       key: 'selling-price',
       width: '82px',
       render: (item: InventoryItem) => (
-        <div className="appointment-profile-title">{formatCurrencyValue(item.pricing.selling)}</div>
+        <div className="appointment-profile-title">
+          {formatCurrencyValue(item.pricing.selling, item.currency)}
+        </div>
       ),
     },
     {
@@ -207,27 +216,31 @@ const InventoryTable = ({
     {
       label: 'Actions',
       key: 'actions',
-      width: '78px',
+      width: '104px',
       render: (item: InventoryItem) => (
         <div className="action-btn-col">
           {onRestock && (
+            <GlassTooltip content="Restock" side="top">
+              <button
+                type="button"
+                onClick={() => onRestock(item)}
+                aria-label={`Restock ${item.basicInfo.name}`}
+                className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+              >
+                <LuPackagePlus size={20} color="var(--color-neutral-900)" />
+              </button>
+            </GlassTooltip>
+          )}
+          <GlassTooltip content="View details" side="top">
             <button
               type="button"
-              onClick={() => onRestock(item)}
-              aria-label={`Restock ${item.basicInfo.name}`}
-              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-9 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+              onClick={() => handleViewInventory(item)}
+              aria-label={`View ${item.basicInfo.name}`}
+              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
             >
-              <LuPackagePlus size={18} color="var(--color-neutral-900)" />
+              <IoEye size={20} color="var(--color-neutral-900)" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => handleViewInventory(item)}
-            aria-label={`View ${item.basicInfo.name}`}
-            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-9 rounded-full! border border-black-text! bg-black-text! flex items-center justify-center cursor-pointer"
-          >
-            <IoEye size={18} color="var(--color-white)" />
-          </button>
+          </GlassTooltip>
         </div>
       ),
     },

@@ -599,6 +599,36 @@ describe('PackageFormDraft', () => {
       expect(screen.getByText('Wellness Pack')).toBeInTheDocument();
     });
 
+    it('blocks adding a second bookable service and warns', () => {
+      render(<PackageFormDraft {...defaultProps} />);
+      const searchInput = screen.getByLabelText('Search catalog items');
+      // Add first bookable service.
+      fireEvent.change(searchInput, { target: { value: 'radiograph' } });
+      fireEvent.click(screen.getByText('Radiographic Consultation'));
+      // Attempt to add a second bookable service.
+      fireEvent.change(searchInput, { target: { value: 'mri' } });
+      fireEvent.click(screen.getByText('MRI Procedure'));
+
+      expect(mockNotify).toHaveBeenCalledWith(
+        'warning',
+        expect.objectContaining({ title: 'Only one bookable service allowed' })
+      );
+      // Only the first bookable item remains in the breakdown.
+      expect(screen.getAllByTestId(/^breakdown-item-/)).toHaveLength(1);
+    });
+
+    it('allows a non-bookable item alongside one bookable service', () => {
+      render(<PackageFormDraft {...defaultProps} />);
+      const searchInput = screen.getByLabelText('Search catalog items');
+      fireEvent.change(searchInput, { target: { value: 'radiograph' } });
+      fireEvent.click(screen.getByText('Radiographic Consultation'));
+      fireEvent.change(searchInput, { target: { value: 'syringe' } });
+      fireEvent.click(screen.getByText('Syringe'));
+
+      expect(mockNotify).not.toHaveBeenCalledWith('warning', expect.anything());
+      expect(screen.getAllByTestId(/^breakdown-item-/)).toHaveLength(2);
+    });
+
     it('excludes the editPackage itself from the combined catalog', () => {
       setupStoreMock([{ id: 'pkg-edit-1', name: 'Self Package', status: 'ACTIVE', breakdown: [] }]);
       render(<PackageFormDraft {...defaultProps} editPackage={mockEditPackage} />);

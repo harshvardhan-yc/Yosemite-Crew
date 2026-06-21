@@ -10,6 +10,13 @@ import { BusinessType } from '@/app/features/organization/types/org';
 jest.mock('@/app/features/inventory/pages/Inventory/utils', () => ({
   formatDisplayDate: jest.fn((val) => (val ? `Formatted ${val}` : '')),
   toStringSafe: jest.fn((val) => (val === null || val === undefined ? '' : String(val))),
+  formatCurrencyValue: jest.fn((val, currency) =>
+    val === undefined || val === null || val === '' ? '—' : `${currency ?? 'USD'} ${val}`
+  ),
+  formatPercentValue: jest.fn((val) => (val === undefined ? '—' : `${val}%`)),
+  getGrossProfitPerUnit: jest.fn(() => 10),
+  getMarginPercent: jest.fn(() => 50),
+  getStockValue: jest.fn(() => 100),
 }));
 
 jest.mock('@/app/features/inventory/components/AddInventory/InventoryConfig', () => ({
@@ -246,6 +253,11 @@ describe('InventoryInfo Component', () => {
     expect(screen.getByTestId('modal')).toBeInTheDocument();
     expect(screen.getByText('Item 1')).toBeInTheDocument();
     expect(screen.getByTestId('primary-btn')).toHaveTextContent('Delete item');
+  });
+
+  it('opens directly on the requested initialSection (Restock → Stock Control)', () => {
+    render(<InventoryInfo {...defaultProps} initialSection="stock" />);
+    expect(screen.getByText('Current Section: stock')).toBeInTheDocument();
   });
 
   it('switches tabs correctly', () => {

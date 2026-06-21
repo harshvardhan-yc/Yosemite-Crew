@@ -53,7 +53,7 @@ type AddFormProps = {
   setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
   initialForm?: FormsProps | null;
   onClose?: () => void;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
   draft?: FormsProps | null;
   onDraftChange?: (draft: FormsProps | null) => void;
 };

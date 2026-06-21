@@ -52,7 +52,7 @@ export type IdexxTestsResponse = {
 };
 
 export type CreateLabOrderPayload = {
-  companionId: string;
+  patientId: string;
   appointmentId?: string;
   tests: string[];
   modality: 'REFERENCE_LAB' | 'INHOUSE' | 'IN_HOUSE';
@@ -113,7 +113,7 @@ export type CensusEntry = {
 };
 
 export type AddCensusPayload = {
-  companionId: string;
+  patientId: string;
   parentId?: string;
   veterinarian?: string;
   ivls?: string[];

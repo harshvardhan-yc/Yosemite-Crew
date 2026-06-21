@@ -26,7 +26,7 @@ type BuildProps = {
   formData: FormsProps;
   setFormData: React.Dispatch<React.SetStateAction<FormsProps>>;
   onNext: () => void;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
   registerValidator?: (fn: () => boolean) => void;
 };
 
@@ -233,7 +233,7 @@ const getServiceCheckbox = (
 
 const ensureServiceCheckbox = (
   field: FormField & { type: 'group' },
-  serviceOptions: { label: string; value: string }[]
+  serviceOptions: { label: string; value: string; badge?: string }[]
 ): { group: FormField & { type: 'group' }; selected: string[] } => {
   const existingCheckbox = getServiceCheckbox(field);
   const selected = existingCheckbox?.options?.map((opt) => opt.value) ?? [];
@@ -354,7 +354,7 @@ type GroupBuilderProps = {
   field: FormField & { type: 'group'; fields?: FormField[] };
   onChange: (f: FormField) => void;
   createField: (t: OptionKey) => FormField;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
 };
 
 const GroupBuilder: React.FC<GroupBuilderProps> = ({

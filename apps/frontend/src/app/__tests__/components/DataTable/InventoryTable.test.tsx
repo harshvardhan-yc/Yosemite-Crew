@@ -108,4 +108,54 @@ describe('InventoryTable', () => {
     expect(setActiveInventory).toHaveBeenCalledWith(item);
     expect(setViewInventory).toHaveBeenCalledWith(true);
   });
+
+  it('prefers onView over the legacy setters when provided', () => {
+    const setActiveInventory = jest.fn();
+    const setViewInventory = jest.fn();
+    const onView = jest.fn();
+
+    render(
+      <InventoryTable
+        filteredList={[item]}
+        setActiveInventory={setActiveInventory}
+        setViewInventory={setViewInventory}
+        onView={onView}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('icon-eye').closest('button')!);
+    expect(onView).toHaveBeenCalledWith(item);
+    expect(setViewInventory).not.toHaveBeenCalled();
+  });
+
+  it('renders the restock action and fires onRestock', () => {
+    const onRestock = jest.fn();
+
+    render(
+      <InventoryTable
+        filteredList={[item]}
+        setActiveInventory={jest.fn()}
+        setViewInventory={jest.fn()}
+        onRestock={onRestock}
+      />
+    );
+
+    const restockBtn = screen.getByRole('button', { name: 'Restock Vaccine' });
+    fireEvent.click(restockBtn);
+    expect(onRestock).toHaveBeenCalledWith(item);
+  });
+
+  it('exposes accessible labels for the action icons (tooltip triggers)', () => {
+    render(
+      <InventoryTable
+        filteredList={[item]}
+        setActiveInventory={jest.fn()}
+        setViewInventory={jest.fn()}
+        onRestock={jest.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'View Vaccine' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restock Vaccine' })).toBeInTheDocument();
+  });
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import CompanionHistoryPage from '@/app/features/companionHistory/pages/CompanionHistoryPage';
@@ -36,6 +36,9 @@ const searchGetMock = jest.fn();
 const useCompanionsParentsForPrimaryOrgMock = jest.fn();
 const useCompanionStoreMock = jest.fn();
 const replaceCompanionTextMock = jest.fn((text: string) => text);
+const mockUpdateCompanion = jest.fn();
+const mockUpdateParent = jest.fn();
+const mockNotify = jest.fn();
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -99,6 +102,15 @@ jest.mock('@/app/lib/routeLoader', () => ({
   startRouteLoader: () => startRouteLoaderMock(),
 }));
 
+jest.mock('@/app/features/companions/services/companionService', () => ({
+  updateCompanion: (...args: unknown[]) => mockUpdateCompanion(...args),
+  updateParent: (...args: unknown[]) => mockUpdateParent(...args),
+}));
+
+jest.mock('@/app/hooks/useNotify', () => ({
+  useNotify: () => ({ notify: mockNotify }),
+}));
+
 jest.mock('@/app/stores/companionStore', () => ({
   useCompanionStore: (selector: (s: { status: string }) => unknown) =>
     useCompanionStoreMock(selector),
@@ -122,6 +134,8 @@ describe('CompanionHistoryPage', () => {
     useCompanionStoreMock.mockImplementation((selector: (s: { status: string }) => unknown) =>
       selector({ status: 'loaded' })
     );
+    mockUpdateCompanion.mockResolvedValue(undefined);
+    mockUpdateParent.mockResolvedValue(undefined);
   });
 
   it('shows missing companion notice and uses fallback back path', () => {
@@ -247,6 +261,59 @@ describe('CompanionHistoryPage', () => {
     expect(clientTrigger).not.toBeNull();
     fireEvent.mouseEnter(clientTrigger as Element);
     expect(await screen.findByText('Add alert for client')).toBeInTheDocument();
+  });
+
+  it('saves client alerts through the parent update service', async () => {
+    searchGetMock.mockImplementation((key: string) => {
+      if (key === 'companionId') return 'c-1';
+      if (key === 'source') return 'appointments';
+      if (key === 'backTo') return null;
+      return null;
+    });
+    const parent = {
+      id: 'p-1',
+      firstName: 'Sam',
+      lastName: 'Owner',
+      email: 'sam@example.com',
+      phoneNumber: '+15555555555',
+      address: {},
+      createdFrom: 'pms',
+    };
+    useCompanionsParentsForPrimaryOrgMock.mockReturnValue([
+      {
+        companion: {
+          id: 'c-1',
+          name: 'Buddy',
+          photoUrl: '/buddy.jpg',
+          breed: 'Labrador',
+          type: 'dog',
+          gender: 'male',
+          isneutered: true,
+          isInsured: false,
+          dateOfBirth: new Date('2021-01-01'),
+          parentId: 'p-1',
+          organisationId: 'org-1',
+        },
+        parent,
+      },
+    ]);
+
+    render(<CompanionHistoryPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /add client alert/i }));
+    fireEvent.change(screen.getByLabelText(/call before visit/i), {
+      target: { value: 'Call before visit' },
+    });
+    const submitButton = screen.getAllByRole('button', { name: 'Add client alert' }).at(-1);
+    expect(submitButton).toBeDefined();
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => expect(mockUpdateParent).toHaveBeenCalledTimes(1));
+    expect(mockUpdateParent).toHaveBeenCalledWith({
+      ...parent,
+      alerts: [{ title: 'Call before visit', severity: 'low' }],
+    });
+    expect(mockUpdateCompanion).not.toHaveBeenCalled();
   });
 
   it('has no axe violations on initial render', async () => {

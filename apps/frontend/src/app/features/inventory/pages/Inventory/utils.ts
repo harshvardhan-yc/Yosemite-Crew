@@ -270,6 +270,7 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
     id: apiItem._id,
     organisationId: apiItem.organisationId,
     businessType: apiItem.businessType,
+    currency: apiItem.currency,
     stockHealth: apiItem.stockHealth,
     status: normalizeStatus(apiItem.status),
     attributes,
@@ -529,10 +530,14 @@ export const buildInventoryPayload = (
     },
     onHand: batchTotals.onHand ?? toNumberSafe(formData.stock.current),
     allocated: batchTotals.allocated ?? toNumberSafe(formData.stock.allocated),
+    // Backend create reads initialOnHand/initialAllocated for items without batches;
+    // when batches exist the server recomputes these from the batch quantities.
+    initialOnHand: batchTotals.onHand ?? toNumberSafe(formData.stock.current),
+    initialAllocated: batchTotals.allocated ?? toNumberSafe(formData.stock.allocated),
     reorderLevel: toNumberSafe(formData.stock.reorderLevel),
     unitCost: toNumberSafe(formData.pricing.purchaseCost),
     sellingPrice: toNumberSafe(formData.pricing.selling),
-    currency: 'USD',
+    // Currency is derived server-side from the org billing settings; do not send a hardcoded value.
     vendorId: formData.vendor.vendor,
     status: formData.basicInfo.visibleInInventory === false ? 'HIDDEN' : statusForApi,
   };
@@ -603,14 +608,23 @@ export const getStockValue = (item: InventoryItem): number | undefined => {
   return onHand * unitCost;
 };
 
-export const formatCurrencyValue = (value?: string | number) => {
+export const formatCurrencyValue = (value?: string | number, currency = 'USD') => {
   const num = toNumberSafe(value);
   if (num === undefined) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: Number.isInteger(num) ? 0 : 2,
-  }).format(num);
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD',
+      maximumFractionDigits: Number.isInteger(num) ? 0 : 2,
+    }).format(num);
+  } catch {
+    // Unknown/invalid ISO currency code — fall back to USD formatting.
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: Number.isInteger(num) ? 0 : 2,
+    }).format(num);
+  }
 };
 
 export const formatPercentValue = (value?: number) => {

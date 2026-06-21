@@ -9,7 +9,11 @@ import Datepicker from '@/app/ui/inputs/Datepicker';
 import { BusinessType } from '@/app/features/organization/types/org';
 import { RiUploadCloud2Fill } from 'react-icons/ri';
 
-import { InventoryItem, InventoryErrors } from '@/app/features/inventory/pages/Inventory/types';
+import {
+  InventoryItem,
+  InventoryErrors,
+  getSubCategoryOptions,
+} from '@/app/features/inventory/pages/Inventory/types';
 import {
   InventoryFormConfig,
   ConfigItem,
@@ -72,6 +76,7 @@ type FormSectionProps = {
   onAddBatch?: () => void;
   onRemoveBatch?: (index: number) => void;
   stockLocationOptions?: string[];
+  headerSlot?: React.ReactNode;
 };
 
 const PricingSummary = ({ formData }: { formData: InventoryItem }) => (
@@ -79,7 +84,7 @@ const PricingSummary = ({ formData }: { formData: InventoryItem }) => (
     <div>
       <span>Gross profit per unit : </span>
       <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
-        {formatCurrencyValue(getGrossProfitPerUnit(formData))}
+        {formatCurrencyValue(getGrossProfitPerUnit(formData), formData.currency)}
       </span>
     </div>
     <div>
@@ -91,7 +96,7 @@ const PricingSummary = ({ formData }: { formData: InventoryItem }) => (
     <FormInput
       intype="text"
       inname="stockValue"
-      value={formatCurrencyValue(getStockValue(formData))}
+      value={formatCurrencyValue(getStockValue(formData), formData.currency)}
       inlabel="Total stock value"
       readonly
     />
@@ -123,6 +128,7 @@ const FormSection: React.FC<FormSectionProps> = ({
   onAddBatch,
   onRemoveBatch,
   stockLocationOptions,
+  headerSlot,
 }) => {
   const configForBusiness = InventoryFormConfig[businessType] || {};
   const sectionConfig = configForBusiness[sectionKey];
@@ -210,13 +216,22 @@ const FormSection: React.FC<FormSectionProps> = ({
     }
 
     if (component === 'dropdown') {
-      const resolvedOptions =
+      const isStockLocation =
         sectionKey === 'stock' &&
         field.name === 'stockLocation' &&
         stockLocationOptions &&
-        stockLocationOptions.length > 0
-          ? stockLocationOptions
-          : options || [];
+        stockLocationOptions.length > 0;
+      // Subcategory options depend on the currently-selected category in the same
+      // section, so they're scoped to that category instead of the full flat list.
+      const isSubCategory = field.name === 'subCategory';
+      let resolvedOptions: typeof options;
+      if (isStockLocation) {
+        resolvedOptions = stockLocationOptions;
+      } else if (isSubCategory) {
+        resolvedOptions = getSubCategoryOptions(sectionData?.category);
+      } else {
+        resolvedOptions = options || [];
+      }
       const dropdownOptions = resolvedOptions.map((opt) =>
         typeof opt === 'string' ? { label: opt, value: opt } : opt
       );
@@ -383,6 +398,7 @@ const FormSection: React.FC<FormSectionProps> = ({
             </div>
           ) : (
             <div className="flex flex-col gap-3">
+              {headerSlot}
               {sectionConfig.map((item, index) => renderItem(item, index))}
               {sectionKey === 'pricing' && <PricingSummary formData={formData} />}
             </div>

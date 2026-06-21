@@ -20,10 +20,10 @@ export const getAppointmentAuditTrail = async (appointmentId: string): Promise<A
 export const getCompanionAuditTrail = async (companionId: string): Promise<AuditTrail[]> => {
   try {
     if (!companionId) {
-      throw new Error('CompanionId ID missing');
+      throw new Error('Companion ID missing');
     }
     const res = await http.post<{ entries: AuditTrail[] }>('/v1/audit-trail/companion', {
-      companionId,
+      patientId: companionId,
     });
     return res.data.entries;
   } catch (err) {

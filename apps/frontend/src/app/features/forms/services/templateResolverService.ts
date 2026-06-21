@@ -6,7 +6,7 @@ export type TemplateResolveParams = {
   kind: TemplateKind;
   appointmentId?: string;
   encounterId?: string;
-  companionId?: string;
+  patientId?: string;
   species?: string;
   serviceId?: string;
   packageId?: string;

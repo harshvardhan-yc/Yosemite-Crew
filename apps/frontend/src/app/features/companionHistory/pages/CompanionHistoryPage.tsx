@@ -21,13 +21,18 @@ import { buildCompanionDetails } from '@/app/lib/companionWorkspaceDetails';
 import { formatDisplayDate, getAgeInYears } from '@/app/lib/date';
 import AlertPill from '@/app/features/appointments/pages/AppointmentWorkspace/components/AlertPill';
 import AddAlertModal from '@/app/features/appointments/pages/AppointmentWorkspace/components/AddAlertModal';
-import type { AlertSeverity, CompanionAlert } from '@/app/features/appointments/types/workspace';
+import type { CompanionAlert } from '@/app/features/appointments/types/workspace';
+import {
+  companionAlertsToStoredAlerts,
+  storedAlertsToCompanionAlerts,
+} from '@/app/features/appointments/lib/alertMapping';
 import AddAppointmentCentralModal from '@/app/features/appointments/pages/Appointments/Sections/AddAppointmentCentralModal';
+import { updateCompanion, updateParent } from '@/app/features/companions/services/companionService';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
+import { useNotify } from '@/app/hooks/useNotify';
 import type {
   CompanionParent,
-  StoredCompanion,
   StoredParent,
 } from '@/app/features/companions/pages/Companions/types';
 
@@ -76,34 +81,6 @@ const formatAgeDob = (value?: Date | string): string => {
   if (!Number.isFinite(age) || age < 0) return dob;
   const ageLabel = `${age} ${age === 1 ? 'year' : 'years'}`;
   return dob === '-' ? ageLabel : `${ageLabel} / ${dob}`;
-};
-
-const buildCompanionAlerts = (companion?: StoredCompanion) => {
-  const alerts: Array<{ id: string; label: string; severity: AlertSeverity }> = [];
-  if (companion?.allergy?.trim()) {
-    alerts.push({ id: 'allergy', label: companion.allergy.trim(), severity: 'MEDICAL' });
-  }
-  if (companion?.status === 'archived' || companion?.status === 'inactive') {
-    alerts.push({ id: 'status', label: 'Inactive profile', severity: 'ADMIN' });
-  }
-  if (companion?.bloodGroup?.trim()) {
-    alerts.push({ id: 'blood', label: `Blood ${companion.bloodGroup.trim()}`, severity: 'INFO' });
-  }
-  return alerts.slice(0, 3);
-};
-
-const buildParentAlerts = (parent?: StoredParent) => {
-  const alerts: Array<{ id: string; label: string; severity: AlertSeverity }> = [];
-  if (parent?.isProfileComplete === false) {
-    alerts.push({ id: 'profile', label: 'Profile incomplete', severity: 'ATTENTION' });
-  }
-  if (parent?.createdFrom === 'invited') {
-    alerts.push({ id: 'invited', label: 'Client invited', severity: 'ADMIN' });
-  }
-  if (parent?.linkedUserId) {
-    alerts.push({ id: 'linked', label: 'Mobile app linked', severity: 'INFO' });
-  }
-  return alerts.slice(0, 3);
 };
 
 const ProfileDetail = ({
@@ -180,11 +157,13 @@ const ParentProfilePanel = ({
   companionId,
   alerts,
   onAddAlert,
+  onRemoveAlert,
 }: {
   parent: StoredParent;
   companionId: string;
   alerts: CompanionAlert[];
   onAddAlert: () => void;
+  onRemoveAlert: (id: string) => void;
 }) => {
   const details = [
     { label: 'Client', value: formatParentName(parent) },
@@ -221,7 +200,13 @@ const ParentProfilePanel = ({
           </span>
           <div className="flex flex-col items-start gap-1.5 md:items-end">
             {alerts.map((alert) => (
-              <AlertPill key={alert.id} label={alert.label} severity={alert.severity} />
+              <AlertPill
+                key={alert.id}
+                id={alert.id}
+                label={alert.label}
+                severity={alert.severity}
+                onRemove={onRemoveAlert}
+              />
             ))}
             <GlassTooltip content="Add alert for client" side="bottom">
               <button
@@ -247,12 +232,11 @@ const CompanionHistoryPageInner = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const replaceCompanionText = useCompanionTerminologyText();
+  const { notify } = useNotify();
   const [addAppointmentOpen, setAddAppointmentOpen] = useState(false);
   const appointmentFilterState = useState('all');
   const appointmentStatusState = useState('all');
   const [alertTarget, setAlertTarget] = useState<'companion' | 'client' | null>(null);
-  const [companionAlertExtras, setCompanionAlertExtras] = useState<CompanionAlert[]>([]);
-  const [clientAlertExtras, setClientAlertExtras] = useState<CompanionAlert[]>([]);
 
   const companionId = String(searchParams.get('companionId') ?? '').trim();
   const source = String(searchParams.get('source') ?? '')
@@ -274,12 +258,12 @@ const CompanionHistoryPageInner = () => {
     [activeCompanion, replaceCompanionText]
   );
   const companionAlerts = useMemo<CompanionAlert[]>(
-    () => [...buildCompanionAlerts(activeCompanion?.companion), ...companionAlertExtras],
-    [activeCompanion?.companion, companionAlertExtras]
+    () => storedAlertsToCompanionAlerts(activeCompanion?.companion.alerts, 'patient-alert'),
+    [activeCompanion?.companion.alerts]
   );
   const clientAlerts = useMemo<CompanionAlert[]>(
-    () => [...buildParentAlerts(activeCompanion?.parent), ...clientAlertExtras],
-    [activeCompanion?.parent, clientAlertExtras]
+    () => storedAlertsToCompanionAlerts(activeCompanion?.parent.alerts, 'client-alert'),
+    [activeCompanion?.parent.alerts]
   );
 
   const handleBack = useCallback(() => {
@@ -287,20 +271,80 @@ const CompanionHistoryPageInner = () => {
     router.push(backPath);
   }, [router, backPath]);
 
-  const handleAddAlert = useCallback(
-    (alert: Omit<CompanionAlert, 'id'>) => {
-      const entry: CompanionAlert = {
-        ...alert,
-        id: `${alertTarget}-${globalThis.crypto.randomUUID()}`,
-      };
-      if (alertTarget === 'client') {
-        setClientAlertExtras((current) => [...current, entry]);
-      } else {
-        setCompanionAlertExtras((current) => [...current, entry]);
-      }
-      setAlertTarget(null);
+  const persistCompanionAlerts = useCallback(
+    async (nextAlerts: CompanionAlert[]) => {
+      if (!activeCompanion) return;
+      await updateCompanion({
+        ...activeCompanion.companion,
+        alerts: companionAlertsToStoredAlerts(nextAlerts),
+      });
     },
-    [alertTarget]
+    [activeCompanion]
+  );
+
+  const persistClientAlerts = useCallback(
+    async (nextAlerts: CompanionAlert[]) => {
+      if (!activeCompanion) return;
+      await updateParent({
+        ...activeCompanion.parent,
+        alerts: companionAlertsToStoredAlerts(nextAlerts),
+      });
+    },
+    [activeCompanion]
+  );
+
+  const handleAddAlert = useCallback(
+    async (alert: Omit<CompanionAlert, 'id'>) => {
+      try {
+        if (alertTarget === 'client') {
+          await persistClientAlerts([
+            ...clientAlerts,
+            { ...alert, id: `client-alert-${clientAlerts.length}` },
+          ]);
+        } else {
+          await persistCompanionAlerts([
+            ...companionAlerts,
+            { ...alert, id: `patient-alert-${companionAlerts.length}` },
+          ]);
+        }
+        notify('success', { title: 'Alert added', text: 'Alert has been saved.' });
+        setAlertTarget(null);
+      } catch {
+        notify('error', { title: 'Failed to add alert', text: 'Please try again.' });
+      }
+    },
+    [
+      alertTarget,
+      clientAlerts,
+      companionAlerts,
+      notify,
+      persistClientAlerts,
+      persistCompanionAlerts,
+    ]
+  );
+
+  const handleRemoveCompanionAlert = useCallback(
+    async (id: string) => {
+      try {
+        await persistCompanionAlerts(companionAlerts.filter((alert) => alert.id !== id));
+        notify('success', { title: 'Alert removed', text: 'Patient alert has been removed.' });
+      } catch {
+        notify('error', { title: 'Failed to remove alert', text: 'Please try again.' });
+      }
+    },
+    [companionAlerts, notify, persistCompanionAlerts]
+  );
+
+  const handleRemoveClientAlert = useCallback(
+    async (id: string) => {
+      try {
+        await persistClientAlerts(clientAlerts.filter((alert) => alert.id !== id));
+        notify('success', { title: 'Alert removed', text: 'Client alert has been removed.' });
+      } catch {
+        notify('error', { title: 'Failed to remove alert', text: 'Please try again.' });
+      }
+    },
+    [clientAlerts, notify, persistClientAlerts]
   );
 
   if (companionsStatus === 'loading') {
@@ -332,7 +376,13 @@ const CompanionHistoryPageInner = () => {
                 <h1 className="text-heading-2 text-text-primary">{historyTitle}</h1>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {companionAlerts.map((alert) => (
-                    <AlertPill key={alert.id} label={alert.label} severity={alert.severity} />
+                    <AlertPill
+                      key={alert.id}
+                      id={alert.id}
+                      label={alert.label}
+                      severity={alert.severity}
+                      onRemove={handleRemoveCompanionAlert}
+                    />
                   ))}
                   {activeCompanion ? (
                     <GlassTooltip content="Add alerts for patient" side="bottom">
@@ -366,6 +416,7 @@ const CompanionHistoryPageInner = () => {
                   companionId={activeCompanion.companion.id}
                   alerts={clientAlerts}
                   onAddAlert={() => setAlertTarget('client')}
+                  onRemoveAlert={handleRemoveClientAlert}
                 />
               </div>
             ) : null}

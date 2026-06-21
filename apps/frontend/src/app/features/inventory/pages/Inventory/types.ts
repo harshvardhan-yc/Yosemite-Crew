@@ -77,6 +77,8 @@ export type InventoryRequestPayload = {
   attributes?: Record<string, any>;
   onHand?: number;
   allocated?: number;
+  initialOnHand?: number;
+  initialAllocated?: number;
   reorderLevel?: number;
   unitCost?: number;
   sellingPrice?: number;
@@ -150,88 +152,87 @@ export const CategoryOptionsByBusiness: Record<BusinessType, string[]> = {
     'Facility supplies',
   ],
 };
-export const SubCategoryOptions: string[] = [
-  'Antibiotic',
-  'NSAID',
-  'Analgesic',
-  'Pain management',
-  'Antifungal',
-  'Antiviral',
-  'Anthelmintic',
-  'Sedative',
-  'Anesthetic',
-  'Cardiac',
-  'Endocrine',
-  'Gastrointestinal',
-  'Dermatology',
-  'Ophthalmic',
-  'Otic',
-  'Core vaccine',
-  'Non-core vaccine',
-  'Rabies',
-  'DHPP',
-  'FVRCP',
-  'Bordetella',
-  'Leptospirosis',
-  'Syringe',
-  'Needle',
-  'IV catheter',
-  'Cannula',
-  'Catheter',
-  'Gloves',
-  'Mask',
-  'Gauze',
-  'Cotton',
-  'Bandage',
-  'Urine collection',
-  'Suture',
-  'Scalpel blade',
-  'Surgical drape',
-  'Sterilization pouch',
-  'Surgical glove',
-  'Surgical pack',
-  'Fluid bag',
-  'IV line',
-  'Giving set',
-  'Extension set',
-  'Flush',
-  'Rapid test',
-  'Blood test',
-  'Urine test',
-  'Fecal test',
-  'Culture test',
-  'Sample tube',
-  'Slide',
-  'Swab',
-  'Reagent',
-  'Collection container',
-  'Prescription diet',
-  'Maintenance diet',
-  'Treat',
-  'Supplement food',
-  'Vitamin',
-  'Probiotic',
-  'Mineral mix',
-  'Joint support',
-  'Skin & coat',
-  'Reusable instrument',
-  'Monitoring equipment',
-  'Imaging equipment',
-  'Dental equipment',
-  'Disinfectant',
-  'Surface cleaner',
-  'Disinfectant wipes',
-  'Sterilization supply',
-  'X-ray film',
-  'Ultrasound gel',
-  'Probe cover',
-  'Imaging marker',
-  'Bandage roll',
-  'Dressing',
-  'Antiseptic',
-  'Wound spray',
-  'Tape',
-];
+/**
+ * Subcategories keyed by their parent category. The add/edit subcategory dropdown
+ * must show only the subcategories that belong to the currently selected category.
+ */
+export const SubCategoryByCategory: Record<string, string[]> = {
+  Medicine: [
+    'Antibiotic',
+    'NSAID',
+    'Analgesic',
+    'Pain management',
+    'Antifungal',
+    'Antiviral',
+    'Anthelmintic',
+    'Sedative',
+    'Anesthetic',
+    'Cardiac',
+    'Endocrine',
+    'Gastrointestinal',
+    'Dermatology',
+    'Ophthalmic',
+    'Otic',
+  ],
+  Vaccine: [
+    'Core vaccine',
+    'Non-core vaccine',
+    'Rabies',
+    'DHPP',
+    'FVRCP',
+    'Bordetella',
+    'Leptospirosis',
+  ],
+  Consumable: [
+    'Syringe',
+    'Needle',
+    'IV catheter',
+    'Cannula',
+    'Catheter',
+    'Gloves',
+    'Mask',
+    'Gauze',
+    'Cotton',
+    'Bandage',
+    'Urine collection',
+  ],
+  'Surgical supply': [
+    'Suture',
+    'Scalpel blade',
+    'Surgical drape',
+    'Sterilization pouch',
+    'Surgical glove',
+    'Surgical pack',
+  ],
+  'IV / Fluid therapy': ['Fluid bag', 'IV line', 'Giving set', 'Extension set', 'Flush'],
+  'Diagnostic kit': ['Rapid test', 'Blood test', 'Urine test', 'Fecal test', 'Culture test'],
+  Laboratory: ['Sample tube', 'Slide', 'Swab', 'Reagent', 'Collection container'],
+  Food: ['Prescription diet', 'Maintenance diet', 'Treat', 'Supplement food'],
+  Supplement: ['Vitamin', 'Probiotic', 'Mineral mix', 'Joint support', 'Skin & coat'],
+  Equipment: [
+    'Reusable instrument',
+    'Monitoring equipment',
+    'Imaging equipment',
+    'Dental equipment',
+  ],
+  'Cleaning supply': [
+    'Disinfectant',
+    'Surface cleaner',
+    'Disinfectant wipes',
+    'Sterilization supply',
+  ],
+  'Imaging consumable': ['X-ray film', 'Ultrasound gel', 'Probe cover', 'Imaging marker'],
+  'Wound care': ['Bandage roll', 'Dressing', 'Antiseptic', 'Wound spray', 'Tape'],
+};
+
+/** Flattened list of every subcategory (deduped), preserving category order. */
+export const SubCategoryOptions: string[] = Array.from(
+  new Set(Object.values(SubCategoryByCategory).flat())
+);
+
+/** Resolve the subcategories for a category, falling back to the full flat list. */
+export const getSubCategoryOptions = (category?: string): string[] =>
+  (category && SubCategoryByCategory[category]) || SubCategoryOptions;
 export const DepartmentOptions: string[] = [
   'Veterinary',
   'Grooming',
@@ -626,6 +627,7 @@ export interface InventoryItem {
   id?: string;
   organisationId?: string;
   businessType?: BusinessType;
+  currency?: string;
   stockHealth?: StockHealthStatus;
   status?: InventoryStatus;
   attributes?: Record<string, any>;

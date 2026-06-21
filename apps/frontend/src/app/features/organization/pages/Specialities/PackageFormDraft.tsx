@@ -26,6 +26,11 @@ import { useCurrencyForPrimaryOrg } from '@/app/hooks/useBilling';
 import { formatMoney } from '@/app/lib/money';
 import { catalogApi } from '@/app/features/organization/services/catalogApiService';
 import { getCatalogErrorMessage } from '@/app/features/organization/services/catalogErrors';
+import {
+  countBookableBreakdownItems,
+  hasBookableBreakdownItem,
+  hasInpatientBreakdownItem,
+} from '@/app/features/organization/services/catalogBookable';
 
 const LEAD_OPTIONS = [
   { value: '1', label: 'Yes' },
@@ -68,14 +73,6 @@ const TYPE_LABELS: Record<string, string> = {
   MEDICATION: 'Medication',
   PACKAGE: 'Package',
 };
-
-const hasBookableBreakdownItem = (items: PackageBreakdownItem[]): boolean =>
-  items.some((item) => item.isBookable || hasBookableBreakdownItem(item.nestedBreakdown ?? []));
-
-const hasInpatientBreakdownItem = (items: PackageBreakdownItem[]): boolean =>
-  items.some(
-    (item) => item.isInpatientPreferred || hasInpatientBreakdownItem(item.nestedBreakdown ?? [])
-  );
 
 const PackageFormDraft = ({
   specialityId,
@@ -288,6 +285,16 @@ const PackageFormDraft = ({
           prev.map((b) => (b.id === existing.id ? { ...b, quantity: b.quantity + 1 } : b))
         );
       } else {
+        const catalogIsBookable =
+          catalog.isBookable || hasBookableBreakdownItem(catalog.nestedBreakdown ?? []);
+        if (catalogIsBookable && breakdown.some(itemIsBookable)) {
+          notify('warning', {
+            title: 'Only one bookable service allowed',
+            text: 'A package can include just one bookable service. Remove the current bookable item before adding another.',
+          });
+          setSearchQuery('');
+          return;
+        }
         setBreakdown((prev) => [
           ...prev,
           {
@@ -309,7 +316,7 @@ const PackageFormDraft = ({
       }
       setSearchQuery('');
     },
-    [breakdown, orgCurrency]
+    [breakdown, itemIsBookable, notify, orgCurrency]
   );
 
   const removeBreakdownItem = useCallback((id: string) => {
@@ -330,6 +337,8 @@ const PackageFormDraft = ({
     if (!name.trim()) errs.name = 'Package name is required.';
     if (!durationText.trim()) errs.durationText = 'Approx. duration is required.';
     if (breakdown.length === 0) errs.breakdown = 'Add at least one item to this package.';
+    else if (countBookableBreakdownItems(breakdown) > 1)
+      errs.breakdown = 'A package can include only one bookable service. Remove the extra one.';
     if (
       additionalDiscount &&
       (Number.isNaN(additionalDiscountValue) ||
@@ -339,7 +348,7 @@ const PackageFormDraft = ({
       errs.additionalDiscount = 'Additional discount must be 0–100.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [additionalDiscount, breakdown.length, durationText, name]);
+  }, [additionalDiscount, breakdown, durationText, name]);
 
   const handleSave = async () => {
     if (!validate()) return;

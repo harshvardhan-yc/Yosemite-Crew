@@ -18,7 +18,7 @@ type ReviewProps = {
   formData: FormsProps;
   onPublish: () => void;
   onSaveDraft: () => void;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
   loading?: boolean;
   isEditing?: boolean;
 };

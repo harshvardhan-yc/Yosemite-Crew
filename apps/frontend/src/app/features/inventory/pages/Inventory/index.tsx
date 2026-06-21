@@ -12,8 +12,10 @@ import {
   InventoryItem,
   InventoryTurnoverItem,
   SubCategoryOptions,
+  SubCategoryByCategory,
 } from '@/app/features/inventory/pages/Inventory/types';
 import { defaultFilters } from '@/app/features/inventory/pages/Inventory/utils';
+import { InventorySectionKey } from '@/app/features/inventory/components/AddInventory/InventoryConfig';
 import { BusinessType, BusinessTypes } from '@/app/features/organization/types/org';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useLoadOrg } from '@/app/hooks/useLoadOrg';
@@ -54,75 +56,6 @@ const InventoryInfo = dynamic(() =>
 
 type InventoryView = 'inventory' | 'turnover';
 
-const hospitalCategorySubcategories: Record<string, string[]> = {
-  Medicine: [
-    'Antibiotic',
-    'NSAID',
-    'Analgesic',
-    'Pain management',
-    'Antifungal',
-    'Antiviral',
-    'Anthelmintic',
-    'Sedative',
-    'Anesthetic',
-    'Cardiac',
-    'Endocrine',
-    'Gastrointestinal',
-    'Dermatology',
-    'Ophthalmic',
-    'Otic',
-  ],
-  Vaccine: [
-    'Core vaccine',
-    'Non-core vaccine',
-    'Rabies',
-    'DHPP',
-    'FVRCP',
-    'Bordetella',
-    'Leptospirosis',
-  ],
-  Consumable: [
-    'Syringe',
-    'Needle',
-    'IV catheter',
-    'Cannula',
-    'Catheter',
-    'Gloves',
-    'Mask',
-    'Gauze',
-    'Cotton',
-    'Bandage',
-    'Urine collection',
-  ],
-  'Surgical supply': [
-    'Suture',
-    'Scalpel blade',
-    'Surgical drape',
-    'Sterilization pouch',
-    'Surgical glove',
-    'Surgical pack',
-  ],
-  'IV / Fluid therapy': ['Fluid bag', 'IV line', 'Giving set', 'Extension set', 'Flush'],
-  'Diagnostic kit': ['Rapid test', 'Blood test', 'Urine test', 'Fecal test', 'Culture test'],
-  Laboratory: ['Sample tube', 'Slide', 'Swab', 'Reagent', 'Collection container'],
-  Food: ['Prescription diet', 'Maintenance diet', 'Treat', 'Supplement food'],
-  Supplement: ['Vitamin', 'Probiotic', 'Mineral mix', 'Joint support', 'Skin & coat'],
-  Equipment: [
-    'Reusable instrument',
-    'Monitoring equipment',
-    'Imaging equipment',
-    'Dental equipment',
-  ],
-  'Cleaning supply': [
-    'Disinfectant',
-    'Surface cleaner',
-    'Disinfectant wipes',
-    'Sterilization supply',
-  ],
-  'Imaging consumable': ['X-ray film', 'Ultrasound gel', 'Probe cover', 'Imaging marker'],
-  'Wound care': ['Bandage roll', 'Dressing', 'Antiseptic', 'Wound spray', 'Tape'],
-};
-
 const toggleArrayValue = (values: string[], value: string) =>
   values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 
@@ -156,6 +89,9 @@ const Inventory = () => {
   const [filteredTurnoverList, setFilteredTurnoverList] = useState<InventoryTurnoverItem[]>([]);
   const [addPopup, setAddPopup] = useState(false);
   const [viewInventory, setViewInventory] = useState(false);
+  const [infoInitialSection, setInfoInitialSection] = useState<InventorySectionKey | undefined>(
+    undefined
+  );
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeInventory, setActiveInventory] = useState<InventoryItem | null>(null);
   const [savingItem, setSavingItem] = useState(false);
@@ -214,7 +150,7 @@ const Inventory = () => {
 
   const categorySubcategoryOptions = useMemo(() => {
     return categoryOptions.reduce<Record<string, string[]>>((acc, category) => {
-      const configured = hospitalCategorySubcategories[category] ?? [];
+      const configured = SubCategoryByCategory[category] ?? [];
       const fromItems = inventory.reduce<string[]>((subCategories, item) => {
         const subCategory = item.basicInfo.subCategory?.trim();
         if (item.basicInfo.category === category && subCategory) {
@@ -341,6 +277,7 @@ const Inventory = () => {
     if (!target) return;
 
     setActiveInventory(target);
+    setInfoInitialSection(undefined);
     setViewInventory(true);
     handledDeepLinkRef.current = inventoryId;
   }, [inventory, searchParams]);
@@ -445,6 +382,7 @@ const Inventory = () => {
 
   const handleRestock = useCallback((item: InventoryItem) => {
     setActiveInventory(item);
+    setInfoInitialSection('stock');
     setViewInventory(true);
   }, []);
 
@@ -480,21 +418,65 @@ const Inventory = () => {
   );
 
   const selectedFilterChips = useMemo(() => {
-    const chips: string[] = [];
-    if (filters.status !== 'ALL') chips.push(filters.status);
-    chips.push(...(filters.categories ?? []));
-    chips.push(...(filters.subCategories ?? []));
-    chips.push(...(filters.locations ?? []));
-    chips.push(...(filters.abcClasses ?? []));
-    chips.push(...(filters.suppliers ?? []));
+    const chips: { id: string; label: string; onRemove: () => void }[] = [];
+    if (filters.status !== 'ALL') {
+      chips.push({
+        id: `status-${filters.status}`,
+        label: filters.status.replaceAll('_', ' ').toLowerCase(),
+        onRemove: () => setFilters((prev) => ({ ...prev, status: 'ALL' })),
+      });
+    }
+    (filters.categories ?? []).forEach((category) =>
+      chips.push({
+        id: `category-${category}`,
+        label: category,
+        onRemove: () => toggleCategoryFilter(category),
+      })
+    );
+    (filters.subCategories ?? []).forEach((subCategory) =>
+      chips.push({
+        id: `subCategory-${subCategory}`,
+        label: subCategory,
+        onRemove: () => toggleListFilter('subCategories', subCategory),
+      })
+    );
+    (filters.locations ?? []).forEach((location) =>
+      chips.push({
+        id: `location-${location}`,
+        label: location,
+        onRemove: () => toggleListFilter('locations', location),
+      })
+    );
+    (filters.abcClasses ?? []).forEach((abcClass) =>
+      chips.push({
+        id: `abcClass-${abcClass}`,
+        label: abcClass,
+        onRemove: () => toggleListFilter('abcClasses', abcClass),
+      })
+    );
+    (filters.suppliers ?? []).forEach((supplier) =>
+      chips.push({
+        id: `supplier-${supplier}`,
+        label: supplier,
+        onRemove: () => toggleListFilter('suppliers', supplier),
+      })
+    );
     if (filters.category !== 'all' && !(filters.categories ?? []).includes(filters.category)) {
-      chips.push(filters.category);
+      chips.push({
+        id: `categorySingle-${filters.category}`,
+        label: filters.category,
+        onRemove: () => setFilters((prev) => ({ ...prev, category: 'all' })),
+      });
     }
     if (filters.visibility !== 'ALL') {
-      chips.push(filters.visibility === 'ACTIVE' ? 'Visible' : 'Hidden');
+      chips.push({
+        id: `visibility-${filters.visibility}`,
+        label: filters.visibility === 'ACTIVE' ? 'Visible' : 'Hidden',
+        onRemove: () => setFilters((prev) => ({ ...prev, visibility: 'ALL' })),
+      });
     }
     return chips;
-  }, [filters]);
+  }, [filters, toggleCategoryFilter, toggleListFilter]);
 
   return (
     <div className="relative min-w-0 flex h-full min-h-0 flex-col gap-4 pl-3! pr-3! pt-3! pb-3! md:pl-5! md:pr-5! md:pt-5! md:pb-3! lg:pl-5! lg:pr-5! lg:pt-5! lg:pb-3!">
@@ -607,6 +589,11 @@ const Inventory = () => {
               <InventoryTable
                 setActiveInventory={setActiveInventory}
                 setViewInventory={setViewInventory}
+                onView={(item) => {
+                  setActiveInventory(item);
+                  setInfoInitialSection(undefined);
+                  setViewInventory(true);
+                }}
                 filteredList={filteredInventory}
                 onRestock={handleRestock}
               />
@@ -626,34 +613,43 @@ const Inventory = () => {
 
         {filterOpen && (
           <Modal showModal={filterOpen} setShowModal={setFilterOpen}>
-            <div className="flex h-full flex-col gap-5">
-              <div className="flex items-center justify-between border-b border-card-border pb-4">
+            <div className="flex h-full flex-col">
+              <div className="flex items-center justify-between gap-3 pb-5">
                 <div className="flex items-center gap-2 text-body-3-emphasis text-text-primary">
                   <FiSliders size={18} aria-hidden="true" />
                   <span>Filter</span>
                 </div>
-                <button
-                  type="button"
-                  className="rounded-full border border-blue-text px-4 py-2 text-body-4 text-blue-text"
-                  onClick={() => setFilters(defaultFilters)}
-                >
-                  Clear all
-                </button>
+                {selectedFilterChips.length > 0 && (
+                  <button
+                    type="button"
+                    className="rounded-full border border-blue-text px-4 py-1.5 text-body-4 text-blue-text transition-colors hover:bg-blue-light"
+                    onClick={() => setFilters(defaultFilters)}
+                  >
+                    Clear all
+                  </button>
+                )}
               </div>
               {selectedFilterChips.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 pb-5">
                   {selectedFilterChips.map((chip) => (
                     <span
-                      key={chip}
-                      className="inline-flex items-center gap-1 rounded-full bg-badge-blue-bg px-3 py-1 text-caption-1 text-badge-blue-text"
+                      key={chip.id}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-badge-blue-bg py-1 pl-3 pr-2 text-caption-1 capitalize text-badge-blue-text"
                     >
-                      {chip}
-                      <FiX size={14} aria-hidden="true" />
+                      {chip.label}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${chip.label} filter`}
+                        onClick={chip.onRemove}
+                        className="inline-flex size-4 items-center justify-center rounded-full text-badge-blue-text transition-colors hover:bg-badge-blue-text/15"
+                      >
+                        <FiX size={13} aria-hidden="true" />
+                      </button>
                     </span>
                   ))}
                 </div>
               )}
-              <div className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
+              <div className="flex flex-1 flex-col gap-5 overflow-y-auto pr-1">
                 <div className="flex flex-col gap-2 border-b border-card-border pb-4">
                   <div className="text-body-4-emphasis text-text-primary">Stock status</div>
                   {['ALL', 'LOW_STOCK', 'EXPIRED', 'OUT_OF_STOCK'].map((status) => (
@@ -783,7 +779,7 @@ const Inventory = () => {
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 border-t border-card-border pt-5 mt-5">
                 <Primary
                   href="#"
                   text="Apply"
@@ -815,6 +811,7 @@ const Inventory = () => {
             onUnhide={handleUnhideInventory}
             canEdit={canEditInventory}
             stockLocationOptions={stockLocationOptions}
+            initialSection={infoInitialSection}
           />
         )}
       </PermissionGate>

@@ -63,7 +63,7 @@ type FormInfoProps = {
   setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
   activeForm: FormsProps;
   onEdit: (form: FormsProps) => void;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
   canEdit?: boolean;
 };
 

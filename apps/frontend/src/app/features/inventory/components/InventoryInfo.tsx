@@ -1,7 +1,15 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { BatchValues, InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { BusinessType } from '@/app/features/organization/types/org';
-import { formatDisplayDate, toStringSafe } from '@/app/features/inventory/pages/Inventory/utils';
+import {
+  formatCurrencyValue,
+  formatDisplayDate,
+  formatPercentValue,
+  getGrossProfitPerUnit,
+  getMarginPercent,
+  getStockValue,
+  toStringSafe,
+} from '@/app/features/inventory/pages/Inventory/utils';
 import {
   ConfigItem,
   InventoryFormConfig,
@@ -506,6 +514,7 @@ type InventoryInfoProps = {
   onUnhide: (itemId: string) => Promise<void>;
   canEdit?: boolean;
   stockLocationOptions?: string[];
+  initialSection?: InventorySectionKey;
 };
 
 const modalSections: { key: InventorySectionKey; name: string }[] = [
@@ -596,6 +605,44 @@ const PreviewItem = ({ item, batchData }: { item: ConfigItem<any>; batchData: Ba
   );
 };
 
+const PricingCurrencySummary = ({ inventory }: { inventory: InventoryItem }) => {
+  const currency = inventory.currency;
+  return (
+    <div className="flex flex-col gap-2 px-1 pt-2 text-body-4 text-text-primary">
+      <div className="flex items-center justify-between">
+        <span className="text-grey-bg">Purchase cost</span>
+        <span className="font-semibold">
+          {formatCurrencyValue(inventory.pricing.purchaseCost, currency)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-grey-bg">Selling price</span>
+        <span className="font-semibold">
+          {formatCurrencyValue(inventory.pricing.selling, currency)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-grey-bg">Gross profit per unit</span>
+        <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
+          {formatCurrencyValue(getGrossProfitPerUnit(inventory), currency)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-grey-bg">Margin</span>
+        <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
+          {formatPercentValue(getMarginPercent(inventory))}
+        </span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-grey-bg">Total stock value</span>
+        <span className="font-semibold">
+          {formatCurrencyValue(getStockValue(inventory), currency)}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 const InventoryInfo = ({
   showModal,
   setShowModal,
@@ -608,8 +655,22 @@ const InventoryInfo = ({
   onUpdateBatch,
   canEdit = true,
   stockLocationOptions,
+  initialSection,
 }: InventoryInfoProps) => {
-  const [activeLabel, setActiveLabel] = useState<InventorySectionKey>(modalSections[0].key);
+  const [activeLabel, setActiveLabel] = useState<InventorySectionKey>(
+    initialSection ?? modalSections[0].key
+  );
+  // On each (re)open, land on the requested section (e.g. Restock → Stock Control)
+  // or fall back to the first tab. Adjusted during render via a prev-prop comparison
+  // rather than an effect, so the correct tab shows on the first commit.
+  const [lastOpenKey, setLastOpenKey] = useState<string | null>(null);
+  const openKey = showModal ? `${activeInventory?.id ?? ''}:${initialSection ?? ''}` : null;
+  if (openKey !== null && openKey !== lastOpenKey) {
+    setLastOpenKey(openKey);
+    setActiveLabel(initialSection ?? modalSections[0].key);
+  } else if (openKey === null && lastOpenKey !== null) {
+    setLastOpenKey(null);
+  }
   const [isUpdating, setIsUpdating] = useState(false);
   const [isHiding, setIsHiding] = useState(false);
   const [isSectionEditing, setIsSectionEditing] = useState(false);
@@ -815,6 +876,9 @@ const InventoryInfo = ({
                       sectionActions.current = actions;
                     }}
                   />
+                )}
+                {activeLabel === 'pricing' && (
+                  <PricingCurrencySummary inventory={activeInventory} />
                 )}
               </>
             )}
