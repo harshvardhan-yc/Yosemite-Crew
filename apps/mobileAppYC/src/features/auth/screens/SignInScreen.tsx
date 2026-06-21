@@ -23,6 +23,7 @@ import {
 import {AUTH_FEATURE_FLAGS} from '@/config/variables';
 import {Amplify} from 'aws-amplify';
 import devOutputs from '../../../../devamplify_outputs.json';
+import prodOutputs from '../../../../prodamplify_outputs.json';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {AuthStackParamList} from '@/navigation/AuthNavigator';
 import {useAuth} from '@/features/auth/context/AuthContext';
@@ -159,16 +160,12 @@ const useOTPHandler = (
 
     setEmailError('');
     setIsSubmitting(true);
+    const normalizedEmail = emailValue.trim();
+    const isDemoLogin =
+      allowReviewLogin && normalizedEmail.toLowerCase() === DEMO_LOGIN_EMAIL;
     try {
-      const normalizedEmail = emailValue.trim();
-      const lowerCasedEmail = normalizedEmail.toLowerCase();
-      const isDemoLogin =
-        allowReviewLogin && lowerCasedEmail === DEMO_LOGIN_EMAIL;
       if (isDemoLogin) {
         Amplify.configure(devOutputs);
-        console.log(
-          '[Auth] Demo login — reconfigured Amplify to dev Cognito pool',
-        );
       }
       const result = await requestPasswordlessEmailCode(normalizedEmail);
 
@@ -184,6 +181,9 @@ const useOTPHandler = (
         challengeLength: isDemoLogin ? result.challengeLength : undefined,
       });
     } catch (error) {
+      if (isDemoLogin) {
+        Amplify.configure(prodOutputs);
+      }
       console.error('[Auth] Failed requesting passwordless code', error);
       setEmailError(formatAuthError(error));
     } finally {

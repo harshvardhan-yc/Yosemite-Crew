@@ -101,21 +101,23 @@ export const isDevelopmentMobileEnv = (env?: MobileEnv | null): boolean => {
   return normalized === 'dev' || normalized === 'development';
 };
 
-export const fetchMobileConfig = async (): Promise<MobileConfig> => {
-  const url = resolveMobileConfigUrl();
-  console.log('[MobileConfig] Request', {url});
+export const fetchMobileConfig = async (
+  url?: string,
+): Promise<MobileConfig> => {
+  const resolvedUrl = url ?? resolveMobileConfigUrl();
+  console.log('[MobileConfig] Request', {url: resolvedUrl});
   try {
-    const response = await axios.get<MobileConfig>(url, {
+    const response = await axios.get<MobileConfig>(resolvedUrl, {
       timeout: MOBILE_CONFIG_TIMEOUT_MS,
     });
     console.log('[MobileConfig] Response', {
-      url,
+      url: resolvedUrl,
       status: response.status,
       data: response.data,
     });
     return response.data;
   } catch (error) {
-    console.log('[MobileConfig] Error', {url, error});
+    console.log('[MobileConfig] Error', {url: resolvedUrl, error});
     throw error;
   }
 };

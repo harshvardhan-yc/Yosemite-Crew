@@ -269,11 +269,15 @@ export const logout = createAsyncThunk<
 
   await clearSessionData({clearPendingProfile: true});
 
-  const defaultBaseUrl = MOBILE_CONFIG_BEHAVIOR.useDevApi
-    ? DEVELOPMENT_API_BASE_URL
-    : PRODUCTION_API_BASE_URL;
+  const defaultBaseUrl =
+    MOBILE_CONFIG_BEHAVIOR.overrides?.apiBaseUrl ??
+    (MOBILE_CONFIG_BEHAVIOR.useDevApi
+      ? DEVELOPMENT_API_BASE_URL
+      : PRODUCTION_API_BASE_URL);
+  const defaultPmsUrl =
+    MOBILE_CONFIG_BEHAVIOR.overrides?.pmsBaseUrl ?? defaultBaseUrl;
   API_CONFIG.baseUrl = defaultBaseUrl;
-  API_CONFIG.pmsBaseUrl = defaultBaseUrl;
+  API_CONFIG.pmsBaseUrl = defaultPmsUrl;
   updateApiClientBaseConfig({baseUrl: defaultBaseUrl});
   Amplify.configure(
     MOBILE_CONFIG_BEHAVIOR.useDevApi ? devOutputs : prodOutputs,

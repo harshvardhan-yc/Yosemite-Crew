@@ -57,6 +57,7 @@ import {
   AUTH_FEATURE_FLAGS,
   DEV_API_MODE_CHANGED_EVENT,
   MOBILE_CONFIG_BEHAVIOR,
+  MOBILE_CONFIG_PATH,
   POSTHOG_CONFIG,
   STRIPE_CONFIG,
   UI_FEATURE_FLAGS,
@@ -312,10 +313,19 @@ function App(): React.JSX.Element {
           } else {
             const storedDemoMode =
               await AsyncStorage.getItem(DEMO_API_MODE_KEY);
-            resolvedBaseUrl =
-              storedDemoMode === 'true'
-                ? DEVELOPMENT_API_BASE_URL
-                : PRODUCTION_API_BASE_URL;
+            if (storedDemoMode === 'true') {
+              resolvedBaseUrl = DEVELOPMENT_API_BASE_URL;
+              try {
+                const devConfig = await fetchMobileConfig(
+                  `${DEVELOPMENT_API_BASE_URL}${MOBILE_CONFIG_PATH}`,
+                );
+                config = {...config, ...devConfig};
+              } catch (_) {}
+              Amplify.configure(devOutputs);
+              setDevApiActive(true);
+            } else {
+              resolvedBaseUrl = PRODUCTION_API_BASE_URL;
+            }
           }
 
           const resolvedPmsUrl =

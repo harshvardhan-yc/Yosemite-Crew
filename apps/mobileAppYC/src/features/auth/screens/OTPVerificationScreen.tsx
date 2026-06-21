@@ -37,6 +37,7 @@ import {
   AUTH_FEATURE_FLAGS,
   API_CONFIG,
   DEVELOPMENT_API_BASE_URL,
+  PRODUCTION_API_BASE_URL,
 } from '@/config/variables';
 import {storeTokens} from '@/features/auth/services/tokenStorage';
 import {updateApiClientBaseConfig} from '@/shared/services/apiClient';
@@ -221,14 +222,15 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
         API_CONFIG.baseUrl = DEVELOPMENT_API_BASE_URL;
         API_CONFIG.pmsBaseUrl = DEVELOPMENT_API_BASE_URL;
         updateApiClientBaseConfig({baseUrl: DEVELOPMENT_API_BASE_URL});
-        await AsyncStorage.setItem(DEMO_API_MODE_KEY, 'true');
-        DeviceEventEmitter.emit(DEV_API_MODE_CHANGED_EVENT, {isDevApi: true});
-        console.log('[API] Switched to dev API for demo login');
       }
       const completion = await completePasswordlessSignIn(code.trim());
       const shouldIgnoreCompletion = cancellationRef.current;
       if (shouldIgnoreCompletion) {
         return;
+      }
+      if (isDemoLogin) {
+        await AsyncStorage.setItem(DEMO_API_MODE_KEY, 'true');
+        DeviceEventEmitter.emit(DEV_API_MODE_CHANGED_EVENT, {isDevApi: true});
       }
       setOtpError('');
       const userPayload = buildUserPayload(completion);
@@ -240,6 +242,11 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
         await handleNewAccount(completion, userPayload, tokens);
       }
     } catch (error) {
+      if (isDemoLogin) {
+        API_CONFIG.baseUrl = PRODUCTION_API_BASE_URL;
+        API_CONFIG.pmsBaseUrl = PRODUCTION_API_BASE_URL;
+        updateApiClientBaseConfig({baseUrl: PRODUCTION_API_BASE_URL});
+      }
       const formatted = formatAuthError(error);
       setOtpError(
         formatted === 'Unexpected authentication error. Please retry.'
