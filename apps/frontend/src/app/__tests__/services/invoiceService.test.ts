@@ -1,6 +1,7 @@
 import {
   addLineItemsToAppointments,
   getPaymentLink,
+  loadAppointmentBilling,
   loadInvoicesForAppointment,
   loadInvoicesForOrgPrimaryOrg,
   markAppointmentReadyForBilling,
@@ -614,5 +615,40 @@ describe('invoiceService', () => {
       'org-1',
       expect.arrayContaining([expect.objectContaining({ appointmentId: 'appt-ext-1' })])
     );
+  });
+
+  it('maps a plain finance invoice envelope into workspace line items', async () => {
+    (getData as jest.Mock).mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 'ed0f6c19',
+            appointmentId: 'appt-1',
+            organisationId: 'org-1',
+            items: [
+              { name: 'bookable procedure', total: 10, quantity: 1, unitPrice: 10 },
+              { name: 'IDEXX test 3196', total: 195.65, quantity: 1, unitPrice: 195.65 },
+            ],
+            subtotal: 205.65,
+            totalAmount: 205.65,
+            currency: 'usd',
+            status: 'AWAITING_PAYMENT',
+            createdAt: '2026-06-20T19:18:22.990Z',
+          },
+        ],
+        meta: null,
+        error: null,
+      },
+    });
+
+    const billing = await loadAppointmentBilling('org-1', 'appt-1');
+
+    expect(billing.pastInvoices).toHaveLength(1);
+    expect(billing.pastInvoices[0].items.map((item) => item.name)).toEqual([
+      'bookable procedure',
+      'IDEXX test 3196',
+    ]);
+    expect(billing.pastInvoices[0].items[1].amountCents).toBe(19565);
+    expect(billing.pastInvoices[0].totalCents).toBe(20565);
   });
 });

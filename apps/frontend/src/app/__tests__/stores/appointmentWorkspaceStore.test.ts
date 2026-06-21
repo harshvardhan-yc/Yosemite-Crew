@@ -355,7 +355,7 @@ describe('appointmentWorkspaceStore', () => {
     expect(enc.pastInvoices.map((invoice) => invoice.id)).toEqual(['finance-inv-1', localId]);
   });
 
-  it('seeds the editable bill from the latest open invoice and hides it from history', () => {
+  it('seeds the editable bill from the latest open invoice while keeping it in history', () => {
     seed();
     getStore().hydrateInvoiceBilling(APPT, {
       depositCents: 0,
@@ -414,9 +414,9 @@ describe('appointmentWorkspaceStore', () => {
       'bookable procedure',
       'IDEXX test 3196',
     ]);
-    // …and the seeded invoice is removed from the read-only Invoices breakdown,
-    // while the paid invoice stays in history.
-    expect(enc.pastInvoices.map((invoice) => invoice.id)).toEqual(['paid-old']);
+    // …and BOTH invoices remain in the read-only Invoices breakdown (the history
+    // record is never moved out — seeding the builder is additive).
+    expect(enc.pastInvoices.map((invoice) => invoice.id)).toEqual(['paid-old', 'open-draft']);
   });
 
   it('does not reseed the bill when line items already exist', () => {

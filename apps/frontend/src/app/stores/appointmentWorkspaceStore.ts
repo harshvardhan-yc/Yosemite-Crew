@@ -700,7 +700,10 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       // Seed the editable bill builder from the latest still-open (unpaid/partial)
       // invoice so its line items show in the bill, not only in the read-only
       // Invoices breakdown. Only seed once, when the builder is empty and editable;
-      // paid invoices stay history-only and never repopulate the builder.
+      // paid invoices stay history-only and never repopulate the builder. The
+      // invoice always remains in `pastInvoices` (the historical record) — seeding
+      // the builder is additive, never moves it out of the Invoices section, so a
+      // hidden bill builder can never make the invoice disappear entirely.
       const openInvoice = [...billing.pastInvoices]
         .filter((invoice) => invoice.status !== 'PAID_FULL' && invoice.items.length > 0)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
@@ -709,15 +712,10 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       const invoiceLineItems = shouldSeedBill
         ? openInvoice.items.map((item) => ({ ...item }))
         : enc.invoiceLineItems;
-      // The seeded invoice now lives in the editable builder, so drop it from the
-      // read-only Invoices breakdown to avoid showing the same lines twice.
-      const visiblePastInvoices = shouldSeedBill
-        ? billing.pastInvoices.filter((invoice) => invoice.id !== openInvoice.id)
-        : billing.pastInvoices;
       return {
         ...enc,
         invoiceLineItems,
-        pastInvoices: [...visiblePastInvoices, ...localOnly],
+        pastInvoices: [...billing.pastInvoices, ...localOnly],
         // The collected deposit is authoritative from finance; fall back to the
         // existing local value when the server reports none.
         depositCents: billing.depositCents > 0 ? billing.depositCents : enc.depositCents,

@@ -700,6 +700,7 @@ const InvoiceStep = ({
           hydrateInvoiceBilling(appointmentId, {
             pastInvoices: billing.pastInvoices,
             depositCents: billing.depositCents,
+            currency: billing.currency,
           });
         }
       })
