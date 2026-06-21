@@ -2,6 +2,8 @@ import {
   getSafeDocumensoIframeUrl,
   getSafeIdexxIframeUrl,
   getSafeImageUrl,
+  getSafeSameOriginPath,
+  getSafeStripeRedirectUrl,
   isHttpsImageUrl,
 } from '@/app/lib/urls';
 
@@ -48,5 +50,41 @@ describe('url helpers', () => {
   it('rejects unsafe or untrusted Documenso iframe URLs', () => {
     expect(getSafeDocumensoIframeUrl('javascript:alert(1)')).toBe('');
     expect(getSafeDocumensoIframeUrl('https://evil.example.com/sign/abc')).toBe('');
+  });
+
+  it('allows only https Stripe-host redirect URLs', () => {
+    expect(getSafeStripeRedirectUrl('https://billing.stripe.com/p/session/abc')).toBe(
+      'https://billing.stripe.com/p/session/abc'
+    );
+    expect(getSafeStripeRedirectUrl('https://checkout.stripe.com/c/pay/cs_test_1')).toBe(
+      'https://checkout.stripe.com/c/pay/cs_test_1'
+    );
+  });
+
+  it('rejects non-https, non-Stripe, or malformed redirect URLs', () => {
+    expect(getSafeStripeRedirectUrl('http://billing.stripe.com/p/session/abc')).toBe('');
+    expect(getSafeStripeRedirectUrl('https://evil.example.com/p/session/abc')).toBe('');
+    expect(getSafeStripeRedirectUrl('https://stripe.com.evil.example.com/x')).toBe('');
+    expect(getSafeStripeRedirectUrl('javascript:alert(1)')).toBe('');
+    expect(getSafeStripeRedirectUrl('')).toBe('');
+    expect(getSafeStripeRedirectUrl(null)).toBe('');
+  });
+
+  it('allows safe same-origin paths only', () => {
+    expect(getSafeSameOriginPath('/appointments?appointmentId=abc')).toBe(
+      '/appointments?appointmentId=abc'
+    );
+    expect(getSafeSameOriginPath('/tasks?taskId=t1')).toBe('/tasks?taskId=t1');
+  });
+
+  it('rejects paths that could escape the origin', () => {
+    expect(getSafeSameOriginPath('//evil.example.com')).toBe('');
+    expect(getSafeSameOriginPath('https://evil.example.com')).toBe('');
+    expect(getSafeSameOriginPath('javascript:alert(1)')).toBe('');
+    expect(getSafeSameOriginPath('/path:with:colon')).toBe('');
+    expect(getSafeSameOriginPath('/path\\with\\backslash')).toBe('');
+    expect(getSafeSameOriginPath('relative/no/leading/slash')).toBe('');
+    expect(getSafeSameOriginPath('')).toBe('');
+    expect(getSafeSameOriginPath(undefined)).toBe('');
   });
 });

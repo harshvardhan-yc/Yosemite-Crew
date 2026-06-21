@@ -30,8 +30,11 @@ export const buildSecurityHeaders = (isProduction = isProductionRuntime()): Secu
     value: 'camera=(), microphone=(), geolocation=(self)',
   },
   {
+    // Disabled intentionally: the legacy XSS auditor is deprecated and its
+    // filtering can introduce side-channel/info-leak issues. The per-route
+    // nonce CSP is the real XSS defence here.
     key: 'X-XSS-Protection',
-    value: '1; mode=block',
+    value: '0',
   },
 ];
 

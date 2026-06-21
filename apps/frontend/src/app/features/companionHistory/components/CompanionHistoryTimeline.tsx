@@ -25,6 +25,7 @@ import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import { PERMISSIONS } from '@/app/lib/permissions';
 import { toTitle } from '@/app/lib/validators';
 import { formatDateTimeLocal } from '@/app/lib/date';
+import { getSafeSameOriginPath } from '@/app/lib/urls';
 import { loadDocumentDownloadURL } from '@/app/features/companions/services/companionDocumentService';
 import HistoryEmptyState from '@/app/features/companionHistory/components/HistoryEmptyState';
 import HistoryDocumentUpload from '@/app/features/companionHistory/components/HistoryDocumentUpload';
@@ -39,8 +40,7 @@ import {
 import { fetchCompanionHistory } from '@/app/features/companionHistory/services/companionHistoryService';
 import { AuditTrail } from '@/app/features/audit/types/audit';
 import { getCompanionAuditTrail } from '@/app/features/audit/services/auditService';
-import { Secondary } from '@/app/ui/primitives/Buttons';
-import { Primary } from '@/app/ui/primitives/Buttons';
+import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import Search from '@/app/ui/inputs/Search';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
@@ -86,6 +86,60 @@ type InvoiceBreakdownItem = {
   gross: string;
   discount: string;
   amount: string;
+};
+
+type TimelineBodyProps = {
+  activeFilter: HistoryFilterKey;
+  loading: boolean;
+  error: string | null;
+  auditLoading: boolean;
+  auditError: string | null;
+  auditEntries: AuditTrail[];
+  filteredEntries: HistoryEntry[];
+  statusOverrides: StatusOverrides;
+  expandedId: string | null;
+  onStatusChange: (entryId: string, nextStatus: string) => void;
+  onToggle: (entryId: string) => void;
+  onOpen: (entry: HistoryEntry) => void;
+  onPreviewPdf: (entry: HistoryEntry, pdfUrl: string) => void;
+};
+
+const getTimelineBody = ({
+  activeFilter,
+  loading,
+  error,
+  auditLoading,
+  auditError,
+  auditEntries,
+  filteredEntries,
+  statusOverrides,
+  expandedId,
+  onStatusChange,
+  onToggle,
+  onOpen,
+  onPreviewPdf,
+}: TimelineBodyProps) => {
+  if (activeFilter === 'AUDIT_TRAIL') {
+    return <AuditTimeline loading={auditLoading} error={auditError} entries={auditEntries} />;
+  }
+  if (loading) {
+    return <div className="px-4 py-8 text-body-3 text-text-secondary">Loading overview…</div>;
+  }
+  if (error) {
+    return <HistoryEmptyState isError message={error} />;
+  }
+  return (
+    <EmptyOrRows
+      activeFilter={activeFilter}
+      entries={filteredEntries}
+      statusOverrides={statusOverrides}
+      expandedId={expandedId}
+      onStatusChange={onStatusChange}
+      onToggle={onToggle}
+      onOpen={onOpen}
+      onPreviewPdf={onPreviewPdf}
+    />
+  );
 };
 
 const DEFAULT_FILTER: HistoryFilterKey = 'APPOINTMENT';
@@ -154,6 +208,16 @@ const buildFinanceLink = (invoiceId: string) => {
   return `/finance?${params.toString()}`;
 };
 
+/**
+ * Navigate to an internally-built path, but only after confirming it cannot
+ * escape the current origin (defence-in-depth: the path is built from API ids).
+ */
+const navigateSameOrigin = (path: string) => {
+  const safePath = getSafeSameOriginPath(path);
+  if (!safePath) return;
+  globalThis.window?.location.assign(safePath);
+};
+
 const appendPage = (
   previous: HistoryEntry[],
   response: CompanionHistoryResponse,
@@ -191,6 +255,11 @@ const statusPillStyle = (status?: string | null): React.CSSProperties => {
 
 const LOCKED_STATUS_KEYS = new Set(['completed']);
 
+const isStatusLocked = (status: string): boolean => LOCKED_STATUS_KEYS.has(status);
+const isRequestedStatus = (status: string): boolean => status === 'REQUESTED';
+const getRequestedButtonLabel = (status: string): string =>
+  status === 'CHECKED_IN' ? 'Start' : 'Open';
+
 const StatusPillSelect = ({
   status,
   options,
@@ -207,7 +276,7 @@ const StatusPillSelect = ({
   const label =
     options.find((option) => option.key === normalizedStatus)?.name ?? formatStatusLabel(status);
 
-  if (LOCKED_STATUS_KEYS.has(normalizedStatus)) {
+  if (isStatusLocked(normalizedStatus)) {
     return (
       <span
         className="inline-flex h-8 w-30 items-center justify-center rounded-2xl border px-3 text-caption-1 font-medium"
@@ -598,11 +667,11 @@ const RequestedAppointmentActions = ({
   const status = String(entry.status ?? '')
     .trim()
     .toUpperCase();
-  if (status !== 'REQUESTED') {
+  if (!isRequestedStatus(status)) {
     return (
       <div className="flex justify-end">
         <Primary
-          text={status === 'CHECKED_IN' ? 'Start' : 'Open'}
+          text={getRequestedButtonLabel(status)}
           icon={<LuArrowRight size={17} aria-hidden="true" />}
           iconPosition="right"
           onClick={() => onOpen(entry)}
@@ -1370,9 +1439,7 @@ const CompanionHistoryTimeline = ({
           onOpenAppointmentView({ label: 'labs', subLabel: 'idexx-labs' });
           return;
         }
-        globalThis.window?.location.assign(
-          buildAppointmentsLink(appointmentId, 'labs', 'idexx-labs')
-        );
+        navigateSameOrigin(buildAppointmentsLink(appointmentId, 'labs', 'idexx-labs'));
         return;
       }
       const resolvedUrl = resolveFallbackUrl(entry);
@@ -1393,9 +1460,7 @@ const CompanionHistoryTimeline = ({
         onOpenAppointmentView({ label: intent.label, subLabel: intent.subLabel });
         return;
       }
-      globalThis.window?.location.assign(
-        buildAppointmentsLink(appointmentId, intent.open, intent.subLabel)
-      );
+      navigateSameOrigin(buildAppointmentsLink(appointmentId, intent.open, intent.subLabel));
     },
     [activeAppointmentId, onOpenAppointmentView]
   );
@@ -1409,11 +1474,11 @@ const CompanionHistoryTimeline = ({
       }
       const taskId = getLinkedId(entry, ['taskId'], 'task');
       if (taskId) {
-        globalThis.window?.location.assign(buildTasksLink(taskId));
+        navigateSameOrigin(buildTasksLink(taskId));
         return;
       }
       if (appointmentId) {
-        globalThis.window?.location.assign(buildAppointmentsLink(appointmentId, undefined, 'task'));
+        navigateSameOrigin(buildAppointmentsLink(appointmentId, undefined, 'task'));
       }
     },
     [activeAppointmentId, onOpenAppointmentView]
@@ -1428,13 +1493,11 @@ const CompanionHistoryTimeline = ({
       }
       const invoiceId = getLinkedId(entry, ['invoiceId'], 'invoice');
       if (invoiceId) {
-        globalThis.window?.location.assign(buildFinanceLink(invoiceId));
+        navigateSameOrigin(buildFinanceLink(invoiceId));
         return;
       }
       if (appointmentId) {
-        globalThis.window?.location.assign(
-          buildAppointmentsLink(appointmentId, 'finance', 'summary')
-        );
+        navigateSameOrigin(buildAppointmentsLink(appointmentId, 'finance', 'summary'));
       }
     },
     [activeAppointmentId, onOpenAppointmentView]
@@ -1564,24 +1627,21 @@ const CompanionHistoryTimeline = ({
           ) : null}
 
           <div className="overflow-x-auto">
-            {activeFilter === 'AUDIT_TRAIL' ? (
-              <AuditTimeline loading={auditLoading} error={auditError} entries={auditEntries} />
-            ) : loading ? (
-              <div className="px-4 py-8 text-body-3 text-text-secondary">Loading overview…</div>
-            ) : error ? (
-              <HistoryEmptyState isError message={error} />
-            ) : (
-              <EmptyOrRows
-                activeFilter={activeFilter}
-                entries={filteredEntries}
-                statusOverrides={statusOverrides}
-                expandedId={expandedId}
-                onStatusChange={handleStatusChange}
-                onToggle={handleToggleExpanded}
-                onOpen={handleOpenEntry}
-                onPreviewPdf={handlePreviewPdf}
-              />
-            )}
+            {getTimelineBody({
+              activeFilter,
+              loading,
+              error,
+              auditLoading,
+              auditError,
+              auditEntries,
+              filteredEntries,
+              statusOverrides,
+              expandedId,
+              onStatusChange: handleStatusChange,
+              onToggle: handleToggleExpanded,
+              onOpen: handleOpenEntry,
+              onPreviewPdf: handlePreviewPdf,
+            })}
           </div>
         </div>
 
