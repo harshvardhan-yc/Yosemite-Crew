@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useCallback, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -234,8 +234,16 @@ const CompanionHistoryPageInner = () => {
   const replaceCompanionText = useCompanionTerminologyText();
   const { notify } = useNotify();
   const [addAppointmentOpen, setAddAppointmentOpen] = useState(false);
-  const appointmentFilterState = useState('all');
-  const appointmentStatusState = useState('all');
+  const appointmentFilterStateRef = useRef('all');
+  const appointmentStatusStateRef = useRef('all');
+  const setAppointmentFilterState = useCallback((value: string | ((prev: string) => string)) => {
+    appointmentFilterStateRef.current =
+      typeof value === 'function' ? value(appointmentFilterStateRef.current) : value;
+  }, []);
+  const setAppointmentStatusState = useCallback((value: string | ((prev: string) => string)) => {
+    appointmentStatusStateRef.current =
+      typeof value === 'function' ? value(appointmentStatusStateRef.current) : value;
+  }, []);
   const [alertTarget, setAlertTarget] = useState<'companion' | 'client' | null>(null);
 
   const companionId = String(searchParams.get('companionId') ?? '').trim();
@@ -435,8 +443,8 @@ const CompanionHistoryPageInner = () => {
           <AddAppointmentCentralModal
             showModal={addAppointmentOpen}
             setShowModal={setAddAppointmentOpen}
-            setActiveFilter={appointmentFilterState[1]}
-            setActiveStatus={appointmentStatusState[1]}
+            setActiveFilter={setAppointmentFilterState}
+            setActiveStatus={setAppointmentStatusState}
             initialCompanionId={companionId || null}
           />
 

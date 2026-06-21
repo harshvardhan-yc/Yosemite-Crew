@@ -562,11 +562,11 @@ const IdexxFollowUpPortal = ({ open, followUpFrameUrl, onClose }: IdexxFollowUpP
           </button>
         </div>
         <div className="relative flex-1">
-          {!loaded ? (
+          {loaded ? null : (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
               <YosemiteLoader label="Loading IDEXX" size={120} testId="idexx-followup-loader" />
             </div>
-          ) : null}
+          )}
           <iframe
             key={followUpFrameUrl}
             src={followUpFrameUrl}

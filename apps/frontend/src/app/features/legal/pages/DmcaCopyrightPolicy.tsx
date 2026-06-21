@@ -106,9 +106,9 @@ const DmcaCopyrightPolicy = () => {
               <a className="DmcaPolicyLink" href={`mailto:${DMCA_EMAIL}`}>
                 {DMCA_EMAIL}
               </a>
-              . Use the subject line &quot;DMCA Notice - Attn: Copyright Agent.&quot; We process
-              notices received at that address only. Notices sent elsewhere may not be reviewed
-              promptly.
+              {
+                '. Use the subject line "DMCA Notice - Attn: Copyright Agent." We process notices received at that address only. Notices sent elsewhere may not be reviewed promptly.'
+              }
             </p>
           </section>
 
@@ -119,7 +119,7 @@ const DmcaCopyrightPolicy = () => {
               <a className="DmcaPolicyLink" href={`mailto:${DMCA_EMAIL}`}>
                 {DMCA_EMAIL}
               </a>
-              .
+              {'.'}
             </p>
             <p>
               This policy applies to content hosted on Yosemite Crew&apos;s platform. Yosemite Crew
