@@ -11,6 +11,8 @@ export interface WorkspaceSummaryItem {
   name: string | null;
   status: string | null;
   kind: string | null;
+  productItemId?: string | null;
+  productKind?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

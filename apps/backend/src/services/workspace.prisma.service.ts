@@ -36,6 +36,7 @@ type AppointmentRow = {
   status: string;
   appointmentKind: string;
   concern: string | null;
+  productItemId?: string | null;
   encounterId: string | null;
   caseId: string | null;
   patient: unknown;
@@ -117,6 +118,7 @@ type RenderedDocumentRow = {
 
 type WorkspaceContext = {
   appointment: AppointmentRow | null;
+  appointmentProductKind: string | null;
   encounter: Encounter | null;
   episodeOfCare: Case | null;
   companion: PatientRow | null;
@@ -161,6 +163,8 @@ const buildWorkspaceSummaryItem = (input: {
   name: string | null;
   status: string | null;
   kind: string | null;
+  productItemId?: string | null;
+  productKind?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): WorkspaceSummaryItem => input;
@@ -930,6 +934,18 @@ const buildContext = async (
 
   return {
     appointment: resolvedAppointment,
+    appointmentProductKind:
+      resolvedAppointment?.productItemId != null
+        ? ((
+            await prisma.productItem.findFirst({
+              where: {
+                id: resolvedAppointment.productItemId,
+                organisationId: input.organisationId,
+              },
+              select: { kind: true },
+            })
+          )?.kind ?? null)
+        : null,
     encounter,
     episodeOfCare,
     companion,
@@ -1414,6 +1430,8 @@ const buildBootstrapAggregate = async (
           name: context.appointment.concern,
           status: context.appointment.status,
           kind: context.appointment.appointmentKind,
+          productItemId: context.appointment.productItemId,
+          productKind: context.appointmentProductKind,
           createdAt: context.appointment.createdAt,
           updatedAt: context.appointment.updatedAt,
         })

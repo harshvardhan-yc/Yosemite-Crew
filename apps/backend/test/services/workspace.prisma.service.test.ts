@@ -15,12 +15,12 @@ jest.mock("src/config/prisma", () => ({
     organization: { findUnique: jest.fn() },
     patient: { findFirst: jest.fn() },
     parent: { findFirst: jest.fn() },
+    productItem: { findFirst: jest.fn(), findMany: jest.fn() },
     task: { findMany: jest.fn() },
     taskSchedule: { findMany: jest.fn() },
     templateInstance: { findMany: jest.fn() },
     document: { findMany: jest.fn() },
     renderedDocument: { findMany: jest.fn() },
-    productItem: { findMany: jest.fn() },
     workspaceTreatmentItem: {
       findMany: jest.fn(),
       create: jest.fn(),
@@ -61,12 +61,12 @@ describe("WorkspaceService", () => {
     organization: { findUnique: jest.Mock };
     patient: { findFirst: jest.Mock };
     parent: { findFirst: jest.Mock };
+    productItem: { findFirst: jest.Mock; findMany: jest.Mock };
     task: { findMany: jest.Mock };
     taskSchedule: { findMany: jest.Mock };
     templateInstance: { findMany: jest.Mock };
     document: { findMany: jest.Mock };
     renderedDocument: { findMany: jest.Mock };
-    productItem: { findMany: jest.Mock };
     workspaceTreatmentItem: {
       findMany: jest.Mock;
       create: jest.Mock;
@@ -101,6 +101,7 @@ describe("WorkspaceService", () => {
     mockedPrisma.organization.findUnique.mockResolvedValue(null);
     mockedPrisma.patient.findFirst.mockResolvedValue(null);
     mockedPrisma.parent.findFirst.mockResolvedValue(null);
+    mockedPrisma.productItem.findFirst.mockResolvedValue(null);
     mockedPrisma.task.findMany.mockResolvedValue([]);
     mockedPrisma.taskSchedule.findMany.mockResolvedValue([]);
     mockedPrisma.templateInstance.findMany.mockResolvedValue([]);
@@ -190,6 +191,7 @@ describe("WorkspaceService", () => {
       status: "UPCOMING",
       appointmentKind: "OUTPATIENT",
       concern: "Annual review",
+      productItemId: "pkg-1",
       encounterId: "enc-1",
       caseId: "case-1",
       patient: { id: "patient-1", parent: { id: "parent-1" } },
@@ -240,6 +242,9 @@ describe("WorkspaceService", () => {
       description: null,
       createdAt: new Date("2026-06-14T10:00:00.000Z"),
       updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.productItem.findFirst.mockResolvedValue({
+      kind: "PACKAGE",
     });
     mockedPrisma.invoice.findFirst.mockResolvedValue({
       id: "invoice-1",
@@ -349,6 +354,12 @@ describe("WorkspaceService", () => {
 
     expect(result.organisationId).toBe("org-1");
     expect(result.appointment?.id).toBe("appt-1");
+    expect(result.appointment).toEqual(
+      expect.objectContaining({
+        productItemId: "pkg-1",
+        productKind: "PACKAGE",
+      }),
+    );
     expect(result.companion?.id).toBe("patient-1");
     expect(result.client?.id).toBe("parent-1");
     expect(result.permissions.canViewAppointments).toBe(true);

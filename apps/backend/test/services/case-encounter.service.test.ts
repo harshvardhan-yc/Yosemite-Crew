@@ -3,7 +3,24 @@ import {
   CaseEncounterService,
   CaseEncounterServiceError,
 } from "../../src/services/case-encounter.service";
+import { CatalogService } from "../../src/services/catalog.service";
 import { prisma } from "../../src/config/prisma";
+
+jest.mock("../../src/services/catalog.service", () => ({
+  __esModule: true,
+  CatalogServiceError: class CatalogServiceError extends Error {
+    constructor(
+      message: string,
+      public readonly statusCode: number,
+    ) {
+      super(message);
+      this.name = "CatalogServiceError";
+    }
+  },
+  CatalogService: {
+    resolveSelection: jest.fn(),
+  },
+}));
 
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
@@ -41,6 +58,10 @@ jest.mock("../../src/config/prisma", () => ({
       update: jest.fn(),
       create: jest.fn(),
     },
+    workspaceTreatmentItem: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+    },
     admission: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -50,6 +71,9 @@ jest.mock("../../src/config/prisma", () => ({
 }));
 
 const mockedPrisma = prisma as any;
+const mockedCatalogService = CatalogService as unknown as {
+  resolveSelection: jest.Mock;
+};
 
 const baseCaseRow = {
   id: "case_1",
@@ -94,6 +118,11 @@ describe("CaseEncounterService", () => {
     } as never);
     mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue(null);
     mockedPrisma.admission.findMany.mockResolvedValue([] as never);
+    mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([]);
+    mockedPrisma.workspaceTreatmentItem.create.mockResolvedValue({
+      id: "ti_1",
+    } as never);
+    mockedCatalogService.resolveSelection.mockResolvedValue(null as never);
   });
 
   it("creates a case", async () => {
@@ -188,6 +217,204 @@ describe("CaseEncounterService", () => {
       },
     });
     expect(result.appointmentId).toBe("appt_1");
+  });
+
+  it("expands a package appointment into workspace treatment rows once", async () => {
+    mockedPrisma.case.findUnique.mockResolvedValue(baseCaseRow as never);
+    mockedPrisma.appointment.findUnique.mockResolvedValue({
+      id: "appt_pkg",
+      caseId: null,
+      encounterId: null,
+      organisationId: "org_1",
+      productItemId: "pkg_1",
+      patient: { id: "comp_1" },
+    } as never);
+    mockedPrisma.encounter.create.mockResolvedValue({
+      ...baseEncounterRow,
+      id: "enc_pkg",
+    } as never);
+    mockedPrisma.appointment.update.mockResolvedValue({
+      id: "appt_pkg",
+    } as never);
+    mockedCatalogService.resolveSelection.mockResolvedValue({
+      productItemId: "pkg_1",
+      productKind: "PACKAGE",
+      name: "Bundle",
+      code: "PKG-1",
+      currency: "USD",
+      isBookable: true,
+      appointmentKinds: ["OUTPATIENT"],
+      grossAmount: 100,
+      itemDiscountAmount: 0,
+      additionalDiscountAmount: 0,
+      finalAmount: 100,
+      templateKinds: [],
+      templateBindings: [],
+      billingItems: [
+        {
+          productItemId: "pkg_1",
+          code: "PKG-1",
+          name: "Bundle",
+          kind: "PACKAGE",
+          quantity: 1,
+          currency: "USD",
+          unitPrice: 100,
+          referenceUnitPrice: null,
+          defaultDiscountPercent: null,
+          maxDiscountPercent: null,
+          discountPercent: 0,
+          grossAmount: 100,
+          discountAmount: 0,
+          finalAmount: 100,
+          isPackageComponent: false,
+          packageProductItemId: null,
+        },
+        {
+          productItemId: "svc_1",
+          code: "LAB-1",
+          name: "Lab",
+          kind: "LAB_TEST",
+          quantity: 2,
+          currency: "USD",
+          unitPrice: 30,
+          referenceUnitPrice: 30,
+          defaultDiscountPercent: null,
+          maxDiscountPercent: null,
+          discountPercent: 0,
+          grossAmount: 60,
+          discountAmount: 0,
+          finalAmount: 60,
+          isPackageComponent: true,
+          packageProductItemId: "pkg_1",
+        },
+      ],
+      includedItems: [
+        {
+          productItemId: "med_1",
+          code: "MED-1",
+          name: "Medication",
+          kind: "MEDICATION",
+          quantity: 1,
+          currency: "USD",
+          unitPrice: 0,
+          referenceUnitPrice: 25,
+          defaultDiscountPercent: null,
+          maxDiscountPercent: null,
+          discountPercent: 0,
+          grossAmount: 0,
+          discountAmount: 0,
+          finalAmount: 0,
+          isPackageComponent: true,
+          packageProductItemId: "pkg_1",
+        },
+      ],
+    } as never);
+
+    const result = await CaseEncounterService.createEncounter({
+      caseId: "case_1",
+      appointmentId: "appt_pkg",
+      organisationId: "org_1",
+      patientId: "comp_1",
+      parentId: "parent_1",
+      status: "planned",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      title: "Admission encounter",
+      reason: "Observation",
+      periodStart: new Date("2026-06-11T10:30:00.000Z"),
+      periodEnd: new Date("2026-06-11T11:00:00.000Z"),
+    });
+
+    expect(mockedCatalogService.resolveSelection).toHaveBeenCalledWith(
+      "pkg_1",
+      "org_1",
+    );
+    expect(mockedPrisma.workspaceTreatmentItem.create).toHaveBeenCalledTimes(3);
+    expect(mockedPrisma.workspaceTreatmentItem.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          productId: "pkg_1",
+          servicePackageKind: "PACKAGE",
+          quantity: 1,
+          priceSnapshot: expect.objectContaining({
+            unitPrice: 100,
+            packageProductItemId: "pkg_1",
+          }),
+        }),
+      }),
+    );
+    expect(mockedPrisma.workspaceTreatmentItem.create).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          productId: "med_1",
+          servicePackageKind: "MEDICATION",
+          priceSnapshot: expect.objectContaining({
+            unitPrice: 0,
+            finalAmount: 0,
+            packageProductItemId: "pkg_1",
+          }),
+          productSnapshot: expect.objectContaining({
+            packageProductItemId: "pkg_1",
+          }),
+        }),
+      }),
+    );
+    expect(result.appointmentId).toBe("appt_pkg");
+  });
+
+  it("does not duplicate package treatment rows when they already exist", async () => {
+    mockedPrisma.case.findUnique.mockResolvedValue(baseCaseRow as never);
+    mockedPrisma.appointment.findUnique.mockResolvedValue({
+      id: "appt_pkg",
+      caseId: null,
+      encounterId: null,
+      organisationId: "org_1",
+      productItemId: "pkg_1",
+      patient: { id: "comp_1" },
+    } as never);
+    mockedPrisma.encounter.create.mockResolvedValue({
+      ...baseEncounterRow,
+      id: "enc_pkg",
+    } as never);
+    mockedPrisma.appointment.update.mockResolvedValue({
+      id: "appt_pkg",
+    } as never);
+    mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([
+      {
+        productSnapshot: { packageProductItemId: "pkg_1" },
+      },
+    ] as never);
+    mockedCatalogService.resolveSelection.mockResolvedValue({
+      productItemId: "pkg_1",
+      productKind: "PACKAGE",
+      name: "Bundle",
+      code: "PKG-1",
+      currency: "USD",
+      isBookable: true,
+      appointmentKinds: ["OUTPATIENT"],
+      grossAmount: 100,
+      itemDiscountAmount: 0,
+      additionalDiscountAmount: 0,
+      finalAmount: 100,
+      templateKinds: [],
+      templateBindings: [],
+      billingItems: [],
+      includedItems: [],
+    } as never);
+
+    await CaseEncounterService.createEncounter({
+      caseId: "case_1",
+      appointmentId: "appt_pkg",
+      organisationId: "org_1",
+      patientId: "comp_1",
+      status: "planned",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+    });
+
+    expect(mockedPrisma.workspaceTreatmentItem.create).not.toHaveBeenCalled();
   });
 
   it("rejects encounter creation when appointment belongs to another companion", async () => {

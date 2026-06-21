@@ -1,4 +1,5 @@
 import { prisma } from "src/config/prisma";
+import { CatalogService, CatalogServiceError } from "./catalog.service";
 import type {
   Admission as AdmissionDomain,
   AppointmentKind,
@@ -44,6 +45,7 @@ type AppointmentLinkRow = {
   caseId: string | null;
   encounterId: string | null;
   organisationId: string;
+  productItemId?: string | null;
   patient: unknown;
 };
 
@@ -167,6 +169,32 @@ type RoomUnitAssignmentDelegate = {
   }): Promise<RoomUnitAssignmentRow>;
 };
 
+type WorkspaceTreatmentItemRow = {
+  productSnapshot: unknown;
+};
+
+type WorkspaceTreatmentItemDelegate = {
+  findMany(args: {
+    where: { organisationId: string; encounterId: string };
+  }): Promise<WorkspaceTreatmentItemRow[]>;
+  create(args: {
+    data: {
+      organisationId: string;
+      appointmentId?: string | null;
+      encounterId: string;
+      productId: string;
+      productVersion?: number | null;
+      productSnapshot: unknown;
+      servicePackageKind: string;
+      quantity: number;
+      priceSnapshot: unknown;
+      billingStatus?: string;
+      invoiceRowId?: string | null;
+      lockState?: unknown;
+    };
+  }): Promise<unknown>;
+};
+
 export class CaseEncounterServiceError extends Error {
   constructor(
     message: string,
@@ -229,6 +257,111 @@ const normalizeOptionalString = (value?: string | null) => {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const getPackageProductItemId = (value: unknown): string | undefined => {
+  if (!isRecord(value)) return undefined;
+  return typeof value.packageProductItemId === "string" &&
+    value.packageProductItemId.trim()
+    ? value.packageProductItemId.trim()
+    : undefined;
+};
+
+const resolveSelectionSafe = async (
+  productItemId: string,
+  organisationId: string,
+) => {
+  try {
+    return await CatalogService.resolveSelection(productItemId, organisationId);
+  } catch (error) {
+    if (error instanceof CatalogServiceError && error.statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const expandPackageTreatmentItems = async (params: {
+  tx: {
+    workspaceTreatmentItem: WorkspaceTreatmentItemDelegate;
+  };
+  organisationId: string;
+  appointmentId: string;
+  encounterId: string;
+  selection: Awaited<ReturnType<typeof CatalogService.resolveSelection>>;
+}) => {
+  const packageProductItemId = params.selection.productItemId;
+  const existingItems = await params.tx.workspaceTreatmentItem.findMany({
+    where: {
+      organisationId: params.organisationId,
+      encounterId: params.encounterId,
+    },
+  });
+
+  if (
+    existingItems.some(
+      (item) =>
+        getPackageProductItemId(item.productSnapshot) === packageProductItemId,
+    )
+  ) {
+    return;
+  }
+
+  const items = [
+    ...params.selection.billingItems,
+    ...params.selection.includedItems,
+  ];
+
+  for (const item of items) {
+    const included = params.selection.includedItems.some(
+      (includedItem) => includedItem.productItemId === item.productItemId,
+    );
+    const priceSnapshot = {
+      productItemId: item.productItemId,
+      code: item.code,
+      name: item.name,
+      kind: item.kind,
+      quantity: item.quantity,
+      currency: item.currency,
+      unitPrice: included ? 0 : item.unitPrice,
+      referenceUnitPrice: item.referenceUnitPrice ?? null,
+      defaultDiscountPercent: item.defaultDiscountPercent ?? null,
+      maxDiscountPercent: item.maxDiscountPercent ?? null,
+      discountPercent: included ? 0 : item.discountPercent,
+      grossAmount: included ? 0 : item.grossAmount,
+      discountAmount: included ? 0 : item.discountAmount,
+      finalAmount: included ? 0 : item.finalAmount,
+      isPackageComponent: item.isPackageComponent,
+      packageProductItemId,
+    };
+
+    await params.tx.workspaceTreatmentItem.create({
+      data: {
+        organisationId: params.organisationId,
+        appointmentId: params.appointmentId,
+        encounterId: params.encounterId,
+        productId: item.productItemId,
+        productVersion: null,
+        productSnapshot: {
+          productItemId: item.productItemId,
+          code: item.code,
+          name: item.name,
+          kind: item.kind,
+          packageProductItemId,
+          isPackageComponent: item.isPackageComponent,
+        },
+        servicePackageKind: item.kind,
+        quantity: item.quantity,
+        priceSnapshot,
+        billingStatus: "UNBILLED",
+        invoiceRowId: null,
+        lockState: null,
+      },
+    });
+  }
 };
 
 const toCaseStatus = (status: string): CaseStatus => {
@@ -629,6 +762,7 @@ export const CaseEncounterService = {
             caseId: true,
             encounterId: true,
             organisationId: true,
+            productItemId: true,
             patient: true,
           },
         })) as AppointmentLinkRow | null;
@@ -690,6 +824,37 @@ export const CaseEncounterService = {
             encounterId: createdEncounter.id,
           },
         });
+
+        const appointment = (await tx.appointment.findUnique({
+          where: { id: appointmentId },
+          select: {
+            id: true,
+            caseId: true,
+            encounterId: true,
+            organisationId: true,
+            productItemId: true,
+            patient: true,
+          },
+        })) as AppointmentLinkRow | null;
+
+        if (appointment?.productItemId) {
+          const selection = await resolveSelectionSafe(
+            appointment.productItemId,
+            organisationId,
+          );
+
+          if (selection?.productKind === "PACKAGE") {
+            await expandPackageTreatmentItems({
+              tx: tx as unknown as {
+                workspaceTreatmentItem: WorkspaceTreatmentItemDelegate;
+              },
+              organisationId,
+              appointmentId,
+              encounterId: createdEncounter.id,
+              selection,
+            });
+          }
+        }
       }
 
       return createdEncounter;
