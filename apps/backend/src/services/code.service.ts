@@ -107,6 +107,65 @@ const toJsonInput = (value: Record<string, unknown> | null | undefined) => {
   return value as Prisma.InputJsonValue;
 };
 
+const normalizeTrimmedValue = <T extends string>(value?: T) =>
+  typeof value === "string" && value.trim() ? value : undefined;
+
+const normalizeLimit = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? Math.floor(value)
+    : undefined;
+
+const escapeRegex = (value: string) =>
+  value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\\$&`);
+
+const applyEntryQueryFilter = (
+  query: string | undefined,
+  filter: Record<string, unknown>,
+) => {
+  if (!query) {
+    return;
+  }
+
+  if (typeof query !== "string") {
+    throw new CodeServiceError("Invalid query", 400);
+  }
+
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    return;
+  }
+
+  const escaped = escapeRegex(trimmedQuery);
+  filter.$or = [
+    { code: new RegExp(escaped, "i") },
+    { display: new RegExp(escaped, "i") },
+    { synonyms: new RegExp(escaped, "i") },
+  ];
+};
+
+const applyEntryQueryWhere = (
+  query: string | undefined,
+  where: Prisma.CodeEntryWhereInput,
+) => {
+  if (!query) {
+    return;
+  }
+
+  if (typeof query !== "string") {
+    throw new CodeServiceError("Invalid query", 400);
+  }
+
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    return;
+  }
+
+  where.OR = [
+    { code: { contains: trimmedQuery, mode: "insensitive" } },
+    { display: { contains: trimmedQuery, mode: "insensitive" } },
+  ];
+};
+
 export const CodeService = {
   async upsertEntry(input: CodeEntryMongo) {
     ensureNonEmpty(input.system, "system");
@@ -224,53 +283,21 @@ export const CodeService = {
   }) {
     const { system, type, active, query, limit } = params;
     const filter: Record<string, unknown> = {};
-    const safeSystem =
-      typeof system === "string" && system.trim() ? system : undefined;
-    const safeType = typeof type === "string" && type.trim() ? type : undefined;
-    const safeLimit =
-      typeof limit === "number" && Number.isFinite(limit)
-        ? Math.floor(limit)
-        : undefined;
+    const safeSystem = normalizeTrimmedValue(system);
+    const safeType = normalizeTrimmedValue(type);
+    const safeLimit = normalizeLimit(limit);
 
     if (safeSystem) filter.system = safeSystem;
     if (safeType) filter.type = safeType;
     if (typeof active === "boolean") filter.active = active;
-
-    if (query) {
-      if (typeof query !== "string") {
-        throw new CodeServiceError("Invalid query", 400);
-      }
-      const trimmedQuery = query.trim();
-      if (trimmedQuery) {
-        const escaped = trimmedQuery.replaceAll(
-          /[.*+?^${}()|[\]\\]/g,
-          String.raw`\\$&`,
-        );
-        filter.$or = [
-          { code: new RegExp(escaped, "i") },
-          { display: new RegExp(escaped, "i") },
-          { synonyms: new RegExp(escaped, "i") },
-        ];
-      }
-    }
+    applyEntryQueryFilter(query, filter);
 
     if (isReadFromPostgres()) {
       const where: Prisma.CodeEntryWhereInput = {};
       if (safeSystem) where.system = safeSystem;
       if (safeType) where.type = safeType;
       if (typeof active === "boolean") where.active = active;
-      if (query) {
-        if (typeof query !== "string") {
-          throw new CodeServiceError("Invalid query", 400);
-        }
-        const trimmedQuery = query.trim();
-        if (trimmedQuery) {
-          where.OR = [
-            { code: { contains: trimmedQuery, mode: "insensitive" } },
-            { display: { contains: trimmedQuery, mode: "insensitive" } },
-          ];
-        }
-      }
+      applyEntryQueryWhere(query, where);
 
       return prisma.codeEntry.findMany({
         where,
@@ -300,22 +327,10 @@ export const CodeService = {
     const { sourceSystem, sourceCode, targetSystem, targetCode, active } =
       params;
     const filter: Record<string, unknown> = {};
-    const safeSourceSystem =
-      typeof sourceSystem === "string" && sourceSystem.trim()
-        ? sourceSystem
-        : undefined;
-    const safeSourceCode =
-      typeof sourceCode === "string" && sourceCode.trim()
-        ? sourceCode
-        : undefined;
-    const safeTargetSystem =
-      typeof targetSystem === "string" && targetSystem.trim()
-        ? targetSystem
-        : undefined;
-    const safeTargetCode =
-      typeof targetCode === "string" && targetCode.trim()
-        ? targetCode
-        : undefined;
+    const safeSourceSystem = normalizeTrimmedValue(sourceSystem);
+    const safeSourceCode = normalizeTrimmedValue(sourceCode);
+    const safeTargetSystem = normalizeTrimmedValue(targetSystem);
+    const safeTargetCode = normalizeTrimmedValue(targetCode);
 
     if (safeSourceSystem) filter.sourceSystem = safeSourceSystem;
     if (safeSourceCode) filter.sourceCode = safeSourceCode;

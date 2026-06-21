@@ -307,6 +307,68 @@ const createPaymentAttempt = async (
     },
   });
 
+const updateInvoiceAfterPayment = async (params: {
+  invoice: Prisma.InvoiceGetPayload<{
+    include: { payments: { where: { status: "SUCCEEDED" } } };
+  }>;
+  invoiceId: string;
+  appliedAmount: number;
+  balance: number;
+  receivedAt: Date;
+  input: InvoicePaymentInput;
+}) => {
+  const { invoice, invoiceId, appliedAmount, balance, receivedAt, input } =
+    params;
+  const isDepositPayment =
+    input.collectionMode === "DEPOSIT_THEN_SETTLE" ||
+    input.settlementChannel === "DEPOSIT" ||
+    invoice.billingCollectionMode === "DEPOSIT_THEN_SETTLE";
+
+  const nextDepositCollectedAmount = isDepositPayment
+    ? roundMoney(
+        invoice.depositTargetAmount > 0
+          ? Math.min(
+              (invoice.depositCollectedAmount ?? 0) + appliedAmount,
+              invoice.depositTargetAmount,
+            )
+          : (invoice.depositCollectedAmount ?? 0) + appliedAmount,
+      )
+    : roundMoney(invoice.depositCollectedAmount ?? 0);
+
+  if (appliedAmount >= balance) {
+    return prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: "PAID",
+        paidAt: receivedAt,
+        visitBillingStage: "SETTLED",
+        depositCollectedAmount: nextDepositCollectedAmount,
+        ...(isDepositPayment
+          ? {
+              billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+            }
+          : {}),
+      },
+    });
+  }
+
+  if (isDepositPayment) {
+    return prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        depositCollectedAmount: nextDepositCollectedAmount,
+        billingCollectionMode: "DEPOSIT_THEN_SETTLE",
+        visitBillingStage:
+          invoice.visitBillingStage === "SETTLED"
+            ? "SETTLED"
+            : "READY_FOR_BILLING",
+      },
+    });
+  }
+
+  return invoice;
+};
+
 const readJsonRecord = (value: Prisma.JsonValue | null | undefined) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -1182,50 +1244,14 @@ export const FinancePaymentService = {
       },
     });
 
-    const isDepositPayment =
-      input.collectionMode === "DEPOSIT_THEN_SETTLE" ||
-      input.settlementChannel === "DEPOSIT" ||
-      invoice.billingCollectionMode === "DEPOSIT_THEN_SETTLE";
-    const nextDepositCollectedAmount = isDepositPayment
-      ? roundMoney(
-          invoice.depositTargetAmount > 0
-            ? Math.min(
-                (invoice.depositCollectedAmount ?? 0) + appliedAmount,
-                invoice.depositTargetAmount,
-              )
-            : (invoice.depositCollectedAmount ?? 0) + appliedAmount,
-        )
-      : roundMoney(invoice.depositCollectedAmount ?? 0);
-
-    const updatedInvoice =
-      appliedAmount >= balance
-        ? await prisma.invoice.update({
-            where: { id: invoiceId },
-            data: {
-              status: "PAID",
-              paidAt: receivedAt,
-              visitBillingStage: "SETTLED",
-              depositCollectedAmount: nextDepositCollectedAmount,
-              ...(isDepositPayment
-                ? {
-                    billingCollectionMode: "DEPOSIT_THEN_SETTLE",
-                  }
-                : {}),
-            },
-          })
-        : isDepositPayment
-          ? await prisma.invoice.update({
-              where: { id: invoiceId },
-              data: {
-                depositCollectedAmount: nextDepositCollectedAmount,
-                billingCollectionMode: "DEPOSIT_THEN_SETTLE",
-                visitBillingStage:
-                  invoice.visitBillingStage === "SETTLED"
-                    ? "SETTLED"
-                    : "READY_FOR_BILLING",
-              },
-            })
-          : invoice;
+    const updatedInvoice = await updateInvoiceAfterPayment({
+      invoice,
+      invoiceId,
+      appliedAmount,
+      balance,
+      receivedAt,
+      input,
+    });
 
     await FinanceEventService.recordEvent({
       organisationId: invoice.organisationId ?? null,

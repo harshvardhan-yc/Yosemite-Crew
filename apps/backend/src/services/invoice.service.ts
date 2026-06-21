@@ -114,6 +114,37 @@ const resolveBillingCollectionMode = (
     ? "PAY_AT_VISIT_END"
     : "PREPAY_AT_BOOKING";
 
+const resolveInvoiceDepositTargetAmount = (depositTargetAmount: number) => {
+  if (depositTargetAmount < 0) {
+    throw new InvoiceServiceError(
+      "Deposit target amount must be greater than or equal to zero",
+      400,
+    );
+  }
+
+  return roundMoney(depositTargetAmount);
+};
+
+const resolveInvoiceDepositCollectedAmount = (
+  invoice: Pick<PrismaInvoice, "depositCollectedAmount">,
+  depositTargetAmount: number,
+) =>
+  roundMoney(
+    Math.min(invoice.depositCollectedAmount ?? 0, depositTargetAmount),
+  );
+
+const findInvoiceByIdOrThrow = async (invoiceId: string) => {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+  });
+
+  if (!invoice) {
+    throw new InvoiceServiceError("Invoice not found", 404);
+  }
+
+  return invoice;
+};
+
 const normalizeInvoiceMetadata = (
   value: Prisma.JsonValue | null | undefined,
 ): InvoiceMetadata | undefined => {
@@ -479,6 +510,54 @@ const resolveCatalogSelectionSafe = async (
   }
 };
 
+const buildBootstrapInvoiceItems = async (params: {
+  appointment: {
+    appointmentType: Prisma.JsonValue | null;
+    organisationId: string;
+  };
+  serviceId?: string;
+  productItemId?: string | null;
+}) => {
+  const { appointment, serviceId, productItemId } = params;
+
+  const catalogSelection = productItemId
+    ? await resolveCatalogSelectionSafe(
+        productItemId,
+        appointment.organisationId,
+      )
+    : null;
+
+  if (catalogSelection) {
+    return mapCatalogSelectionToDraftItems(catalogSelection);
+  }
+
+  const service = serviceId
+    ? await prisma.service.findUnique({ where: { id: serviceId } })
+    : null;
+  if (!service) {
+    throw new InvoiceServiceError("Service not found", 404);
+  }
+
+  const description =
+    typeof appointment.appointmentType === "object" &&
+    appointment.appointmentType &&
+    typeof (appointment.appointmentType as Record<string, unknown>).name ===
+      "string"
+      ? ((appointment.appointmentType as Record<string, unknown>).name as
+          | string
+          | undefined)
+      : undefined;
+
+  return [
+    {
+      description: description ?? service.name ?? "Consultation",
+      quantity: 1,
+      unitPrice: service.cost,
+      discountPercent: service.maxDiscount ?? undefined,
+    },
+  ] satisfies DraftInvoiceItemInput[];
+};
+
 const resolveOrganisationCurrency = (): string => "usd";
 
 const toStripeAddress = (
@@ -618,11 +697,7 @@ const normalizeCreateInput = async (
 };
 
 export const InvoiceService = {
-  async createDraftForAppointment(
-    input: CreateInvoiceInput,
-    session?: unknown,
-  ) {
-    void session;
+  async createDraftForAppointment(input: CreateInvoiceInput) {
     const appointment = await prisma.appointment.findUnique({
       where: { id: input.appointmentId },
       select: { id: true, organisationId: true, patient: true },
@@ -1183,24 +1258,8 @@ export const InvoiceService = {
     invoiceId: string,
     depositTargetAmount: number,
   ) {
-    if (depositTargetAmount < 0) {
-      throw new InvoiceServiceError(
-        "Deposit target amount must be greater than or equal to zero",
-        400,
-      );
-    }
-
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: invoiceId },
-    });
-    if (!invoice) {
-      throw new InvoiceServiceError("Invoice not found", 404);
-    }
-
-    const targetAmount = roundMoney(depositTargetAmount);
-    const collectedAmount = roundMoney(
-      Math.min(invoice.depositCollectedAmount ?? 0, targetAmount),
-    );
+    const targetAmount = resolveInvoiceDepositTargetAmount(depositTargetAmount);
+    const invoice = await findInvoiceByIdOrThrow(invoiceId);
 
     const updated = await prisma.invoice.update({
       where: { id: invoiceId },
@@ -1208,7 +1267,10 @@ export const InvoiceService = {
         billingCollectionMode: "DEPOSIT_THEN_SETTLE",
         visitBillingStage: "READY_FOR_BILLING",
         depositTargetAmount: targetAmount,
-        depositCollectedAmount: collectedAmount,
+        depositCollectedAmount: resolveInvoiceDepositCollectedAmount(
+          invoice,
+          targetAmount,
+        ),
       },
     });
 
@@ -1287,41 +1349,11 @@ export const InvoiceService = {
       );
     }
 
-    const catalogSelection = productItemId
-      ? await resolveCatalogSelectionSafe(
-          productItemId,
-          appointment.organisationId,
-        )
-      : null;
-
-    let items: DraftInvoiceItemInput[];
-    if (catalogSelection) {
-      items = mapCatalogSelectionToDraftItems(catalogSelection);
-    } else {
-      const service = serviceId
-        ? await prisma.service.findUnique({ where: { id: serviceId } })
-        : null;
-      if (!service) {
-        throw new InvoiceServiceError("Service not found", 404);
-      }
-
-      const description =
-        typeof appointment.appointmentType === "object" &&
-        appointment.appointmentType
-          ? ((appointment.appointmentType as Record<string, unknown>).name as
-              | string
-              | undefined)
-          : undefined;
-
-      items = [
-        {
-          description: description ?? service.name ?? "Consultation",
-          quantity: 1,
-          unitPrice: service.cost,
-          discountPercent: service.maxDiscount ?? undefined,
-        },
-      ];
-    }
+    const items = await buildBootstrapInvoiceItems({
+      appointment,
+      serviceId,
+      productItemId,
+    });
 
     return this.createDraftForAppointment({
       appointmentId,

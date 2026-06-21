@@ -163,4 +163,72 @@ describe("CodeService", () => {
     expect(mockedPrisma.codeEntry.upsert).not.toHaveBeenCalled();
     expect(mockedPrisma.codeMapping.upsert).not.toHaveBeenCalled();
   });
+
+  it("lists entries with normalized filters in Postgres mode", async () => {
+    process.env.READ_FROM_POSTGRES = "true";
+    mockedPrisma.codeEntry.findMany.mockResolvedValue([
+      {
+        system: "YOSEMITECODE",
+        code: "YSPEC:CANINE",
+        display: "Canine",
+      },
+    ]);
+
+    await expect(
+      CodeService.listEntries({
+        system: "YOSEMITECODE",
+        type: "SPECIES",
+        active: true,
+        query: " Canine ",
+        limit: 7,
+      }),
+    ).resolves.toHaveLength(1);
+
+    expect(mockedPrisma.codeEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          system: "YOSEMITECODE",
+          type: "SPECIES",
+          active: true,
+          OR: [
+            { code: { contains: "Canine", mode: "insensitive" } },
+            { display: { contains: "Canine", mode: "insensitive" } },
+          ],
+        }),
+        take: 7,
+      }),
+    );
+  });
+
+  it("lists mappings with normalized filters in Mongo mode", async () => {
+    process.env.READ_FROM_POSTGRES = "false";
+    const lean: any = jest.fn();
+    lean.mockResolvedValue([{ sourceCode: "YSPEC:CANINE" }]);
+    const mockCursor: any = {
+      sort: jest.fn().mockReturnValue({
+        setOptions: jest.fn().mockReturnValue({
+          lean,
+        }),
+      }),
+    };
+    (mockedCodeMappingModel.find as jest.Mock).mockReturnValue(mockCursor);
+
+    await expect(
+      CodeService.listMappings({
+        sourceSystem: "YOSEMITECODE",
+        sourceCode: "YSPEC:CANINE",
+        targetSystem: "IDEXX",
+        targetCode: "CANINE",
+        active: true,
+      }),
+    ).resolves.toHaveLength(1);
+
+    expect(mockedCodeMappingModel.find).toHaveBeenCalledWith({
+      sourceSystem: "YOSEMITECODE",
+      sourceCode: "YSPEC:CANINE",
+      targetSystem: "IDEXX",
+      targetCode: "CANINE",
+      active: true,
+    });
+  });
 });

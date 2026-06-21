@@ -402,6 +402,50 @@ const RESULTED_LAB_STATUSES = new Set(["RESULTED", "COMPLETE", "FINAL"]);
 
 const FAILED_LAB_STATUSES = new Set(["FAILED", "ERROR", "CANCELLED"]);
 
+const countLabStatuses = (
+  items: Array<{ status?: string | null }>,
+  statuses: Set<string>,
+) =>
+  items.filter((item) => statuses.has((item.status ?? "").toUpperCase()))
+    .length;
+
+const getLatestLabEvent = (
+  orders: Array<{ status?: string | null; updatedAt?: Date }>,
+  results: Array<{ status?: string | null; updatedAt?: Date }>,
+) =>
+  [...orders, ...results]
+    .filter((item) => item.updatedAt instanceof Date)
+    .sort(
+      (left, right) =>
+        (right.updatedAt?.getTime() ?? 0) - (left.updatedAt?.getTime() ?? 0),
+    )[0];
+
+const resolveLatestLabStatus = (
+  orders: Array<unknown>,
+  results: Array<unknown>,
+  latestEvent: { status?: string | null } | undefined,
+  pendingCount: number,
+  resultedCount: number,
+) => {
+  if (!orders.length && !results.length) {
+    return "NONE";
+  }
+
+  if (!latestEvent || typeof latestEvent.status !== "string") {
+    if (pendingCount > 0 && resultedCount > 0) return "PARTIAL";
+    if (resultedCount > 0) return "RESULTED";
+    if (pendingCount > 0) return "ORDERED";
+    return "NONE";
+  }
+
+  const status = latestEvent.status.toUpperCase();
+  if (FAILED_LAB_STATUSES.has(status)) return "FAILED";
+  if (RESULTED_LAB_STATUSES.has(status)) return "RESULTED";
+  if (status === "CREATED") return "QUEUED";
+  if (pendingCount > 0 && resultedCount > 0) return "PARTIAL";
+  return "ORDERED";
+};
+
 const buildLabSummary = (
   orders: Array<{
     provider?: string | null;
@@ -422,47 +466,19 @@ const buildLabSummary = (
     ),
   ];
 
-  const pendingCount = orders.filter((order) =>
-    OPEN_LAB_ORDER_STATUSES.has((order.status ?? "").toUpperCase()),
-  ).length;
-  const resultedCount = results.filter((result) =>
-    RESULTED_LAB_STATUSES.has((result.status ?? "").toUpperCase()),
-  ).length;
+  const pendingCount = countLabStatuses(orders, OPEN_LAB_ORDER_STATUSES);
+  const resultedCount = countLabStatuses(results, RESULTED_LAB_STATUSES);
   const failedCount =
-    orders.filter((order) =>
-      FAILED_LAB_STATUSES.has((order.status ?? "").toUpperCase()),
-    ).length +
-    results.filter((result) =>
-      FAILED_LAB_STATUSES.has((result.status ?? "").toUpperCase()),
-    ).length;
-
-  const latestEvent = [...orders, ...results]
-    .filter((item) => item.updatedAt instanceof Date)
-    .sort(
-      (left, right) =>
-        (right.updatedAt?.getTime() ?? 0) - (left.updatedAt?.getTime() ?? 0),
-    )[0];
-
-  const latestStatus =
-    !orders.length && !results.length
-      ? "NONE"
-      : latestEvent && typeof latestEvent.status === "string"
-        ? FAILED_LAB_STATUSES.has(latestEvent.status.toUpperCase())
-          ? "FAILED"
-          : RESULTED_LAB_STATUSES.has(latestEvent.status.toUpperCase())
-            ? "RESULTED"
-            : latestEvent.status.toUpperCase() === "CREATED"
-              ? "QUEUED"
-              : pendingCount > 0 && resultedCount > 0
-                ? "PARTIAL"
-                : "ORDERED"
-        : pendingCount > 0 && resultedCount > 0
-          ? "PARTIAL"
-          : resultedCount > 0
-            ? "RESULTED"
-            : pendingCount > 0
-              ? "ORDERED"
-              : "NONE";
+    countLabStatuses(orders, FAILED_LAB_STATUSES) +
+    countLabStatuses(results, FAILED_LAB_STATUSES);
+  const latestEvent = getLatestLabEvent(orders, results);
+  const latestStatus = resolveLatestLabStatus(
+    orders,
+    results,
+    latestEvent,
+    pendingCount,
+    resultedCount,
+  );
 
   return {
     hasLabs: orders.length > 0 || results.length > 0,
@@ -709,8 +725,8 @@ const buildTreatmentItemsFromPrescriptions = (
     };
   });
 
-const buildDiagnosticPreloadItems = (
-  products: ProductItemRow[],
+const buildDiagnosticPreloadItemsForProduct = (
+  product: ProductItemRow,
 ): Array<{
   id: string;
   provider: string;
@@ -723,6 +739,28 @@ const buildDiagnosticPreloadItems = (
   createdAt: Date;
   updatedAt: Date;
 }> => {
+  if (product.kind === "DIAGNOSTIC" || product.kind === "LAB_TEST") {
+    if (!product.code) return [];
+    return [
+      {
+        id: `provider-test:${product.id}`,
+        provider: "IDEXX",
+        providerTestCode: product.code,
+        label: product.name,
+        sourceKind: "PRODUCT_ITEM",
+        sourceId: product.id,
+        sourceProductId: product.id,
+        sourcePackageId: null,
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt,
+      },
+    ];
+  }
+
+  if (product.kind !== "PACKAGE" || !product.package?.items?.length) {
+    return [];
+  }
+
   const items: Array<{
     id: string;
     provider: string;
@@ -736,52 +774,32 @@ const buildDiagnosticPreloadItems = (
     updatedAt: Date;
   }> = [];
 
-  for (const product of products) {
-    if (product.kind === "DIAGNOSTIC" || product.kind === "LAB_TEST") {
-      if (!product.code) continue;
-      items.push({
-        id: `provider-test:${product.id}`,
-        provider: "IDEXX",
-        providerTestCode: product.code,
-        label: product.name,
-        sourceKind: "PRODUCT_ITEM",
-        sourceId: product.id,
-        sourceProductId: product.id,
-        sourcePackageId: null,
-        createdAt: product.createdAt,
-        updatedAt: product.updatedAt,
-      });
+  for (const item of product.package.items) {
+    const child = item.childProductItem;
+    if (child.kind !== "DIAGNOSTIC" && child.kind !== "LAB_TEST") {
       continue;
     }
+    if (!child.code) continue;
 
-    if (product.kind !== "PACKAGE" || !product.package?.items?.length) {
-      continue;
-    }
-
-    for (const item of product.package.items) {
-      const child = item.childProductItem;
-      if (child.kind !== "DIAGNOSTIC" && child.kind !== "LAB_TEST") {
-        continue;
-      }
-      if (!child.code) continue;
-
-      items.push({
-        id: `provider-test:${product.id}:${item.id}`,
-        provider: "IDEXX",
-        providerTestCode: child.code,
-        label: child.name,
-        sourceKind: "PACKAGE_ITEM",
-        sourceId: item.id,
-        sourceProductId: child.id,
-        sourcePackageId: product.id,
-        createdAt: child.createdAt,
-        updatedAt: child.updatedAt,
-      });
-    }
+    items.push({
+      id: `provider-test:${product.id}:${item.id}`,
+      provider: "IDEXX",
+      providerTestCode: child.code,
+      label: child.name,
+      sourceKind: "PACKAGE_ITEM",
+      sourceId: item.id,
+      sourceProductId: child.id,
+      sourcePackageId: product.id,
+      createdAt: child.createdAt,
+      updatedAt: child.updatedAt,
+    });
   }
 
   return items;
 };
+
+const buildDiagnosticPreloadItems = (products: ProductItemRow[]) =>
+  products.flatMap((product) => buildDiagnosticPreloadItemsForProduct(product));
 
 const mapDocumentRow = (input: {
   documentId: string;

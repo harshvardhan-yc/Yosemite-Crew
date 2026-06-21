@@ -370,7 +370,6 @@ export const AppointmentController = {
       const data = await AppointmentPrismaService.cancelAppointmentFromParent(
         req.params.appointmentId,
         authUser.parentId.toString(),
-        req.body.reason,
       );
 
       return res.status(200).json({ message: "Appointment cancelled", data });
@@ -387,7 +386,6 @@ export const AppointmentController = {
     try {
       const data = await AppointmentPrismaService.cancelAppointment(
         req.params.appointmentId,
-        req.body.reason,
       );
       return res.status(200).json({ message: "Appointment cancelled", data });
     } catch (err: unknown) {

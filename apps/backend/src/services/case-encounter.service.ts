@@ -49,6 +49,20 @@ type AppointmentLinkRow = {
   patient: unknown;
 };
 
+type AppointmentLinkLookupDelegate = {
+  findUnique(args: {
+    where: { id: string };
+    select: {
+      id: true;
+      caseId: true;
+      encounterId: true;
+      organisationId: true;
+      productItemId: true;
+      patient: true;
+    };
+  }): Promise<AppointmentLinkRow | null>;
+};
+
 type AdmissionRow = {
   encounterId: string;
   organisationId: string;
@@ -282,6 +296,80 @@ const resolveSelectionSafe = async (
     }
     throw error;
   }
+};
+
+const loadAppointmentLink = async (
+  appointmentDelegate: AppointmentLinkLookupDelegate,
+  appointmentId: string,
+) =>
+  appointmentDelegate.findUnique({
+    where: { id: appointmentId },
+    select: {
+      id: true,
+      caseId: true,
+      encounterId: true,
+      organisationId: true,
+      productItemId: true,
+      patient: true,
+    },
+  });
+
+const assertAppointmentMatchesEncounterContext = (
+  appointment: AppointmentLinkRow,
+  context: {
+    caseId: string;
+    encounterId?: string;
+    organisationId: string;
+    patientId: string;
+  },
+) => {
+  if (appointment.organisationId !== context.organisationId) {
+    throw new CaseEncounterServiceError(
+      "Encounter appointment organisation mismatch.",
+      409,
+    );
+  }
+
+  if (toAppointmentCompanionId(appointment.patient) !== context.patientId) {
+    throw new CaseEncounterServiceError(
+      "Encounter appointment companion mismatch.",
+      409,
+    );
+  }
+
+  if (appointment.caseId && appointment.caseId !== context.caseId) {
+    throw new CaseEncounterServiceError(
+      "Appointment is already linked to a different case.",
+      409,
+    );
+  }
+
+  if (
+    context.encounterId &&
+    appointment.encounterId &&
+    appointment.encounterId !== context.encounterId
+  ) {
+    throw new CaseEncounterServiceError(
+      "Appointment is already linked to a different encounter.",
+      409,
+    );
+  }
+};
+
+const maybeExpandPackageTreatmentItems = async (params: {
+  tx: {
+    workspaceTreatmentItem: WorkspaceTreatmentItemDelegate;
+  };
+  organisationId: string;
+  appointmentId: string;
+  encounterId: string;
+  selection: Awaited<ReturnType<typeof CatalogService.resolveSelection>>;
+}) => {
+  if (params.selection.productKind !== "PACKAGE") {
+    return;
+  }
+
+  await expandPackageTreatmentItems(params);
 };
 
 const expandPackageTreatmentItems = async (params: {
@@ -755,49 +843,20 @@ export const CaseEncounterService = {
 
       const appointmentId = normalizeOptionalString(input.appointmentId);
       if (appointmentId) {
-        const appointment = (await tx.appointment.findUnique({
-          where: { id: appointmentId },
-          select: {
-            id: true,
-            caseId: true,
-            encounterId: true,
-            organisationId: true,
-            productItemId: true,
-            patient: true,
-          },
-        })) as AppointmentLinkRow | null;
+        const appointment = await loadAppointmentLink(
+          tx.appointment,
+          appointmentId,
+        );
 
         if (!appointment) {
           throw new CaseEncounterServiceError("Appointment not found.", 404);
         }
 
-        if (appointment.organisationId !== organisationId) {
-          throw new CaseEncounterServiceError(
-            "Encounter appointment organisation mismatch.",
-            409,
-          );
-        }
-
-        if (toAppointmentCompanionId(appointment.patient) !== patientId) {
-          throw new CaseEncounterServiceError(
-            "Encounter appointment companion mismatch.",
-            409,
-          );
-        }
-
-        if (appointment.caseId && appointment.caseId !== caseId) {
-          throw new CaseEncounterServiceError(
-            "Appointment is already linked to a different case.",
-            409,
-          );
-        }
-
-        if (appointment.encounterId) {
-          throw new CaseEncounterServiceError(
-            "Appointment is already linked to a different encounter.",
-            409,
-          );
-        }
+        assertAppointmentMatchesEncounterContext(appointment, {
+          caseId,
+          organisationId,
+          patientId,
+        });
       }
 
       const createdEncounter = await tx.encounter.create({
@@ -843,8 +902,8 @@ export const CaseEncounterService = {
             organisationId,
           );
 
-          if (selection?.productKind === "PACKAGE") {
-            await expandPackageTreatmentItems({
+          if (selection) {
+            await maybeExpandPackageTreatmentItems({
               tx: tx as unknown as {
                 workspaceTreatmentItem: WorkspaceTreatmentItemDelegate;
               },
@@ -932,53 +991,21 @@ export const CaseEncounterService = {
         }
 
         if (nextAppointmentId) {
-          const nextAppointment = (await tx.appointment.findUnique({
-            where: { id: nextAppointmentId },
-            select: {
-              id: true,
-              caseId: true,
-              encounterId: true,
-              organisationId: true,
-              patient: true,
-            },
-          })) as AppointmentLinkRow | null;
+          const nextAppointment = await loadAppointmentLink(
+            tx.appointment,
+            nextAppointmentId,
+          );
 
           if (!nextAppointment) {
             throw new CaseEncounterServiceError("Appointment not found.", 404);
           }
 
-          if (nextAppointment.organisationId !== row.organisationId) {
-            throw new CaseEncounterServiceError(
-              "Encounter appointment organisation mismatch.",
-              409,
-            );
-          }
-
-          if (
-            toAppointmentCompanionId(nextAppointment.patient) !== row.patientId
-          ) {
-            throw new CaseEncounterServiceError(
-              "Encounter appointment companion mismatch.",
-              409,
-            );
-          }
-
-          if (nextAppointment.caseId && nextAppointment.caseId !== row.caseId) {
-            throw new CaseEncounterServiceError(
-              "Appointment is already linked to a different case.",
-              409,
-            );
-          }
-
-          if (
-            nextAppointment.encounterId &&
-            nextAppointment.encounterId !== id
-          ) {
-            throw new CaseEncounterServiceError(
-              "Appointment is already linked to a different encounter.",
-              409,
-            );
-          }
+          assertAppointmentMatchesEncounterContext(nextAppointment, {
+            caseId: row.caseId,
+            encounterId: id,
+            organisationId: row.organisationId,
+            patientId: row.patientId,
+          });
 
           await tx.appointment.update({
             where: { id: nextAppointmentId },

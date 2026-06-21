@@ -123,6 +123,61 @@ const requireSafeString = (value: string, field: string) => {
   return trimmed;
 };
 
+const listOrganisationsProvidingServiceFromPostgres = async (
+  serviceName: string,
+) => {
+  const safeName = serviceName.trim();
+  if (!safeName) return [];
+
+  const services = await prisma.service.findMany({
+    where: { name: { contains: safeName, mode: "insensitive" } },
+    select: { organisationId: true },
+  });
+
+  if (!services.length) return [];
+
+  const orgIds = [...new Set(services.map((s) => s.organisationId))];
+  const organisations = await prisma.organization.findMany({
+    where: { id: { in: orgIds } },
+    include: { address: true },
+  });
+
+  return organisations.map((org) => mapOrganisationWithAddress(org));
+};
+
+const listOrganisationsProvidingServiceFromMongo = async (
+  serviceName: string,
+) => {
+  const safe = escapeStringRegexp(serviceName.trim());
+  const searchRegex = new RegExp(safe);
+
+  const services = (await ServiceModel.find({
+    name: searchRegex,
+  }).lean()) as Array<{ organisationId: Types.ObjectId }>;
+
+  if (!services.length) return [];
+
+  const orgIds = [...new Set(services.map((s) => s.organisationId.toString()))];
+  const organisations = (await OrganizationModel.find({
+    _id: { $in: orgIds },
+  })
+    .lean()
+    .exec()) as Array<OrganizationMongo & { _id: Types.ObjectId }>;
+
+  return organisations.map((org) =>
+    mapOrganisationWithAddress({
+      id: org._id.toString(),
+      name: org.name,
+      imageURL: org.imageURL,
+      phoneNo: org.phoneNo,
+      type: org.type,
+      appointmentCheckInBufferMinutes: org.appointmentCheckInBufferMinutes,
+      appointmentCheckInRadiusMeters: org.appointmentCheckInRadiusMeters,
+      address: org.address,
+    }),
+  );
+};
+
 const mapServiceRecordToDomain = (service: ServiceRecord): Service => ({
   id: service.id,
   organisationId: service.organisationId,
@@ -241,6 +296,92 @@ const getServiceSchedulingContext = async (
     durationMinutes: service.durationMinutes,
     vetIds: speciality.memberUserIds || [],
   };
+};
+
+const collectCalendarPrefillMatches = async (params: {
+  input: CalendarPrefillRequest;
+  timezone: string;
+  serviceContexts: ServiceSchedulingContext[];
+  slotCache: Map<
+    string,
+    Promise<{
+      date: string;
+      dayOfWeek: string;
+      windows: AvailabilitySlotMongo[];
+    }>
+  >;
+}) => {
+  const { input, timezone, serviceContexts, slotCache } = params;
+  const utcDateShifts = [-1, 0, 1] as const;
+  const matches: CalendarPrefillMatch[] = [];
+
+  for (const context of serviceContexts) {
+    for (const utcDateShift of utcDateShifts) {
+      const referenceDate = dayjs(input.date)
+        .utc()
+        .add(utcDateShift, "day")
+        .toDate();
+
+      const result = await buildBookableWindowsForVets({
+        organisationId: context.organisationId,
+        vetIds: context.vetIds,
+        durationMinutes: context.durationMinutes,
+        referenceDate,
+        slotCache,
+        getBookableSlotsForDate: (...args) =>
+          AvailabilityService.getBookableSlotsForDate(...args),
+      });
+
+      for (const slot of result.windows) {
+        if (
+          input.leadId &&
+          !(slot.vetIds ?? []).includes(
+            requireSafeString(input.leadId, "leadId"),
+          )
+        ) {
+          continue;
+        }
+
+        const meta = normalizeSlotForSelectedDay({
+          timezone,
+          utcDateShift,
+          slot,
+        });
+        if (!meta) {
+          continue;
+        }
+
+        if (
+          Math.abs(meta.localStartMinute - input.minuteOfDay) >
+          SLOT_MATCH_TOLERANCE_MINUTES
+        ) {
+          continue;
+        }
+
+        matches.push({
+          serviceId: context.serviceId,
+          slot: {
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            vetIds: slot.vetIds ?? [],
+          },
+          meta,
+        });
+      }
+    }
+  }
+
+  matches.sort((a, b) => {
+    if (a.meta.localStartMinute !== b.meta.localStartMinute) {
+      return a.meta.localStartMinute - b.meta.localStartMinute;
+    }
+    if (a.meta.localEndMinute !== b.meta.localEndMinute) {
+      return a.meta.localEndMinute - b.meta.localEndMinute;
+    }
+    return a.serviceId.localeCompare(b.serviceId);
+  });
+
+  return matches;
 };
 
 export const ServiceService = {
@@ -488,62 +629,9 @@ export const ServiceService = {
   },
 
   async listOrganisationsProvidingService(serviceName: string) {
-    if (isReadFromPostgres()) {
-      const safeName = serviceName.trim();
-      if (!safeName) return [];
-
-      const services = await prisma.service.findMany({
-        where: { name: { contains: safeName, mode: "insensitive" } },
-        select: { organisationId: true },
-      });
-
-      if (!services.length) return [];
-
-      const orgIds = [...new Set(services.map((s) => s.organisationId))];
-
-      const organisations = await prisma.organization.findMany({
-        where: { id: { in: orgIds } },
-        include: { address: true },
-      });
-
-      return organisations.map((org) => mapOrganisationWithAddress(org));
-    }
-
-    const safe = escapeStringRegexp(serviceName.trim());
-    const searchRegex = new RegExp(safe);
-
-    // 1. Find matching services
-    const services = (await ServiceModel.find({
-      name: searchRegex,
-    }).lean()) as Array<{ organisationId: Types.ObjectId }>;
-
-    if (!services.length) return [];
-
-    // 2. Extract unique organisation IDs
-    const orgIds = [
-      ...new Set(services.map((s) => s.organisationId.toString())),
-    ];
-
-    // 3. Fetch organisations
-    const organisations = (await OrganizationModel.find({
-      _id: { $in: orgIds },
-      //isActive: true,
-    })
-      .lean()
-      .exec()) as Array<OrganizationMongo & { _id: Types.ObjectId }>;
-
-    return organisations.map((org) =>
-      mapOrganisationWithAddress({
-        id: org._id.toString(),
-        name: org.name,
-        imageURL: org.imageURL,
-        phoneNo: org.phoneNo,
-        type: org.type,
-        appointmentCheckInBufferMinutes: org.appointmentCheckInBufferMinutes,
-        appointmentCheckInRadiusMeters: org.appointmentCheckInRadiusMeters,
-        address: org.address,
-      }),
-    );
+    return isReadFromPostgres()
+      ? listOrganisationsProvidingServiceFromPostgres(serviceName)
+      : listOrganisationsProvidingServiceFromMongo(serviceName);
   },
 
   async getBookableSlotsService(
@@ -655,77 +743,14 @@ export const ServiceService = {
             getServiceSchedulingContext(serviceId, input.organisationId),
           ),
         );
-
-        const utcDateShifts = [-1, 0, 1] as const;
-        const matches: CalendarPrefillMatch[] = [];
-
-        for (const context of serviceContexts) {
-          for (const utcDateShift of utcDateShifts) {
-            const referenceDate = dayjs(input.date)
-              .utc()
-              .add(utcDateShift, "day")
-              .toDate();
-
-            const result = await buildBookableWindowsForVets({
-              organisationId: context.organisationId,
-              vetIds: context.vetIds,
-              durationMinutes: context.durationMinutes,
-              referenceDate,
-              slotCache,
-              getBookableSlotsForDate: (...args) =>
-                AvailabilityService.getBookableSlotsForDate(...args),
-            });
-
-            for (const slot of result.windows) {
-              if (
-                input.leadId &&
-                !(slot.vetIds ?? []).includes(
-                  requireSafeString(input.leadId, "leadId"),
-                )
-              ) {
-                continue;
-              }
-
-              const meta = normalizeSlotForSelectedDay({
-                timezone,
-                utcDateShift,
-                slot,
-              });
-              if (!meta) {
-                continue;
-              }
-
-              if (
-                Math.abs(meta.localStartMinute - input.minuteOfDay) >
-                SLOT_MATCH_TOLERANCE_MINUTES
-              ) {
-                continue;
-              }
-
-              matches.push({
-                serviceId: context.serviceId,
-                slot: {
-                  startTime: slot.startTime,
-                  endTime: slot.endTime,
-                  vetIds: slot.vetIds ?? [],
-                },
-                meta,
-              });
-            }
-          }
-        }
-
-        matches.sort((a, b) => {
-          if (a.meta.localStartMinute !== b.meta.localStartMinute) {
-            return a.meta.localStartMinute - b.meta.localStartMinute;
-          }
-          if (a.meta.localEndMinute !== b.meta.localEndMinute) {
-            return a.meta.localEndMinute - b.meta.localEndMinute;
-          }
-          return a.serviceId.localeCompare(b.serviceId);
+        return collectCalendarPrefillMatches({
+          input,
+          timezone,
+          serviceContexts: serviceContexts.filter(
+            (context): context is ServiceSchedulingContext => Boolean(context),
+          ),
+          slotCache,
         });
-
-        return matches;
       },
       {
         maxEntries: CALENDAR_PREFILL_CACHE_MAX_ENTRIES,
