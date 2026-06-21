@@ -7,11 +7,21 @@ import {
 } from "../../services/user-organization.service";
 import { resolveUserIdFromRequest } from "src/utils/request";
 
+type PermissionExtension = {
+  url?: string;
+  extension?: Array<{ url?: string; valueString?: string }>;
+};
+
+type PermissionResource = {
+  effectivePermissions?: string[];
+  extension?: PermissionExtension[];
+};
+
 type UserOrganizationMapping = {
   practitionerReference?: string;
   organizationReference?: string;
-  effectivePermissions?: string[];
-};
+  active?: boolean;
+} & PermissionResource;
 
 type UserOrganizationListing = {
   mapping?: UserOrganizationMapping;
@@ -20,14 +30,13 @@ type UserOrganizationListing = {
 type FhirPractitionerRole = {
   practitioner?: { reference?: string };
   organization?: { reference?: string };
-  extension?: Array<{
-    url?: string;
-    extension?: Array<{ url?: string; valueString?: string }>;
-  }>;
-};
+  active?: boolean;
+} & PermissionResource;
 
 const TEAM_VIEW_PERMISSION = "teams:view:any";
 const TEAM_EDIT_PERMISSION = "teams:edit:any";
+const EFFECTIVE_PERMISSIONS_EXTENSION =
+  "https://yosemitecrew.com/fhir/StructureDefinition/effective-permissions";
 
 const extractIdentifier = (reference: string | undefined): string | undefined =>
   reference?.trim().split("/").filter(Boolean).at(-1)?.trim() || undefined;
@@ -42,10 +51,45 @@ const sameOrganisation = (
   return Boolean(leftId && rightId && leftId === rightId);
 };
 
-const hasPermission = (
-  permissions: string[] | undefined,
+const isActiveMembership = (
+  mapping:
+    | Pick<UserOrganizationMapping, "active">
+    | Pick<FhirPractitionerRole, "active">,
+): boolean => mapping.active !== false;
+
+const extractEffectivePermissions = (
+  resource: UserOrganizationMapping | FhirPractitionerRole | undefined,
+): string[] => {
+  if (!resource) {
+    return [];
+  }
+
+  if (resource.effectivePermissions?.length) {
+    return resource.effectivePermissions;
+  }
+
+  const effectivePermissionsExtension = resource.extension?.find(
+    (entry) => entry.url === EFFECTIVE_PERMISSIONS_EXTENSION,
+  );
+
+  return (
+    effectivePermissionsExtension?.extension
+      ?.map((entry) => entry.valueString)
+      .filter((permission): permission is string =>
+        Boolean(permission?.trim()),
+      ) ?? []
+  );
+};
+
+const hasTeamPermission = (
+  resource: UserOrganizationMapping | FhirPractitionerRole | undefined,
   permission: string,
-): boolean => Boolean(permissions?.includes(permission));
+): boolean =>
+  Boolean(
+    resource &&
+    isActiveMembership(resource) &&
+    extractEffectivePermissions(resource).includes(permission),
+  );
 
 const canViewResource = (
   resource: FhirPractitionerRole,
@@ -70,8 +114,8 @@ const canViewResource = (
     return Boolean(
       mapping &&
       sameOrganisation(mapping.organizationReference, resourceOrg) &&
-      (hasPermission(mapping.effectivePermissions, TEAM_VIEW_PERMISSION) ||
-        hasPermission(mapping.effectivePermissions, TEAM_EDIT_PERMISSION)),
+      (hasTeamPermission(mapping, TEAM_VIEW_PERMISSION) ||
+        hasTeamPermission(mapping, TEAM_EDIT_PERMISSION)),
     );
   });
 };
@@ -84,10 +128,47 @@ const canEditOrganisation = (
     const mapping = entry.mapping;
     return Boolean(
       mapping &&
+      isActiveMembership(mapping) &&
       sameOrganisation(mapping.organizationReference, organisationReference) &&
-      hasPermission(mapping.effectivePermissions, TEAM_EDIT_PERMISSION),
+      hasTeamPermission(mapping, TEAM_EDIT_PERMISSION),
     );
   });
+
+const resolveExistingResource = async (
+  id: string | undefined,
+): Promise<FhirPractitionerRole | null> => {
+  if (!id) {
+    return null;
+  }
+
+  const resource = await UserOrganizationService.getById(id);
+
+  if (!resource || Array.isArray(resource)) {
+    return null;
+  }
+
+  return resource as FhirPractitionerRole;
+};
+
+const hasPermissionOnCurrentAndNextOrg = (
+  currentOrgReference: string | undefined,
+  nextOrgReference: string | undefined,
+  requesterMappings: UserOrganizationListing[],
+): boolean => {
+  if (!canEditOrganisation(currentOrgReference, requesterMappings)) {
+    return false;
+  }
+
+  if (
+    nextOrgReference &&
+    !sameOrganisation(currentOrgReference, nextOrgReference) &&
+    !canEditOrganisation(nextOrgReference, requesterMappings)
+  ) {
+    return false;
+  }
+
+  return true;
+};
 
 export const UserOrganizationController = {
   upsertMapping: async (req: Request, res: Response) => {
@@ -110,12 +191,35 @@ export const UserOrganizationController = {
       const requesterMappings = (await UserOrganizationService.listByUserId(
         requesterUserId,
       )) as UserOrganizationListing[] | undefined;
+      const existingResource = await resolveExistingResource(payload.id);
+
+      const hasTargetOrgAccess = canEditOrganisation(
+        payload.organization?.reference,
+        requesterMappings ?? [],
+      );
+      const hasExistingOrgAccess = existingResource
+        ? canEditOrganisation(
+            existingResource.organization?.reference,
+            requesterMappings ?? [],
+          )
+        : true;
+      const hasDestinationOrgAccess =
+        existingResource &&
+        payload.organization?.reference &&
+        !sameOrganisation(
+          existingResource.organization?.reference,
+          payload.organization.reference,
+        )
+          ? canEditOrganisation(
+              payload.organization.reference,
+              requesterMappings ?? [],
+            )
+          : true;
 
       if (
-        !canEditOrganisation(
-          payload.organization?.reference,
-          requesterMappings ?? [],
-        )
+        !hasTargetOrgAccess ||
+        !hasExistingOrgAccess ||
+        !hasDestinationOrgAccess
       ) {
         res.status(403).json({
           message: "Forbidden – insufficient permissions",
@@ -226,26 +330,20 @@ export const UserOrganizationController = {
         return;
       }
 
-      const resource = await UserOrganizationService.getById(id);
       const requesterMappings = (await UserOrganizationService.listByUserId(
         requesterUserId,
       )) as UserOrganizationListing[] | undefined;
+      const resource = await resolveExistingResource(id);
 
-      const resources = (
-        Array.isArray(resource) ? resource : [resource]
-      ).filter(Boolean) as FhirPractitionerRole[];
-
-      if (!resources.length) {
+      if (!resource) {
         res.status(404).json({ message: "Mapping not found." });
         return;
       }
 
       if (
-        !resources.every((entry) =>
-          canEditOrganisation(
-            entry.organization?.reference,
-            requesterMappings ?? [],
-          ),
+        !canEditOrganisation(
+          resource.organization?.reference,
+          requesterMappings ?? [],
         )
       ) {
         res.status(403).json({
@@ -297,26 +395,38 @@ export const UserOrganizationController = {
         return;
       }
 
-      const resource = await UserOrganizationService.getById(id);
       const requesterMappings = (await UserOrganizationService.listByUserId(
         requesterUserId,
       )) as UserOrganizationListing[] | undefined;
+      const resource = await resolveExistingResource(id);
 
-      const resources = (
-        Array.isArray(resource) ? resource : [resource]
-      ).filter(Boolean) as FhirPractitionerRole[];
-
-      if (!resources.length) {
+      if (!resource) {
         res.status(404).json({ message: "Mapping not found." });
         return;
       }
 
       if (
-        !resources.every((entry) =>
-          canEditOrganisation(
-            entry.organization?.reference,
-            requesterMappings ?? [],
-          ),
+        !hasPermissionOnCurrentAndNextOrg(
+          resource.organization?.reference,
+          undefined,
+          requesterMappings ?? [],
+        )
+      ) {
+        res.status(403).json({
+          message: "Forbidden – insufficient permissions",
+        });
+        return;
+      }
+
+      if (
+        payload.organization?.reference &&
+        !sameOrganisation(
+          resource.organization?.reference,
+          payload.organization.reference,
+        ) &&
+        !canEditOrganisation(
+          payload.organization.reference,
+          requesterMappings ?? [],
         )
       ) {
         res.status(403).json({
@@ -402,11 +512,12 @@ export const UserOrganizationController = {
           const mapping = entry.mapping;
           return Boolean(
             mapping &&
+            isActiveMembership(mapping) &&
             sameOrganisation(
               mapping.organizationReference,
               `Organization/${organisationId}`,
             ) &&
-            hasPermission(mapping.effectivePermissions, TEAM_VIEW_PERMISSION),
+            hasTeamPermission(mapping, TEAM_VIEW_PERMISSION),
           );
         })
       ) {

@@ -47,16 +47,59 @@ const createMockRes = (): MockResponse => {
 const allowedMapping = {
   mapping: {
     organizationReference: "Organization/org-1",
-    effectivePermissions: ["teams:view:any", "teams:edit:any"],
+    active: true,
     practitionerReference: "Practitioner/user-1",
+    extension: [
+      {
+        url: "https://yosemitecrew.com/fhir/StructureDefinition/effective-permissions",
+        extension: [
+          { url: "permission", valueString: "teams:view:any" },
+          { url: "permission", valueString: "teams:edit:any" },
+        ],
+      },
+    ],
   },
 };
 
 const viewOnlyMapping = {
   mapping: {
     organizationReference: "Organization/org-2",
-    effectivePermissions: ["teams:view:any"],
+    active: true,
     practitionerReference: "Practitioner/user-2",
+    extension: [
+      {
+        url: "https://yosemitecrew.com/fhir/StructureDefinition/effective-permissions",
+        extension: [{ url: "permission", valueString: "teams:view:any" }],
+      },
+    ],
+  },
+};
+
+const inactiveEditorMapping = {
+  mapping: {
+    organizationReference: "Organization/org-1",
+    active: false,
+    practitionerReference: "Practitioner/user-3",
+    extension: [
+      {
+        url: "https://yosemitecrew.com/fhir/StructureDefinition/effective-permissions",
+        extension: [{ url: "permission", valueString: "teams:edit:any" }],
+      },
+    ],
+  },
+};
+
+const allowedEditOnlyMapping = {
+  mapping: {
+    organizationReference: "Organization/org-2",
+    active: true,
+    practitionerReference: "Practitioner/user-4",
+    extension: [
+      {
+        url: "https://yosemitecrew.com/fhir/StructureDefinition/effective-permissions",
+        extension: [{ url: "permission", valueString: "teams:edit:any" }],
+      },
+    ],
   },
 };
 
@@ -102,6 +145,22 @@ describe("UserOrganizationController", () => {
       expect(UserOrganizationService.upsert).not.toHaveBeenCalled();
     });
 
+    it("returns 403 when requester only has an inactive edit membership", async () => {
+      (UserOrganizationService.listByUserId as jest.Mock).mockResolvedValue([
+        inactiveEditorMapping,
+      ]);
+
+      const req = createMockReq({
+        body: payload,
+        userId: "user-1",
+      });
+
+      await UserOrganizationController.upsertMapping(req, mockRes as Response);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(UserOrganizationService.upsert).not.toHaveBeenCalled();
+    });
+
     it("creates mapping when requester has edit permission", async () => {
       (UserOrganizationService.listByUserId as jest.Mock).mockResolvedValue([
         allowedMapping,
@@ -124,6 +183,29 @@ describe("UserOrganizationController", () => {
       expect(UserOrganizationService.upsert).toHaveBeenCalledWith(payload);
       expect(mockRes.status).toHaveBeenCalledWith(201);
       expect(mockRes.json).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it("returns 403 when updating an existing mapping into another org without access", async () => {
+      (UserOrganizationService.listByUserId as jest.Mock).mockResolvedValue([
+        allowedMapping,
+      ]);
+      (UserOrganizationService.getById as jest.Mock).mockResolvedValue({
+        organization: { reference: "Organization/org-1" },
+      });
+
+      const req = createMockReq({
+        body: {
+          ...payload,
+          id: "map-1",
+          organization: { reference: "Organization/org-2" },
+        },
+        userId: "user-1",
+      });
+
+      await UserOrganizationController.upsertMapping(req, mockRes as Response);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(UserOrganizationService.upsert).not.toHaveBeenCalled();
     });
   });
 
@@ -275,6 +357,60 @@ describe("UserOrganizationController", () => {
       expect(UserOrganizationService.update).not.toHaveBeenCalled();
     });
 
+    it("returns 403 when requester cannot edit the destination org", async () => {
+      (UserOrganizationService.getById as jest.Mock).mockResolvedValue({
+        practitioner: { reference: "Practitioner/user-1" },
+        organization: { reference: "Organization/org-1" },
+      });
+      (UserOrganizationService.listByUserId as jest.Mock).mockResolvedValue([
+        allowedEditOnlyMapping,
+      ]);
+
+      const req = createMockReq({
+        params: { id: "map-1" },
+        body: {
+          ...payload,
+          organization: { reference: "Organization/org-1" },
+        },
+        userId: "user-1",
+      });
+
+      await UserOrganizationController.updateMappingById(
+        req,
+        mockRes as Response,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(UserOrganizationService.update).not.toHaveBeenCalled();
+    });
+
+    it("returns 403 when requester can edit the current org but not the new org", async () => {
+      (UserOrganizationService.getById as jest.Mock).mockResolvedValue({
+        practitioner: { reference: "Practitioner/user-1" },
+        organization: { reference: "Organization/org-1" },
+      });
+      (UserOrganizationService.listByUserId as jest.Mock).mockResolvedValue([
+        allowedMapping,
+      ]);
+
+      const req = createMockReq({
+        params: { id: "map-1" },
+        body: {
+          ...payload,
+          organization: { reference: "Organization/org-2" },
+        },
+        userId: "user-1",
+      });
+
+      await UserOrganizationController.updateMappingById(
+        req,
+        mockRes as Response,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(UserOrganizationService.update).not.toHaveBeenCalled();
+    });
+
     it("updates the mapping when requester can edit target org", async () => {
       (UserOrganizationService.getById as jest.Mock).mockResolvedValue({
         practitioner: { reference: "Practitioner/user-1" },
@@ -315,6 +451,40 @@ describe("UserOrganizationController", () => {
 
       const req = createMockReq({
         params: { organisationId: "org-9" },
+        userId: "user-1",
+      });
+
+      await UserOrganizationController.listByOrganisationId(
+        req,
+        mockRes as Response,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(
+        UserOrganizationService.listByOrganisationId,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("returns 403 when requester has only an inactive view membership", async () => {
+      (UserOrganizationService.listByUserId as jest.Mock).mockResolvedValue([
+        {
+          mapping: {
+            organizationReference: "Organization/org-1",
+            active: false,
+            extension: [
+              {
+                url: "https://yosemitecrew.com/fhir/StructureDefinition/effective-permissions",
+                extension: [
+                  { url: "permission", valueString: "teams:view:any" },
+                ],
+              },
+            ],
+          },
+        },
+      ]);
+
+      const req = createMockReq({
+        params: { organisationId: "org-1" },
         userId: "user-1",
       });
 
