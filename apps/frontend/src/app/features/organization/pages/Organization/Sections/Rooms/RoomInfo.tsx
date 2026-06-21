@@ -149,7 +149,7 @@ const getRoomForm = (room: RoomFormInput, unitGroups: RoomUnitGroup[] = []): Man
   assignedStaffs: normalizeReferenceIds(room.assignedStaffs),
   availability: {
     ...DEFAULT_AVAILABILITY,
-    ...(room.availability ?? {}),
+    ...room.availability,
     isAvailable:
       room.availableNow ?? room.availability?.isAvailable ?? DEFAULT_AVAILABILITY.isAvailable,
     days: room.availabilityDays?.[0] ?? room.availability?.days ?? DEFAULT_AVAILABILITY.days,

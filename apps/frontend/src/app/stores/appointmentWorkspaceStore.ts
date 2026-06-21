@@ -42,7 +42,7 @@ const recalcInvoiceLine = (item: InvoiceLineItem): InvoiceLineItem => {
   // Discount is bounded by the gross and, when the catalog sets one, the per-line
   // max-discount ceiling — so a manual edit can never exceed the allowed discount.
   const ceiling =
-    item.maxDiscountCents != null ? Math.min(item.maxDiscountCents, grossCents) : grossCents;
+    item.maxDiscountCents == null ? grossCents : Math.min(item.maxDiscountCents, grossCents);
   const discountCents = Math.min(Math.max(0, item.discountCents), ceiling);
   return { ...item, grossCents, discountCents, amountCents: grossCents - discountCents };
 };
@@ -206,6 +206,109 @@ const patchEncounter = (
   };
 };
 
+type SetState = (
+  partial:
+    | Partial<AppointmentWorkspaceState>
+    | ((state: AppointmentWorkspaceState) => Partial<AppointmentWorkspaceState>)
+) => void;
+
+/**
+ * Apply an immutable encounter updater via `set`. Wrapping the
+ * `set` → `patchEncounter` chain in one named call keeps each action body flat
+ * (one callback instead of nested `set`/`patchEncounter`/updater arrows).
+ */
+const patchEnc = (
+  set: SetState,
+  appointmentId: string,
+  updater: (encounter: AppointmentEncounter) => AppointmentEncounter
+): void => {
+  set((state) => patchEncounter(state, appointmentId, updater));
+};
+
+const preferNonEmpty = <T>(next: T[] | undefined, current: T[]): T[] =>
+  next && next.length > 0 ? next : current;
+
+const mergeEncounterDataPatch = (
+  enc: AppointmentEncounter,
+  patch: Partial<
+    Pick<
+      AppointmentEncounter,
+      | 'soap'
+      | 'vitals'
+      | 'observations'
+      | 'diagnosticOrders'
+      | 'services'
+      | 'prescription'
+      | 'dischargeSummary'
+      | 'followUpAt'
+      | 'dischargeSavedAt'
+      | 'dischargeSavedByName'
+      | 'dischargeSummaryId'
+      | 'documents'
+      | 'soapTemplates'
+      | 'readyForBilling'
+      | 'readyForDischarge'
+      | 'roomId'
+      | 'unitId'
+      | 'admittedAt'
+      | 'dischargedAt'
+      | 'mode'
+    >
+  > & { stepStatus?: Partial<Record<WorkspaceStep, StepStatus>> }
+) => ({
+  ...enc,
+  soap: preferNonEmpty(patch.soap, enc.soap),
+  vitals: preferNonEmpty(patch.vitals, enc.vitals),
+  observations: preferNonEmpty(patch.observations, enc.observations),
+  diagnosticOrders: preferNonEmpty(patch.diagnosticOrders, enc.diagnosticOrders),
+  services: preferNonEmpty(patch.services, enc.services),
+  prescription: preferNonEmpty(patch.prescription, enc.prescription),
+  dischargeSummary: patch.dischargeSummary ?? enc.dischargeSummary,
+  followUpAt: patch.followUpAt ?? enc.followUpAt,
+  dischargeSavedAt: patch.dischargeSavedAt ?? enc.dischargeSavedAt,
+  dischargeSavedByName: patch.dischargeSavedByName ?? enc.dischargeSavedByName,
+  dischargeSummaryId: patch.dischargeSummaryId ?? enc.dischargeSummaryId,
+  documents: preferNonEmpty(patch.documents, enc.documents),
+  soapTemplates: preferNonEmpty(patch.soapTemplates, enc.soapTemplates),
+  readyForBilling: patch.readyForBilling ?? enc.readyForBilling,
+  readyForDischarge: patch.readyForDischarge ?? enc.readyForDischarge,
+  roomId: patch.roomId ?? enc.roomId,
+  unitId: patch.unitId ?? enc.unitId,
+  admittedAt: patch.admittedAt ?? enc.admittedAt,
+  dischargedAt: patch.dischargedAt ?? enc.dischargedAt,
+  mode: patch.mode ?? enc.mode,
+  consultationType:
+    patch.mode === undefined ? enc.consultationType : consultationTypeForMode(patch.mode),
+  stepStatus: patch.stepStatus ? { ...enc.stepStatus, ...patch.stepStatus } : enc.stepStatus,
+});
+
+const getNextEncounterModeState = (
+  current: AppointmentEncounter | undefined,
+  appointmentId: string,
+  mode: EncounterMode
+): AppointmentEncounter => {
+  const modeDefaults = buildEmptyEncounter(appointmentId, mode);
+  if (!current) return modeDefaults;
+
+  const inpatientPatch = {
+    schedule: current.schedule.length > 0 ? current.schedule : modeDefaults.schedule,
+    roomId: current.roomId ?? modeDefaults.roomId,
+    unitId: current.unitId ?? modeDefaults.unitId,
+  };
+  const outpatientPatch = {
+    schedule: [],
+    roomId: undefined,
+    unitId: undefined,
+  };
+
+  return {
+    ...current,
+    mode,
+    consultationType: modeDefaults.consultationType,
+    ...(mode === 'INPATIENT' ? inpatientPatch : outpatientPatch),
+  };
+};
+
 export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((set, get) => ({
   encountersById: {},
   activeStep: 'SOAP',
@@ -232,90 +335,18 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
   getEncounter: (appointmentId) => get().encountersById[appointmentId],
 
   mergeEncounterData: (appointmentId, patch) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        soap: patch.soap && patch.soap.length > 0 ? patch.soap : enc.soap,
-        vitals: patch.vitals && patch.vitals.length > 0 ? patch.vitals : enc.vitals,
-        observations:
-          patch.observations && patch.observations.length > 0
-            ? patch.observations
-            : enc.observations,
-        diagnosticOrders:
-          patch.diagnosticOrders && patch.diagnosticOrders.length > 0
-            ? patch.diagnosticOrders
-            : enc.diagnosticOrders,
-        services: patch.services && patch.services.length > 0 ? patch.services : enc.services,
-        prescription:
-          patch.prescription && patch.prescription.length > 0
-            ? patch.prescription
-            : enc.prescription,
-        dischargeSummary:
-          patch.dischargeSummary !== undefined ? patch.dischargeSummary : enc.dischargeSummary,
-        followUpAt: patch.followUpAt !== undefined ? patch.followUpAt : enc.followUpAt,
-        dischargeSavedAt:
-          patch.dischargeSavedAt !== undefined ? patch.dischargeSavedAt : enc.dischargeSavedAt,
-        dischargeSavedByName:
-          patch.dischargeSavedByName !== undefined
-            ? patch.dischargeSavedByName
-            : enc.dischargeSavedByName,
-        dischargeSummaryId:
-          patch.dischargeSummaryId !== undefined
-            ? patch.dischargeSummaryId
-            : enc.dischargeSummaryId,
-        documents: patch.documents && patch.documents.length > 0 ? patch.documents : enc.documents,
-        soapTemplates:
-          patch.soapTemplates && patch.soapTemplates.length > 0
-            ? patch.soapTemplates
-            : enc.soapTemplates,
-        readyForBilling:
-          patch.readyForBilling !== undefined ? patch.readyForBilling : enc.readyForBilling,
-        readyForDischarge:
-          patch.readyForDischarge !== undefined ? patch.readyForDischarge : enc.readyForDischarge,
-        roomId: patch.roomId !== undefined ? patch.roomId : enc.roomId,
-        unitId: patch.unitId !== undefined ? patch.unitId : enc.unitId,
-        admittedAt: patch.admittedAt !== undefined ? patch.admittedAt : enc.admittedAt,
-        dischargedAt: patch.dischargedAt !== undefined ? patch.dischargedAt : enc.dischargedAt,
-        mode: patch.mode !== undefined ? patch.mode : enc.mode,
-        consultationType:
-          patch.mode !== undefined ? consultationTypeForMode(patch.mode) : enc.consultationType,
-        stepStatus: patch.stepStatus ? { ...enc.stepStatus, ...patch.stepStatus } : enc.stepStatus,
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => mergeEncounterDataPatch(enc, patch)),
 
   setEncounterMode: (appointmentId, mode) =>
     set((state) => {
-      const current = state.encountersById[appointmentId];
-      const modeDefaults = buildEmptyEncounter(appointmentId, mode);
-      if (!current) {
-        return {
-          encountersById: {
-            ...state.encountersById,
-            [appointmentId]: modeDefaults,
-          },
-        };
-      }
-
-      const inpatientPatch = {
-        schedule: current.schedule.length > 0 ? current.schedule : modeDefaults.schedule,
-        roomId: current.roomId ?? modeDefaults.roomId,
-        unitId: current.unitId ?? modeDefaults.unitId,
-      };
-      const outpatientPatch = {
-        schedule: [],
-        roomId: undefined,
-        unitId: undefined,
-      };
-
       return {
         encountersById: {
           ...state.encountersById,
-          [appointmentId]: {
-            ...current,
-            mode,
-            consultationType: modeDefaults.consultationType,
-            ...(mode === 'INPATIENT' ? inpatientPatch : outpatientPatch),
-          },
+          [appointmentId]: getNextEncounterModeState(
+            state.encountersById[appointmentId],
+            appointmentId,
+            mode
+          ),
         },
       };
     }),
@@ -324,461 +355,389 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
   setActiveSideAction: (action) => set({ activeSideAction: action }),
 
   setStepStatus: (appointmentId, step, status) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        stepStatus: { ...enc.stepStatus, [step]: status },
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      stepStatus: { ...enc.stepStatus, [step]: status },
+    })),
 
   setLead: (appointmentId, id, name) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({ ...enc, leadId: id, leadName: name }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({ ...enc, leadId: id, leadName: name })),
 
   setNurse: (appointmentId, id, name) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({ ...enc, nurseId: id, nurseName: name }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({ ...enc, nurseId: id, nurseName: name })),
 
   setRoomUnit: (appointmentId, roomId, unitId) =>
-    set((state) => patchEncounter(state, appointmentId, (enc) => ({ ...enc, roomId, unitId }))),
+    patchEnc(set, appointmentId, (enc) => ({ ...enc, roomId, unitId })),
 
   upsertSoap: (appointmentId, patch) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        // Edit the active draft (the first not-yet-signed note); never touch a
-        // signed note so a new SOAP can be started after Save & Next.
-        const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
-        if (draftIndex >= 0) {
-          const updated = { ...enc.soap[draftIndex], ...patch };
-          const soap = [...enc.soap];
-          soap[draftIndex] = updated;
-          return { ...enc, soap };
-        }
-        const created: SoapNoteEntry = {
-          id: nextId('soap'),
-          chiefComplaint: '',
-          subjective: '',
-          objective: '',
-          assessment: '',
-          plan: '',
-          status: 'IN_PROGRESS',
-          createdAt: nowIso(),
-          ...patch,
-        };
-        return { ...enc, soap: [created, ...enc.soap] };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      // Edit the active draft (the first not-yet-signed note); never touch a
+      // signed note so a new SOAP can be started after Save & Next.
+      const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
+      if (draftIndex >= 0) {
+        const updated = { ...enc.soap[draftIndex], ...patch };
+        const soap = [...enc.soap];
+        soap[draftIndex] = updated;
+        return { ...enc, soap };
+      }
+      const created: SoapNoteEntry = {
+        id: nextId('soap'),
+        chiefComplaint: '',
+        subjective: '',
+        objective: '',
+        assessment: '',
+        plan: '',
+        status: 'IN_PROGRESS',
+        createdAt: nowIso(),
+        ...patch,
+      };
+      return { ...enc, soap: [created, ...enc.soap] };
+    }),
 
   applySoapTemplate: (appointmentId, template) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
-        if (draftIndex >= 0) {
-          const soap = [...enc.soap];
-          soap[draftIndex] = { ...soap[draftIndex], templateId: template.id };
-          return { ...enc, soap };
-        }
-        const created: SoapNoteEntry = {
-          id: nextId('soap'),
-          chiefComplaint: '',
-          subjective: '',
-          objective: '',
-          assessment: '',
-          plan: '',
-          status: 'IN_PROGRESS',
-          createdAt: nowIso(),
-          templateId: template.id,
-        };
-        return { ...enc, soap: [created, ...enc.soap] };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
+      if (draftIndex >= 0) {
+        const soap = [...enc.soap];
+        soap[draftIndex] = { ...soap[draftIndex], templateId: template.id };
+        return { ...enc, soap };
+      }
+      const created: SoapNoteEntry = {
+        id: nextId('soap'),
+        chiefComplaint: '',
+        subjective: '',
+        objective: '',
+        assessment: '',
+        plan: '',
+        status: 'IN_PROGRESS',
+        createdAt: nowIso(),
+        templateId: template.id,
+      };
+      return { ...enc, soap: [created, ...enc.soap] };
+    }),
 
   signSoap: (appointmentId, signedByName, offline, persistedId) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        // Sign the active draft and keep it in history; the next upsert starts a
-        // fresh draft, so the SOAP form clears and is editable again.
-        const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
-        if (draftIndex < 0) return enc;
-        const signed: SoapNoteEntry = {
-          ...enc.soap[draftIndex],
-          // Stamp the backend-issued id so a later edit PATCHes instead of POSTing a duplicate.
-          id: persistedId ?? enc.soap[draftIndex].id,
-          signedByName,
-          signedOffline: offline,
-          signedAt: nowIso(),
-          status: 'COMPLETED',
-        };
-        const soap = [...enc.soap];
-        soap[draftIndex] = signed;
-        return {
-          ...enc,
-          soap,
-          stepStatus: { ...enc.stepStatus, SOAP: 'COMPLETED' },
-        };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      // Sign the active draft and keep it in history; the next upsert starts a
+      // fresh draft, so the SOAP form clears and is editable again.
+      const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
+      if (draftIndex < 0) return enc;
+      const signed: SoapNoteEntry = {
+        ...enc.soap[draftIndex],
+        // Stamp the backend-issued id so a later edit PATCHes instead of POSTing a duplicate.
+        id: persistedId ?? enc.soap[draftIndex].id,
+        signedByName,
+        signedOffline: offline,
+        signedAt: nowIso(),
+        status: 'COMPLETED',
+      };
+      const soap = [...enc.soap];
+      soap[draftIndex] = signed;
+      return {
+        ...enc,
+        soap,
+        stepStatus: { ...enc.stepStatus, SOAP: 'COMPLETED' },
+      };
+    }),
 
   addVitals: (appointmentId, vitals, persistedId) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        vitals: [
-          {
-            ...vitals,
-            id: persistedId ?? nextId('vt'),
-            code: `VT-${String(enc.vitals.length + 1).padStart(3, '0')}`,
-          },
-          ...enc.vitals,
-        ],
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      vitals: [
+        {
+          ...vitals,
+          id: persistedId ?? nextId('vt'),
+          code: `VT-${String(enc.vitals.length + 1).padStart(3, '0')}`,
+        },
+        ...enc.vitals,
+      ],
+    })),
 
   addObservation: (appointmentId, record) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        observations: [
-          {
-            ...record,
-            id: nextId('ot'),
-            code: `OT-${String(enc.observations.length + 1).padStart(3, '0')}`,
-          },
-          ...enc.observations,
-        ],
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      observations: [
+        {
+          ...record,
+          id: nextId('ot'),
+          code: `OT-${String(enc.observations.length + 1).padStart(3, '0')}`,
+        },
+        ...enc.observations,
+      ],
+    })),
 
   removeDiagnosticTest: (appointmentId, id) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        diagnosticTests: enc.diagnosticTests.filter((test) => test.id !== id),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      diagnosticTests: enc.diagnosticTests.filter((test) => test.id !== id),
+    })),
 
   addDiagnosticOrder: (appointmentId, order) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        diagnosticOrders: [
-          {
-            id: nextId('dx-order'),
-            orderCode: order?.orderCode ?? '100355709',
-            createdAt: order?.createdAt ?? nowIso(),
-            status: order?.status ?? 'CREATED',
-            results: order?.results,
-          },
-          ...enc.diagnosticOrders,
-        ],
-        stepStatus: { ...enc.stepStatus, DIAGNOSTICS: 'IN_PROGRESS' },
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      diagnosticOrders: [
+        {
+          id: nextId('dx-order'),
+          orderCode: order?.orderCode ?? '100355709',
+          createdAt: order?.createdAt ?? nowIso(),
+          status: order?.status ?? 'CREATED',
+          results: order?.results,
+        },
+        ...enc.diagnosticOrders,
+      ],
+      stepStatus: { ...enc.stepStatus, DIAGNOSTICS: 'IN_PROGRESS' },
+    })),
 
   addLineItem: (appointmentId, item) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        const lineItem = { ...item, id: nextId('li') };
-        const generatedTask: ScheduleTask = {
-          id: nextId('sch'),
-          description: `${item.kind === 'PACKAGE' ? 'Complete package' : 'Complete service'}: ${item.name}`,
-          category: item.kind === 'PACKAGE' ? 'Treatment' : 'Consultation (billable)',
-          status: 'UPCOMING',
-          autoGenerated: true,
-          sourceRefId: lineItem.id,
-        };
-        return {
-          ...enc,
-          services: [...enc.services, lineItem],
-          schedule: enc.mode === 'INPATIENT' ? [...enc.schedule, generatedTask] : enc.schedule,
-        };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      const lineItem = { ...item, id: nextId('li') };
+      const generatedTask: ScheduleTask = {
+        id: nextId('sch'),
+        description: `${item.kind === 'PACKAGE' ? 'Complete package' : 'Complete service'}: ${item.name}`,
+        category: item.kind === 'PACKAGE' ? 'Treatment' : 'Consultation (billable)',
+        status: 'UPCOMING',
+        autoGenerated: true,
+        sourceRefId: lineItem.id,
+      };
+      return {
+        ...enc,
+        services: [...enc.services, lineItem],
+        schedule: enc.mode === 'INPATIENT' ? [...enc.schedule, generatedTask] : enc.schedule,
+      };
+    }),
 
   updateLineItem: (appointmentId, id, patch) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        services: enc.services.map((s) => (s.id === id ? { ...s, ...patch } : s)),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      services: enc.services.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    })),
 
   removeLineItem: (appointmentId, id) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        services: enc.services.filter((s) => s.id !== id),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      services: enc.services.filter((s) => s.id !== id),
+    })),
 
   addPrescription: (appointmentId, item, persistedId) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        const prescription = { ...item, id: persistedId ?? nextId('rx') };
-        const generatedTask: ScheduleTask = {
-          id: nextId('sch'),
-          description: `Administer ${item.medicineName}`,
-          category: 'Medication',
-          status: 'UPCOMING',
-          autoGenerated: true,
-          sourceRefId: prescription.id,
-        };
-        return {
-          ...enc,
-          prescription: [...enc.prescription, prescription],
-          schedule: enc.mode === 'INPATIENT' ? [...enc.schedule, generatedTask] : enc.schedule,
-        };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      const prescription = { ...item, id: persistedId ?? nextId('rx') };
+      const generatedTask: ScheduleTask = {
+        id: nextId('sch'),
+        description: `Administer ${item.medicineName}`,
+        category: 'Medication',
+        status: 'UPCOMING',
+        autoGenerated: true,
+        sourceRefId: prescription.id,
+      };
+      return {
+        ...enc,
+        prescription: [...enc.prescription, prescription],
+        schedule: enc.mode === 'INPATIENT' ? [...enc.schedule, generatedTask] : enc.schedule,
+      };
+    }),
 
   updatePrescription: (appointmentId, id, patch) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        prescription: enc.prescription.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      prescription: enc.prescription.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+    })),
 
   removePrescription: (appointmentId, id) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        prescription: enc.prescription.filter((p) => p.id !== id),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      prescription: enc.prescription.filter((p) => p.id !== id),
+    })),
 
   addScheduleTask: (appointmentId, task) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        schedule: [...enc.schedule, { ...task, id: nextId('sch') }],
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      schedule: [...enc.schedule, { ...task, id: nextId('sch') }],
+    })),
 
   updateScheduleTask: (appointmentId, id, patch) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        schedule: enc.schedule.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      schedule: enc.schedule.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+    })),
 
   setScheduleTaskStatus: (appointmentId, id, status) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        schedule: enc.schedule.map((t) => (t.id === id ? { ...t, status } : t)),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      schedule: enc.schedule.map((t) => (t.id === id ? { ...t, status } : t)),
+    })),
 
   setDischargeSummary: (appointmentId, html) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({ ...enc, dischargeSummary: html }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({ ...enc, dischargeSummary: html })),
 
   saveDischargeSummary: (appointmentId, byName, persistedId) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        dischargeSavedAt: new Date().toISOString(),
-        dischargeSavedByName: byName,
-        // Keep the backend id so re-saving the summary PATCHes instead of POSTing a duplicate.
-        dischargeSummaryId: persistedId ?? enc.dischargeSummaryId,
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      dischargeSavedAt: new Date().toISOString(),
+      dischargeSavedByName: byName,
+      // Keep the backend id so re-saving the summary PATCHes instead of POSTing a duplicate.
+      dischargeSummaryId: persistedId ?? enc.dischargeSummaryId,
+    })),
 
   reopenDischargeSummary: (appointmentId) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        dischargeSavedAt: undefined,
-        dischargeSavedByName: undefined,
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      dischargeSavedAt: undefined,
+      dischargeSavedByName: undefined,
+    })),
 
   markDischarged: (appointmentId, dischargedAt) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        dischargedAt,
-        viewOnly: true,
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      dischargedAt,
+      viewOnly: true,
+    })),
 
   setFollowUp: (appointmentId, at) =>
-    set((state) => patchEncounter(state, appointmentId, (enc) => ({ ...enc, followUpAt: at }))),
+    patchEnc(set, appointmentId, (enc) => ({ ...enc, followUpAt: at })),
 
   addDocument: (appointmentId, document) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        documents: [{ ...document, id: nextId('doc') }, ...enc.documents],
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      documents: [{ ...document, id: nextId('doc') }, ...enc.documents],
+    })),
 
   setWithdrawDeposit: (appointmentId, value) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({ ...enc, withdrawDeposit: value }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({ ...enc, withdrawDeposit: value })),
 
   setOverallDiscountPercent: (appointmentId, percent) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        overallDiscountPercent: Math.min(100, Math.max(0, percent)),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      overallDiscountPercent: Math.min(100, Math.max(0, percent)),
+    })),
 
   addInvoiceLineItem: (appointmentId, item) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        invoiceLineItems: [...enc.invoiceLineItems, { ...item, id: nextId('inv') }],
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      invoiceLineItems: [...enc.invoiceLineItems, { ...item, id: nextId('inv') }],
+    })),
 
   updateInvoiceLineItem: (appointmentId, id, patch) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        invoiceLineItems: enc.invoiceLineItems.map((item) =>
-          item.id === id ? recalcInvoiceLine({ ...item, ...patch }) : item
-        ),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      invoiceLineItems: enc.invoiceLineItems.map((item) =>
+        item.id === id ? recalcInvoiceLine({ ...item, ...patch }) : item
+      ),
+    })),
 
   removeInvoiceLineItem: (appointmentId, id) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        invoiceLineItems: enc.invoiceLineItems.filter((item) => item.id !== id),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      invoiceLineItems: enc.invoiceLineItems.filter((item) => item.id !== id),
+    })),
 
   recordInvoicePayment: (appointmentId, payment) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        if (enc.invoiceLineItems.length === 0) return enc;
-        const totals = computeInvoiceTotals(enc);
-        const paidFromDeposit = payment.method === 'DEPOSIT' || enc.withdrawDeposit;
-        const invoice: PastInvoice = {
-          id: nextId('inv-paid'),
-          createdAt: nowIso(),
-          totalCents: totals.estimatedTotalCents,
-          outstandingCents: 0,
-          status: 'PAID_FULL',
-          byName: payment.byName,
-          paidByName: payment.byName,
-          paidAt: nowIso(),
-          paymentMethod: payment.method,
-          paidFromDeposit,
-          items: enc.invoiceLineItems.map((item) => ({ ...item })),
-        };
-        return {
-          ...enc,
-          pastInvoices: [invoice, ...enc.pastInvoices],
-          invoiceLineItems: [],
-          depositCents: paidFromDeposit
-            ? Math.max(0, enc.depositCents - totals.estimatedTotalCents)
-            : enc.depositCents,
-        };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      if (enc.invoiceLineItems.length === 0) return enc;
+      const totals = computeInvoiceTotals(enc);
+      const paidFromDeposit = payment.method === 'DEPOSIT' || enc.withdrawDeposit;
+      const invoice: PastInvoice = {
+        id: nextId('inv-paid'),
+        createdAt: nowIso(),
+        totalCents: totals.estimatedTotalCents,
+        outstandingCents: 0,
+        status: 'PAID_FULL',
+        byName: payment.byName,
+        paidByName: payment.byName,
+        paidAt: nowIso(),
+        paymentMethod: payment.method,
+        paidFromDeposit,
+        items: enc.invoiceLineItems.map((item) => ({ ...item })),
+      };
+      return {
+        ...enc,
+        pastInvoices: [invoice, ...enc.pastInvoices],
+        invoiceLineItems: [],
+        depositCents: paidFromDeposit
+          ? Math.max(0, enc.depositCents - totals.estimatedTotalCents)
+          : enc.depositCents,
+      };
+    }),
 
   recordDepositCollection: (appointmentId, deposit) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        const amountCents = Math.max(0, Math.round(deposit.amountCents));
-        if (amountCents <= 0) return enc;
-        const lineItem: InvoiceLineItem = {
-          id: nextId('deposit-line'),
-          name: 'Visit deposit',
-          unitPriceCents: amountCents,
-          qty: 1,
-          grossCents: amountCents,
-          discountCents: 0,
-          amountCents,
-        };
-        const invoice: PastInvoice = {
-          id: nextId('deposit'),
-          createdAt: nowIso(),
-          totalCents: amountCents,
-          outstandingCents: 0,
-          status: 'PAID_FULL',
-          byName: deposit.byName,
-          paidByName: deposit.byName,
-          paidAt: nowIso(),
-          paymentMethod: deposit.method,
-          items: [lineItem],
-        };
-        return {
-          ...enc,
-          depositCents: enc.depositCents + amountCents,
-          pastInvoices: [invoice, ...enc.pastInvoices],
-        };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      const amountCents = Math.max(0, Math.round(deposit.amountCents));
+      if (amountCents <= 0) return enc;
+      const lineItem: InvoiceLineItem = {
+        id: nextId('deposit-line'),
+        name: 'Visit deposit',
+        unitPriceCents: amountCents,
+        qty: 1,
+        grossCents: amountCents,
+        discountCents: 0,
+        amountCents,
+      };
+      const invoice: PastInvoice = {
+        id: nextId('deposit'),
+        createdAt: nowIso(),
+        totalCents: amountCents,
+        outstandingCents: 0,
+        status: 'PAID_FULL',
+        byName: deposit.byName,
+        paidByName: deposit.byName,
+        paidAt: nowIso(),
+        paymentMethod: deposit.method,
+        items: [lineItem],
+      };
+      return {
+        ...enc,
+        depositCents: enc.depositCents + amountCents,
+        pastInvoices: [invoice, ...enc.pastInvoices],
+      };
+    }),
 
   hydrateInvoiceBilling: (appointmentId, billing) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        // Locally recorded payments/deposits (ids prefixed inv-paid/deposit) are
-        // session-only and not yet refetched from finance — keep them, and prefer
-        // server invoices by id so a refetch doesn't duplicate rows.
-        const serverIds = new Set(billing.pastInvoices.map((invoice) => invoice.id));
-        const localOnly = enc.pastInvoices.filter((invoice) => !serverIds.has(invoice.id));
-        return {
-          ...enc,
-          pastInvoices: [...billing.pastInvoices, ...localOnly],
-          // The collected deposit is authoritative from finance; fall back to the
-          // existing local value when the server reports none.
-          depositCents: billing.depositCents > 0 ? billing.depositCents : enc.depositCents,
-          currency: billing.currency ?? enc.currency,
-        };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      // Locally recorded payments/deposits (ids prefixed inv-paid/deposit) are
+      // session-only and not yet refetched from finance — keep them, and prefer
+      // server invoices by id so a refetch doesn't duplicate rows.
+      const serverIds = new Set(billing.pastInvoices.map((invoice) => invoice.id));
+      const localOnly = enc.pastInvoices.filter((invoice) => !serverIds.has(invoice.id));
+      return {
+        ...enc,
+        pastInvoices: [...billing.pastInvoices, ...localOnly],
+        // The collected deposit is authoritative from finance; fall back to the
+        // existing local value when the server reports none.
+        depositCents: billing.depositCents > 0 ? billing.depositCents : enc.depositCents,
+        currency: billing.currency ?? enc.currency,
+      };
+    }),
 
   toggleReadyForBilling: (appointmentId, actor) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        const value = !enc.readyForBilling.value;
-        return {
-          ...enc,
-          readyForBilling: value
-            ? { value: true, byUserId: actor.id, byName: actor.name, at: nowIso() }
-            : { value: false },
-        };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      const value = !enc.readyForBilling.value;
+      return {
+        ...enc,
+        readyForBilling: value
+          ? { value: true, byUserId: actor.id, byName: actor.name, at: nowIso() }
+          : { value: false },
+      };
+    }),
 
   toggleReadyForDischarge: (appointmentId, actor) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => {
-        const value = !enc.readyForDischarge.value;
-        return {
-          ...enc,
-          readyForDischarge: value
-            ? { value: true, byUserId: actor.id, byName: actor.name, at: nowIso() }
-            : { value: false },
-        };
-      })
-    ),
+    patchEnc(set, appointmentId, (enc) => {
+      const value = !enc.readyForDischarge.value;
+      return {
+        ...enc,
+        readyForDischarge: value
+          ? { value: true, byUserId: actor.id, byName: actor.name, at: nowIso() }
+          : { value: false },
+      };
+    }),
 
   addAlert: (appointmentId, alert) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        alerts: [...enc.alerts, { ...alert, id: nextId('al') }],
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      alerts: [...enc.alerts, { ...alert, id: nextId('al') }],
+    })),
 
   removeAlert: (appointmentId, id) =>
-    set((state) =>
-      patchEncounter(state, appointmentId, (enc) => ({
-        ...enc,
-        alerts: enc.alerts.filter((alert) => alert.id !== id),
-      }))
-    ),
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      alerts: enc.alerts.filter((alert) => alert.id !== id),
+    })),
 }));

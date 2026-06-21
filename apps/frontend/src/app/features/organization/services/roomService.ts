@@ -34,32 +34,52 @@ type RoomMutationPayload = OrganisationRoom & {
   equipment?: string[];
 };
 
-const UNIT_CAPABLE_ROOM_TYPES: OrganisationRoom['type'][] = [...UnitCapableRoomTypes];
+const UNIT_CAPABLE_ROOM_TYPES = new Set<OrganisationRoom['type']>(UnitCapableRoomTypes);
 const SUPPORTED_ROOM_SPECIES = new Set(['CANINE', 'FELINE', 'EQUINE']);
 
 const normalizeRoomCode = (value?: string) => value?.trim() ?? '';
 
 const buildFallbackRoomCode = (name?: string) => {
-  const base =
-    name
-      ?.trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 18) || 'ROOM';
+  const upperName = name?.trim().toUpperCase() ?? '';
+  let base = '';
+  let lastWasDash = false;
+
+  for (const char of upperName) {
+    const isAlphanumeric = (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9');
+
+    if (isAlphanumeric) {
+      base += char;
+      lastWasDash = false;
+      continue;
+    }
+
+    if (!lastWasDash) {
+      base += '-';
+      lastWasDash = true;
+    }
+  }
+
+  let start = 0;
+  let end = base.length;
+  while (start < end && base[start] === '-') start += 1;
+  while (end > start && base[end - 1] === '-') end -= 1;
+  base = base.slice(start, end).slice(0, 18);
+  if (!base) base = 'ROOM';
   const suffix = Date.now().toString(36).slice(-5).toUpperCase();
   return `${base}-${suffix}`;
 };
 
 const toSpeciesConstraints = (value?: string | string[]) => {
-  const values = Array.isArray(value) ? value : value ? [value] : [];
+  let values: string[] = [];
+  if (Array.isArray(value)) values = value;
+  else if (value) values = [value];
   const species = values
     .map((entry) => entry.trim().toUpperCase())
     .filter((entry) => SUPPORTED_ROOM_SPECIES.has(entry));
   return species.length ? Array.from(new Set(species)) : undefined;
 };
 
-const canSyncUnits = (room: OrganisationRoom) => UNIT_CAPABLE_ROOM_TYPES.includes(room.type);
+const canSyncUnits = (room: OrganisationRoom) => UNIT_CAPABLE_ROOM_TYPES.has(room.type);
 
 const buildQuery = (params: Record<string, string | boolean | undefined>) => {
   const query = new URLSearchParams();
@@ -91,10 +111,7 @@ const getDesiredUnitGroups = (source: RoomMutationPayload): RoomUnitGroupDraft[]
   const explicitGroups = source.units?.filter((unit) => Number(unit.count ?? 0) > 0) ?? [];
   if (explicitGroups.length) return explicitGroups;
 
-  const totalUnits =
-    typeof source.availability?.totalUnits === 'number'
-      ? Number(source.availability.totalUnits)
-      : 0;
+  const totalUnits = source.availability?.totalUnits ?? 0;
 
   if (totalUnits <= 0) return [];
 

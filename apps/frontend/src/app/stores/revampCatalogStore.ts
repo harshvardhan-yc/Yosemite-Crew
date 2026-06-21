@@ -76,6 +76,32 @@ const applyBreakdownUpdate = (
     return { ...p, breakdown: updateFn(p.breakdown) };
   });
 
+const addPackageBreakdownItem = (
+  packages: PackageRevamp[],
+  packageId: string,
+  item: PackageBreakdownItem
+): PackageRevamp[] =>
+  applyBreakdownUpdate(packages, packageId, (breakdown) => [...breakdown, item]);
+
+const updatePackageBreakdownItem = (
+  packages: PackageRevamp[],
+  packageId: string,
+  itemId: string,
+  patch: Partial<PackageBreakdownItem>
+): PackageRevamp[] =>
+  applyBreakdownUpdate(packages, packageId, (breakdown) =>
+    breakdown.map((item) => (item.id === itemId ? { ...item, ...patch } : item))
+  );
+
+const removePackageBreakdownItem = (
+  packages: PackageRevamp[],
+  packageId: string,
+  itemId: string
+): PackageRevamp[] =>
+  applyBreakdownUpdate(packages, packageId, (breakdown) =>
+    breakdown.filter((item) => item.id !== itemId)
+  );
+
 const findService = (services: ServiceRevamp[], id: string): ServiceRevamp => {
   const service = services.find((item) => item.id === id);
   if (!service) throw new Error('Service not found.');
@@ -313,25 +339,17 @@ export const useRevampCatalogStore = create<RevampCatalogState>()((set, get) => 
 
   addBreakdownItem: (packageId, item) => {
     const newItem: PackageBreakdownItem = { ...item, id: crypto.randomUUID() };
-    set((state) => ({
-      packages: state.packages.map((p) =>
-        p.id === packageId ? { ...p, breakdown: [...p.breakdown, newItem] } : p
-      ),
-    }));
+    set((state) => ({ packages: addPackageBreakdownItem(state.packages, packageId, newItem) }));
   },
 
   updateBreakdownItem: (packageId, itemId, patch) =>
     set((state) => ({
-      packages: applyBreakdownUpdate(state.packages, packageId, (breakdown) =>
-        breakdown.map((item) => (item.id === itemId ? { ...item, ...patch } : item))
-      ),
+      packages: updatePackageBreakdownItem(state.packages, packageId, itemId, patch),
     })),
 
   removeBreakdownItem: (packageId, itemId) =>
     set((state) => ({
-      packages: applyBreakdownUpdate(state.packages, packageId, (breakdown) =>
-        breakdown.filter((item) => item.id !== itemId)
-      ),
+      packages: removePackageBreakdownItem(state.packages, packageId, itemId),
     })),
 
   generateItemCode: (type) => {

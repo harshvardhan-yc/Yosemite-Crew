@@ -41,6 +41,46 @@ type RoomState = {
   setError: (message: string) => void;
 };
 
+const pruneIdsForOrg = (
+  index: Record<string, string[]>,
+  roomUnitsById: Record<string, RoomUnit>,
+  orgId: string
+) => {
+  for (const [key, ids] of Object.entries(index)) {
+    const retained = ids.filter((id) => roomUnitsById[id]?.organisationId !== orgId);
+    if (retained.length) index[key] = retained;
+    else delete index[key];
+  }
+};
+
+const appendUnitId = (index: Record<string, string[]>, key: string, unitId: string) => {
+  const ids = index[key] ?? [];
+  index[key] = ids.includes(unitId) ? ids : [...ids, unitId];
+};
+
+const syncRoomUnitsForOrg = (
+  state: Pick<RoomState, 'roomUnitsById' | 'roomUnitIdsByRoomId' | 'roomUnitIdsByGroupId'>,
+  orgId: string,
+  items: RoomUnit[]
+) => {
+  const roomUnitsById = { ...state.roomUnitsById };
+  const roomUnitIdsByRoomId = { ...state.roomUnitIdsByRoomId };
+  const roomUnitIdsByGroupId = { ...state.roomUnitIdsByGroupId };
+  pruneIdsForOrg(roomUnitIdsByRoomId, roomUnitsById, orgId);
+  pruneIdsForOrg(roomUnitIdsByGroupId, roomUnitsById, orgId);
+  for (const [id, unit] of Object.entries(roomUnitsById)) {
+    if (unit.organisationId === orgId) delete roomUnitsById[id];
+  }
+  for (const unit of items) {
+    roomUnitsById[unit.id] = unit;
+    appendUnitId(roomUnitIdsByRoomId, unit.roomId, unit.id);
+    if (unit.unitGroupId) {
+      appendUnitId(roomUnitIdsByGroupId, unit.unitGroupId, unit.id);
+    }
+  }
+  return { roomUnitsById, roomUnitIdsByRoomId, roomUnitIdsByGroupId };
+};
+
 export const useOrganisationRoomStore = create<RoomState>()((set, get) => ({
   roomsById: {},
   roomIdsByOrgId: {},
@@ -150,39 +190,7 @@ export const useOrganisationRoomStore = create<RoomState>()((set, get) => ({
       return { roomUnitGroupsById, roomUnitGroupIdsByRoomId };
     }),
 
-  setRoomUnitsForOrg: (orgId, items) =>
-    set((state) => {
-      const roomUnitsById = { ...state.roomUnitsById };
-      const roomUnitIdsByRoomId = { ...state.roomUnitIdsByRoomId };
-      const roomUnitIdsByGroupId = { ...state.roomUnitIdsByGroupId };
-      for (const [roomId, ids] of Object.entries(roomUnitIdsByRoomId)) {
-        const retained = ids.filter((id) => roomUnitsById[id]?.organisationId !== orgId);
-        if (retained.length) roomUnitIdsByRoomId[roomId] = retained;
-        else delete roomUnitIdsByRoomId[roomId];
-      }
-      for (const [groupId, ids] of Object.entries(roomUnitIdsByGroupId)) {
-        const retained = ids.filter((id) => roomUnitsById[id]?.organisationId !== orgId);
-        if (retained.length) roomUnitIdsByGroupId[groupId] = retained;
-        else delete roomUnitIdsByGroupId[groupId];
-      }
-      for (const [id, unit] of Object.entries(roomUnitsById)) {
-        if (unit.organisationId === orgId) delete roomUnitsById[id];
-      }
-      for (const unit of items) {
-        roomUnitsById[unit.id] = unit;
-        const roomIds = roomUnitIdsByRoomId[unit.roomId] ?? [];
-        roomUnitIdsByRoomId[unit.roomId] = roomIds.includes(unit.id)
-          ? roomIds
-          : [...roomIds, unit.id];
-        if (unit.unitGroupId) {
-          const groupIds = roomUnitIdsByGroupId[unit.unitGroupId] ?? [];
-          roomUnitIdsByGroupId[unit.unitGroupId] = groupIds.includes(unit.id)
-            ? groupIds
-            : [...groupIds, unit.id];
-        }
-      }
-      return { roomUnitsById, roomUnitIdsByRoomId, roomUnitIdsByGroupId };
-    }),
+  setRoomUnitsForOrg: (orgId, items) => set((state) => syncRoomUnitsForOrg(state, orgId, items)),
 
   setRoomUnitGroupsForRoom: (roomId, items) =>
     set((state) => {
