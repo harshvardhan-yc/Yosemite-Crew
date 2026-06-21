@@ -62,6 +62,36 @@ const formatTime = (value: Date | string | undefined) => {
   return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 };
 
+const renderFormsPanelContent = (
+  status: 'loading' | 'loaded' | 'error',
+  filteredForms: SubmittedForm[]
+) => {
+  if (status === 'loading') {
+    return <p className="py-6 text-center text-body-4 text-text-secondary">Loading forms...</p>;
+  }
+  if (status === 'error') {
+    return (
+      <p className="py-6 text-center text-body-4 text-danger-600">
+        Unable to load forms. Try again later.
+      </p>
+    );
+  }
+  if (filteredForms.length === 0) {
+    return (
+      <p className="py-6 text-center text-body-4 text-text-secondary">
+        No forms match this search.
+      </p>
+    );
+  }
+  return (
+    <ul className="rounded-2xl border border-card-border px-4">
+      {filteredForms.map((form) => (
+        <FormRow key={form.id} form={form} />
+      ))}
+    </ul>
+  );
+};
+
 const FormRow = ({ form }: { form: SubmittedForm }) => {
   const meta = AUTH_META[form.auth];
   const isPending = form.auth === 'PENDING';
@@ -158,23 +188,7 @@ const AppointmentFormsPanel = ({ appointmentId }: { appointmentId: string }) => 
         label="Search forms to add"
         className="w-full!"
       />
-      {status === 'loading' ? (
-        <p className="py-6 text-center text-body-4 text-text-secondary">Loading forms...</p>
-      ) : status === 'error' ? (
-        <p className="py-6 text-center text-body-4 text-danger-600">
-          Unable to load forms. Try again later.
-        </p>
-      ) : filteredForms.length === 0 ? (
-        <p className="py-6 text-center text-body-4 text-text-secondary">
-          No forms match this search.
-        </p>
-      ) : (
-        <ul className="rounded-2xl border border-card-border px-4">
-          {filteredForms.map((form) => (
-            <FormRow key={form.id} form={form} />
-          ))}
-        </ul>
-      )}
+      {renderFormsPanelContent(status, filteredForms)}
     </div>
   );
 };

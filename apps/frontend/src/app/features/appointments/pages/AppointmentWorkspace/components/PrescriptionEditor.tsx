@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LuChevronDown, LuCopy, LuPlus, LuPrinter, LuTrash2 } from 'react-icons/lu';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
@@ -64,52 +64,33 @@ const FulfillmentDropdown = ({
   onChange: (value: PrescriptionFulfillment) => void;
 }) => {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
+    <div className="relative">
+      <label className="sr-only" htmlFor="fulfillment-select">
+        Fulfillment
+      </label>
+      <select
+        id="fulfillment-select"
         disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
         aria-label="Fulfillment"
-        onClick={() => setOpen((o) => !o)}
+        value={value}
+        onChange={(e) => onChange(e.target.value as PrescriptionFulfillment)}
+        onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
-        className="flex items-center gap-1 rounded-2xl border border-neutral-500 bg-neutral-0 py-1.5 pr-3.5 pl-4 text-[14px] leading-[120%] font-medium text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex items-center gap-1 rounded-2xl border border-neutral-500 bg-neutral-0 py-1.5 pr-10 pl-4 text-[14px] leading-[120%] font-medium text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {FULFILLMENT_LABELS[value]}
-        <LuChevronDown
-          size={16}
-          aria-hidden="true"
-          className={`transition-transform ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
-      {open && (
-        <ul
-          role="listbox"
-          aria-label="Fulfillment"
-          className="absolute right-0 z-20 mt-1 min-w-44 overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]"
-        >
-          {FULFILLMENT_OPTIONS.map((option) => (
-            <li key={option}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={option === value}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onChange(option);
-                  setOpen(false);
-                }}
-                className="flex w-full items-center px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-              >
-                {FULFILLMENT_LABELS[option]}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+        {FULFILLMENT_OPTIONS.map((option) => (
+          <option key={option} value={option}>
+            {FULFILLMENT_LABELS[option]}
+          </option>
+        ))}
+      </select>
+      <LuChevronDown
+        size={16}
+        aria-hidden="true"
+        className={`pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 transition-transform ${open ? 'rotate-180' : ''}`}
+      />
     </div>
   );
 };
@@ -212,7 +193,7 @@ const PrescriptionRow = ({
             disabled={rowReadOnly}
             onChange={(fulfillment) => onUpdateItem(item.id, { fulfillment })}
           />
-          {!isBilled && (
+          {isBilled ? null : (
             <CircleIconButton
               icon={<LuTrash2 aria-hidden="true" />}
               label={`Remove ${item.medicineName}`}
@@ -243,7 +224,7 @@ const PrescriptionRow = ({
           onChange={(value) => onUpdateItem(item.id, { instructions: value })}
         />
         <span className="ml-auto shrink-0 text-body-3-emphasis font-bold text-text-primary">
-          {item.priceCents != null ? formatCents(item.priceCents) : '-'}
+          {item.priceCents == null ? '-' : formatCents(item.priceCents)}
         </span>
       </div>
     </li>
@@ -261,11 +242,11 @@ const PrescriptionEditor = ({
   onPrint,
 }: PrescriptionEditorProps) => {
   const [search, setSearch] = useState('');
-  const searchRef = useRef<HTMLDivElement>(null);
+  const searchRef = React.useRef<HTMLDivElement>(null);
 
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return [];
+    if (query === '') return [];
     return catalogItems.filter((item) => item.medicineName.toLowerCase().includes(query));
   }, [catalogItems, search]);
 

@@ -35,20 +35,20 @@ type RenderedDocument = {
   signing?: { required?: boolean; status?: string | null } | null;
 };
 
+type WorkspaceClinicalHydrationFields =
+  | 'soap'
+  | 'vitals'
+  | 'observations'
+  | 'prescription'
+  | 'dischargeSummary'
+  | 'followUpAt'
+  | 'dischargeSavedAt'
+  | 'dischargeSavedByName'
+  | 'dischargeSummaryId'
+  | 'documents';
+
 export type WorkspaceClinicalHydration = Partial<
-  Pick<
-    AppointmentEncounter,
-    | 'soap'
-    | 'vitals'
-    | 'observations'
-    | 'prescription'
-    | 'dischargeSummary'
-    | 'followUpAt'
-    | 'dischargeSavedAt'
-    | 'dischargeSavedByName'
-    | 'dischargeSummaryId'
-    | 'documents'
-  >
+  Pick<AppointmentEncounter, WorkspaceClinicalHydrationFields>
 >;
 
 type ObservationToolSubmission = {
@@ -178,6 +178,12 @@ const toIsoQueryValue = (value: string | Date | undefined) => {
   return value;
 };
 
+const toText = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+};
+
 const observationSubmissionQuery = (filters: ObservationSubmissionListFilters = {}) => ({
   patientId: filters.companionId,
   toolId: filters.toolId,
@@ -238,22 +244,24 @@ const buildComposition = (
   };
 };
 
+type SoapNoteCompositionContext = Pick<
+  ClinicalContext,
+  'organisationId' | 'appointmentId' | 'encounterId' | 'authorId' | 'authorName'
+>;
+
 const soapNoteFromComposition = (
   resource: Composition,
-  context: Pick<
-    ClinicalContext,
-    'organisationId' | 'appointmentId' | 'encounterId' | 'authorId' | 'authorName'
-  >
+  context: SoapNoteCompositionContext
 ): SoapNoteEntry => {
   const input = clinicalArtifactFhirMapper.compositionToSoapNoteInput(resource, context);
   const signedByName = getClinicalAuthorName(resource, context);
   return {
     id: resource.id ?? `soap-${resource.date ?? Date.now()}`,
     chiefComplaint: '',
-    subjective: String(input.subjective ?? ''),
-    objective: String(input.objective ?? ''),
-    assessment: String(input.assessment ?? ''),
-    plan: String(input.plan ?? ''),
+    subjective: toText(input.subjective),
+    objective: toText(input.objective),
+    assessment: toText(input.assessment),
+    plan: toText(input.plan),
     templateId: input.templateId,
     // A SOAP note that came back from the backend is a saved record and belongs in the
     // "All SOAP notes" history, not the active draft. The backend stores saved notes as
@@ -272,10 +280,10 @@ const vitalRecordFromObservation = (
   context: Pick<ClinicalContext, 'organisationId' | 'appointmentId' | 'encounterId'>
 ): Vitals => {
   const input = clinicalArtifactFhirMapper.observationToVitalRecordInput(resource, context);
-  const vitals = (input.vitals && typeof input.vitals === 'object' ? input.vitals : {}) as Record<
-    string,
-    unknown
-  >;
+  const vitals =
+    input.vitals && typeof input.vitals === 'object'
+      ? (input.vitals as Record<string, unknown>)
+      : {};
   return {
     id: resource.id ?? `vital-${index + 1}`,
     code: `VT-${String(index + 1).padStart(3, '0')}`,
@@ -299,7 +307,7 @@ const dischargeSummaryFromComposition = (
 ): DischargeSummaryHydration => {
   const input = clinicalArtifactFhirMapper.compositionToDischargeSummaryInput(resource, context);
   return {
-    dischargeSummary: String(input.summaryContent ?? ''),
+    dischargeSummary: toText(input.summaryContent),
     followUpAt: typeof input.followUp === 'string' ? input.followUp : undefined,
     dischargeSavedAt: asIso(resource.date),
     // Resolve to a human name (display, or the current author's name) — never

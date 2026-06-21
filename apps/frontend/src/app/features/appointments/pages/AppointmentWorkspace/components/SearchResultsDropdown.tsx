@@ -53,7 +53,7 @@ const SearchResultsDropdown = ({
     positionSnapshot === EMPTY_POSITION_SNAPSHOT
       ? null
       : (() => {
-          const [top, left, width] = positionSnapshot.split(':').map((value) => Number(value));
+          const [top, left, width] = positionSnapshot.split(':').map(Number);
           return { top, left, width } satisfies Position;
         })();
 

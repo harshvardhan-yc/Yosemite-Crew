@@ -37,16 +37,13 @@ export type ReadyState = {
   at?: string;
 };
 
-/** Rich-text content is stored as sanitized HTML for backend round-trips. */
-export type RichTextValue = string;
-
 export type SoapNoteEntry = {
   id: string;
-  chiefComplaint: RichTextValue;
-  subjective: RichTextValue;
-  objective: RichTextValue;
-  assessment: RichTextValue;
-  plan: RichTextValue;
+  chiefComplaint: string;
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
   templateId?: string;
   signedByName?: string;
   signedAt?: string;
@@ -89,7 +86,7 @@ export type ObservationToolDefinition = {
 export type ObservationRecord = {
   id: string;
   code: string;
-  toolKey: ObservationToolKey | string;
+  toolKey: ObservationToolKey | (string & {});
   toolName: string;
   scores: Record<string, number | string>;
   total?: number;
@@ -210,8 +207,6 @@ export type ParentTaskCategory =
   | 'Record'
   | 'Custom reminders';
 
-export type ScheduleTaskCategory = EmployeeTaskCategory;
-
 export type TaskRepeat = 'None' | 'Daily' | 'Weekly' | 'Monthly';
 
 export type TaskAssigneeKind = 'EMPLOYEE' | 'PARENT' | 'CO_PARENT';
@@ -222,7 +217,7 @@ export type ScheduleTask = {
   id: string;
   time?: string;
   description: string;
-  category: ScheduleTaskCategory;
+  category: EmployeeTaskCategory;
   assignedToId?: string;
   assignedToName?: string;
   status: ScheduleTaskStatus;
@@ -324,7 +319,7 @@ export type AppointmentEncounter = {
   withdrawDeposit: boolean;
   taxPercent: number;
   overallDiscountPercent: number;
-  dischargeSummary: RichTextValue;
+  dischargeSummary: string;
   followUpAt?: string;
   /** Set when the discharge summary is saved — drives the read-only saved view. */
   dischargeSavedAt?: string;

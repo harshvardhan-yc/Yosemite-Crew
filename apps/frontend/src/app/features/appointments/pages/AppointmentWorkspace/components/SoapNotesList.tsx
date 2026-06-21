@@ -46,14 +46,14 @@ const SignStatusChip = ({ offline }: { offline: boolean }) =>
 const ReadRow = ({ field }: { field: SoapNoteReadField }) => (
   <div className="flex flex-col gap-1 py-1.5 sm:flex-row sm:items-start sm:gap-6">
     <span className="w-full shrink-0 pt-px text-yc-12-b-neutral sm:w-44">{field.label}</span>
-    {field.text != null ? (
-      <p className="flex-1 text-body-4 leading-[140%] text-text-primary">{field.text || '-'}</p>
-    ) : (
+    {field.text == null ? (
       <div
         className="flex-1 text-body-4 leading-[140%] text-text-primary [&_li]:my-0 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul_ul]:pl-5"
         // Re-sanitized at render as defence-in-depth (also sanitized on write).
         dangerouslySetInnerHTML={{ __html: sanitizeRichText(field.html ?? '') || '-' }}
       />
+    ) : (
+      <p className="flex-1 text-body-4 leading-[140%] text-text-primary">{field.text || '-'}</p>
     )}
   </div>
 );

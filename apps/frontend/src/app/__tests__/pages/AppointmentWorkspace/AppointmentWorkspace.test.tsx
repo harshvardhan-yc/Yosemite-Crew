@@ -365,7 +365,7 @@ describe('AppointmentWorkspace container', () => {
 
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /room: ward a/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'Ward B' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ward B' }));
     // Selecting a room auto-selects that room's first unit, so the Unit dropdown
     // now reflects "B" (unit-b) rather than the placeholder.
     expect(screen.getByRole('button', { name: 'Unit: B' })).toBeInTheDocument();
@@ -414,7 +414,7 @@ describe('AppointmentWorkspace container', () => {
 
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /room/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'Exam Room 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exam Room 2' }));
 
     await waitFor(() => {
       expect(updateAppointment).toHaveBeenCalledWith(
@@ -487,7 +487,7 @@ describe('AppointmentWorkspace container', () => {
     expect(screen.getByRole('button', { name: 'Unit: A' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Unit: A' }));
-    fireEvent.click(screen.getByRole('option', { name: 'B' }));
+    fireEvent.click(screen.getByRole('button', { name: 'B' }));
 
     await waitFor(() => {
       expect(assignEncounterUnit).toHaveBeenCalledWith(
@@ -584,7 +584,7 @@ describe('AppointmentWorkspace container', () => {
 
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Unit: A' }));
-    fireEvent.click(screen.getByRole('option', { name: 'B' }));
+    fireEvent.click(screen.getByRole('button', { name: 'B' }));
 
     await waitFor(() => {
       expect(assignEncounterUnit).toHaveBeenCalledWith(
@@ -633,7 +633,7 @@ describe('AppointmentWorkspace container', () => {
 
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Unit: A' }));
-    fireEvent.click(screen.getByRole('option', { name: 'B' }));
+    fireEvent.click(screen.getByRole('button', { name: 'B' }));
 
     await waitFor(() => {
       expect(admitAppointment).toHaveBeenCalledWith(

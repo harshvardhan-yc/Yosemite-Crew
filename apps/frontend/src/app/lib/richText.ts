@@ -8,12 +8,44 @@ const ALLOWED_ATTR = ['class'];
 export const sanitizeRichText = (html: string): string =>
   DOMPurify.sanitize(html ?? '', { ALLOWED_TAGS, ALLOWED_ATTR });
 
+const stripHtmlTags = (html: string): string => {
+  let result = '';
+  let inTag = false;
+
+  for (const char of html) {
+    if (char === '<') {
+      inTag = true;
+      continue;
+    }
+    if (char === '>') {
+      inTag = false;
+      continue;
+    }
+    if (!inTag) {
+      result += char;
+    }
+  }
+
+  return result;
+};
+
+const replaceNbsp = (value: string): string => {
+  let result = '';
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === '&' && value.slice(index, index + 6) === '&nbsp;') {
+      result += ' ';
+      index += 5;
+      continue;
+    }
+    result += value[index];
+  }
+
+  return result;
+};
+
 /** Strip tags to test whether a rich-text value carries any visible content. */
 export const isRichTextEmpty = (html: string | undefined): boolean => {
   if (!html) return true;
-  const text = html
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .trim();
+  const text = replaceNbsp(stripHtmlTags(html)).trim();
   return text.length === 0;
 };

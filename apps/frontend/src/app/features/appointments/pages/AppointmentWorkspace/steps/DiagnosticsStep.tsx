@@ -124,6 +124,9 @@ const getStatusPillClasses = (status: string): string => {
   return 'border-pill-neutral-border bg-pill-neutral-bg text-pill-neutral-text';
 };
 
+const getIvlsConfirmationLabel = (confirmed: boolean): string =>
+  confirmed ? 'Confirmed for selected device' : 'Pending for selected device';
+
 const StatusPill = ({ status }: { status: string }) => (
   <span
     className={`inline-flex rounded-2xl border px-3 py-1 text-caption-1 ${getStatusPillClasses(status)}`}
@@ -313,11 +316,9 @@ const InhouseOrderBuilder = ({ s }: { s: UseLabTestsReturn }) => (
         </p>
         <p>
           IVLS confirmation:{' '}
-          {s.selectedIvls
-            ? s.inHouseCensusConfirmed
-              ? 'Confirmed for selected device'
-              : 'Pending for selected device'
-            : 'Select an IVLS device to check confirmation state'}
+          {s.selectedIvls === undefined || s.selectedIvls === ''
+            ? 'Select an IVLS device to check confirmation state'
+            : getIvlsConfirmationLabel(s.inHouseCensusConfirmed)}
         </p>
       </output>
     </div>
@@ -448,7 +449,7 @@ const OrderStatusSection = ({
                 <div className="flex items-center justify-end gap-2">
                   <Secondary
                     text={isComplete ? 'Result PDF' : orderButtonText}
-                    icon={!isComplete ? <LuExternalLink aria-hidden="true" /> : undefined}
+                    icon={isComplete ? undefined : <LuExternalLink aria-hidden="true" />}
                     ariaLabel={`${isComplete ? 'Open result PDF' : orderButtonText} for order ${order.idexxOrderId}`}
                     onClick={() => {
                       s.setActiveOrderForActions(order);
@@ -598,11 +599,11 @@ const OrderIframeOverlay = ({ s }: { s: UseLabTestsReturn }) => {
           </button>
         </div>
         <div className="relative flex-1">
-          {!loaded ? (
+          {loaded ? null : (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
               <YosemiteLoader label="Loading IDEXX" size={120} testId="idexx-order-loader" />
             </div>
-          ) : null}
+          )}
           <iframe
             key={safeUrl}
             src={safeUrl}

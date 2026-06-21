@@ -436,7 +436,7 @@ describe('TasksPanel', () => {
 
     // Pick a different assignee from the row dropdown.
     fireEvent.click(screen.getAllByRole('button', { name: /assigned to/i })[0]);
-    fireEvent.click(screen.getByRole('option', { name: 'Dr. Tim Apple' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dr. Tim Apple' }));
     expect(
       useAppointmentWorkspaceStore.getState().getEncounter(APPT)!.schedule[0].assignedToId
     ).toBe('usr-tim');

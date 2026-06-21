@@ -15,7 +15,6 @@ import type { RecurrenceType, Task } from '@/app/features/tasks/types/task';
 import type {
   EmployeeTaskCategory,
   ScheduleTask,
-  ScheduleTaskCategory,
   ScheduleTaskStatus,
 } from '@/app/features/appointments/types/workspace';
 import { formatStampDate } from '@/app/lib/appointmentWorkspace';
@@ -110,7 +109,7 @@ const buildDueAt = (dateValue: string, timeValue: string) => {
 
 const scheduleTaskFromTask = (task: Task): ScheduleTask => ({
   id: task._id,
-  category: task.category as ScheduleTaskCategory,
+  category: task.category as EmployeeTaskCategory,
   description: task.description || task.name,
   assignedToId: task.assignedTo,
   status: taskStatusToScheduleStatus(task.status),
@@ -193,7 +192,7 @@ const TaskRow = ({
 type TaskDraft = {
   assignedTo: string;
   templateSource: string;
-  category: ScheduleTaskCategory;
+  category: EmployeeTaskCategory;
   description: string;
   setTime: string;
   reminder: string;
@@ -267,7 +266,7 @@ const TaskForm = ({
           options={categories}
           defaultOption={draft.category}
           searchable={false}
-          onSelect={(o) => onChange({ category: o.value as ScheduleTaskCategory })}
+          onSelect={(o) => onChange({ category: o.value as EmployeeTaskCategory })}
         />
       </div>
       <textarea

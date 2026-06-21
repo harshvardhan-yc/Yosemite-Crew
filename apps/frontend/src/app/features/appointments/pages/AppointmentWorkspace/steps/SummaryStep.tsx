@@ -450,9 +450,7 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
                 <Datepicker
                   type="input"
                   currentDate={followUpDate}
-                  setCurrentDate={
-                    (() => undefined) as React.Dispatch<React.SetStateAction<Date | null>>
-                  }
+                  setCurrentDate={() => undefined}
                   placeholder="Follow up date"
                 />
               </div>

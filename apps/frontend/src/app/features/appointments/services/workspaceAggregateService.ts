@@ -74,6 +74,12 @@ const readFirstIso = (source: Record<string, unknown>, keys: string[]): string |
   return undefined;
 };
 
+const toText = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+};
+
 const buildReadyState = (
   source: Record<string, unknown>,
   fallbackSource: Record<string, unknown>,
@@ -240,6 +246,91 @@ const latestDischargeSummary = (artifacts: Record<string, unknown>[]) =>
       );
     })[0];
 
+const applyEncounterReadiness = (
+  patch: Omit<Partial<AppointmentEncounter>, 'stepStatus'> & {
+    stepStatus?: Partial<Record<WorkspaceStep, 'COMPLETED'>>;
+  },
+  bootstrap: WorkspaceBootstrapDTO,
+  encounter: Record<string, unknown>,
+  invoice: Record<string, unknown>
+) => {
+  const readyForDischargeFlag =
+    asString(encounter.status) === 'onleave' ||
+    encounter.readyForDischarge === true ||
+    (isRecord(encounter.readyForDischarge) &&
+      asBoolean(encounter.readyForDischarge.value) === true);
+  if (readyForDischargeFlag) {
+    patch.readyForDischarge = buildReadyState(
+      encounter,
+      encounter,
+      ['readyForDischargeAt', 'readyForDischargeOn', 'dischargeReadyAt', 'updatedAt'],
+      ['readyForDischargeByName', 'dischargeReadyByName', 'updatedByName', 'updatedBy'],
+      ['readyForDischargeByUserId', 'dischargeReadyByUserId', 'updatedById']
+    );
+  }
+
+  const billingFallback = { ...encounter, ...invoice };
+  let readyForBilling = billingFallback;
+  if (isRecord(bootstrap.readyForBilling)) {
+    readyForBilling = bootstrap.readyForBilling;
+  } else if (isRecord(encounter.readyForBilling)) {
+    readyForBilling = encounter.readyForBilling;
+  }
+  const billingStage =
+    asString(bootstrap.visitBillingStage) ??
+    asString(invoice.visitBillingStage) ??
+    asString(encounter.visitBillingStage);
+  const readyForBillingFlag =
+    billingStage === 'READY_FOR_BILLING' ||
+    billingStage === 'SETTLED' ||
+    bootstrap.readyForBilling === true ||
+    encounter.readyForBilling === true ||
+    (isRecord(bootstrap.readyForBilling) && asBoolean(bootstrap.readyForBilling.value) === true) ||
+    (isRecord(encounter.readyForBilling) && asBoolean(encounter.readyForBilling.value) === true);
+  if (readyForBillingFlag) {
+    patch.readyForBilling = buildReadyState(
+      readyForBilling,
+      billingFallback,
+      ['readyForBillingAt', 'billingReadyAt', 'updatedAt', 'createdAt'],
+      ['readyForBillingByName', 'billingReadyByName', 'updatedByName', 'updatedBy'],
+      ['readyForBillingByUserId', 'billingReadyByUserId', 'updatedById']
+    );
+  }
+};
+
+const applyBootstrapCollections = (
+  patch: Omit<Partial<AppointmentEncounter>, 'stepStatus'> & {
+    stepStatus?: Partial<Record<WorkspaceStep, 'COMPLETED'>>;
+  },
+  bootstrap: WorkspaceBootstrapDTO
+) => {
+  const diagnosticQueue = normalizeDiagnosticQueue(asArray(bootstrap.diagnosticQueue));
+  if (diagnosticQueue.length) patch.diagnosticOrders = diagnosticQueue;
+
+  const documents = normalizeDocuments(asArray(bootstrap.documents));
+  if (documents.length) patch.documents = documents;
+
+  const treatmentItems = normalizeTreatmentItems(asArray(bootstrap.treatmentItems));
+  if (treatmentItems.length) patch.services = treatmentItems;
+
+  const prescriptions = normalizePrescriptions(
+    asArray(bootstrap.prescriptions),
+    asArray(bootstrap.treatmentItems)
+  );
+  if (prescriptions.length) patch.prescription = prescriptions;
+
+  const discharge = latestDischargeSummary(asArray(bootstrap.clinicalArtifacts));
+  if (discharge) {
+    const artifact = isRecord(discharge.artifact) ? discharge.artifact : {};
+    const summary = isRecord(discharge.dischargeSummary) ? discharge.dischargeSummary : {};
+    patch.dischargeSummary = toText(summary.summary);
+    patch.followUpAt = asString(summary.followUp);
+    patch.dischargeSavedAt = asIso(artifact.updatedAt ?? summary.updatedAt);
+    patch.dischargeSavedByName = asString(artifact.signedBy) ?? asString(artifact.authorId);
+    patch.dischargeSummaryId = asString(artifact.id);
+  }
+};
+
 export const normalizeWorkspaceBootstrapForEncounter = (
   bootstrap: WorkspaceBootstrapDTO
 ): Omit<Partial<AppointmentEncounter>, 'stepStatus'> & {
@@ -261,81 +352,9 @@ export const normalizeWorkspaceBootstrapForEncounter = (
       asOptionalIso(encounter.updatedAt);
     patch.dischargedAt = asOptionalIso(encounter.admission.dischargedAt);
   }
-  // Ready-for-discharge survives a refresh via the encounter status the backend
-  // sets on `$ready-for-discharge` (`onleave`), or via an explicit flag if the
-  // backend later surfaces one in the bootstrap.
-  const readyForDischargeFlag =
-    asString(encounter.status) === 'onleave' ||
-    encounter.readyForDischarge === true ||
-    (isRecord(encounter.readyForDischarge) &&
-      asBoolean(encounter.readyForDischarge.value) === true);
-  if (readyForDischargeFlag) {
-    patch.readyForDischarge = buildReadyState(
-      encounter,
-      encounter,
-      ['readyForDischargeAt', 'readyForDischargeOn', 'dischargeReadyAt', 'updatedAt'],
-      ['readyForDischargeByName', 'dischargeReadyByName', 'updatedByName', 'updatedBy'],
-      ['readyForDischargeByUserId', 'dischargeReadyByUserId', 'updatedById']
-    );
-  }
-
-  // Ready-for-billing is persisted server-side as the invoice billing stage, but
-  // the bootstrap does not yet surface it (backend gap). Read it defensively from
-  // whichever field the backend exposes so the toggle survives a refresh once the
-  // read model includes it.
   const invoice = isRecord(bootstrap.invoice) ? bootstrap.invoice : {};
-  const readyForBilling = isRecord(bootstrap.readyForBilling)
-    ? bootstrap.readyForBilling
-    : isRecord(encounter.readyForBilling)
-      ? encounter.readyForBilling
-      : {};
-  const billingFallback = { ...encounter, ...invoice };
-  const billingStage =
-    asString(bootstrap.visitBillingStage) ??
-    asString(invoice.visitBillingStage) ??
-    asString(encounter.visitBillingStage);
-  const readyForBillingFlag =
-    billingStage === 'READY_FOR_BILLING' ||
-    billingStage === 'SETTLED' ||
-    bootstrap.readyForBilling === true ||
-    encounter.readyForBilling === true ||
-    (isRecord(bootstrap.readyForBilling) && asBoolean(bootstrap.readyForBilling.value) === true) ||
-    (isRecord(encounter.readyForBilling) && asBoolean(encounter.readyForBilling.value) === true);
-  if (readyForBillingFlag) {
-    patch.readyForBilling = buildReadyState(
-      readyForBilling,
-      billingFallback,
-      ['readyForBillingAt', 'billingReadyAt', 'updatedAt', 'createdAt'],
-      ['readyForBillingByName', 'billingReadyByName', 'updatedByName', 'updatedBy'],
-      ['readyForBillingByUserId', 'billingReadyByUserId', 'updatedById']
-    );
-  }
-
-  const diagnosticQueue = normalizeDiagnosticQueue(asArray(bootstrap.diagnosticQueue));
-  if (diagnosticQueue.length) patch.diagnosticOrders = diagnosticQueue;
-
-  const documents = normalizeDocuments(asArray(bootstrap.documents));
-  if (documents.length) patch.documents = documents;
-
-  const treatmentItems = normalizeTreatmentItems(asArray(bootstrap.treatmentItems));
-  if (treatmentItems.length) patch.services = treatmentItems;
-
-  const prescriptions = normalizePrescriptions(
-    asArray(bootstrap.prescriptions),
-    asArray(bootstrap.treatmentItems)
-  );
-  if (prescriptions.length) patch.prescription = prescriptions;
-
-  const discharge = latestDischargeSummary(asArray(bootstrap.clinicalArtifacts));
-  if (discharge) {
-    const artifact = isRecord(discharge.artifact) ? discharge.artifact : {};
-    const summary = isRecord(discharge.dischargeSummary) ? discharge.dischargeSummary : {};
-    patch.dischargeSummary = String(summary.summary ?? '');
-    patch.followUpAt = asString(summary.followUp);
-    patch.dischargeSavedAt = asIso(artifact.updatedAt ?? summary.updatedAt);
-    patch.dischargeSavedByName = asString(artifact.signedBy) ?? asString(artifact.authorId);
-    patch.dischargeSummaryId = asString(artifact.id);
-  }
+  applyEncounterReadiness(patch, bootstrap, encounter, invoice);
+  applyBootstrapCollections(patch, bootstrap);
 
   const stepStatus = Object.entries(STEP_STATUS_BY_AGGREGATE_KEY).reduce<
     Partial<Record<WorkspaceStep, 'COMPLETED'>>

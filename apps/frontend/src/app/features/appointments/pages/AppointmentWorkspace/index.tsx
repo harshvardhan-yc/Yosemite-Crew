@@ -7,6 +7,7 @@ import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceS
 import { useAuthStore } from '@/app/stores/authStore';
 import {
   buildWorkspaceHref,
+  getNextStep,
   isPastLockWindow,
   resolveEncounterMode,
   resolveLandingStep,
@@ -48,7 +49,6 @@ import InvoiceStep from '@/app/features/appointments/pages/AppointmentWorkspace/
 import SummaryStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/SummaryStep';
 import QuickActionsModal from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/QuickActionsModal';
 import HospitalizationModal from '@/app/features/appointments/pages/AppointmentWorkspace/sidemodal/HospitalizationModal';
-import { getNextStep } from '@/app/lib/appointmentWorkspace';
 import {
   admitAppointment,
   assignEncounterUnit,
@@ -107,11 +107,9 @@ const getErrorMessage = (error: unknown): string => {
   if (!data || typeof data !== 'object') return '';
   const message = (data as { message?: unknown; error?: { message?: unknown } }).message;
   const nestedMessage = (data as { error?: { message?: unknown } }).error?.message;
-  return typeof message === 'string'
-    ? message
-    : typeof nestedMessage === 'string'
-      ? nestedMessage
-      : '';
+  if (typeof message === 'string') return message;
+  if (typeof nestedMessage === 'string') return nestedMessage;
+  return '';
 };
 
 const getWorkspaceBootstrapEncounterId = (bootstrap: unknown): string | undefined => {
@@ -227,7 +225,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const attributes = useAuthStore((s) => s.attributes);
   useLoadRoomsForPrimaryOrg();
   useLoadCompanionsForPrimaryOrg();
-  const rooms = useRoomsForPrimaryOrg() as WorkspaceRoom[];
+  const rooms = useRoomsForPrimaryOrg();
   const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
   const roomUnitIdsByRoomId = useOrganisationRoomStore((s) => s.roomUnitIdsByRoomId);
   const catalogSpecialities = useRevampCatalogStore((s) => s.specialities);
@@ -699,7 +697,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
             id: roomId,
             name: getRoomName(rooms, roomId),
           },
-        } as Appointment);
+        });
       } catch (error) {
         console.error('Unable to persist appointment room assignment:', error);
       }

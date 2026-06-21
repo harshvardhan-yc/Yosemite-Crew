@@ -243,6 +243,17 @@ const invoiceDateFormatter = new Intl.DateTimeFormat('en-US', {
 
 const formatInvoiceDate = (iso: string): string => invoiceDateFormatter.format(new Date(iso));
 
+const getDepositMethodLabel = (option: PaymentMethod): string => {
+  if (option === 'CARD') return 'Card present';
+  if (option === 'ONLINE') return 'Online link';
+  return 'Cash';
+};
+
+const getDepositModalActionLabel = (saving: boolean, method: PaymentMethod): string => {
+  if (saving) return 'Saving...';
+  return method === 'ONLINE' ? 'Generate link' : 'Collect deposit';
+};
+
 const StatusPill = ({ status }: { status: InvoiceStatus }) => (
   <span
     className={`inline-flex rounded-2xl border px-3 py-1 text-caption-1 ${STATUS_CLASSES[status]}`}
@@ -561,7 +572,7 @@ const DepositModal = ({
                   : 'border-card-border text-text-primary'
               }`}
             >
-              {option === 'CARD' ? 'Card present' : option === 'ONLINE' ? 'Online link' : 'Cash'}
+              {getDepositMethodLabel(option)}
             </button>
           ))}
         </div>
@@ -583,14 +594,14 @@ const DepositModal = ({
           />
         </label>
         {generatedLink && (
-          <p role="status" className="rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
+          <output className="rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
             Payment link generated: {generatedLink}
-          </p>
+          </output>
         )}
         <div className="flex justify-end gap-3">
           <Secondary text="Cancel" onClick={onClose} />
           <Primary
-            text={saving ? 'Saving...' : method === 'ONLINE' ? 'Generate link' : 'Collect deposit'}
+            text={getDepositModalActionLabel(saving, method)}
             isDisabled={saving || amountNumber <= 0}
             onClick={() => onSubmit({ amount: amountNumber, method, reference, notes })}
           />
@@ -728,11 +739,11 @@ const InvoiceStep = ({
     try {
       const invoice = await persistCurrentInvoice();
       if (method === 'ONLINE') {
-        if (!invoice?.id) {
-          setConfirmation('Invoice prepared for online payment');
-        } else {
+        if (invoice?.id) {
           const url = await getPaymentLink(invoice.id);
           setConfirmation(url ? `Payment link generated: ${url}` : 'Payment link generated');
+        } else {
+          setConfirmation('Invoice prepared for online payment');
         }
         return;
       }
@@ -757,6 +768,43 @@ const InvoiceStep = ({
     }
   };
 
+  const createDepositInvoice = async (
+    input: { amount: number; method: PaymentMethod; reference: string; notes: string },
+    orgId: string
+  ): Promise<string | undefined> => {
+    const invoice = await createFinanceInvoice({
+      appointmentId,
+      parentId,
+      patientId,
+      organisationId: orgId,
+      paymentCollectionMethod: input.method === 'ONLINE' ? 'PAYMENT_LINK' : 'PAYMENT_AT_CLINIC',
+      items: [
+        {
+          name: 'Visit deposit',
+          description: 'Upfront visit deposit',
+          quantity: 1,
+          unitPrice: input.amount,
+          total: input.amount,
+        },
+      ],
+      notes: input.notes || 'Visit deposit',
+    });
+    if (!invoice.id) return undefined;
+    if (input.method === 'ONLINE') {
+      return getPaymentLink(invoice.id);
+    }
+    await recordManualInvoicePayment(invoice.id, {
+      provider: 'MANUAL',
+      settlementChannel: input.method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
+      amount: input.amount,
+      currency: financeCurrency,
+      reference: input.reference || undefined,
+      receivedAt: new Date().toISOString(),
+      notes: input.notes || undefined,
+    });
+    return undefined;
+  };
+
   const handleDepositSubmit = async (input: {
     amount: number;
     method: PaymentMethod;
@@ -767,39 +815,9 @@ const InvoiceStep = ({
     setErrorMessage(null);
     setIsProcessingPayment(true);
     try {
-      let checkoutUrl: string | undefined;
-      if (organisationId) {
-        const invoice = await createFinanceInvoice({
-          appointmentId,
-          parentId,
-          patientId,
-          organisationId,
-          paymentCollectionMethod: input.method === 'ONLINE' ? 'PAYMENT_LINK' : 'PAYMENT_AT_CLINIC',
-          items: [
-            {
-              name: 'Visit deposit',
-              description: 'Upfront visit deposit',
-              quantity: 1,
-              unitPrice: input.amount,
-              total: input.amount,
-            },
-          ],
-          notes: input.notes || 'Visit deposit',
-        });
-        if (invoice.id && input.method === 'ONLINE') {
-          checkoutUrl = await getPaymentLink(invoice.id);
-        } else if (invoice.id) {
-          await recordManualInvoicePayment(invoice.id, {
-            provider: 'MANUAL',
-            settlementChannel: input.method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
-            amount: input.amount,
-            currency: financeCurrency,
-            reference: input.reference || undefined,
-            receivedAt: new Date().toISOString(),
-            notes: input.notes || undefined,
-          });
-        }
-      }
+      const checkoutUrl = organisationId
+        ? await createDepositInvoice(input, organisationId)
+        : undefined;
       if (input.method === 'ONLINE') {
         setDepositPaymentLink(checkoutUrl ?? null);
         setConfirmation(
@@ -871,9 +889,9 @@ const InvoiceStep = ({
           )}
 
           {confirmation && (
-            <p role="status" className="rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
+            <output className="rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
               {confirmation}
-            </p>
+            </output>
           )}
         </>
       )}

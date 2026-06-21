@@ -160,7 +160,7 @@ const DiscountInput = ({
   item: InvoiceLineItem;
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
 }) => {
-  const maxDollars = item.maxDiscountCents != null ? item.maxDiscountCents / 100 : undefined;
+  const maxDollars = item.maxDiscountCents == null ? undefined : item.maxDiscountCents / 100;
   return (
     <div className="relative">
       <span
@@ -178,7 +178,7 @@ const DiscountInput = ({
         aria-label={`Discount for ${item.name}`}
         onChange={(e) => {
           const dollars = Math.max(0, Number.parseFloat(e.target.value) || 0);
-          const capped = maxDollars != null ? Math.min(dollars, maxDollars) : dollars;
+          const capped = maxDollars == null ? dollars : Math.min(dollars, maxDollars);
           onUpdateItem(item.id, { discountCents: Math.round(capped * 100) });
         }}
         className={`${EDITABLE_BOX} pl-12 text-pill-success-text`}
@@ -288,7 +288,7 @@ const FooterAmountRow = ({
     <span className="min-w-0" style={FOOTER_LABEL_STYLE}>
       {label}
     </span>
-    <span className="text-right" style={{ ...FOOTER_VALUE_STYLE, ...(valueStyle ?? {}) }}>
+    <span className="text-right" style={{ ...FOOTER_VALUE_STYLE, ...valueStyle }}>
       {value}
     </span>
   </div>
@@ -310,7 +310,7 @@ const FooterBreakdownRow = ({
     <span className="min-w-0" style={FOOTER_LABEL_STYLE}>
       {label}
     </span>
-    <span className="text-right" style={{ ...FOOTER_VALUE_STYLE, ...(valueStyle ?? {}) }}>
+    <span className="text-right" style={{ ...FOOTER_VALUE_STYLE, ...valueStyle }}>
       {value}
     </span>
   </div>
@@ -426,7 +426,6 @@ const TotalBillContainer = ({
   // Strip the display-only `kind` before the item enters the bill.
   const addCandidate = (item: BillableSearchItem) => {
     const { kind: _kind, ...lineItem } = item;
-    void _kind;
     onAddItem(lineItem);
   };
 

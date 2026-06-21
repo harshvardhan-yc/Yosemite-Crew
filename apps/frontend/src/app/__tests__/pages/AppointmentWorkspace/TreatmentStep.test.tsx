@@ -338,7 +338,7 @@ describe('TreatmentStep', () => {
     expect(screen.getByText('$165')).toBeInTheDocument();
     expect(screen.getAllByLabelText('Refill').length).toBeGreaterThan(0);
     // Fulfillment is a pill dropdown (not checkboxes), defaulting to the value.
-    expect(screen.getAllByRole('button', { name: /fulfillment/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('combobox', { name: /fulfillment/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByText('In-house fulfilled').length).toBeGreaterThan(0);
     // The old "Medication" tag no longer appears on the cards.
     expect(screen.queryByText('Medication')).not.toBeInTheDocument();
@@ -472,8 +472,9 @@ describe('TreatmentStep', () => {
     ).toBe('Gabapentin');
 
     // Fulfillment is a compact pill dropdown: open it, then pick the option.
-    fireEvent.click(screen.getAllByRole('button', { name: /fulfillment/i })[0]);
-    fireEvent.mouseDown(screen.getByRole('option', { name: /prescription only/i }));
+    fireEvent.change(screen.getAllByRole('combobox', { name: /fulfillment/i })[0], {
+      target: { value: 'PRESCRIPTION_ONLY' },
+    });
     expect(
       useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.prescription[0].fulfillment
     ).toBe('PRESCRIPTION_ONLY');
@@ -566,7 +567,7 @@ describe('TreatmentStep', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: /load schedule template/i }));
-    fireEvent.click(screen.getByRole('option', { name: /post-op care pathway/i }));
+    fireEvent.click(screen.getByRole('button', { name: /post-op care pathway/i }));
 
     await waitFor(() =>
       expect(createWorkspaceTemplateInstance).toHaveBeenCalledWith(ORG, 'tpl-care', {
@@ -615,7 +616,7 @@ describe('TreatmentStep', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Record' }));
     // Assign the first task via its Assigned-to dropdown.
     fireEvent.click(screen.getAllByRole('button', { name: /assigned to/i })[0]);
-    fireEvent.click(screen.getByRole('option', { name: 'Dr. Tim Apple' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dr. Tim Apple' }));
     expect(
       useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.schedule[0].assignedToName
     ).toBe('Dr. Tim Apple');
