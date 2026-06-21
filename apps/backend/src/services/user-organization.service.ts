@@ -995,7 +995,11 @@ export const UserOrganizationService = {
 
   async listByUserId(id: string) {
     const userId = requireSafeString(id, "User Id");
-    const practitionerReferences = [userId, `Practitioner/${userId}`];
+    const practitionerReferences = [
+      userId,
+      `Practitioner/${userId}`,
+      `User/${userId}`,
+    ];
 
     const mappings = await prisma.userOrganization.findMany({
       where: {
