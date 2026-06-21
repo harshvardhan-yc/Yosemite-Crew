@@ -46,6 +46,21 @@ export const UserController = {
 
   getById: async (req: GetUserRequest, res: Response) => {
     try {
+      const authRequest = req as AuthenticatedRequest;
+      const requesterId = authRequest.userId;
+
+      if (!requesterId) {
+        return res
+          .status(401)
+          .json({ message: "Missing user identity from token." });
+      }
+
+      if (requesterId !== req.params?.id) {
+        return res.status(403).json({
+          message: "You can only access your own user record.",
+        });
+      }
+
       const user = await UserService.getById(req.params?.id);
 
       if (!user) {
