@@ -32,8 +32,8 @@ const MobileMenu = ({ isOpen, children, id, onClose }: MobileMenuProps) => {
           ? 'opacity-100 h-[calc(100vh-72px)] pointer-events-auto'
           : 'opacity-0 h-0 pointer-events-none',
       ].join(' ')}
-      aria-hidden={!isOpen}
       aria-label="Mobile navigation"
+      inert={!isOpen}
       hidden={!isOpen}
     >
       {children}

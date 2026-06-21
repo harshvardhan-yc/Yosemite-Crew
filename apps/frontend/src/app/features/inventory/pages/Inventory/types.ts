@@ -2,7 +2,13 @@ import { BusinessType } from '@/app/features/organization/types/org';
 
 export type InventoryStatus = 'ACTIVE' | 'HIDDEN';
 
-export type StockHealthStatus = 'HEALTHY' | 'LOW_STOCK' | 'EXPIRED' | 'EXPIRING_SOON';
+export type StockHealthStatus =
+  | 'HEALTHY'
+  | 'LOW_STOCK'
+  | 'EXPIRED'
+  | 'EXPIRING_SOON'
+  | 'OUT_OF_STOCK'
+  | 'OVERSTOCKED';
 
 export type InventoryBatchApi = {
   batchNumber?: string;
@@ -71,6 +77,8 @@ export type InventoryRequestPayload = {
   attributes?: Record<string, any>;
   onHand?: number;
   allocated?: number;
+  initialOnHand?: number;
+  initialAllocated?: number;
   reorderLevel?: number;
   unitCost?: number;
   sellingPrice?: number;
@@ -85,18 +93,18 @@ export const StatusOptions: string[] = ['Low stock', 'Expired', 'Hidden', 'This 
 export const CategoryOptionsByBusiness: Record<BusinessType, string[]> = {
   HOSPITAL: [
     'Medicine',
-    'Consumable',
-    'Equipment',
-    'Supplement',
-    'Diagnostic kit',
     'Vaccine',
-    'Food',
-    'Cleaning supply',
+    'Consumable',
     'Surgical supply',
-    'Wound care',
-    'IV/Fluid therapy',
+    'IV / Fluid therapy',
+    'Diagnostic kit',
     'Laboratory',
+    'Food',
+    'Supplement',
+    'Equipment',
+    'Cleaning supply',
     'Imaging consumable',
+    'Wound care',
   ],
   GROOMER: [
     'Accessories',
@@ -144,37 +152,87 @@ export const CategoryOptionsByBusiness: Record<BusinessType, string[]> = {
     'Facility supplies',
   ],
 };
-export const SubCategoryOptions: string[] = [
-  'Accessories',
-  'Antibiotic',
-  'Anti-inflammatory',
-  'Dewormer',
-  'Painkiller',
-  'Antifungal',
-  'Antiviral',
-  'Bandage',
-  'IV Line',
-  'Syringe',
-  'Vitamin',
-  'Probiotic',
-  'Mineral Mix',
-  'Bandage roll',
-  'Sutures',
-  'Cannula',
-  'Catheter',
-  'Fluid set',
-  'Scalpel',
-  'Mask & gloves',
-  'Disinfectant wipes',
-  'Sterilization pouch',
-  'Ophthalmic',
-  'Otic',
-  'Dermatology',
-  'Pain management',
-  'Dental care',
-  'Nutritional',
-  'Orthopedic support',
-];
+/**
+ * Subcategories keyed by their parent category. The add/edit subcategory dropdown
+ * must show only the subcategories that belong to the currently selected category.
+ */
+export const SubCategoryByCategory: Record<string, string[]> = {
+  Medicine: [
+    'Antibiotic',
+    'NSAID',
+    'Analgesic',
+    'Pain management',
+    'Antifungal',
+    'Antiviral',
+    'Anthelmintic',
+    'Sedative',
+    'Anesthetic',
+    'Cardiac',
+    'Endocrine',
+    'Gastrointestinal',
+    'Dermatology',
+    'Ophthalmic',
+    'Otic',
+  ],
+  Vaccine: [
+    'Core vaccine',
+    'Non-core vaccine',
+    'Rabies',
+    'DHPP',
+    'FVRCP',
+    'Bordetella',
+    'Leptospirosis',
+  ],
+  Consumable: [
+    'Syringe',
+    'Needle',
+    'IV catheter',
+    'Cannula',
+    'Catheter',
+    'Gloves',
+    'Mask',
+    'Gauze',
+    'Cotton',
+    'Bandage',
+    'Urine collection',
+  ],
+  'Surgical supply': [
+    'Suture',
+    'Scalpel blade',
+    'Surgical drape',
+    'Sterilization pouch',
+    'Surgical glove',
+    'Surgical pack',
+  ],
+  'IV / Fluid therapy': ['Fluid bag', 'IV line', 'Giving set', 'Extension set', 'Flush'],
+  'Diagnostic kit': ['Rapid test', 'Blood test', 'Urine test', 'Fecal test', 'Culture test'],
+  Laboratory: ['Sample tube', 'Slide', 'Swab', 'Reagent', 'Collection container'],
+  Food: ['Prescription diet', 'Maintenance diet', 'Treat', 'Supplement food'],
+  Supplement: ['Vitamin', 'Probiotic', 'Mineral mix', 'Joint support', 'Skin & coat'],
+  Equipment: [
+    'Reusable instrument',
+    'Monitoring equipment',
+    'Imaging equipment',
+    'Dental equipment',
+  ],
+  'Cleaning supply': [
+    'Disinfectant',
+    'Surface cleaner',
+    'Disinfectant wipes',
+    'Sterilization supply',
+  ],
+  'Imaging consumable': ['X-ray film', 'Ultrasound gel', 'Probe cover', 'Imaging marker'],
+  'Wound care': ['Bandage roll', 'Dressing', 'Antiseptic', 'Wound spray', 'Tape'],
+};
+
+/** Flattened list of every subcategory (deduped), preserving category order. */
+export const SubCategoryOptions: string[] = Array.from(
+  new Set(Object.values(SubCategoryByCategory).flat())
+);
+
+/** Resolve the subcategories for a category, falling back to the full flat list. */
+export const getSubCategoryOptions = (category?: string): string[] =>
+  (category && SubCategoryByCategory[category]) || SubCategoryOptions;
 export const DepartmentOptions: string[] = [
   'Veterinary',
   'Grooming',
@@ -223,11 +281,18 @@ export const IntendedUsageOptions: Record<BusinessType, string[]> = {
 };
 
 // Hospital
-export const ItemTypeOptions: string[] = ['Drug', 'No-drug'];
+export const ItemTypeOptions: string[] = ['Drug', 'Non-drug'];
+export const DrugScheduleOptions: string[] = [
+  'Schedule II',
+  'Schedule III',
+  'Schedule IV',
+  'Schedule V',
+  'Non-scheduled',
+];
 export const PrescriptionRequiredOptions: string[] = ['Yes', 'No'];
 export const RegulationTypeOptions: string[] = ['Controlled', 'Non-controlled'];
 export const StorageConditionOptions: string[] = [
-  'Room temp',
+  'Room temperature',
   'Refrigerated',
   'Freezer',
   'Cold chain (2-8°C)',
@@ -269,9 +334,13 @@ export type BasicInfoValues = {
   department: string;
   description: string;
   status: string;
+  brand?: string;
+  imageUrl?: string;
+  visibleInInventory?: boolean;
 
   // Hospital
   itemType?: string;
+  drugSchedule?: string;
   prescriptionRequired?: string;
   regulationType?: string;
   storageCondition?: string;
@@ -298,48 +367,47 @@ export type BasicInfoValues = {
 export const FormOptions = [
   'Tablet',
   'Capsule',
-  'Ointment',
-  'Powder',
+  'Injection',
   'Liquid',
   'Solution',
+  'Suspension',
+  'Ointment',
+  'Cream',
+  'Powder',
   'Spray',
   'Wipe',
-  'Treat',
   'Food pack',
+  'Kit',
+  'Device',
   'Other',
 ];
 export const UnitOptions = [
-  'tablets',
-  'ml',
-  'gms',
-  'kg',
-  'piece',
-  'pack',
-  'litre',
-  'bag',
-  'roll',
-  'box',
-  'pair',
-  'sheet',
-  'cartridge',
-  'can',
-  'jar',
+  'mg',
+  'mcg',
+  'g',
+  'mL',
+  'mg/mL',
+  'mcg/mL',
+  'IU',
+  'IU/mL',
+  '%',
+  'dose',
+  'Not applicable',
 ];
 export const SpeciesOptions = ['Canine', 'Feline', 'Equine'];
 export const AdminstrationOptions = [
   'Oral',
   'Topical',
   'Injectable',
-  'Rectal',
   'Ophthalmic',
-  'Inhalation',
   'Otic',
-  'Sublingual',
-  'Buccal',
   'Intranasal',
+  'Inhalation',
+  'Rectal',
   'IV',
   'IM',
   'SC',
+  'Not applicable',
 ];
 // Hospital
 export const TherapeuticOptions = [
@@ -424,6 +492,12 @@ export type ClassificationValues = {
   unitofMeasure?: string | string[];
   species?: string | string[];
   administration?: string;
+  itemType?: string;
+  drugSchedule?: string;
+  storageCondition?: string;
+  controlledSubstance?: string;
+  prescriptionRequired?: string;
+  reportableToGovernment?: string;
 
   // Hospital
   therapeuticClass?: string;
@@ -497,14 +571,27 @@ export const StockLocationOptions = [
   'Isolation ward',
 ];
 export const StockTypeOptions = ['Central store', 'Pharmacy', 'Surgery', 'Lab', 'Cold storage'];
+export const AbcClassOptions = ['Class A', 'Class B', 'Class C'];
+export const WithdrawalPeriodOptions = [
+  'Not applicable',
+  '24 hours',
+  '48 hours',
+  '7 days',
+  '14 days',
+  '30 days',
+];
+export const ExpiryWarningOptions = ['2 weeks', '1 month', '3 months', '6 months'];
 
 export type StockValues = {
   current: string;
   allocated: string;
   available: string;
+  maxStock?: string;
   reorderLevel: string;
   reorderQuantity: string;
   stockLocation: string;
+  abcClass?: string;
+  withdrawlPeriod?: string;
   minStockAlert?: string;
 
   // Hospital
@@ -516,6 +603,8 @@ export type BatchValues = {
   batch: string;
   manufactureDate: string;
   expiryDate: string;
+  expiryWarningBefore?: string;
+  barcode?: string;
   nextRefillDate?: string;
   quantity?: string;
   allocated?: string;
@@ -538,6 +627,7 @@ export interface InventoryItem {
   id?: string;
   organisationId?: string;
   businessType?: BusinessType;
+  currency?: string;
   stockHealth?: StockHealthStatus;
   status?: InventoryStatus;
   attributes?: Record<string, any>;
@@ -556,6 +646,11 @@ export interface InventoryItem {
 
 export type InventoryFiltersState = {
   category: string;
+  categories: string[];
+  subCategories: string[];
+  locations: string[];
+  abcClasses: string[];
+  suppliers: string[];
   visibility: 'ALL' | 'ACTIVE' | 'HIDDEN';
   status: string;
   search: string;

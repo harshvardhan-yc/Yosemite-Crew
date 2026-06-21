@@ -198,7 +198,6 @@ const SignUp = ({
         <YosemiteLoader
           variant="fullscreen-translucent"
           label="Creating your account..."
-          size={120}
           testId="signup-loader"
         />
       ) : null}

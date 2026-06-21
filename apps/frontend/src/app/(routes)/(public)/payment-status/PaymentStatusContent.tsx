@@ -12,6 +12,12 @@ type Return = {
   total: number;
 };
 
+type PaymentStatusState = {
+  data: Return | null;
+  requestState: RequestState;
+  stopped: boolean;
+};
+
 const shortId = (value: string) =>
   value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
 
@@ -19,23 +25,24 @@ export function PaymentStatusContent() {
   const searchParams = useSearchParams();
   const session_id = searchParams.get('session_id');
 
-  const [data, setData] = useState<Return | null>(null);
-  const [requestState, setRequestState] = useState<RequestState>('loading');
-  const [stopped, setStopped] = useState(false);
+  const [state, setState] = useState<PaymentStatusState>({
+    data: null,
+    requestState: session_id ? 'loading' : 'missing_session',
+    stopped: false,
+  });
   const stopPollingRef = useRef(false);
 
   useEffect(() => {
-    setData(null);
-    setRequestState('loading');
-    setStopped(false);
+    setState({
+      data: null,
+      requestState: session_id ? 'loading' : 'missing_session',
+      stopped: !session_id,
+    });
     stopPollingRef.current = false;
   }, [session_id]);
 
   useEffect(() => {
     if (!session_id) {
-      setRequestState('missing_session');
-      setStopped(true);
-      setData(null);
       return;
     }
 
@@ -52,8 +59,7 @@ export function PaymentStatusContent() {
         });
         const json = (await res.json()) as Return;
         if (!alive) return;
-        setData(json);
-        setRequestState('ready');
+        setState((current) => ({ ...current, data: json, requestState: 'ready' }));
         attempts += 1;
         if (
           json.status === 'paid' ||
@@ -61,14 +67,13 @@ export function PaymentStatusContent() {
           attempts >= maxAttempts
         ) {
           stopPollingRef.current = true;
-          setStopped(true);
+          setState((current) => ({ ...current, stopped: true }));
         }
       } catch {
         if (!alive) return;
-        setRequestState('error');
-        setData(null);
+        setState((current) => ({ ...current, requestState: 'error', data: null }));
         stopPollingRef.current = true;
-        setStopped(true);
+        setState((current) => ({ ...current, stopped: true }));
       }
     }
 
@@ -80,6 +85,8 @@ export function PaymentStatusContent() {
       clearInterval(interval);
     };
   }, [session_id]);
+
+  const { data, requestState, stopped } = state;
 
   const title = useMemo(() => {
     if (!session_id || requestState === 'missing_session') return 'Missing payment session';

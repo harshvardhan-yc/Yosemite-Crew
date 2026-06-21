@@ -8,7 +8,6 @@ import AppointmentScopeToggle from '@/app/ui/primitives/AppointmentScopeToggle/A
 import { Appointment } from '@yosemite-crew/types';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import {
-  acceptAppointment,
   changeAppointmentStatus,
   rejectAppointment,
 } from '@/app/features/appointments/services/appointmentService';
@@ -60,8 +59,14 @@ import { useNotify } from '@/app/hooks/useNotify';
 import { AppointmentStatus } from '@/app/features/appointments/types/appointments';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
+import {
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+} from '@/app/lib/appointmentWorkspace';
+import { startRouteLoader } from '@/app/lib/routeLoader';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import clsx from 'clsx';
+import { AppointmentModePill } from '@/app/features/appointments/components/AppointmentCardContent';
 
 type BoardStatus =
   | 'REQUESTED'
@@ -239,22 +244,25 @@ const AppointmentBoardComponent = ({
   const openAppointment = (appointment: Appointment) => {
     setActiveAppointment?.(appointment);
     setViewIntent?.(null);
+    if (setViewPopup) {
+      setViewPopup(true);
+      return;
+    }
     setDetailPopup?.(true);
   };
 
-  const openAppointmentOverview = (appointment: Appointment) => {
-    setActiveAppointment?.(appointment);
-    setViewIntent?.(null);
-    setViewPopup?.(true);
-  };
-
-  const openAppointmentWithIntent = (appointment: Appointment, intent?: AppointmentViewIntent) => {
-    setActiveAppointment?.(appointment);
-    setViewIntent?.(intent ?? null);
-    setDetailPopup?.(true);
+  const openAppointmentWorkspace = (appointment: Appointment, intent?: AppointmentViewIntent) => {
+    if (!appointment.id) return;
+    if (!canEnterAppointmentWorkspace(appointment.status)) {
+      openAppointment(appointment);
+      return;
+    }
+    startRouteLoader();
+    router.push(buildWorkspaceHrefForIntent(appointment.id, intent));
   };
 
   const openAppointmentHistory = (appointment: Appointment) => {
+    startRouteLoader();
     router.push(
       buildAppointmentCompanionHistoryHref(
         appointment.id,
@@ -616,6 +624,11 @@ const AppointmentBoardComponent = ({
                                 minute: '2-digit',
                               })}
                             </div>
+                            <AppointmentModePill
+                              appointment={appointment}
+                              className="h-6 px-2.5 text-[10px]"
+                              iconSize={12}
+                            />
                           </div>
                         </div>
                         <div className="relative z-10 pt-1 pb-1 border-t border-card-border/60 flex items-center justify-between gap-2">
@@ -636,7 +649,7 @@ const AppointmentBoardComponent = ({
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  void acceptAppointment(appointment);
+                                  openChangeStatus(appointment);
                                 }}
                               >
                                 <FaCheckCircle size={14} color="var(--color-success-400)" />
@@ -666,7 +679,7 @@ const AppointmentBoardComponent = ({
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  openAppointmentOverview(appointment);
+                                  openAppointment(appointment);
                                 }}
                               >
                                 <IoEyeOutline size={16} color="var(--color-neutral-900)" />
@@ -748,7 +761,7 @@ const AppointmentBoardComponent = ({
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  openAppointmentWithIntent(
+                                  openAppointmentWorkspace(
                                     appointment,
                                     getClinicalNotesIntent(getBoardOrgType(appointment, orgsById))
                                   );
@@ -767,7 +780,7 @@ const AppointmentBoardComponent = ({
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  openAppointmentWithIntent(appointment, {
+                                  openAppointmentWorkspace(appointment, {
                                     label: 'finance',
                                     subLabel: 'summary',
                                   });
@@ -783,7 +796,7 @@ const AppointmentBoardComponent = ({
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  openAppointmentWithIntent(appointment, {
+                                  openAppointmentWorkspace(appointment, {
                                     label: 'labs',
                                     subLabel: 'idexx-labs',
                                   });

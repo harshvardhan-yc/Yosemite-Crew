@@ -4,6 +4,8 @@ import type {
   Form as BackendForm,
   FormField as BackendFormField,
   Organisation,
+  TemplateKind,
+  TemplateOwnershipType,
 } from '@yosemite-crew/types';
 
 const formsCategories = [
@@ -11,6 +13,10 @@ const formsCategories = [
   'Prescription',
   'SOAP',
   'Discharge Form',
+  'Vitals',
+  'Prescription Template',
+  'Inpatient Schedule',
+  'Task Template',
   'Boarder - Boarding Checklist',
   'Boarder - Dietary Plan',
   'Boarder - Medication Details',
@@ -92,6 +98,11 @@ export type FormsProps = {
   lastUpdated: string;
   status?: FormsStatus;
   schema: FormField[];
+  templateId?: string;
+  templateKind?: TemplateKind;
+  templateSource?: TemplateOwnershipType;
+  templateVersion?: number;
+  isTemplateBacked?: boolean;
 };
 
 const makeOption = (label: string, value?: string): FieldOption => ({
@@ -308,6 +319,9 @@ const buildServicesGroup = (): FormField => ({
 
 export const CategoryTemplates: Record<FormsCategory, FormField[]> = {
   Custom: [],
+  'Prescription Template': [],
+  'Inpatient Schedule': [],
+  'Task Template': [],
   'Consent form': [
     textInputField('pet_name', 'Companion name', 'Enter Companion name', { required: true }),
     textInputField('owner_name', 'Pet parent name', 'Enter pet parent name', { required: true }),
@@ -385,7 +399,6 @@ export const CategoryTemplates: Record<FormsCategory, FormField[]> = {
         'Highlight critical follow-up instructions'
       ),
     ]),
-    signatureField('signature', 'Signature'),
   ],
   'Discharge Form': [
     groupField('discharge_section', 'Discharge summary', [
@@ -407,6 +420,19 @@ export const CategoryTemplates: Record<FormsCategory, FormField[]> = {
       dateField('follow_up', 'Follow-up date', 'Select next visit date'),
     ]),
     signatureField('signature', 'Signature'),
+  ],
+  Vitals: [
+    groupField('vitals', 'Vitals', [
+      numberField('weightLbs', 'Weight', '', { meta: { unit: 'lbs' } as any }),
+      numberField('tempF', 'Temperature', '', { meta: { unit: '°F' } as any }),
+      numberField('heartRateBpm', 'Heart rate', '', { meta: { unit: 'bpm' } as any }),
+      numberField('respRateBpm', 'Respiratory rate', '', { meta: { unit: 'bpm' } as any }),
+      textInputField('crtSec', 'CRT', '', { meta: { unit: 'sec' } as any }),
+      textInputField('mucousMembrane', 'Mucous membrane'),
+      numberField('painScore', 'Pain score', '', { meta: { unit: '/ 10' } as any }),
+      numberField('bcs', 'BCS', '', { meta: { unit: '/ 9' } as any }),
+    ]),
+    textAreaField('notes', 'Notes', 'Additional vitals notes'),
   ],
   'Boarder - Boarding Checklist': [
     {

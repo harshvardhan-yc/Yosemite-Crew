@@ -130,7 +130,6 @@ const SignIn = ({
         <YosemiteLoader
           variant="fullscreen-translucent"
           label="Signing you in..."
-          size={120}
           testId="signin-loader"
         />
       ) : null}

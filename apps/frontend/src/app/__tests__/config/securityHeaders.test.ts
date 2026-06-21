@@ -34,7 +34,7 @@ describe('security headers', () => {
     expect(routeHeaders?.source).toBe('/(.*)');
 
     const headers = routeHeaders?.headers as HeaderEntry[];
-    expect(findHeader(headers, 'X-Frame-Options')).toBe('DENY');
+    expect(findHeader(headers, 'X-Frame-Options')).toBe('SAMEORIGIN');
     expect(findHeader(headers, 'X-Content-Type-Options')).toBe('nosniff');
     expect(findHeader(headers, 'Strict-Transport-Security')).toBeUndefined();
     expect(findHeader(headers, 'Referrer-Policy')).toBe('strict-origin-when-cross-origin');
@@ -62,13 +62,15 @@ describe('security headers', () => {
     expect(directives.get('default-src')).toBe("'self'");
     expect(directives.get('object-src')).toBe("'none'");
     expect(directives.get('base-uri')).toBe("'self'");
-    expect(directives.get('frame-ancestors')).toBe("'none'");
+    expect(directives.get('frame-ancestors')).toBe("'self'");
     expect(directives.get('form-action')).toBe("'self'");
     expect(directives.get('upgrade-insecure-requests')).toBeUndefined();
 
     expect(directives.get('script-src')).toContain("'self'");
     expect(directives.get('script-src')).toContain("'nonce-test-nonce'");
     expect(directives.get('script-src')).toContain('https://js.stripe.com');
+    expect(directives.get('script-src')).toContain('https://connect-js.stripe.com');
+    expect(directives.get('script-src')).toContain('https://*.js.stripe.com');
     expect(directives.get('script-src')).toContain("'unsafe-eval'");
     expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
     expect(directives.get('style-src')).toContain('https://fonts.googleapis.com');
@@ -78,12 +80,17 @@ describe('security headers', () => {
     expect(directives.get('font-src')).toContain('https://fonts.gstatic.com');
     expect(directives.get('connect-src')).toContain('blob:');
     expect(directives.get('connect-src')).toContain('https://api.stripe.com');
+    expect(directives.get('connect-src')).toContain('https://connect-js.stripe.com');
+    expect(directives.get('connect-src')).toContain('https://places.googleapis.com');
     expect(directives.get('connect-src')).toContain('https://raw.githubusercontent.com');
     expect(directives.get('connect-src')).toContain('http:');
     expect(directives.get('connect-src')).toContain('ws:');
     expect(directives.get('img-src')).toContain('https://upload.wikimedia.org');
     expect(directives.get('frame-src')).toContain('blob:');
     expect(directives.get('frame-src')).toContain('https://js.stripe.com');
+    expect(directives.get('frame-src')).toContain('https://*.js.stripe.com');
+    expect(directives.get('frame-src')).toContain('https://connect-js.stripe.com');
+    expect(directives.get('img-src')).toContain('https://*.stripe.com');
     expect(directives.get('frame-src')).toContain('https://*.merckvetmanual.com');
     expect(directives.get('frame-src')).toContain('https://*.idexx.com');
     expect(directives.get('frame-src')).toContain('https://*.vetconnectplus.com');
@@ -123,6 +130,7 @@ describe('security headers', () => {
     expect(directives.get('style-src-elem')).not.toContain("'nonce-test-nonce'");
     expect(directives.get('style-src')).toContain("'unsafe-inline'");
     expect(directives.get('style-src-elem')).toContain("'unsafe-inline'");
+    expect(directives.get('connect-src')).toContain('https://places.googleapis.com');
     expect(directives.get('connect-src')).not.toContain('http:');
     expect(directives.get('connect-src')).not.toContain('ws:');
     expect(directives.get('upgrade-insecure-requests')).toBe('');

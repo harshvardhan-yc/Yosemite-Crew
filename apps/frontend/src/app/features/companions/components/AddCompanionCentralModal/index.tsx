@@ -1050,7 +1050,7 @@ const AddCompanionCentralModal = ({
   const displayStatus: RecordStatus = pendingStatus ?? vc?.status ?? 'active';
   const statusStyle = vc ? getCompanionStatusStyle(displayStatus) : {};
   const speciesLabel = vc ? (SPECIES_LABEL[vc.type?.toLowerCase()] ?? toTitleCase(vc.type)) : '';
-  const vcAlerts: CompanionAlert[] = (vc as any)?.alerts ?? [];
+  const vcAlerts: CompanionAlert[] = fromStoredCompanionAlerts((vc as any)?.alerts ?? []);
   const companionTitle = vc && vp ? formatCompanionNameWithOwnerLastName(vc.name, vp) : '';
 
   const parentSearchOptions = useMemo(

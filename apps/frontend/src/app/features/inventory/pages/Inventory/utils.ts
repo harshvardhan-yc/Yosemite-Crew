@@ -11,19 +11,21 @@ import {
 } from '@/app/features/inventory/pages/Inventory/types';
 import { formatDisplayDate as formatGlobalDisplayDate } from '@/app/lib/date';
 
-export const toStringSafe = (value: any): string => {
+export const toStringSafe = (value: unknown): string => {
   if (value === undefined || value === null) return '';
   if (typeof value === 'number' && Number.isNaN(value)) return '';
-  return String(value);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
 };
 
-export const toNumberSafe = (value: any): number | undefined => {
+export const toNumberSafe = (value: unknown): number | undefined => {
   const num = Number(value);
   return Number.isFinite(num) ? num : undefined;
 };
 
-const cleanObject = (obj: Record<string, any>) =>
-  Object.entries(obj).reduce<Record<string, any>>((acc, [key, value]) => {
+const cleanObject = (obj: Record<string, unknown>) =>
+  Object.entries(obj).reduce<Record<string, unknown>>((acc, [key, value]) => {
     if (value === undefined || value === null || value === '') return acc;
     if (Array.isArray(value) && value.length === 0) return acc;
     acc[key] = value;
@@ -123,6 +125,10 @@ export const formatStockHealthLabel = (stockHealth?: StockHealthStatus): string 
       return 'Expired';
     case 'EXPIRING_SOON':
       return 'Expiring soon';
+    case 'OUT_OF_STOCK':
+      return 'Out of stock';
+    case 'OVERSTOCKED':
+      return 'Overstocked';
     default:
       return '';
   }
@@ -137,6 +143,13 @@ export const getStatusBadgeStyle = (statusLabel?: string) => {
         backgroundColor: 'var(--color-pill-progress-bg)',
         borderColor: 'var(--color-pill-progress-border)',
       };
+    case 'overstocked':
+    case 'expiring soon':
+      return {
+        color: 'var(--color-pill-info-text)',
+        backgroundColor: 'var(--color-pill-info-bg)',
+        borderColor: 'var(--color-pill-info-border)',
+      };
     case 'expired':
     case 'out of stock':
       return {
@@ -150,14 +163,9 @@ export const getStatusBadgeStyle = (statusLabel?: string) => {
         backgroundColor: 'var(--color-pill-neutral-bg)',
         borderColor: 'var(--color-pill-neutral-border)',
       };
-    case 'expiring soon':
-      return {
-        color: 'var(--color-pill-info-text)',
-        backgroundColor: 'var(--color-pill-info-bg)',
-        borderColor: 'var(--color-pill-info-border)',
-      };
     case 'healthy':
     case 'active':
+    case 'in stock':
       return {
         color: 'var(--color-pill-success-text)',
         backgroundColor: 'var(--color-pill-success-bg)',
@@ -175,10 +183,11 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
   const attributes = apiItem.attributes ?? {};
   const statusLabel = formatStatusLabel(apiItem.status);
   const stockHealthLabel = formatStockHealthLabel(apiItem.stockHealth);
-  const normalizeStringOrArray = (val: any): string | string[] => {
+  const normalizeStringOrArray = (val: unknown): string | string[] => {
     if (Array.isArray(val)) return val.filter(Boolean);
-    if (val === undefined || val === null) return '';
-    return String(val);
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+    return '';
   };
 
   const firstDefined = <T>(...vals: (T | undefined)[]): T | undefined => {
@@ -223,7 +232,7 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
     if (!batchList.length) return undefined;
     const withExpiry = batchList
       .map((b) => ({ batch: b, date: parseDateSafe(b.expiryDate) }))
-      .filter((entry) => entry.date !== null) as { batch: BatchValues; date: Date }[];
+      .filter((entry): entry is { batch: BatchValues; date: Date } => entry.date !== null);
     if (withExpiry.length) {
       return withExpiry.reduce(
         (earliest, current) =>
@@ -259,6 +268,7 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
     id: apiItem._id,
     organisationId: apiItem.organisationId,
     businessType: apiItem.businessType,
+    currency: apiItem.currency,
     stockHealth: apiItem.stockHealth,
     status: normalizeStatus(apiItem.status),
     attributes,
@@ -274,7 +284,11 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
       department: toStringSafe(attributes.department),
       description: apiItem.description ?? '',
       status: statusLabel || stockHealthLabel || 'Active',
+      brand: toStringSafe(attributes.brand),
+      imageUrl: toStringSafe(apiItem.imageUrl ?? attributes.imageUrl),
+      visibleInInventory: normalizeStatus(apiItem.status) !== 'HIDDEN',
       itemType: toStringSafe(attributes.itemType),
+      drugSchedule: toStringSafe(attributes.drugSchedule),
       prescriptionRequired: toStringSafe(attributes.prescriptionRequired),
       regulationType: toStringSafe(attributes.regulationType),
       storageCondition: toStringSafe(attributes.storageCondition),
@@ -292,6 +306,12 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
       unitofMeasure: normalizeStringOrArray(attributes.unitofMeasure ?? attributes.unitOfMeasure),
       species: normalizeStringOrArray(attributes.species),
       administration: toStringSafe(attributes.administration),
+      itemType: toStringSafe(attributes.itemType),
+      drugSchedule: toStringSafe(attributes.drugSchedule),
+      storageCondition: toStringSafe(attributes.storageCondition),
+      controlledSubstance: toStringSafe(attributes.controlledSubstance),
+      prescriptionRequired: toStringSafe(attributes.prescriptionRequired),
+      reportableToGovernment: toStringSafe(attributes.reportableToGovernment),
       therapeuticClass: toStringSafe(attributes.therapeuticClass),
       strength: toStringSafe(attributes.strength),
       dosageForm: toStringSafe(attributes.dosageForm),
@@ -329,9 +349,12 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
       current: toStringSafe(onHandVal ?? toNumberSafe(attributes.current) ?? attributes.current),
       allocated: toStringSafe(allocatedVal ?? attributes.allocated),
       available: toStringSafe(available),
+      maxStock: toStringSafe(attributes.maxStock),
       reorderLevel: toStringSafe(apiItem.reorderLevel),
       reorderQuantity: toStringSafe(attributes.reorderQuantity),
       stockLocation: toStringSafe(attributes.stockLocation),
+      abcClass: toStringSafe(attributes.abcClass),
+      withdrawlPeriod: toStringSafe(attributes.withdrawlPeriod),
       stockType: toStringSafe(attributes.stockType),
       minStockAlert: toStringSafe(attributes.minStockAlert),
     },
@@ -350,6 +373,8 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
           attributes.expiryDate ??
           batches.find((b) => b.expiryDate)?.expiryDate
       ),
+      expiryWarningBefore: toStringSafe(attributes.expiryWarningBefore),
+      barcode: toStringSafe(primaryBatch?.serial ?? attributes.barcode),
       serial: toStringSafe(primaryBatch?.serial ?? attributes.serial),
       tracking: toStringSafe(primaryBatch?.tracking ?? attributes.tracking),
       litterId: toStringSafe(primaryBatch?.litterId ?? attributes.litterId),
@@ -381,10 +406,9 @@ const normalizeStatusForApi = (status?: string) => {
 };
 
 export const buildBatchPayload = (batch: BatchValues): InventoryBatchPayload | undefined => {
-  const quantity = toNumberSafe(
-    batch.quantity ?? (batch as any).current ?? (batch as any).available
-  );
-  const allocated = toNumberSafe(batch.allocated ?? (batch as any).allocated);
+  const batchRecord = batch as BatchValues & { current?: unknown; available?: unknown };
+  const quantity = toNumberSafe(batch.quantity ?? batchRecord.current ?? batchRecord.available);
+  const allocated = toNumberSafe(batch.allocated);
   const normalizeDateForApi = (val?: string) => {
     if (!val) return undefined;
     if (val.includes('/')) {
@@ -444,10 +468,17 @@ export const buildInventoryPayload = (
 
   const attributes = cleanObject({
     department: formData.basicInfo.department,
-    itemType: formData.basicInfo.itemType,
-    prescriptionRequired: formData.basicInfo.prescriptionRequired,
+    brand: formData.basicInfo.brand ?? formData.vendor.brand,
+    imageUrl: formData.basicInfo.imageUrl ?? formData.imageUrl,
+    itemType: formData.classification.itemType ?? formData.basicInfo.itemType,
+    drugSchedule: formData.classification.drugSchedule ?? formData.basicInfo.drugSchedule,
+    prescriptionRequired:
+      formData.classification.prescriptionRequired ?? formData.basicInfo.prescriptionRequired,
+    controlledSubstance: formData.classification.controlledSubstance,
+    reportableToGovernment: formData.classification.reportableToGovernment,
     regulationType: formData.basicInfo.regulationType,
-    storageCondition: formData.basicInfo.storageCondition,
+    storageCondition:
+      formData.classification.storageCondition ?? formData.basicInfo.storageCondition,
     productUsage: formData.basicInfo.productUsage,
     intendedUsage: formData.basicInfo.intendedUsage,
     coatType: formData.basicInfo.coatType,
@@ -460,17 +491,21 @@ export const buildInventoryPayload = (
     tax: formData.pricing.tax,
     maxDiscount: formData.pricing.maxDiscount,
     supplierName: formData.vendor.supplierName,
-    brand: formData.vendor.brand,
     vendor: formData.vendor.vendor,
     license: formData.vendor.license,
     paymentTerms: formData.vendor.paymentTerms,
     leadTime: formData.vendor.leadTime,
     stockLocation: formData.stock.stockLocation,
     stockType: formData.stock.stockType,
+    maxStock: formData.stock.maxStock,
+    abcClass: formData.stock.abcClass,
+    withdrawlPeriod: formData.stock.withdrawlPeriod ?? formData.classification.withdrawlPeriod,
     minStockAlert: formData.stock.minStockAlert,
     reorderQuantity: formData.stock.reorderQuantity,
     available: batchTotals.available ?? toNumberSafe(formData.stock.available),
-    serial: firstBatch?.serial,
+    expiryWarningBefore: firstBatch?.expiryWarningBefore,
+    barcode: firstBatch?.barcode,
+    serial: firstBatch?.serial ?? firstBatch?.barcode,
     tracking: firstBatch?.tracking,
     litterId: firstBatch?.litterId,
     nextRefillDate: firstBatch?.nextRefillDate,
@@ -484,7 +519,7 @@ export const buildInventoryPayload = (
     category: formData.basicInfo.category,
     subCategory: formData.basicInfo.subCategory,
     description: formData.basicInfo.description,
-    imageUrl: formData.imageUrl,
+    imageUrl: formData.basicInfo.imageUrl ?? formData.imageUrl,
     attributes: {
       ...attributes,
       species: formData.classification.species,
@@ -492,12 +527,16 @@ export const buildInventoryPayload = (
     },
     onHand: batchTotals.onHand ?? toNumberSafe(formData.stock.current),
     allocated: batchTotals.allocated ?? toNumberSafe(formData.stock.allocated),
+    // Backend create reads initialOnHand/initialAllocated for items without batches;
+    // when batches exist the server recomputes these from the batch quantities.
+    initialOnHand: batchTotals.onHand ?? toNumberSafe(formData.stock.current),
+    initialAllocated: batchTotals.allocated ?? toNumberSafe(formData.stock.allocated),
     reorderLevel: toNumberSafe(formData.stock.reorderLevel),
     unitCost: toNumberSafe(formData.pricing.purchaseCost),
     sellingPrice: toNumberSafe(formData.pricing.selling),
-    currency: 'USD',
+    // Currency is derived server-side from the org billing settings; do not send a hardcoded value.
     vendorId: formData.vendor.vendor,
-    status: statusForApi,
+    status: formData.basicInfo.visibleInInventory === false ? 'HIDDEN' : statusForApi,
   };
 
   if (batchPayloads.length > 0) {
@@ -509,6 +548,11 @@ export const buildInventoryPayload = (
 
 export const defaultFilters: InventoryFiltersState = {
   category: 'all',
+  categories: [],
+  subCategories: [],
+  locations: [],
+  abcClasses: [],
+  suppliers: [],
   visibility: 'ALL',
   status: 'ALL',
   search: '',
@@ -517,5 +561,100 @@ export const defaultFilters: InventoryFiltersState = {
 export const displayStatusLabel = (item: InventoryItem): string => {
   const status = formatStatusLabel(item.status || item.basicInfo.status);
   if (status.toLowerCase() === 'hidden') return 'Hidden';
-  return formatStockHealthLabel(item.stockHealth) || status || 'Active';
+  const stockHealth = formatStockHealthLabel(item.stockHealth);
+  if (stockHealth) return stockHealth;
+  if (item.stock || item.batch) {
+    const derived = getDerivedStockHealth(item);
+    return derived.label || status || 'Active';
+  }
+  return status || 'Active';
+};
+
+export const getAvailableStock = (item: InventoryItem): number | undefined => {
+  const onHand = toNumberSafe(item.stock?.current);
+  const allocated = toNumberSafe(item.stock?.allocated) ?? 0;
+  if (onHand === undefined) return undefined;
+  return onHand - allocated;
+};
+
+export const getGrossProfitPerUnit = (item: InventoryItem): number | undefined => {
+  const selling = toNumberSafe(item.pricing.selling);
+  const unitCost = toNumberSafe(item.pricing.purchaseCost);
+  if (selling === undefined || unitCost === undefined) return undefined;
+  return selling - unitCost;
+};
+
+export const getMarginPercent = (item: InventoryItem): number | undefined => {
+  const selling = toNumberSafe(item.pricing.selling);
+  const profit = getGrossProfitPerUnit(item);
+  if (selling === undefined || selling === 0 || profit === undefined) return undefined;
+  return (profit / selling) * 100;
+};
+
+export const getMarkupPercent = (item: InventoryItem): number | undefined => {
+  const unitCost = toNumberSafe(item.pricing.purchaseCost);
+  const profit = getGrossProfitPerUnit(item);
+  if (unitCost === undefined || unitCost === 0 || profit === undefined) return undefined;
+  return (profit / unitCost) * 100;
+};
+
+export const getStockValue = (item: InventoryItem): number | undefined => {
+  const onHand = toNumberSafe(item.stock.current);
+  const unitCost = toNumberSafe(item.pricing.purchaseCost);
+  if (onHand === undefined || unitCost === undefined) return undefined;
+  return onHand * unitCost;
+};
+
+export const formatCurrencyValue = (value?: string | number, currency = 'USD') => {
+  const num = toNumberSafe(value);
+  if (num === undefined) return '—';
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD',
+      maximumFractionDigits: Number.isInteger(num) ? 0 : 2,
+    }).format(num);
+  } catch {
+    // Unknown/invalid ISO currency code — fall back to USD formatting.
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: Number.isInteger(num) ? 0 : 2,
+    }).format(num);
+  }
+};
+
+export const formatPercentValue = (value?: number) => {
+  if (value === undefined || !Number.isFinite(value)) return '—';
+  return `${Number(value.toFixed(2))}%`;
+};
+
+export const getDerivedStockHealth = (
+  item: InventoryItem
+): { key: StockHealthStatus | 'IN_STOCK'; label: string } => {
+  const status = normalizeStatus(item.status || item.basicInfo.status);
+  if (status === 'HIDDEN') return { key: 'HEALTHY', label: 'Hidden' };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiry = parseDateSafe(item.batch?.expiryDate);
+  if (expiry && expiry.getTime() < today.getTime()) {
+    return { key: 'EXPIRED', label: 'Expired' };
+  }
+
+  const available = getAvailableStock(item);
+  const reorderPoint = toNumberSafe(item.stock?.reorderLevel);
+  const maxStock = toNumberSafe(item.stock?.maxStock);
+  if (available !== undefined && available <= 0) {
+    return { key: 'OUT_OF_STOCK', label: 'Out of stock' };
+  }
+  if (available !== undefined && reorderPoint !== undefined && available <= reorderPoint) {
+    return { key: 'LOW_STOCK', label: 'Low stock' };
+  }
+  const onHand = toNumberSafe(item.stock?.current);
+  if (onHand !== undefined && maxStock !== undefined && onHand > maxStock) {
+    return { key: 'OVERSTOCKED', label: 'Overstocked' };
+  }
+
+  return { key: 'IN_STOCK', label: 'In stock' };
 };

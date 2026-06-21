@@ -10,7 +10,7 @@ const isProductionRuntime = () => process.env.NODE_ENV === 'production';
 export const buildSecurityHeaders = (isProduction = isProductionRuntime()): SecurityHeader[] => [
   {
     key: 'X-Frame-Options',
-    value: 'DENY',
+    value: 'SAMEORIGIN',
   },
   {
     key: 'X-Content-Type-Options',
@@ -30,8 +30,11 @@ export const buildSecurityHeaders = (isProduction = isProductionRuntime()): Secu
     value: 'camera=(), microphone=(), geolocation=(self)',
   },
   {
+    // Disabled intentionally: the legacy XSS auditor is deprecated and its
+    // filtering can introduce side-channel/info-leak issues. The per-route
+    // nonce CSP is the real XSS defence here.
     key: 'X-XSS-Protection',
-    value: '1; mode=block',
+    value: '0',
   },
 ];
 
@@ -74,6 +77,8 @@ export const buildContentSecurityPolicy = ({
       allowInlineScripts ? "'unsafe-inline'" : undefined,
       isDevelopment ? "'unsafe-eval'" : undefined,
       'https://js.stripe.com',
+      'https://*.js.stripe.com',
+      'https://connect-js.stripe.com',
       'https://cal.com',
       'https://app.cal.com',
       ...postHogScriptHosts,
@@ -88,7 +93,7 @@ export const buildContentSecurityPolicy = ({
       .join(' '),
     "style-src-attr 'unsafe-inline'",
     "font-src 'self' https://fonts.gstatic.com https://cal.com https://app.cal.com",
-    "img-src 'self' data: blob: https://d2il6osz49gpup.cloudfront.net https://d2kyjiikho62xx.cloudfront.net https://images.unsplash.com https://plus.unsplash.com https://yosemitecrew-backend.s3.eu-central-1.amazonaws.com https://cdn.yc.dev https://laika.aitemsolutions.com https://upload.wikimedia.org",
+    "img-src 'self' data: blob: https://d2il6osz49gpup.cloudfront.net https://d2kyjiikho62xx.cloudfront.net https://images.unsplash.com https://plus.unsplash.com https://yosemitecrew-backend.s3.eu-central-1.amazonaws.com https://cdn.yc.dev https://laika.aitemsolutions.com https://upload.wikimedia.org https://*.stripe.com",
     [
       "connect-src 'self'",
       'blob:',
@@ -99,6 +104,8 @@ export const buildContentSecurityPolicy = ({
       'https://chat.stream-io-api.com',
       'wss://chat.stream-io-api.com',
       'https://api.stripe.com',
+      'https://connect-js.stripe.com',
+      'https://places.googleapis.com',
       'https://cal.com',
       'https://app.cal.com',
       'https://api.openstatus.dev',
@@ -118,6 +125,8 @@ export const buildContentSecurityPolicy = ({
       "frame-src 'self'",
       'blob:',
       'https://js.stripe.com',
+      'https://*.js.stripe.com',
+      'https://connect-js.stripe.com',
       'https://hooks.stripe.com',
       'https://cal.com',
       'https://app.cal.com',
@@ -132,7 +141,7 @@ export const buildContentSecurityPolicy = ({
       .join(' '),
     "object-src 'none'",
     "base-uri 'self'",
-    "frame-ancestors 'none'",
+    "frame-ancestors 'self'",
     "form-action 'self'",
     // upgrade-insecure-requests breaks localhost in Safari. Only send in production.
     ...(isProduction ? ['upgrade-insecure-requests'] : []),

@@ -78,6 +78,7 @@ expect.extend(toHaveNoViolations);
 describe('Slot (Appointments)', () => {
   const handleViewAppointment = jest.fn();
   const handleDetailAppointment = jest.fn();
+  const handleOpenWorkspace = jest.fn();
   const handleRescheduleAppointment = jest.fn();
   const originalConsoleError = console.error;
 
@@ -111,6 +112,7 @@ describe('Slot (Appointments)', () => {
         height={120}
         handleViewAppointment={handleViewAppointment}
         handleDetailAppointment={handleDetailAppointment}
+        handleOpenWorkspace={handleOpenWorkspace}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={0}
@@ -139,6 +141,7 @@ describe('Slot (Appointments)', () => {
         height={120}
         handleViewAppointment={handleViewAppointment}
         handleDetailAppointment={handleDetailAppointment}
+        handleOpenWorkspace={handleOpenWorkspace}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={1}
@@ -170,6 +173,7 @@ describe('Slot (Appointments)', () => {
         height={120}
         handleViewAppointment={handleViewAppointment}
         handleDetailAppointment={handleDetailAppointment}
+        handleOpenWorkspace={handleOpenWorkspace}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={1}
@@ -179,7 +183,8 @@ describe('Slot (Appointments)', () => {
 
     fireEvent.doubleClick(screen.getByRole('button', { name: /Rex/i }));
 
-    expect(handleDetailAppointment).toHaveBeenCalledWith(event);
+    expect(handleOpenWorkspace).toHaveBeenCalledWith(event);
+    expect(handleDetailAppointment).not.toHaveBeenCalled();
   });
 
   it('shows only the service label for overlapping compact markers', () => {
@@ -356,6 +361,7 @@ describe('Slot (Appointments)', () => {
       endTime: new Date('2025-01-06T09:30:00Z'),
     } as any;
 
+    const handleAcceptAppointment = jest.fn();
     render(
       <Slot
         slotEvents={[requestedEvent]}
@@ -363,6 +369,7 @@ describe('Slot (Appointments)', () => {
         handleViewAppointment={handleViewAppointment}
         handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
+        handleAcceptAppointment={handleAcceptAppointment}
         dayIndex={0}
         length={1}
         canEditAppointments
@@ -378,14 +385,20 @@ describe('Slot (Appointments)', () => {
     await act(async () => {
       fireEvent.click(screen.getByTitle('Accept request'));
     });
-    expect(acceptAppointment).toHaveBeenCalledWith(expect.objectContaining({ id: 'requested-1' }));
+    // Accept now routes through the change-status flow (assign lead/support) instead
+    // of calling the accept service directly.
+    expect(acceptAppointment).not.toHaveBeenCalled();
+    expect(handleAcceptAppointment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'requested-1' })
+    );
 
     fireEvent.click(eventButton);
     act(() => {
       jest.advanceTimersByTime(200);
     });
+    const declineButton = await screen.findByTitle('Decline request');
     await act(async () => {
-      fireEvent.click(await screen.findByTitle('Decline request'));
+      fireEvent.click(declineButton);
     });
     expect(rejectAppointment).toHaveBeenCalledWith(expect.objectContaining({ id: 'requested-1' }));
   });
