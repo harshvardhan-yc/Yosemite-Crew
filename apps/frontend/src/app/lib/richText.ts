@@ -1,12 +1,20 @@
-import DOMPurify from 'isomorphic-dompurify';
+import DOMPurify from 'dompurify';
 
 /** Tags allowed in stored rich-text HTML (B/I/U, lists, paragraphs, line breaks). */
 const ALLOWED_TAGS = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li'];
 const ALLOWED_ATTR = ['class'];
 
+/** DOMPurify needs a real DOM; expose the check so the SSR fallback is testable. */
+export const hasDom = (): boolean => typeof window !== 'undefined';
+
 /** Sanitize editor HTML before storing/sending to the backend. */
-export const sanitizeRichText = (html: string): string =>
-  DOMPurify.sanitize(html ?? '', { ALLOWED_TAGS, ALLOWED_ATTR });
+export const sanitizeRichText = (html: string): string => {
+  const value = html ?? '';
+  // On the server (no DOM) fall back to stripping all tags so no unsanitized
+  // markup is ever emitted during SSR.
+  if (!hasDom()) return replaceNbsp(stripHtmlTags(value));
+  return DOMPurify.sanitize(value, { ALLOWED_TAGS, ALLOWED_ATTR });
+};
 
 const stripHtmlTags = (html: string): string => {
   let result = '';

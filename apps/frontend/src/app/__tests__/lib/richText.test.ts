@@ -1,4 +1,4 @@
-import { isRichTextEmpty, sanitizeRichText } from '@/app/lib/richText';
+import { hasDom, isRichTextEmpty, sanitizeRichText } from '@/app/lib/richText';
 
 describe('richText lib', () => {
   it('keeps allowed formatting tags', () => {
@@ -18,6 +18,10 @@ describe('richText lib', () => {
 
   it('handles empty input', () => {
     expect(sanitizeRichText('')).toBe('');
+  });
+
+  it('reports a DOM is available in the jsdom test environment', () => {
+    expect(hasDom()).toBe(true);
   });
 
   it('detects empty rich text', () => {
