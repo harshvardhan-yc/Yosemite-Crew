@@ -234,7 +234,7 @@ const LabelDropdown = ({
             type="button"
             role="option"
             aria-selected={selected?.value === option.value}
-            className={`px-5 py-3 text-left text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full ${
+            className={`flex items-center justify-between gap-2 px-5 py-3 text-left text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full ${
               activeOptionId === `${listboxId}-option-${option.value}`
                 ? 'bg-card-hover text-text-primary!'
                 : ''
@@ -242,7 +242,12 @@ const LabelDropdown = ({
             onMouseEnter={() => setActiveIndex(filteredOptions.indexOf(option))}
             onClick={() => selectOption(option)}
           >
-            {option.label}
+            <span className="min-w-0 truncate">{option.label}</span>
+            {option.badge && (
+              <span className="shrink-0 rounded-2xl bg-primary-100 px-2 py-0.5 text-caption-2 font-medium text-text-brand">
+                {option.badge}
+              </span>
+            )}
           </button>
         ))}
       {filteredOptions.length === 0 && (

@@ -12,6 +12,24 @@ jest.mock('react-icons/fa6', () => ({
 }));
 
 describe('MultiSelectDropdown', () => {
+  it('renders a badge pill next to options that provide one', () => {
+    render(
+      <MultiSelectDropdown
+        placeholder="Select"
+        value={[]}
+        onChange={jest.fn()}
+        options={[
+          { label: 'Consult', value: 'srv-1', badge: 'Service' },
+          { label: 'Wellness', value: 'pkg-1', badge: 'Package' },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Select/i }));
+    expect(screen.getByText('Service')).toBeInTheDocument();
+    expect(screen.getByText('Package')).toBeInTheDocument();
+  });
+
   it('adds and removes options', () => {
     const onChange = jest.fn();
     const { rerender } = render(

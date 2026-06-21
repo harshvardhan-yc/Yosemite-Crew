@@ -11,7 +11,7 @@ type DropdownProps = {
   value: string[];
   onChange: (e: string[]) => void;
   error?: string;
-  options?: Array<string | { label: string; value: string }>;
+  options?: Array<string | { label: string; value: string; badge?: string }>;
   searchable?: boolean;
   icon?: React.ReactNode;
   portal?: boolean;
@@ -91,7 +91,14 @@ const MultiSelectPanel = ({
             onMouseEnter={() => onActiveIndexChange(filteredOptions.indexOf(option))}
             onClick={() => onToggleOption(option)}
           >
-            <span>{option.label}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate">{option.label}</span>
+              {option.badge && (
+                <span className="shrink-0 rounded-full bg-card-hover px-2 py-0.5 text-caption-2 text-text-secondary">
+                  {option.badge}
+                </span>
+              )}
+            </span>
             {isSelected && (
               <FiCheck size={14} className="shrink-0 text-text-brand" aria-hidden="true" />
             )}

@@ -224,6 +224,25 @@ describe('LabelDropdown', () => {
     expect(screen.queryByRole('textbox', { name: 'Search Species' })).not.toBeInTheDocument();
   });
 
+  it('renders a badge pill next to options that provide one', () => {
+    render(
+      <LabelDropdown
+        placeholder="Service"
+        options={[
+          { label: 'Consultation', value: 'srv-1' },
+          { label: 'Wellness Plan', value: 'pkg-1', badge: 'Package' },
+        ]}
+        onSelect={jest.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Service/i }));
+
+    expect(screen.getByText('Package')).toBeInTheDocument();
+    // Non-badged option renders only its label.
+    expect(screen.getByText('Consultation')).toBeInTheDocument();
+  });
+
   it('has no axe accessibility violations', async () => {
     const { container } = render(
       <LabelDropdown placeholder="Species" options={options} onSelect={jest.fn()} />
