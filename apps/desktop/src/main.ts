@@ -1098,6 +1098,14 @@ const pinWindowManager = createPinWindowManager({
       webPreferences: secureWebPreferences(path.join(__dirname, 'preload.js')),
     });
     win.setAlwaysOnTop(true, 'floating');
+    // Containment: this window carries the privileged preload, so prevent it from
+    // navigating in-place to a non-internal origin (e.g. via an open redirect or
+    // XSS on the loaded page), which would hand the bridge to attacker content.
+    const blockExternalNav = (e: Electron.Event, navUrl: string): void => {
+      if (classifyNavigation(navUrl, config).disposition !== 'internal') e.preventDefault();
+    };
+    win.webContents.on('will-navigate', blockExternalNav);
+    win.webContents.on('will-redirect', blockExternalNav);
     void win.loadURL(url);
     return String(win.id);
   },
