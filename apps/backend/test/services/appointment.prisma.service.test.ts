@@ -61,7 +61,7 @@ jest.mock("../../src/config/prisma", () => ({
     roomUnitGroup: {
       findUnique: jest.fn(),
     },
-    companion: {
+    patient: {
       findUnique: jest.fn(),
     },
     roomUnitAssignment: {
@@ -208,7 +208,7 @@ describe("AppointmentPrismaService", () => {
     mockedPrisma.occupancy.deleteMany.mockResolvedValue({ count: 1 } as any);
     mockedPrisma.roomUnit.findUnique.mockResolvedValue(null);
     mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue(null);
-    mockedPrisma.companion.findUnique.mockResolvedValue({
+    mockedPrisma.patient.findUnique.mockResolvedValue({
       id: "comp_1",
       type: "dog",
       speciesCode: "canislf",

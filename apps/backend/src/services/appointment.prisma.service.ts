@@ -173,9 +173,6 @@ type RoomUnitDelegate = {
 type RoomUnitGroupDelegate = {
   findUnique(args: { where: { id: string } }): Promise<RoomUnitGroupRow | null>;
 };
-type CompanionDelegate = {
-  findUnique(args: { where: { id: string } }): Promise<CompanionRow | null>;
-};
 type RoomUnitAssignmentDelegate = {
   findFirst(args: {
     where: {
@@ -1563,9 +1560,7 @@ export const AppointmentPrismaService = {
         },
       });
 
-      const companion = await (
-        tx as unknown as { companion: CompanionDelegate }
-      ).companion.findUnique({
+      const companion = await tx.patient.findUnique({
         where: { id: encounter.patientId },
       });
 

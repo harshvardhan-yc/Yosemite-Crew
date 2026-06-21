@@ -56,6 +56,7 @@ describe("encounter.router", () => {
   it("registers the encounter action routes", () => {
     expect(findRoute("/:id/$discharge", "post")).toBeDefined();
     expect(findRoute("/:id/$assign-unit", "post")).toBeDefined();
+    expect(findRoute("/:id/assign-unit", "post")).toBeDefined();
     expect(findRoute("/:id/$unit-assignments", "get")).toBeDefined();
     expect(findRoute("/:id/$admission-unit-assignments", "get")).toBeDefined();
     expect(findRoute("/:id/$start", "post")).toBeDefined();

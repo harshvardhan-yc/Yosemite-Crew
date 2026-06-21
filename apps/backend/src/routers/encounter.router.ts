@@ -30,7 +30,7 @@ router.post(
 );
 
 router.post(
-  String.raw`/:id/$assign-unit`,
+  "/:id/assign-unit",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:edit:any"),
