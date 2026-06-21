@@ -54,6 +54,7 @@ import {
 } from './utils/settings-store';
 import { createRecentsStore, BUILTIN_ACTIONS, type RecentsStore } from './ui/command-palette';
 import { PAGE_ACTION_TRIGGERS, buildPageActionScript } from './ui/page-actions';
+import { createPinWindowManager, pinWindowBounds } from './ui/pin-window';
 import { createOfflineCache, type OfflineCache } from './sync/offline-cache';
 import { createNotificationManager, type NotificationManager } from './ui/notifications';
 import { createSyncDaemon, type SyncDaemon } from './sync/sync-daemon';
@@ -421,6 +422,31 @@ const enterTabMode = (initialUrl: string): void => {
   layoutTabChrome();
   logger.info('tab_mode_entered', { tabs: tabs.length });
   saveSession();
+};
+
+// A WebContentsView added to a not-yet-shown window does not paint until it is
+// re-laid-out, so a restored/active tab would otherwise sit transparent over the
+// loading splash forever. Re-attach + re-layout the active tab once the window is
+// actually visible. Needed on cold start (restored session) AND on macOS dock
+// reopen — both create the window hidden, then show it asynchronously.
+const repaintActiveTab = (): void => {
+  if (attachedTabId && tabViewHost && mainWindow && !mainWindow.isDestroyed()) {
+    const activeView = tabViewHost.get(attachedTabId);
+    if (activeView) {
+      mainWindow.contentView.removeChildView(activeView);
+      mainWindow.contentView.addChildView(activeView);
+    }
+  }
+  layoutTabChrome();
+};
+
+const repaintActiveTabOnShow = (): void => {
+  if (!mainWindow) return;
+  if (mainWindow.isVisible()) {
+    repaintActiveTab();
+  } else {
+    mainWindow.once('show', repaintActiveTab);
+  }
 };
 
 // Make `id` the active tab: swap the content view and re-layout.
@@ -1054,6 +1080,50 @@ const runUrlCommand = async (
   }
 };
 
+// Floating reference window: pin the current page as a small always-on-top
+// window so a clinician can keep a chart/protocol visible while working in
+// another tab. Only in-app pages may be pinned — never arbitrary external URLs.
+const pinWindowManager = createPinWindowManager({
+  isPinnable: (url) => classifyNavigation(url, config).disposition === 'internal',
+  createWindow: (url, title) => {
+    const base = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined;
+    const area = (base ? screen.getDisplayMatching(base) : screen.getPrimaryDisplay()).workArea;
+    const bounds = pinWindowBounds(area);
+    const win = new BrowserWindow({
+      ...bounds,
+      title,
+      alwaysOnTop: true,
+      minWidth: 320,
+      minHeight: 360,
+      webPreferences: secureWebPreferences(path.join(__dirname, 'preload.js')),
+    });
+    win.setAlwaysOnTop(true, 'floating');
+    void win.loadURL(url);
+    return String(win.id);
+  },
+  closeWindow: (windowId) => {
+    const win = BrowserWindow.getAllWindows().find((w) => String(w.id) === windowId);
+    if (!win) return false;
+    win.close();
+    return true;
+  },
+  focusWindow: (windowId) => {
+    BrowserWindow.getAllWindows()
+      .find((w) => String(w.id) === windowId)
+      ?.focus();
+  },
+});
+
+const pinCurrentPage = (): void => {
+  const url = activeContents()?.getURL();
+  if (!url) {
+    logger.warn('pin_current_no_active_url');
+    return;
+  }
+  const pinnedId = pinWindowManager.pin(url, 'Pinned · Yosemite Crew');
+  logger.info('pin_current_page', { pinned: Boolean(pinnedId) });
+};
+
 const runCommandAction = async (id: string): Promise<void> => {
   const action = BUILTIN_ACTIONS.find((a) => a.id === id);
   if (!action) {
@@ -1065,6 +1135,10 @@ const runCommandAction = async (id: string): Promise<void> => {
   }
   if (action.id === 'open-settings') {
     createSettingsWindow();
+    return;
+  }
+  if (action.id === 'pin-current') {
+    pinCurrentPage();
     return;
   }
   if (id.startsWith('tab:')) {
@@ -1608,7 +1682,10 @@ if (gotSingleInstanceLock) {
       }));
       // enterTabMode reads the module window/tab globals assigned just above, so
       // it must run here (not inside createMainWindow) to actually take effect.
-      if (pendingTabModeUrl) enterTabMode(pendingTabModeUrl);
+      if (pendingTabModeUrl) {
+        enterTabMode(pendingTabModeUrl);
+        repaintActiveTabOnShow();
+      }
       tray = setupTray({
         productName: PRODUCT_NAME,
         mainWindow,
@@ -1797,7 +1874,23 @@ if (gotSingleInstanceLock) {
         tabViewHost = output.tabViewHost;
         saveSession = output.saveSession;
         coldStartWatchdog = output.coldStartWatchdog;
-        if (output.enterTabModeUrl) enterTabMode(output.enterTabModeUrl);
+        if (output.enterTabModeUrl) {
+          // Closing the window (red button) never resets the module tab-mode
+          // state — only closing the last tab does (exitTabMode). So after a
+          // reopen, `tabMode` is still true and enterTabMode would no-op,
+          // leaving the fresh window stuck on the loading splash. Clear the
+          // stale state (the old views/chrome died with the closed window) so
+          // enterTabMode rebuilds tabs on the new window + new tabViewHost.
+          tabMode = false;
+          attachedTabId = null;
+          splitId = null;
+          tabChromeView = null;
+          enterTabMode(output.enterTabModeUrl);
+          // The reopened window is created hidden and shown async, so the
+          // restored tab must be re-laid-out on show (or immediately if already
+          // visible) or it stays transparent over the splash.
+          repaintActiveTabOnShow();
+        }
       });
     }
   });
@@ -1805,6 +1898,7 @@ if (gotSingleInstanceLock) {
   app.on('will-quit', () => {
     tray?.destroy();
     tabViewHost?.destroyAll();
+    pinWindowManager.closeAll();
     coldStartWatchdog?.cancel();
     localApi?.stop().catch((err) => {
       logger.warn('local_api_stop_failed', { error: String(err) });
