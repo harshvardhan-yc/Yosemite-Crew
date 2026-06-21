@@ -6,7 +6,7 @@ import { useServiceStore } from '@/app/stores/serviceStore';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { useAppointmentStore } from '@/app/stores/appointmentStore';
-import { Slot } from '@/app/features/appointments/types/appointments';
+import { Slot, AppointmentWithCompanion } from '@/app/features/appointments/types/appointments';
 import {
   CalendarPrefillSlotMatch,
   createAppointment,
@@ -30,7 +30,6 @@ import { useCanMoreForPrimaryOrg, useCurrencyForPrimaryOrg } from '@/app/hooks/u
 import { loadInvoicesForOrgPrimaryOrg } from '@/app/features/billing/services/invoiceService';
 import { EMPTY_APPOINTMENT } from '@/app/features/appointments/constants/emptyAppointment';
 import { AppointmentDraftPrefill } from '@/app/features/appointments/types/calendar';
-import { AppointmentWithCompanion } from '@/app/features/appointments/types/appointments';
 import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 import { PackageRevamp, ServiceRevamp } from '@/app/features/organization/types/revamp';
 import {
@@ -1147,7 +1146,7 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
       if (!formData.appointmentType?.speciality.id) {
         errors.specialityId = 'Please select a speciality';
       }
-      if (!formData.appointmentType?.id) {
+      if (formData.appointmentType?.id === undefined) {
         errors.serviceId = 'Please select a service';
       } else {
         const selectedService = services.find(

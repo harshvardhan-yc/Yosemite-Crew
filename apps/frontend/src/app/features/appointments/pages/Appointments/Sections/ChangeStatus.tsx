@@ -4,13 +4,13 @@ import {
   changeAppointmentStatus,
   getSlotsForServiceAndDateForPrimaryOrg,
 } from '@/app/features/appointments/services/appointmentService';
-import { Slot } from '@/app/features/appointments/types/appointments';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
 import {
   AppointmentStatus,
   AppointmentStatusOptions,
+  Slot,
 } from '@/app/features/appointments/types/appointments';
 import {
   canTransitionAppointmentStatus,
@@ -35,6 +35,48 @@ const createNextLead = (
   const profileUrl = existingLead?.profileUrl;
   if (profileUrl) return { id, name, profileUrl };
   return { id, name };
+};
+
+const getSelectedSupportIds = (supportStaff: Appointment['supportStaff']) =>
+  (supportStaff ?? [])
+    .map((staff) => normalizeId(staff?.id))
+    .filter((id): id is string => Boolean(id));
+
+const getAvailableLeadOptions = (
+  availableVetIds: string[] | null,
+  leadOptions: Array<{ value: string; label: string }>,
+  currentLeadId: string | undefined
+) => {
+  if (availableVetIds === null) return leadOptions;
+  const allowed = new Set(availableVetIds);
+  const activeLeadId = normalizeId(currentLeadId);
+  return leadOptions.filter((option) => allowed.has(option.value) || option.value === activeLeadId);
+};
+
+const getNextAppointmentForStatus = (
+  appointment: Appointment,
+  selectedLeadId: string,
+  selectedSupportIds: string[],
+  leadOptions: Array<{ value: string; label: string }>,
+  currentStatus: AppointmentStatus,
+  newStatus: AppointmentStatus
+) => {
+  if (!(currentStatus === 'REQUESTED' && newStatus === 'UPCOMING')) {
+    return appointment;
+  }
+  const selectedLeadName =
+    leadOptions.find((option) => option.value === selectedLeadId)?.label ??
+    appointment.lead?.name ??
+    'Assigned vet';
+  const nextLead = createNextLead(appointment.lead, selectedLeadId, selectedLeadName);
+  const nextSupportStaff = selectedSupportIds.map((id) => ({
+    id,
+    name: leadOptions.find((option) => option.value === id)?.label ?? id,
+  }));
+  const nextAppointment = structuredClone(appointment);
+  nextAppointment.lead = nextLead;
+  nextAppointment.supportStaff = nextSupportStaff;
+  return nextAppointment;
 };
 
 type ChangeStatusProps = {
@@ -115,30 +157,20 @@ const ChangeStatus = ({
 
   // Leads to actually offer: filtered to the available set once resolved, but the
   // currently-assigned lead is always kept so an existing assignment never disappears.
-  const availableLeadOptions = React.useMemo(() => {
-    if (availableVetIds === null) return leadOptions;
-    const allowed = new Set(availableVetIds);
-    const currentLeadId = normalizeId(activeAppointment.lead?.id);
-    return leadOptions.filter(
-      (option) => allowed.has(option.value) || option.value === currentLeadId
-    );
-  }, [availableVetIds, leadOptions, activeAppointment.lead?.id]);
+  const availableLeadOptions = React.useMemo(
+    () => getAvailableLeadOptions(availableVetIds, leadOptions, activeAppointment.lead?.id),
+    [availableVetIds, leadOptions, activeAppointment.lead?.id]
+  );
   const [selectedLeadId, setSelectedLeadId] = React.useState<string>(() =>
     normalizeId(activeAppointment.lead?.id)
   );
   const [selectedSupportIds, setSelectedSupportIds] = React.useState<string[]>(() =>
-    (activeAppointment.supportStaff ?? [])
-      .map((staff) => normalizeId(staff?.id))
-      .filter((id): id is string => Boolean(id))
+    getSelectedSupportIds(activeAppointment.supportStaff)
   );
 
   React.useEffect(() => {
     if (!showModal) return;
-    setSelectedSupportIds(
-      (activeAppointment.supportStaff ?? [])
-        .map((staff) => normalizeId(staff?.id))
-        .filter((id): id is string => Boolean(id))
-    );
+    setSelectedSupportIds(getSelectedSupportIds(activeAppointment.supportStaff));
     const activeLeadId = normalizeId(activeAppointment.lead?.id);
     if (activeLeadId) {
       setSelectedLeadId(activeLeadId);
@@ -156,6 +188,11 @@ const ChangeStatus = ({
     leadOptions,
     showModal,
   ]);
+
+  const handleLeadSelect = (option: { value: string }) => {
+    setSelectedLeadId(option.value);
+    setSelectedSupportIds((prev) => prev.filter((id) => id !== option.value));
+  };
 
   const supportOptions = React.useMemo(
     () => leadOptions.filter((option) => option.value !== normalizeId(selectedLeadId)),
@@ -210,10 +247,7 @@ const ChangeStatus = ({
               placeholder={isLoadingAvailability ? 'Checking availability…' : 'Select lead'}
               options={availableLeadOptions}
               defaultOption={selectedLeadId}
-              onSelect={(option) => {
-                setSelectedLeadId(option.value);
-                setSelectedSupportIds((prev) => prev.filter((id) => id !== option.value));
-              }}
+              onSelect={handleLeadSelect}
               noOptionsMessage={noLeadsAvailable ? 'No lead is available for this slot' : undefined}
             />
             {noLeadsAvailable ? (
@@ -231,23 +265,14 @@ const ChangeStatus = ({
         );
       }}
       onSave={async (newStatus) => {
-        const selectedLeadName =
-          leadOptions.find((option) => option.value === selectedLeadId)?.label ??
-          activeAppointment.lead?.name ??
-          'Assigned vet';
-        const nextLead = createNextLead(activeAppointment.lead, selectedLeadId, selectedLeadName);
-        const shouldSetLead = currentStatus === 'REQUESTED' && newStatus === 'UPCOMING';
-        if (!shouldSetLead) {
-          await changeAppointmentStatus(activeAppointment, newStatus);
-          return;
-        }
-        const nextSupportStaff = selectedSupportIds.map((id) => ({
-          id,
-          name: leadOptions.find((option) => option.value === id)?.label ?? id,
-        }));
-        const nextAppointment = structuredClone(activeAppointment);
-        nextAppointment.lead = nextLead;
-        nextAppointment.supportStaff = nextSupportStaff;
+        const nextAppointment = getNextAppointmentForStatus(
+          activeAppointment,
+          selectedLeadId,
+          selectedSupportIds,
+          leadOptions,
+          currentStatus,
+          newStatus
+        );
         await changeAppointmentStatus(nextAppointment, newStatus);
       }}
     />

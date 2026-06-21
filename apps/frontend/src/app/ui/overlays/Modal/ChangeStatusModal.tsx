@@ -7,6 +7,31 @@ import { useNotify } from '@/app/hooks/useNotify';
 
 type StatusOption<S extends string> = { value: S; label: string };
 
+const resolveSelectedStatus = <S extends string>(
+  currentStatus: S,
+  preferredStatus: S | null,
+  canTransition: (from: S, to: S) => boolean,
+  statusOptions: StatusOption<S>[]
+): S =>
+  preferredStatus &&
+  canTransition(currentStatus, preferredStatus) &&
+  statusOptions.some((option) => option.value === preferredStatus)
+    ? preferredStatus
+    : currentStatus;
+
+const buildSelectionKey = <S extends string>(
+  showModal: boolean,
+  currentStatus: S,
+  preferredStatus: S | null,
+  statusOptions: StatusOption<S>[]
+) =>
+  [
+    showModal ? 'open' : 'closed',
+    currentStatus,
+    preferredStatus ?? '',
+    statusOptions.map((option) => option.value).join('|'),
+  ].join('::');
+
 type ChangeStatusModalProps<S extends string> = {
   showModal: boolean;
   setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
@@ -37,31 +62,26 @@ const ChangeStatusModal = <S extends string>({
   onSave,
 }: ChangeStatusModalProps<S>) => {
   const { notify } = useNotify();
-  const preferredSelection =
-    preferredStatus &&
-    canTransition(currentStatus, preferredStatus) &&
-    statusOptions.some((option) => option.value === preferredStatus)
-      ? preferredStatus
-      : currentStatus;
+  const preferredSelection = resolveSelectedStatus(
+    currentStatus,
+    preferredStatus,
+    canTransition,
+    statusOptions
+  );
   const [selectedStatus, setSelectedStatus] = useState<S>(preferredSelection);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const previousSelectionKeyRef = useRef<string | null>(null);
-  const selectionKey = [
-    showModal ? 'open' : 'closed',
-    currentStatus,
-    preferredStatus ?? '',
-    statusOptions.map((option) => option.value).join('|'),
-  ].join('::');
+  const selectionKey = buildSelectionKey(showModal, currentStatus, preferredStatus, statusOptions);
 
   if (previousSelectionKeyRef.current !== selectionKey) {
     previousSelectionKeyRef.current = selectionKey;
-    const nextSelection =
-      preferredStatus &&
-      canTransition(currentStatus, preferredStatus) &&
-      statusOptions.some((option) => option.value === preferredStatus)
-        ? preferredStatus
-        : currentStatus;
+    const nextSelection = resolveSelectedStatus(
+      currentStatus,
+      preferredStatus,
+      canTransition,
+      statusOptions
+    );
     if (selectedStatus !== nextSelection) {
       setSelectedStatus(nextSelection);
     }

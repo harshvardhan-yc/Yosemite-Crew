@@ -36,6 +36,11 @@ const normalizeLeadId = (value?: string | null): string => {
   return lowered === 'undefined' || lowered === 'null' ? '' : trimmed;
 };
 
+const resolveModeBackgroundColor = (isInpatient: boolean, isStrong: boolean): string => {
+  if (!isInpatient) return 'var(--color-neutral-100)';
+  return isStrong ? 'var(--color-primary-600)' : 'var(--color-primary-500)';
+};
+
 export const AppointmentCompanionHeader = ({ appointment }: AppointmentCardContentProps) => (
   <div className="flex gap-2 items-center">
     {(() => {
@@ -127,11 +132,7 @@ export const AppointmentModePill = ({
   const isInpatient = mode === 'INPATIENT';
   const isStrong = tone === 'strong';
   const modeStyle: React.CSSProperties = {
-    backgroundColor: isInpatient
-      ? isStrong
-        ? 'var(--color-primary-600)'
-        : 'var(--color-primary-500)'
-      : 'var(--color-neutral-100)',
+    backgroundColor: resolveModeBackgroundColor(isInpatient, isStrong),
     borderColor: isInpatient ? 'var(--color-primary-700)' : 'var(--color-neutral-200)',
     borderStyle: 'solid',
     borderWidth: '1px',

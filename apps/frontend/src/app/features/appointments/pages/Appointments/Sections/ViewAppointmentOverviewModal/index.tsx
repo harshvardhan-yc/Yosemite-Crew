@@ -5,7 +5,11 @@ import { useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
 import { useInvoicesForPrimaryOrg } from '@/app/hooks/useInvoices';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useServiceStore } from '@/app/stores/serviceStore';
-import { canAssignAppointmentRoom, getClinicalNotesIntent } from '@/app/lib/appointments';
+import {
+  canAssignAppointmentRoom,
+  getClinicalNotesIntent,
+  getAppointmentCompanion,
+} from '@/app/lib/appointments';
 import {
   canEnterAppointmentWorkspace,
   getWorkspaceBlockedMessage,
@@ -26,7 +30,6 @@ import AppointmentCentralModalShell from '@/app/features/appointments/components
 import AppointmentAvatar from '@/app/features/appointments/components/AppointmentCentralModal/AppointmentAvatar';
 import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
 import { Primary } from '@/app/ui/primitives/Buttons';
-import { getAppointmentCompanion } from '@/app/lib/appointments';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import { IoArrowForward } from 'react-icons/io5';
@@ -89,6 +92,48 @@ const getFirstRoomUnitId = (
   roomUnitsById: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitsById'],
   roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId']
 ) => getActiveRoomUnits(roomId, roomUnitsById, roomUnitIdsByRoomId)[0]?.id;
+
+type RoomSelectorSectionProps = {
+  label: string;
+  savingRoom: boolean;
+  canEditRoom: boolean;
+  options: Array<{ label: string; value: string }>;
+  defaultOption: string;
+  onSelect: (option: { label: string; value: string }) => void;
+  fallback: string;
+};
+
+const RoomSelectorSection = ({
+  label,
+  savingRoom,
+  canEditRoom,
+  options,
+  defaultOption,
+  onSelect,
+  fallback,
+}: RoomSelectorSectionProps) => (
+  <div className="relative">
+    <span
+      className="pointer-events-none absolute left-4 top-0 z-10 flex -translate-y-1/2 items-center gap-1 bg-white px-1 font-satoshi text-sm leading-none"
+      style={{ color: 'var(--color-input-text-placeholder)' }}
+    >
+      {label}
+    </span>
+    {canEditRoom ? (
+      <LabelDropdown
+        placeholder={savingRoom ? 'Saving…' : `Select ${label.toLowerCase()}`}
+        options={options}
+        defaultOption={defaultOption}
+        onSelect={onSelect}
+        searchable={false}
+      />
+    ) : (
+      <div className="border border-input-border-default rounded-2xl px-4 py-3 min-h-12 font-satoshi text-base text-text-primary">
+        {fallback}
+      </div>
+    )}
+  </div>
+);
 
 const ViewAppointmentOverviewModal = ({
   showModal,
@@ -358,54 +403,34 @@ const ViewAppointmentOverviewModal = ({
           </div>
 
           {/* Room */}
-          <div className="relative">
-            <span
-              className="pointer-events-none absolute left-4 top-0 z-10 flex -translate-y-1/2 items-center gap-1 bg-white px-1 font-satoshi text-sm leading-none"
-              style={{ color: 'var(--color-input-text-placeholder)' }}
-            >
-              Room
-            </span>
-            {canEditRoom ? (
-              <LabelDropdown
-                placeholder={savingRoom ? 'Saving…' : 'Select room'}
-                options={roomOptions}
-                defaultOption={effectiveRoomId ?? ''}
-                onSelect={handleRoomChange}
-                searchable={false}
-              />
-            ) : (
-              <div className="border border-input-border-default rounded-2xl px-4 py-3 min-h-12 font-satoshi text-base text-text-primary">
-                {rooms.find((room) => room.id === effectiveRoomId)?.name ||
-                  activeAppointment.room?.name ||
-                  '-'}
-              </div>
-            )}
-          </div>
+          <RoomSelectorSection
+            label="Room"
+            savingRoom={savingRoom}
+            canEditRoom={canEditRoom}
+            options={roomOptions}
+            defaultOption={effectiveRoomId ?? ''}
+            onSelect={handleRoomChange}
+            fallback={
+              rooms.find((room) => room.id === effectiveRoomId)?.name ||
+              activeAppointment.room?.name ||
+              '-'
+            }
+          />
 
           {isInpatient ? (
-            <div className="relative">
-              <span
-                className="pointer-events-none absolute left-4 top-0 z-10 flex -translate-y-1/2 items-center gap-1 bg-white px-1 font-satoshi text-sm leading-none"
-                style={{ color: 'var(--color-input-text-placeholder)' }}
-              >
-                Unit
-              </span>
-              {canEditRoom ? (
-                <LabelDropdown
-                  placeholder={savingRoom ? 'Saving…' : 'Select unit'}
-                  options={unitOptions}
-                  defaultOption={effectiveUnitId ?? ''}
-                  onSelect={handleUnitChange}
-                  searchable={false}
-                />
-              ) : (
-                <div className="border border-input-border-default rounded-2xl px-4 py-3 min-h-12 font-satoshi text-base text-text-primary">
-                  {unitOptions.find((unit) => unit.value === effectiveUnitId)?.label ||
-                    effectiveUnitId ||
-                    '-'}
-                </div>
-              )}
-            </div>
+            <RoomSelectorSection
+              label="Unit"
+              savingRoom={savingRoom}
+              canEditRoom={canEditRoom}
+              options={unitOptions}
+              defaultOption={effectiveUnitId ?? ''}
+              onSelect={handleUnitChange}
+              fallback={
+                unitOptions.find((unit) => unit.value === effectiveUnitId)?.label ||
+                effectiveUnitId ||
+                '-'
+              }
+            />
           ) : null}
 
           {/* Estimate panel */}

@@ -108,6 +108,64 @@ const normalizeLeadId = (value?: string | null) =>
     .pop()
     ?.toLowerCase() ?? '';
 
+const getNextSelectedAppointment = (
+  current: Appointment | null,
+  appointments: Appointment[]
+): Appointment | null => {
+  if (appointments.length === 0) return null;
+  if (current?.id) {
+    const updated = appointments.find((appointment) => appointment.id === current.id);
+    if (updated) return updated;
+  }
+  return appointments[0];
+};
+
+const LABEL_BY_SUB_LABEL: Record<string, AppointmentViewIntent['label']> = {
+  appointment: 'info',
+  companion: 'info',
+  history: 'info',
+  summary: 'finance',
+  'payment-details': 'finance',
+  'idexx-labs': 'labs',
+  'parent-chat': 'tasks',
+  task: 'tasks',
+  'parent-task': 'tasks',
+  forms: 'prescription',
+  documents: 'prescription',
+  'audit-trail': 'prescription',
+  subjective: 'prescription',
+  objective: 'prescription',
+  assessment: 'prescription',
+  plan: 'prescription',
+  'discharge-summary': 'prescription',
+  'merck-manuals': 'prescription',
+};
+
+const PRIMARY_OPEN_LABELS = new Set(['info', 'details', 'tasks', 'prescription', 'care']);
+
+const resolveInitialIntent = (
+  open: string,
+  normalizedSubLabel: string
+): AppointmentViewIntent | null => {
+  if (open === 'labs') {
+    return { label: 'labs', subLabel: normalizedSubLabel || 'idexx-labs' };
+  }
+  if (open === 'finance') {
+    return { label: 'finance', subLabel: normalizedSubLabel || 'summary' };
+  }
+  if (PRIMARY_OPEN_LABELS.has(open)) {
+    const fallbackSubLabel = open === 'info' || open === 'details' ? 'appointment' : '';
+    return {
+      label: (open === 'details' ? 'info' : open) as AppointmentViewIntent['label'],
+      subLabel: normalizedSubLabel || fallbackSubLabel || undefined,
+    };
+  }
+  if (normalizedSubLabel && LABEL_BY_SUB_LABEL[normalizedSubLabel]) {
+    return { label: LABEL_BY_SUB_LABEL[normalizedSubLabel], subLabel: normalizedSubLabel };
+  }
+  return null;
+};
+
 const Appointments = () => {
   const router = useRouter();
   useLoadAppointmentsForPrimaryOrg();
@@ -281,14 +339,7 @@ const Appointments = () => {
   }, [changeStatusPopup]);
 
   useEffect(() => {
-    setActiveAppointment((prev) => {
-      if (appointments.length === 0) return null;
-      if (prev?.id) {
-        const updated = appointments.find((s) => s.id === prev.id);
-        if (updated) return updated;
-      }
-      return appointments[0];
-    });
+    setActiveAppointment((prev) => getNextSelectedAppointment(prev, appointments));
   }, [appointments]);
 
   useEffect(() => {
@@ -302,47 +353,7 @@ const Appointments = () => {
     if (!appointmentId) return;
 
     const normalizedSubLabel = subLabelRaw === 'overview' ? 'history' : subLabelRaw;
-    const labelBySubLabel: Record<string, AppointmentViewIntent['label']> = {
-      appointment: 'info',
-      companion: 'info',
-      history: 'info',
-      summary: 'finance',
-      'payment-details': 'finance',
-      'idexx-labs': 'labs',
-      'parent-chat': 'tasks',
-      task: 'tasks',
-      'parent-task': 'tasks',
-      forms: 'prescription',
-      documents: 'prescription',
-      'audit-trail': 'prescription',
-      subjective: 'prescription',
-      objective: 'prescription',
-      assessment: 'prescription',
-      plan: 'prescription',
-      'discharge-summary': 'prescription',
-      'merck-manuals': 'prescription',
-    };
-
-    let initialIntent: AppointmentViewIntent | null = null;
-    if (open === 'labs') {
-      initialIntent = { label: 'labs', subLabel: normalizedSubLabel || 'idexx-labs' };
-    } else if (open === 'finance') {
-      initialIntent = { label: 'finance', subLabel: normalizedSubLabel || 'summary' };
-    } else if (
-      open === 'info' ||
-      open === 'details' ||
-      open === 'tasks' ||
-      open === 'prescription' ||
-      open === 'care'
-    ) {
-      const fallbackSubLabel = open === 'info' || open === 'details' ? 'appointment' : '';
-      initialIntent = {
-        label: (open === 'details' ? 'info' : open) as AppointmentViewIntent['label'],
-        subLabel: normalizedSubLabel || fallbackSubLabel || undefined,
-      };
-    } else if (normalizedSubLabel && labelBySubLabel[normalizedSubLabel]) {
-      initialIntent = { label: labelBySubLabel[normalizedSubLabel], subLabel: normalizedSubLabel };
-    }
+    const initialIntent = resolveInitialIntent(open, normalizedSubLabel);
 
     const resolvedSubLabel = initialIntent?.subLabel ?? normalizedSubLabel;
 

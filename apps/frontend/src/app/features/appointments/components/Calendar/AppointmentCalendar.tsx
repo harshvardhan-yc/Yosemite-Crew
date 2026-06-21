@@ -671,16 +671,6 @@ const AppointmentCalendar = ({
     setDetailPopup?.(true);
   };
 
-  const handleDetailAppointment = (appointment: Appointment, intent?: AppointmentViewIntent) => {
-    setActiveAppointment?.(appointment);
-    setViewIntent?.(intent ?? null);
-    if (setViewPopup) {
-      setViewPopup(true);
-      return;
-    }
-    setDetailPopup?.(true);
-  };
-
   const handleRescheduleAppointment = (appointment: Appointment) => {
     if (!allowCalendarDrag(appointment.status)) {
       notify('warning', {
@@ -783,12 +773,10 @@ const AppointmentCalendar = ({
           date={currentDate}
           zoomMode={zoomMode}
           handleViewAppointment={handleViewAppointment}
-          handleDetailAppointment={handleDetailAppointment}
+          handleDetailAppointment={handleViewAppointment}
           handleOpenWorkspace={onOpenWorkspace}
           handleRescheduleAppointment={handleRescheduleAppointment}
           handleChangeRoomAppointment={handleChangeRoomAppointment}
-          handleChangeStatusAppointment={handleChangeStatusAppointment}
-          handleAcceptAppointment={handleChangeStatusAppointment}
           setCurrentDate={setCurrentDate}
           canEditAppointments={canEditAppointments}
           draggedAppointmentId={draggedAppointmentId}
@@ -850,7 +838,6 @@ const AppointmentCalendar = ({
           events={weekEvents}
           zoomMode={zoomMode}
           handleViewAppointment={handleViewAppointment}
-          handleDetailAppointment={handleDetailAppointment}
           handleOpenWorkspace={onOpenWorkspace}
           handleRescheduleAppointment={handleRescheduleAppointment}
           handleChangeStatusAppointment={handleChangeStatusAppointment}
@@ -920,12 +907,10 @@ const AppointmentCalendar = ({
           zoomMode={zoomMode}
           forceFullDayInZoomIn
           handleViewAppointment={handleViewAppointment}
-          handleDetailAppointment={handleDetailAppointment}
           handleOpenWorkspace={onOpenWorkspace}
           handleRescheduleAppointment={handleRescheduleAppointment}
           handleChangeRoomAppointment={handleChangeRoomAppointment}
           handleChangeStatusAppointment={handleChangeStatusAppointment}
-          handleAcceptAppointment={handleChangeStatusAppointment}
           setCurrentDate={setCurrentDate}
           canEditAppointments={canEditAppointments}
           draggedAppointmentId={draggedAppointmentId}

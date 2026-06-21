@@ -782,7 +782,6 @@ const SlotComponent: React.FC<SlotProps> = ({
             menuRef={contextMenuRef}
             menuStyle={contextMenuStyle}
             handleViewAppointment={handleViewAppointment}
-            handleDetailAppointment={handleDetailAppointment ?? handleViewAppointment}
             handleRescheduleAppointment={handleRescheduleAppointment}
             onClose={() => setContextMenu(null)}
           />,

@@ -1506,11 +1506,11 @@ const IdexxOrderIframeOverlay = ({ url, title, onClose }: IdexxOrderIframeOverla
           </button>
         </div>
         <div className="relative flex-1">
-          {!loaded ? (
+          {loaded ? null : (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
               <YosemiteLoader label="Loading IDEXX" size={120} testId="idexx-order-loader" />
             </div>
-          ) : null}
+          )}
           <iframe
             key={url}
             src={url}

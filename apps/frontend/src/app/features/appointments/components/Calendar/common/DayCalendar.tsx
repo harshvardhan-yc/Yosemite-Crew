@@ -62,7 +62,6 @@ type DayCalendarProps = {
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
   handleRescheduleAppointment: (appointment: Appointment) => void;
   handleChangeRoomAppointment?: (appointment: Appointment) => void;
-  handleChangeStatusAppointment?: (appointment: Appointment) => void;
   handleAcceptAppointment?: (appointment: Appointment) => void;
   canEditAppointments: boolean;
   draggedAppointmentId?: string | null;
@@ -847,7 +846,6 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
             menuRef={contextMenuRef}
             menuStyle={contextMenuStyle}
             handleViewAppointment={handleViewAppointment}
-            handleDetailAppointment={handleDetailAppointment}
             handleRescheduleAppointment={handleRescheduleAppointment}
             onClose={() => setContextMenu(null)}
           />,

@@ -33,7 +33,6 @@ type AppointmentContextMenuProps = {
   menuRef: React.RefObject<HTMLDivElement | null>;
   menuStyle: React.CSSProperties;
   handleViewAppointment: (appt: Appointment, intent?: AppointmentViewIntent) => void;
-  handleDetailAppointment?: (appt: Appointment, intent?: AppointmentViewIntent) => void;
   handleRescheduleAppointment: (appt: Appointment) => void;
   onClose: () => void;
 };

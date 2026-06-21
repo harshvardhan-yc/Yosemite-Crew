@@ -88,6 +88,7 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
   handleRescheduleAppointment,
   handleChangeStatusAppointment,
   handleChangeRoomAppointment,
+  handleAcceptAppointment,
   setCurrentDate,
   canEditAppointments,
   draggedAppointmentId,
@@ -307,7 +308,9 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
                             handleOpenWorkspace={handleOpenWorkspace}
                             handleRescheduleAppointment={handleRescheduleAppointment}
                             handleChangeRoomAppointment={handleChangeRoomAppointment}
-                            handleAcceptAppointment={handleChangeStatusAppointment}
+                            handleAcceptAppointment={
+                              handleAcceptAppointment ?? handleChangeStatusAppointment
+                            }
                             length={team.length - 1}
                             canEditAppointments={canEditAppointments}
                             draggedAppointmentId={draggedAppointmentId}
