@@ -164,9 +164,7 @@ const useOTPHandler = (
     const isDemoLogin =
       allowReviewLogin && normalizedEmail.toLowerCase() === DEMO_LOGIN_EMAIL;
     try {
-      if (isDemoLogin) {
-        Amplify.configure(devOutputs);
-      }
+      Amplify.configure(isDemoLogin ? devOutputs : prodOutputs);
       const result = await requestPasswordlessEmailCode(normalizedEmail);
 
       const message = isDemoLogin

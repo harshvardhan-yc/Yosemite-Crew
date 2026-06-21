@@ -37,6 +37,7 @@ import {
   AUTH_FEATURE_FLAGS,
   API_CONFIG,
   DEVELOPMENT_API_BASE_URL,
+  MOBILE_CONFIG_BEHAVIOR,
   PRODUCTION_API_BASE_URL,
 } from '@/config/variables';
 import {storeTokens} from '@/features/auth/services/tokenStorage';
@@ -45,6 +46,11 @@ import {DEMO_API_MODE_KEY} from '@/features/auth/sessionManager';
 
 const DEFAULT_OTP_LENGTH = 4;
 const RESEND_SECONDS = 60;
+
+const resolveOtpError = (formatted: string): string =>
+  formatted === 'Unexpected authentication error. Please retry.'
+    ? 'The code you entered is incorrect. Please try again.'
+    : formatted;
 
 type OTPVerificationScreenProps = NativeStackScreenProps<
   AuthStackParamList,
@@ -243,16 +249,18 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       }
     } catch (error) {
       if (isDemoLogin) {
-        API_CONFIG.baseUrl = PRODUCTION_API_BASE_URL;
-        API_CONFIG.pmsBaseUrl = PRODUCTION_API_BASE_URL;
-        updateApiClientBaseConfig({baseUrl: PRODUCTION_API_BASE_URL});
+        const defaultBaseUrl =
+          MOBILE_CONFIG_BEHAVIOR.overrides?.apiBaseUrl ??
+          (MOBILE_CONFIG_BEHAVIOR.useDevApi
+            ? DEVELOPMENT_API_BASE_URL
+            : PRODUCTION_API_BASE_URL);
+        const defaultPmsUrl =
+          MOBILE_CONFIG_BEHAVIOR.overrides?.pmsBaseUrl ?? defaultBaseUrl;
+        API_CONFIG.baseUrl = defaultBaseUrl;
+        API_CONFIG.pmsBaseUrl = defaultPmsUrl;
+        updateApiClientBaseConfig({baseUrl: defaultBaseUrl});
       }
-      const formatted = formatAuthError(error);
-      setOtpError(
-        formatted === 'Unexpected authentication error. Please retry.'
-          ? 'The code you entered is incorrect. Please try again.'
-          : formatted,
-      );
+      setOtpError(resolveOtpError(formatAuthError(error)));
     } finally {
       if (!cancellationRef.current) {
         setIsVerifying(false);

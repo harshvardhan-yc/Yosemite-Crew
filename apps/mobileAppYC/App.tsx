@@ -223,7 +223,23 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(
       DEV_API_MODE_CHANGED_EVENT,
-      ({isDevApi}: {isDevApi: boolean}) => setDevApiActive(isDevApi),
+      ({isDevApi}: {isDevApi: boolean}) => {
+        setDevApiActive(isDevApi);
+        if (!isDevApi && !MOBILE_CONFIG_BEHAVIOR.skipRemoteFetch) {
+          fetchMobileConfig()
+            .then(prodConfig => {
+              dispatchMobileConfig({
+                type: 'CONFIG_LOADED',
+                config: applyMockAppUpdateFlow(
+                  prodConfig,
+                  MOBILE_CONFIG_BEHAVIOR.mockAppUpdateFlow,
+                ),
+                prompt: null,
+              });
+            })
+            .catch(() => {});
+        }
+      },
     );
     return () => sub.remove();
   }, []);
@@ -250,8 +266,22 @@ function App(): React.JSX.Element {
           enablePayments: false,
         };
 
+        // Check stored demo mode BEFORE fetching so we use the correct endpoint
+        // from the start — avoiding a prod-fetch failure blocking dev rehydration.
+        const storedDemoMode =
+          !MOBILE_CONFIG_BEHAVIOR.overrides?.apiBaseUrl &&
+          !MOBILE_CONFIG_BEHAVIOR.useDevApi
+            ? await AsyncStorage.getItem(DEMO_API_MODE_KEY)
+            : null;
+        const shouldUseDev =
+          MOBILE_CONFIG_BEHAVIOR.useDevApi || storedDemoMode === 'true';
+
         if (!MOBILE_CONFIG_BEHAVIOR.skipRemoteFetch) {
-          config = await fetchMobileConfig();
+          config = await fetchMobileConfig(
+            shouldUseDev
+              ? `${DEVELOPMENT_API_BASE_URL}${MOBILE_CONFIG_PATH}`
+              : undefined,
+          );
         }
 
         // Apply local overrides on top of remote config (field is `overrides`, not `override`)
@@ -310,22 +340,12 @@ function App(): React.JSX.Element {
             resolvedBaseUrl = MOBILE_CONFIG_BEHAVIOR.overrides.apiBaseUrl;
           } else if (MOBILE_CONFIG_BEHAVIOR.useDevApi) {
             resolvedBaseUrl = DEVELOPMENT_API_BASE_URL;
+          } else if (storedDemoMode === 'true') {
+            resolvedBaseUrl = DEVELOPMENT_API_BASE_URL;
+            Amplify.configure(devOutputs);
+            setDevApiActive(true);
           } else {
-            const storedDemoMode =
-              await AsyncStorage.getItem(DEMO_API_MODE_KEY);
-            if (storedDemoMode === 'true') {
-              resolvedBaseUrl = DEVELOPMENT_API_BASE_URL;
-              try {
-                const devConfig = await fetchMobileConfig(
-                  `${DEVELOPMENT_API_BASE_URL}${MOBILE_CONFIG_PATH}`,
-                );
-                config = {...config, ...devConfig};
-              } catch (_) {}
-              Amplify.configure(devOutputs);
-              setDevApiActive(true);
-            } else {
-              resolvedBaseUrl = PRODUCTION_API_BASE_URL;
-            }
+            resolvedBaseUrl = PRODUCTION_API_BASE_URL;
           }
 
           const resolvedPmsUrl =
