@@ -59,6 +59,30 @@ type InventoryView = 'inventory' | 'turnover';
 const toggleArrayValue = (values: string[], value: string) =>
   values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 
+type SortMode = 'name' | 'expiry' | 'stock';
+
+const getNextSortMode = (current: SortMode): SortMode => {
+  if (current === 'name') return 'expiry';
+  if (current === 'expiry') return 'stock';
+  return 'name';
+};
+
+const compareInventoryRows = (a: InventoryItem, b: InventoryItem, sortMode: SortMode): number => {
+  if (sortMode === 'expiry') {
+    return String(a.batch.expiryDate ?? '').localeCompare(String(b.batch.expiryDate ?? ''));
+  }
+  if (sortMode === 'stock') {
+    return Number(a.stock.current ?? 0) - Number(b.stock.current ?? 0);
+  }
+  return a.basicInfo.name.localeCompare(b.basicInfo.name);
+};
+
+const getVisibilityLabel = (visibility: 'ALL' | 'ACTIVE' | 'HIDDEN'): string => {
+  if (visibility === 'ALL') return 'All';
+  if (visibility === 'ACTIVE') return 'Visible';
+  return 'Hidden';
+};
+
 const getSupplierName = (item: InventoryItem) =>
   (item.vendor?.supplierName || item.vendor?.vendor || '').trim();
 
@@ -75,9 +99,7 @@ const Inventory = () => {
   const searchParams = useSearchParams();
   const handledDeepLinkRef = useRef<string | null>(null);
 
-  const [businessType, setBusinessType] = useState<BusinessType | null>(
-    primaryOrg?.type as BusinessType
-  );
+  const [businessType, setBusinessType] = useState<BusinessType | null>(primaryOrg?.type ?? null);
   const resolvedBusinessType: BusinessType = businessType ?? 'GROOMER';
 
   const inventoryModule = useInventoryModule(resolvedBusinessType);
@@ -107,7 +129,7 @@ const Inventory = () => {
     const org = primaryOrgId ? orgsById[primaryOrgId] : null;
     if (org?.type && BusinessTypes.includes(org.type)) {
       setBusinessType(org.type);
-    } else if (!businessType) {
+    } else if (businessType === null) {
       setBusinessType('GROOMER');
     }
   }, [primaryOrgId, orgsById, businessType]);
@@ -213,7 +235,7 @@ const Inventory = () => {
       const visibilityMatch = visibilityFilter === 'ALL' || statusKey === visibilityFilter;
       const stockHealthMatch = stockHealthFilter === 'ALL' || stockHealthKey === stockHealthFilter;
       const searchMatch =
-        !normalizedSearch ||
+        normalizedSearch === '' ||
         item.basicInfo.name.toLowerCase().includes(normalizedSearch) ||
         item.basicInfo.category?.toLowerCase().includes(normalizedSearch) ||
         item.basicInfo.subCategory?.toLowerCase().includes(normalizedSearch) ||
@@ -230,15 +252,7 @@ const Inventory = () => {
         searchMatch
       );
     });
-    nextFiltered.sort((a, b) => {
-      if (sortMode === 'expiry') {
-        return String(a.batch.expiryDate || '').localeCompare(String(b.batch.expiryDate || ''));
-      }
-      if (sortMode === 'stock') {
-        return Number(a.stock.current || 0) - Number(b.stock.current || 0);
-      }
-      return a.basicInfo.name.localeCompare(b.basicInfo.name);
-    });
+    nextFiltered.sort((a, b) => compareInventoryRows(a, b, sortMode));
     setFilteredInventory(nextFiltered);
   }, [
     inventory,
@@ -274,7 +288,7 @@ const Inventory = () => {
     if (handledDeepLinkRef.current === inventoryId) return;
 
     const target = inventory.find((item) => item.id === inventoryId);
-    if (!target) return;
+    if (target === undefined) return;
 
     setActiveInventory(target);
     setInfoInitialSection(undefined);
@@ -352,7 +366,7 @@ const Inventory = () => {
       setActionError(null);
       try {
         const res = await inventoryModule.hideItem(itemId);
-        if (res) {
+        if (res !== undefined) {
           setActiveInventory(res);
         }
       } catch (err) {
@@ -369,7 +383,7 @@ const Inventory = () => {
       setActionError(null);
       try {
         const res = await inventoryModule.unhideItem(itemId);
-        if (res) {
+        if (res !== undefined) {
           setActiveInventory(res);
         }
       } catch (err) {
@@ -543,11 +557,7 @@ const Inventory = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setSortMode((prev) =>
-                        prev === 'name' ? 'expiry' : prev === 'expiry' ? 'stock' : 'name'
-                      )
-                    }
+                    onClick={() => setSortMode((prev) => getNextSortMode(prev))}
                     className="inline-flex h-11 items-center gap-2 rounded-2xl border border-card-border bg-white px-4 text-body-4 text-text-primary"
                   >
                     <FiFilter size={18} aria-hidden="true" />
@@ -768,13 +778,7 @@ const Inventory = () => {
                         checked={filters.visibility === visibility}
                         onChange={() => setFilters((prev) => ({ ...prev, visibility }))}
                       />
-                      <span>
-                        {visibility === 'ALL'
-                          ? 'All'
-                          : visibility === 'ACTIVE'
-                            ? 'Visible'
-                            : 'Hidden'}
-                      </span>
+                      <span>{getVisibilityLabel(visibility)}</span>
                     </label>
                   ))}
                 </div>

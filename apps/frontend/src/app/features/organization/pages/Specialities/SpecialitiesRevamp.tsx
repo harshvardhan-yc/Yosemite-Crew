@@ -12,6 +12,12 @@ import { useOrgStore } from '@/app/stores/orgStore';
 import { useSearchStore } from '@/app/stores/searchStore';
 import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
+const getSpecialitiesEmptyMessage = (status: string, searchQuery: string): string => {
+  if (status === 'loading') return 'Loading specialities...';
+  if (searchQuery) return `No specialities match "${searchQuery}"`;
+  return 'No specialities yet.';
+};
+
 const SpecialitiesRevamp = () => {
   const specialities = useRevampCatalogStore((s) => s.specialities);
   const loadOrganisationCatalog = useRevampCatalogStore((s) => s.loadOrganisationCatalog);
@@ -86,13 +92,7 @@ const SpecialitiesRevamp = () => {
         ))}
         {filteredSpecialities.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 py-16 rounded-2xl border border-card-border text-text-secondary">
-            <p className="text-body-3">
-              {status === 'loading'
-                ? 'Loading specialities...'
-                : searchQuery
-                  ? `No specialities match "${searchQuery}"`
-                  : 'No specialities yet.'}
-            </p>
+            <p className="text-body-3">{getSpecialitiesEmptyMessage(status, searchQuery)}</p>
             {!searchQuery && status !== 'loading' && (
               <Primary
                 href="#"

@@ -86,7 +86,7 @@ const ServiceFormDraft = ({
   const { total } = computeServiceTotal({
     grossAmount: gross,
     defaultDiscount: disc,
-  } as ServiceRevamp);
+  });
 
   const validate = useCallback((): boolean => {
     const errs: FormErrors = {};

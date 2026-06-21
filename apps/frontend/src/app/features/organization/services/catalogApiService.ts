@@ -26,7 +26,7 @@ import {
   computePackageTotals,
 } from '@/app/features/organization/services/catalogCalculations';
 
-type ListResponse<T> = { items?: T[] } | T[];
+type ListResponse<T> = T[] | { items?: T[] };
 type SpecialityRow = {
   id?: string;
   _id?: string;
@@ -46,7 +46,7 @@ const unwrapItems = <T>(data: ListResponse<T>): T[] =>
 
 const toId = (value: unknown): string => (typeof value === 'string' ? value : '');
 
-const normalizeKind = (kind: ProductKind | string | null | undefined): CatalogItemType => {
+const normalizeKind = (kind: string | null | undefined): CatalogItemType => {
   if (kind === 'DIAGNOSTIC' || kind === 'LAB_TEST') return 'LAB';
   if (kind === 'INVENTORY_ITEM') return 'INVENTORY';
   if (
@@ -90,7 +90,7 @@ const formatDurationText = (minutes: number | null | undefined): string =>
   minutes ? `Approx. ${minutes} mins` : 'Approx. 30 mins';
 
 export const parseDurationMinutes = (value: string): number => {
-  const firstNumber = value.match(/\d+/)?.[0];
+  const firstNumber = /\d+/.exec(value)?.[0];
   if (!firstNumber) return 30;
   return Math.max(1, Number.parseInt(firstNumber, 10));
 };
@@ -273,10 +273,10 @@ const mapPackageDetail = (
   version: detail.version,
 });
 
-const catalogPayloadFromService = (
-  service: Omit<ServiceRevamp, 'id' | 'code' | 'createdAt'> &
-    Partial<Pick<ServiceRevamp, 'id' | 'code' | 'version'>>
-) =>
+type CatalogServicePayload = Omit<ServiceRevamp, 'id' | 'code' | 'createdAt'> &
+  Partial<Pick<ServiceRevamp, 'id' | 'code' | 'version'>>;
+
+const catalogPayloadFromService = (service: CatalogServicePayload) =>
   toCatalogResponseDTO({
     id: service.id ?? '',
     version: service.version,
@@ -301,10 +301,10 @@ const catalogPayloadFromService = (
     ),
   });
 
-const catalogPayloadFromPackage = (
-  pkg: Omit<PackageRevamp, 'id' | 'code' | 'createdAt'> &
-    Partial<Pick<PackageRevamp, 'id' | 'code' | 'version'>>
-) => {
+type CatalogPackagePayload = Omit<PackageRevamp, 'id' | 'code' | 'createdAt'> &
+  Partial<Pick<PackageRevamp, 'id' | 'code' | 'version'>>;
+
+const catalogPayloadFromPackage = (pkg: CatalogPackagePayload) => {
   const totals = computePackageTotals(pkg as PackageRevamp);
   const itemDiscountAmount = pkg.breakdown.reduce(
     (sum, item) => sum + computePackageBreakdownItem(item).discountAmt,
@@ -385,9 +385,7 @@ const mapHealthcareService = (
     specialityId: normal.specialityId ?? fallback.specialityId,
     organisationId: normal.organisationId || fallback.organisationId,
     currency: normal.price?.currency ?? undefined,
-    status: (normal.isActive === false ? 'ARCHIVED' : (fallback.status ?? 'ACTIVE')) as
-      | 'ACTIVE'
-      | 'ARCHIVED',
+    status: normal.isActive === false ? 'ARCHIVED' : (fallback.status ?? 'ACTIVE'),
     createdAt: new Date().toISOString(),
   };
   if (isPackage) {

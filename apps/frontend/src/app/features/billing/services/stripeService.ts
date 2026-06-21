@@ -56,24 +56,23 @@ type FinanceCurrentSubscription = {
   latestSnapshot?: FinanceUsageSnapshot | null;
 };
 
+const isFinanceEnvelope = <T>(value: T | FinanceEnvelope<T>): value is FinanceEnvelope<T> =>
+  Boolean(
+    value && typeof value === 'object' && 'data' in value && ('meta' in value || 'error' in value)
+  );
+
 const FREE_APPOINTMENTS_LIMIT = 120;
 const FREE_TOOLS_LIMIT = 200;
 const FREE_USERS_LIMIT = 10;
 
-const unwrapFinanceData = <T>(value: T | FinanceEnvelope<T>): T => {
-  if (
-    value &&
-    typeof value === 'object' &&
-    'data' in value &&
-    ('meta' in value || 'error' in value)
-  ) {
-    const envelope = value as FinanceEnvelope<T>;
-    if (envelope.error) {
-      throw new Error(envelope.error.message || envelope.error.code || 'Finance request failed');
+const unwrapFinanceData = <T>(value: T | FinanceEnvelope<T>): T | undefined => {
+  if (isFinanceEnvelope(value)) {
+    if (value.error) {
+      throw new Error(value.error.message || value.error.code || 'Finance request failed');
     }
-    return envelope.data as T;
+    return value.data;
   }
-  return value as T;
+  return value;
 };
 
 const parseDate = (value?: string | Date | null): Date | null | undefined => {

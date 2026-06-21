@@ -11,19 +11,21 @@ import {
 } from '@/app/features/inventory/pages/Inventory/types';
 import { formatDisplayDate as formatGlobalDisplayDate } from '@/app/lib/date';
 
-export const toStringSafe = (value: any): string => {
+export const toStringSafe = (value: unknown): string => {
   if (value === undefined || value === null) return '';
   if (typeof value === 'number' && Number.isNaN(value)) return '';
-  return String(value);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
 };
 
-export const toNumberSafe = (value: any): number | undefined => {
+export const toNumberSafe = (value: unknown): number | undefined => {
   const num = Number(value);
   return Number.isFinite(num) ? num : undefined;
 };
 
-const cleanObject = (obj: Record<string, any>) =>
-  Object.entries(obj).reduce<Record<string, any>>((acc, [key, value]) => {
+const cleanObject = (obj: Record<string, unknown>) =>
+  Object.entries(obj).reduce<Record<string, unknown>>((acc, [key, value]) => {
     if (value === undefined || value === null || value === '') return acc;
     if (Array.isArray(value) && value.length === 0) return acc;
     acc[key] = value;
@@ -142,6 +144,7 @@ export const getStatusBadgeStyle = (statusLabel?: string) => {
         borderColor: 'var(--color-pill-progress-border)',
       };
     case 'overstocked':
+    case 'expiring soon':
       return {
         color: 'var(--color-pill-info-text)',
         backgroundColor: 'var(--color-pill-info-bg)',
@@ -159,12 +162,6 @@ export const getStatusBadgeStyle = (statusLabel?: string) => {
         color: 'var(--color-pill-neutral-text)',
         backgroundColor: 'var(--color-pill-neutral-bg)',
         borderColor: 'var(--color-pill-neutral-border)',
-      };
-    case 'expiring soon':
-      return {
-        color: 'var(--color-pill-info-text)',
-        backgroundColor: 'var(--color-pill-info-bg)',
-        borderColor: 'var(--color-pill-info-border)',
       };
     case 'healthy':
     case 'active':
@@ -186,10 +183,11 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
   const attributes = apiItem.attributes ?? {};
   const statusLabel = formatStatusLabel(apiItem.status);
   const stockHealthLabel = formatStockHealthLabel(apiItem.stockHealth);
-  const normalizeStringOrArray = (val: any): string | string[] => {
+  const normalizeStringOrArray = (val: unknown): string | string[] => {
     if (Array.isArray(val)) return val.filter(Boolean);
-    if (val === undefined || val === null) return '';
-    return String(val);
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+    return '';
   };
 
   const firstDefined = <T>(...vals: (T | undefined)[]): T | undefined => {
@@ -234,7 +232,7 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
     if (!batchList.length) return undefined;
     const withExpiry = batchList
       .map((b) => ({ batch: b, date: parseDateSafe(b.expiryDate) }))
-      .filter((entry) => entry.date !== null) as { batch: BatchValues; date: Date }[];
+      .filter((entry): entry is { batch: BatchValues; date: Date } => entry.date !== null);
     if (withExpiry.length) {
       return withExpiry.reduce(
         (earliest, current) =>
@@ -408,10 +406,9 @@ const normalizeStatusForApi = (status?: string) => {
 };
 
 export const buildBatchPayload = (batch: BatchValues): InventoryBatchPayload | undefined => {
-  const quantity = toNumberSafe(
-    batch.quantity ?? (batch as any).current ?? (batch as any).available
-  );
-  const allocated = toNumberSafe(batch.allocated ?? (batch as any).allocated);
+  const batchRecord = batch as BatchValues & { current?: unknown; available?: unknown };
+  const quantity = toNumberSafe(batch.quantity ?? batchRecord.current ?? batchRecord.available);
+  const allocated = toNumberSafe(batch.allocated);
   const normalizeDateForApi = (val?: string) => {
     if (!val) return undefined;
     if (val.includes('/')) {

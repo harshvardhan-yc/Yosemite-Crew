@@ -31,6 +31,8 @@ type FinanceEnvelope<T> = {
   error?: { code?: string; message?: string; details?: unknown } | null;
 };
 
+type FinanceResponse = FinanceEnvelope<unknown>;
+
 export type FinanceInvoiceLineItem = {
   name: string;
   description?: string | null;
@@ -101,7 +103,7 @@ const unwrapFinanceData = <T>(value: T | FinanceEnvelope<T>): T => {
     'data' in value &&
     ('meta' in value || 'error' in value)
   ) {
-    const envelope = value as FinanceEnvelope<T>;
+    const envelope = value;
     if (envelope.error) {
       throw new Error(envelope.error.message || envelope.error.code || 'Finance request failed');
     }
@@ -118,14 +120,13 @@ const getErrorStatus = (error: unknown): number | undefined => {
 
 const isInvoiceMissingForReadyForBilling = (error: unknown): boolean => {
   if (getErrorStatus(error) !== 404) return false;
-  const data = (error as { response?: { data?: unknown } }).response?.data;
+  const response = error as { response?: { data?: unknown } };
+  const data = response.response?.data;
   if (!data || typeof data !== 'object') return false;
-  const message = String(
-    (data as { message?: unknown; error?: unknown }).message ?? ''
-  ).toLowerCase();
-  const errorMessage = String(
-    (data as { error?: { message?: unknown } }).error?.message ?? ''
-  ).toLowerCase();
+  const toText = (value: unknown): string =>
+    typeof value === 'string' || typeof value === 'number' ? String(value).toLowerCase() : '';
+  const message = toText((data as { message?: unknown }).message);
+  const errorMessage = toText((data as { error?: { message?: unknown } }).error?.message);
   return [message, errorMessage].some((text) => text.includes('invoice'));
 };
 
@@ -134,7 +135,7 @@ const markAppointmentReadyForBillingViaAppointmentRoute = async (
   input: ReadyForBillingInput
 ): Promise<unknown> => {
   if (!input.organisationId) throw new Error('Organisation ID missing');
-  const res = await patchData<FinanceEnvelope<unknown> | unknown>(
+  const res = await patchData<FinanceResponse>(
     `/fhir/v1/appointment/pms/${input.organisationId}/${appointmentId}/ready-for-billing`,
     input
   );
@@ -148,12 +149,14 @@ const normalizeFinanceInvoice = (invoice: any, fallbackOrganisationId?: string):
 
   const createdAt = invoice?.createdAt ? new Date(invoice.createdAt) : new Date();
   const updatedAt = invoice?.updatedAt ? new Date(invoice.updatedAt) : createdAt;
-  const subtotal =
-    typeof invoice?.subtotal === 'number'
-      ? invoice.subtotal
-      : Array.isArray(invoice?.items)
-        ? invoice.items.reduce((sum: number, item: any) => sum + Number(item?.total ?? 0), 0)
-        : Number(invoice?.totalAmount ?? 0);
+  let subtotal: number;
+  if (typeof invoice?.subtotal === 'number') {
+    subtotal = invoice.subtotal;
+  } else if (Array.isArray(invoice?.items)) {
+    subtotal = invoice.items.reduce((sum: number, item: any) => sum + Number(item?.total ?? 0), 0);
+  } else {
+    subtotal = Number(invoice?.totalAmount ?? 0);
+  }
 
   return {
     id: invoice?.id,
@@ -187,7 +190,11 @@ const normalizeFinanceInvoice = (invoice: any, fallbackOrganisationId?: string):
 };
 
 const getInvoiceAppointmentIdFallback = (fhirInvoice: InvoiceResponseDTO): string | undefined => {
-  const invoice = fhirInvoice as any;
+  const invoice = fhirInvoice as Partial<InvoiceResponseDTO> & {
+    account?: { reference?: string };
+    appointmentId?: string;
+    extension?: Array<{ url?: string; valueString?: string }>;
+  };
   const extensions = Array.isArray(invoice?.extension) ? invoice.extension : [];
   const appointmentIdFromExtension = extensions.find(
     (ext: any) => String(ext?.url ?? '') === APPOINTMENT_ID_EXTENSION_URL
@@ -342,13 +349,15 @@ export const loadAppointmentBilling = async (
     .map((invoice) => normalizeFinanceInvoice(invoice, organisationId))
     // Guard against a backend that ignores the appointmentId filter: only keep
     // invoices for this appointment (when the field is present on the row).
-    .filter((invoice) => !invoice.appointmentId || invoice.appointmentId === appointmentId);
+    .filter(
+      (invoice) => invoice.appointmentId === undefined || invoice.appointmentId === appointmentId
+    );
 
   const invoicedItemNames = new Set<string>();
   let depositCents = 0;
   const pastInvoices: WorkspacePastInvoice[] = invoices.map((invoice) => {
     const items = (Array.isArray(invoice.items) ? invoice.items : []).map(
-      financeItemToWorkspaceLineItem
+      (item: InvoiceItem, index: number) => financeItemToWorkspaceLineItem(item, index)
     );
     items.forEach((item) => {
       const key = item.name.trim().toLowerCase();
@@ -446,10 +455,7 @@ export const addLineItemsToAppointments = async (
       })),
       currency: currency.toLowerCase(),
     };
-    await postData<FinanceEnvelope<unknown> | unknown>(
-      `${FINANCE_BASE_PATH}/invoices/${invoice.id}/lines`,
-      body
-    );
+    await postData<FinanceResponse>(`${FINANCE_BASE_PATH}/invoices/${invoice.id}/lines`, body);
   } catch (err) {
     console.error('Failed to load specialities:', err);
     throw err;
@@ -527,7 +533,7 @@ export const updateInvoicePaymentCollectionMethod = async (
 };
 
 export const createFinanceInvoice = async (input: CreateFinanceInvoiceInput): Promise<Invoice> => {
-  const res = await postData<FinanceEnvelope<unknown> | unknown>(`${FINANCE_BASE_PATH}/invoices`, {
+  const res = await postData<FinanceResponse>(`${FINANCE_BASE_PATH}/invoices`, {
     paymentCollectionMethod: 'PAYMENT_LINK',
     ...input,
   });
@@ -539,9 +545,7 @@ export const createFinanceInvoice = async (input: CreateFinanceInvoiceInput): Pr
 export const getFinanceInvoiceById = async (invoiceId: string): Promise<Invoice> => {
   if (!invoiceId) throw new Error('Invoice ID missing');
   const primaryOrgId = useOrgStore.getState().primaryOrgId;
-  const res = await getData<FinanceEnvelope<unknown> | unknown>(
-    `${FINANCE_BASE_PATH}/invoices/${invoiceId}`
-  );
+  const res = await getData<FinanceResponse>(`${FINANCE_BASE_PATH}/invoices/${invoiceId}`);
   const invoice = normalizeFinanceInvoice(unwrapFinanceData(res.data), primaryOrgId ?? undefined);
   useInvoiceStore.getState().upsertInvoice(invoice);
   return invoice;
@@ -550,7 +554,7 @@ export const getFinanceInvoiceById = async (invoiceId: string): Promise<Invoice>
 export const finalizeFinanceInvoice = async (invoiceId: string): Promise<Invoice> => {
   if (!invoiceId) throw new Error('Invoice ID missing');
   const primaryOrgId = useOrgStore.getState().primaryOrgId;
-  const res = await postData<FinanceEnvelope<unknown> | unknown>(
+  const res = await postData<FinanceResponse>(
     `${FINANCE_BASE_PATH}/invoices/${invoiceId}/finalize`,
     { taxProvider: 'STRIPE' }
   );
@@ -564,7 +568,7 @@ export const recordManualInvoicePayment = async (
   input: ManualPaymentInput
 ): Promise<unknown> => {
   if (!invoiceId) throw new Error('Invoice ID missing');
-  const res = await postData<FinanceEnvelope<unknown> | unknown>(
+  const res = await postData<FinanceResponse>(
     `${FINANCE_BASE_PATH}/invoices/${invoiceId}/payments`,
     {
       provider: 'MANUAL',
@@ -581,7 +585,7 @@ export const createSupplementalInvoice = async (
   if (!invoiceId) throw new Error('Invoice ID missing');
   if (!items.length) throw new Error('At least one line item is required');
   const primaryOrgId = useOrgStore.getState().primaryOrgId;
-  const res = await postData<FinanceEnvelope<unknown> | unknown>(
+  const res = await postData<FinanceResponse>(
     `${FINANCE_BASE_PATH}/invoices/${invoiceId}/supplement`,
     { items }
   );
@@ -597,7 +601,7 @@ export const markAppointmentReadyForBilling = async (
   if (!appointmentId) throw new Error('Appointment ID missing');
   const endpoint = `${FINANCE_BASE_PATH}/appointments/${appointmentId}/ready-for-billing`;
   try {
-    const res = await postData<FinanceEnvelope<unknown> | unknown>(endpoint, input);
+    const res = await postData<FinanceResponse>(endpoint, input);
     return unwrapFinanceData(res.data);
   } catch (error) {
     if (getErrorStatus(error) === 404 && !isInvoiceMissingForReadyForBilling(error)) {
@@ -631,7 +635,7 @@ export const markAppointmentReadyForBilling = async (
     });
 
     try {
-      const retry = await postData<FinanceEnvelope<unknown> | unknown>(endpoint, input);
+      const retry = await postData<FinanceResponse>(endpoint, input);
       return unwrapFinanceData(retry.data);
     } catch (retryError) {
       if (getErrorStatus(retryError) === 404) {
@@ -652,7 +656,7 @@ export const seedAppointmentInvoice = async (appointmentId: string): Promise<Inv
     if (existing?.id) return existing;
   }
 
-  const res = await postData<FinanceEnvelope<unknown> | unknown>(
+  const res = await postData<FinanceResponse>(
     `${FINANCE_BASE_PATH}/mobile/appointments/${appointmentId}/seed`,
     {}
   );

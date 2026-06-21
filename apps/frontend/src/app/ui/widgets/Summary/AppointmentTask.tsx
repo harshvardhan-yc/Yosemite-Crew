@@ -29,6 +29,55 @@ import ViewAppointmentOverviewModal from '@/app/features/appointments/pages/Appo
 
 const revampEnabled = isAppointmentRevampEnabled();
 
+const resetActiveTableState = (
+  activeTable: string,
+  activeSubLabel: string,
+  viewTaskPopup: boolean,
+  setters: {
+    setActiveSubLabel: React.Dispatch<React.SetStateAction<string>>;
+    setViewTaskPopup: React.Dispatch<React.SetStateAction<boolean>>;
+    setViewPopup: React.Dispatch<React.SetStateAction<boolean>>;
+    setDetailPopup: React.Dispatch<React.SetStateAction<boolean>>;
+    setReschedulePopup: React.Dispatch<React.SetStateAction<boolean>>;
+    setChangeStatusPopup: React.Dispatch<React.SetStateAction<boolean>>;
+    setChangeRoomPopup: React.Dispatch<React.SetStateAction<boolean>>;
+    setViewIntent: React.Dispatch<React.SetStateAction<AppointmentViewIntent | null>>;
+  }
+) => {
+  if (activeSubLabel !== 'all') setters.setActiveSubLabel('all');
+  if (activeTable === 'Appointments') {
+    if (viewTaskPopup) setters.setViewTaskPopup(false);
+    return;
+  }
+  setters.setViewPopup(false);
+  setters.setDetailPopup(false);
+  setters.setReschedulePopup(false);
+  setters.setChangeStatusPopup(false);
+  setters.setChangeRoomPopup(false);
+  setters.setViewIntent(null);
+};
+
+const getNextSelectedAppointment = (
+  current: Appointment | null,
+  appointments: Appointment[]
+): Appointment | null => {
+  if (appointments.length === 0) return null;
+  if (current?.id) {
+    const updated = appointments.find((item) => item.id === current.id);
+    if (updated) return updated;
+  }
+  return appointments[0];
+};
+
+const getNextSelectedTask = (current: Task | null, tasks: Task[]): Task | null => {
+  if (tasks.length === 0) return null;
+  if (current?._id) {
+    const updated = tasks.find((item) => item._id === current._id);
+    if (updated) return updated;
+  }
+  return tasks[0];
+};
+
 const AppointmentTask = () => {
   const appointments = useAppointmentsForPrimaryOrg();
   const { can } = usePermissions();
@@ -58,39 +107,24 @@ const AppointmentTask = () => {
   const prevActiveTableRef = useRef(activeTable);
   if (prevActiveTableRef.current !== activeTable) {
     prevActiveTableRef.current = activeTable;
-    if (activeSubLabel !== 'all') setActiveSubLabel('all');
-    if (activeTable === 'Appointments') {
-      if (viewTaskPopup) setViewTaskPopup(false);
-    } else {
-      setViewPopup(false);
-      setDetailPopup(false);
-      setReschedulePopup(false);
-      setChangeStatusPopup(false);
-      setChangeRoomPopup(false);
-      setViewIntent(null);
-    }
+    resetActiveTableState(activeTable, activeSubLabel, viewTaskPopup, {
+      setActiveSubLabel,
+      setViewTaskPopup,
+      setViewPopup,
+      setDetailPopup,
+      setReschedulePopup,
+      setChangeStatusPopup,
+      setChangeRoomPopup,
+      setViewIntent,
+    });
   }
 
   useEffect(() => {
-    setActiveAppointment((prev) => {
-      if (appointments.length === 0) return null;
-      if (prev?.id) {
-        const updated = appointments.find((s) => s.id === prev.id);
-        if (updated) return updated;
-      }
-      return appointments[0];
-    });
+    setActiveAppointment((prev) => getNextSelectedAppointment(prev, appointments));
   }, [appointments]);
 
   useEffect(() => {
-    setActiveTask((prev) => {
-      if (tasks.length === 0) return null;
-      if (prev?._id) {
-        const updated = tasks.find((s) => s._id === prev._id);
-        if (updated) return updated;
-      }
-      return tasks[0];
-    });
+    setActiveTask((prev) => getNextSelectedTask(prev, tasks));
   }, [tasks]);
 
   const filteredList = useMemo(() => {

@@ -55,6 +55,18 @@ const toList = (val?: string | string[]): string[] => {
   return Array.isArray(val) ? val : [val];
 };
 
+const normalizeUsageLabel = (usage: string): FormsUsage => {
+  const normalized = usage.toLowerCase().replace(/[\s-]/g, '');
+  if (
+    normalized === 'internal&external' ||
+    normalized === 'internal_external' ||
+    normalized === 'interna_external'
+  ) {
+    return 'Internal & External';
+  }
+  return usage as FormsUsage;
+};
+
 export const formatDateLabel = (value?: Date | string): string => {
   return formatDisplayDate(value, '');
 };
@@ -169,20 +181,7 @@ export const mapFormToUI = (form: Form): FormsProps => ({
   species: form.speciesFilter ?? [],
   category: form.category as FormsCategory,
   requiredSigner: form.requiredSigner ?? '',
-  usage: (() => {
-    const visibility = (form.visibilityType as FormsUsage) ?? 'Internal';
-    if (typeof visibility === 'string') {
-      const normalized = visibility.toLowerCase().replaceAll(/\s|-/g, '');
-      if (
-        normalized === 'internal&external' ||
-        normalized === 'internal_external' ||
-        normalized === 'interna_external'
-      ) {
-        return 'Internal & External';
-      }
-    }
-    return visibility;
-  })(),
+  usage: normalizeUsageLabel(form.visibilityType ?? 'Internal'),
   updatedBy: form.updatedBy || '',
   lastUpdated: formatDateLabel(form.updatedAt ?? form.createdAt),
   status: statusToLabel(form.status),
@@ -191,6 +190,15 @@ export const mapFormToUI = (form: Form): FormsProps => ({
 
 export const mapQuestionnaireToUI = (dto: FormResponseDTO): FormsProps =>
   mapFormToUI(questionnaireToForm(dto));
+
+const resolveTemplateStatus = (
+  status: string,
+  sectionCount: number
+): 'published' | 'archived' | 'draft' => {
+  if (sectionCount > 0 && status === 'PUBLISHED') return 'published';
+  if (status === 'ARCHIVED') return 'archived';
+  return 'draft';
+};
 
 const templateToForm = (template: TemplateLike): Form => {
   if (templateMapper.isPlanDefinitionResourceKind(template.kind)) {
@@ -219,7 +227,7 @@ const templateToForm = (template: TemplateLike): Form => {
       updatedBy: template.updatedBy,
       createdAt: template.createdAt,
       updatedAt: template.updatedAt,
-    } as Form;
+    };
   }
 
   const resource = templateMapper.templateToQuestionnaire(template);
@@ -240,19 +248,14 @@ const templateToForm = (template: TemplateLike): Form => {
     category: templateKindToCategory(input.kind),
     description: input.description,
     visibilityType: 'Internal',
-    status:
-      input.schemaSnapshot.sections.length && template.status === 'PUBLISHED'
-        ? 'published'
-        : template.status === 'ARCHIVED'
-          ? 'archived'
-          : 'draft',
-    schema: mapFormToUI(questionnaireToForm(resource as FormResponseDTO)).schema,
+    status: resolveTemplateStatus(template.status, input.schemaSnapshot.sections.length),
+    schema: mapFormToUI(questionnaireToForm(resource)).schema,
     serviceId: template.catalogItemIds,
     createdBy: template.createdBy,
     updatedBy: template.updatedBy,
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
-  } as Form;
+  };
 };
 
 export const mapTemplateToUI = (template: TemplateLike): FormsProps => ({

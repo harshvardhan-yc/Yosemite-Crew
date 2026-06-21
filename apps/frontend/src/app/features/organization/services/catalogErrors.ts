@@ -17,7 +17,7 @@ const getResponseData = (error: unknown): CatalogErrorBody | undefined => {
   if (typeof error !== 'object' || error === null) return undefined;
   const response = (error as { response?: { data?: unknown } }).response;
   const data = response?.data;
-  return typeof data === 'object' && data !== null ? (data as CatalogErrorBody) : undefined;
+  return typeof data === 'object' && data !== null ? data : undefined;
 };
 
 export const getCatalogErrorCode = (error: unknown): string | undefined =>

@@ -17,8 +17,7 @@ type SpecialitiesTableRevampProps = {
   onManageTeam: (speciality: SpecialityWeb) => void;
 };
 
-const getRevampId = (item: SpecialityWeb): string =>
-  (item as SpecialityWeb & { revampId?: string }).revampId ?? item._id ?? '';
+const getRevampId = (item: SpecialityWeb): string => String(item._id ?? '');
 
 const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTableRevampProps) => {
   const allServices = useRevampCatalogStore(useShallow((s) => s.services));
@@ -53,11 +52,7 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
           ? allServices.filter((s) => s.specialityId === id && s.status === 'ACTIVE').length
           : 0;
         const count =
-          revampCount > 0
-            ? revampCount
-            : ((item as SpecialityWeb & { activeServiceCount?: number }).activeServiceCount ??
-              item.services?.length ??
-              0);
+          revampCount > 0 ? revampCount : (item.activeServiceCount ?? item.services?.length ?? 0);
         return <ProfileTitle>{count}</ProfileTitle>;
       },
     },
@@ -70,10 +65,7 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
         const revampCount = id
           ? allPackages.filter((p) => p.specialityId === id && p.status === 'ACTIVE').length
           : 0;
-        const count =
-          revampCount > 0
-            ? revampCount
-            : ((item as SpecialityWeb & { activePackageCount?: number }).activePackageCount ?? 0);
+        const count = revampCount > 0 ? revampCount : (item.activePackageCount ?? 0);
         return <ProfileTitle>{count}</ProfileTitle>;
       },
     },
@@ -142,7 +134,7 @@ const SpecialitiesTableRevamp = ({ filteredList, onManageTeam }: SpecialitiesTab
         ) : (
           filteredList.map((item, i) => (
             <SpecialitiesCard
-              key={(item.name ?? '') + i}
+              key={(item._id ?? item.name ?? '') + i}
               speciality={item}
               handleViewSpeciality={() => onManageTeam(item)}
             />

@@ -65,6 +65,33 @@ type CatalogEntry = {
   nestedBreakdown?: PackageBreakdownItem[];
 };
 
+type CatalogSearchResultItem = Awaited<ReturnType<typeof catalogApi.searchItems>>[number];
+
+const collectCatalogEntry = (
+  entries: CatalogEntry[],
+  item: CatalogSearchResultItem
+): CatalogEntry[] => {
+  if (!item.canBeAddedToPackage) return entries;
+  const breakdownItem = catalogApi.mapSearchItem(item);
+  entries.push({
+    id: item.id,
+    code: item.code ?? undefined,
+    name: item.name,
+    type: breakdownItem.type,
+    unitPrice: item.unitPrice,
+    currency: item.currency ?? undefined,
+    defaultDiscount: item.defaultDiscountPercent,
+    maxDiscount: item.maxDiscountPercent,
+    isBookable: item.isBookable,
+    isInpatientPreferred: false,
+    nestedBreakdown: breakdownItem.nestedBreakdown,
+  });
+  return entries;
+};
+
+const mapItemsToCatalog = (items: CatalogSearchResultItem[]): CatalogEntry[] =>
+  items.reduce<CatalogEntry[]>((acc, item) => collectCatalogEntry(acc, item), []);
+
 const TYPE_LABELS: Record<string, string> = {
   CONSULTATION: 'Consultation',
   PROCEDURE: 'Procedure',
@@ -166,7 +193,7 @@ const PackageFormDraft = ({
       return;
     }
     let cancelled = false;
-    const timeout = window.setTimeout(() => {
+    const timeout = globalThis.window.setTimeout(() => {
       setSearchLoading(true);
       catalogApi
         .searchItems({
@@ -177,27 +204,7 @@ const PackageFormDraft = ({
           excludePackageId: editPackage?.id,
         })
         .then((items) => {
-          if (cancelled) return;
-          setCatalogResults(
-            items.reduce<CatalogEntry[]>((entries, item) => {
-              if (!item.canBeAddedToPackage) return entries;
-              const breakdownItem = catalogApi.mapSearchItem(item);
-              entries.push({
-                id: item.id,
-                code: item.code ?? undefined,
-                name: item.name,
-                type: breakdownItem.type,
-                unitPrice: item.unitPrice,
-                currency: item.currency ?? undefined,
-                defaultDiscount: item.defaultDiscountPercent,
-                maxDiscount: item.maxDiscountPercent,
-                isBookable: item.isBookable,
-                isInpatientPreferred: false,
-                nestedBreakdown: breakdownItem.nestedBreakdown,
-              });
-              return entries;
-            }, [])
-          );
+          if (!cancelled) setCatalogResults(mapItemsToCatalog(items));
         })
         .catch(() => {
           if (!cancelled) setCatalogResults([]);
@@ -208,7 +215,7 @@ const PackageFormDraft = ({
     }, 250);
     return () => {
       cancelled = true;
-      window.clearTimeout(timeout);
+      globalThis.window.clearTimeout(timeout);
     };
   }, [editPackage?.id, organisationId, searchQuery, specialityId]);
 

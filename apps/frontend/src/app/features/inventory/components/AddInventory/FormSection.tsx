@@ -130,7 +130,7 @@ const FormSection: React.FC<FormSectionProps> = ({
   stockLocationOptions,
   headerSlot,
 }) => {
-  const configForBusiness = InventoryFormConfig[businessType] || {};
+  const configForBusiness = InventoryFormConfig[businessType] ?? {};
   const sectionConfig = configForBusiness[sectionKey];
 
   if (!sectionConfig || sectionConfig.length === 0) {
@@ -140,42 +140,84 @@ const FormSection: React.FC<FormSectionProps> = ({
   const sectionData = formData[sectionKey] as any;
   const sectionErrors = (errors as Record<InventorySectionKey, any>)[sectionKey];
 
-  const getValue = (field: FieldDef<any>): string => sectionData?.[field.name] ?? '';
-  const getError = (field: FieldDef<any>): string | undefined => sectionErrors?.[field.name];
-
   const handleChange = (field: FieldDef<any>, value: string | string[], batchIndex?: number) => {
     onFieldChange(sectionKey, field.name, value, batchIndex);
   };
 
-  const shouldHideField = (field: FieldDef<any>) => {
-    const itemType = String(formData.classification?.itemType ?? '').toLowerCase();
-    return sectionKey === 'classification' && itemType === 'non-drug'
-      ? drugOnlyClassificationFields.has(String(field.name))
-      : false;
-  };
+  const renderField = (field: FieldDef<any>, key?: React.Key, index?: number) =>
+    renderInventoryField({
+      field,
+      key,
+      index,
+      sectionKey,
+      formData,
+      sectionData,
+      sectionErrors,
+      stockLocationOptions,
+      handleChange,
+    });
 
-  const resolveDateChange = (
-    next: Date | null | ((prev: Date | null) => Date | null),
-    currentDate: Date | null,
-    field: FieldDef<any>,
-    index?: number
+  const getResolvedDropdownOptions = (
+    sectionKey: string,
+    fieldName: string,
+    stockLocationOptions: Array<string | { label: string; value: string }> | undefined,
+    sectionCategory: string | undefined,
+    options: Array<string | { label: string; value: string }> | undefined
   ) => {
-    const resolved = typeof next === 'function' ? next(currentDate) : next;
-    if (!resolved) {
-      handleChange(field, '', index);
-      return;
+    if (sectionKey === 'stock' && fieldName === 'stockLocation' && stockLocationOptions?.length) {
+      return stockLocationOptions;
     }
-    handleChange(field, formatDate(resolved), index);
+    if (fieldName === 'subCategory') {
+      return getSubCategoryOptions(sectionCategory);
+    }
+    return options || [];
   };
 
-  const renderField = (field: FieldDef<any>, key?: React.Key, index?: number) => {
-    if (shouldHideField(field)) return null;
+  const getMultiSelectValues = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const text = String(value);
+      if (!text) return [];
+      return text.split(',').map((v) => v.trim());
+    }
+    return [];
+  };
+
+  const renderInventoryField = ({
+    field,
+    key,
+    index,
+    sectionKey,
+    formData,
+    sectionData,
+    sectionErrors,
+    stockLocationOptions,
+    handleChange,
+  }: {
+    field: FieldDef<any>;
+    key?: React.Key;
+    index?: number;
+    sectionKey: InventorySectionKey;
+    formData: InventoryItem;
+    sectionData: any;
+    sectionErrors: any;
+    stockLocationOptions?: string[];
+    handleChange: (field: FieldDef<any>, value: string | string[], batchIndex?: number) => void;
+  }) => {
     const { placeholder, component, options } = field;
     const isBatch = sectionKey === 'batch' && typeof index === 'number';
     const value = isBatch
       ? ((formData.batches?.[index] as any)?.[field.name] ?? '')
-      : getValue(field);
-    const error = isBatch ? (errors.batch as any)?.[field.name] : getError(field);
+      : (sectionData?.[field.name] ?? '');
+    const error = sectionErrors?.[field.name];
+
+    if (
+      sectionKey === 'classification' &&
+      String(formData.classification?.itemType ?? '').toLowerCase() === 'non-drug' &&
+      drugOnlyClassificationFields.has(String(field.name))
+    ) {
+      return null;
+    }
 
     if (component === 'text') {
       const isReadOnlyAvailable = sectionKey === 'stock' && field.name === 'available';
@@ -203,9 +245,10 @@ const FormSection: React.FC<FormSectionProps> = ({
         <div key={key ?? field.name} className="flex flex-col gap-1">
           <Datepicker
             currentDate={currentDate}
-            setCurrentDate={(next: Date | null | ((prev: Date | null) => Date | null)) =>
-              resolveDateChange(next, currentDate, field, index)
-            }
+            setCurrentDate={(next: Date | null | ((prev: Date | null) => Date | null)) => {
+              const resolved = typeof next === 'function' ? next(currentDate) : next;
+              handleChange(field, resolved ? formatDate(resolved) : '', index);
+            }}
             placeholder={placeholder || ''}
             type="input"
             className="min-h-12!"
@@ -216,22 +259,13 @@ const FormSection: React.FC<FormSectionProps> = ({
     }
 
     if (component === 'dropdown') {
-      const isStockLocation =
-        sectionKey === 'stock' &&
-        field.name === 'stockLocation' &&
-        stockLocationOptions &&
-        stockLocationOptions.length > 0;
-      // Subcategory options depend on the currently-selected category in the same
-      // section, so they're scoped to that category instead of the full flat list.
-      const isSubCategory = field.name === 'subCategory';
-      let resolvedOptions: typeof options;
-      if (isStockLocation) {
-        resolvedOptions = stockLocationOptions;
-      } else if (isSubCategory) {
-        resolvedOptions = getSubCategoryOptions(sectionData?.category);
-      } else {
-        resolvedOptions = options || [];
-      }
+      const resolvedOptions = getResolvedDropdownOptions(
+        sectionKey,
+        field.name,
+        stockLocationOptions,
+        sectionData?.category,
+        options
+      );
       const dropdownOptions = resolvedOptions.map((opt) =>
         typeof opt === 'string' ? { label: opt, value: opt } : opt
       );
@@ -248,16 +282,7 @@ const FormSection: React.FC<FormSectionProps> = ({
     }
 
     if (component === 'multiSelect') {
-      let arrayValue: string[];
-      if (Array.isArray(value)) {
-        arrayValue = value;
-      } else if (value) {
-        arrayValue = String(value)
-          .split(',')
-          .map((v) => v.trim());
-      } else {
-        arrayValue = [];
-      }
+      const arrayValue = getMultiSelectValues(value);
       return (
         <MultiSelectDropdown
           key={key ?? field.name}
@@ -355,7 +380,7 @@ const FormSection: React.FC<FormSectionProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full flex-1 justify-between">
+    <div className="flex w-full flex-1 flex-col justify-between gap-6">
       <div className="flex flex-col gap-6">
         <div className="font-satoshi text-black-text text-[23px] font-medium">{sectionTitle}</div>
 
