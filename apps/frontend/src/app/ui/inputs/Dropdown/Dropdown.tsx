@@ -37,6 +37,12 @@ type DropdownProps = {
 const DROPDOWN_MAX_HEIGHT = 200;
 const DROPDOWN_MIN_HEIGHT = 72;
 
+/** Wrap the active option index when navigating with the arrow keys. */
+const wrapActiveIndex = (current: number, optionCount: number, delta: 1 | -1): number => {
+  if (delta === 1) return current + 1 >= optionCount ? 0 : current + 1;
+  return current <= 0 ? optionCount - 1 : current - 1;
+};
+
 const Dropdown = ({
   placeholder,
   onChange,
@@ -188,7 +194,7 @@ const Dropdown = ({
     setActiveIndex((current) => {
       if (current >= 0 && current < filteredList.length) return current;
       const selectedIndex = filteredList.findIndex((option: any) => option.value === value);
-      return selectedIndex >= 0 ? selectedIndex : 0;
+      return Math.max(selectedIndex, 0);
     });
   }, [filteredList, open, value]);
 
@@ -207,62 +213,70 @@ const Dropdown = ({
     [onChange, returnObject]
   );
 
+  const handleArrowKey = useCallback(
+    (delta: 1 | -1) => {
+      const optionCount = filteredList.length;
+      if (optionCount === 0) return;
+      if (!open) {
+        setOpen(true);
+        return;
+      }
+      setActiveIndex((current) => wrapActiveIndex(current, optionCount, delta));
+    },
+    [filteredList.length, open]
+  );
+
+  const handleConfirmKey = useCallback(() => {
+    const optionCount = filteredList.length;
+    if (!open) {
+      setOpen(true);
+      return;
+    }
+    if (activeIndex < 0 || activeIndex >= optionCount) return;
+    selectOption(filteredList[activeIndex]);
+  }, [activeIndex, filteredList, open, selectOption]);
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (disabled) return;
       const optionCount = filteredList.length;
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setOpen(false);
-        return;
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        if (optionCount === 0) return;
-        if (!open) {
-          setOpen(true);
+      switch (event.key) {
+        case 'Escape':
+          event.preventDefault();
+          setOpen(false);
           return;
-        }
-        setActiveIndex((current) => (current + 1 >= optionCount ? 0 : current + 1));
-        return;
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        if (optionCount === 0) return;
-        if (!open) {
-          setOpen(true);
+        case 'ArrowDown':
+          event.preventDefault();
+          handleArrowKey(1);
           return;
-        }
-        setActiveIndex((current) => (current <= 0 ? optionCount - 1 : current - 1));
-        return;
+        case 'ArrowUp':
+          event.preventDefault();
+          handleArrowKey(-1);
+          return;
+        case 'Home':
+          if (!open || optionCount === 0) return;
+          event.preventDefault();
+          setActiveIndex(0);
+          return;
+        case 'End':
+          if (!open || optionCount === 0) return;
+          event.preventDefault();
+          setActiveIndex(optionCount - 1);
+          return;
+        case 'Enter':
+        case ' ':
+          event.preventDefault();
+          handleConfirmKey();
+          return;
+        default:
       }
-      if (event.key === 'Home' && open && optionCount > 0) {
-        event.preventDefault();
-        setActiveIndex(0);
-        return;
-      }
-      if (event.key === 'End' && open && optionCount > 0) {
-        event.preventDefault();
-        setActiveIndex(optionCount - 1);
-        return;
-      }
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      if (!open) {
-        event.preventDefault();
-        setOpen(true);
-        return;
-      }
-      if (activeIndex < 0 || activeIndex >= optionCount) return;
-      event.preventDefault();
-      selectOption(filteredList[activeIndex]);
     },
-    [activeIndex, disabled, filteredList, open, selectOption]
+    [disabled, filteredList.length, handleArrowKey, handleConfirmKey, open]
   );
 
   const panel = (
     <div
       id={listboxId}
-      role="listbox"
       aria-label={placeholder}
       data-portal-dropdown
       className={`select-input-dropdown ${shouldPortal ? 'select-input-dropdown-portal' : ''} ${dropdownClassName ?? ''}`}
@@ -300,14 +314,11 @@ const Dropdown = ({
       {filteredList.map((option: any, index: number) => {
         const label: string = option.label ?? option.value ?? '';
         const valueToSend: string = option.value ?? option.label ?? '';
-        const isSelected = valueToSend === value;
         return (
           <button
             key={valueToSend || label}
             id={`${listboxId}-option-${valueToSend}`}
             type="button"
-            role="option"
-            aria-selected={isSelected}
             className={`select-input-dropdown-item ${index === list.length - 1 ? '' : 'border-b border-grey-light'} ${
               activeOptionId === `${listboxId}-option-${valueToSend}` ? 'bg-card-hover' : ''
             }`}

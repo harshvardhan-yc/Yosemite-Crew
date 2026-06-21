@@ -7,6 +7,12 @@ type Option = {
   label: string;
 };
 
+/** Wrap the active option index when navigating with the arrow keys. */
+const wrapActiveIndex = (current: number, optionCount: number, delta: 1 | -1): number => {
+  if (delta === 1) return current + 1 >= optionCount ? 0 : current + 1;
+  return current <= 0 ? optionCount - 1 : current - 1;
+};
+
 type DropdownProps = {
   placeholder: string;
   options: Option[];
@@ -52,7 +58,7 @@ const Dropdown = ({ placeholder, options, defaultOption, onSelect, error }: Drop
     setActiveIndex((current) => {
       if (current >= 0 && current < options.length) return current;
       const selectedIndex = options.findIndex((option) => option.key === selected?.key);
-      return selectedIndex >= 0 ? selectedIndex : 0;
+      return Math.max(selectedIndex, 0);
     });
   }, [open, options, selected?.key]);
 
@@ -67,52 +73,58 @@ const Dropdown = ({ placeholder, options, defaultOption, onSelect, error }: Drop
     setOpen(false);
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent) => {
+  const handleArrowKey = (delta: 1 | -1) => {
     const optionCount = options.length;
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      setOpen(false);
-      return;
-    }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      if (optionCount === 0) return;
-      if (!open) {
-        setOpen(true);
-        return;
-      }
-      setActiveIndex((current) => (current + 1 >= optionCount ? 0 : current + 1));
-      return;
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (optionCount === 0) return;
-      if (!open) {
-        setOpen(true);
-        return;
-      }
-      setActiveIndex((current) => (current <= 0 ? optionCount - 1 : current - 1));
-      return;
-    }
-    if (event.key === 'Home' && open && optionCount > 0) {
-      event.preventDefault();
-      setActiveIndex(0);
-      return;
-    }
-    if (event.key === 'End' && open && optionCount > 0) {
-      event.preventDefault();
-      setActiveIndex(optionCount - 1);
-      return;
-    }
-    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (optionCount === 0) return;
     if (!open) {
-      event.preventDefault();
+      setOpen(true);
+      return;
+    }
+    setActiveIndex((current) => wrapActiveIndex(current, optionCount, delta));
+  };
+
+  const handleConfirmKey = () => {
+    const optionCount = options.length;
+    if (!open) {
       setOpen(true);
       return;
     }
     if (activeIndex < 0 || activeIndex >= optionCount) return;
-    event.preventDefault();
     selectOption(options[activeIndex]);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    const optionCount = options.length;
+    switch (event.key) {
+      case 'Escape':
+        event.preventDefault();
+        setOpen(false);
+        return;
+      case 'ArrowDown':
+        event.preventDefault();
+        handleArrowKey(1);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        handleArrowKey(-1);
+        return;
+      case 'Home':
+        if (!open || optionCount === 0) return;
+        event.preventDefault();
+        setActiveIndex(0);
+        return;
+      case 'End':
+        if (!open || optionCount === 0) return;
+        event.preventDefault();
+        setActiveIndex(optionCount - 1);
+        return;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        handleConfirmKey();
+        return;
+      default:
+    }
   };
 
   return (
@@ -136,7 +148,6 @@ const Dropdown = ({ placeholder, options, defaultOption, onSelect, error }: Drop
       {open && (
         <div
           id={listboxId}
-          role="listbox"
           className="border-input-text-placeholder-active max-h-50 overflow-y-auto scrollbar-hidden z-99 absolute top-full left-0 rounded-b-2xl border-l border-r border-b border-t bg-white flex flex-col items-center w-full px-3 py-2.5"
         >
           {options.map((option, i) => (
@@ -144,8 +155,6 @@ const Dropdown = ({ placeholder, options, defaultOption, onSelect, error }: Drop
               type="button"
               key={option.key + i}
               id={`${listboxId}-option-${option.key}`}
-              role="option"
-              aria-selected={selected?.key === option.key}
               className={`px-[1.25rem] py-[0.75rem] text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full ${
                 activeOptionId === `${listboxId}-option-${option.key}`
                   ? 'bg-card-hover text-text-primary!'

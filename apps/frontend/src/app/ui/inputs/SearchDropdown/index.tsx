@@ -179,7 +179,6 @@ const SearchDropdown = ({
       {canSearch && (
         <div
           id={listboxId}
-          role="listbox"
           aria-label={accessibleLabel}
           className="border-input-text-placeholder-active max-h-50 overflow-y-auto scrollbar-hidden z-99 absolute top-full left-0 rounded-b-2xl border-l border-r border-b border-t bg-white flex flex-col items-center w-full px-3 py-2.5"
           onScroll={handleScroll}
@@ -189,8 +188,6 @@ const SearchDropdown = ({
               type="button"
               key={option.value}
               id={`${listboxId}-option-${option.value}`}
-              role="option"
-              aria-selected={activeOptionId === `${listboxId}-option-${option.value}`}
               onMouseEnter={() => setActiveIndex(filtered.indexOf(option))}
               onClick={() => onSelectOption(option.value)}
               className={

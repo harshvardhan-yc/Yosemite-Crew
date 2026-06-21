@@ -42,7 +42,7 @@ describe('MultiSelectDropdown', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Select/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'One' }));
+    fireEvent.click(screen.getByRole('button', { name: 'One', pressed: false }));
     expect(onChange).toHaveBeenCalledWith(['One']);
 
     rerender(
@@ -56,11 +56,8 @@ describe('MultiSelectDropdown', () => {
 
     expect(screen.getByText('One')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('One'));
-    const oneButtons = screen.getAllByRole('option', { name: 'One' });
-    const selectedOption = oneButtons.at(-1);
-    expect(selectedOption).toBeDefined();
-    fireEvent.click(selectedOption!);
+    const selectedOption = screen.getByRole('button', { name: 'One', pressed: true });
+    fireEvent.click(selectedOption);
     expect(onChange).toHaveBeenCalledWith([]);
   });
 

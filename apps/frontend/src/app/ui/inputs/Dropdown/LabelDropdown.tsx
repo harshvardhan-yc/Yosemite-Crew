@@ -17,6 +17,12 @@ type DropdownProps = {
   noOptionsMessage?: string;
 };
 
+/** Wrap the active option index when navigating with the arrow keys. */
+const wrapActiveIndex = (current: number, optionCount: number, delta: 1 | -1): number => {
+  if (delta === 1) return current + 1 >= optionCount ? 0 : current + 1;
+  return current <= 0 ? optionCount - 1 : current - 1;
+};
+
 const DROPDOWN_MAX_HEIGHT = 200;
 const DROPDOWN_MIN_HEIGHT = 72;
 const TERMINOLOGY_LOCK_SELECTOR = "[data-terminology-lock='true']";
@@ -145,7 +151,7 @@ const LabelDropdown = ({
     setActiveIndex((current) => {
       if (current >= 0 && current < filteredOptions.length) return current;
       const selectedIndex = filteredOptions.findIndex((option) => option.value === selected?.value);
-      return selectedIndex >= 0 ? selectedIndex : 0;
+      return Math.max(selectedIndex, 0);
     });
   }, [filteredOptions, open, selected?.value]);
 
@@ -164,62 +170,70 @@ const LabelDropdown = ({
     [closeDropdown, onSelect]
   );
 
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
+  const handleArrowKey = useCallback(
+    (delta: 1 | -1) => {
       const optionCount = filteredOptions.length;
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeDropdown();
-        return;
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        if (optionCount === 0) return;
-        if (!open) {
-          openDropdown();
-          return;
-        }
-        setActiveIndex((current) => (current + 1 >= optionCount ? 0 : current + 1));
-        return;
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        if (optionCount === 0) return;
-        if (!open) {
-          openDropdown();
-          return;
-        }
-        setActiveIndex((current) => (current <= 0 ? optionCount - 1 : current - 1));
-        return;
-      }
-      if (event.key === 'Home' && open && optionCount > 0) {
-        event.preventDefault();
-        setActiveIndex(0);
-        return;
-      }
-      if (event.key === 'End' && open && optionCount > 0) {
-        event.preventDefault();
-        setActiveIndex(optionCount - 1);
-        return;
-      }
-      if (event.key !== 'Enter' && event.key !== ' ') return;
+      if (optionCount === 0) return;
       if (!open) {
-        event.preventDefault();
         openDropdown();
         return;
       }
-      if (activeIndex < 0 || activeIndex >= optionCount) return;
-      event.preventDefault();
-      selectOption(filteredOptions[activeIndex]);
+      setActiveIndex((current) => wrapActiveIndex(current, optionCount, delta));
     },
-    [activeIndex, closeDropdown, filteredOptions, open, openDropdown, selectOption]
+    [filteredOptions.length, open, openDropdown]
+  );
+
+  const handleConfirmKey = useCallback(() => {
+    const optionCount = filteredOptions.length;
+    if (!open) {
+      openDropdown();
+      return;
+    }
+    if (activeIndex < 0 || activeIndex >= optionCount) return;
+    selectOption(filteredOptions[activeIndex]);
+  }, [activeIndex, filteredOptions, open, openDropdown, selectOption]);
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      const optionCount = filteredOptions.length;
+      switch (event.key) {
+        case 'Escape':
+          event.preventDefault();
+          closeDropdown();
+          return;
+        case 'ArrowDown':
+          event.preventDefault();
+          handleArrowKey(1);
+          return;
+        case 'ArrowUp':
+          event.preventDefault();
+          handleArrowKey(-1);
+          return;
+        case 'Home':
+          if (!open || optionCount === 0) return;
+          event.preventDefault();
+          setActiveIndex(0);
+          return;
+        case 'End':
+          if (!open || optionCount === 0) return;
+          event.preventDefault();
+          setActiveIndex(optionCount - 1);
+          return;
+        case 'Enter':
+        case ' ':
+          event.preventDefault();
+          handleConfirmKey();
+          return;
+        default:
+      }
+    },
+    [closeDropdown, filteredOptions.length, handleArrowKey, handleConfirmKey, open]
   );
 
   // Same visual style for both portal and inline — connected panel below trigger
   const panel = (
     <div
       id={listboxId}
-      role="listbox"
       aria-label={placeholder}
       data-portal-dropdown
       data-terminology-lock={isTerminologyLocked ? 'true' : undefined}
@@ -232,8 +246,6 @@ const LabelDropdown = ({
             key={option.value}
             id={`${listboxId}-option-${option.value}`}
             type="button"
-            role="option"
-            aria-selected={selected?.value === option.value}
             className={`flex items-center justify-between gap-2 px-5 py-3 text-left text-body-4 hover:bg-card-hover rounded-2xl! text-text-secondary! hover:text-text-primary! w-full ${
               activeOptionId === `${listboxId}-option-${option.value}`
                 ? 'bg-card-hover text-text-primary!'
