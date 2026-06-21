@@ -10,7 +10,7 @@ const items: SoapNoteListItem[] = [
     id: 'soap-1',
     signedByName: 'Dr. Tim Apple',
     date: 'Apr 21, 2026',
-    time: '09:45 AM',
+    time: '09:45 AM IST',
     fields: [
       { label: 'Chief complaint', text: 'vomiting and feeling sick' },
       { label: 'Subjective (History)', html: '<p>owner reports limping</p>' },
@@ -31,8 +31,8 @@ describe('SoapNotesList', () => {
     expect(screen.getByText('All SOAP notes')).toBeInTheDocument();
     expect(screen.getByText('SOAP Note')).toBeInTheDocument();
     expect(screen.getByText(/By Dr. Tim Apple/)).toBeInTheDocument();
-    expect(screen.getByText('Apr 21, 2026')).toBeInTheDocument();
-    expect(screen.getByText('09:45 AM')).toBeInTheDocument();
+    // Date, time and time zone render together on a single row.
+    expect(screen.getByText('Apr 21, 2026 · 09:45 AM IST')).toBeInTheDocument();
     // Online-signed notes show the "Signed" status chip.
     expect(screen.getByText('Signed')).toBeInTheDocument();
   });

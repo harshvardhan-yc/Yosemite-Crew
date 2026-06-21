@@ -892,7 +892,7 @@ export const useLabTests = (activeAppointment: Appointment | null) => {
     setError(null);
     try {
       const payload = {
-        companionId,
+        patientId: companionId,
         appointmentId: activeAppointment?.id,
         tests: selectedTests.map((test) => test.code),
         modality,
@@ -940,7 +940,7 @@ export const useLabTests = (activeAppointment: Appointment | null) => {
       await addPatientToIdexxCensus({
         organisationId: primaryOrgId,
         payload: {
-          companionId,
+          patientId: companionId,
           parentId: parentId || undefined,
           veterinarian: veterinarian || undefined,
           ivls: selectedIvls ? [selectedIvls] : undefined,

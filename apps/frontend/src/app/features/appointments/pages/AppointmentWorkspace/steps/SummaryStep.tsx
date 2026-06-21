@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import type { Appointment, TemplateLike, TemplateSchemaSnapshot } from '@yosemite-crew/types';
 import {
   LuDownload,
@@ -13,18 +14,22 @@ import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContai
 import Search from '@/app/ui/inputs/Search';
 import Datepicker from '@/app/ui/inputs/Datepicker';
 import RichTextEditor from '@/app/ui/primitives/RichTextEditor/RichTextEditor';
-import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
+import { Secondary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
+import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
 import SigningOverlay from '@/app/ui/overlays/SigningOverlay';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
-import { sanitizeRichText } from '@/app/lib/richText';
+import { isRichTextEmpty, sanitizeRichText } from '@/app/lib/richText';
 import type {
   AppointmentEncounter,
   WorkspaceDocument,
 } from '@/app/features/appointments/types/workspace';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
-import { saveDischargeSummaryArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
+import {
+  getRenderedDocument,
+  saveDischargeSummaryArtifact,
+} from '@/app/features/appointments/services/workspaceClinicalService';
 import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
 
 type SummaryStepProps = {
@@ -93,67 +98,186 @@ const DOCUMENT_COLS =
   'sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_92px]';
 const DOCUMENT_ROW_GRID = `grid gap-3 ${DOCUMENT_COLS} sm:items-center`;
 
-const AllDocumentsTable = ({ documents }: { documents: WorkspaceDocument[] }) => (
-  <SectionContainer
-    titleClassName="text-yc-20-b-primary"
-    title="All Documents"
-    className="flex flex-col gap-4"
-  >
-    {documents.length === 0 ? (
-      <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
-        No documents recorded yet.
-      </p>
-    ) : (
-      <div className="flex flex-col gap-3">
-        <div
-          className={`${DOCUMENT_ROW_GRID} hidden border border-transparent px-4 text-caption-2 font-medium tracking-wide text-text-secondary uppercase [&>span]:truncate sm:grid`}
-        >
-          <span>Created</span>
-          <span>Category</span>
-          <span>Description</span>
-          <span>Signed by</span>
-          <span>Last modified</span>
-          <span className="text-right">Actions</span>
+const downloadDocumentUrl = (url: string) => {
+  const link = globalThis.document.createElement('a');
+  link.href = url;
+  link.download = '';
+  link.rel = 'noopener noreferrer';
+  globalThis.document.body.append(link);
+  link.click();
+  link.remove();
+};
+
+/**
+ * Build the "All Documents" rows from the encounter's clinical artifacts so the
+ * list stays in sync with every save (SOAP, prescription, discharge summary)
+ * without a dedicated documents fetch. Any explicitly added/signed documents
+ * (e.g. the signed discharge summary) are merged in and win on id collisions.
+ */
+const deriveWorkspaceDocuments = (encounter: AppointmentEncounter): WorkspaceDocument[] => {
+  const derived: WorkspaceDocument[] = [];
+
+  encounter.soap.forEach((note, index) => {
+    const hasContent =
+      !isRichTextEmpty(note.subjective) ||
+      !isRichTextEmpty(note.objective) ||
+      !isRichTextEmpty(note.assessment) ||
+      !isRichTextEmpty(note.plan) ||
+      !isRichTextEmpty(note.chiefComplaint);
+    if (!hasContent) return;
+    derived.push({
+      id: note.id,
+      category: 'SOAP',
+      description: encounter.soap.length > 1 ? `SOAP note ${index + 1}` : 'SOAP note',
+      createdAt: note.createdAt,
+      lastModifiedAt: note.signedAt ?? note.createdAt,
+      signedByName: note.signedByName,
+      signatureRequired: note.status !== 'COMPLETED',
+    });
+  });
+
+  if (encounter.prescription.length > 0) {
+    const names = encounter.prescription
+      .map((item) => item.medicineName)
+      .filter(Boolean)
+      .join(', ');
+    derived.push({
+      id: 'prescription',
+      category: 'Treatment',
+      description: names ? `Prescription — ${names}` : 'Prescription',
+      createdAt: encounter.dischargeSavedAt ?? new Date().toISOString(),
+      lastModifiedAt: encounter.dischargeSavedAt ?? new Date().toISOString(),
+    });
+  }
+
+  if (encounter.dischargeSavedAt && !isRichTextEmpty(encounter.dischargeSummary)) {
+    derived.push({
+      id: encounter.dischargeSummaryId ?? 'discharge-summary',
+      category: 'Discharge',
+      description: 'Discharge summary',
+      createdAt: encounter.dischargeSavedAt,
+      lastModifiedAt: encounter.dischargeSavedAt,
+      signedByName: encounter.dischargeSavedByName,
+      signatureRequired: false,
+    });
+  }
+
+  const explicitIds = new Set(encounter.documents.map((document) => document.id));
+  return [
+    ...encounter.documents,
+    ...derived.filter((document) => !explicitIds.has(document.id)),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+};
+
+const AllDocumentsTable = ({
+  documents,
+  organisationId,
+}: {
+  documents: WorkspaceDocument[];
+  organisationId?: string;
+}) => {
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ title: string; url: string } | null>(null);
+
+  const resolveDocumentUrl = async (document: WorkspaceDocument) => {
+    if (document.pdfUrl) return document.pdfUrl;
+    if (!organisationId) throw new Error('Organisation missing for document lookup.');
+    const rendered = await getRenderedDocument(organisationId, document.id);
+    const pdfUrl = (rendered as { pdfUrl?: unknown }).pdfUrl;
+    if (typeof pdfUrl === 'string' && pdfUrl.trim()) return pdfUrl.trim();
+    throw new Error('Document PDF is not available yet.');
+  };
+
+  const handleDocumentAction = async (document: WorkspaceDocument, download: boolean) => {
+    setDocumentError(null);
+    try {
+      const url = await resolveDocumentUrl(document);
+      if (download) {
+        downloadDocumentUrl(url);
+        return;
+      }
+      setPreview({ title: document.description, url });
+    } catch (error) {
+      console.error('Unable to open workspace document:', error);
+      setDocumentError(error instanceof Error ? error.message : 'Unable to open document.');
+    }
+  };
+
+  return (
+    <SectionContainer
+      titleClassName="text-yc-20-b-primary"
+      title="All Documents"
+      className="flex flex-col gap-4"
+    >
+      {documents.length === 0 ? (
+        <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
+          No documents recorded yet.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div
+            className={`${DOCUMENT_ROW_GRID} hidden border border-transparent px-4 text-caption-2 font-medium tracking-wide text-text-secondary uppercase [&>span]:truncate sm:grid`}
+          >
+            <span>Created</span>
+            <span>Category</span>
+            <span>Description</span>
+            <span>Signed by</span>
+            <span>Last modified</span>
+            <span className="text-right">Actions</span>
+          </div>
+          <ul className="flex flex-col gap-3">
+            {documents.map((document) => (
+              <li
+                key={document.id}
+                className={`${DOCUMENT_ROW_GRID} rounded-2xl border border-card-border p-4`}
+              >
+                <span className="truncate text-body-4 text-text-secondary">
+                  {formatDateTime(document.createdAt)}
+                </span>
+                <span>
+                  <DocumentCategoryPill category={document.category} />
+                </span>
+                <span className="truncate font-medium text-text-primary">
+                  {document.description}
+                </span>
+                <span className="truncate text-body-4 text-text-primary">
+                  {document.signedByName ?? '-'}
+                </span>
+                <span className="truncate text-body-4 text-text-secondary">
+                  {formatDateTime(document.lastModifiedAt)}
+                </span>
+                <div className="flex justify-end gap-2">
+                  <CircleIconButton
+                    icon={<LuEye aria-hidden="true" />}
+                    label={`View ${document.description}`}
+                    variant="dark"
+                    onClick={() => void handleDocumentAction(document, false)}
+                  />
+                  <CircleIconButton
+                    icon={<LuDownload aria-hidden="true" />}
+                    label={`Download ${document.description}`}
+                    onClick={() => void handleDocumentAction(document, true)}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+          {documentError && (
+            <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">
+              {documentError}
+            </p>
+          )}
         </div>
-        <ul className="flex flex-col gap-3">
-          {documents.map((document) => (
-            <li
-              key={document.id}
-              className={`${DOCUMENT_ROW_GRID} rounded-2xl border border-card-border p-4`}
-            >
-              <span className="truncate text-body-4 text-text-secondary">
-                {formatDateTime(document.createdAt)}
-              </span>
-              <span>
-                <DocumentCategoryPill category={document.category} />
-              </span>
-              <span className="truncate font-medium text-text-primary">{document.description}</span>
-              <span className="truncate text-body-4 text-text-primary">
-                {document.signedByName ?? '-'}
-              </span>
-              <span className="truncate text-body-4 text-text-secondary">
-                {formatDateTime(document.lastModifiedAt)}
-              </span>
-              <div className="flex justify-end gap-2">
-                <CircleIconButton
-                  icon={<LuEye aria-hidden="true" />}
-                  label={`View ${document.description}`}
-                  variant="dark"
-                  onClick={() => undefined}
-                />
-                <CircleIconButton
-                  icon={<LuDownload aria-hidden="true" />}
-                  label={`Download ${document.description}`}
-                  onClick={() => undefined}
-                />
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-    )}
-  </SectionContainer>
-);
+      )}
+      <PdfPreviewOverlay
+        open={Boolean(preview)}
+        title={preview?.title ?? 'Document'}
+        pdfUrl={preview?.url ?? null}
+        onClose={() => setPreview(null)}
+      />
+    </SectionContainer>
+  );
+};
 
 const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps) => {
   const setDischargeSummary = useAppointmentWorkspaceStore((s) => s.setDischargeSummary);
@@ -173,7 +297,9 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   // itself is view-only).
   const dischargeSaved = Boolean(encounter.dischargeSavedAt);
   const readOnly = encounter.viewOnly || dischargeSaved;
+  const derivedDocuments = useMemo(() => deriveWorkspaceDocuments(encounter), [encounter]);
 
+  const templateSearchRef = useRef<HTMLDivElement>(null);
   const templateMatches = useMemo(() => {
     const q = templateQuery.trim().toLowerCase();
     if (!q) return [];
@@ -250,7 +376,7 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
       {/* Discharge-template search sits above the container (like the SOAP step's
           template search) — selecting a template fills the editor. */}
       <div className="relative flex justify-end">
-        <div className="relative w-full sm:max-w-90">
+        <div ref={templateSearchRef} className="relative w-full sm:max-w-90">
           <Search
             value={templateQuery}
             setSearch={setTemplateQuery}
@@ -258,27 +384,32 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
             label="Search discharge templates"
             className="w-full!"
           />
-          {templateMatches.length > 0 && (
-            <ul className="absolute right-0 z-20 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
-              {templateMatches.map((template) => (
-                <li key={template.id}>
-                  <button
-                    type="button"
-                    onClick={() => handleTemplateSelect(template)}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                  >
-                    <LuSearch aria-hidden="true" />
-                    <span>{template.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {templateQuery.trim() && templateMatches.length === 0 && !templateState.error && (
-            <p className="absolute right-0 z-20 mt-1 w-full rounded-2xl border border-card-border bg-neutral-0 px-4 py-3 text-body-4 text-text-secondary shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
-              No discharge templates match this search.
-            </p>
-          )}
+          <SearchResultsDropdown
+            anchorRef={templateSearchRef}
+            open={Boolean(templateQuery.trim()) && !templateState.error}
+            onClose={() => setTemplateQuery('')}
+          >
+            {templateMatches.length > 0 ? (
+              <ul>
+                {templateMatches.map((template) => (
+                  <li key={template.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleTemplateSelect(template)}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
+                    >
+                      <LuSearch aria-hidden="true" />
+                      <span>{template.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 py-3 text-body-4 text-text-secondary">
+                No discharge templates match this search.
+              </p>
+            )}
+          </SearchResultsDropdown>
           {templateState.error && (
             <p className="mt-2 text-caption-1 text-danger-600">{templateState.error}</p>
           )}
@@ -378,7 +509,7 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
             isDisabled={encounter.viewOnly || isSaving}
           />
         )}
-        <Primary
+        <Secondary
           text="Sign"
           icon={<LuFileSignature aria-hidden="true" />}
           onClick={handleSign}
@@ -386,7 +517,10 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
         />
       </div>
 
-      <AllDocumentsTable documents={encounter.documents} />
+      <AllDocumentsTable
+        documents={derivedDocuments}
+        organisationId={appointment?.organisationId}
+      />
     </div>
   );
 };

@@ -400,7 +400,7 @@ describe('AppointmentInfo modal', () => {
     (useResolvedMerckIntegrationForPrimaryOrg as jest.Mock).mockReturnValue({ isEnabled: false });
   });
 
-  it('fetches submissions and renders header', async () => {
+  it('renders header without fetching SOAP submissions by default', () => {
     render(
       <AppointmentInfoModal showModal setShowModal={setShowModal} activeAppointment={appointment} />
     );
@@ -411,10 +411,7 @@ describe('AppointmentInfo modal', () => {
     expect(screen.getByText('Status: UPCOMING')).toBeInTheDocument();
     expect(screen.getByText(/Upcoming:/)).toBeInTheDocument();
     expect(screen.getByText('appointment-info-section')).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(fetchSubmissions).toHaveBeenCalledWith('appt-1');
-    });
+    expect(fetchSubmissions).not.toHaveBeenCalled();
   });
 
   it('shows companion profile photo in the modal header when available', () => {
@@ -456,7 +453,7 @@ describe('AppointmentInfo modal', () => {
     expect(headerImage?.getAttribute('data-src')).toContain('/avatar/cat.png');
   });
 
-  it('switches to prescription templates section', () => {
+  it('switches to prescription templates section', async () => {
     render(
       <AppointmentInfoModal showModal setShowModal={setShowModal} activeAppointment={appointment} />
     );
@@ -465,6 +462,9 @@ describe('AppointmentInfo modal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'SOAP' }));
 
     expect(screen.getByText(/loading forms/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchSubmissions).toHaveBeenCalledWith('appt-1');
+    });
   });
 
   it('includes SOAP category templates in hospital medical records search', async () => {

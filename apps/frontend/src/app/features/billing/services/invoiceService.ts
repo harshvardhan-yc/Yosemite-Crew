@@ -8,8 +8,22 @@ import {
 import { useInvoiceStore } from '@/app/stores/invoiceStore';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { getData, patchData, postData } from '@/app/services/axios';
+import type {
+  InvoiceLineItem as WorkspaceInvoiceLine,
+  InvoiceStatus as WorkspaceInvoiceStatus,
+  PastInvoice as WorkspacePastInvoice,
+} from '@/app/features/appointments/types/workspace';
 
 export type InvoicePaymentCollectionMethod = 'PAYMENT_AT_CLINIC';
+
+export type AppointmentBillingHydration = {
+  pastInvoices: WorkspacePastInvoice[];
+  depositCents: number;
+  /** Lower-cased names of items already on an invoice, so the bill builder can exclude them. */
+  invoicedItemNames: string[];
+  /** Currency reported by the appointment's invoices (ISO code), if any. */
+  currency?: string;
+};
 
 type FinanceEnvelope<T> = {
   data: T;
@@ -48,6 +62,8 @@ type ManualPaymentInput = {
 
 type ReadyForBillingInput = {
   organisationId: string;
+  patientId?: string;
+  parentId?: string;
   visitId?: string;
   notes?: string;
 };
@@ -92,6 +108,37 @@ const unwrapFinanceData = <T>(value: T | FinanceEnvelope<T>): T => {
     return envelope.data;
   }
   return value as T;
+};
+
+const getErrorStatus = (error: unknown): number | undefined => {
+  if (!error || typeof error !== 'object' || !('response' in error)) return undefined;
+  const response = (error as { response?: { status?: unknown } }).response;
+  return typeof response?.status === 'number' ? response.status : undefined;
+};
+
+const isInvoiceMissingForReadyForBilling = (error: unknown): boolean => {
+  if (getErrorStatus(error) !== 404) return false;
+  const data = (error as { response?: { data?: unknown } }).response?.data;
+  if (!data || typeof data !== 'object') return false;
+  const message = String(
+    (data as { message?: unknown; error?: unknown }).message ?? ''
+  ).toLowerCase();
+  const errorMessage = String(
+    (data as { error?: { message?: unknown } }).error?.message ?? ''
+  ).toLowerCase();
+  return [message, errorMessage].some((text) => text.includes('invoice'));
+};
+
+const markAppointmentReadyForBillingViaAppointmentRoute = async (
+  appointmentId: string,
+  input: ReadyForBillingInput
+): Promise<unknown> => {
+  if (!input.organisationId) throw new Error('Organisation ID missing');
+  const res = await patchData<FinanceEnvelope<unknown> | unknown>(
+    `/fhir/v1/appointment/pms/${input.organisationId}/${appointmentId}/ready-for-billing`,
+    input
+  );
+  return unwrapFinanceData(res.data);
 };
 
 const normalizeFinanceInvoice = (invoice: any, fallbackOrganisationId?: string): Invoice => {
@@ -237,6 +284,105 @@ export const loadInvoicesForAppointment = async (appointmentId: string): Promise
   }
 };
 
+/**
+ * Finance invoice amounts are expressed in major currency units (dollars). The
+ * appointment workspace works entirely in integer cents, so convert on read.
+ */
+const financeAmountToCents = (amount: number | undefined): number =>
+  Math.max(0, Math.round((Number(amount) || 0) * 100));
+
+const FINANCE_OPEN_STATUSES = new Set(['PENDING', 'AWAITING_PAYMENT', 'REQUIRES_ACTION']);
+
+/** Map a finance invoice status to the workspace's coarse paid/unpaid pill state. */
+const toWorkspaceInvoiceStatus = (
+  status: string | undefined,
+  outstandingCents: number
+): WorkspaceInvoiceStatus => {
+  if (status === 'PAID' || outstandingCents <= 0) return 'PAID_FULL';
+  if (status && FINANCE_OPEN_STATUSES.has(status)) return 'UNPAID';
+  return outstandingCents > 0 ? 'PARTIAL' : 'PAID_FULL';
+};
+
+const financeItemToWorkspaceLineItem = (item: InvoiceItem, index: number): WorkspaceInvoiceLine => {
+  const unitPriceCents = financeAmountToCents(item.unitPrice);
+  const qty = Math.max(1, Math.round(Number(item.quantity) || 1));
+  const grossCents = unitPriceCents * qty;
+  const amountCents = financeAmountToCents(item.total) || grossCents;
+  return {
+    id: String(item.id ?? `finance-line-${index}`),
+    name: item.name,
+    unitPriceCents,
+    qty,
+    grossCents,
+    discountCents: Math.max(0, grossCents - amountCents),
+    amountCents,
+  };
+};
+
+/**
+ * Hydrate the appointment workspace's billing view from the finance service:
+ * existing/settled invoices (for the Invoices section), the deposit balance, and
+ * the set of line-item names already invoiced (so the bill builder doesn't offer
+ * them again).
+ */
+export const loadAppointmentBilling = async (
+  organisationId: string,
+  appointmentId: string
+): Promise<AppointmentBillingHydration> => {
+  if (!organisationId || !appointmentId) {
+    return { pastInvoices: [], depositCents: 0, invoicedItemNames: [] };
+  }
+
+  const res = await getData<FinanceEnvelope<unknown[]> | unknown[]>(
+    `${FINANCE_BASE_PATH}/invoices`,
+    { organisationId, appointmentId }
+  );
+  const invoicePayload = unwrapFinanceData(res.data) ?? [];
+  const invoices = invoicePayload
+    .map((invoice) => normalizeFinanceInvoice(invoice, organisationId))
+    // Guard against a backend that ignores the appointmentId filter: only keep
+    // invoices for this appointment (when the field is present on the row).
+    .filter((invoice) => !invoice.appointmentId || invoice.appointmentId === appointmentId);
+
+  const invoicedItemNames = new Set<string>();
+  let depositCents = 0;
+  const pastInvoices: WorkspacePastInvoice[] = invoices.map((invoice) => {
+    const items = (Array.isArray(invoice.items) ? invoice.items : []).map(
+      financeItemToWorkspaceLineItem
+    );
+    items.forEach((item) => {
+      const key = item.name.trim().toLowerCase();
+      if (key) invoicedItemNames.add(key);
+    });
+    const totalCents =
+      financeAmountToCents(invoice.totalAmount) ||
+      items.reduce((sum, item) => sum + item.amountCents, 0);
+    const collectedCents = financeAmountToCents(invoice.depositCollectedAmount);
+    depositCents += collectedCents;
+    const isPaid = invoice.status === 'PAID' || Boolean(invoice.paidAt);
+    const outstandingCents = isPaid ? 0 : totalCents;
+    return {
+      id: String(invoice.id ?? appointmentId),
+      createdAt: (invoice.createdAt ?? new Date()).toISOString(),
+      totalCents,
+      outstandingCents,
+      status: toWorkspaceInvoiceStatus(invoice.status, outstandingCents),
+      paidByName: undefined,
+      paidAt: invoice.paidAt ? invoice.paidAt.toISOString() : undefined,
+      items,
+    };
+  });
+
+  const currency = invoices.find((invoice) => invoice.currency)?.currency;
+
+  return {
+    pastInvoices,
+    depositCents,
+    invoicedItemNames: [...invoicedItemNames],
+    currency: currency ? currency.toUpperCase() : undefined,
+  };
+};
+
 const shouldFetchInvoices = (
   status: ReturnType<typeof useInvoiceStore.getState>['status'],
   hasOrgData: boolean,
@@ -245,6 +391,32 @@ const shouldFetchInvoices = (
   if (opts?.force) return true;
   if (!hasOrgData) return true;
   return status === 'idle' || status === 'error';
+};
+
+const normalizeInvoiceLineKey = (
+  item: Pick<InvoiceItem, 'name' | 'quantity' | 'unitPrice' | 'total'>
+) =>
+  [
+    String(item.name ?? '')
+      .trim()
+      .toLowerCase(),
+    Number(item.quantity),
+    Number(item.unitPrice),
+    Number(item.total),
+  ].join('|');
+
+const filterNewInvoiceLineItems = (invoice: Invoice, lineItems: InvoiceItem[]): InvoiceItem[] => {
+  const existingItems = Array.isArray(invoice.items) ? invoice.items : [];
+  const existingIds = new Set(
+    existingItems.map((item) => String(item.id ?? '').trim()).filter((id) => id.length > 0)
+  );
+  const existingKeys = new Set(existingItems.map(normalizeInvoiceLineKey));
+
+  return lineItems.filter((item) => {
+    const id = String(item.id ?? '').trim();
+    if (id && existingIds.has(id)) return false;
+    return !existingKeys.has(normalizeInvoiceLineKey(item));
+  });
 };
 
 export const addLineItemsToAppointments = async (
@@ -262,8 +434,10 @@ export const addLineItemsToAppointments = async (
       throw new Error('Line items or Appointment ID or Currency missing');
     }
     const invoice = await ensureAppointmentInvoice(appointmentId);
+    const newLineItems = filterNewInvoiceLineItems(invoice, lineItems);
+    if (newLineItems.length === 0) return;
     const body = {
-      items: lineItems.map((item) => ({
+      items: newLineItems.map((item) => ({
         name: item.name,
         description: item.description ?? item.name,
         quantity: item.quantity,
@@ -421,11 +595,51 @@ export const markAppointmentReadyForBilling = async (
   input: ReadyForBillingInput
 ): Promise<unknown> => {
   if (!appointmentId) throw new Error('Appointment ID missing');
-  const res = await postData<FinanceEnvelope<unknown> | unknown>(
-    `${FINANCE_BASE_PATH}/appointments/${appointmentId}/ready-for-billing`,
-    input
-  );
-  return unwrapFinanceData(res.data);
+  const endpoint = `${FINANCE_BASE_PATH}/appointments/${appointmentId}/ready-for-billing`;
+  try {
+    const res = await postData<FinanceEnvelope<unknown> | unknown>(endpoint, input);
+    return unwrapFinanceData(res.data);
+  } catch (error) {
+    if (getErrorStatus(error) === 404 && !isInvoiceMissingForReadyForBilling(error)) {
+      return markAppointmentReadyForBillingViaAppointmentRoute(appointmentId, input);
+    }
+    if (
+      !isInvoiceMissingForReadyForBilling(error) ||
+      !input.organisationId ||
+      !input.parentId ||
+      !input.patientId
+    ) {
+      throw error;
+    }
+
+    await createFinanceInvoice({
+      appointmentId,
+      parentId: input.parentId,
+      patientId: input.patientId,
+      organisationId: input.organisationId,
+      paymentCollectionMethod: 'PAYMENT_AT_CLINIC',
+      items: [
+        {
+          name: 'Billing handoff',
+          description: input.notes ?? 'Clinical visit ready for billing',
+          quantity: 1,
+          unitPrice: 0,
+          total: 0,
+        },
+      ],
+      notes: input.notes ?? 'Ready for billing',
+    });
+
+    try {
+      const retry = await postData<FinanceEnvelope<unknown> | unknown>(endpoint, input);
+      return unwrapFinanceData(retry.data);
+    } catch (retryError) {
+      if (getErrorStatus(retryError) === 404) {
+        return markAppointmentReadyForBillingViaAppointmentRoute(appointmentId, input);
+      }
+      throw retryError;
+    }
+  }
 };
 
 export const seedAppointmentInvoice = async (appointmentId: string): Promise<Invoice> => {

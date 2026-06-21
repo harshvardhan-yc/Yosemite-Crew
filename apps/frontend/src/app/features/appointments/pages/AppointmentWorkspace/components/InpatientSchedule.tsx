@@ -21,10 +21,14 @@ import { getStatusStyle } from '@/app/config/statusConfig';
 import type { ScheduleTask, ScheduleTaskStatus } from '@/app/features/appointments/types/workspace';
 import type { TemplateLike } from '@yosemite-crew/types';
 
+type AssigneeOption = { label: string; value: string };
+
 type InpatientScheduleProps = {
   tasks: ScheduleTask[];
   templates?: TemplateLike[];
   readOnly: boolean;
+  /** Real staff (team members + appointment lead/support) available to own a task. */
+  assigneeOptions: AssigneeOption[];
   onAddTask: (task: Omit<ScheduleTask, 'id'>) => void;
   onUpdateTask: (id: string, patch: Partial<ScheduleTask>) => void;
   onApplyTemplate?: (templateId: string) => void;
@@ -35,11 +39,6 @@ const STATUS_OPTIONS: { label: string; value: ScheduleTaskStatus }[] = [
   { label: 'Completed', value: 'COMPLETED' },
   { label: 'Cancelled', value: 'CANCELLED' },
   { label: 'Pending', value: 'PENDING' },
-];
-
-const ASSIGNEE_OPTIONS = [
-  { label: 'Sarah Mitchell', value: 'usr-sarah' },
-  { label: 'Dr. Tim Apple', value: 'usr-tim' },
 ];
 
 const formatStatusLabel = (status: ScheduleTaskStatus): string =>
@@ -243,6 +242,7 @@ const InpatientSchedule = ({
   tasks,
   templates = [],
   readOnly,
+  assigneeOptions,
   onAddTask,
   onUpdateTask,
   onApplyTemplate,
@@ -354,7 +354,7 @@ const InpatientSchedule = ({
                   <span>{task.category}</span>
                   <LabelDropdown
                     placeholder="Assigned to"
-                    options={ASSIGNEE_OPTIONS}
+                    options={assigneeOptions}
                     defaultOption={task.assignedToId ?? task.assignedToName}
                     searchable={false}
                     onSelect={(option) =>
@@ -373,7 +373,9 @@ const InpatientSchedule = ({
                       icon={<LuRefreshCw aria-hidden="true" />}
                       label={`Reschedule ${task.description}`}
                       disabled={readOnly}
-                      onClick={() => onUpdateTask(task.id, { time: '5:40 PM' })}
+                      // Reschedule expands the row so the real time/date pickers in
+                      // the breakdown are used — no hardcoded placeholder time.
+                      onClick={() => setExpandedId(task.id)}
                     />
                     <CircleIconButton
                       icon={

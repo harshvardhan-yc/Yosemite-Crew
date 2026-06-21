@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { LuChevronDown, LuCopy, LuPlus, LuPrinter, LuTrash2 } from 'react-icons/lu';
+import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
@@ -258,6 +259,7 @@ const PrescriptionEditor = ({
   onPrint,
 }: PrescriptionEditorProps) => {
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLDivElement>(null);
 
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -269,13 +271,13 @@ const PrescriptionEditor = ({
     <div className="flex flex-col gap-3">
       {/* Search + print row sits above the floating container (matches the other
           steps); results surface as a dropdown on type. */}
-      <div className="relative flex items-center justify-end gap-3">
+      <div className="relative z-50 flex items-center justify-end gap-3">
         <CircleIconButton
           icon={<LuPrinter aria-hidden="true" />}
           label="Print prescription"
           onClick={onPrint}
         />
-        <div className="relative w-full sm:max-w-90">
+        <div ref={searchRef} className="relative w-full sm:max-w-90">
           <Search
             value={search}
             setSearch={setSearch}
@@ -283,8 +285,12 @@ const PrescriptionEditor = ({
             label="Search medicines"
             className="w-full!"
           />
-          {matches.length > 0 && (
-            <ul className="absolute right-0 z-20 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+          <SearchResultsDropdown
+            anchorRef={searchRef}
+            open={matches.length > 0}
+            onClose={() => setSearch('')}
+          >
+            <ul>
               {matches.map((item) => (
                 <li key={item.medicineName}>
                   <button
@@ -304,7 +310,7 @@ const PrescriptionEditor = ({
                 </li>
               ))}
             </ul>
-          )}
+          </SearchResultsDropdown>
         </div>
       </div>
 

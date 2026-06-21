@@ -26,6 +26,17 @@ import {
 } from '@/app/lib/appointments';
 
 type AppointmentPaymentStatus = 'PAID' | 'UNPAID' | 'PAID_CASH' | 'PAYMENT_AT_CLINIC';
+export type AdmitAppointmentInput = {
+  admittedAt: string;
+  expectedStayDays?: number;
+  lead?: { id?: string; name?: string };
+  supportStaff?: Array<{ id?: string; name?: string }>;
+  room?: { id: string; name: string };
+  roomUnitId?: string;
+  assignedAt?: string;
+  assignedBy?: string;
+  assignmentReason?: string;
+};
 const inFlightBookableSlotsRequests = new Map<string, Promise<Slot[]>>();
 const inFlightCalendarPrefillRequests = new Map<
   string,
@@ -478,6 +489,25 @@ export const updateAppointmentPaymentStatus = async (
   } as Appointment);
 };
 
+export const admitAppointment = async (
+  organisationId: string,
+  appointmentId: string,
+  input: AdmitAppointmentInput
+) => {
+  if (!organisationId) throw new Error('Organisation ID missing');
+  if (!appointmentId) throw new Error('Appointment ID missing');
+  try {
+    const res = await postData(
+      `/fhir/v1/appointment/pms/${organisationId}/${appointmentId}/admit`,
+      input
+    );
+    return res.data;
+  } catch (err) {
+    console.error('Failed to admit appointment:', err);
+    throw err;
+  }
+};
+
 export const assignEncounterUnit = async ({
   encounterId,
   unitId,
@@ -543,6 +573,21 @@ export const undoEncounterReadyForDischarge = (encounterId?: string) =>
     operation: '$undo-ready-for-discharge',
     logLabel: 'undo encounter ready for discharge',
   });
+
+export const dischargeEncounter = async (encounterId?: string, dischargedAt?: string) => {
+  if (!encounterId) return;
+  try {
+    await postData(`/fhir/v1/encounter/${encounterId}/$discharge`, {
+      resourceType: 'Parameters',
+      parameter: [
+        { name: 'dischargedAt', valueDateTime: dischargedAt ?? new Date().toISOString() },
+      ],
+    });
+  } catch (err) {
+    console.error('Failed to discharge encounter:', err);
+    throw err;
+  }
+};
 
 export const consumeInventory = async (inventory: InventoryConsumeRequest) => {
   const { primaryOrgId } = useOrgStore.getState();

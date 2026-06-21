@@ -5,6 +5,7 @@ import PopoverDetail from './PopoverDetail';
 import StaffInput from './StaffInput';
 import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
 import EmergencyBadge from '@/app/features/appointments/components/EmergencyBadge';
+import { AppointmentModePill } from '@/app/features/appointments/components/AppointmentCardContent';
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
 import {
   allowReschedule,
@@ -20,10 +21,7 @@ import { getAppointmentPaymentDisplay } from '@/app/lib/paymentStatus';
 import { normalizeAppointmentId } from '@/app/lib/invoice';
 import { formatMoney } from '@/app/lib/money';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
-import {
-  acceptAppointment,
-  rejectAppointment,
-} from '@/app/features/appointments/services/appointmentService';
+import { rejectAppointment } from '@/app/features/appointments/services/appointmentService';
 import { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 import { Appointment, Invoice } from '@yosemite-crew/types';
 import { useOrgStore } from '@/app/stores/orgStore';
@@ -56,6 +54,7 @@ type AppointmentPopoverProps = {
   popoverStyle: React.CSSProperties;
   handleRescheduleAppointment: (appt: Appointment) => void;
   handleChangeRoomAppointment?: (appt: Appointment) => void;
+  handleAcceptAppointment?: (appt: Appointment) => void;
   onClose: () => void;
   registerAnchorEl: (el: HTMLElement | null) => () => void;
 };
@@ -158,6 +157,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
   popoverStyle,
   handleRescheduleAppointment,
   handleChangeRoomAppointment,
+  handleAcceptAppointment,
   onClose,
   registerAnchorEl,
 }) => {
@@ -281,6 +281,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
             onChanged={onClose}
             registerAnchorEl={registerAnchorEl}
           />
+          <AppointmentModePill appointment={appointment} className="w-fit" />
 
           {appointment.isEmergency && <EmergencyBadge />}
         </div>
@@ -311,15 +312,15 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
 
       <div className="mt-5 flex items-center justify-between gap-2 px-1">
         {canEditAppointments && isRequestedLikeStatus(appointment.status) && (
-          <>
+          <div className="flex shrink-0 items-center gap-2">
             <GlassTooltip content="Accept request" side="top">
               <button
                 type="button"
                 title="Accept request"
                 aria-label="Accept request"
-                className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-success-100"
-                onClick={async () => {
-                  await acceptAppointment(appointment);
+                className="flex size-10 shrink-0 items-center justify-center rounded-full! border border-success-200 bg-success-100 hover:bg-success-200"
+                onClick={() => {
+                  handleAcceptAppointment?.(appointment);
                   onClose();
                 }}
               >
@@ -331,7 +332,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 type="button"
                 title="Decline request"
                 aria-label="Decline request"
-                className="flex size-12 shrink-0 items-center justify-center rounded-full! border-[1.2px] border-neutral-900 bg-white p-3 shadow-[0_1px_8px_1px_rgba(169,163,158,0.10)] hover:bg-danger-100"
+                className="flex size-10 shrink-0 items-center justify-center rounded-full! border border-danger-200 bg-danger-100 hover:bg-danger-200"
                 onClick={async () => {
                   await rejectAppointment(appointment);
                   onClose();
@@ -340,7 +341,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
                 <IoIosCloseCircle size={20} color="var(--color-danger-600)" aria-hidden="true" />
               </button>
             </GlassTooltip>
-          </>
+          </div>
         )}
         {!isRequestedLikeStatus(appointment.status) && canOpenWorkspace && (
           <div

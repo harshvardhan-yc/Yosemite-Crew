@@ -24,6 +24,8 @@ export interface Organisation {
   stripeAccountId?: string;
   appointmentCheckInBufferMinutes?: number;
   appointmentCheckInRadiusMeters?: number;
+  appointmentLockWindowOutpatientMinutes?: number;
+  appointmentLockWindowInpatientMinutes?: number;
 }
 
 export type Organization = Organisation;

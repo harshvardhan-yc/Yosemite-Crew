@@ -63,6 +63,7 @@ describe('workspaceClinicalService', () => {
         id: 'soap-1',
         status: 'final',
         date: '2026-04-20T09:00:00.000Z',
+        author: [{ display: 'Dr Meredith Grey' }],
         extension: [
           {
             url: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-subjective',
@@ -80,7 +81,32 @@ describe('workspaceClinicalService', () => {
       '/fhir/v1/clinical-artifact/organisation/org-1/appointment/appt-1/soap-notes',
       {}
     );
-    expect(notes[0]).toEqual(expect.objectContaining({ id: 'soap-1', status: 'COMPLETED' }));
+    expect(notes[0]).toEqual(
+      expect.objectContaining({
+        id: 'soap-1',
+        status: 'COMPLETED',
+        signedByName: 'Dr Meredith Grey',
+      })
+    );
+  });
+
+  it('uses the current author name when hydrated SOAP notes only contain the author reference', async () => {
+    postDataMock.mockResolvedValueOnce({
+      data: bundle('Composition', {
+        id: 'soap-1',
+        status: 'final',
+        date: '2026-04-20T09:00:00.000Z',
+        author: [{ reference: 'Practitioner/user-1' }],
+      }),
+    });
+
+    const notes = await listSoapNotesForAppointment('org-1', 'appt-1', {
+      encounterId: 'enc-1',
+      authorId: 'user-1',
+      authorName: 'Dr Tim Apple',
+    });
+
+    expect(notes[0].signedByName).toBe('Dr Tim Apple');
   });
 
   it('saves a SOAP note as a FHIR Composition with backend context fields', async () => {
@@ -92,6 +118,7 @@ describe('workspaceClinicalService', () => {
         appointmentId: 'appt-1',
         encounterId: 'enc-1',
         authorId: 'user-1',
+        authorName: 'Dr Tim Apple',
       },
       {
         id: 'draft',
@@ -112,6 +139,7 @@ describe('workspaceClinicalService', () => {
         appointmentId: 'appt-1',
         encounterId: 'enc-1',
         authorId: 'user-1',
+        author: [{ reference: 'Practitioner/user-1', display: 'Dr Tim Apple' }],
       })
     );
   });
@@ -353,6 +381,26 @@ describe('workspaceClinicalService', () => {
     expect(summary.id).toBe('dc-enc');
   });
 
+  it('resolves the discharge "Saved by" to the author name, never a raw id', async () => {
+    postDataMock.mockResolvedValueOnce({
+      data: bundle('Composition', {
+        id: 'dc-enc',
+        status: 'final',
+        date: '2026-04-20T09:00:00.000Z',
+        author: [{ reference: 'Practitioner/user-1' }],
+      }),
+    });
+
+    const [summary] = await listDischargeSummariesForEncounter('org-1', 'enc-1', {
+      appointmentId: 'appt-1',
+      authorId: 'user-1',
+      authorName: 'Dr Tim Apple',
+    });
+
+    expect(summary.dischargeSavedByName).toBe('Dr Tim Apple');
+    expect(summary.dischargeSavedByName).not.toBe('user-1');
+  });
+
   it('saves prescriptions as a FHIR MedicationRequest with appointment context', async () => {
     postDataMock.mockResolvedValueOnce({
       data: { resourceType: 'MedicationRequest', id: 'rx-1' },
@@ -496,7 +544,7 @@ describe('workspaceClinicalService', () => {
     await listPmsObservationTaskPreviewsForAppointment('appt-1');
 
     expect(getDataMock).toHaveBeenNthCalledWith(1, '/v1/observation-tools/pms/submissions', {
-      companionId: 'comp-1',
+      patientId: 'comp-1',
       toolId: 'fgs',
       fromDate: '2026-04-20T00:00:00.000Z',
       toDate: undefined,
@@ -527,6 +575,7 @@ describe('workspaceClinicalService', () => {
           id: 'soap-1',
           status: 'final',
           date: '2026-04-20T09:00:00.000Z',
+          author: [{ reference: 'Practitioner/user-1' }],
         }),
       })
       .mockRejectedValueOnce(new Error('vitals unavailable'))
@@ -544,17 +593,37 @@ describe('workspaceClinicalService', () => {
       .mockResolvedValueOnce({
         data: bundle('MedicationRequest', { id: 'rx-1', status: 'active' }),
       })
-      .mockResolvedValueOnce({ data: { resourceType: 'Bundle', entry: [] } });
+      .mockResolvedValueOnce({
+        data: bundle('Composition', {
+          id: 'dc-1',
+          status: 'final',
+          date: '2026-04-20T10:00:00.000Z',
+          author: [{ display: 'Dr A' }],
+          extension: [
+            {
+              url: 'https://yosemitecrew.com/fhir/StructureDefinition/discharge-summary-content',
+              valueString: '<p>Stable for home care</p>',
+            },
+          ],
+        }),
+      });
 
     const hydrated = await loadWorkspaceClinicalArtifacts({
       organisationId: 'org-1',
       appointmentId: 'appt-1',
       encounterId: 'enc-1',
+      authorId: 'user-1',
+      authorName: 'Dr Tim Apple',
     });
 
     expect(hydrated.soap?.[0].id).toBe('soap-1');
+    expect(hydrated.soap?.[0].signedByName).toBe('Dr Tim Apple');
     expect(hydrated.observations?.[0].id).toBe('obs-1');
     expect(hydrated.prescription?.[0].id).toBe('rx-1');
+    expect(hydrated.dischargeSummary).toBe('<p>Stable for home care</p>');
+    expect(hydrated.dischargeSummaryId).toBe('dc-1');
+    expect(hydrated.dischargeSavedAt).toBe('2026-04-20T10:00:00.000Z');
+    expect(hydrated.dischargeSavedByName).toBe('Dr A');
     expect(hydrated.vitals).toBeUndefined();
   });
 });

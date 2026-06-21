@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import { IoArrowForward } from 'react-icons/io5';
 import { LuClipboardList, LuPrinter } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import RichTextEditor from '@/app/ui/primitives/RichTextEditor/RichTextEditor';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
+import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
 import SoapNotesList, {
   type SoapNoteListItem,
 } from '@/app/features/appointments/pages/AppointmentWorkspace/components/SoapNotesList';
@@ -14,14 +16,21 @@ import type {
   SoapNoteEntry,
 } from '@/app/features/appointments/types/workspace';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
-import { saveSoapNote } from '@/app/features/appointments/services/workspaceClinicalService';
+import { isRichTextEmpty } from '@/app/lib/richText';
+import {
+  getRenderedDocument,
+  saveSoapNote,
+} from '@/app/features/appointments/services/workspaceClinicalService';
 
 type SoapStepProps = {
   appointmentId: string;
   organisationId?: string;
   encounterId?: string;
   authorId?: string;
+  authorName?: string;
   appointmentReason: string;
+  appointmentService?: string;
+  appointmentSpeciality?: string;
   encounter: AppointmentEncounter;
   onRecordVitals: () => void;
   onSaveAndNext: () => void;
@@ -37,6 +46,14 @@ const EMPTY_SOAP: SoapNoteEntry = {
   status: 'EMPTY',
   createdAt: '',
 };
+
+const isPersistedSoapId = (value?: string) =>
+  Boolean(value && value !== 'draft' && !value.startsWith('local-'));
+
+const hasSoapContent = (note: SoapNoteEntry) =>
+  [note.chiefComplaint, note.subjective, note.objective, note.assessment, note.plan].some(
+    (value) => !isRichTextEmpty(value)
+  );
 
 const SoapSignActions = ({
   disabled,
@@ -65,6 +82,30 @@ const SoapSignActions = ({
   </div>
 );
 
+const SoapContextField = ({ label, value }: { label: string; value?: string }) => (
+  <div className="relative w-full">
+    <div className="relative flex min-h-12 w-full items-center rounded-2xl border border-input-border-default bg-(--whitebg) px-5 py-2">
+      <span
+        className={`min-w-0 flex-1 truncate text-left text-body-4 ${value?.trim() ? 'text-text-primary' : 'text-input-text-placeholder'}`}
+      >
+        {value?.trim() || '-'}
+      </span>
+    </div>
+    <span className="pointer-events-none absolute -top-2 left-5 z-10 bg-(--whitebg) px-1 text-caption-2 text-text-secondary">
+      {label}
+    </span>
+  </div>
+);
+
+const ChiefComplaintField = ({ value }: { value: string }) => (
+  <div className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-input-border-default px-5 py-4">
+    <span className="shrink-0 text-yc-16-r-neutral font-bold">Chief Complaint</span>
+    <span className="min-w-0 overflow-x-auto whitespace-nowrap text-right text-yc-16-r-neutral">
+      {value}
+    </span>
+  </div>
+);
+
 /**
  * SOAP step: appointment reason, template search, and four rich-text sections
  * (Subjective / Objective / Assessment / Plan). Record Vitals lives in the
@@ -76,7 +117,10 @@ const SoapStep = ({
   organisationId,
   encounterId,
   authorId,
+  authorName,
   appointmentReason,
+  appointmentService,
+  appointmentSpeciality,
   encounter,
   onRecordVitals,
   onSaveAndNext,
@@ -86,12 +130,22 @@ const SoapStep = ({
   const signSoap = useAppointmentWorkspaceStore((s) => s.signSoap);
   const [templateQuery, setTemplateQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isPreparingPdf, setIsPreparingPdf] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('SOAP note');
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [persistedDraftId, setPersistedDraftId] = useState<string | undefined>(undefined);
 
   // Work on the active draft (first not-yet-signed note); once a note is signed
   // it moves to "All SOAP notes" history and the form clears for a new entry.
   const note = encounter.soap.find((entry) => entry.status !== 'COMPLETED') ?? EMPTY_SOAP;
   const readOnly = encounter.viewOnly;
 
+  useEffect(() => {
+    setPersistedDraftId(isPersistedSoapId(note.id) ? note.id : undefined);
+  }, [note.id]);
+
+  const templateSearchRef = useRef<HTMLDivElement>(null);
   const templateMatches = useMemo(() => {
     const q = templateQuery.trim().toLowerCase();
     if (!q) return [];
@@ -105,7 +159,7 @@ const SoapStep = ({
           ? [
               {
                 id: entry.id,
-                signedByName: entry.signedByName ?? 'Unknown',
+                signedByName: entry.signedByName ?? encounter.leadName ?? 'Clinician',
                 signedOffline: entry.signedOffline,
                 date: entry.signedAt ? formatStampDate(entry.signedAt) : undefined,
                 time: entry.signedAt ? formatStampTime(entry.signedAt) : undefined,
@@ -120,7 +174,7 @@ const SoapStep = ({
             ]
           : []
       ),
-    [appointmentReason, encounter.soap]
+    [appointmentReason, encounter.leadName, encounter.soap]
   );
 
   const handleSaveAndNext = async () => {
@@ -129,9 +183,20 @@ const SoapStep = ({
     let persistedId: string | undefined;
     try {
       if (organisationId) {
+        const noteForSave =
+          persistedDraftId && !isPersistedSoapId(note.id)
+            ? { ...note, id: persistedDraftId }
+            : note;
         const saved = await saveSoapNote(
-          { organisationId, appointmentId, encounterId, authorId, templateId: note.templateId },
-          note
+          {
+            organisationId,
+            appointmentId,
+            encounterId,
+            authorId,
+            authorName,
+            templateId: note.templateId,
+          },
+          noteForSave
         );
         persistedId = (saved as { id?: string } | undefined)?.id;
       }
@@ -144,17 +209,95 @@ const SoapStep = ({
     }
   };
 
+  const resolveSoapPdfUrl = async (soapNoteId: string) => {
+    if (!organisationId) throw new Error('Organisation missing for SOAP document lookup.');
+    const rendered = await getRenderedDocument(organisationId, soapNoteId);
+    const pdfUrl = rendered.pdfUrl?.trim();
+    if (pdfUrl) return pdfUrl;
+    throw new Error('SOAP note PDF is not available yet.');
+  };
+
+  const openSoapPdfPreview = async (soapNoteId: string, title: string) => {
+    setPdfError(null);
+    setIsPreparingPdf(true);
+    try {
+      const pdfUrl = await resolveSoapPdfUrl(soapNoteId);
+      setPdfPreviewTitle(title);
+      setPdfPreviewUrl(pdfUrl);
+    } catch (error) {
+      console.error('Unable to open SOAP PDF:', error);
+      setPdfError(
+        error instanceof Error
+          ? `${error.message} Using browser print.`
+          : 'Unable to open SOAP PDF.'
+      );
+      globalThis.window.print();
+    } finally {
+      setIsPreparingPdf(false);
+    }
+  };
+
+  const handlePrintToSign = async () => {
+    if (isSaving || isPreparingPdf) return;
+    let soapNoteId = isPersistedSoapId(note.id) ? note.id : undefined;
+    if (!soapNoteId && persistedDraftId) {
+      soapNoteId = persistedDraftId;
+    }
+    if (!soapNoteId && organisationId && hasSoapContent(note)) {
+      setIsPreparingPdf(true);
+      try {
+        const saved = await saveSoapNote(
+          {
+            organisationId,
+            appointmentId,
+            encounterId,
+            authorId,
+            authorName,
+            templateId: note.templateId,
+          },
+          note
+        );
+        soapNoteId = (saved as { id?: string } | undefined)?.id;
+        if (soapNoteId) {
+          setPersistedDraftId(soapNoteId);
+          upsertSoap(appointmentId, { id: soapNoteId });
+        }
+      } catch (error) {
+        console.error('Unable to persist SOAP note before printing:', error);
+      } finally {
+        setIsPreparingPdf(false);
+      }
+    }
+
+    if (soapNoteId) {
+      await openSoapPdfPreview(soapNoteId, 'SOAP note - print to sign');
+      return;
+    }
+
+    setPdfError('SOAP note PDF is not available yet. Using browser print.');
+    globalThis.window.print();
+  };
+
   return (
     <div className="flex flex-col gap-7">
-      <div className="flex items-center justify-between gap-4 rounded-2xl border border-input-border-default px-5 py-4">
-        <span className="shrink-0 text-yc-16-r-neutral font-bold">Chief Complaint</span>
-        <span className="text-right text-yc-16-r-neutral">{appointmentReason}</span>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
+        <div className="w-full lg:max-w-125 lg:flex-1">
+          <ChiefComplaintField value={appointmentReason} />
+        </div>
+        <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center lg:w-auto lg:shrink-0 lg:justify-end lg:gap-3">
+          <div className="w-full sm:w-52">
+            <SoapContextField label="Speciality" value={appointmentSpeciality} />
+          </div>
+          <div className="w-full sm:w-52">
+            <SoapContextField label="Service" value={appointmentService} />
+          </div>
+        </div>
       </div>
 
       {!readOnly && (
         <>
           <div className="relative flex justify-end">
-            <div className="relative w-full sm:max-w-90">
+            <div ref={templateSearchRef} className="relative w-full sm:max-w-90">
               <Search
                 value={templateQuery}
                 setSearch={setTemplateQuery}
@@ -162,8 +305,12 @@ const SoapStep = ({
                 label="Search for SOAP template"
                 className="w-full!"
               />
-              {templateMatches.length > 0 && (
-                <ul className="absolute right-0 z-10 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+              <SearchResultsDropdown
+                anchorRef={templateSearchRef}
+                open={templateMatches.length > 0}
+                onClose={() => setTemplateQuery('')}
+              >
+                <ul>
                   {templateMatches.map((tpl) => (
                     <li key={tpl.id}>
                       <button
@@ -179,7 +326,7 @@ const SoapStep = ({
                     </li>
                   ))}
                 </ul>
-              )}
+              </SearchResultsDropdown>
             </div>
           </div>
 
@@ -248,15 +395,29 @@ const SoapStep = ({
 
           <div className="flex justify-end">
             <SoapSignActions
-              disabled={isSaving}
-              onPrintToSign={() => window.print()}
+              disabled={isSaving || isPreparingPdf}
+              onPrintToSign={() => void handlePrintToSign()}
               onSaveAndNext={handleSaveAndNext}
             />
           </div>
         </>
       )}
 
-      <SoapNotesList items={pastNotes} onPrint={() => window.print()} />
+      <SoapNotesList
+        items={pastNotes}
+        onPrint={(item) => void openSoapPdfPreview(item.id, `SOAP note by ${item.signedByName}`)}
+      />
+      {pdfError && (
+        <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">
+          {pdfError}
+        </p>
+      )}
+      <PdfPreviewOverlay
+        open={Boolean(pdfPreviewUrl)}
+        title={pdfPreviewTitle}
+        pdfUrl={pdfPreviewUrl}
+        onClose={() => setPdfPreviewUrl(null)}
+      />
     </div>
   );
 };

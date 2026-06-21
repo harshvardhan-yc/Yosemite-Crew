@@ -623,6 +623,15 @@ const normalizeInfoSubLabel = (label: string, subLabel?: string) => {
   return subLabel;
 };
 
+const SOAP_SUB_LABELS = new Set([
+  'forms',
+  'subjective',
+  'objective',
+  'assessment',
+  'plan',
+  'discharge-summary',
+]);
+
 const resolveIntentLabel = (
   availableLabels: Array<{ key: string }>,
   label: string
@@ -1061,6 +1070,9 @@ const AppoitmentInfo = ({
         setFormData(createEmptyFormData());
         return;
       }
+      if (activeLabel !== 'prescription' || !SOAP_SUB_LABELS.has(activeSubLabel)) {
+        return;
+      }
       try {
         const soap = await fetchSubmissions(appointmentId);
         if (cancelled) return;
@@ -1088,7 +1100,7 @@ const AppoitmentInfo = ({
     return () => {
       cancelled = true;
     };
-  }, [activeAppointment?.id]);
+  }, [activeAppointment?.id, activeLabel, activeSubLabel]);
 
   useEffect(() => {
     void loadAppointmentForms();

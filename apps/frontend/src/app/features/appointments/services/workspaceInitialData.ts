@@ -55,6 +55,7 @@ export const buildEmptyEncounter = (
   invoiceLineItems: [],
   pastInvoices: [],
   depositCents: 0,
+  currency: 'USD',
   withdrawDeposit: false,
   taxPercent: 0,
   overallDiscountPercent: 0,

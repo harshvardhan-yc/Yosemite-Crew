@@ -3,7 +3,7 @@ import { IoIosArrowBack } from 'react-icons/io';
 import { LuPlus } from 'react-icons/lu';
 import { HiBolt } from 'react-icons/hi2';
 import type { Appointment } from '@yosemite-crew/types';
-import { Secondary } from '@/app/ui/primitives/Buttons';
+import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import AlertPill from '@/app/features/appointments/pages/AppointmentWorkspace/components/AlertPill';
 import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
@@ -19,7 +19,11 @@ type WorkspaceHeaderProps = {
   onHospitalize?: () => void;
   /** Hide the hospitalize action when the encounter is already inpatient. */
   canHospitalize?: boolean;
+  canAdmit?: boolean;
+  isAdmitting?: boolean;
+  onAdmit?: () => void;
   onAddAlert?: () => void;
+  onRemoveAlert?: (id: string) => void;
 };
 
 const HospitalizeIcon = () => (
@@ -55,7 +59,11 @@ const WorkspaceHeader = ({
   onQuickActions,
   onHospitalize,
   canHospitalize = true,
+  canAdmit = false,
+  isAdmitting = false,
+  onAdmit,
   onAddAlert,
+  onRemoveAlert,
 }: WorkspaceHeaderProps) => (
   <div className="flex flex-wrap items-center justify-between gap-3">
     <div className="flex flex-wrap items-center gap-3">
@@ -74,7 +82,13 @@ const WorkspaceHeader = ({
       {appointment.isEmergency && <EmergencyBadge />}
       <div className="flex flex-wrap items-center gap-2">
         {alerts.map((alert) => (
-          <AlertPill key={alert.id} label={alert.label} severity={alert.severity} />
+          <AlertPill
+            key={alert.id}
+            id={alert.id}
+            label={alert.label}
+            severity={alert.severity}
+            onRemove={onRemoveAlert}
+          />
         ))}
         {onAddAlert && (
           <GlassTooltip content="Add alerts for patient" side="bottom">
@@ -91,6 +105,13 @@ const WorkspaceHeader = ({
       </div>
     </div>
     <div className="flex items-center gap-3">
+      {canAdmit && onAdmit && (
+        <Primary
+          text={isAdmitting ? 'Admitting' : 'Admit'}
+          onClick={onAdmit}
+          isDisabled={isAdmitting}
+        />
+      )}
       {canHospitalize && (
         <button
           type="button"

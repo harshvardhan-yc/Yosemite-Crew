@@ -10,6 +10,7 @@ import {
   listCompanionWorkspaceDocuments,
   listEncounterTreatmentItems,
   listEncounterWorkspaceDocuments,
+  normalizeWorkspaceBootstrapForEncounter,
   signWorkspaceDocumentPacket,
   updateEncounterTreatmentItem,
 } from '@/app/features/appointments/services/workspaceAggregateService';
@@ -105,5 +106,123 @@ describe('workspaceAggregateService', () => {
     expect(deleteData).toHaveBeenCalledWith(
       '/v1/workspace/organisations/org-1/treatment-items/item-1'
     );
+  });
+
+  it('normalizes aggregate diagnostics, encounter mode, and saved discharge state', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      appointment: { id: 'appt-1', kind: 'INPATIENT' },
+      encounter: {
+        id: 'enc-1',
+        appointmentKind: 'INPATIENT',
+        encounterClass: 'IMP',
+        status: 'onleave',
+        updatedAt: '2026-06-18T10:00:00.000Z',
+        readyForDischargeByName: 'Dr Discharge',
+        readyForDischargeAt: '2026-06-18T10:05:00.000Z',
+        admission: {
+          unitId: 'unit-1',
+          admittedAt: '2026-06-18T08:30:00.000Z',
+        },
+      },
+      diagnosticQueue: [
+        {
+          id: 'lab-1',
+          providerTestCode: 'CBC',
+          status: 'SUBMITTED',
+          createdAt: '2026-06-18T09:00:00.000Z',
+        },
+      ],
+      clinicalArtifacts: [
+        {
+          artifact: {
+            id: 'dc-1',
+            kind: 'DISCHARGE_SUMMARY',
+            updatedAt: '2026-06-18T11:00:00.000Z',
+            authorId: 'Dr A',
+          },
+          dischargeSummary: {
+            summary: '<p>Stable for discharge</p>',
+            followUp: '2026-06-25T09:00:00.000Z',
+          },
+        },
+      ],
+      documents: [
+        {
+          documentId: 'doc-1',
+          sourceKind: 'RENDERED_DOCUMENT',
+          sourceId: 'doc-1',
+          kind: 'DISCHARGE_SUMMARY',
+          title: 'Discharge summary',
+          status: 'ACTIVE',
+          signingStatus: 'SIGNED',
+          pdfUrl: 'https://files.test/discharge.pdf',
+          createdAt: '2026-06-18T11:00:00.000Z',
+          updatedAt: '2026-06-18T11:30:00.000Z',
+        },
+      ],
+    });
+
+    expect(patch.mode).toBe('INPATIENT');
+    expect(patch.unitId).toBe('unit-1');
+    expect(patch.admittedAt).toBe('2026-06-18T08:30:00.000Z');
+    expect(patch.readyForDischarge?.value).toBe(true);
+    expect(patch.readyForDischarge?.byName).toBe('Dr Discharge');
+    expect(patch.readyForDischarge?.at).toBe('2026-06-18T10:05:00.000Z');
+    expect(patch.diagnosticOrders).toEqual([
+      {
+        id: 'lab-1',
+        orderCode: 'CBC',
+        createdAt: '2026-06-18T09:00:00.000Z',
+        status: 'SUBMITTED',
+      },
+    ]);
+    expect(patch.dischargeSummary).toBe('<p>Stable for discharge</p>');
+    expect(patch.dischargeSummaryId).toBe('dc-1');
+    expect(patch.dischargeSavedAt).toBe('2026-06-18T11:00:00.000Z');
+    expect(patch.documents?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'doc-1',
+        sourceKind: 'RENDERED_DOCUMENT',
+        sourceId: 'doc-1',
+        status: 'ACTIVE',
+        signingStatus: 'SIGNED',
+        pdfUrl: 'https://files.test/discharge.pdf',
+      })
+    );
+    expect(patch.stepStatus).toEqual({
+      DIAGNOSTICS: 'COMPLETED',
+      SUMMARY: 'COMPLETED',
+      SOAP: 'COMPLETED',
+    });
+  });
+
+  it('hydrates ready-for-billing from the invoice billing stage so it survives a refresh', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      encounter: { id: 'enc-1', status: 'in-progress', updatedAt: '2026-06-18T11:00:00.000Z' },
+      invoice: {
+        visitBillingStage: 'READY_FOR_BILLING',
+        readyForBillingByName: 'Front Desk',
+        readyForBillingAt: '2026-06-18T11:05:00.000Z',
+      },
+    });
+    expect(patch.readyForBilling?.value).toBe(true);
+    expect(patch.readyForBilling?.byName).toBe('Front Desk');
+    expect(patch.readyForBilling?.at).toBe('2026-06-18T11:05:00.000Z');
+    // Discharge is not implied by billing.
+    expect(patch.readyForDischarge).toBeUndefined();
+  });
+
+  it('hydrates both ready states from explicit bootstrap flags', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      encounter: {
+        id: 'enc-1',
+        status: 'in-progress',
+        readyForBilling: true,
+        readyForDischarge: true,
+        updatedAt: '2026-06-18T11:00:00.000Z',
+      },
+    });
+    expect(patch.readyForBilling?.value).toBe(true);
+    expect(patch.readyForDischarge?.value).toBe(true);
   });
 });

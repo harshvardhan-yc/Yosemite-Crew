@@ -8,7 +8,6 @@ import AppointmentScopeToggle from '@/app/ui/primitives/AppointmentScopeToggle/A
 import { Appointment } from '@yosemite-crew/types';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import {
-  acceptAppointment,
   changeAppointmentStatus,
   rejectAppointment,
 } from '@/app/features/appointments/services/appointmentService';
@@ -67,6 +66,7 @@ import {
 import { startRouteLoader } from '@/app/lib/routeLoader';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import clsx from 'clsx';
+import { AppointmentModePill } from '@/app/features/appointments/components/AppointmentCardContent';
 
 type BoardStatus =
   | 'REQUESTED'
@@ -624,6 +624,11 @@ const AppointmentBoardComponent = ({
                                 minute: '2-digit',
                               })}
                             </div>
+                            <AppointmentModePill
+                              appointment={appointment}
+                              className="h-6 px-2.5 text-[10px]"
+                              iconSize={12}
+                            />
                           </div>
                         </div>
                         <div className="relative z-10 pt-1 pb-1 border-t border-card-border/60 flex items-center justify-between gap-2">
@@ -644,7 +649,7 @@ const AppointmentBoardComponent = ({
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  void acceptAppointment(appointment);
+                                  openChangeStatus(appointment);
                                 }}
                               >
                                 <FaCheckCircle size={14} color="var(--color-success-400)" />

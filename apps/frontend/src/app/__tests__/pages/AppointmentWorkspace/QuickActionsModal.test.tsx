@@ -45,6 +45,7 @@ jest.mock('@/app/features/appointments/services/workspaceTemplateService', () =>
 }));
 jest.mock('@/app/hooks/useTeam', () => ({
   useTeamForPrimaryOrg: jest.fn(),
+  useLoadTeam: jest.fn(),
 }));
 jest.mock('@/app/features/tasks/services/taskService', () => ({
   createTask: jest.fn().mockResolvedValue(undefined),
@@ -420,6 +421,9 @@ describe('TasksPanel', () => {
   it('reschedules and reassigns an employee task', () => {
     reset();
     seedInpatient();
+    (useTeamForPrimaryOrg as jest.Mock).mockReturnValue([
+      { practionerId: 'usr-tim', name: 'Dr. Tim Apple' },
+    ]);
     render(<TasksPanel appointmentId={APPT} />);
     const target = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!.schedule[0];
 

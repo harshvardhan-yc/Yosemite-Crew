@@ -14,6 +14,7 @@ import {
   updateAppointmentPaymentStatus,
   markEncounterReadyForDischarge,
   undoEncounterReadyForDischarge,
+  dischargeEncounter,
   consumeInventory,
   consumeBulkInventory,
 } from '@/app/features/appointments/services/appointmentService';
@@ -641,9 +642,29 @@ describe('Appointment Service', () => {
       );
     });
 
+    it('discharges an encounter with the supplied timestamp', async () => {
+      mockedPostData.mockResolvedValue({});
+
+      await dischargeEncounter('enc-1', '2026-05-01T10:00:00Z');
+
+      expect(mockedPostData).toHaveBeenCalledWith(
+        '/fhir/v1/encounter/enc-1/$discharge',
+        expect.objectContaining({
+          resourceType: 'Parameters',
+          parameter: [
+            expect.objectContaining({
+              name: 'dischargedAt',
+              valueDateTime: '2026-05-01T10:00:00Z',
+            }),
+          ],
+        })
+      );
+    });
+
     it('skips encounter lifecycle calls without an encounter id', async () => {
       await markEncounterReadyForDischarge();
       await undoEncounterReadyForDischarge();
+      await dischargeEncounter();
 
       expect(mockedPostData).not.toHaveBeenCalled();
     });

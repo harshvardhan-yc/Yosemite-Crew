@@ -18,9 +18,11 @@ import { useTaskStore } from '@/app/stores/taskStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
 import type { Task } from '@/app/features/tasks/types/task';
+import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
   applyInpatientScheduleTemplate,
   createWorkspaceTemplateInstance,
+  getInpatientScheduleForEncounter,
   listInpatientScheduleTemplates,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import type { TemplateLike } from '@yosemite-crew/types';
@@ -68,15 +70,31 @@ const isLowStock = (item: InventoryItem) => {
   return available <= reorderLevel;
 };
 
-const inventoryToPrescriptionItem = (item: InventoryItem) => ({
-  medicineName: item.basicInfo.name,
-  fulfillment: 'IN_HOUSE' as const,
-  inventoryItemId: item.id,
-  inventoryBatchId: item.batch?._id,
-  priceCents: toCents(item.pricing.selling),
-  stockQty: getAvailableStock(item),
-  lowStock: isLowStock(item),
-});
+const joinNonEmpty = (...parts: Array<string | undefined>): string | undefined => {
+  const joined = parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(' ');
+  return joined || undefined;
+};
+
+const inventoryToPrescriptionItem = (item: InventoryItem) => {
+  const classification = item.classification ?? {};
+  return {
+    medicineName: item.basicInfo.name,
+    // Pre-fill the prescribing fields from the inventory item so the clinician sees the
+    // medicine's strength/form, route, and default frequency instead of empty inputs.
+    dosage: joinNonEmpty(classification.strength, classification.dosageForm ?? classification.form),
+    route: classification.administration,
+    frequency: classification.frequency,
+    fulfillment: 'IN_HOUSE' as const,
+    inventoryItemId: item.id,
+    inventoryBatchId: item.batch?._id,
+    priceCents: toCents(item.pricing.selling),
+    stockQty: getAvailableStock(item),
+    lowStock: isLowStock(item),
+  };
+};
 
 const moneyToCents = (amount: number): number => Math.max(0, Math.round(amount * 100));
 
@@ -165,6 +183,8 @@ const TreatmentStep = ({
   const inventoryById = useInventoryStore((s) => s.itemsById);
   const setInventoryForOrg = useInventoryStore((s) => s.setInventoryForOrg);
   const tasksById = useTaskStore((s) => s.tasksById);
+  useLoadTeam();
+  const teamMembers = useTeamForPrimaryOrg();
   const catalogSpecialities = useRevampCatalogStore((s) => s.specialities);
   const catalogServices = useRevampCatalogStore((s) => s.services);
   const catalogPackages = useRevampCatalogStore((s) => s.packages);
@@ -205,6 +225,27 @@ const TreatmentStep = ({
     () => [...encounter.schedule, ...appointmentEmployeeTasks],
     [appointmentEmployeeTasks, encounter.schedule]
   );
+
+  // Real staff available to own a schedule task: active org team members, plus
+  // the encounter's own lead/support so they are always selectable even if the
+  // team list hasn't loaded yet. De-duped by value.
+  const assigneeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: { label: string; value: string }[] = [];
+    const add = (value?: string, label?: string) => {
+      const id = (value ?? '').trim();
+      const name = (label ?? '').trim();
+      if (!id || !name || seen.has(id)) return;
+      seen.add(id);
+      options.push({ value: id, label: name });
+    };
+    teamMembers
+      .filter((member) => member.status !== 'Off-Duty')
+      .forEach((member) => add(member.practionerId || member._id, member.name));
+    add(encounter.leadId, encounter.leadName);
+    add(encounter.nurseId, encounter.nurseName);
+    return options;
+  }, [teamMembers, encounter.leadId, encounter.leadName, encounter.nurseId, encounter.nurseName]);
 
   useEffect(() => {
     if (!organisationId) return;
@@ -259,6 +300,26 @@ const TreatmentStep = ({
         console.error('Failed to load inpatient schedule templates:', error);
       });
   }, [isInpatient, organisationId]);
+
+  // Hydrate the inpatient schedule on load: confirm the encounter's schedules
+  // exist on the backend, then pull the generated tasks into the task store so
+  // the timeline renders persisted items (not just ones added this session).
+  useEffect(() => {
+    if (!organisationId || !isInpatient) return;
+    const loadSchedule = async () => {
+      if (encounterId) {
+        try {
+          await getInpatientScheduleForEncounter(organisationId, encounterId);
+        } catch (error) {
+          console.error('Failed to load encounter schedule:', error);
+        }
+      }
+      await loadTasksForPrimaryOrg({ force: true, silent: true }).catch((error) => {
+        console.error('Failed to load schedule tasks:', error);
+      });
+    };
+    void loadSchedule();
+  }, [encounterId, isInpatient, organisationId]);
 
   const handleApplyScheduleTemplate = async (templateId: string) => {
     if (!organisationId) return;
@@ -335,6 +396,7 @@ const TreatmentStep = ({
           tasks={visibleScheduleTasks}
           templates={scheduleTemplates}
           readOnly={readOnly}
+          assigneeOptions={assigneeOptions}
           onAddTask={(task) => addScheduleTask(appointmentId, task)}
           onUpdateTask={(id, patch) => updateScheduleTask(appointmentId, id, patch)}
           onApplyTemplate={handleApplyScheduleTemplate}

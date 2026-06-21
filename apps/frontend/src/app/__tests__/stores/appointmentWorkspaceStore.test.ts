@@ -318,6 +318,43 @@ describe('appointmentWorkspaceStore', () => {
     expect(enc?.withdrawDeposit).toBe(true);
   });
 
+  it('marks the encounter discharged and locks it view-only', () => {
+    seed();
+    getStore().markDischarged(APPT, '2026-05-01T10:00:00Z');
+    const enc = getStore().getEncounter(APPT);
+    expect(enc?.dischargedAt).toBe('2026-05-01T10:00:00Z');
+    expect(enc?.viewOnly).toBe(true);
+  });
+
+  it('hydrates invoice billing while preserving locally recorded invoices', () => {
+    seed();
+    // A locally recorded (session-only) invoice that finance has not returned yet.
+    getStore().recordDepositCollection(APPT, {
+      amountCents: 5000,
+      method: 'CASH',
+      byName: 'Front desk',
+    });
+    const localId = getStore().getEncounter(APPT)!.pastInvoices[0].id;
+
+    getStore().hydrateInvoiceBilling(APPT, {
+      depositCents: 12000,
+      pastInvoices: [
+        {
+          id: 'finance-inv-1',
+          createdAt: '2026-05-01T10:00:00Z',
+          totalCents: 8000,
+          outstandingCents: 8000,
+          status: 'UNPAID',
+          items: [],
+        },
+      ],
+    });
+
+    const enc = getStore().getEncounter(APPT)!;
+    expect(enc.depositCents).toBe(12000);
+    expect(enc.pastInvoices.map((invoice) => invoice.id)).toEqual(['finance-inv-1', localId]);
+  });
+
   it('sets the overall discount percent, clamped to 0–100', () => {
     seed();
     getStore().setOverallDiscountPercent(APPT, 15);
@@ -393,6 +430,28 @@ describe('appointmentWorkspaceStore', () => {
       .invoiceLineItems.find((i) => i.id === item.id)!;
     expect(clamped.discountCents).toBe(clamped.grossCents);
     expect(clamped.amountCents).toBe(0);
+  });
+
+  it('caps a line discount at the per-line max-discount ceiling', () => {
+    seed();
+    getStore().addInvoiceLineItem(APPT, {
+      name: 'Ultrasound scan',
+      unitPriceCents: 10000,
+      qty: 1,
+      grossCents: 10000,
+      discountCents: 1000,
+      amountCents: 9000,
+      maxDiscountCents: 2000,
+    });
+    const item = getStore().getEncounter(APPT)!.invoiceLineItems[0];
+
+    // Try to discount more than the ceiling — it clamps to maxDiscountCents.
+    getStore().updateInvoiceLineItem(APPT, item.id, { discountCents: 5000 });
+    const capped = getStore()
+      .getEncounter(APPT)!
+      .invoiceLineItems.find((i) => i.id === item.id)!;
+    expect(capped.discountCents).toBe(2000);
+    expect(capped.amountCents).toBe(8000);
   });
 
   it('records an invoice payment, clearing the bill and prepending a paid invoice', () => {
@@ -485,12 +544,12 @@ describe('appointmentWorkspaceStore', () => {
   it('adds and removes companion alerts', () => {
     seed();
     const before = getStore().getEncounter(APPT)!.alerts.length;
-    getStore().addAlert(APPT, { label: 'Diabetic', severity: 'MEDICAL' });
+    getStore().addAlert(APPT, { label: 'Diabetic', severity: 'high' });
     const added = getStore().getEncounter(APPT)!.alerts;
     expect(added).toHaveLength(before + 1);
     const newAlert = added[added.length - 1];
     expect(newAlert.label).toBe('Diabetic');
-    expect(newAlert.severity).toBe('MEDICAL');
+    expect(newAlert.severity).toBe('high');
     getStore().removeAlert(APPT, newAlert.id);
     expect(getStore().getEncounter(APPT)!.alerts).toHaveLength(before);
   });

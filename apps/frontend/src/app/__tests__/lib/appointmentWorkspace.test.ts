@@ -9,7 +9,10 @@ import {
   resolveEncounterMode,
   resolveLandingStep,
   richTextIsEmpty,
+  formatStampTime,
+  formatStampDate,
 } from '@/app/lib/appointmentWorkspace';
+import { setPreferredTimeZone } from '@/app/lib/timezone';
 import { buildEmptyEncounter } from '@/app/features/appointments/services/workspaceInitialData';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 
@@ -39,6 +42,34 @@ describe('appointmentWorkspace lib', () => {
     expect(resolveWorkspaceStepForIntent(null)).toBeUndefined();
   });
 
+  describe('stamp formatters use the preferred time zone', () => {
+    beforeEach(() => {
+      setPreferredTimeZone('Asia/Kolkata');
+    });
+
+    it('formats time in the preferred zone with its abbreviation', () => {
+      // 2026-06-19T05:15:00Z is 10:45 AM IST.
+      const result = formatStampTime('2026-06-19T05:15:00Z');
+      expect(result).toContain('10:45');
+      expect(result).toMatch(/GMT\+5:30|UTC\+5:30|IST/);
+    });
+
+    it('returns "Today" for a timestamp on the current preferred-zone day', () => {
+      expect(formatStampDate(new Date().toISOString())).toBe('Today');
+    });
+
+    it('formats a non-today date as "Mon D" in the preferred zone', () => {
+      expect(formatStampDate('2026-01-15T05:15:00Z')).toBe('Jan 15');
+    });
+
+    it('returns empty string for missing or invalid stamps', () => {
+      expect(formatStampTime(undefined)).toBe('');
+      expect(formatStampTime('not-a-date')).toBe('');
+      expect(formatStampDate(undefined)).toBe('');
+      expect(formatStampDate('not-a-date')).toBe('');
+    });
+  });
+
   it('builds workspace hrefs from appointment view intents', () => {
     expect(buildWorkspaceHrefForIntent('a1', { label: 'labs', subLabel: 'idexx-labs' })).toBe(
       '/appointments/a1/workspace?step=DIAGNOSTICS'
@@ -60,7 +91,26 @@ describe('appointmentWorkspace lib', () => {
     );
   });
 
-  it('resolves encounter mode from room presence', () => {
+  it('resolves encounter mode from explicit kind before room presence', () => {
+    expect(resolveEncounterMode({ appointmentKind: 'INPATIENT', room: undefined })).toBe(
+      'INPATIENT'
+    );
+    expect(
+      resolveEncounterMode({
+        appointmentKind: 'OUTPATIENT',
+        room: { id: 'r1', name: 'Room 1' },
+      })
+    ).toBe('OUTPATIENT');
+    expect(
+      resolveEncounterMode({
+        appointmentType: {
+          id: 'svc-1',
+          name: 'Hospital admission',
+          speciality: { id: 'spec-1', name: 'General' },
+        },
+        room: undefined,
+      })
+    ).toBe('INPATIENT');
     expect(resolveEncounterMode({ room: { id: 'r1', name: 'Room 1' } })).toBe('INPATIENT');
     expect(resolveEncounterMode({ room: undefined })).toBe('OUTPATIENT');
   });

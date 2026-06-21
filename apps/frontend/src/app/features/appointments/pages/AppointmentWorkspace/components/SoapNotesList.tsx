@@ -79,8 +79,9 @@ const SoapNoteRow = ({
         <span className="hidden flex-1 text-body-4 text-text-secondary sm:block">
           By {item.signedByName}
         </span>
-        <span className="hidden w-28 text-body-4 text-pill-success-text sm:block">{item.date}</span>
-        <span className="hidden w-24 text-body-4 text-pill-success-text sm:block">{item.time}</span>
+        <span className="hidden shrink-0 whitespace-nowrap text-body-4 text-pill-success-text sm:block">
+          {[item.date, item.time].filter(Boolean).join(' · ')}
+        </span>
         <CircleIconButton
           icon={<LuPrinter size={16} aria-hidden="true" />}
           label={`Print SOAP note by ${item.signedByName}`}
@@ -104,7 +105,7 @@ const SoapNoteRow = ({
         />
       </div>
       {open && (
-        <div className="mb-3 rounded-2xl border border-card-border bg-neutral-0 px-5 py-3">
+        <div className="mb-3 grid grid-cols-1 gap-x-8 rounded-2xl border border-card-border bg-neutral-0 px-5 py-3 lg:grid-cols-2">
           {item.fields.map((field) => (
             <ReadRow key={field.label} field={field} />
           ))}

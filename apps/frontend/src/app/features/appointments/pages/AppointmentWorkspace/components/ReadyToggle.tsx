@@ -25,6 +25,7 @@ const formatStamp = (iso?: string): string => {
  */
 const ReadyToggle = ({ label, state, disabled = false, onToggle }: ReadyToggleProps) => {
   const checked = state.value;
+  const showStamp = checked && Boolean(state.byName || state.at);
 
   return (
     // The toggle's own height is just the 32px pill so it can be vertically
@@ -57,9 +58,11 @@ const ReadyToggle = ({ label, state, disabled = false, onToggle }: ReadyTogglePr
       </button>
       {/* Reserved stamp slot below the pill — absolute so it does not change the
           toggle's box height (and thus its vertical alignment with the button). */}
-      {checked && state.byName && (
+      {showStamp && (
         <div className="absolute left-3 top-9 flex flex-col items-start leading-[120%]">
-          <span className="text-[12px] font-bold text-neutral-900">By {state.byName}</span>
+          <span className="text-[12px] font-bold text-neutral-900">
+            By {state.byName ?? 'Clinical team'}
+          </span>
           {state.at && (
             <span className="text-[12px] font-medium text-text-brand">{formatStamp(state.at)}</span>
           )}

@@ -16,28 +16,27 @@ type AddAlertModalProps = {
 };
 
 const SEVERITY_OPTIONS: { value: AlertSeverity; label: string }[] = [
-  { value: 'CAUTION', label: 'Caution' },
-  { value: 'MEDICAL', label: 'Medical' },
-  { value: 'INFO', label: 'Info' },
-  { value: 'ATTENTION', label: 'Attention' },
-  { value: 'ADMIN', label: 'Admin' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'critical', label: 'Critical' },
 ];
 
 const CLIENT_ALERT_OPTIONS: { value: AlertSeverity; label: string }[] = [
-  { value: 'ADMIN', label: 'Billing / account' },
-  { value: 'ATTENTION', label: 'Needs follow-up' },
-  { value: 'INFO', label: 'Communication note' },
-  { value: 'CAUTION', label: 'Preference / caution' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'critical', label: 'Critical' },
 ];
 
-const DEFAULT_SEVERITY: AlertSeverity = 'CAUTION';
+const DEFAULT_SEVERITY: AlertSeverity = 'low';
 
 const getSubjectCopy = (subject: AddAlertModalProps['subject'], displayName: string) => {
   if (subject === 'client') {
     return {
       body: `Add a client alert for ${displayName}.`,
       label: 'Alert (e.g. Call before visit, Billing follow-up)',
-      dropdown: 'Category',
+      dropdown: 'Severity',
       title: 'Add client alert',
       submit: 'Add client alert',
     };

@@ -39,7 +39,11 @@ const nowIso = (): string => new Date().toISOString();
  */
 const recalcInvoiceLine = (item: InvoiceLineItem): InvoiceLineItem => {
   const grossCents = item.unitPriceCents * item.qty;
-  const discountCents = Math.min(Math.max(0, item.discountCents), grossCents);
+  // Discount is bounded by the gross and, when the catalog sets one, the per-line
+  // max-discount ceiling — so a manual edit can never exceed the allowed discount.
+  const ceiling =
+    item.maxDiscountCents != null ? Math.min(item.maxDiscountCents, grossCents) : grossCents;
+  const discountCents = Math.min(Math.max(0, item.discountCents), ceiling);
   return { ...item, grossCents, discountCents, amountCents: grossCents - discountCents };
 };
 
@@ -59,6 +63,9 @@ const computeInvoiceTotals = (
     estimatedTotalCents: discountedCents + taxCents,
   };
 };
+
+const consultationTypeForMode = (mode: EncounterMode): string =>
+  mode === 'INPATIENT' ? 'Inpatient' : 'Outpatient';
 
 type ReadyActor = { id?: string; name?: string };
 
@@ -81,11 +88,23 @@ type AppointmentWorkspaceState = {
         | 'soap'
         | 'vitals'
         | 'observations'
+        | 'diagnosticOrders'
+        | 'services'
         | 'prescription'
         | 'dischargeSummary'
         | 'followUpAt'
+        | 'dischargeSavedAt'
+        | 'dischargeSavedByName'
+        | 'dischargeSummaryId'
         | 'documents'
         | 'soapTemplates'
+        | 'readyForBilling'
+        | 'readyForDischarge'
+        | 'roomId'
+        | 'unitId'
+        | 'admittedAt'
+        | 'dischargedAt'
+        | 'mode'
       >
     > & { stepStatus?: Partial<Record<WorkspaceStep, StepStatus>> }
   ) => void;
@@ -141,6 +160,7 @@ type AppointmentWorkspaceState = {
   setDischargeSummary: (appointmentId: string, html: string) => void;
   saveDischargeSummary: (appointmentId: string, byName: string, persistedId?: string) => void;
   reopenDischargeSummary: (appointmentId: string) => void;
+  markDischarged: (appointmentId: string, dischargedAt: string) => void;
   setFollowUp: (appointmentId: string, at: string | undefined) => void;
   addDocument: (appointmentId: string, document: Omit<WorkspaceDocument, 'id'>) => void;
   setWithdrawDeposit: (appointmentId: string, value: boolean) => void;
@@ -159,6 +179,11 @@ type AppointmentWorkspaceState = {
   recordDepositCollection: (
     appointmentId: string,
     deposit: { amountCents: number; method: PaymentMethod; byName?: string }
+  ) => void;
+  /** Seed the Invoices section + deposit balance + currency from the finance service on load. */
+  hydrateInvoiceBilling: (
+    appointmentId: string,
+    billing: { pastInvoices: PastInvoice[]; depositCents: number; currency?: string }
   ) => void;
 
   toggleReadyForBilling: (appointmentId: string, actor: ReadyActor) => void;
@@ -216,6 +241,11 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
           patch.observations && patch.observations.length > 0
             ? patch.observations
             : enc.observations,
+        diagnosticOrders:
+          patch.diagnosticOrders && patch.diagnosticOrders.length > 0
+            ? patch.diagnosticOrders
+            : enc.diagnosticOrders,
+        services: patch.services && patch.services.length > 0 ? patch.services : enc.services,
         prescription:
           patch.prescription && patch.prescription.length > 0
             ? patch.prescription
@@ -223,11 +253,32 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
         dischargeSummary:
           patch.dischargeSummary !== undefined ? patch.dischargeSummary : enc.dischargeSummary,
         followUpAt: patch.followUpAt !== undefined ? patch.followUpAt : enc.followUpAt,
+        dischargeSavedAt:
+          patch.dischargeSavedAt !== undefined ? patch.dischargeSavedAt : enc.dischargeSavedAt,
+        dischargeSavedByName:
+          patch.dischargeSavedByName !== undefined
+            ? patch.dischargeSavedByName
+            : enc.dischargeSavedByName,
+        dischargeSummaryId:
+          patch.dischargeSummaryId !== undefined
+            ? patch.dischargeSummaryId
+            : enc.dischargeSummaryId,
         documents: patch.documents && patch.documents.length > 0 ? patch.documents : enc.documents,
         soapTemplates:
           patch.soapTemplates && patch.soapTemplates.length > 0
             ? patch.soapTemplates
             : enc.soapTemplates,
+        readyForBilling:
+          patch.readyForBilling !== undefined ? patch.readyForBilling : enc.readyForBilling,
+        readyForDischarge:
+          patch.readyForDischarge !== undefined ? patch.readyForDischarge : enc.readyForDischarge,
+        roomId: patch.roomId !== undefined ? patch.roomId : enc.roomId,
+        unitId: patch.unitId !== undefined ? patch.unitId : enc.unitId,
+        admittedAt: patch.admittedAt !== undefined ? patch.admittedAt : enc.admittedAt,
+        dischargedAt: patch.dischargedAt !== undefined ? patch.dischargedAt : enc.dischargedAt,
+        mode: patch.mode !== undefined ? patch.mode : enc.mode,
+        consultationType:
+          patch.mode !== undefined ? consultationTypeForMode(patch.mode) : enc.consultationType,
         stepStatus: patch.stepStatus ? { ...enc.stepStatus, ...patch.stepStatus } : enc.stepStatus,
       }))
     ),
@@ -547,6 +598,15 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       }))
     ),
 
+  markDischarged: (appointmentId, dischargedAt) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => ({
+        ...enc,
+        dischargedAt,
+        viewOnly: true,
+      }))
+    ),
+
   setFollowUp: (appointmentId, at) =>
     set((state) => patchEncounter(state, appointmentId, (enc) => ({ ...enc, followUpAt: at }))),
 
@@ -657,6 +717,25 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
           ...enc,
           depositCents: enc.depositCents + amountCents,
           pastInvoices: [invoice, ...enc.pastInvoices],
+        };
+      })
+    ),
+
+  hydrateInvoiceBilling: (appointmentId, billing) =>
+    set((state) =>
+      patchEncounter(state, appointmentId, (enc) => {
+        // Locally recorded payments/deposits (ids prefixed inv-paid/deposit) are
+        // session-only and not yet refetched from finance — keep them, and prefer
+        // server invoices by id so a refetch doesn't duplicate rows.
+        const serverIds = new Set(billing.pastInvoices.map((invoice) => invoice.id));
+        const localOnly = enc.pastInvoices.filter((invoice) => !serverIds.has(invoice.id));
+        return {
+          ...enc,
+          pastInvoices: [...billing.pastInvoices, ...localOnly],
+          // The collected deposit is authoritative from finance; fall back to the
+          // existing local value when the server reports none.
+          depositCents: billing.depositCents > 0 ? billing.depositCents : enc.depositCents,
+          currency: billing.currency ?? enc.currency,
         };
       })
     ),

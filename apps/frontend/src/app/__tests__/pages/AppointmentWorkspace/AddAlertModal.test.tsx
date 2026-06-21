@@ -30,7 +30,7 @@ jest.mock('@/app/ui/inputs/FormInput/FormInput', () => ({
 jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
   __esModule: true,
   default: ({ onSelect }: any) => (
-    <button type="button" onClick={() => onSelect({ value: 'MEDICAL', label: 'Medical' })}>
+    <button type="button" onClick={() => onSelect({ value: 'high', label: 'High' })}>
       pick severity
     </button>
   ),
@@ -81,7 +81,7 @@ describe('AddAlertModal', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'pick severity' }));
     fireEvent.click(screen.getByRole('button', { name: 'Add alert' }));
-    expect(onAdd).toHaveBeenCalledWith({ label: 'Diabetic', severity: 'MEDICAL' });
+    expect(onAdd).toHaveBeenCalledWith({ label: 'Diabetic', severity: 'high' });
     expect(onClose).toHaveBeenCalled();
   });
 

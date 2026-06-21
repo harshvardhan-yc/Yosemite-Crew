@@ -6,6 +6,9 @@ import { useNotify } from '@/app/hooks/useNotify';
 import { getSavedLockWindow, setSavedLockWindow } from '@/app/lib/appointmentLockWindow';
 
 jest.mock('@/app/hooks/useNotify', () => ({ useNotify: jest.fn() }));
+jest.mock('@/app/features/organization/services/orgService', () => ({ updateOrg: jest.fn() }));
+import { updateOrg } from '@/app/features/organization/services/orgService';
+import { useOrgStore } from '@/app/stores/orgStore';
 jest.mock('@/app/lib/appointmentLockWindow', () => ({
   ...jest.requireActual('@/app/lib/appointmentLockWindow'),
   setSavedLockWindow: jest.fn(
@@ -19,6 +22,7 @@ describe('AppointmentLockWindowPreference', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     window.localStorage.clear();
+    useOrgStore.setState({ orgsById: {}, primaryOrgId: null });
     (useNotify as jest.Mock).mockReturnValue({ notify });
   });
 
@@ -62,6 +66,29 @@ describe('AppointmentLockWindowPreference', () => {
     render(<AppointmentLockWindowPreference />);
     expect((screen.getByLabelText('Outpatient') as HTMLInputElement).value).toBe('6');
     expect((screen.getByLabelText('Inpatient') as HTMLInputElement).value).toBe('36');
+  });
+
+  it('also pushes the window to the org as minute FHIR extensions when a primary org exists', () => {
+    (updateOrg as jest.Mock).mockResolvedValue(undefined);
+    useOrgStore.setState({
+      orgsById: {
+        'org-1': { _id: 'org-1', name: 'Clinic', type: 'HOSPITAL', phoneNo: '1', taxId: 't' },
+      },
+      primaryOrgId: 'org-1',
+    });
+
+    render(<AppointmentLockWindowPreference />);
+    fireEvent.change(screen.getByLabelText('Outpatient'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Inpatient'), { target: { value: '3' } });
+    fireEvent.click(screen.getByText('Save lock window'));
+
+    expect(updateOrg).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: 'org-1',
+        appointmentLockWindowOutpatientMinutes: 120,
+        appointmentLockWindowInpatientMinutes: 180,
+      })
+    );
   });
 
   it('notifies an error when persistence fails', () => {

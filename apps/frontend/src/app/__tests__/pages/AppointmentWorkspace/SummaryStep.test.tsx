@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import SummaryStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/SummaryStep';
@@ -7,9 +7,26 @@ import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceS
 import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
+import { getRenderedDocument } from '@/app/features/appointments/services/workspaceClinicalService';
 
 jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
   listDischargeSummaryTemplates: jest.fn(),
+}));
+
+jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
+  getRenderedDocument: jest.fn(),
+  saveDischargeSummaryArtifact: jest.fn().mockResolvedValue({ id: 'saved-summary' }),
+}));
+
+jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
+  __esModule: true,
+  default: ({ open, title, pdfUrl }: { open: boolean; title: string; pdfUrl: string | null }) =>
+    open ? (
+      <div data-testid="pdf-preview">
+        <span>{title}</span>
+        <span>{pdfUrl}</span>
+      </div>
+    ) : null,
 }));
 
 expect.extend(toHaveNoViolations);
@@ -61,6 +78,7 @@ const reset = () => {
     submissionId: null,
   });
   (listDischargeSummaryTemplates as jest.Mock).mockResolvedValue([]);
+  (getRenderedDocument as jest.Mock).mockResolvedValue({ pdfUrl: 'https://files.test/doc.pdf' });
 };
 
 const seedAndGet = () => {
@@ -194,6 +212,83 @@ describe('SummaryStep', () => {
     printSpy.mockRestore();
   });
 
+  it('opens an existing workspace document PDF', async () => {
+    const enc = {
+      ...seedAndGet(),
+      documents: [
+        {
+          id: 'doc-1',
+          pdfUrl: 'https://files.test/direct.pdf',
+          createdAt: '2026-04-20T12:30:00Z',
+          category: 'SOAP' as const,
+          description: 'Signed SOAP note',
+          signedByName: 'Dr. Tim Apple',
+          lastModifiedAt: '2026-04-20T12:45:00Z',
+        },
+      ],
+    };
+    renderSummary(enc);
+
+    fireEvent.click(screen.getByRole('button', { name: /view signed soap note/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pdf-preview')).toHaveTextContent('Signed SOAP note');
+    });
+    expect(screen.getByTestId('pdf-preview')).toHaveTextContent('https://files.test/direct.pdf');
+    expect(getRenderedDocument).not.toHaveBeenCalled();
+  });
+
+  it('looks up a rendered document PDF when the document row has no direct URL', async () => {
+    const enc = {
+      ...seedAndGet(),
+      documents: [
+        {
+          id: 'rendered-1',
+          createdAt: '2026-04-20T12:30:00Z',
+          category: 'Discharge' as const,
+          description: 'Discharge summary',
+          lastModifiedAt: '2026-04-20T12:45:00Z',
+        },
+      ],
+    };
+    render(<SummaryStep appointmentId={APPT} appointment={appointment} encounter={enc} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /view discharge summary/i }));
+
+    await waitFor(() => {
+      expect(getRenderedDocument).toHaveBeenCalledWith('org-1', 'rendered-1');
+    });
+    expect(await screen.findByTestId('pdf-preview')).toHaveTextContent('Discharge summary');
+    expect(screen.getByTestId('pdf-preview')).toHaveTextContent('https://files.test/doc.pdf');
+  });
+
+  it('downloads a workspace document PDF', async () => {
+    const clickSpy = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const enc = {
+      ...seedAndGet(),
+      documents: [
+        {
+          id: 'doc-download',
+          pdfUrl: 'https://files.test/download.pdf',
+          createdAt: '2026-04-20T12:30:00Z',
+          category: 'SOAP' as const,
+          description: 'Signed SOAP note',
+          lastModifiedAt: '2026-04-20T12:45:00Z',
+        },
+      ],
+    };
+    renderSummary(enc);
+
+    fireEvent.click(screen.getByRole('button', { name: /download signed soap note/i }));
+
+    await waitFor(() => {
+      expect(clickSpy).toHaveBeenCalled();
+    });
+    clickSpy.mockRestore();
+  });
+
   it('disables editing controls in read-only mode and shows empty documents', () => {
     const enc = {
       ...seedAndGet(),
@@ -214,5 +309,57 @@ describe('SummaryStep', () => {
     const { container } = render(<SummaryStep appointmentId={APPT} encounter={enc} />);
 
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('derives document rows from saved SOAP notes and prescriptions', () => {
+    const enc = {
+      ...seedAndGet(),
+      soap: [
+        {
+          id: 'note-1',
+          chiefComplaint: '',
+          subjective: '<p>Lethargy</p>',
+          objective: '',
+          assessment: '',
+          plan: '',
+          status: 'COMPLETED' as const,
+          createdAt: '2026-04-20T12:30:00Z',
+        },
+      ],
+      prescription: [{ id: 'rx-1', medicineName: 'Amoxicillin', fulfillment: 'IN_HOUSE' as const }],
+    } as AppointmentEncounter;
+    renderSummary(enc);
+
+    expect(screen.getByText('SOAP note')).toBeInTheDocument();
+    expect(screen.getByText(/Prescription — Amoxicillin/)).toBeInTheDocument();
+  });
+
+  it('does not render the terminal Complete button inside the summary body', () => {
+    const enc = seedAndGet();
+    render(<SummaryStep appointmentId={APPT} encounter={enc} />);
+
+    expect(screen.queryByRole('button', { name: /discharge/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^complete$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^sign$/i })).toBeInTheDocument();
+  });
+
+  it('does not render inline discharge date/time fields for inpatient confirmation', () => {
+    useAppointmentWorkspaceStore.getState().initEncounter(APPT, 'INPATIENT');
+    const enc = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
+    render(<SummaryStep appointmentId={APPT} encounter={enc} />);
+
+    expect(screen.queryByText('Discharge date & time')).not.toBeInTheDocument();
+  });
+
+  it('keeps discharge date/time out of the summary body once discharged', () => {
+    useAppointmentWorkspaceStore.getState().initEncounter(APPT, 'INPATIENT');
+    const enc = {
+      ...useAppointmentWorkspaceStore.getState().getEncounter(APPT)!,
+      dischargedAt: '2026-05-01T10:00:00Z',
+    } as AppointmentEncounter;
+    render(<SummaryStep appointmentId={APPT} encounter={enc} />);
+
+    expect(screen.queryByText('Discharge date & time')).not.toBeInTheDocument();
   });
 });

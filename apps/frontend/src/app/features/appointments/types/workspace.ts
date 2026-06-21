@@ -21,7 +21,7 @@ export type StepStatus = 'EMPTY' | 'IN_PROGRESS' | 'COMPLETED' | 'LOCKED';
 
 export type EncounterMode = 'OUTPATIENT' | 'INPATIENT';
 
-export type AlertSeverity = 'CAUTION' | 'MEDICAL' | 'INFO' | 'ATTENTION' | 'ADMIN';
+export type AlertSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export type CompanionAlert = {
   id: string;
@@ -244,6 +244,8 @@ export type InvoiceLineItem = {
   grossCents: number;
   discountCents: number;
   amountCents: number;
+  /** Per-line discount ceiling in cents (from the catalog max-discount %); caps manual edits. */
+  maxDiscountCents?: number;
 };
 
 export type PastInvoice = {
@@ -273,6 +275,11 @@ export type WorkspaceDocumentCategory =
 
 export type WorkspaceDocument = {
   id: string;
+  sourceKind?: string;
+  sourceId?: string;
+  status?: string;
+  signingStatus?: string;
+  pdfUrl?: string | null;
   createdAt: string;
   category: WorkspaceDocumentCategory;
   description: string;
@@ -307,9 +314,13 @@ export type AppointmentEncounter = {
   schedule: ScheduleTask[];
   roomId?: string;
   unitId?: string;
+  admittedAt?: string;
+  dischargedAt?: string;
   invoiceLineItems: InvoiceLineItem[];
   pastInvoices: PastInvoice[];
   depositCents: number;
+  /** ISO currency code for this encounter's billing (from finance/org); defaults to USD. */
+  currency: string;
   withdrawDeposit: boolean;
   taxPercent: number;
   overallDiscountPercent: number;

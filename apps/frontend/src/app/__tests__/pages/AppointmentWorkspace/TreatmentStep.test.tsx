@@ -27,10 +27,21 @@ jest.mock('@/app/features/appointments/services/workspaceTemplateService', () =>
   applyInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
   createWorkspaceTemplateInstance: jest.fn().mockResolvedValue({ id: 'instance-1' }),
   listInpatientScheduleTemplates: jest.fn().mockResolvedValue([]),
+  getInpatientScheduleForEncounter: jest
+    .fn()
+    .mockResolvedValue({ resourceType: 'Bundle', entry: [] }),
 }));
 
 jest.mock('@/app/features/tasks/services/taskService', () => ({
   loadTasksForPrimaryOrg: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('@/app/hooks/useTeam', () => ({
+  useLoadTeam: jest.fn(),
+  useTeamForPrimaryOrg: jest.fn().mockReturnValue([
+    { _id: 'usr-sarah', practionerId: 'usr-sarah', name: 'Sarah Mitchell', status: 'Available' },
+    { _id: 'usr-tim', practionerId: 'usr-tim', name: 'Dr. Tim Apple', status: 'Available' },
+  ]),
 }));
 
 expect.extend(toHaveNoViolations);
@@ -573,18 +584,23 @@ describe('TreatmentStep', () => {
     expect(loadTasksForPrimaryOrg).toHaveBeenCalledWith({ force: true, silent: true });
   });
 
-  it('updates inpatient schedule rows', () => {
+  it('reschedule expands the row so the real time picker is used', () => {
     const enc = seedAndGet('INPATIENT');
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
 
+    // Collapse the (initially expanded) first row, then Reschedule should re-open it
+    // — revealing the breakdown's real Set Time picker instead of writing a fake time.
     fireEvent.click(screen.getByRole('button', { name: /hide record observation for analgesic/i }));
-    fireEvent.click(screen.getByRole('button', { name: /view record observation for analgesic/i }));
     fireEvent.click(
       screen.getByRole('button', { name: /reschedule record observation for analgesic/i })
     );
 
+    expect(
+      screen.getByRole('button', { name: /hide record observation for analgesic/i })
+    ).toBeInTheDocument();
+    // The stored time is untouched by Reschedule itself.
     const task = useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.schedule[0];
-    expect(task?.time).toBe('5:40 PM');
+    expect(task?.time).toBe('10:00 AM');
   });
 
   it('uses inpatient schedule dropdowns, day controls and status pill', () => {

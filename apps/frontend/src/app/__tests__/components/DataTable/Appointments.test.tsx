@@ -26,6 +26,7 @@ jest.mock('@/app/lib/appointments', () => ({
   allowCalendarDrag: jest.fn(() => true),
   canAssignAppointmentRoom: jest.fn(() => true),
   canShowStatusChangeAction: jest.fn(() => true),
+  getPreferredNextAppointmentStatus: jest.fn(() => 'UPCOMING'),
   getClinicalNotesLabel: jest.fn(() => 'Medical Records'),
   getAppointmentCompanionPhotoUrl: jest.fn(() => ''),
   isRequestedLikeStatus: jest.fn(
@@ -101,12 +102,27 @@ describe('Appointments table', () => {
       },
     };
 
-    render(<Appointments filteredList={[appointment]} canEditAppointments />);
+    const setActiveAppointment = jest.fn();
+    const setChangeStatusPopup = jest.fn();
+    const setChangeStatusPreferredStatus = jest.fn();
+
+    render(
+      <Appointments
+        filteredList={[appointment]}
+        canEditAppointments
+        setActiveAppointment={setActiveAppointment}
+        setChangeStatusPopup={setChangeStatusPopup}
+        setChangeStatusPreferredStatus={setChangeStatusPreferredStatus}
+      />
+    );
 
     fireEvent.click(screen.getByText('accept-icon').closest('button')!);
     fireEvent.click(screen.getByText('cancel-icon').closest('button')!);
 
-    expect(acceptAppointmentMock).toHaveBeenCalledWith(appointment);
+    // Accept now opens the change-status modal so a lead/support can be assigned.
+    expect(acceptAppointmentMock).not.toHaveBeenCalled();
+    expect(setActiveAppointment).toHaveBeenCalledWith(appointment);
+    expect(setChangeStatusPopup).toHaveBeenCalledWith(true);
     expect(rejectAppointmentMock).toHaveBeenCalledWith(appointment);
     expect(cancelAppointmentMock).not.toHaveBeenCalled();
   });
@@ -204,5 +220,29 @@ describe('Appointments table', () => {
     render(<Appointments filteredList={[appointment]} canEditAppointments />);
 
     expect(screen.getByText('-')).toBeInTheDocument();
+  });
+
+  it('shows room unit and mode pill in the room column for inpatient appointments', () => {
+    const appointment: any = {
+      id: 'a5',
+      status: 'UPCOMING',
+      appointmentKind: 'INPATIENT',
+      appointmentType: { name: 'Hospitalization' },
+      room: { id: 'room-1', name: 'Ward 1', unitName: 'Kennel A' },
+      appointmentDate: '2025-01-06T09:00:00.000Z',
+      startTime: '2025-01-06T09:00:00.000Z',
+      companion: {
+        id: 'c5',
+        name: 'Nala',
+        species: 'dog',
+        parent: { name: 'Jamie' },
+      },
+    };
+
+    render(<Appointments filteredList={[appointment]} canEditAppointments />);
+
+    expect(screen.getByText('Ward 1')).toBeInTheDocument();
+    expect(screen.getByText('Kennel A')).toBeInTheDocument();
+    expect(screen.getByText('Inpatient')).toBeInTheDocument();
   });
 });

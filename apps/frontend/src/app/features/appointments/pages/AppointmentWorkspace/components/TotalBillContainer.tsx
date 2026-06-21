@@ -1,14 +1,44 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { LuPlus, LuTrash2 } from 'react-icons/lu';
+import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import type { InvoiceLineItem } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
 
+/** Origin of a searchable bill item; rendered as a pill in the search dropdown. */
+export type BillableKind = 'SERVICE' | 'PACKAGE' | 'MEDICATION' | 'INVENTORY';
+
+export type BillableSearchItem = Omit<InvoiceLineItem, 'id'> & { kind?: BillableKind };
+
+const KIND_LABELS: Record<BillableKind, string> = {
+  SERVICE: 'Service',
+  PACKAGE: 'Package',
+  MEDICATION: 'Medication',
+  INVENTORY: 'Inventory',
+};
+
+const KIND_PILL_CLASSES: Record<BillableKind, string> = {
+  SERVICE: 'border-pill-info-border bg-pill-info-bg text-pill-info-text',
+  PACKAGE: 'border-pill-success-border bg-pill-success-bg text-pill-success-text',
+  MEDICATION: 'border-pill-warning-border bg-pill-warning-bg text-pill-warning-text',
+  INVENTORY: 'border-card-border bg-neutral-100 text-text-secondary',
+};
+
+const KindPill = ({ kind }: { kind: BillableKind }) => (
+  <span
+    className={`inline-flex shrink-0 rounded-2xl border px-2 py-0.5 text-caption-2 ${KIND_PILL_CLASSES[kind]}`}
+  >
+    {KIND_LABELS[kind]}
+  </span>
+);
+
 type TotalBillContainerProps = {
   items: InvoiceLineItem[];
-  billableItems: Omit<InvoiceLineItem, 'id'>[];
+  billableItems: BillableSearchItem[];
+  /** ISO currency code for money formatting (from the encounter/finance). */
+  currency?: string;
   depositCents: number;
   withdrawDeposit: boolean;
   overallDiscountPercent: number;
@@ -19,7 +49,13 @@ type TotalBillContainerProps = {
   onRemoveItem: (id: string) => void;
 };
 
-const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
+// One currency per bill; share it via context so the nested footer/row helpers
+// format money without prop-drilling through every layout wrapper.
+const CurrencyContext = React.createContext<string>('USD');
+
+const formatCents = (cents: number, currency = 'USD'): string => formatMoney(cents / 100, currency);
+
+const useCurrency = () => React.useContext(CurrencyContext);
 
 // Totals are shown exclusive of taxes — taxes are finalised by the finance/tax provider at
 // invoice finalisation, not estimated in the workspace.
@@ -114,35 +150,47 @@ const QtyInput = ({
   </div>
 );
 
-/** Editable per-line discount box (dollars) with leading "− $"; re-derives amount. */
+/** Editable per-line discount box (dollars) with leading "− $"; re-derives amount.
+ *  Honours the catalog's per-line max-discount ceiling: the input is capped and a
+ *  "Max $X" hint is shown so the user knows the limit. */
 const DiscountInput = ({
   item,
   onUpdateItem,
 }: {
   item: InvoiceLineItem;
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
-}) => (
-  <div className="relative">
-    <span
-      aria-hidden="true"
-      className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-body-4 text-pill-success-text"
-    >
-      − $
-    </span>
-    <input
-      type="number"
-      min={0}
-      step={0.01}
-      value={item.discountCents / 100}
-      aria-label={`Discount for ${item.name}`}
-      onChange={(e) => {
-        const dollars = Math.max(0, Number.parseFloat(e.target.value) || 0);
-        onUpdateItem(item.id, { discountCents: Math.round(dollars * 100) });
-      }}
-      className={`${EDITABLE_BOX} pl-12 text-pill-success-text`}
-    />
-  </div>
-);
+}) => {
+  const maxDollars = item.maxDiscountCents != null ? item.maxDiscountCents / 100 : undefined;
+  return (
+    <div className="relative">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-body-4 text-pill-success-text"
+      >
+        − $
+      </span>
+      <input
+        type="number"
+        min={0}
+        max={maxDollars}
+        step={0.01}
+        value={item.discountCents / 100}
+        aria-label={`Discount for ${item.name}`}
+        onChange={(e) => {
+          const dollars = Math.max(0, Number.parseFloat(e.target.value) || 0);
+          const capped = maxDollars != null ? Math.min(dollars, maxDollars) : dollars;
+          onUpdateItem(item.id, { discountCents: Math.round(capped * 100) });
+        }}
+        className={`${EDITABLE_BOX} pl-12 text-pill-success-text`}
+      />
+      {maxDollars != null && maxDollars > 0 && (
+        <span className="pointer-events-none absolute -bottom-4 left-3 text-caption-2 text-text-secondary">
+          Max ${maxDollars.toFixed(2)}
+        </span>
+      )}
+    </div>
+  );
+};
 
 const BillRow = ({
   item,
@@ -152,24 +200,30 @@ const BillRow = ({
   item: InvoiceLineItem;
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
   onRemoveItem: (id: string) => void;
-}) => (
-  <li className={`${ROW_GRID} text-body-4 text-text-primary`}>
-    <TextCell className="min-w-0">
-      <span className="truncate">{item.name}</span>
-    </TextCell>
-    <TextCell>{formatCents(item.unitPriceCents)}</TextCell>
-    <QtyInput item={item} onUpdateItem={onUpdateItem} />
-    <TextCell>{formatCents(item.grossCents)}</TextCell>
-    <DiscountInput item={item} onUpdateItem={onUpdateItem} />
-    <TextCell className="font-medium">{formatCents(item.amountCents)}</TextCell>
-    <CircleIconButton
-      icon={<LuTrash2 aria-hidden="true" />}
-      label={`Remove ${item.name}`}
-      variant="danger"
-      onClick={() => onRemoveItem(item.id)}
-    />
-  </li>
-);
+}) => {
+  const currency = useCurrency();
+  // Rows with a max-discount hint need extra bottom space so the absolutely
+  // positioned "Max $X" caption doesn't collide with the next row.
+  const hasMaxHint = item.maxDiscountCents != null && item.maxDiscountCents > 0;
+  return (
+    <li className={`${ROW_GRID} text-body-4 text-text-primary ${hasMaxHint ? 'pb-4' : ''}`}>
+      <TextCell className="min-w-0">
+        <span className="truncate">{item.name}</span>
+      </TextCell>
+      <TextCell>{formatCents(item.unitPriceCents, currency)}</TextCell>
+      <QtyInput item={item} onUpdateItem={onUpdateItem} />
+      <TextCell>{formatCents(item.grossCents, currency)}</TextCell>
+      <DiscountInput item={item} onUpdateItem={onUpdateItem} />
+      <TextCell className="font-medium">{formatCents(item.amountCents, currency)}</TextCell>
+      <CircleIconButton
+        icon={<LuTrash2 aria-hidden="true" />}
+        label={`Remove ${item.name}`}
+        variant="danger"
+        onClick={() => onRemoveItem(item.id)}
+      />
+    </li>
+  );
+};
 
 const FOOTER_AMOUNT_ROW = 'grid min-h-8 grid-cols-[minmax(0,1fr)_max-content] items-center gap-4';
 const FOOTER_BREAKDOWN_ROW =
@@ -276,82 +330,81 @@ const TotalsFooter = ({
   withdrawDeposit: boolean;
   onToggleWithdrawDeposit: (value: boolean) => void;
   onChangeOverallDiscount: (percent: number) => void;
-}) => (
-  <div className="-mx-5 -mb-5 grid gap-5 rounded-b-2xl border-t border-neutral-300 bg-pill-success-bg px-5 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(13rem,0.8fr)_minmax(0,1fr)] lg:items-stretch">
-    <div className="flex h-full flex-col justify-center gap-2">
-      <label className="flex min-h-8 items-center gap-2">
-        <input
-          type="checkbox"
-          checked={withdrawDeposit}
-          onChange={(e) => onToggleWithdrawDeposit(e.target.checked)}
-          className="size-4 accent-pill-success-text"
+}) => {
+  const currency = useCurrency();
+  const money = (cents: number) => formatCents(cents, currency);
+  return (
+    <div className="-mx-5 -mb-5 grid gap-5 rounded-b-2xl border-t border-neutral-300 bg-pill-success-bg px-5 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(13rem,0.8fr)_minmax(0,1fr)] lg:items-stretch">
+      <div className="flex h-full flex-col justify-center gap-2">
+        <label className="flex min-h-8 items-center gap-2">
+          <input
+            type="checkbox"
+            checked={withdrawDeposit}
+            onChange={(e) => onToggleWithdrawDeposit(e.target.checked)}
+            className="size-4 accent-pill-success-text"
+          />
+          <span style={FOOTER_HELPER_TEXT_STYLE}>Withdraw from deposit</span>
+        </label>
+        <FooterAmountRow label="Total Deposit" value={money(depositCents)} />
+        <FooterAmountRow
+          label="Invoice Amount"
+          value={money(totals.estimatedTotalCents)}
+          valueStyle={{ color: PRIMARY_TEXT }}
         />
-        <span style={FOOTER_HELPER_TEXT_STYLE}>Withdraw from deposit</span>
-      </label>
-      <FooterAmountRow label="Total Deposit" value={formatCents(depositCents)} />
-      <FooterAmountRow
-        label="Invoice Amount"
-        value={formatCents(totals.estimatedTotalCents)}
-        valueStyle={{ color: PRIMARY_TEXT }}
-      />
-      <FooterAmountRow
-        label="Remaining Deposit"
-        value={formatCents(totals.remainingDepositCents)}
-      />
-    </div>
+        <FooterAmountRow label="Remaining Deposit" value={money(totals.remainingDepositCents)} />
+      </div>
 
-    <div className="flex h-full items-center justify-center py-1 lg:py-0">
-      <div className="text-center">
-        <p style={FOOTER_LABEL_STYLE}>Total Amount</p>
-        <p className="text-right" style={FOOTER_TOTAL_VALUE_STYLE}>
-          {formatCents(totals.estimatedTotalCents)}
+      <div className="flex h-full items-center justify-center py-1 lg:py-0">
+        <div className="text-center">
+          <p style={FOOTER_LABEL_STYLE}>Total Amount</p>
+          <p className="text-right" style={FOOTER_TOTAL_VALUE_STYLE}>
+            {money(totals.estimatedTotalCents)}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex h-full flex-col justify-center gap-2">
+        <FooterBreakdownRow label="Subtotal:" value={money(totals.subtotalCents)} />
+        <FooterBreakdownRow
+          label="Overall Discount:"
+          value={`− ${money(totals.overallDiscountCents)}`}
+          valueStyle={FOOTER_DISCOUNT_VALUE_STYLE}
+          leftSlot={
+            <span className="relative inline-flex h-8 w-20 items-center">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={overallDiscountPercent}
+                aria-label="Overall discount percent"
+                onChange={(e) =>
+                  onChangeOverallDiscount(Math.max(0, Number.parseFloat(e.target.value) || 0))
+                }
+                className="h-full w-full rounded-xl border bg-transparent pr-6 pl-2 text-right focus-visible:outline-none"
+                style={{ ...FOOTER_DISCOUNT_VALUE_STYLE, borderColor: DISCOUNT_TEXT }}
+              />
+              <span
+                className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2"
+                style={FOOTER_DISCOUNT_VALUE_STYLE}
+              >
+                %
+              </span>
+            </span>
+          }
+        />
+        <FooterBreakdownRow label="Estimated Total:" value={money(totals.estimatedTotalCents)} />
+        <p className="text-right" style={FOOTER_HELPER_TEXT_STYLE}>
+          Exclusive of taxes
         </p>
       </div>
     </div>
-
-    <div className="flex h-full flex-col justify-center gap-2">
-      <FooterBreakdownRow label="Subtotal:" value={formatCents(totals.subtotalCents)} />
-      <FooterBreakdownRow
-        label="Overall Discount:"
-        value={`− ${formatCents(totals.overallDiscountCents)}`}
-        valueStyle={FOOTER_DISCOUNT_VALUE_STYLE}
-        leftSlot={
-          <span className="relative inline-flex h-8 w-20 items-center">
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={overallDiscountPercent}
-              aria-label="Overall discount percent"
-              onChange={(e) =>
-                onChangeOverallDiscount(Math.max(0, Number.parseFloat(e.target.value) || 0))
-              }
-              className="h-full w-full rounded-xl border bg-transparent pr-6 pl-2 text-right focus-visible:outline-none"
-              style={{ ...FOOTER_DISCOUNT_VALUE_STYLE, borderColor: DISCOUNT_TEXT }}
-            />
-            <span
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2"
-              style={FOOTER_DISCOUNT_VALUE_STYLE}
-            >
-              %
-            </span>
-          </span>
-        }
-      />
-      <FooterBreakdownRow
-        label="Estimated Total:"
-        value={formatCents(totals.estimatedTotalCents)}
-      />
-      <p className="text-right" style={FOOTER_HELPER_TEXT_STYLE}>
-        Exclusive of taxes
-      </p>
-    </div>
-  </div>
-);
+  );
+};
 
 const TotalBillContainer = ({
   items,
   billableItems,
+  currency = 'USD',
   depositCents,
   withdrawDeposit,
   overallDiscountPercent,
@@ -362,6 +415,7 @@ const TotalBillContainer = ({
   onRemoveItem,
 }: TotalBillContainerProps) => {
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLDivElement>(null);
 
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -369,89 +423,105 @@ const TotalBillContainer = ({
     return billableItems.filter((item) => item.name.toLowerCase().includes(query));
   }, [billableItems, search]);
 
+  // Strip the display-only `kind` before the item enters the bill.
+  const addCandidate = (item: BillableSearchItem) => {
+    const { kind: _kind, ...lineItem } = item;
+    void _kind;
+    onAddItem(lineItem);
+  };
+
   const totals = buildTotals(items, overallDiscountPercent, depositCents, withdrawDeposit);
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Search row sits above the floating container, right-aligned and sized to
+    <CurrencyContext.Provider value={currency}>
+      <div className="flex flex-col gap-3">
+        {/* Search row sits above the floating container, right-aligned and sized to
           match the other steps' search bars (SOAP / Services / Prescription). */}
-      <div className="relative flex items-center justify-end gap-3">
-        <CircleIconButton
-          icon={<LuPlus aria-hidden="true" />}
-          label="Add invoice item"
-          variant="dark"
-          onClick={() => {
-            if (matches[0]) onAddItem(matches[0]);
-          }}
-        />
-        <div className="relative w-full sm:max-w-90">
-          <Search
-            value={search}
-            setSearch={setSearch}
-            placeholder="Search for Services, medicines..."
-            label="Search invoice items"
-            className="w-full!"
+        <div className="relative flex items-center justify-end gap-3">
+          <CircleIconButton
+            icon={<LuPlus aria-hidden="true" />}
+            label="Add invoice item"
+            variant="dark"
+            onClick={() => {
+              if (matches[0]) addCandidate(matches[0]);
+            }}
           />
-          {matches.length > 0 && (
-            <ul className="absolute right-0 z-20 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
-              {matches.map((item) => (
-                <li key={item.name}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddItem(item);
-                      setSearch('');
-                    }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                  >
-                    <LuPlus aria-hidden="true" />
-                    <span className="flex-1">{item.name}</span>
-                    <span className="text-text-secondary">{formatCents(item.amountCents)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-
-      <SectionContainer
-        titleClassName="text-yc-20-b-primary"
-        title="Total Bill"
-        className="flex flex-col gap-5"
-      >
-        {items.length === 0 ? (
-          <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
-            No invoice line items added yet.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <div className="hidden sm:block">
-              <ColumnHeadings />
-            </div>
-            <ul className="flex flex-col gap-3">
-              {items.map((item) => (
-                <BillRow
-                  key={item.id}
-                  item={item}
-                  onUpdateItem={onUpdateItem}
-                  onRemoveItem={onRemoveItem}
-                />
-              ))}
-            </ul>
+          <div ref={searchRef} className="relative w-full sm:max-w-130">
+            <Search
+              value={search}
+              setSearch={setSearch}
+              placeholder="Search services, packages, medicines, inventory..."
+              label="Search invoice items"
+              className="w-full!"
+            />
+            <SearchResultsDropdown
+              anchorRef={searchRef}
+              open={matches.length > 0}
+              onClose={() => setSearch('')}
+            >
+              <ul>
+                {matches.map((item) => (
+                  <li key={item.name}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        addCandidate(item);
+                        setSearch('');
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
+                    >
+                      <LuPlus aria-hidden="true" className="shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                      {item.kind && <KindPill kind={item.kind} />}
+                      <span className="shrink-0 text-text-secondary">
+                        {formatCents(item.amountCents, currency)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </SearchResultsDropdown>
           </div>
-        )}
+        </div>
 
-        <TotalsFooter
-          totals={totals}
-          depositCents={depositCents}
-          overallDiscountPercent={overallDiscountPercent}
-          withdrawDeposit={withdrawDeposit}
-          onToggleWithdrawDeposit={onToggleWithdrawDeposit}
-          onChangeOverallDiscount={onChangeOverallDiscount}
-        />
-      </SectionContainer>
-    </div>
+        <SectionContainer
+          titleClassName="text-yc-20-b-primary"
+          title="Total Bill"
+          className="flex flex-col gap-5"
+        >
+          {items.length === 0 ? (
+            <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
+              No invoice line items added yet.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div className="hidden sm:block">
+                <ColumnHeadings />
+              </div>
+              <ul className="flex flex-col gap-3">
+                {items.map((item) => (
+                  <BillRow
+                    key={item.id}
+                    item={item}
+                    onUpdateItem={onUpdateItem}
+                    onRemoveItem={onRemoveItem}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <TotalsFooter
+            totals={totals}
+            depositCents={depositCents}
+            overallDiscountPercent={overallDiscountPercent}
+            withdrawDeposit={withdrawDeposit}
+            onToggleWithdrawDeposit={onToggleWithdrawDeposit}
+            onChangeOverallDiscount={onChangeOverallDiscount}
+          />
+        </SectionContainer>
+      </div>
+    </CurrencyContext.Provider>
   );
 };
 

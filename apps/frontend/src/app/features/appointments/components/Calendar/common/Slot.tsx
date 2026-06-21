@@ -27,6 +27,7 @@ type SlotProps = {
   handleOpenWorkspace?: (appt: Appointment, intent?: AppointmentViewIntent) => void;
   handleRescheduleAppointment: (appt: Appointment) => void;
   handleChangeRoomAppointment?: (appt: Appointment) => void;
+  handleAcceptAppointment?: (appt: Appointment) => void;
   dayIndex: number;
   length: number;
   canEditAppointments: boolean;
@@ -97,6 +98,7 @@ const SlotComponent: React.FC<SlotProps> = ({
   handleOpenWorkspace,
   handleRescheduleAppointment,
   handleChangeRoomAppointment,
+  handleAcceptAppointment,
   dayIndex,
   length,
   canEditAppointments,
@@ -758,6 +760,7 @@ const SlotComponent: React.FC<SlotProps> = ({
             popoverStyle={popoverStyle}
             handleRescheduleAppointment={handleRescheduleAppointment}
             handleChangeRoomAppointment={handleChangeRoomAppointment}
+            handleAcceptAppointment={handleAcceptAppointment}
             onClose={() => setActivePopoverKey(null)}
             registerAnchorEl={registerAnchorEl}
           />,

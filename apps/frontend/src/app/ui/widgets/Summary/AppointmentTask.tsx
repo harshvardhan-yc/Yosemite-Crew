@@ -1,5 +1,6 @@
 'use client';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Appointments from '@/app/ui/tables/Appointments';
 import Tasks from '@/app/ui/tables/Tasks';
 
@@ -21,14 +22,22 @@ import ChangeRoom from '@/app/features/appointments/pages/Appointments/Sections/
 import { AppointmentStatusFiltersUI } from '@/app/features/appointments/types/appointments';
 import { normalizeAppointmentStatus } from '@/app/lib/appointments';
 import Filters from '@/app/ui/filters/Filters';
+import { isAppointmentRevampEnabled } from '@/app/lib/featureFlags';
+import { buildWorkspaceHref } from '@/app/lib/appointmentWorkspace';
+import { startRouteLoader } from '@/app/lib/routeLoader';
+import ViewAppointmentOverviewModal from '@/app/features/appointments/pages/Appointments/Sections/ViewAppointmentOverviewModal';
+
+const revampEnabled = isAppointmentRevampEnabled();
 
 const AppointmentTask = () => {
   const appointments = useAppointmentsForPrimaryOrg();
   const { can } = usePermissions();
   const canEditAppointments = can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
   const tasks = useTasksForPrimaryOrg();
+  const router = useRouter();
   const [activeTable, setActiveTable] = useState('Appointments');
   const [viewPopup, setViewPopup] = useState(false);
+  const [detailPopup, setDetailPopup] = useState(false);
   const [viewTaskPopup, setViewTaskPopup] = useState(false);
   const [reschedulePopup, setReschedulePopup] = useState(false);
   const [changeStatusPopup, setChangeStatusPopup] = useState(false);
@@ -43,8 +52,8 @@ const AppointmentTask = () => {
   const [activeSubLabel, setActiveSubLabel] = useState('all');
 
   useEffect(() => {
-    if (!viewPopup) setViewIntent(null);
-  }, [viewPopup]);
+    if (!viewPopup && !detailPopup) setViewIntent(null);
+  }, [viewPopup, detailPopup]);
 
   const prevActiveTableRef = useRef(activeTable);
   if (prevActiveTableRef.current !== activeTable) {
@@ -54,6 +63,7 @@ const AppointmentTask = () => {
       if (viewTaskPopup) setViewTaskPopup(false);
     } else {
       setViewPopup(false);
+      setDetailPopup(false);
       setReschedulePopup(false);
       setChangeStatusPopup(false);
       setChangeRoomPopup(false);
@@ -138,6 +148,7 @@ const AppointmentTask = () => {
             filteredList={filteredList}
             setActiveAppointment={setActiveAppointment}
             setViewPopup={setViewPopup}
+            setDetailPopup={setDetailPopup}
             setReschedulePopup={setReschedulePopup}
             canEditAppointments={canEditAppointments}
             setChangeStatusPopup={setChangeStatusPopup}
@@ -154,10 +165,28 @@ const AppointmentTask = () => {
           />
         )}
 
-        {activeAppointment && (
-          <AppoitmentInfo
+        {activeAppointment && revampEnabled && (
+          <ViewAppointmentOverviewModal
             showModal={viewPopup}
             setShowModal={setViewPopup}
+            activeAppointment={activeAppointment}
+            canEditAppointments={canEditAppointments}
+            onOpenDetails={(appointment, intent) => {
+              setActiveAppointment(appointment);
+              setViewIntent(intent ?? null);
+              setViewPopup(false);
+              if (appointment.id) {
+                startRouteLoader();
+                router.push(buildWorkspaceHref(appointment.id));
+              }
+            }}
+          />
+        )}
+
+        {activeAppointment && (
+          <AppoitmentInfo
+            showModal={revampEnabled ? detailPopup : viewPopup}
+            setShowModal={revampEnabled ? setDetailPopup : setViewPopup}
             activeAppointment={activeAppointment}
             initialViewIntent={viewIntent}
           />

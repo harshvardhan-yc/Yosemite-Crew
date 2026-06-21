@@ -3,10 +3,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { LuArrowLeft, LuCalendarClock, LuPencil, LuPlus } from 'react-icons/lu';
 import TabToggle from '@/app/ui/primitives/TabToggle/TabToggle';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
+import Datepicker from '@/app/ui/inputs/Datepicker';
+import Timepicker from '@/app/ui/inputs/Timepicker';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useTaskStore } from '@/app/stores/taskStore';
+import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import { createTask, loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
 import type { RecurrenceType, Task } from '@/app/features/tasks/types/task';
 import type {
@@ -19,6 +22,8 @@ import { formatStampDate } from '@/app/lib/appointmentWorkspace';
 
 type TasksPanelProps = {
   appointmentId: string;
+  /** Real parent/co-parent assignees for the appointment's companion. */
+  parentOptions?: AssigneeOption[];
 };
 
 type TaskTab = 'EMPLOYEE' | 'PARENT';
@@ -66,16 +71,7 @@ const PARENT_CATEGORIES: { label: string; value: EmployeeTaskCategory }[] = [
   'Custom reminders',
 ].map((c) => ({ label: c, value: c as EmployeeTaskCategory }));
 
-const EMPLOYEE_ASSIGNEES = [
-  { label: 'Sarah Mitchell', value: 'usr-sarah' },
-  { label: 'Dr. Tim Apple', value: 'usr-tim' },
-  { label: 'John Doe', value: 'usr-john' },
-];
-
-const PARENT_ASSIGNEES = [
-  { label: 'Yasmin Hadid', value: 'parent-yasmin' },
-  { label: 'Co-parent', value: 'parent-co' },
-];
+type AssigneeOption = { label: string; value: string };
 
 const REPEAT_OPTIONS = ['None', 'Daily', 'Weekly', 'Monthly'].map((r) => ({ label: r, value: r }));
 
@@ -90,6 +86,20 @@ const repeatToRecurrenceType = (repeat: string): RecurrenceType => {
   if (repeat === 'Daily') return 'DAILY';
   if (repeat === 'Weekly') return 'WEEKLY';
   return 'ONCE';
+};
+
+/** "YYYY-MM-DD" (draft storage) ⇄ the Datepicker's `Date | null` value. */
+const parseDraftDate = (value?: string): Date | null => {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+const formatDraftDate = (date: Date | null): string => {
+  if (!date) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const buildDueAt = (dateValue: string, timeValue: string) => {
@@ -211,6 +221,7 @@ const TaskForm = ({
   onSave,
   onDiscard,
   editing,
+  assignees,
 }: {
   isParent: boolean;
   draft: TaskDraft;
@@ -218,8 +229,8 @@ const TaskForm = ({
   onSave: () => void;
   onDiscard: () => void;
   editing: boolean;
+  assignees: AssigneeOption[];
 }) => {
-  const assignees = isParent ? PARENT_ASSIGNEES : EMPLOYEE_ASSIGNEES;
   const categories = isParent ? PARENT_CATEGORIES : EMPLOYEE_CATEGORIES;
   return (
     <div className="flex flex-col gap-4">
@@ -268,12 +279,10 @@ const TaskForm = ({
         className="rounded-2xl border border-input-border-default px-4 py-2.5 text-body-4 text-text-primary outline-none focus:border-input-border-active"
       />
       <div className="grid grid-cols-2 gap-3">
-        <input
-          type="time"
+        <Timepicker
+          label="Set time"
           value={draft.setTime}
-          onChange={(e) => onChange({ setTime: e.target.value })}
-          aria-label="Set time"
-          className="rounded-2xl border border-input-border-default px-4 py-2.5 text-body-4 text-text-primary outline-none focus:border-input-border-active"
+          onChange={(value) => onChange({ setTime: value })}
         />
         <input
           value={draft.reminder}
@@ -291,19 +300,25 @@ const TaskForm = ({
         onSelect={(o) => onChange({ repeat: o.value })}
       />
       <div className="grid grid-cols-2 gap-3">
-        <input
-          type="date"
-          value={draft.starts}
-          onChange={(e) => onChange({ starts: e.target.value })}
-          aria-label="Starts"
-          className="rounded-2xl border border-input-border-default px-4 py-2.5 text-body-4 text-text-primary outline-none focus:border-input-border-active"
+        <Datepicker
+          type="input"
+          placeholder="Starts"
+          currentDate={parseDraftDate(draft.starts)}
+          setCurrentDate={
+            ((next: Date | null) => onChange({ starts: formatDraftDate(next) })) as React.Dispatch<
+              React.SetStateAction<Date | null>
+            >
+          }
         />
-        <input
-          type="date"
-          value={draft.ends}
-          onChange={(e) => onChange({ ends: e.target.value })}
-          aria-label="Ends"
-          className="rounded-2xl border border-input-border-default px-4 py-2.5 text-body-4 text-text-primary outline-none focus:border-input-border-active"
+        <Datepicker
+          type="input"
+          placeholder="Ends"
+          currentDate={parseDraftDate(draft.ends)}
+          setCurrentDate={
+            ((next: Date | null) => onChange({ ends: formatDraftDate(next) })) as React.Dispatch<
+              React.SetStateAction<Date | null>
+            >
+          }
         />
       </div>
       <div className="flex items-center gap-3">
@@ -315,11 +330,24 @@ const TaskForm = ({
 };
 
 /** Tasks panel: Employee (workspace schedule) + Parent task sub-tabs with a New/Edit form. */
-const TasksPanel = ({ appointmentId }: TasksPanelProps) => {
+const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
   const [tab, setTab] = useState<TaskTab>('EMPLOYEE');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [draft, setDraft] = useState<TaskDraft>(EMPTY_DRAFT);
+
+  useLoadTeam();
+  const team = useTeamForPrimaryOrg();
+  const employeeOptions = useMemo<AssigneeOption[]>(
+    () =>
+      team
+        .map((member) => ({
+          label: member.name?.trim() || member.practionerId,
+          value: member.practionerId,
+        }))
+        .filter((option) => option.value),
+    [team]
+  );
 
   const encounter = useAppointmentWorkspaceStore((s) => s.encountersById[appointmentId]);
   const addScheduleTask = useAppointmentWorkspaceStore((s) => s.addScheduleTask);
@@ -384,7 +412,7 @@ const TasksPanel = ({ appointmentId }: TasksPanelProps) => {
     setEditingId(null);
   };
 
-  const assigneeOptions = isParent ? PARENT_ASSIGNEES : EMPLOYEE_ASSIGNEES;
+  const assigneeOptions = isParent ? parentOptions : employeeOptions;
 
   const handleSave = async () => {
     const assignee = assigneeOptions.find((a) => a.value === draft.assignedTo);
@@ -440,6 +468,7 @@ const TasksPanel = ({ appointmentId }: TasksPanelProps) => {
         isParent={isParent}
         draft={draft}
         editing={editingId != null}
+        assignees={assigneeOptions}
         onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
         onSave={handleSave}
         onDiscard={closeForm}

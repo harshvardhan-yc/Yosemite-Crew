@@ -15,7 +15,10 @@ import { formatTimeLabel } from '@/app/lib/forms';
 import { createInvoiceByAppointmentId } from '@/app/lib/paymentStatus';
 import { formatMoney } from '@/app/lib/money';
 import { normalizeAppointmentId } from '@/app/lib/invoice';
-import { updateAppointment } from '@/app/features/appointments/services/appointmentService';
+import {
+  assignEncounterUnit,
+  updateAppointment,
+} from '@/app/features/appointments/services/appointmentService';
 import { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 import { useNotify } from '@/app/hooks/useNotify';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
@@ -24,6 +27,8 @@ import AppointmentAvatar from '@/app/features/appointments/components/Appointmen
 import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import { getAppointmentCompanion } from '@/app/lib/appointments';
+import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import { IoArrowForward } from 'react-icons/io5';
 
 type ViewAppointmentOverviewModalProps = {
@@ -69,6 +74,22 @@ const resolveEstimateDisplay = (
   return '-';
 };
 
+const getActiveRoomUnits = (
+  roomId: string | undefined,
+  roomUnitsById: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitsById'],
+  roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId']
+) =>
+  (roomUnitIdsByRoomId[roomId ?? ''] ?? []).flatMap((unitId) => {
+    const unit = roomUnitsById[unitId];
+    return unit && unit.isActive !== false ? [unit] : [];
+  });
+
+const getFirstRoomUnitId = (
+  roomId: string | undefined,
+  roomUnitsById: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitsById'],
+  roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId']
+) => getActiveRoomUnits(roomId, roomUnitsById, roomUnitIdsByRoomId)[0]?.id;
+
 const ViewAppointmentOverviewModal = ({
   showModal,
   setShowModal,
@@ -78,12 +99,20 @@ const ViewAppointmentOverviewModal = ({
 }: ViewAppointmentOverviewModalProps) => {
   const { notify } = useNotify();
   const rooms = useRoomsForPrimaryOrg();
+  const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
+  const roomUnitIdsByRoomId = useOrganisationRoomStore((s) => s.roomUnitIdsByRoomId);
   const invoices = useInvoicesForPrimaryOrg();
   const orgsById = useOrgStore((s) => s.orgsById);
   const getServicesBySpecialityId = useServiceStore.getState().getServicesBySpecialityId;
+  const initEncounter = useAppointmentWorkspaceStore((s) => s.initEncounter);
+  const setRoomUnit = useAppointmentWorkspaceStore((s) => s.setRoomUnit);
+  const encounter = useAppointmentWorkspaceStore((s) =>
+    activeAppointment.id ? s.encountersById[activeAppointment.id] : undefined
+  );
 
   const [savingRoom, setSavingRoom] = useState(false);
   const companion = getAppointmentCompanion(activeAppointment);
+  const isInpatient = activeAppointment.appointmentKind === 'INPATIENT';
 
   const orgType =
     (activeAppointment.organisationId && orgsById[activeAppointment.organisationId]?.type) ||
@@ -96,7 +125,18 @@ const ViewAppointmentOverviewModal = ({
 
   const invoicesByAppointmentId = useMemo(() => createInvoiceByAppointmentId(invoices), [invoices]);
 
+  const effectiveRoomId = encounter?.roomId ?? activeAppointment.room?.id;
+  const effectiveUnitId =
+    encounter?.unitId ?? getFirstRoomUnitId(effectiveRoomId, roomUnitsById, roomUnitIdsByRoomId);
   const roomOptions = useMemo(() => rooms.map((r) => ({ label: r.name, value: r.id })), [rooms]);
+  const unitOptions = useMemo(
+    () =>
+      getActiveRoomUnits(effectiveRoomId, roomUnitsById, roomUnitIdsByRoomId).map((unit) => ({
+        label: unit.displayName || unit.code,
+        value: unit.id,
+      })),
+    [effectiveRoomId, roomUnitIdsByRoomId, roomUnitsById]
+  );
 
   const serviceInfo = useMemo(() => {
     const specialityId = activeAppointment.appointmentType?.speciality?.id;
@@ -147,17 +187,81 @@ const ViewAppointmentOverviewModal = ({
       setSavingRoom(true);
       try {
         const foundRoom = rooms.find((r) => r.id === option.value);
+        const nextUnitId = isInpatient
+          ? getFirstRoomUnitId(option.value, roomUnitsById, roomUnitIdsByRoomId)
+          : undefined;
         await updateAppointment({
           ...activeAppointment,
           room: foundRoom ? { id: foundRoom.id, name: foundRoom.name } : undefined,
         });
+        if (isInpatient && activeAppointment.id) {
+          initEncounter(activeAppointment.id, 'INPATIENT', {
+            leadId: activeAppointment.lead?.id,
+            leadName: activeAppointment.lead?.name,
+          });
+          setRoomUnit(activeAppointment.id, option.value, nextUnitId);
+          if (activeAppointment.encounterId && nextUnitId) {
+            await assignEncounterUnit({
+              encounterId: activeAppointment.encounterId,
+              unitId: nextUnitId,
+              reason: 'Appointment overview room assignment',
+            });
+          }
+        }
       } catch {
         notify('error', { title: 'Room update failed', text: 'Please try again.' });
       } finally {
         setSavingRoom(false);
       }
     },
-    [activeAppointment, canEditRoom, notify, rooms]
+    [
+      activeAppointment,
+      canEditRoom,
+      initEncounter,
+      isInpatient,
+      notify,
+      roomUnitIdsByRoomId,
+      roomUnitsById,
+      rooms,
+      setRoomUnit,
+    ]
+  );
+
+  const handleUnitChange = useCallback(
+    async (option: { label: string; value: string }) => {
+      if (!canEditRoom || !isInpatient || !activeAppointment.id) return;
+      setSavingRoom(true);
+      try {
+        initEncounter(activeAppointment.id, 'INPATIENT', {
+          leadId: activeAppointment.lead?.id,
+          leadName: activeAppointment.lead?.name,
+        });
+        setRoomUnit(activeAppointment.id, effectiveRoomId, option.value);
+        if (activeAppointment.encounterId) {
+          await assignEncounterUnit({
+            encounterId: activeAppointment.encounterId,
+            unitId: option.value,
+            reason: 'Appointment overview unit assignment',
+          });
+        }
+      } catch {
+        notify('error', { title: 'Unit update failed', text: 'Please try again.' });
+      } finally {
+        setSavingRoom(false);
+      }
+    },
+    [
+      activeAppointment.encounterId,
+      activeAppointment.id,
+      activeAppointment.lead?.id,
+      activeAppointment.lead?.name,
+      canEditRoom,
+      effectiveRoomId,
+      initEncounter,
+      isInpatient,
+      notify,
+      setRoomUnit,
+    ]
   );
 
   const handlePrimaryAction = () => {
@@ -265,16 +369,44 @@ const ViewAppointmentOverviewModal = ({
               <LabelDropdown
                 placeholder={savingRoom ? 'Saving…' : 'Select room'}
                 options={roomOptions}
-                defaultOption={activeAppointment.room?.id}
+                defaultOption={effectiveRoomId ?? ''}
                 onSelect={handleRoomChange}
                 searchable={false}
               />
             ) : (
               <div className="border border-input-border-default rounded-2xl px-4 py-3 min-h-12 font-satoshi text-base text-text-primary">
-                {activeAppointment.room?.name || '-'}
+                {rooms.find((room) => room.id === effectiveRoomId)?.name ||
+                  activeAppointment.room?.name ||
+                  '-'}
               </div>
             )}
           </div>
+
+          {isInpatient ? (
+            <div className="relative">
+              <span
+                className="pointer-events-none absolute left-4 top-0 z-10 flex -translate-y-1/2 items-center gap-1 bg-white px-1 font-satoshi text-sm leading-none"
+                style={{ color: 'var(--color-input-text-placeholder)' }}
+              >
+                Unit
+              </span>
+              {canEditRoom ? (
+                <LabelDropdown
+                  placeholder={savingRoom ? 'Saving…' : 'Select unit'}
+                  options={unitOptions}
+                  defaultOption={effectiveUnitId ?? ''}
+                  onSelect={handleUnitChange}
+                  searchable={false}
+                />
+              ) : (
+                <div className="border border-input-border-default rounded-2xl px-4 py-3 min-h-12 font-satoshi text-base text-text-primary">
+                  {unitOptions.find((unit) => unit.value === effectiveUnitId)?.label ||
+                    effectiveUnitId ||
+                    '-'}
+                </div>
+              )}
+            </div>
+          ) : null}
 
           {/* Estimate panel */}
           {activeAppointment.status !== 'COMPLETED' && (

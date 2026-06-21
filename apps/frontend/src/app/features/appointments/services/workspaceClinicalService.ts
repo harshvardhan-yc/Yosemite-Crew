@@ -15,6 +15,7 @@ type ClinicalContext = {
   appointmentId: string;
   encounterId?: string;
   authorId?: string;
+  authorName?: string;
   templateId?: string;
   templateVersion?: number;
   templateVersionId?: string;
@@ -30,6 +31,7 @@ type RenderedDocument = {
   updatedAt?: string | Date;
   signedBy?: string | null;
   signedAt?: string | Date | null;
+  pdfUrl?: string | null;
   signing?: { required?: boolean; status?: string | null } | null;
 };
 
@@ -42,6 +44,9 @@ export type WorkspaceClinicalHydration = Partial<
     | 'prescription'
     | 'dischargeSummary'
     | 'followUpAt'
+    | 'dischargeSavedAt'
+    | 'dischargeSavedByName'
+    | 'dischargeSummaryId'
     | 'documents'
   >
 >;
@@ -85,6 +90,14 @@ type ObservationSubmissionListFilters = {
 };
 
 type ClinicalArtifactAction = '$finalize' | '$reopen' | '$amend';
+type DischargeSummaryHydration = Pick<
+  WorkspaceClinicalHydration,
+  | 'dischargeSummary'
+  | 'followUpAt'
+  | 'dischargeSavedAt'
+  | 'dischargeSavedByName'
+  | 'dischargeSummaryId'
+>;
 
 const asIso = (value: unknown) => {
   if (value instanceof Date) return value.toISOString();
@@ -112,6 +125,39 @@ const jsonExtension = (url: string, value: unknown) =>
 const compactExtensions = (items: Array<{ url: string; valueString?: string } | undefined>) =>
   items.filter((item): item is { url: string; valueString?: string } => Boolean(item));
 
+const getReferenceId = (reference?: string) => reference?.split('/').findLast(Boolean);
+
+const displayFromReference = (
+  reference: unknown,
+  context: Pick<ClinicalContext, 'authorId' | 'authorName'>
+) => {
+  if (!reference || typeof reference !== 'object') return undefined;
+  const ref = reference as { display?: unknown; reference?: unknown };
+  if (typeof ref.display === 'string' && ref.display.trim()) return ref.display.trim();
+  const authorReferenceId =
+    typeof ref.reference === 'string' ? getReferenceId(ref.reference) : undefined;
+  return authorReferenceId && authorReferenceId === context.authorId
+    ? context.authorName
+    : undefined;
+};
+
+const getClinicalAuthorName = (
+  resource: Composition,
+  context: Pick<ClinicalContext, 'authorId' | 'authorName'>
+) => {
+  const authorDisplay = (resource.author ?? [])
+    .map((author) => displayFromReference(author, context))
+    .find(Boolean);
+  if (authorDisplay) return authorDisplay;
+
+  const metadata = resource as { authorId?: unknown; signedBy?: unknown };
+  const authorId = typeof metadata.authorId === 'string' ? metadata.authorId : undefined;
+  if (authorId && authorId === context.authorId) return context.authorName;
+
+  const signedBy = typeof metadata.signedBy === 'string' ? metadata.signedBy.trim() : '';
+  return signedBy || undefined;
+};
+
 const stringifyObjectId = (value: ObservationToolSubmission['_id']) => {
   if (typeof value === 'string') return value;
   return value?.toString();
@@ -133,7 +179,7 @@ const toIsoQueryValue = (value: string | Date | undefined) => {
 };
 
 const observationSubmissionQuery = (filters: ObservationSubmissionListFilters = {}) => ({
-  companionId: filters.companionId,
+  patientId: filters.companionId,
   toolId: filters.toolId,
   fromDate: toIsoQueryValue(filters.fromDate),
   toDate: toIsoQueryValue(filters.toDate),
@@ -178,7 +224,7 @@ const buildComposition = (
     type: { text: kind },
     date: new Date().toISOString(),
     author: context.authorId
-      ? [{ reference: `Practitioner/${context.authorId}` }]
+      ? [{ reference: `Practitioner/${context.authorId}`, display: context.authorName }]
       : [{ display: 'System' }],
     encounter,
     extension: extensions,
@@ -194,9 +240,13 @@ const buildComposition = (
 
 const soapNoteFromComposition = (
   resource: Composition,
-  context: Pick<ClinicalContext, 'organisationId' | 'appointmentId' | 'encounterId'>
+  context: Pick<
+    ClinicalContext,
+    'organisationId' | 'appointmentId' | 'encounterId' | 'authorId' | 'authorName'
+  >
 ): SoapNoteEntry => {
   const input = clinicalArtifactFhirMapper.compositionToSoapNoteInput(resource, context);
+  const signedByName = getClinicalAuthorName(resource, context);
   return {
     id: resource.id ?? `soap-${resource.date ?? Date.now()}`,
     chiefComplaint: '',
@@ -210,6 +260,7 @@ const soapNoteFromComposition = (
     // `preliminary` (only `$finalize` flips it to `final`), so persisted id — not status —
     // is the signal that this is a past entry.
     status: resource.id ? 'COMPLETED' : 'IN_PROGRESS',
+    signedByName,
     signedAt: resource.date,
     createdAt: resource.date ?? new Date().toISOString(),
   };
@@ -236,6 +287,25 @@ const vitalRecordFromObservation = (
     notes: typeof input.notes === 'string' ? input.notes : undefined,
     recordedByName: input.recordedBy ?? 'Clinician',
     recordedAt: asIso(input.measuredAt),
+  };
+};
+
+const dischargeSummaryFromComposition = (
+  resource: Composition,
+  context: Pick<
+    ClinicalContext,
+    'organisationId' | 'appointmentId' | 'encounterId' | 'authorId' | 'authorName'
+  >
+): DischargeSummaryHydration => {
+  const input = clinicalArtifactFhirMapper.compositionToDischargeSummaryInput(resource, context);
+  return {
+    dischargeSummary: String(input.summaryContent ?? ''),
+    followUpAt: typeof input.followUp === 'string' ? input.followUp : undefined,
+    dischargeSavedAt: asIso(resource.date),
+    // Resolve to a human name (display, or the current author's name) — never
+    // surface the raw author reference/id when no display is present.
+    dischargeSavedByName: getClinicalAuthorName(resource, context),
+    dischargeSummaryId: resource.id,
   };
 };
 
@@ -342,7 +412,7 @@ export const listDischargeSummariesForAppointment = async (
     {}
   );
   return bundleResources<Composition>(res.data, 'Composition').map((resource) =>
-    clinicalArtifactFhirMapper.compositionToDischargeSummaryInput(resource, {
+    dischargeSummaryFromComposition(resource, {
       organisationId,
       appointmentId,
       ...context,
@@ -360,7 +430,7 @@ export const listDischargeSummariesForEncounter = async (
     {}
   );
   return bundleResources<Composition>(res.data, 'Composition').map((resource) =>
-    clinicalArtifactFhirMapper.compositionToDischargeSummaryInput(resource, {
+    dischargeSummaryFromComposition(resource, {
       organisationId,
       encounterId,
       ...context,
@@ -738,7 +808,10 @@ export const amendPrescriptionArtifact = (
   );
 
 export const loadWorkspaceClinicalArtifacts = async (
-  context: Pick<ClinicalContext, 'organisationId' | 'appointmentId' | 'encounterId'>
+  context: Pick<
+    ClinicalContext,
+    'organisationId' | 'appointmentId' | 'encounterId' | 'authorId' | 'authorName'
+  >
 ): Promise<WorkspaceClinicalHydration> => {
   const [soapResult, vitalsResult, observationResult, prescriptionsResult, dischargeResult] =
     await Promise.allSettled([
@@ -765,8 +838,11 @@ export const loadWorkspaceClinicalArtifacts = async (
   }
   if (dischargeResult.status === 'fulfilled' && dischargeResult.value.length > 0) {
     const summary = dischargeResult.value.at(0);
-    patch.dischargeSummary = String(summary?.summaryContent ?? '');
-    patch.followUpAt = typeof summary?.followUp === 'string' ? summary.followUp : undefined;
+    patch.dischargeSummary = summary?.dischargeSummary;
+    patch.followUpAt = summary?.followUpAt;
+    patch.dischargeSavedAt = summary?.dischargeSavedAt;
+    patch.dischargeSavedByName = summary?.dischargeSavedByName;
+    patch.dischargeSummaryId = summary?.dischargeSummaryId;
   }
 
   return patch;
@@ -801,4 +877,7 @@ export const renderedDocumentToWorkspaceDocument = (
   signedByName: document.signedBy ?? undefined,
   lastModifiedAt: asIso(document.updatedAt),
   signatureRequired: document.signing?.required ?? document.status !== 'SIGNED',
+  status: document.status,
+  signingStatus: document.signing?.status ?? undefined,
+  pdfUrl: document.pdfUrl ?? null,
 });

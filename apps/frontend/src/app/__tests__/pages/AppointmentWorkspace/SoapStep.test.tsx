@@ -1,14 +1,36 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import SoapStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/SoapStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import {
+  getRenderedDocument,
+  saveSoapNote,
+} from '@/app/features/appointments/services/workspaceClinicalService';
 
 expect.extend(toHaveNoViolations);
 
+jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
+  getRenderedDocument: jest.fn(),
+  saveSoapNote: jest.fn(),
+}));
+
+jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
+  __esModule: true,
+  default: ({ open, title, pdfUrl }: { open: boolean; title: string; pdfUrl: string | null }) =>
+    open ? (
+      <div data-testid="pdf-preview">
+        <span>{title}</span>
+        <span>{pdfUrl}</span>
+      </div>
+    ) : null,
+}));
+
 const APPT = 'appt-soap';
 const APPOINTMENT_REASON = 'Limping after a long hike';
+const APPOINTMENT_SERVICE = 'Orthopaedic consult';
+const APPOINTMENT_SPECIALITY = 'Surgery';
 
 const onRecordVitals = jest.fn();
 const onSaveAndNext = jest.fn();
@@ -39,13 +61,21 @@ const seedAndGet = () => {
 };
 
 describe('SoapStep', () => {
-  beforeEach(reset);
+  beforeEach(() => {
+    reset();
+    onRecordVitals.mockClear();
+    onSaveAndNext.mockClear();
+    (saveSoapNote as jest.Mock).mockResolvedValue({ id: 'soap-saved' });
+    (getRenderedDocument as jest.Mock).mockResolvedValue({ pdfUrl: 'https://files.test/soap.pdf' });
+  });
 
   const renderSoapStep = (encounter = seedAndGet()) =>
     render(
       <SoapStep
         appointmentId={APPT}
         appointmentReason={APPOINTMENT_REASON}
+        appointmentService={APPOINTMENT_SERVICE}
+        appointmentSpeciality={APPOINTMENT_SPECIALITY}
         encounter={encounter}
         onRecordVitals={onRecordVitals}
         onSaveAndNext={onSaveAndNext}
@@ -56,6 +86,10 @@ describe('SoapStep', () => {
     renderSoapStep();
     expect(screen.getByText('Chief Complaint')).toBeInTheDocument();
     expect(screen.getByText(APPOINTMENT_REASON)).toBeInTheDocument();
+    expect(screen.getByText('Service')).toBeInTheDocument();
+    expect(screen.getByText(APPOINTMENT_SERVICE)).toBeInTheDocument();
+    expect(screen.getByText('Speciality')).toBeInTheDocument();
+    expect(screen.getByText(APPOINTMENT_SPECIALITY)).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Chief complaint' })).not.toBeInTheDocument();
     expect(screen.getByText('Subjective (History)')).toBeInTheDocument();
     expect(screen.getByText('Objective (Examination)')).toBeInTheDocument();
@@ -205,6 +239,70 @@ describe('SoapStep', () => {
     printSpy.mockRestore();
   });
 
+  it('opens a rendered SOAP PDF overlay on the Print to Sign path when the backend provides one', async () => {
+    seedAndGet();
+    useAppointmentWorkspaceStore.getState().upsertSoap(APPT, { subjective: '<p>history</p>' });
+    const enc = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
+    render(
+      <SoapStep
+        appointmentId={APPT}
+        organisationId="org-1"
+        appointmentReason={APPOINTMENT_REASON}
+        encounter={enc}
+        onRecordVitals={onRecordVitals}
+        onSaveAndNext={onSaveAndNext}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print to Sign' }));
+
+    await waitFor(() => {
+      expect(saveSoapNote).toHaveBeenCalled();
+      expect(getRenderedDocument).toHaveBeenCalledWith('org-1', 'soap-saved');
+    });
+    expect(screen.getByTestId('pdf-preview')).toHaveTextContent('SOAP note - print to sign');
+    expect(screen.getByTestId('pdf-preview')).toHaveTextContent('https://files.test/soap.pdf');
+    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.soap[0]?.id).toBe(
+      'soap-saved'
+    );
+  });
+
+  it('opens a rendered SOAP PDF overlay from a historical SOAP note print action', async () => {
+    const enc = {
+      ...seedAndGet(),
+      soap: [
+        {
+          id: 'soap-old',
+          chiefComplaint: '',
+          subjective: '<p>legacy</p>',
+          objective: '',
+          assessment: '',
+          plan: '',
+          status: 'COMPLETED' as const,
+          signedByName: 'Dr Tim',
+          createdAt: '2026-04-20T12:30:00Z',
+        },
+      ],
+    };
+    render(
+      <SoapStep
+        appointmentId={APPT}
+        organisationId="org-1"
+        appointmentReason={APPOINTMENT_REASON}
+        encounter={enc}
+        onRecordVitals={onRecordVitals}
+        onSaveAndNext={onSaveAndNext}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /print soap note by dr tim/i }));
+
+    await waitFor(() => {
+      expect(getRenderedDocument).toHaveBeenCalledWith('org-1', 'soap-old');
+    });
+    expect(await screen.findByTestId('pdf-preview')).toHaveTextContent('SOAP note by Dr Tim');
+  });
+
   it('advances from the SOAP step when Save & Next is clicked', () => {
     onSaveAndNext.mockClear();
     renderSoapStep();
@@ -212,7 +310,7 @@ describe('SoapStep', () => {
     expect(onSaveAndNext).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to Unknown signer and omits date/time when not recorded', () => {
+  it('falls back to the encounter lead name and omits date/time when not recorded', () => {
     const enc = {
       ...seedAndGet(),
       soap: [
@@ -229,7 +327,7 @@ describe('SoapStep', () => {
       ],
     };
     renderSoapStep(enc);
-    expect(screen.getByText(/By Unknown/)).toBeInTheDocument();
+    expect(screen.getByText(/By Dr\. Tim Apple/)).toBeInTheDocument();
   });
 
   it('has no axe accessibility violations', async () => {

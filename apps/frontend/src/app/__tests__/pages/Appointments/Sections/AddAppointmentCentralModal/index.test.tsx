@@ -108,9 +108,12 @@ jest.mock(
 );
 
 jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => (props: any) => (
-  <div data-testid={`label-dropdown-${props['aria-label'] ?? props.label ?? 'default'}`}>
+  <div
+    data-testid={`label-dropdown-${props.placeholder ?? props['aria-label'] ?? props.label ?? 'default'}`}
+    data-default-option={props.defaultOption}
+  >
     <button type="button" onClick={() => props.onSelect?.(props.options?.[0]?.value)}>
-      {props.label}
+      {props.placeholder ?? props.label}
     </button>
   </div>
 ));
@@ -403,6 +406,17 @@ describe('AddAppointmentCentralModal', () => {
     render(<AddAppointmentCentralModal {...defaultProps} />);
     // LabelDropdown mocks are rendered
     expect(screen.getAllByTestId(/label-dropdown/)).toBeTruthy();
+  });
+
+  it('passes empty controlled values to lead, speciality, and service after form reset', () => {
+    render(<AddAppointmentCentralModal {...defaultProps} />);
+
+    expect(screen.getByTestId('label-dropdown-Lead')).toHaveAttribute('data-default-option', '');
+    expect(screen.getByTestId('label-dropdown-Speciality')).toHaveAttribute(
+      'data-default-option',
+      ''
+    );
+    expect(screen.getByTestId('label-dropdown-Service')).toHaveAttribute('data-default-option', '');
   });
 
   it('renders estimate panel', () => {

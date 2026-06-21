@@ -27,6 +27,7 @@ type DropdownItem = { label: string; value: string };
 
 type ServicePackage = {
   id: string;
+  kind: 'SERVICE' | 'PACKAGE';
   name: string;
   cost: number;
   maxDiscount: number;

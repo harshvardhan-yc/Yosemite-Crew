@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LuArrowRight,
   LuBanknote,
@@ -31,9 +31,17 @@ import {
   createFinanceInvoice,
   finalizeFinanceInvoice,
   getPaymentLink,
+  loadAppointmentBilling,
   recordManualInvoicePayment,
   seedAppointmentInvoice,
 } from '@/app/features/billing/services/invoiceService';
+import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
+import { computePackageTotals } from '@/app/features/organization/services/catalogCalculations';
+import type { PackageRevamp, ServiceRevamp } from '@/app/features/organization/types/revamp';
+import { useInventoryStore } from '@/app/stores/inventoryStore';
+import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
+import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
+import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 
 type InvoiceStepProps = {
   appointmentId: string;
@@ -64,7 +72,19 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   DEPOSIT: 'Paid from Deposit',
 };
 
-const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
+/** Origin of a searchable bill item, surfaced as a pill in the search dropdown. */
+type BillableKind = 'SERVICE' | 'PACKAGE' | 'MEDICATION' | 'INVENTORY';
+
+export type BillableCandidate = Omit<InvoiceLineItem, 'id'> & { kind: BillableKind };
+
+const DEFAULT_CURRENCY = 'USD';
+
+const formatCents = (cents: number, currency: string = DEFAULT_CURRENCY): string =>
+  formatMoney(cents / 100, currency);
+
+/** The workspace tracks money in integer cents; the finance API stores major units
+ *  (dollars/decimals), so convert on the way out. */
+const centsToMajor = (cents: number): number => Math.round(cents) / 100;
 
 const toFinanceLineItems = (items: InvoiceLineItem[]) =>
   items.map((item) => ({
@@ -72,38 +92,134 @@ const toFinanceLineItems = (items: InvoiceLineItem[]) =>
     name: item.name,
     description: item.name,
     quantity: item.qty,
-    unitPrice: item.unitPriceCents,
-    total: item.amountCents,
+    unitPrice: centsToMajor(item.unitPriceCents),
+    total: centsToMajor(item.amountCents),
   }));
 
-const toInvoiceCandidate = (name: string, amountCents: number): Omit<InvoiceLineItem, 'id'> => ({
+const toInvoiceCandidate = (
+  name: string,
+  amountCents: number,
+  kind: BillableKind
+): BillableCandidate => ({
   name,
   unitPriceCents: amountCents,
   qty: 1,
   grossCents: amountCents,
   discountCents: 0,
   amountCents,
+  kind,
 });
 
-const buildBillableItems = (encounter: AppointmentEncounter): Omit<InvoiceLineItem, 'id'>[] => {
+const moneyToCents = (amount: number): number => Math.max(0, Math.round(amount * 100));
+
+/**
+ * Build a candidate that surfaces the catalog discount on the line: gross is the
+ * full price, the default-discount % is applied as the starting line discount, and
+ * the max-discount % becomes the editable ceiling so a manual edit can't exceed it.
+ */
+const toDiscountedCandidate = (
+  name: string,
+  grossDollars: number,
+  defaultDiscountPercent: number,
+  maxDiscountPercent: number,
+  kind: BillableKind
+): BillableCandidate => {
+  const grossCents = moneyToCents(grossDollars);
+  const discountCents = Math.min(
+    grossCents,
+    Math.round((grossCents * defaultDiscountPercent) / 100)
+  );
+  const maxDiscountCents = Math.min(
+    grossCents,
+    Math.round((grossCents * maxDiscountPercent) / 100)
+  );
+  return {
+    name,
+    unitPriceCents: grossCents,
+    qty: 1,
+    grossCents,
+    discountCents,
+    amountCents: grossCents - discountCents,
+    maxDiscountCents,
+    kind,
+  };
+};
+
+const serviceToInvoiceCandidate = (service: ServiceRevamp) =>
+  toDiscountedCandidate(
+    service.name,
+    service.grossAmount,
+    service.defaultDiscount ?? 0,
+    service.maxDiscount ?? 0,
+    'SERVICE'
+  );
+
+const packageToInvoiceCandidate = (pkg: PackageRevamp) => {
+  const { totalCost } = computePackageTotals(pkg);
+  return toDiscountedCandidate(pkg.name, totalCost, 0, pkg.additionalDiscount ?? 0, 'PACKAGE');
+};
+
+const uniqueByName = (
+  items: BillableCandidate[],
+  excludedNames: Set<string>
+): BillableCandidate[] => {
+  const seen = new Set(excludedNames);
+  return items.filter((item) => {
+    const key = item.name.trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const inventoryToInvoiceCandidate = (item: InventoryItem) => {
+  const sellingDollars = Number(item.pricing?.selling ?? 0);
+  return toInvoiceCandidate(item.basicInfo.name, moneyToCents(sellingDollars), 'INVENTORY');
+};
+
+const buildBillableItems = (
+  encounter: AppointmentEncounter,
+  catalogServices: ServiceRevamp[],
+  catalogPackages: PackageRevamp[],
+  inventoryItems: InventoryItem[],
+  organisationId?: string
+): BillableCandidate[] => {
   const existingNames = new Set(
     encounter.invoiceLineItems.map((item) => item.name.trim().toLowerCase())
   );
   const serviceItems = encounter.services
     .filter((item) => !item.billed && item.amountCents > 0)
     .filter((item) => !existingNames.has(item.name.trim().toLowerCase()))
-    .map((item) => toInvoiceCandidate(item.name, item.amountCents));
+    .map((item) => toInvoiceCandidate(item.name, item.amountCents, 'SERVICE'));
+  // In-house medications prescribed this visit. Their price comes from the linked
+  // inventory item; when it is missing we still surface them at 0 so they can be
+  // added and priced inline rather than silently dropped from the bill.
   const prescriptionItems = encounter.prescription
-    .filter(
-      (item) =>
-        !item.billed &&
-        item.fulfillment === 'IN_HOUSE' &&
-        typeof item.priceCents === 'number' &&
-        item.priceCents > 0
-    )
+    .filter((item) => !item.billed && item.fulfillment === 'IN_HOUSE')
     .filter((item) => !existingNames.has(item.medicineName.trim().toLowerCase()))
-    .map((item) => toInvoiceCandidate(item.medicineName, item.priceCents ?? 0));
-  return [...serviceItems, ...prescriptionItems];
+    .map((item) =>
+      toInvoiceCandidate(item.medicineName, Math.max(0, item.priceCents ?? 0), 'MEDICATION')
+    );
+  const catalogItems = organisationId
+    ? [
+        ...catalogServices
+          .filter(
+            (service) => service.organisationId === organisationId && service.status === 'ACTIVE'
+          )
+          .map(serviceToInvoiceCandidate),
+        ...catalogPackages
+          .filter((pkg) => pkg.organisationId === organisationId && pkg.status === 'ACTIVE')
+          .map(packageToInvoiceCandidate),
+      ]
+    : [];
+  // Inventory/stock items (drugs, consumables) so they can be charged directly.
+  const inventoryCandidates = inventoryItems
+    .filter((item) => item.basicInfo?.name && item.status !== 'HIDDEN')
+    .map(inventoryToInvoiceCandidate);
+  return uniqueByName(
+    [...serviceItems, ...prescriptionItems, ...catalogItems, ...inventoryCandidates],
+    existingNames
+  );
 };
 
 const computeInvoiceTotalCents = (encounter: AppointmentEncounter): number => {
@@ -149,7 +265,7 @@ const SettledBadge = ({ invoice }: { invoice: PastInvoice }) => {
 const ROW_GRID =
   'grid gap-3 sm:grid-cols-[minmax(0,1.7fr)_repeat(5,minmax(0,1fr))] sm:items-center';
 
-const InvoiceBreakdown = ({ invoice }: { invoice: PastInvoice }) => (
+const InvoiceBreakdown = ({ invoice, currency }: { invoice: PastInvoice; currency: string }) => (
   <SectionContainer title="Breakdown" nested className="bg-neutral-0">
     <div className="flex flex-col gap-2">
       <div
@@ -166,17 +282,21 @@ const InvoiceBreakdown = ({ invoice }: { invoice: PastInvoice }) => (
         {invoice.items.map((item) => (
           <li key={item.id} className={`${ROW_GRID} px-1 py-2.5 text-body-4 text-text-primary`}>
             <span className="truncate font-medium">{item.name}</span>
-            <span>{formatCents(item.unitPriceCents)}</span>
+            <span>{formatCents(item.unitPriceCents, currency)}</span>
             <span className="text-text-secondary">x{item.qty}</span>
-            <span>{formatCents(item.grossCents)}</span>
-            <span className="text-pill-success-text">- {formatCents(item.discountCents)}</span>
-            <span className="text-right font-medium">{formatCents(item.amountCents)}</span>
+            <span>{formatCents(item.grossCents, currency)}</span>
+            <span className="text-pill-success-text">
+              - {formatCents(item.discountCents, currency)}
+            </span>
+            <span className="text-right font-medium">
+              {formatCents(item.amountCents, currency)}
+            </span>
           </li>
         ))}
       </ul>
       <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-card-border pt-3">
         <span className="text-text-secondary">Total</span>
-        <span className="text-yc-20-b-primary">{formatCents(invoice.totalCents)}</span>
+        <span className="text-yc-20-b-primary">{formatCents(invoice.totalCents, currency)}</span>
         <SettledBadge invoice={invoice} />
       </div>
     </div>
@@ -214,12 +334,14 @@ const InvoiceRow = ({
   index,
   expanded,
   readOnly,
+  currency,
   onToggle,
 }: {
   invoice: PastInvoice;
   index: number;
   expanded: boolean;
   readOnly: boolean;
+  currency: string;
   onToggle: (id: string) => void;
 }) => (
   <li className="flex flex-col gap-4 rounded-2xl border border-card-border p-4">
@@ -230,8 +352,12 @@ const InvoiceRow = ({
       <span className="truncate text-body-4 text-text-secondary">
         {formatInvoiceDate(invoice.createdAt)}
       </span>
-      <span className="text-body-4 text-text-primary">{formatCents(invoice.totalCents)}</span>
-      <span className="text-body-4 text-text-primary">{formatCents(invoice.outstandingCents)}</span>
+      <span className="text-body-4 text-text-primary">
+        {formatCents(invoice.totalCents, currency)}
+      </span>
+      <span className="text-body-4 text-text-primary">
+        {formatCents(invoice.outstandingCents, currency)}
+      </span>
       <div className="flex">
         <StatusPill status={invoice.status} />
       </div>
@@ -257,7 +383,7 @@ const InvoiceRow = ({
       </div>
     </div>
 
-    {expanded && <InvoiceBreakdown invoice={invoice} />}
+    {expanded && <InvoiceBreakdown invoice={invoice} currency={currency} />}
 
     {invoice.paidByName && (
       <div className="flex flex-wrap items-center justify-end gap-3 text-right">
@@ -283,9 +409,11 @@ const InvoiceRow = ({
 const InvoicesSection = ({
   invoices,
   readOnly,
+  currency,
 }: {
   invoices: PastInvoice[];
   readOnly: boolean;
+  currency: string;
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(invoices[0]?.id ?? null);
 
@@ -312,6 +440,7 @@ const InvoicesSection = ({
                 index={index}
                 expanded={expandedId === invoice.id}
                 readOnly={readOnly}
+                currency={currency}
                 onToggle={handleToggle}
               />
             ))}
@@ -489,7 +618,13 @@ const InvoiceStep = ({
   const removeInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.removeInvoiceLineItem);
   const recordInvoicePayment = useAppointmentWorkspaceStore((s) => s.recordInvoicePayment);
   const recordDepositCollection = useAppointmentWorkspaceStore((s) => s.recordDepositCollection);
+  const hydrateInvoiceBilling = useAppointmentWorkspaceStore((s) => s.hydrateInvoiceBilling);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
+  const catalogServices = useRevampCatalogStore((s) => s.services);
+  const catalogPackages = useRevampCatalogStore((s) => s.packages);
+  const itemIdsByOrgId = useInventoryStore((s) => s.itemIdsByOrgId);
+  const inventoryById = useInventoryStore((s) => s.itemsById);
+  const setInventoryForOrg = useInventoryStore((s) => s.setInventoryForOrg);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -499,7 +634,73 @@ const InvoiceStep = ({
   const isInpatient = encounter.mode === 'INPATIENT';
   const hasItems = encounter.invoiceLineItems.length > 0;
   const canBuildBill = !readOnly && !hideBillBuilder;
-  const billableItems = useMemo(() => buildBillableItems(encounter), [encounter]);
+  // Currency is encounter-scoped (hydrated from finance, defaults to USD). The
+  // finance API works in lower-case ISO codes; display uses the upper-case code.
+  const currency = encounter.currency || DEFAULT_CURRENCY;
+  const financeCurrency = currency.toLowerCase();
+  const inventoryIds = useMemo(
+    () => (organisationId ? (itemIdsByOrgId[organisationId] ?? []) : []),
+    [itemIdsByOrgId, organisationId]
+  );
+  const inventoryItems = useMemo(
+    () => inventoryIds.map((id) => inventoryById[id]).filter(Boolean),
+    [inventoryById, inventoryIds]
+  );
+  const billableItems = useMemo(
+    () =>
+      buildBillableItems(
+        encounter,
+        catalogServices,
+        catalogPackages,
+        inventoryItems,
+        organisationId
+      ),
+    [catalogPackages, catalogServices, encounter, inventoryItems, organisationId]
+  );
+
+  // Load inventory so drugs/consumables are searchable in the bill builder.
+  useEffect(() => {
+    if (!organisationId || inventoryIds.length > 0) return undefined;
+    let active = true;
+    fetchInventoryItems(organisationId)
+      .then((items) => {
+        if (active) setInventoryForOrg(organisationId, items.map(mapApiItemToInventoryItem));
+      })
+      .catch((error) => console.error('Failed to load invoice inventory:', error));
+    return () => {
+      active = false;
+    };
+  }, [inventoryIds.length, organisationId, setInventoryForOrg]);
+
+  // Hydrate existing invoices + deposit for this appointment from finance — exactly
+  // once per appointment. Hydration mutates the store, which re-renders this step
+  // with a fresh `encounter` prop; without this guard the load would re-fire in a
+  // loop and hammer the finance API.
+  const billingLoadedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!organisationId || !appointmentId) return undefined;
+    const loadKey = `${organisationId}:${appointmentId}`;
+    if (billingLoadedRef.current === loadKey) return undefined;
+    billingLoadedRef.current = loadKey;
+    let active = true;
+    loadAppointmentBilling(organisationId, appointmentId)
+      .then((billing) => {
+        if (active) {
+          hydrateInvoiceBilling(appointmentId, {
+            pastInvoices: billing.pastInvoices,
+            depositCents: billing.depositCents,
+          });
+        }
+      })
+      .catch((error) => {
+        // Allow a later retry if the load failed.
+        if (billingLoadedRef.current === loadKey) billingLoadedRef.current = null;
+        console.error('Failed to load appointment billing:', error);
+      });
+    return () => {
+      active = false;
+    };
+  }, [appointmentId, hydrateInvoiceBilling, organisationId]);
 
   const persistCurrentInvoice = async () => {
     if (!organisationId) return undefined;
@@ -507,7 +708,7 @@ const InvoiceStep = ({
     await addLineItemsToAppointments(
       toFinanceLineItems(encounter.invoiceLineItems),
       appointmentId,
-      'USD'
+      currency
     );
     if (invoice.id) {
       await finalizeFinanceInvoice(invoice.id);
@@ -539,8 +740,8 @@ const InvoiceStep = ({
         await recordManualInvoicePayment(invoice.id, {
           provider: 'MANUAL',
           settlementChannel: method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
-          amount: computeInvoiceTotalCents(encounter),
-          currency: 'usd',
+          amount: centsToMajor(computeInvoiceTotalCents(encounter)),
+          currency: financeCurrency,
           receivedAt: new Date().toISOString(),
         });
       }
@@ -579,8 +780,8 @@ const InvoiceStep = ({
               name: 'Visit deposit',
               description: 'Upfront visit deposit',
               quantity: 1,
-              unitPrice: amountCents,
-              total: amountCents,
+              unitPrice: input.amount,
+              total: input.amount,
             },
           ],
           notes: input.notes || 'Visit deposit',
@@ -591,8 +792,8 @@ const InvoiceStep = ({
           await recordManualInvoicePayment(invoice.id, {
             provider: 'MANUAL',
             settlementChannel: input.method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
-            amount: amountCents,
-            currency: 'usd',
+            amount: input.amount,
+            currency: financeCurrency,
             reference: input.reference || undefined,
             receivedAt: new Date().toISOString(),
             notes: input.notes || undefined,
@@ -644,6 +845,7 @@ const InvoiceStep = ({
           <TotalBillContainer
             items={encounter.invoiceLineItems}
             billableItems={billableItems}
+            currency={currency}
             depositCents={encounter.depositCents}
             withdrawDeposit={encounter.withdrawDeposit}
             overallDiscountPercent={encounter.overallDiscountPercent}
@@ -684,7 +886,7 @@ const InvoiceStep = ({
         onSubmit={handleDepositSubmit}
       />
 
-      <InvoicesSection invoices={encounter.pastInvoices} readOnly={readOnly} />
+      <InvoicesSection invoices={encounter.pastInvoices} readOnly={readOnly} currency={currency} />
 
       {!readOnly && (
         <div className="flex justify-end">

@@ -9,6 +9,10 @@ import {
   setSavedLockWindow,
 } from '@/app/lib/appointmentLockWindow';
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
+import { useOrgStore } from '@/app/stores/orgStore';
+import { updateOrg } from '@/app/features/organization/services/orgService';
+
+const HOURS_TO_MINUTES = 60;
 
 const HoursField = ({
   id,
@@ -52,6 +56,24 @@ const HoursField = ({
 const AppointmentLockWindowPreference = () => {
   const { notify } = useNotify();
   const saved = useAppointmentLockWindow();
+  const primaryOrg = useOrgStore((s) => s.getPrimaryOrg());
+
+  // When the backend returns the lock-window extensions (post-merge), mirror them
+  // into local storage once so the rest of the app (which reads the local window)
+  // stays in sync. No-op while the fork backend omits these fields.
+  const orgOutMinutes = primaryOrg?.appointmentLockWindowOutpatientMinutes;
+  const orgInMinutes = primaryOrg?.appointmentLockWindowInpatientMinutes;
+  const [prevOrgMinutes, setPrevOrgMinutes] = useState<string | null>(null);
+  if (typeof orgOutMinutes === 'number' && typeof orgInMinutes === 'number') {
+    const orgKey = `${orgOutMinutes}:${orgInMinutes}`;
+    if (orgKey !== prevOrgMinutes) {
+      setPrevOrgMinutes(orgKey);
+      setSavedLockWindow({
+        outpatientHours: clampLockHours(orgOutMinutes / HOURS_TO_MINUTES),
+        inpatientHours: clampLockHours(orgInMinutes / HOURS_TO_MINUTES),
+      });
+    }
+  }
 
   const [outpatient, setOutpatient] = useState(String(saved.outpatientHours));
   const [inpatient, setInpatient] = useState(String(saved.inpatientHours));
@@ -73,6 +95,21 @@ const AppointmentLockWindowPreference = () => {
     // Reflect the clamped values back into the inputs.
     setOutpatient(String(next.outpatientHours));
     setInpatient(String(next.inpatientHours));
+
+    // Also persist to the org via the FHIR extension API (minutes). The deployed
+    // fork backend does not yet handle these extensions, so this is best-effort:
+    // it keeps the preference server-ready for the upcoming backend merge without
+    // blocking the local save above. Failures are intentionally swallowed.
+    if (primaryOrg?._id) {
+      void updateOrg({
+        ...primaryOrg,
+        appointmentLockWindowOutpatientMinutes: next.outpatientHours * HOURS_TO_MINUTES,
+        appointmentLockWindowInpatientMinutes: next.inpatientHours * HOURS_TO_MINUTES,
+      }).catch(() => {
+        // Backend support pending; local persistence already succeeded.
+      });
+    }
+
     if (didSave) {
       notify('success', {
         title: 'Lock window updated',

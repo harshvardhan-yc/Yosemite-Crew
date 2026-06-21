@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { LuCopy, LuEye, LuEyeOff, LuPlus, LuTrash2 } from 'react-icons/lu';
+import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
@@ -105,6 +106,7 @@ const ServicesPackagesEditor = ({
 }: ServicesPackagesEditorProps) => {
   const [search, setSearch] = useState('');
   const [expandedPackageId, setExpandedPackageId] = useState<string | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   const matches = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -122,7 +124,7 @@ const ServicesPackagesEditor = ({
           results surface as a dropdown on type. Locking is now per-item (billed),
           so adding new items always stays available. */}
       <div className="relative flex justify-end">
-        <div className="relative w-full sm:max-w-90">
+        <div ref={searchRef} className="relative w-full sm:max-w-90">
           <Search
             value={search}
             setSearch={setSearch}
@@ -130,8 +132,12 @@ const ServicesPackagesEditor = ({
             label="Search for services and packages"
             className="w-full!"
           />
-          {matches.length > 0 && (
-            <ul className="absolute right-0 z-20 mt-1 w-full overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]">
+          <SearchResultsDropdown
+            anchorRef={searchRef}
+            open={matches.length > 0}
+            onClose={() => setSearch('')}
+          >
+            <ul>
               {matches.map((item) => (
                 <li key={item.refId}>
                   <button
@@ -149,7 +155,7 @@ const ServicesPackagesEditor = ({
                 </li>
               ))}
             </ul>
-          )}
+          </SearchResultsDropdown>
         </div>
       </div>
 

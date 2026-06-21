@@ -8,6 +8,7 @@ import type {
 import type { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 import { WORKSPACE_STEPS } from '@/app/features/appointments/types/workspace';
 import { normalizeAppointmentStatus, toStatusLabel } from '@/app/lib/appointments';
+import { formatDateInPreferredTimeZone, getDateKeyInPreferredTimeZone } from '@/app/lib/timezone';
 
 /** Default lock/edit window (hours) used until the org preference is wired. */
 export const DEFAULT_OUTPATIENT_LOCK_HOURS = 24;
@@ -49,14 +50,22 @@ export const getWorkspaceBlockedMessage = (status?: string | null): string => {
   return `${toStatusLabel(status)} appointments cannot be opened in the clinical workspace.`;
 };
 
+const INPATIENT_TEXT_PATTERN = /\b(inpatient|hospital|admission|admit|ward)\b/i;
+
 /**
- * Derive the encounter mode used by the workspace.
- * The backend does not yet carry an explicit inpatient flag, so we treat an
- * appointment that has a room assigned as inpatient. A future explicit backend
- * care-type field can replace this without touching callers.
+ * Derive the encounter mode used by the workspace from backend-owned booking
+ * fields first. Room presence is only a fallback because a new inpatient
+ * booking may not have a room or unit assigned yet.
  */
-export const resolveEncounterMode = (appointment: Pick<Appointment, 'room'>): EncounterMode =>
-  appointment.room?.id ? 'INPATIENT' : 'OUTPATIENT';
+export const resolveEncounterMode = (
+  appointment: Pick<Appointment, 'appointmentKind' | 'appointmentType' | 'room'>
+): EncounterMode => {
+  if (appointment.appointmentKind === 'INPATIENT') return 'INPATIENT';
+  if (appointment.appointmentKind === 'OUTPATIENT') return 'OUTPATIENT';
+  const appointmentTypeName = appointment.appointmentType?.name ?? '';
+  if (INPATIENT_TEXT_PATTERN.test(appointmentTypeName)) return 'INPATIENT';
+  return appointment.room?.id ? 'INPATIENT' : 'OUTPATIENT';
+};
 
 const isStepDone = (status: StepStatus | undefined): boolean => status === 'COMPLETED';
 
@@ -103,22 +112,29 @@ export const isPastLockWindow = (
   return nowMs - startMs > hours * 60 * 60 * 1000;
 };
 
-/** Format the time portion of an ISO timestamp, e.g. "10:45 PM". */
+/**
+ * Format the time portion of an ISO timestamp in the org's preferred time zone,
+ * with the zone abbreviation, e.g. "10:45 PM IST".
+ */
 export const formatStampTime = (iso?: string): string => {
   if (!iso) return '';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return formatDateInPreferredTimeZone(date, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
 };
 
-/** Format the date portion of an ISO timestamp as "Today" or "Mon D". */
+/** Format the date portion of an ISO timestamp as "Today" or "Mon D", in the preferred time zone. */
 export const formatStampDate = (iso?: string): string => {
   if (!iso) return '';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  const isToday = new Date().toDateString() === date.toDateString();
+  const isToday = getDateKeyInPreferredTimeZone(new Date()) === getDateKeyInPreferredTimeZone(date);
   if (isToday) return 'Today';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return formatDateInPreferredTimeZone(date, { month: 'short', day: 'numeric' });
 };
 
 /** Strip HTML tags to test whether a rich-text value carries any content. */

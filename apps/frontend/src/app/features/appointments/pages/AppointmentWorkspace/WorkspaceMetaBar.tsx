@@ -67,8 +67,13 @@ type WorkspaceMetaBarProps = {
    * makes the step content read-only, so a mistaken check can be undone.
    */
   dischargeTogglesLocked: boolean;
-  /** Treatment step shows a "Skip to Summary" CTA instead of Save & Next. */
-  primaryCta?: { label: string; onClick: () => void };
+  /** Step-specific primary action shown beside the Ready toggles. */
+  primaryCta?: {
+    label: string;
+    onClick: () => void;
+    isDisabled?: boolean;
+    icon?: React.ReactNode;
+  };
 };
 
 const WorkspaceMetaBar = ({
@@ -92,7 +97,7 @@ const WorkspaceMetaBar = ({
   // has a room assigned (a selected room id or room options to choose from).
   const showRoom = isInpatient || Boolean(encounter.roomId) || roomOptions.length > 0;
   const nextStep = getNextStep(activeStep);
-  const saveLabel = nextStep ? `${WORKSPACE_STEP_LABELS[nextStep]}` : 'Save & Next';
+  const saveLabel = nextStep ? WORKSPACE_STEP_LABELS[nextStep] : '';
   const locked = encounter.viewOnly;
 
   const staffFields = (
@@ -148,22 +153,28 @@ const WorkspaceMetaBar = ({
     </>
   );
 
-  const saveButton = primaryCta ? (
-    <Primary
-      text={primaryCta.label}
-      onClick={primaryCta.onClick}
-      icon={<IoArrowForward />}
-      iconPosition="right"
-    />
-  ) : (
-    <Primary
-      text={saveLabel}
-      onClick={onSaveAndNext}
-      icon={<IoArrowForward />}
-      iconPosition="right"
-      isDisabled={!nextStep || locked}
-    />
-  );
+  let saveButton: React.ReactNode = null;
+  if (primaryCta) {
+    saveButton = (
+      <Primary
+        text={primaryCta.label}
+        onClick={primaryCta.onClick}
+        icon={primaryCta.icon ?? <IoArrowForward />}
+        iconPosition="right"
+        isDisabled={primaryCta.isDisabled}
+      />
+    );
+  } else if (nextStep) {
+    saveButton = (
+      <Primary
+        text={saveLabel}
+        onClick={onSaveAndNext}
+        icon={<IoArrowForward />}
+        iconPosition="right"
+        isDisabled={locked}
+      />
+    );
+  }
 
   // Two responsive columns. The left column holds the staff / consultation /
   // room / unit fields and lets them wrap across rows to use the available

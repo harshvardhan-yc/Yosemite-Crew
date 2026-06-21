@@ -4,18 +4,66 @@ import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import InvoiceStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/InvoiceStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
+import {
+  loadAppointmentBilling,
+  seedAppointmentInvoice,
+} from '@/app/features/billing/services/invoiceService';
+import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
+
+jest.mock('@/app/features/billing/services/invoiceService', () => ({
+  __esModule: true,
+  loadAppointmentBilling: jest.fn(),
+  seedAppointmentInvoice: jest.fn(),
+  addLineItemsToAppointments: jest.fn(),
+  finalizeFinanceInvoice: jest.fn(),
+  getPaymentLink: jest.fn(),
+  recordManualInvoicePayment: jest.fn(),
+  createFinanceInvoice: jest.fn(),
+}));
+
+jest.mock('@/app/features/inventory/services/inventoryService', () => ({
+  __esModule: true,
+  fetchInventoryItems: jest.fn(),
+}));
+
+jest.mock('@/app/features/inventory/pages/Inventory/utils', () => ({
+  __esModule: true,
+  mapApiItemToInventoryItem: (item: unknown) => item,
+}));
+
+const mockLoadAppointmentBilling = loadAppointmentBilling as jest.Mock;
+const mockSeedAppointmentInvoice = seedAppointmentInvoice as jest.Mock;
+const mockFetchInventoryItems = fetchInventoryItems as jest.Mock;
 
 expect.extend(toHaveNoViolations);
 
 const APPT = 'appt-invoice';
 
-const reset = () =>
+const reset = () => {
+  jest.clearAllMocks();
+  mockLoadAppointmentBilling.mockResolvedValue({
+    pastInvoices: [],
+    depositCents: 0,
+    invoicedItemNames: [],
+  });
+  mockFetchInventoryItems.mockResolvedValue([]);
+  mockSeedAppointmentInvoice.mockResolvedValue({ id: 'inv-seed' });
   useAppointmentWorkspaceStore.setState({
     encountersById: {},
     activeStep: 'INVOICE',
     activeSideAction: null,
   });
+  useRevampCatalogStore.setState({
+    specialities: [],
+    services: [],
+    packages: [],
+    status: 'idle',
+    error: undefined,
+    loadedSpecialityIds: [],
+  });
+};
 
 const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
   useAppointmentWorkspaceStore.getState().initEncounter(APPT, mode);
@@ -105,12 +153,14 @@ const getEnc = () => useAppointmentWorkspaceStore.getState().getEncounter(APPT)!
 const renderInvoice = (
   encounter: AppointmentEncounter,
   onOpenSummary = jest.fn(),
-  hideBillBuilder = false
+  hideBillBuilder = false,
+  organisationId?: string
 ) => {
   render(
     <InvoiceStep
       appointmentId={APPT}
       encounter={encounter}
+      organisationId={organisationId}
       hideBillBuilder={hideBillBuilder}
       onOpenSummary={onOpenSummary}
     />
@@ -155,6 +205,108 @@ describe('InvoiceStep', () => {
     fireEvent.click(screen.getByRole('button', { name: /add invoice item/i }));
 
     expect(getEnc().invoiceLineItems.at(-1)?.name).toBe('Hospitalization day charge');
+  });
+
+  it('searches active catalog services when treatment has no billable items', async () => {
+    useRevampCatalogStore.setState({
+      services: [
+        {
+          id: 'svc-catalog-ultrasound',
+          code: 'PR-0001',
+          name: 'Ultrasound scan',
+          description: 'Abdominal ultrasound',
+          type: 'PROCEDURE',
+          specialityId: 'spec-1',
+          organisationId: 'org-1',
+          grossAmount: 85,
+          currency: 'USD',
+          defaultDiscount: 0,
+          maxDiscount: 10,
+          durationMinutes: 30,
+          isBookable: true,
+          isInpatientPreferred: false,
+          status: 'ACTIVE',
+          createdAt: '2026-06-18T10:00:00.000Z',
+        },
+      ],
+    });
+    const enc = { ...seedAndGet(), services: [], prescription: [] };
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    // The org-scoped load effects fire on mount; let them settle before asserting.
+    await waitFor(() => expect(mockLoadAppointmentBilling).toHaveBeenCalledWith('org-1', APPT));
+    await waitFor(() => expect(mockFetchInventoryItems).toHaveBeenCalledWith('org-1'));
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'ultrasound' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /ultrasound scan/i }));
+
+    expect(getEnc().invoiceLineItems.at(-1)?.name).toBe('Ultrasound scan');
+  });
+
+  it('lists in-house medications and inventory items with a type pill in search', async () => {
+    mockFetchInventoryItems.mockResolvedValue([
+      {
+        id: 'inv-amoxi',
+        status: 'ACTIVE',
+        basicInfo: { name: 'Amoxicillin 250mg' },
+        pricing: { selling: '12' },
+      },
+    ]);
+    const enc = {
+      ...seedAndGet(),
+      services: [],
+      invoiceLineItems: [],
+      prescription: [
+        {
+          id: 'rx-1',
+          medicineName: 'Carprofen',
+          fulfillment: 'IN_HOUSE' as const,
+          priceCents: 1500,
+        },
+      ],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    await waitFor(() => expect(mockFetchInventoryItems).toHaveBeenCalledWith('org-1'));
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'carprofen' },
+    });
+    const medRow = screen.getByRole('button', { name: /carprofen/i });
+    expect(within(medRow).getByText('Medication')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'amoxicillin' },
+    });
+    const invRow = await screen.findByRole('button', { name: /amoxicillin/i });
+    expect(within(invRow).getByText('Inventory')).toBeInTheDocument();
+  });
+
+  it('hydrates existing invoices and deposit from finance on mount', async () => {
+    mockLoadAppointmentBilling.mockResolvedValue({
+      pastInvoices: [
+        {
+          id: 'finance-inv-99',
+          createdAt: '2026-05-02T09:00:00Z',
+          totalCents: 7500,
+          outstandingCents: 7500,
+          status: 'UNPAID',
+          items: [],
+        },
+      ],
+      depositCents: 20000,
+      invoicedItemNames: [],
+    });
+    const enc = { ...seedAndGet(), pastInvoices: [] } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    await waitFor(() => expect(mockLoadAppointmentBilling).toHaveBeenCalledWith('org-1', APPT));
+    await waitFor(() =>
+      expect(getEnc().pastInvoices.some((invoice) => invoice.id === 'finance-inv-99')).toBe(true)
+    );
+    expect(getEnc().depositCents).toBe(20000);
   });
 
   it('does nothing when the dark add button has no current match', () => {

@@ -50,6 +50,18 @@ describe('ReadyToggle', () => {
     expect(screen.getByText(/Today,/)).toBeInTheDocument();
   });
 
+  it('renders the timestamp when the backend does not include an actor name', () => {
+    render(
+      <ReadyToggle
+        label="Ready for Billing"
+        state={{ value: true, at: '2026-06-18T11:05:00.000Z' }}
+        onToggle={jest.fn()}
+      />
+    );
+    expect(screen.getByText('By Clinical team')).toBeInTheDocument();
+    expect(screen.getByText(/Jun 18,/)).toBeInTheDocument();
+  });
+
   it('does not toggle when disabled', () => {
     const onToggle = jest.fn();
     render(
@@ -66,7 +78,7 @@ describe('ReadyToggle', () => {
 
 describe('AlertPill', () => {
   it('renders the label', () => {
-    render(<AlertPill label="Needs muzzle" severity="CAUTION" />);
+    render(<AlertPill label="Needs muzzle" severity="high" />);
     expect(screen.getByText('Needs muzzle')).toBeInTheDocument();
   });
 });
@@ -96,7 +108,7 @@ describe('WorkspaceHeader', () => {
       <WorkspaceHeader
         appointment={headerAppointment}
         companionName="Gigi Hadid"
-        alerts={[{ id: '1', label: 'Needs muzzle', severity: 'CAUTION' }]}
+        alerts={[{ id: '1', label: 'Needs muzzle', severity: 'high' }]}
         onBack={onBack}
         onQuickActions={onQuickActions}
       />
@@ -333,6 +345,22 @@ describe('WorkspaceMetaBar', () => {
     render(<WorkspaceMetaBar {...props} primaryCta={{ label: 'Skip to Summary', onClick }} />);
     fireEvent.click(screen.getByText('Skip to Summary'));
     expect(onClick).toHaveBeenCalled();
+  });
+
+  it('shows a Summary terminal CTA beside the ready toggles', () => {
+    const props = baseProps('INPATIENT');
+    const onClick = jest.fn();
+    render(
+      <WorkspaceMetaBar
+        {...props}
+        activeStep="SUMMARY"
+        primaryCta={{ label: 'Discharge', onClick }}
+      />
+    );
+
+    expect(screen.getByText('Ready for Discharge')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^discharge$/i }));
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it('toggles ready flags', () => {

@@ -315,12 +315,17 @@ describe('AppointmentBoard', () => {
     expect(screen.queryByText('Other')).not.toBeInTheDocument();
   });
 
-  it('invokes accept and decline actions for requested appointments', () => {
+  it('opens change-status to assign a lead on accept and declines requested appointments', () => {
+    const setChangeStatusPopup = jest.fn();
+    const setChangeStatusPreferredStatus = jest.fn();
     render(
       <AppointmentBoard
         appointments={[{ ...baseAppointment, id: 'appt-requested', status: 'REQUESTED' } as any]}
         currentDate={new Date('2026-03-16T00:00:00.000Z')}
         setCurrentDate={setCurrentDate}
+        setActiveAppointment={setActiveAppointment}
+        setChangeStatusPopup={setChangeStatusPopup}
+        setChangeStatusPreferredStatus={setChangeStatusPreferredStatus}
         canEditAppointments
       />
     );
@@ -330,9 +335,12 @@ describe('AppointmentBoard', () => {
     fireEvent.click(cardButtons[1]);
     fireEvent.click(cardButtons[2]);
 
-    expect(acceptAppointment).toHaveBeenCalledWith(
+    // Accept now routes through the change-status modal so a lead/support can be assigned.
+    expect(acceptAppointment).not.toHaveBeenCalled();
+    expect(setActiveAppointment).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'appt-requested' })
     );
+    expect(setChangeStatusPopup).toHaveBeenCalledWith(true);
     expect(rejectAppointment).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'appt-requested' })
     );

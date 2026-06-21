@@ -1050,7 +1050,7 @@ const AddAppointmentCentralModal = ({
                 <LabelDropdown
                   placeholder="Lead"
                   options={LeadOptions}
-                  defaultOption={formData.lead?.id}
+                  defaultOption={formData.lead?.id ?? ''}
                   onSelect={handleLeadSelectWithReset}
                   error={showError('leadId')}
                   searchable
@@ -1085,7 +1085,7 @@ const AddAppointmentCentralModal = ({
               <LabelDropdown
                 placeholder="Speciality"
                 options={SpecialitiesOptions}
-                defaultOption={formData.appointmentType?.speciality?.id}
+                defaultOption={formData.appointmentType?.speciality?.id ?? ''}
                 onSelect={handleSpecialitySelect}
                 error={showError('specialityId')}
                 searchable
@@ -1097,7 +1097,7 @@ const AddAppointmentCentralModal = ({
               <LabelDropdown
                 placeholder="Service"
                 options={ServicesOptions}
-                defaultOption={formData.appointmentType?.id}
+                defaultOption={formData.appointmentType?.id ?? ''}
                 onSelect={handleServiceSelect}
                 error={showError('serviceId')}
                 searchable

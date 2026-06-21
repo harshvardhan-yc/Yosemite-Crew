@@ -169,7 +169,16 @@ const QuickActionsModal = ({
               authorId={authorId}
             />
           )}
-          {activeAction === 'TASKS' && <TasksPanel appointmentId={appointmentId} />}
+          {activeAction === 'TASKS' && (
+            <TasksPanel
+              appointmentId={appointmentId}
+              parentOptions={
+                companion.parent?.id
+                  ? [{ label: companion.parent.name || 'Pet parent', value: companion.parent.id }]
+                  : []
+              }
+            />
+          )}
           {activeAction === 'DOCUMENTS' && (
             <DocumentsPanel appointmentId={appointmentId} companionId={companion.id} />
           )}

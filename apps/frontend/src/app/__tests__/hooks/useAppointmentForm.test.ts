@@ -170,11 +170,30 @@ const setRevampCatalogState = (
       status: 'ACTIVE' | 'ARCHIVED';
       createdAt: string;
     }>;
+    packages: Array<{
+      id: string;
+      code: string;
+      name: string;
+      description: string;
+      specialityId: string;
+      organisationId: string;
+      durationText: string;
+      isBookable: boolean;
+      isInpatientPreferred: boolean;
+      leadCount: number;
+      supportCount: number;
+      additionalDiscount: number;
+      breakdown: unknown[];
+      serverFinalAmount?: number;
+      status: 'ACTIVE' | 'ARCHIVED';
+      createdAt: string;
+    }>;
     loadSpecialityCatalog: jest.Mock;
   }> = {}
 ) => {
   const state = {
     services: [],
+    packages: [],
     loadSpecialityCatalog: jest.fn(() => Promise.resolve()),
     ...overrides,
   };
@@ -326,7 +345,103 @@ describe('useAppointmentForm', () => {
     });
   });
 
-  it('shows only bookable outpatient services for outpatient appointments', async () => {
+  it('includes bookable packages with a Package badge and excludes non-bookable packages', async () => {
+    const loadSpecialityCatalog = jest.fn(() => Promise.resolve());
+    setRevampCatalogState({
+      loadSpecialityCatalog,
+      services: [
+        {
+          id: 'svc-consult',
+          code: 'CS-001',
+          name: 'General consult',
+          description: 'Exam and consultation',
+          type: 'CONSULTATION',
+          specialityId: 'spec-general',
+          organisationId: 'org-1',
+          grossAmount: 75,
+          defaultDiscount: 0,
+          maxDiscount: 10,
+          durationMinutes: 30,
+          isBookable: true,
+          isInpatientPreferred: false,
+          status: 'ACTIVE',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      packages: [
+        {
+          id: 'pkg-wellness',
+          code: 'PK-001',
+          name: 'Wellness Plan',
+          description: 'Annual wellness package',
+          specialityId: 'spec-general',
+          organisationId: 'org-1',
+          durationText: 'Approx. 45 mins',
+          isBookable: true,
+          isInpatientPreferred: false,
+          leadCount: 1,
+          supportCount: 0,
+          additionalDiscount: 0,
+          breakdown: [],
+          serverFinalAmount: 200,
+          status: 'ACTIVE',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 'pkg-nonbookable',
+          code: 'PK-002',
+          name: 'Add-on Bundle',
+          description: 'Non-bookable extras',
+          specialityId: 'spec-general',
+          organisationId: 'org-1',
+          durationText: 'Approx. 0 mins',
+          isBookable: false,
+          isInpatientPreferred: false,
+          leadCount: 1,
+          supportCount: 0,
+          additionalDiscount: 0,
+          breakdown: [],
+          status: 'ACTIVE',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 'pkg-archived',
+          code: 'PK-003',
+          name: 'Archived Plan',
+          description: 'Old package',
+          specialityId: 'spec-general',
+          organisationId: 'org-1',
+          durationText: 'Approx. 30 mins',
+          isBookable: true,
+          isInpatientPreferred: false,
+          leadCount: 1,
+          supportCount: 0,
+          additionalDiscount: 0,
+          breakdown: [],
+          status: 'ARCHIVED',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    const { result } = renderHook(() => useAppointmentForm());
+
+    await act(async () => {
+      result.current.handleSpecialitySelect({ label: 'General', value: 'spec-general' });
+    });
+
+    expect(result.current.ServicesOptions).toEqual([
+      { label: 'General consult', value: 'svc-consult', badge: undefined },
+      { label: 'Wellness Plan', value: 'pkg-wellness', badge: 'Package' },
+    ]);
+
+    await act(async () => {
+      result.current.handleServiceSelect({ label: 'Wellness Plan', value: 'pkg-wellness' });
+    });
+    expect(result.current.formData.appointmentType?.id).toBe('pkg-wellness');
+    expect(result.current.formData.appointmentType?.name).toBe('Wellness Plan');
+  });
+
+  it('hides non-bookable services for outpatient appointments', async () => {
     setRevampCatalogState({
       services: [
         {
@@ -376,7 +491,7 @@ describe('useAppointmentForm', () => {
     ]);
   });
 
-  it('shows only inpatient-capable services for inpatient appointments and rejects incompatible picks', async () => {
+  it('keeps outpatient services visible for inpatient appointments and switches kind on pick', async () => {
     setRevampCatalogState({
       services: [
         {
@@ -422,6 +537,7 @@ describe('useAppointmentForm', () => {
     });
 
     expect(result.current.ServicesOptions).toEqual([
+      { label: 'Outpatient consult', value: 'svc-outpatient' },
       { label: 'Inpatient admission', value: 'svc-inpatient' },
     ]);
 
@@ -429,8 +545,11 @@ describe('useAppointmentForm', () => {
       result.current.handleServiceSelect({ label: 'Outpatient consult', value: 'svc-outpatient' });
     });
 
-    expect(result.current.formData.appointmentType?.id).toBe('');
-    expect(result.current.formDataErrors.serviceId).toBe('Select an inpatient bookable service.');
+    expect(result.current.formData.appointmentType?.id).toBe('svc-outpatient');
+    await waitFor(() => {
+      expect(result.current.formData.appointmentKind).toBe('OUTPATIENT');
+    });
+    expect(result.current.formDataErrors.serviceId).toBeUndefined();
   });
 
   it('uses the selected service appointment kind instead of forcing the current visit type', async () => {

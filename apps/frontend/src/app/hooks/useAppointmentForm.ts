@@ -32,7 +32,11 @@ import { EMPTY_APPOINTMENT } from '@/app/features/appointments/constants/emptyAp
 import { AppointmentDraftPrefill } from '@/app/features/appointments/types/calendar';
 import { AppointmentWithCompanion } from '@/app/features/appointments/types/appointments';
 import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
-import { ServiceRevamp } from '@/app/features/organization/types/revamp';
+import { PackageRevamp, ServiceRevamp } from '@/app/features/organization/types/revamp';
+import {
+  hasBookableBreakdownItem,
+  hasInpatientBreakdownItem,
+} from '@/app/features/organization/services/catalogBookable';
 
 export type AppointmentFormErrors = {
   companionId?: string;
@@ -67,6 +71,7 @@ type AppointmentCatalogService = Pick<
 > & {
   isBookable?: boolean;
   isInpatientPreferred?: boolean;
+  isPackage?: boolean;
 };
 
 const mapRevampServiceForAppointment = (service: ServiceRevamp): AppointmentCatalogService => ({
@@ -81,19 +86,28 @@ const mapRevampServiceForAppointment = (service: ServiceRevamp): AppointmentCata
   isInpatientPreferred: service.isInpatientPreferred,
 });
 
-const supportsAppointmentKind = (
-  service: AppointmentCatalogService,
-  appointmentKind: AppointmentKind
-) => {
-  if (appointmentKind === 'INPATIENT') return service.isInpatientPreferred === true;
-  return service.isBookable !== false;
-};
+const mapRevampPackageForAppointment = (pkg: PackageRevamp): AppointmentCatalogService => ({
+  id: pkg.id,
+  name: pkg.name,
+  description: pkg.description,
+  durationMinutes: 0,
+  cost: pkg.serverFinalAmount ?? 0,
+  maxDiscount: undefined,
+  specialityId: pkg.specialityId,
+  isBookable: pkg.isBookable || hasBookableBreakdownItem(pkg.breakdown),
+  isInpatientPreferred: pkg.isInpatientPreferred || hasInpatientBreakdownItem(pkg.breakdown),
+  isPackage: true,
+});
+
+const isSelectableAppointmentService = (service: AppointmentCatalogService) =>
+  service.isBookable !== false;
 
 const resolveServiceAppointmentKind = (
   service: AppointmentCatalogService | undefined,
   fallback: AppointmentKind
 ): AppointmentKind => {
   if (service?.isInpatientPreferred === true) return 'INPATIENT';
+  if (service) return 'OUTPATIENT';
   return fallback;
 };
 
@@ -362,6 +376,7 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
   const specialities = useSpecialitiesForPrimaryOrg();
   const primaryOrgId = useOrgStore((state) => state.primaryOrgId);
   const revampServices = useRevampCatalogStore((state) => state.services);
+  const revampPackages = useRevampCatalogStore((state) => state.packages);
   const loadSpecialityCatalog = useRevampCatalogStore((state) => state.loadSpecialityCatalog);
   const { canMore, reason } = useCanMoreForPrimaryOrg('appointments');
   const getServicesBySpecialityId = useMemo(
@@ -418,10 +433,18 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
             service.organisationId === primaryOrgId
         )
         .map(mapRevampServiceForAppointment);
+      const catalogPackages = revampPackages
+        .filter(
+          (pkg) =>
+            pkg.specialityId === specialityId &&
+            pkg.status === 'ACTIVE' &&
+            pkg.organisationId === primaryOrgId
+        )
+        .map(mapRevampPackageForAppointment);
       const legacyServices = getServicesBySpecialityId(specialityId);
-      return mergeServicesById(currentCatalogServices, legacyServices);
+      return mergeServicesById([...currentCatalogServices, ...catalogPackages], legacyServices);
     },
-    [getServicesBySpecialityId, primaryOrgId, revampServices]
+    [getServicesBySpecialityId, primaryOrgId, revampPackages, revampServices]
   );
 
   const ServiceFields = useMemo(
@@ -983,25 +1006,21 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
     return getAppointmentServicesBySpecialityId(specialityId);
   }, [formData.appointmentType?.speciality.id, getAppointmentServicesBySpecialityId]);
 
-  const bookableServices = useMemo(
-    () => services.filter((service) => supportsAppointmentKind(service, appointmentKind)),
-    [appointmentKind, services]
-  );
-
   const ServicesOptions = useMemo(() => {
     if (calendarSlotFlow) {
       const specialityId = formData.appointmentType?.speciality.id;
       if (!specialityId) return [];
       return slotScopedServicesBySpecialityId[specialityId] ?? [];
     }
-    return bookableServices.map((service) => ({
+    return services.filter(isSelectableAppointmentService).map((service) => ({
       label: service.name,
       value: service.id,
+      badge: service.isPackage ? 'Package' : undefined,
     }));
   }, [
-    bookableServices,
     calendarSlotFlow,
     formData.appointmentType?.speciality.id,
+    services,
     slotScopedServicesBySpecialityId,
   ]);
 
@@ -1017,7 +1036,7 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
       }));
       return;
     }
-    if (!selectedService || supportsAppointmentKind(selectedService, appointmentKind)) return;
+    if (!selectedService || isSelectableAppointmentService(selectedService)) return;
     setSelectedSlot(null);
     setTimeSlots([]);
     slotMetaByRef.current = new WeakMap();
@@ -1033,10 +1052,7 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
     }));
     setFormDataErrors((prev) => ({
       ...prev,
-      serviceId:
-        appointmentKind === 'INPATIENT'
-          ? 'Select an inpatient bookable service.'
-          : 'Select a bookable outpatient service.',
+      serviceId: 'Select a bookable service.',
       slot: undefined,
       leadId: undefined,
     }));
@@ -1137,11 +1153,8 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
         const selectedService = services.find(
           (service) => service.id === formData.appointmentType?.id
         );
-        if (selectedService && !supportsAppointmentKind(selectedService, appointmentKind)) {
-          errors.serviceId =
-            appointmentKind === 'INPATIENT'
-              ? 'Select an inpatient bookable service.'
-              : 'Select a bookable outpatient service.';
+        if (selectedService && !isSelectableAppointmentService(selectedService)) {
+          errors.serviceId = 'Select a bookable service.';
         }
       }
       if (!formData.concern?.trim()) {
@@ -1158,7 +1171,6 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
       return errors;
     },
     [
-      appointmentKind,
       canMore,
       reason,
       formData,
@@ -1240,13 +1252,10 @@ export const useAppointmentForm = (options: UseAppointmentFormOptions = {}) => {
         selectedService,
         appointmentKind
       );
-      if (selectedService && !supportsAppointmentKind(selectedService, serviceAppointmentKind)) {
+      if (selectedService && !isSelectableAppointmentService(selectedService)) {
         setFormDataErrors((prev) => ({
           ...prev,
-          serviceId:
-            serviceAppointmentKind === 'INPATIENT'
-              ? 'Select an inpatient bookable service.'
-              : 'Select a bookable outpatient service.',
+          serviceId: 'Select a bookable service.',
         }));
         return;
       }

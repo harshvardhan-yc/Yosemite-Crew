@@ -62,6 +62,8 @@ type DayCalendarProps = {
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
   handleRescheduleAppointment: (appointment: Appointment) => void;
   handleChangeRoomAppointment?: (appointment: Appointment) => void;
+  handleChangeStatusAppointment?: (appointment: Appointment) => void;
+  handleAcceptAppointment?: (appointment: Appointment) => void;
   canEditAppointments: boolean;
   draggedAppointmentId?: string | null;
   draggedAppointmentLabel?: string | null;
@@ -187,6 +189,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
   handleOpenWorkspace,
   handleRescheduleAppointment,
   handleChangeRoomAppointment,
+  handleAcceptAppointment,
   canEditAppointments,
   setCurrentDate,
   draggedAppointmentId,
@@ -828,6 +831,7 @@ const DayCalendarComponent: React.FC<DayCalendarProps> = ({
             popoverStyle={popoverStyle}
             handleRescheduleAppointment={handleRescheduleAppointment}
             handleChangeRoomAppointment={handleChangeRoomAppointment}
+            handleAcceptAppointment={handleAcceptAppointment}
             onClose={() => setActivePopoverKey(null)}
             registerAnchorEl={registerAnchorEl}
           />,

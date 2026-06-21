@@ -12,7 +12,6 @@ import { Appointment } from '@yosemite-crew/types';
 import { formatDateLabel, formatTimeLabel } from '@/app/lib/forms';
 
 import {
-  acceptAppointment,
   cancelAppointment,
   rejectAppointment,
 } from '@/app/features/appointments/services/appointmentService';
@@ -42,8 +41,12 @@ import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistory
 import {
   buildWorkspaceHrefForIntent,
   canEnterAppointmentWorkspace,
+  resolveEncounterMode,
 } from '@/app/lib/appointmentWorkspace';
 import { startRouteLoader } from '@/app/lib/routeLoader';
+import { AppointmentModePill } from '@/app/features/appointments/components/AppointmentCardContent';
+import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 
 import './DataTable.css';
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
@@ -53,6 +56,74 @@ const normalizeLeadId = (value?: string | null): string => {
   if (!trimmed) return '';
   const lowered = trimmed.toLowerCase();
   return lowered === 'undefined' || lowered === 'null' ? '' : trimmed;
+};
+
+type AppointmentWithUnitFields = Appointment & {
+  unitId?: string;
+  roomUnitId?: string;
+  unitName?: string;
+  roomUnitName?: string;
+  unit?: { id?: string; name?: string; displayName?: string; code?: string };
+  room?: Appointment['room'] & {
+    unitId?: string;
+    roomUnitId?: string;
+    unitName?: string;
+    roomUnitName?: string;
+    unit?: { id?: string; name?: string; displayName?: string; code?: string };
+  };
+};
+
+type AppointmentEncounterLookup = Record<string, { unitId?: string } | undefined>;
+type RoomUnitLookup = Record<string, { displayName?: string; code?: string } | undefined>;
+
+const getInlineUnitLabel = (appointment: AppointmentWithUnitFields): string => {
+  const roomUnit = appointment.room?.unit;
+  const directUnit = appointment.unit;
+  return (
+    appointment.room?.roomUnitName?.trim() ||
+    appointment.room?.unitName?.trim() ||
+    roomUnit?.displayName?.trim() ||
+    roomUnit?.name?.trim() ||
+    roomUnit?.code?.trim() ||
+    appointment.roomUnitName?.trim() ||
+    appointment.unitName?.trim() ||
+    directUnit?.displayName?.trim() ||
+    directUnit?.name?.trim() ||
+    directUnit?.code?.trim() ||
+    ''
+  );
+};
+
+const getUnitId = (
+  appointment: AppointmentWithUnitFields,
+  encountersById: AppointmentEncounterLookup
+): string => {
+  const appointmentId = appointment.id ?? '';
+  return (
+    appointment.room?.roomUnitId?.trim() ||
+    appointment.room?.unitId?.trim() ||
+    appointment.room?.unit?.id?.trim() ||
+    appointment.roomUnitId?.trim() ||
+    appointment.unitId?.trim() ||
+    appointment.unit?.id?.trim() ||
+    encountersById[appointmentId]?.unitId?.trim() ||
+    ''
+  );
+};
+
+const getAppointmentUnitLabel = (
+  appointment: Appointment,
+  encountersById: AppointmentEncounterLookup,
+  roomUnitsById: RoomUnitLookup
+): string => {
+  if (resolveEncounterMode(appointment) !== 'INPATIENT') return '';
+  const appointmentWithUnit = appointment as AppointmentWithUnitFields;
+  const inlineLabel = getInlineUnitLabel(appointmentWithUnit);
+  if (inlineLabel) return inlineLabel;
+  const unitId = getUnitId(appointmentWithUnit, encountersById);
+  if (!unitId) return '';
+  const unit = roomUnitsById[unitId];
+  return unit?.displayName?.trim() || unit?.code?.trim() || unitId;
 };
 
 type Column<T> = {
@@ -74,14 +145,6 @@ type AppointmentTableProps = {
   setChangeRoomPopup?: React.Dispatch<React.SetStateAction<boolean>>;
   canEditAppointments: boolean;
   small?: boolean;
-};
-
-const handleAcceptAppointment = async (appointment: Appointment) => {
-  try {
-    await acceptAppointment(appointment);
-  } catch (error) {
-    console.log(error);
-  }
 };
 
 const handleCancelAppointment = async (appointment: Appointment) => {
@@ -113,6 +176,8 @@ const AppointmentsComponent = ({
   useLoadTeam();
   const teams = useTeamForPrimaryOrg();
   const orgsById = useOrgStore((s) => s.orgsById);
+  const encountersById = useAppointmentWorkspaceStore((s) => s.encountersById);
+  const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
   const invoices = useInvoicesForPrimaryOrg();
   const invoicesByAppointmentId = React.useMemo(
     () => createInvoiceByAppointmentId(invoices),
@@ -256,10 +321,22 @@ const AppointmentsComponent = ({
     {
       label: 'Room',
       key: 'room',
-      width: '100px',
-      render: (item: Appointment) => (
-        <div className="appointment-profile-title">{item.room?.name || '-'}</div>
-      ),
+      width: '130px',
+      render: (item: Appointment) => {
+        const unitLabel = getAppointmentUnitLabel(item, encountersById, roomUnitsById);
+        return (
+          <div className="appointment-profile-two">
+            <div className="appointment-profile-title">{item.room?.name || '-'}</div>
+            {unitLabel && <div className="appointment-profile-sub text-[12px]">{unitLabel}</div>}
+            <AppointmentModePill
+              appointment={item}
+              className="mt-1 h-6 w-fit px-2.5 text-[10px]"
+              iconSize={12}
+              tone="strong"
+            />
+          </div>
+        );
+      },
     },
     {
       label: 'Date/Time',
@@ -363,7 +440,7 @@ const AppointmentsComponent = ({
                     type="button"
                     className="action-btn"
                     style={{ background: 'var(--color-success-100)' }}
-                    onClick={() => handleAcceptAppointment(item)}
+                    onClick={() => handleChangeStatusAppointment(item)}
                   >
                     <FaCheckCircle size={22} color="var(--color-success-400)" />
                   </button>

@@ -361,6 +361,7 @@ describe('Slot (Appointments)', () => {
       endTime: new Date('2025-01-06T09:30:00Z'),
     } as any;
 
+    const handleAcceptAppointment = jest.fn();
     render(
       <Slot
         slotEvents={[requestedEvent]}
@@ -368,6 +369,7 @@ describe('Slot (Appointments)', () => {
         handleViewAppointment={handleViewAppointment}
         handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
+        handleAcceptAppointment={handleAcceptAppointment}
         dayIndex={0}
         length={1}
         canEditAppointments
@@ -383,7 +385,12 @@ describe('Slot (Appointments)', () => {
     await act(async () => {
       fireEvent.click(screen.getByTitle('Accept request'));
     });
-    expect(acceptAppointment).toHaveBeenCalledWith(expect.objectContaining({ id: 'requested-1' }));
+    // Accept now routes through the change-status flow (assign lead/support) instead
+    // of calling the accept service directly.
+    expect(acceptAppointment).not.toHaveBeenCalled();
+    expect(handleAcceptAppointment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'requested-1' })
+    );
 
     fireEvent.click(eventButton);
     act(() => {
