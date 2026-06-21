@@ -299,6 +299,27 @@ describe("ParentService", () => {
     expect(result?.response.id).toBe("parent-1");
   });
 
+  it("persists client alerts on update", async () => {
+    mockedPrisma.parent.update.mockResolvedValueOnce(mockParent);
+    mockedPrisma.parent.findUnique.mockResolvedValueOnce(mockParent);
+
+    const alerts = [{ title: "Aggressive", severity: "high" }];
+    await ParentService.update("parent-1", {
+      firstName: "Jane",
+      lastName: "Doe",
+      email: "jane@example.com",
+      phoneNumber: "123",
+      alerts,
+    } as any);
+
+    expect(mockedPrisma.parent.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "parent-1" },
+        data: expect.objectContaining({ alerts }),
+      }),
+    );
+  });
+
   it("clears links and auth user mapping on delete", async () => {
     mockedPrisma.parent.findUnique.mockResolvedValueOnce(mockParent);
     mockedPrisma.parentPatient.deleteMany.mockResolvedValueOnce({ count: 1 });
