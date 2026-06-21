@@ -262,7 +262,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
       topPx = ((focusMinutes - currentRange.startHour * 60) / 60) * height + HOUR_ROW_TOP_OFFSET_PX;
     }
     scrollContainerToTarget(container, topPx);
-  }, [weekStartKey, draggedAppointmentId, skipAutoScroll, days, height]);
+  }, [weekStartKey, draggedAppointmentId, skipAutoScroll, days, height, scrollRef]);
 
   const unavailableByDay = useMemo(
     () =>

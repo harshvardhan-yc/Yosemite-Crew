@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
@@ -37,25 +37,38 @@ const ChangeStatusModal = <S extends string>({
   onSave,
 }: ChangeStatusModalProps<S>) => {
   const { notify } = useNotify();
-  const [selectedStatus, setSelectedStatus] = useState<S>(currentStatus);
+  const preferredSelection =
+    preferredStatus &&
+    canTransition(currentStatus, preferredStatus) &&
+    statusOptions.some((option) => option.value === preferredStatus)
+      ? preferredStatus
+      : currentStatus;
+  const [selectedStatus, setSelectedStatus] = useState<S>(preferredSelection);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const previousSelectionKeyRef = useRef<string | null>(null);
+  const selectionKey = [
+    showModal ? 'open' : 'closed',
+    currentStatus,
+    preferredStatus ?? '',
+    statusOptions.map((option) => option.value).join('|'),
+  ].join('::');
 
-  useEffect(() => {
-    if (!showModal) {
-      setSelectedStatus(currentStatus);
-      return;
-    }
-    if (
+  if (previousSelectionKeyRef.current !== selectionKey) {
+    previousSelectionKeyRef.current = selectionKey;
+    const nextSelection =
       preferredStatus &&
       canTransition(currentStatus, preferredStatus) &&
       statusOptions.some((option) => option.value === preferredStatus)
-    ) {
-      setSelectedStatus(preferredStatus);
-      return;
+        ? preferredStatus
+        : currentStatus;
+    if (selectedStatus !== nextSelection) {
+      setSelectedStatus(nextSelection);
     }
-    setSelectedStatus(currentStatus);
-  }, [currentStatus, canTransition, preferredStatus, showModal, statusOptions]);
+    if (!showModal && errorMessage !== null) {
+      setErrorMessage(null);
+    }
+  }
 
   const handleCancel = () => {
     setShowModal(false);

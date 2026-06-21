@@ -40,6 +40,7 @@ const STATUS_OPTIONS: { label: string; value: ScheduleTaskStatus }[] = [
   { label: 'Cancelled', value: 'CANCELLED' },
   { label: 'Pending', value: 'PENDING' },
 ];
+const EMPTY_TEMPLATES: TemplateLike[] = [];
 
 const formatStatusLabel = (status: ScheduleTaskStatus): string =>
   STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
@@ -240,7 +241,7 @@ const TaskBreakdown = ({
 
 const InpatientSchedule = ({
   tasks,
-  templates = [],
+  templates = EMPTY_TEMPLATES,
   readOnly,
   assigneeOptions,
   onAddTask,

@@ -309,7 +309,13 @@ const SlotComponent: React.FC<SlotProps> = ({
         }
       > = [];
       cluster.forEach((item) => {
-        let laneIndex = laneEnds.findIndex((laneEnd) => laneEnd <= item.startMinute);
+        let laneIndex = -1;
+        for (let i = 0; i < laneEnds.length; i += 1) {
+          if (laneEnds[i] <= item.startMinute) {
+            laneIndex = i;
+            break;
+          }
+        }
         if (laneIndex === -1) {
           laneIndex = laneEnds.length;
           laneEnds.push(item.endMinute);

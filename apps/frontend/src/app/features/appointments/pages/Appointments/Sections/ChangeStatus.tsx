@@ -74,11 +74,16 @@ const ChangeStatus = ({
   const [availableVetIds, setAvailableVetIds] = React.useState<string[] | null>(null);
   const [isLoadingAvailability, setIsLoadingAvailability] = React.useState(false);
   const serviceId = normalizeId(activeAppointment.appointmentType?.id);
+  const availabilityKey = `${showModal ? 'open' : 'closed'}:${currentStatus}:${serviceId}:${activeAppointment.startTime}`;
+  const previousAvailabilityKeyRef = React.useRef(availabilityKey);
+  if (previousAvailabilityKeyRef.current !== availabilityKey) {
+    previousAvailabilityKeyRef.current = availabilityKey;
+    setAvailableVetIds(null);
+    setIsLoadingAvailability(false);
+  }
 
   React.useEffect(() => {
     if (!showModal || currentStatus !== 'REQUESTED' || !serviceId) {
-      setAvailableVetIds(null);
-      setIsLoadingAvailability(false);
       return;
     }
     let cancelled = false;
