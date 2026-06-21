@@ -416,7 +416,10 @@ describe('AddAppointmentCentralModal', () => {
       'data-default-option',
       ''
     );
-    expect(screen.getByTestId('label-dropdown-Service')).toHaveAttribute('data-default-option', '');
+    expect(screen.getByTestId('label-dropdown-Services / Packages')).toHaveAttribute(
+      'data-default-option',
+      ''
+    );
   });
 
   it('renders estimate panel', () => {

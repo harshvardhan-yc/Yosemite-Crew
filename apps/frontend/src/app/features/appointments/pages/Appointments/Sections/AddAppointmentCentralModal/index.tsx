@@ -1093,9 +1093,9 @@ const AddAppointmentCentralModal = ({
                 icon={<TiPlus size={13} style={{ color: NEUTRAL_900 }} aria-hidden="true" />}
               />
 
-              {/* Service */}
+              {/* Service / Package */}
               <LabelDropdown
-                placeholder="Service"
+                placeholder="Services / Packages"
                 options={ServicesOptions}
                 defaultOption={formData.appointmentType?.id ?? ''}
                 onSelect={handleServiceSelect}
