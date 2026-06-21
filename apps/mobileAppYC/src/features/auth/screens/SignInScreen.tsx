@@ -21,6 +21,8 @@ import {
   DEMO_LOGIN_EMAIL,
 } from '@/features/auth/services/passwordlessAuth';
 import {AUTH_FEATURE_FLAGS} from '@/config/variables';
+import {Amplify} from 'aws-amplify';
+import devOutputs from '../../../../devamplify_outputs.json';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {AuthStackParamList} from '@/navigation/AuthNavigator';
 import {useAuth} from '@/features/auth/context/AuthContext';
@@ -34,17 +36,28 @@ const socialIconStyles = StyleSheet.create({
 });
 
 const GoogleIcon = () => (
-  <Image source={Images.googleIcon} style={socialIconStyles.icon} resizeMode="contain" />
+  <Image
+    source={Images.googleIcon}
+    style={socialIconStyles.icon}
+    resizeMode="contain"
+  />
 );
 
 const FacebookIcon = () => (
-  <Image source={Images.facebookIcon} style={socialIconStyles.icon} resizeMode="contain" />
+  <Image
+    source={Images.facebookIcon}
+    style={socialIconStyles.icon}
+    resizeMode="contain"
+  />
 );
 
 const AppleIcon = () => (
-  <Image source={Images.appleIcon} style={socialIconStyles.icon} resizeMode="contain" />
+  <Image
+    source={Images.appleIcon}
+    style={socialIconStyles.icon}
+    resizeMode="contain"
+  />
 );
-
 
 type SignInScreenProps = NativeStackScreenProps<AuthStackParamList, 'SignIn'>;
 
@@ -52,8 +65,10 @@ const useKeyboardVisibility = () => {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const showSubscription = Keyboard.addListener(showEvent, () => {
       setIsKeyboardVisible(true);
     });
@@ -83,7 +98,8 @@ const useRouteParamsRestore = (
     : false;
 
   useEffect(() => {
-    const shouldSkipRestore = routeEmail == null && hasStatusMessageParam === false;
+    const shouldSkipRestore =
+      routeEmail == null && hasStatusMessageParam === false;
     if (shouldSkipRestore) {
       return;
     }
@@ -102,8 +118,15 @@ const useRouteParamsRestore = (
       setStatusMessage(routeStatusMessage ?? '');
     }
 
-    navigation.setParams({ email: undefined, statusMessage: undefined });
-  }, [hasStatusMessageParam, navigation, routeEmail, routeStatusMessage, setEmailValue, setStatusMessage]);
+    navigation.setParams({email: undefined, statusMessage: undefined});
+  }, [
+    hasStatusMessageParam,
+    navigation,
+    routeEmail,
+    routeStatusMessage,
+    setEmailValue,
+    setStatusMessage,
+  ]);
 };
 
 const useOTPHandler = (
@@ -114,15 +137,18 @@ const useOTPHandler = (
   setIsSubmitting: (submitting: boolean) => void,
   navigation: SignInScreenProps['navigation'],
 ) => {
-  const validateEmailInput = React.useCallback((email: string): string | null => {
-    if (email.trim().length === 0) {
-      return 'Please enter your email address';
-    }
-    if (!isValidEmail(email.trim())) {
-      return 'Please enter a valid email address';
-    }
-    return null;
-  }, []);
+  const validateEmailInput = React.useCallback(
+    (email: string): string | null => {
+      if (email.trim().length === 0) {
+        return 'Please enter your email address';
+      }
+      if (!isValidEmail(email.trim())) {
+        return 'Please enter a valid email address';
+      }
+      return null;
+    },
+    [],
+  );
 
   const handleSendOTP = React.useCallback(async () => {
     const validationError = validateEmailInput(emailValue);
@@ -136,10 +162,15 @@ const useOTPHandler = (
     try {
       const normalizedEmail = emailValue.trim();
       const lowerCasedEmail = normalizedEmail.toLowerCase();
-      const isDemoLogin = allowReviewLogin && lowerCasedEmail === DEMO_LOGIN_EMAIL;
-      console.log('[Auth] Sending OTP request', { normalizedEmail });
+      const isDemoLogin =
+        allowReviewLogin && lowerCasedEmail === DEMO_LOGIN_EMAIL;
+      if (isDemoLogin) {
+        Amplify.configure(devOutputs);
+        console.log(
+          '[Auth] Demo login — reconfigured Amplify to dev Cognito pool',
+        );
+      }
       const result = await requestPasswordlessEmailCode(normalizedEmail);
-      console.log('[Auth] OTP request succeeded', result);
 
       const message = isDemoLogin
         ? 'App Review login: use the provided password to continue. No email is sent.'
@@ -158,9 +189,17 @@ const useOTPHandler = (
     } finally {
       setIsSubmitting(false);
     }
-  }, [emailValue, allowReviewLogin, navigation, validateEmailInput, setEmailError, setStatusMessage, setIsSubmitting]);
+  }, [
+    emailValue,
+    allowReviewLogin,
+    navigation,
+    validateEmailInput,
+    setEmailError,
+    setStatusMessage,
+    setIsSubmitting,
+  ]);
 
-  return { handleSendOTP };
+  return {handleSendOTP};
 };
 
 const getKeyboardVisibleIllustrationHeight = (screenHeight: number) => {
@@ -171,7 +210,10 @@ const getKeyboardHiddenIllustrationHeight = (screenHeight: number) => {
   return Math.min(screenHeight * 0.32, 260);
 };
 
-const useIllustrationHeight = (isKeyboardVisible: boolean, screenHeight: number) => {
+const useIllustrationHeight = (
+  isKeyboardVisible: boolean,
+  screenHeight: number,
+) => {
   return React.useMemo(() => {
     return isKeyboardVisible
       ? getKeyboardVisibleIllustrationHeight(screenHeight)
@@ -183,12 +225,16 @@ const getSocialButtonTintColor = (theme: any, color: string) => {
   return Platform.OS === 'ios' ? color : undefined;
 };
 
-const getSocialButtonStyle = (styles: any, theme: any, backgroundColor: string) => {
+const getSocialButtonStyle = (
+  styles: any,
+  theme: any,
+  backgroundColor: string,
+) => {
   const baseStyle = styles.socialButton;
   if (Platform.OS === 'ios') {
     return baseStyle;
   }
-  return { ...baseStyle, backgroundColor };
+  return {...baseStyle, backgroundColor};
 };
 
 const SocialAuthSection: React.FC<{
@@ -260,7 +306,10 @@ const SocialAuthSection: React.FC<{
   </View>
 );
 
-export const SignInScreen: React.FC<SignInScreenProps> = ({navigation, route}) => {
+export const SignInScreen: React.FC<SignInScreenProps> = ({
+  navigation,
+  route,
+}) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const {login} = useAuth();
@@ -273,7 +322,10 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({navigation, route}) =
   const [socialError, setSocialError] = useState('');
   const isKeyboardVisible = useKeyboardVisibility();
   const {height: screenHeight} = useWindowDimensions();
-  const illustrationHeight = useIllustrationHeight(isKeyboardVisible, screenHeight);
+  const illustrationHeight = useIllustrationHeight(
+    isKeyboardVisible,
+    screenHeight,
+  );
 
   const clearAllErrors = React.useCallback(() => {
     setEmailError('');
@@ -281,21 +333,25 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({navigation, route}) =
     setSocialError('');
   }, []);
 
-  const socialAuthConfig = React.useMemo(() => ({
-    onStart: clearAllErrors,
-    onExistingProfile: async (result: any) => {
-      await login(result.user, result.tokens);
-    },
-    onNewProfile: async (createAccountPayload: any) => {
-      navigation.reset({
-        index: 0,
-        routes: [{name: 'CreateAccount', params: createAccountPayload}],
-      });
-    },
-    genericErrorMessage: "We couldn't sign you in. Kindly retry.",
-  }), [clearAllErrors, login, navigation]);
+  const socialAuthConfig = React.useMemo(
+    () => ({
+      onStart: clearAllErrors,
+      onExistingProfile: async (result: any) => {
+        await login(result.user, result.tokens);
+      },
+      onNewProfile: async (createAccountPayload: any) => {
+        navigation.reset({
+          index: 0,
+          routes: [{name: 'CreateAccount', params: createAccountPayload}],
+        });
+      },
+      genericErrorMessage: "We couldn't sign you in. Kindly retry.",
+    }),
+    [clearAllErrors, login, navigation],
+  );
 
-  const {activeProvider, isSocialLoading, handleSocialAuth} = useSocialAuth(socialAuthConfig);
+  const {activeProvider, isSocialLoading, handleSocialAuth} =
+    useSocialAuth(socialAuthConfig);
 
   useRouteParamsRestore(route, navigation, setEmailValue, setStatusMessage);
 
@@ -308,29 +364,45 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({navigation, route}) =
     navigation,
   );
 
-  const attemptSocialAuth = React.useCallback(async (provider: SocialProvider) => {
-    try {
-      await handleSocialAuth(provider);
-    } catch (error) {
-      const message = error instanceof Error
-        ? error.message
-        : "We couldn't sign you in. Kindly retry.";
-      setSocialError(message);
-    }
-  }, [handleSocialAuth]);
+  const attemptSocialAuth = React.useCallback(
+    async (provider: SocialProvider) => {
+      try {
+        await handleSocialAuth(provider);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "We couldn't sign you in. Kindly retry.";
+        setSocialError(message);
+      }
+    },
+    [handleSocialAuth],
+  );
 
   const navigateToSignUp = React.useCallback(() => {
     navigation.navigate('SignUp');
   }, [navigation]);
 
-  const handleEmailChange = React.useCallback((text: string) => {
-    setEmailValue(text);
-    clearAllErrors();
-  }, [clearAllErrors]);
+  const handleEmailChange = React.useCallback(
+    (text: string) => {
+      setEmailValue(text);
+      clearAllErrors();
+    },
+    [clearAllErrors],
+  );
 
-  const handleGoogleSignIn = React.useCallback(() => attemptSocialAuth('google'), [attemptSocialAuth]);
-  const handleFacebookSignIn = React.useCallback(() => attemptSocialAuth('facebook'), [attemptSocialAuth]);
-  const handleAppleSignIn = React.useCallback(() => attemptSocialAuth('apple'), [attemptSocialAuth]);
+  const handleGoogleSignIn = React.useCallback(
+    () => attemptSocialAuth('google'),
+    [attemptSocialAuth],
+  );
+  const handleFacebookSignIn = React.useCallback(
+    () => attemptSocialAuth('facebook'),
+    [attemptSocialAuth],
+  );
+  const handleAppleSignIn = React.useCallback(
+    () => attemptSocialAuth('apple'),
+    [attemptSocialAuth],
+  );
 
   return (
     <SafeArea style={styles.container}>
@@ -348,42 +420,42 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({navigation, route}) =
             isKeyboardVisible && styles.scrollContentKeyboard,
           ]}>
           <View style={styles.content}>
-          <Image
-            source={Images.authIllustration}
-            style={[styles.illustration, {height: illustrationHeight}]}
-            resizeMode="contain"
-          />
-
-          <Text style={styles.title}>Tail-wagging welcome!</Text>
-
-          <View style={styles.formContainer}>
-            <View style={styles.inputContainer}>
-              <Input
-                label="Email address"
-                value={emailValue}
-                onChangeText={handleEmailChange}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                inputStyle={styles.input}
-                error={emailError}
-              />
-            </View>
-
-            <LiquidGlassButton
-              title="Send OTP"
-              onPress={handleSendOTP}
-              style={styles.sendButton}
-              textStyle={styles.sendButtonText}
-              loading={isSubmitting}
-              disabled={isSubmitting}
-              tintColor={theme.colors.secondary}
-              height={56}
-              borderRadius="lg"
+            <Image
+              source={Images.authIllustration}
+              style={[styles.illustration, {height: illustrationHeight}]}
+              resizeMode="contain"
             />
 
-            {statusMessage ? (
-              <Text style={styles.statusMessage}>{statusMessage}</Text>
-            ) : null}
+            <Text style={styles.title}>Tail-wagging welcome!</Text>
+
+            <View style={styles.formContainer}>
+              <View style={styles.inputContainer}>
+                <Input
+                  label="Email address"
+                  value={emailValue}
+                  onChangeText={handleEmailChange}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  inputStyle={styles.input}
+                  error={emailError}
+                />
+              </View>
+
+              <LiquidGlassButton
+                title="Send OTP"
+                onPress={handleSendOTP}
+                style={styles.sendButton}
+                textStyle={styles.sendButtonText}
+                loading={isSubmitting}
+                disabled={isSubmitting}
+                tintColor={theme.colors.secondary}
+                height={56}
+                borderRadius="lg"
+              />
+
+              {statusMessage ? (
+                <Text style={styles.statusMessage}>{statusMessage}</Text>
+              ) : null}
 
               <View style={styles.footerContainer}>
                 <Text style={styles.footerText}>Not a member? </Text>
