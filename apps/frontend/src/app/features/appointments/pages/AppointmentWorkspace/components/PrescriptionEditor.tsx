@@ -32,6 +32,7 @@ const FULFILLMENT_LABELS: Record<PrescriptionFulfillment, string> = {
 };
 
 const FULFILLMENT_OPTIONS = Object.keys(FULFILLMENT_LABELS) as PrescriptionFulfillment[];
+const EMPTY_CATALOG_ITEMS: Omit<PrescriptionItem, 'id'>[] = [];
 
 /** Compact editable fields (shared floating input) — Dose / Route / Freq. / Duration / Refill. */
 const EDITABLE_FIELDS: { key: keyof PrescriptionItem; label: string; width: string }[] = [
@@ -87,6 +88,7 @@ const FulfillmentDropdown = ({
       {open && (
         <ul
           role="listbox"
+          aria-label="Fulfillment"
           className="absolute right-0 z-20 mt-1 min-w-44 overflow-hidden rounded-2xl border border-card-border bg-neutral-0 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15)]"
         >
           {FULFILLMENT_OPTIONS.map((option) => (
@@ -250,7 +252,7 @@ const PrescriptionRow = ({
 
 const PrescriptionEditor = ({
   items,
-  catalogItems = [],
+  catalogItems = EMPTY_CATALOG_ITEMS,
   readOnly,
   deleteLocked = readOnly,
   onAddItem,

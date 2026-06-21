@@ -225,4 +225,110 @@ describe('workspaceAggregateService', () => {
     expect(patch.readyForBilling?.value).toBe(true);
     expect(patch.readyForDischarge?.value).toBe(true);
   });
+
+  it('splits package-expanded treatment items into services and prescriptions by kind', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      treatmentItems: [
+        {
+          id: 'ti-consult',
+          productId: 'prod-consult',
+          servicePackageKind: 'CONSULTATION',
+          name: 'Wellness Consult',
+          quantity: 1,
+          priceSnapshot: { unitPrice: 40 },
+          billingStatus: 'UNBILLED',
+        },
+        {
+          id: 'ti-procedure',
+          productId: 'prod-proc',
+          servicePackageKind: 'PROCEDURE',
+          name: 'Nail Trim',
+          quantity: 2,
+          priceSnapshot: { unitPrice: 10 },
+          billingStatus: 'BILLED',
+        },
+        {
+          id: 'ti-med',
+          productId: 'prod-med',
+          servicePackageKind: 'MEDICATION',
+          name: 'Amoxicillin',
+          quantity: 1,
+          priceSnapshot: { unitPrice: 12 },
+          productSnapshot: { instructions: 'Twice daily' },
+          billingStatus: 'UNBILLED',
+        },
+      ],
+    });
+
+    // Service / procedure components land in Services & Packages.
+    expect(patch.services).toEqual([
+      expect.objectContaining({
+        id: 'ti-consult',
+        kind: 'SERVICE',
+        amountCents: 4000,
+        billed: false,
+      }),
+      expect.objectContaining({
+        id: 'ti-procedure',
+        kind: 'SERVICE',
+        amountCents: 2000,
+        billed: true,
+      }),
+    ]);
+    // Medication component is routed to the prescription section, not Services.
+    expect(patch.services?.some((item) => item.id === 'ti-med')).toBe(false);
+    expect(patch.prescription).toEqual([
+      expect.objectContaining({
+        id: 'ti-med',
+        medicineName: 'Amoxicillin',
+        fulfillment: 'IN_HOUSE',
+        priceCents: 1200,
+        instructions: 'Twice daily',
+        inventoryItemId: 'prod-med',
+      }),
+    ]);
+    expect(patch.stepStatus?.TREATMENT).toBe('COMPLETED');
+  });
+
+  it('merges stored prescriptions with medication treatment items without duplicating ids', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      prescriptions: [
+        {
+          id: 'rx-1',
+          medicineName: 'Carprofen',
+          dosage: '50mg',
+          fulfillment: 'PRESCRIPTION_ONLY',
+          priceCents: 800,
+        },
+      ],
+      treatmentItems: [
+        {
+          id: 'rx-1',
+          servicePackageKind: 'PRESCRIPTION',
+          name: 'Carprofen duplicate',
+          quantity: 1,
+          priceSnapshot: { unitPrice: 8 },
+        },
+        {
+          id: 'ti-med-2',
+          productId: 'prod-med-2',
+          servicePackageKind: 'MEDICATION',
+          name: 'Gabapentin',
+          quantity: 1,
+          priceSnapshot: { unitPrice: 5 },
+        },
+      ],
+    });
+
+    expect(patch.prescription).toEqual([
+      expect.objectContaining({
+        id: 'rx-1',
+        medicineName: 'Carprofen',
+        fulfillment: 'PRESCRIPTION_ONLY',
+      }),
+      expect.objectContaining({ id: 'ti-med-2', medicineName: 'Gabapentin' }),
+    ]);
+    // The PRESCRIPTION-kind treatment item is not also rendered as a service row.
+    expect(patch.services).toBeUndefined();
+  });
 });

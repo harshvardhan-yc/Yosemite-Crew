@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 type SearchResultsDropdownProps = {
@@ -10,6 +10,17 @@ type SearchResultsDropdownProps = {
 };
 
 type Position = { top: number; left: number; width: number };
+
+const EMPTY_POSITION_SNAPSHOT = '0:0:0';
+
+const subscribeToWindowMetrics = (onStoreChange: () => void) => {
+  globalThis.window.addEventListener('resize', onStoreChange);
+  globalThis.window.addEventListener('scroll', onStoreChange, true);
+  return () => {
+    globalThis.window.removeEventListener('resize', onStoreChange);
+    globalThis.window.removeEventListener('scroll', onStoreChange, true);
+  };
+};
 
 /**
  * Renders workspace search results in a body-level portal with fixed
@@ -26,7 +37,25 @@ const SearchResultsDropdown = ({
   children,
 }: SearchResultsDropdownProps) => {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<Position | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const positionSnapshot = useSyncExternalStore(
+    subscribeToWindowMetrics,
+    () => {
+      if (!open || typeof document === 'undefined') return EMPTY_POSITION_SNAPSHOT;
+      const rect = anchorRef.current?.getBoundingClientRect();
+      if (!rect) return EMPTY_POSITION_SNAPSHOT;
+      return `${rect.bottom + 4}:${rect.left}:${rect.width}`;
+    },
+    () => EMPTY_POSITION_SNAPSHOT
+  );
+  const position =
+    positionSnapshot === EMPTY_POSITION_SNAPSHOT
+      ? null
+      : (() => {
+          const [top, left, width] = positionSnapshot.split(':').map((value) => Number(value));
+          return { top, left, width } satisfies Position;
+        })();
 
   // Close when a press lands outside BOTH the anchor and the portal panel.
   useEffect(() => {
@@ -34,35 +63,30 @@ const SearchResultsDropdown = ({
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node;
       if (anchorRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-      onClose();
+      onCloseRef.current();
     };
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('mousedown', handlePointerDown, { passive: true });
+    document.addEventListener('touchstart', handlePointerDown, { passive: true });
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('touchstart', handlePointerDown);
     };
-  }, [open, anchorRef, onClose]);
+  }, [open, anchorRef]);
 
   useEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return undefined;
-    }
-    const measure = () => {
-      const rect = anchorRef.current?.getBoundingClientRect();
-      if (rect) setPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    if (!open) return undefined;
+    // Close when the page scrolls away from the anchor; internal panel scroll
+    // is ignored so the list remains usable.
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && panelRef.current?.contains(target)) return;
+      onCloseRef.current();
     };
-    measure();
-    // Reposition while open; close on scroll so it never floats detached.
-    const handleScroll = () => onClose();
-    globalThis.window.addEventListener('resize', measure);
-    globalThis.window.addEventListener('scroll', handleScroll, true);
+    globalThis.window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
     return () => {
-      globalThis.window.removeEventListener('resize', measure);
-      globalThis.window.removeEventListener('scroll', handleScroll, true);
+      globalThis.window.removeEventListener('scroll', handleScroll, { capture: true });
     };
-  }, [open, anchorRef, onClose]);
+  }, [open]);
 
   if (!open || !position || typeof document === 'undefined') return null;
 

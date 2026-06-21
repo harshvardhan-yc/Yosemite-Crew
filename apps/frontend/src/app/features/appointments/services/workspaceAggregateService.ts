@@ -4,6 +4,7 @@ import type {
   DiagnosticOrder,
   EncounterMode,
   LineItem,
+  PrescriptionItem,
   ReadyState,
   WorkspaceDocument,
   WorkspaceStep,
@@ -137,9 +138,18 @@ const normalizeDocuments = (items: Record<string, unknown>[]): WorkspaceDocument
     signatureRequired: asString(item.signingStatus) !== 'SIGNED',
   }));
 
+// Treatment items whose kind is a medicine belong in the prescription section, not the
+// Services & Packages section. The backend uses `MEDICATION` (catalog kind) for expanded
+// package components and the legacy `PRESCRIPTION` value for stored prescriptions — treat
+// both the same.
+const MEDICATION_TREATMENT_KINDS = new Set(['MEDICATION', 'PRESCRIPTION']);
+
+const isMedicationTreatmentItem = (item: Record<string, unknown>): boolean =>
+  MEDICATION_TREATMENT_KINDS.has(asString(item.servicePackageKind) ?? '');
+
 const normalizeTreatmentItems = (items: Record<string, unknown>[]): LineItem[] =>
   items
-    .filter((item) => asString(item.servicePackageKind) !== 'PRESCRIPTION')
+    .filter((item) => !isMedicationTreatmentItem(item))
     .map((item, index) => {
       const productSnapshot = isRecord(item.productSnapshot) ? item.productSnapshot : {};
       const priceSnapshot = isRecord(item.priceSnapshot) ? item.priceSnapshot : {};
@@ -156,6 +166,64 @@ const normalizeTreatmentItems = (items: Record<string, unknown>[]): LineItem[] =
         billed: asString(item.billingStatus) === 'BILLED',
       };
     });
+
+const medicationTreatmentItemToPrescription = (
+  item: Record<string, unknown>,
+  index: number
+): PrescriptionItem => {
+  const productSnapshot = isRecord(item.productSnapshot) ? item.productSnapshot : {};
+  const priceSnapshot = isRecord(item.priceSnapshot) ? item.priceSnapshot : {};
+  const priceCents = Math.round((asNumber(priceSnapshot.unitPrice) ?? 0) * 100);
+  return {
+    id: asString(item.id) ?? `prescription-${index + 1}`,
+    medicineName: asString(item.name) ?? asString(productSnapshot.name) ?? 'Medication',
+    instructions: asString(productSnapshot.instructions),
+    // Package-expanded medications are dispensed in-house by default.
+    fulfillment: 'IN_HOUSE',
+    priceCents,
+    inventoryItemId: asString(item.productId) ?? asString(productSnapshot.inventoryItemId),
+    billed: asString(item.billingStatus) === 'BILLED',
+  };
+};
+
+// Prescriptions come from two server sources: explicitly stored prescription artifacts
+// (`bootstrap.prescriptions`) and medication-kind treatment items the backend expands from
+// a booked package. Merge both, de-duplicating by id.
+const normalizePrescriptions = (
+  prescriptions: Record<string, unknown>[],
+  treatmentItems: Record<string, unknown>[]
+): PrescriptionItem[] => {
+  const byId = new Map<string, PrescriptionItem>();
+  prescriptions.forEach((item, index) => {
+    const productSnapshot = isRecord(item.productSnapshot) ? item.productSnapshot : {};
+    const priceSnapshot = isRecord(item.priceSnapshot) ? item.priceSnapshot : {};
+    const prescription: PrescriptionItem = {
+      id: asString(item.id) ?? `prescription-artifact-${index + 1}`,
+      medicineName:
+        asString(item.medicineName) ??
+        asString(item.name) ??
+        asString(productSnapshot.name) ??
+        'Medication',
+      dosage: asString(item.dosage),
+      route: asString(item.route),
+      frequency: asString(item.frequency),
+      durationDays: asString(item.durationDays),
+      refill: asString(item.refill),
+      instructions: asString(item.instructions) ?? asString(productSnapshot.instructions),
+      fulfillment:
+        asString(item.fulfillment) === 'PRESCRIPTION_ONLY' ? 'PRESCRIPTION_ONLY' : 'IN_HOUSE',
+      priceCents:
+        asNumber(item.priceCents) ?? Math.round((asNumber(priceSnapshot.unitPrice) ?? 0) * 100),
+      inventoryItemId: asString(item.inventoryItemId) ?? asString(item.productId),
+    };
+    byId.set(prescription.id, prescription);
+  });
+  treatmentItems.filter(isMedicationTreatmentItem).forEach((item, index) => {
+    const prescription = medicationTreatmentItemToPrescription(item, index);
+    if (!byId.has(prescription.id)) byId.set(prescription.id, prescription);
+  });
+  return Array.from(byId.values());
+};
 
 const latestDischargeSummary = (artifacts: Record<string, unknown>[]) =>
   artifacts
@@ -251,6 +319,12 @@ export const normalizeWorkspaceBootstrapForEncounter = (
 
   const treatmentItems = normalizeTreatmentItems(asArray(bootstrap.treatmentItems));
   if (treatmentItems.length) patch.services = treatmentItems;
+
+  const prescriptions = normalizePrescriptions(
+    asArray(bootstrap.prescriptions),
+    asArray(bootstrap.treatmentItems)
+  );
+  if (prescriptions.length) patch.prescription = prescriptions;
 
   const discharge = latestDischargeSummary(asArray(bootstrap.clinicalArtifacts));
   if (discharge) {
