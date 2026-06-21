@@ -12,7 +12,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {StatusBar, LogBox, Linking} from 'react-native';
+import {StatusBar, LogBox, Linking, DeviceEventEmitter} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {Provider} from 'react-redux';
@@ -55,12 +55,15 @@ import type {RootStackParamList} from '@/navigation/types';
 import {
   API_CONFIG,
   AUTH_FEATURE_FLAGS,
+  DEV_API_MODE_CHANGED_EVENT,
   MOBILE_CONFIG_BEHAVIOR,
   POSTHOG_CONFIG,
   STRIPE_CONFIG,
   UI_FEATURE_FLAGS,
+  DEVELOPMENT_API_BASE_URL,
 } from '@/config/variables';
 import {updateApiClientBaseConfig} from '@/shared/services/apiClient';
+import {DEMO_API_MODE_KEY} from '@/features/auth/sessionManager';
 import {observationToolApi} from '@/features/observationalTools/services/observationToolService';
 import AppUpdateBottomSheet, {
   AppUpdateBottomSheetRef,
@@ -209,9 +212,20 @@ function App(): React.JSX.Element {
     {mobileConfig, appUpdatePrompt, isConfigLoading},
     dispatchMobileConfig,
   ] = useReducer(mobileConfigReducer, initialMobileConfigState);
+  const [devApiActive, setDevApiActive] = useState(
+    MOBILE_CONFIG_BEHAVIOR.useDevApi,
+  );
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const pendingIntentRef = useRef<NotificationNavigationIntent | null>(null);
   const currentRouteNameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      DEV_API_MODE_CHANGED_EVENT,
+      ({isDevApi}: {isDevApi: boolean}) => setDevApiActive(isDevApi),
+    );
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     configureSocialProviders();
@@ -289,14 +303,19 @@ function App(): React.JSX.Element {
         });
 
         if (mounted) {
-          // Priority: local override apiBaseUrl > useDevApi flag > env from remote config
+          // Priority: local override > useDevApi flag > stored demo mode > prod default
           let resolvedBaseUrl: string;
           if (MOBILE_CONFIG_BEHAVIOR.overrides?.apiBaseUrl) {
             resolvedBaseUrl = MOBILE_CONFIG_BEHAVIOR.overrides.apiBaseUrl;
           } else if (MOBILE_CONFIG_BEHAVIOR.useDevApi) {
-            resolvedBaseUrl = 'https://devapi.yosemitecrew.com';
+            resolvedBaseUrl = DEVELOPMENT_API_BASE_URL;
           } else {
-            resolvedBaseUrl = PRODUCTION_API_BASE_URL;
+            const storedDemoMode =
+              await AsyncStorage.getItem(DEMO_API_MODE_KEY);
+            resolvedBaseUrl =
+              storedDemoMode === 'true'
+                ? DEVELOPMENT_API_BASE_URL
+                : PRODUCTION_API_BASE_URL;
           }
 
           const resolvedPmsUrl =
@@ -398,8 +417,11 @@ function App(): React.JSX.Element {
     };
   }, []);
 
-  const resolvedPublishableKey =
-    mobileConfig?.stripePublishableKey ?? STRIPE_CONFIG.publishableKey;
+  const resolvedPublishableKey = devApiActive
+    ? (mobileConfig?.stripePublishableKeyDev ??
+      mobileConfig?.stripePublishableKey ??
+      STRIPE_CONFIG.publishableKey)
+    : (mobileConfig?.stripePublishableKey ?? STRIPE_CONFIG.publishableKey);
 
   useEffect(() => {
     if (!resolvedPublishableKey && !isConfigLoading) {

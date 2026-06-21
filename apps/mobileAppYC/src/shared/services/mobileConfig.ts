@@ -34,6 +34,7 @@ export interface MobileConfig {
   /** When true, the review/demo bypass login is active for the test account. */
   enableReviewLogin?: boolean;
   stripePublishableKey?: string;
+  stripePublishableKeyDev?: string;
   sentryDsn?: string;
   /**
    * Forces a 1px black outline on all liquid glass surfaces (cards/buttons) to aid visibility.
