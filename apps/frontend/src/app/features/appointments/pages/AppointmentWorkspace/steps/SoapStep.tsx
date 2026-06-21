@@ -403,10 +403,7 @@ const SoapStep = ({
         </>
       )}
 
-      <SoapNotesList
-        items={pastNotes}
-        onPrint={(item) => void openSoapPdfPreview(item.id, `SOAP note by ${item.signedByName}`)}
-      />
+      <SoapNotesList items={pastNotes} />
       {pdfError && (
         <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">
           {pdfError}

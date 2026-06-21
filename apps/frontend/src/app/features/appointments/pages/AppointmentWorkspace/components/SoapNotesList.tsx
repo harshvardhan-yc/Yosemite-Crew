@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { IoEyeOutline, IoEyeOffOutline } from 'react-icons/io5';
-import { LuClipboardList, LuPrinter } from 'react-icons/lu';
+import { LuClipboardList } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { sanitizeRichText } from '@/app/lib/richText';
@@ -26,21 +26,7 @@ export type SoapNoteListItem = {
 type SoapNotesListProps = {
   items: SoapNoteListItem[];
   emptyLabel?: string;
-  /** Prints a single past note. */
-  onPrint: (item: SoapNoteListItem) => void;
 };
-
-/** Status chip distinguishing online vs offline-signed notes. */
-const SignStatusChip = ({ offline }: { offline: boolean }) =>
-  offline ? (
-    <span className="rounded-2xl border border-pill-warning-border px-2.5 py-0.5 text-caption-2 text-pill-warning-text">
-      Signed offline
-    </span>
-  ) : (
-    <span className="rounded-2xl border border-pill-success-border px-2.5 py-0.5 text-caption-2 text-pill-success-text">
-      Signed
-    </span>
-  );
 
 /** One label/value row in the expanded read-out — bold label left, value right. */
 const ReadRow = ({ field }: { field: SoapNoteReadField }) => (
@@ -58,13 +44,7 @@ const ReadRow = ({ field }: { field: SoapNoteReadField }) => (
   </div>
 );
 
-const SoapNoteRow = ({
-  item,
-  onPrint,
-}: {
-  item: SoapNoteListItem;
-  onPrint: (item: SoapNoteListItem) => void;
-}) => {
+const SoapNoteRow = ({ item }: { item: SoapNoteListItem }) => {
   const [open, setOpen] = useState(false);
   return (
     <li className="border-b border-card-border last:border-0">
@@ -73,20 +53,12 @@ const SoapNoteRow = ({
           <LuClipboardList size={20} aria-hidden="true" />
         </span>
         <span className="w-28 shrink-0 text-body-4 font-medium text-text-primary">SOAP Note</span>
-        <span className="hidden shrink-0 sm:block">
-          <SignStatusChip offline={Boolean(item.signedOffline)} />
-        </span>
         <span className="hidden flex-1 text-body-4 text-text-secondary sm:block">
           By {item.signedByName}
         </span>
         <span className="hidden shrink-0 whitespace-nowrap text-body-4 text-pill-success-text sm:block">
           {[item.date, item.time].filter(Boolean).join(' · ')}
         </span>
-        <CircleIconButton
-          icon={<LuPrinter size={16} aria-hidden="true" />}
-          label={`Print SOAP note by ${item.signedByName}`}
-          onClick={() => onPrint(item)}
-        />
         <CircleIconButton
           icon={
             open ? (
@@ -123,7 +95,6 @@ const SoapNoteRow = ({
 const SoapNotesList = ({
   items,
   emptyLabel = 'No SOAP notes recorded yet.',
-  onPrint,
 }: SoapNotesListProps) => {
   return (
     <SectionContainer
@@ -138,7 +109,7 @@ const SoapNotesList = ({
       ) : (
         <ul className="flex flex-col">
           {items.map((item) => (
-            <SoapNoteRow key={item.id} item={item} onPrint={onPrint} />
+            <SoapNoteRow key={item.id} item={item} />
           ))}
         </ul>
       )}

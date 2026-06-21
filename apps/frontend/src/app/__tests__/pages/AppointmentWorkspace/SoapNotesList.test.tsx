@@ -21,36 +21,28 @@ const items: SoapNoteListItem[] = [
 
 describe('SoapNotesList', () => {
   it('renders an empty state when there are no notes', () => {
-    render(<SoapNotesList items={[]} onPrint={jest.fn()} />);
+    render(<SoapNotesList items={[]} />);
     expect(screen.getByText('All SOAP notes')).toBeInTheDocument();
     expect(screen.getByText('No SOAP notes recorded yet.')).toBeInTheDocument();
   });
 
   it('renders a floating-label container with one row per note', () => {
-    render(<SoapNotesList items={items} onPrint={jest.fn()} />);
+    render(<SoapNotesList items={items} />);
     expect(screen.getByText('All SOAP notes')).toBeInTheDocument();
     expect(screen.getByText('SOAP Note')).toBeInTheDocument();
     expect(screen.getByText(/By Dr. Tim Apple/)).toBeInTheDocument();
     // Date, time and time zone render together on a single row.
     expect(screen.getByText('Apr 21, 2026 · 09:45 AM IST')).toBeInTheDocument();
-    // Online-signed notes show the "Signed" status chip.
-    expect(screen.getByText('Signed')).toBeInTheDocument();
   });
 
-  it('shows an offline status chip for offline-signed notes', () => {
-    render(<SoapNotesList items={[{ ...items[0], signedOffline: true }]} onPrint={jest.fn()} />);
-    expect(screen.getByText('Signed offline')).toBeInTheDocument();
-  });
-
-  it('prints a note from the row print action', () => {
-    const onPrint = jest.fn();
-    render(<SoapNotesList items={items} onPrint={onPrint} />);
-    fireEvent.click(screen.getByRole('button', { name: /print soap note by dr\. tim apple/i }));
-    expect(onPrint).toHaveBeenCalledWith(items[0]);
+  it('does not render a status chip or a print action on the row', () => {
+    render(<SoapNotesList items={items} />);
+    expect(screen.queryByText('Signed')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /print soap note/i })).not.toBeInTheDocument();
   });
 
   it('expands and collapses the nested read-out', () => {
-    render(<SoapNotesList items={items} onPrint={jest.fn()} />);
+    render(<SoapNotesList items={items} />);
     expect(screen.queryByText('vomiting and feeling sick')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /view soap note by dr\. tim apple/i }));
     expect(screen.getByText('vomiting and feeling sick')).toBeInTheDocument();
@@ -63,7 +55,6 @@ describe('SoapNotesList', () => {
   it('renders a dash for empty rich-text and empty plain-text fields', () => {
     render(
       <SoapNotesList
-        onPrint={jest.fn()}
         items={[
           {
             id: 's',

@@ -182,15 +182,6 @@ describe('SoapStep', () => {
     expect(screen.getByRole('button', { name: 'Save & Next' })).toBeInTheDocument();
   });
 
-  it('shows an offline status chip in history for offline-signed notes', () => {
-    seedAndGet();
-    const store = useAppointmentWorkspaceStore.getState();
-    store.upsertSoap(APPT, { subjective: '<p>history</p>' });
-    store.signSoap(APPT, 'Dr Tim', true);
-    renderSoapStep(store.getEncounter(APPT)!);
-    expect(screen.getByText('Signed offline')).toBeInTheDocument();
-  });
-
   it('shows only complaint context and past notes when the step is view-only', () => {
     seedAndGet();
     useAppointmentWorkspaceStore.getState().upsertSoap(APPT, { subjective: '<p>history</p>' });
@@ -265,42 +256,6 @@ describe('SoapStep', () => {
     expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.soap[0]?.id).toBe(
       'soap-saved'
     );
-  });
-
-  it('opens a rendered SOAP PDF overlay from a historical SOAP note print action', async () => {
-    const enc = {
-      ...seedAndGet(),
-      soap: [
-        {
-          id: 'soap-old',
-          chiefComplaint: '',
-          subjective: '<p>legacy</p>',
-          objective: '',
-          assessment: '',
-          plan: '',
-          status: 'COMPLETED' as const,
-          signedByName: 'Dr Tim',
-          createdAt: '2026-04-20T12:30:00Z',
-        },
-      ],
-    };
-    render(
-      <SoapStep
-        appointmentId={APPT}
-        organisationId="org-1"
-        appointmentReason={APPOINTMENT_REASON}
-        encounter={enc}
-        onRecordVitals={onRecordVitals}
-        onSaveAndNext={onSaveAndNext}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /print soap note by dr tim/i }));
-
-    await waitFor(() => {
-      expect(getRenderedDocument).toHaveBeenCalledWith('org-1', 'soap-old');
-    });
-    expect(await screen.findByTestId('pdf-preview')).toHaveTextContent('SOAP note by Dr Tim');
   });
 
   it('advances from the SOAP step when Save & Next is clicked', () => {
