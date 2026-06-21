@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { LuCheck, LuEye, LuEyeOff } from 'react-icons/lu';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import Search from '@/app/ui/inputs/Search';
@@ -186,7 +186,13 @@ const parseNumber = (value: string): number | undefined => {
   return Number.isNaN(parsed) ? undefined : parsed;
 };
 
-const VitalRow = ({ entry }: { entry: Vitals }) => {
+const VitalRow = ({
+  entry,
+  resolveRecorderName,
+}: {
+  entry: Vitals;
+  resolveRecorderName: (entry: Vitals) => string;
+}) => {
   const [open, setOpen] = useState(false);
   return (
     <li className="flex flex-col gap-2 border-b border-card-border py-3 last:border-0">
@@ -199,7 +205,7 @@ const VitalRow = ({ entry }: { entry: Vitals }) => {
         </div>
         <div className="flex items-center gap-3">
           <span className="rounded-2xl bg-neutral-100 px-3 py-1 text-body-4 text-text-primary">
-            {entry.recordedByName}
+            {resolveRecorderName(entry)}
           </span>
           <CircleIconButton
             icon={
@@ -249,6 +255,29 @@ const VitalsForm = ({
       return value && label ? [{ label, value }] : [];
     });
   }, [team]);
+  // Map every team-member id (practitioner id and `_id`) to a display name so a
+  // hydrated vital that only carries a recorder id resolves to a real name.
+  const recorderNamesById = useMemo(() => {
+    const map = new Map<string, string>();
+    (team ?? []).forEach((member) => {
+      const name = member.name?.trim();
+      if (!name) return;
+      if (member.practionerId) map.set(member.practionerId, name);
+      if (member._id) map.set(member._id, name);
+    });
+    return map;
+  }, [team]);
+  // Prefer a stored real name; otherwise resolve the recorder id against the
+  // roster; fall back to whatever name was stored ("Clinician" when unknown).
+  const resolveRecorderName = useCallback(
+    (entry: Vitals) => {
+      const stored = entry.recordedByName?.trim();
+      if (stored && stored !== 'Clinician') return stored;
+      const resolved = entry.recordedById ? recorderNamesById.get(entry.recordedById) : undefined;
+      return resolved ?? stored ?? 'Clinician';
+    },
+    [recorderNamesById]
+  );
   const [draft, setDraft] = useState<DraftVitals>(EMPTY_DRAFT);
   const [notes, setNotes] = useState('');
   const [recorder, setRecorder] = useState<{ label: string; value: string } | null>(null);
@@ -339,7 +368,7 @@ const VitalsForm = ({
         ) : (
           <ul className="rounded-2xl border border-card-border px-4">
             {vitals.map((entry) => (
-              <VitalRow key={entry.id} entry={entry} />
+              <VitalRow key={entry.id} entry={entry} resolveRecorderName={resolveRecorderName} />
             ))}
           </ul>
         )}

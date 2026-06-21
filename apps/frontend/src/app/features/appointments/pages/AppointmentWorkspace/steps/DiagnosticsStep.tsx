@@ -434,7 +434,7 @@ const OrderStatusSection = ({
             const isComplete = s.getOrderDisplayStatus(order) === 'Complete';
             return (
               <li
-                key={order._id}
+                key={order._id ?? order.idexxOrderId ?? `order-${index}`}
                 className={`${ORDER_STATUS_ROW_GRID} rounded-2xl border border-card-border p-4`}
               >
                 <span className="truncate font-medium text-text-primary">

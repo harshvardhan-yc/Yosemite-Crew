@@ -546,8 +546,8 @@ const DepositModal = ({
       <ModalHeader title="Collect deposit" onClose={onClose} />
       <div className="flex flex-col gap-4 px-2 pb-2">
         <p className="text-body-4 text-text-secondary">
-          Record an upfront visit deposit. Cash and card-present deposits are marked collected now;
-          online deposits generate a payment link.
+          Record an upfront visit deposit. Cash deposits are marked collected now; online deposits
+          generate a payment link.
         </p>
         <label className="flex flex-col gap-1 text-body-4 text-text-primary">
           <span>Amount</span>
@@ -560,8 +560,8 @@ const DepositModal = ({
             className="h-12 rounded-2xl border border-input-border-default px-4 focus-visible:border-input-border-active focus-visible:outline-none"
           />
         </label>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {(['CASH', 'CARD', 'ONLINE'] as PaymentMethod[]).map((option) => (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(['CASH', 'ONLINE'] as PaymentMethod[]).map((option) => (
             <button
               key={option}
               type="button"

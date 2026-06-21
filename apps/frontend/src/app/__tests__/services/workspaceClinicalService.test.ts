@@ -325,6 +325,36 @@ describe('workspaceClinicalService', () => {
     expect(vital.id).toBe('vital-enc');
   });
 
+  it('reads the recorder from the Observation performer (display + id)', async () => {
+    postDataMock.mockResolvedValueOnce({
+      data: bundle('Observation', {
+        id: 'vital-perf',
+        effectiveDateTime: '2026-04-20T09:00:00.000Z',
+        performer: [{ reference: 'Practitioner/prac-9', display: 'Dr. Jane Roe' }],
+      }),
+    });
+    const [withName] = await listVitalRecordsForEncounter('org-1', 'enc-1', {
+      appointmentId: 'appt-1',
+    });
+    expect(withName.recordedByName).toBe('Dr. Jane Roe');
+    expect(withName.recordedById).toBe('prac-9');
+
+    postDataMock.mockResolvedValueOnce({
+      data: bundle('Observation', {
+        id: 'vital-perf-2',
+        effectiveDateTime: '2026-04-20T09:00:00.000Z',
+        performer: [{ reference: 'Practitioner/prac-7' }],
+      }),
+    });
+    const [idOnly] = await listVitalRecordsForEncounter('org-1', 'enc-1', {
+      appointmentId: 'appt-1',
+    });
+    // No display on the reference: fall back to the placeholder name but keep the
+    // id so the consuming row can resolve it against the team roster.
+    expect(idOnly.recordedByName).toBe('Clinician');
+    expect(idOnly.recordedById).toBe('prac-7');
+  });
+
   it('always creates (append-only) discharge summaries through clinical artifacts', async () => {
     postDataMock.mockResolvedValue({ data: { resourceType: 'Composition', id: 'dc-1' } });
 

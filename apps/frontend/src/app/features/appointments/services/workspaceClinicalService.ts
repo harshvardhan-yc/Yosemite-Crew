@@ -284,6 +284,16 @@ const vitalRecordFromObservation = (
     input.vitals && typeof input.vitals === 'object'
       ? (input.vitals as Record<string, unknown>)
       : {};
+  // The recorder lives on the Observation's `performer` reference (the FHIR→input
+  // mapper only echoes back the caller's default, so read the resource directly).
+  // Prefer the reference `display` (a name); otherwise surface the practitioner id
+  // so the consuming row can resolve it against the team roster.
+  const performer = Array.isArray(resource.performer) ? resource.performer[0] : undefined;
+  const performerDisplay =
+    typeof performer?.display === 'string' && performer.display.trim()
+      ? performer.display.trim()
+      : undefined;
+  const recordedById = getReferenceId(performer?.reference) ?? input.recordedBy ?? undefined;
   return {
     id: resource.id ?? `vital-${index + 1}`,
     code: `VT-${String(index + 1).padStart(3, '0')}`,
@@ -293,7 +303,8 @@ const vitalRecordFromObservation = (
     respRateBpm: typeof vitals.respRateBpm === 'number' ? vitals.respRateBpm : undefined,
     painScore: typeof vitals.painScore === 'number' ? vitals.painScore : undefined,
     notes: typeof input.notes === 'string' ? input.notes : undefined,
-    recordedByName: input.recordedBy ?? 'Clinician',
+    recordedByName: performerDisplay ?? 'Clinician',
+    recordedById: recordedById ?? undefined,
     recordedAt: asIso(input.measuredAt),
   };
 };

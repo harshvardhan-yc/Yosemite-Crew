@@ -67,18 +67,14 @@ const FulfillmentDropdown = ({
 
   return (
     <div className="relative">
-      <label className="sr-only" htmlFor="fulfillment-select">
-        Fulfillment
-      </label>
       <select
-        id="fulfillment-select"
-        disabled={disabled}
         aria-label="Fulfillment"
+        disabled={disabled}
         value={value}
         onChange={(e) => onChange(e.target.value as PrescriptionFulfillment)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
-        className="flex items-center gap-1 rounded-2xl border border-neutral-500 bg-neutral-0 py-1.5 pr-10 pl-4 text-[14px] leading-[120%] font-medium text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex appearance-none items-center gap-1 rounded-2xl border border-neutral-500 bg-neutral-0 py-1.5 pr-10 pl-4 text-[14px] leading-[120%] font-medium text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {FULFILLMENT_OPTIONS.map((option) => (
           <option key={option} value={option}>

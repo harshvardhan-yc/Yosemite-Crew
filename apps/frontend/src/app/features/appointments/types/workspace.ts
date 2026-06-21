@@ -72,6 +72,9 @@ export type Vitals = {
   bcs?: number;
   notes?: string;
   recordedByName: string;
+  /** Practitioner id of the recorder (from the Observation performer), used to
+   *  resolve a display name against the team roster when no name is stored. */
+  recordedById?: string;
   recordedAt: string;
 };
 
