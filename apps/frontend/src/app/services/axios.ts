@@ -60,7 +60,7 @@ export const isAuthRedirectError = (error: unknown): boolean =>
     ('__ycAuthRedirect' in error || (error as { name?: string }).name === AUTH_REDIRECT_ERROR_NAME)
   );
 
-const isBrowser = () => typeof globalThis.window !== 'undefined';
+const isBrowser = () => globalThis.window !== undefined;
 
 const getCurrentRoute = () => {
   if (!isBrowser()) return '/';
@@ -102,16 +102,14 @@ const isPublicApiRequest = (config: AxiosRequestConfig) => {
 };
 
 const handleUnauthorizedSession = async () => {
-  if (!unauthorizedSessionPromise) {
-    unauthorizedSessionPromise = hardSignOut()
-      .catch((error) => {
-        logger.warn('Failed to clear expired session cleanly', error);
-      })
-      .finally(() => {
-        redirectToSignIn();
-        unauthorizedSessionPromise = null;
-      });
-  }
+  unauthorizedSessionPromise ??= hardSignOut()
+    .catch((error) => {
+      logger.warn('Failed to clear expired session cleanly', error);
+    })
+    .finally(() => {
+      redirectToSignIn();
+      unauthorizedSessionPromise = null;
+    });
   return unauthorizedSessionPromise;
 };
 
