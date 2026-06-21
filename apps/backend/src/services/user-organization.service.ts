@@ -1179,4 +1179,34 @@ export const UserOrganizationService = {
 
     return { scannedCount, updatedCount };
   },
+
+  async getMappingByUserAndOrganization(
+    userId: string,
+    organizationId: string,
+  ) {
+    const practitionerReferences = [
+      userId,
+      `Practitioner/${userId}`,
+      `User/${userId}`,
+    ];
+    const organizationReferences = [
+      organizationId,
+      `Organization/${organizationId}`,
+    ];
+
+    const mapping = await prisma.userOrganization.findFirst({
+      where: {
+        practitionerReference: { in: practitionerReferences },
+        organizationReference: { in: organizationReferences },
+      },
+    });
+
+    if (!mapping) {
+      return null;
+    }
+
+    return toUserOrganizationResponseDTO(
+      buildUserOrganizationDomainFromPrisma(mapping),
+    );
+  },
 };

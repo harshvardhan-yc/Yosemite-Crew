@@ -23,6 +23,7 @@ jest.mock("../../../src/services/user-organization.service", () => {
       update: jest.fn(),
       listByUserId: jest.fn(),
       listByOrganisationId: jest.fn(),
+      getMappingByUserAndOrganization: jest.fn(),
     },
   };
 });
@@ -119,13 +120,11 @@ describe("UserOrganizationController", () => {
 
     it("returns service data on success", async () => {
       (resolveUserIdFromRequest as jest.Mock).mockReturnValue("user-1");
-      (UserOrganizationService.listByUserId as jest.Mock).mockResolvedValue([
-        {
-          mapping: {
-            organizationReference: "Organization/org-1",
-          },
-        },
-      ]);
+      (
+        UserOrganizationService.getMappingByUserAndOrganization as jest.Mock
+      ).mockResolvedValue({
+        id: "mapping-1",
+      });
       (UserOrganizationService.upsert as jest.Mock).mockResolvedValue({
         response: { id: "mapping-1" },
         created: true,
@@ -161,13 +160,11 @@ describe("UserOrganizationController", () => {
 
     it("returns the mapping on success", async () => {
       (resolveUserIdFromRequest as jest.Mock).mockReturnValue("user-1");
-      (UserOrganizationService.listByUserId as jest.Mock).mockResolvedValue([
-        {
-          mapping: {
-            organizationReference: "Organization/org-1",
-          },
-        },
-      ]);
+      (
+        UserOrganizationService.getMappingByUserAndOrganization as jest.Mock
+      ).mockResolvedValue({
+        id: "mapping-1",
+      });
       (UserOrganizationService.getById as jest.Mock).mockResolvedValue({
         id: "mapping-1",
         organizationReference: "Organization/org-1",
@@ -180,6 +177,24 @@ describe("UserOrganizationController", () => {
 
       expect(UserOrganizationService.getById).toHaveBeenCalledWith("mapping-1");
       expect(mockRes.status).toHaveBeenCalledWith(200);
+    });
+
+    it("returns 403 when the user is not linked to the organisation", async () => {
+      (resolveUserIdFromRequest as jest.Mock).mockReturnValue("user-1");
+      (
+        UserOrganizationService.getMappingByUserAndOrganization as jest.Mock
+      ).mockResolvedValue(null);
+
+      await UserOrganizationController.getMappingById(
+        createMockReq({ params: { id: "mapping-1" } }),
+        mockRes as Response,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        message: "You do not have access to this organisation.",
+      });
+      expect(UserOrganizationService.getById).toHaveBeenCalledWith("mapping-1");
     });
   });
 

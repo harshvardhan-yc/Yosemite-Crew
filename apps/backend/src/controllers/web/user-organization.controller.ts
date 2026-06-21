@@ -9,16 +9,14 @@ import { resolveUserIdFromRequest } from "src/utils/request";
 
 const normalizeOrganisationReference = (value: string): string => {
   const trimmed = value.trim();
-  if (!trimmed) {
-    return trimmed;
-  }
-
+  // If the reference already starts with "Organization/" then remove "Organization/" prefix to avoid duplication, otherwise add it.
   return trimmed.startsWith("Organization/")
-    ? trimmed
-    : `Organization/${trimmed}`;
+    ? trimmed.replace("Organization/", "")
+    : trimmed;
 };
 
 const getOrganisationReference = (resource: unknown): string | undefined => {
+  logger.debug("Extracting organization reference from resource", { resource });
   if (!resource) return undefined;
 
   if (Array.isArray(resource)) {
@@ -60,19 +58,17 @@ const hasOrgAccess = async (userId: string, organisationReference: string) => {
   const normalizedTarget = normalizeOrganisationReference(
     organisationReference,
   );
-  const mappings = await UserOrganizationService.listByUserId(userId);
-
-  return mappings.some((mapping) => {
-    const mappingReference = getOrganisationReference(mapping);
-    if (!mappingReference) {
-      return false;
-    }
-
-    return (
-      mappingReference === normalizedTarget ||
-      normalizeOrganisationReference(mappingReference) === normalizedTarget
-    );
+  logger.debug("Checking organization access for user", {
+    userId,
+    organisationReference,
+    normalizedTarget,
   });
+  const mapping = await UserOrganizationService.getMappingByUserAndOrganization(
+    userId,
+    normalizedTarget,
+  );
+
+  return Boolean(mapping);
 };
 
 export const UserOrganizationController = {
