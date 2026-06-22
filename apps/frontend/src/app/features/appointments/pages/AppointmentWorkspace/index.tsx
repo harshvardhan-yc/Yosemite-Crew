@@ -23,6 +23,7 @@ import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
 import { useLoadCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
 import { useCompanionStore } from '@/app/stores/companionStore';
+import { useParentStore } from '@/app/stores/parentStore';
 import { updateCompanion } from '@/app/features/companions/services/companionService';
 import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
@@ -421,6 +422,13 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const displayedPatientAlerts = persistedPatientAlerts.length
     ? persistedPatientAlerts
     : (effectiveEncounter?.alerts ?? []);
+  // Client (parent) alerts: surfaced read-only alongside the patient alerts so
+  // the same alert state is visible in the workspace, not only the companion modal.
+  const parentRecord = useParentStore((s) => s.parentsById[companion.parent.id]);
+  const displayedClientAlerts = useMemo(
+    () => storedAlertsToCompanionAlerts(parentRecord?.alerts, 'client-alert'),
+    [parentRecord?.alerts]
+  );
   // Operational encounter — billing (Invoice, Services & Packages) and lab
   // orders (Diagnostics) are NOT frozen by the clinical time window. Industry
   // standard gates these on their own state (invoice finalized/paid,
@@ -1020,6 +1028,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           appointment={appointment}
           companionName={companion.name}
           alerts={displayedPatientAlerts}
+          clientAlerts={displayedClientAlerts}
           onBack={() => router.push('/appointments')}
           onQuickActions={() => setActiveSideAction('RECORD')}
           onHospitalize={() => setIsHospitalizeOpen(true)}
