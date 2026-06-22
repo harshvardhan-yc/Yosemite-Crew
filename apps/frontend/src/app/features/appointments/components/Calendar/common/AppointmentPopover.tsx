@@ -26,6 +26,8 @@ import { AppointmentViewIntent } from '@/app/features/appointments/types/calenda
 import { Appointment, Invoice } from '@yosemite-crew/types';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useCompanionStore } from '@/app/stores/companionStore';
+import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
 import {
   buildWorkspaceHrefForIntent,
@@ -44,6 +46,7 @@ import { RiHistoryLine } from 'react-icons/ri';
 import { FaCheckCircle } from 'react-icons/fa';
 import { IoIosCloseCircle } from 'react-icons/io';
 import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
+import { getAppointmentRoomDisplay } from '@/app/lib/appointmentRoomDisplay';
 
 type AppointmentPopoverProps = {
   appointment: Appointment;
@@ -163,6 +166,8 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
 }) => {
   const router = useRouter();
   const orgsById = useOrgStore((s) => s.orgsById);
+  const encountersById = useAppointmentWorkspaceStore((s) => s.encountersById);
+  const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
   const companion = appointment.companion ?? appointment.patient;
   const storeCompanion = useCompanionStore((s) => s.getCompanionById(companion.id));
   const companionDetails = {
@@ -187,6 +192,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
   const paymentTitle = getPaymentTitle(payment?.state);
   const paymentValue = getPaymentValue(payment?.label, appointmentInvoice);
   const supportStaffValue = appointment.supportStaff?.map((staff) => staff.name).join(', ') || '-';
+  const roomDisplay = getAppointmentRoomDisplay(appointment, encountersById, roomUnitsById);
   const canOpenWorkspace = canEnterAppointmentWorkspace(appointment.status);
   const primaryActionLabel =
     appointment.status === 'UPCOMING' ? 'Start Appointment' : 'View Appointment';
@@ -299,7 +305,7 @@ const AppointmentPopoverComponent: React.FC<AppointmentPopoverProps> = ({
         />
         <PopoverDetail label="Service" value={appointment.appointmentType?.name || '-'} />
         <PopoverDetail label="Date" value={formatAppointmentDate(appointment)} />
-        <PopoverDetail label="Room" value={appointment.room?.name || '-'} />
+        <PopoverDetail label={roomDisplay.label} value={roomDisplay.value} />
         <PopoverDetail label="Client Name" value={getOwnerFirstName(companion.parent) || '-'} />
         <PopoverDetail label="Reason" value={appointment.concern || '-'} scrollValue />
         <PopoverDetail label={paymentTitle} value={paymentValue} emphasized />

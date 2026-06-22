@@ -102,6 +102,14 @@ router.post(
 );
 
 router.get(
+  "/organisations/:organisationId/encounters/:encounterId/document-packet/pdf",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("document:view:any"),
+  (req, res) => WorkspaceController.getEncounterDocumentPacketPdf(req, res),
+);
+
+router.get(
   "/organisations/:organisationId/document-packets/:packetId",
   authorizeCognito,
   withOrgPermissions(),

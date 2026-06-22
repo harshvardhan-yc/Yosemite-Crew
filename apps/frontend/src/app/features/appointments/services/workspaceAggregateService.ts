@@ -1,4 +1,5 @@
-import { deleteData, getData, patchData, postData } from '@/app/services/axios';
+import api, { deleteData, getData, patchData, postData } from '@/app/services/axios';
+import type { WorkspaceDocumentRow, WorkspaceDocumentPacketSigning } from '@yosemite-crew/types';
 import type {
   AppointmentEncounter,
   DiagnosticOrder,
@@ -6,14 +7,29 @@ import type {
   LineItem,
   PrescriptionItem,
   ReadyState,
+  WorkspaceCapabilities,
+  WorkspaceCapability,
   WorkspaceDocument,
+  WorkspaceFinalizationGate,
+  WorkspaceLockSection,
+  WorkspaceLockState,
+  WorkspacePrimaryAction,
   WorkspaceStep,
 } from '@/app/features/appointments/types/workspace';
 
 export type WorkspaceBootstrapDTO = Record<string, unknown>;
 export type WorkspaceDocumentDTO = Record<string, unknown>;
-export type WorkspaceDocumentPacketDTO = Record<string, unknown>;
 export type TreatmentItemDTO = Record<string, unknown>;
+
+export interface WorkspaceDocumentPacketDTO {
+  packetId?: string;
+  status?: string;
+  // Use the shared signing contract type — it has no Date fields so it imports
+  // cleanly over the wire. (The full WorkspaceDocumentPacketRow has string-vs-Date
+  // drift, so we keep this thin DTO rather than importing the whole row.)
+  signing?: WorkspaceDocumentPacketSigning | null;
+  [key: string]: unknown;
+}
 
 const STEP_STATUS_BY_AGGREGATE_KEY: Partial<Record<string, WorkspaceStep>> = {
   clinicalArtifacts: 'SOAP',
@@ -117,6 +133,11 @@ const diagnosticStatus = (status: string | undefined): DiagnosticOrder['status']
   return 'CREATED';
 };
 
+const diagnosticQueueKind = (value: string | undefined): DiagnosticOrder['kind'] => {
+  if (value === 'LAB_ORDER' || value === 'LAB_RESULT' || value === 'PROVIDER_TEST') return value;
+  return undefined;
+};
+
 const normalizeDiagnosticQueue = (items: Record<string, unknown>[]): DiagnosticOrder[] =>
   items.map((item, index) => ({
     id: asString(item.id) ?? `diagnostic-${index + 1}`,
@@ -127,6 +148,10 @@ const normalizeDiagnosticQueue = (items: Record<string, unknown>[]): DiagnosticO
       `DX-${index + 1}`,
     createdAt: asIso(item.createdAt),
     status: diagnosticStatus(asString(item.status)),
+    kind: diagnosticQueueKind(asString(item.kind)),
+    provider: asString(item.provider),
+    name: asString(item.label),
+    sourceKind: asString(item.sourceKind),
   }));
 
 const normalizeDocuments = (items: Record<string, unknown>[]): WorkspaceDocument[] =>
@@ -195,38 +220,96 @@ const medicationTreatmentItemToPrescription = (
 // Prescriptions come from two server sources: explicitly stored prescription artifacts
 // (`bootstrap.prescriptions`) and medication-kind treatment items the backend expands from
 // a booked package. Merge both, de-duplicating by id.
+// A single `bootstrap.prescriptions` entry is the server's
+// `{ artifact, prescription }` envelope: `artifact` carries the clinical record
+// (id/summary/status) and `prescription` carries the orderable rows
+// (`items[]`). Older/flat payloads put the fields at the top level. Read both,
+// expanding each prescription line into its own PrescriptionItem so dose/route/
+// frequency render per medication.
+const fulfillmentFrom = (value: unknown): PrescriptionItem['fulfillment'] =>
+  asString(value) === 'PRESCRIPTION_ONLY' ? 'PRESCRIPTION_ONLY' : 'IN_HOUSE';
+
+const prescriptionLinesFromEnvelope = (item: Record<string, unknown>): PrescriptionItem[] => {
+  const artifact = isRecord(item.artifact) ? item.artifact : item;
+  const prescription = isRecord(item.prescription) ? item.prescription : item;
+  const productSnapshot = isRecord(item.productSnapshot) ? item.productSnapshot : {};
+  const priceSnapshot = isRecord(item.priceSnapshot) ? item.priceSnapshot : {};
+  // Prefer the artifact `summary` as the human medication label — the per-line
+  // `medication` field is often blank when the order came from an inventory pick.
+  const summaryName = asString(artifact.summary);
+  const fallbackName =
+    summaryName ??
+    asString(item.medicineName) ??
+    asString(item.name) ??
+    asString(productSnapshot.name) ??
+    'Medication';
+  const baseId =
+    asString(prescription.id) ?? asString(artifact.id) ?? asString(item.id) ?? 'prescription';
+  const fulfillment = fulfillmentFrom(item.fulfillment ?? prescription.fulfillment);
+  const priceCents =
+    asNumber(item.priceCents) ?? Math.round((asNumber(priceSnapshot.unitPrice) ?? 0) * 100);
+
+  const lines = asArray(prescription.items);
+  if (lines.length === 0) {
+    return [
+      {
+        id: baseId,
+        medicineName: fallbackName,
+        dosage: asString(item.dosage),
+        route: asString(item.route),
+        frequency: asString(item.frequency),
+        durationDays: asString(item.durationDays) ?? asString(item.duration),
+        refill: asString(item.refill),
+        instructions: asString(item.instructions) ?? asString(productSnapshot.instructions),
+        fulfillment,
+        priceCents,
+        inventoryItemId: asString(item.inventoryItemId) ?? asString(item.productId),
+      },
+    ];
+  }
+  return lines.map((line, lineIndex) => ({
+    id: asString(line.id) ?? `${baseId}-${lineIndex + 1}`,
+    medicineName: asString(line.medication) ?? fallbackName,
+    dosage: asString(line.dosage),
+    route: asString(line.route),
+    frequency: asString(line.frequency),
+    durationDays: asString(line.durationDays) ?? asString(line.duration),
+    refill: asString(line.refill),
+    instructions: asString(line.instructions) ?? asString(productSnapshot.instructions),
+    fulfillment,
+    priceCents,
+    inventoryItemId:
+      asString(line.inventoryItemId) ?? asString(item.inventoryItemId) ?? asString(item.productId),
+  }));
+};
+
+// The id a prescription envelope is sourced from (artifact/prescription id),
+// used to suppress the medication-kind treatment item the backend expands from
+// the same record — its per-line ids differ, so we match on the source id.
+const prescriptionSourceId = (item: Record<string, unknown>): string | undefined => {
+  const artifact = isRecord(item.artifact) ? item.artifact : item;
+  const prescription = isRecord(item.prescription) ? item.prescription : item;
+  return asString(prescription.id) ?? asString(artifact.id) ?? asString(item.id);
+};
+
 const normalizePrescriptions = (
   prescriptions: Record<string, unknown>[],
   treatmentItems: Record<string, unknown>[]
 ): PrescriptionItem[] => {
   const byId = new Map<string, PrescriptionItem>();
-  prescriptions.forEach((item, index) => {
-    const productSnapshot = isRecord(item.productSnapshot) ? item.productSnapshot : {};
-    const priceSnapshot = isRecord(item.priceSnapshot) ? item.priceSnapshot : {};
-    const prescription: PrescriptionItem = {
-      id: asString(item.id) ?? `prescription-artifact-${index + 1}`,
-      medicineName:
-        asString(item.medicineName) ??
-        asString(item.name) ??
-        asString(productSnapshot.name) ??
-        'Medication',
-      dosage: asString(item.dosage),
-      route: asString(item.route),
-      frequency: asString(item.frequency),
-      durationDays: asString(item.durationDays),
-      refill: asString(item.refill),
-      instructions: asString(item.instructions) ?? asString(productSnapshot.instructions),
-      fulfillment:
-        asString(item.fulfillment) === 'PRESCRIPTION_ONLY' ? 'PRESCRIPTION_ONLY' : 'IN_HOUSE',
-      priceCents:
-        asNumber(item.priceCents) ?? Math.round((asNumber(priceSnapshot.unitPrice) ?? 0) * 100),
-      inventoryItemId: asString(item.inventoryItemId) ?? asString(item.productId),
-    };
-    byId.set(prescription.id, prescription);
+  const sourceIds = new Set<string>();
+  prescriptions.forEach((item) => {
+    const sourceId = prescriptionSourceId(item);
+    if (sourceId) sourceIds.add(sourceId);
+    prescriptionLinesFromEnvelope(item).forEach((line) => byId.set(line.id, line));
   });
   treatmentItems.filter(isMedicationTreatmentItem).forEach((item, index) => {
     const prescription = medicationTreatmentItemToPrescription(item, index);
-    if (!byId.has(prescription.id)) byId.set(prescription.id, prescription);
+    // The medication-kind treatment item and its prescription artifact share the
+    // same backend id, so skip it when the artifact already produced lines.
+    const linkedId = asString(item.prescriptionId) ?? asString(item.id) ?? prescription.id;
+    if (byId.has(prescription.id) || sourceIds.has(linkedId)) return;
+    byId.set(prescription.id, prescription);
   });
   return Array.from(byId.values());
 };
@@ -331,6 +414,106 @@ const applyBootstrapCollections = (
   }
 };
 
+const LOCK_SECTIONS: WorkspaceLockSection[] = [
+  'appointment',
+  'soap',
+  'vitals',
+  'treatment',
+  'diagnostics',
+  'prescriptions',
+  'inpatientSchedule',
+  'forms',
+  'documents',
+  'roomUnit',
+  'discharge',
+  'invoice',
+];
+
+const CAPABILITY_KEYS: WorkspaceCapability[] = [
+  'canEditSoap',
+  'canRecordVitals',
+  'canEditTreatment',
+  'canOrderDiagnostics',
+  'canPrescribe',
+  'canDispenseInventory',
+  'canAssignForms',
+  'canManageTasks',
+  'canMarkReadyForBilling',
+  'canMarkReadyForDischarge',
+  'canFinalizeDischarge',
+  'canViewFinance',
+  'canCollectPayment',
+];
+
+/**
+ * Read the backend section-lock map (BE "Section Locks And Capabilities"). Each
+ * entry is `{ locked, reason? }`. Returns undefined when the backend has not yet
+ * shipped the contract so the UI keeps its client-derived lock fallback.
+ */
+const normalizeSectionLocks = (value: unknown): WorkspaceLockState | undefined => {
+  if (!isRecord(value)) return undefined;
+  const locks: WorkspaceLockState = {};
+  for (const section of LOCK_SECTIONS) {
+    const entry = value[section];
+    if (!isRecord(entry)) continue;
+    const locked = asBoolean(entry.locked);
+    if (locked === undefined) continue;
+    locks[section] = { locked, reason: asString(entry.reason) };
+  }
+  return Object.keys(locks).length > 0 ? locks : undefined;
+};
+
+const normalizeCapabilities = (value: unknown): WorkspaceCapabilities | undefined => {
+  if (!isRecord(value)) return undefined;
+  const capabilities: WorkspaceCapabilities = {};
+  for (const key of CAPABILITY_KEYS) {
+    const flag = asBoolean(value[key]);
+    if (flag !== undefined) capabilities[key] = flag;
+  }
+  return Object.keys(capabilities).length > 0 ? capabilities : undefined;
+};
+
+const normalizePrimaryAction = (value: unknown): WorkspacePrimaryAction | undefined => {
+  if (!isRecord(value)) return undefined;
+  const label = asString(value.label);
+  const enabled = asBoolean(value.enabled);
+  // A primary action without a label is not renderable; skip it.
+  if (!label) return undefined;
+  return {
+    kind: asString(value.kind),
+    label,
+    detail: asString(value.detail),
+    enabled: enabled ?? true,
+    disabledReason: asString(value.disabledReason),
+  };
+};
+
+const FINALIZATION_GATE_FLAGS: (keyof WorkspaceFinalizationGate)[] = [
+  'requiredSoapOrDischargeComplete',
+  'requiredFormsSigned',
+  'pendingLabsResolved',
+  'billingReady',
+  'pendingDispenseRequestsResolved',
+  'inpatientRoomAdmissionReady',
+  'requiredTasksComplete',
+];
+
+const normalizeFinalizationGate = (value: unknown): WorkspaceFinalizationGate | undefined => {
+  if (!isRecord(value)) return undefined;
+  const enabled = asBoolean(value.enabled);
+  if (enabled === undefined) return undefined;
+  const gate: WorkspaceFinalizationGate = {
+    enabled,
+    disabledReason: asString(value.disabledReason),
+  };
+  for (const flag of FINALIZATION_GATE_FLAGS) {
+    const parsed = asBoolean(value[flag]);
+    // `flag` keys all map to optional booleans; the dynamic index needs a cast.
+    if (parsed !== undefined) (gate as unknown as Record<string, boolean>)[flag] = parsed;
+  }
+  return gate;
+};
+
 export const normalizeWorkspaceBootstrapForEncounter = (
   bootstrap: WorkspaceBootstrapDTO
 ): Omit<Partial<AppointmentEncounter>, 'stepStatus'> & {
@@ -355,6 +538,20 @@ export const normalizeWorkspaceBootstrapForEncounter = (
   const invoice = isRecord(bootstrap.invoice) ? bootstrap.invoice : {};
   applyEncounterReadiness(patch, bootstrap, encounter, invoice);
   applyBootstrapCollections(patch, bootstrap);
+
+  const sectionLocks =
+    normalizeSectionLocks(bootstrap.sectionLocks) ?? normalizeSectionLocks(bootstrap.locks);
+  if (sectionLocks) patch.sectionLocks = sectionLocks;
+  // The backend bootstrap returns capability flags under `permissions`; accept
+  // `capabilities` too for forward-compatibility.
+  const capabilities =
+    normalizeCapabilities(bootstrap.permissions) ?? normalizeCapabilities(bootstrap.capabilities);
+  if (capabilities) patch.capabilities = capabilities;
+
+  const primaryAction = normalizePrimaryAction(bootstrap.primaryAction);
+  if (primaryAction) patch.primaryAction = primaryAction;
+  const finalizationGate = normalizeFinalizationGate(bootstrap.finalizationGate);
+  if (finalizationGate) patch.finalizationGate = finalizationGate;
 
   const stepStatus = Object.entries(STEP_STATUS_BY_AGGREGATE_KEY).reduce<
     Partial<Record<WorkspaceStep, 'COMPLETED'>>
@@ -400,8 +597,8 @@ export const listAppointmentWorkspaceDocuments = async (
 export const listEncounterWorkspaceDocuments = async (
   organisationId: string,
   encounterId: string
-) => {
-  const res = await getData<WorkspaceDocumentDTO[]>(
+): Promise<WorkspaceDocumentRow[]> => {
+  const res = await getData<WorkspaceDocumentRow[]>(
     `/v1/workspace/organisations/${organisationId}/encounters/${encounterId}/documents`
   );
   return res.data ?? [];
@@ -455,6 +652,22 @@ export const signWorkspaceDocumentPacket = async (
   return res.data;
 };
 
+/**
+ * Fetch the merged clinical packet (SOAP + Prescription + Discharge, …) as a
+ * single PDF and return a blob URL for preview/print. Caller is responsible for
+ * revoking the URL when done.
+ */
+export const getEncounterDocumentPacketPdfUrl = async (
+  organisationId: string,
+  encounterId: string
+): Promise<string> => {
+  const res = await api.get<Blob>(
+    `/v1/workspace/organisations/${organisationId}/encounters/${encounterId}/document-packet/pdf`,
+    { responseType: 'blob' }
+  );
+  return URL.createObjectURL(res.data);
+};
+
 export const listEncounterTreatmentItems = async (organisationId: string, encounterId: string) => {
   const res = await getData<TreatmentItemDTO[]>(
     `/v1/workspace/organisations/${organisationId}/encounters/${encounterId}/treatment-items`
@@ -488,4 +701,36 @@ export const updateEncounterTreatmentItem = async (
 
 export const deleteEncounterTreatmentItem = async (organisationId: string, itemId: string) => {
   await deleteData(`/v1/workspace/organisations/${organisationId}/treatment-items/${itemId}`);
+};
+
+/** A service/package line item is backend-persisted unless it still carries a local- id. */
+const isPersistedTreatmentId = (id: string): boolean => Boolean(id) && !id.startsWith('local-');
+
+/** Map a workspace service/package line item to the backend treatment-item create DTO. */
+const lineItemToTreatmentDTO = (item: LineItem): TreatmentItemDTO => ({
+  productItemId: item.refId,
+  productKind: item.kind,
+  servicePackageKind: item.kind,
+  name: item.name,
+  quantity: item.qty,
+  instructions: item.instructions,
+  priceSnapshot: { unitPrice: item.unitPriceCents / 100 },
+  billable: true,
+});
+
+/**
+ * Persist any not-yet-saved service/package rows to the backend treatment-item
+ * endpoint before the workspace moves on to Invoice. Already-persisted rows (real
+ * backend ids) are skipped so Save is idempotent and never duplicates them.
+ * Throws on the first failure so the caller can block the step and surface the error.
+ */
+export const persistTreatmentItems = async (
+  organisationId: string,
+  encounterId: string,
+  items: LineItem[]
+): Promise<void> => {
+  const unsaved = items.filter((item) => !isPersistedTreatmentId(item.id));
+  for (const item of unsaved) {
+    await createEncounterTreatmentItem(organisationId, encounterId, lineItemToTreatmentDTO(item));
+  }
 };

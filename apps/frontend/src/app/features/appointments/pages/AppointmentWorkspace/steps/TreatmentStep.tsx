@@ -7,11 +7,14 @@ import InpatientSchedule from '@/app/features/appointments/pages/AppointmentWork
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import { savePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
-import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import {
-  getAvailableStock,
-  mapApiItemToInventoryItem,
-} from '@/app/features/inventory/pages/Inventory/utils';
+  getAppointmentWorkspaceBootstrap,
+  normalizeWorkspaceBootstrapForEncounter,
+  persistTreatmentItems,
+} from '@/app/features/appointments/services/workspaceAggregateService';
+import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
+import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
+import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
 import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { useTaskStore } from '@/app/stores/taskStore';
@@ -21,9 +24,13 @@ import type { Task } from '@/app/features/tasks/types/task';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
   applyInpatientScheduleTemplate,
+  cancelInpatientScheduleTemplate,
   createWorkspaceTemplateInstance,
   getInpatientScheduleForEncounter,
   listInpatientScheduleTemplates,
+  pauseInpatientScheduleTemplate,
+  regenerateInpatientScheduleTemplate,
+  resumeInpatientScheduleTemplate,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import type { TemplateLike } from '@yosemite-crew/types';
 import type {
@@ -56,45 +63,6 @@ const PRESCRIPTION_INVENTORY_CATEGORIES = new Set([
   'supplement',
   'iv/fluid therapy',
 ]);
-
-const toCents = (value: string | number | undefined): number | undefined => {
-  if (value === undefined || value === '') return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) : undefined;
-};
-
-const isLowStock = (item: InventoryItem) => {
-  const available = getAvailableStock(item);
-  const reorderLevel = Number(item.stock.reorderLevel);
-  if (available === undefined || !Number.isFinite(reorderLevel)) return false;
-  return available <= reorderLevel;
-};
-
-const joinNonEmpty = (...parts: Array<string | undefined>): string | undefined => {
-  const joined = parts
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join(' ');
-  return joined || undefined;
-};
-
-const inventoryToPrescriptionItem = (item: InventoryItem) => {
-  const classification = item.classification ?? {};
-  return {
-    medicineName: item.basicInfo.name,
-    // Pre-fill the prescribing fields from the inventory item so the clinician sees the
-    // medicine's strength/form, route, and default frequency instead of empty inputs.
-    dosage: joinNonEmpty(classification.strength, classification.dosageForm ?? classification.form),
-    route: classification.administration,
-    frequency: classification.frequency,
-    fulfillment: 'IN_HOUSE' as const,
-    inventoryItemId: item.id,
-    inventoryBatchId: item.batch?._id,
-    priceCents: toCents(item.pricing.selling),
-    stockQty: getAvailableStock(item),
-    lowStock: isLowStock(item),
-  };
-};
 
 const moneyToCents = (amount: number): number => Math.max(0, Math.round(amount * 100));
 
@@ -179,6 +147,7 @@ const TreatmentStep = ({
   const addScheduleTask = useAppointmentWorkspaceStore((s) => s.addScheduleTask);
   const updateScheduleTask = useAppointmentWorkspaceStore((s) => s.updateScheduleTask);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
+  const mergeEncounterData = useAppointmentWorkspaceStore((s) => s.mergeEncounterData);
   const itemIdsByOrgId = useInventoryStore((s) => s.itemIdsByOrgId);
   const inventoryById = useInventoryStore((s) => s.itemsById);
   const setInventoryForOrg = useInventoryStore((s) => s.setInventoryForOrg);
@@ -194,6 +163,13 @@ const TreatmentStep = ({
   const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
   const [scheduleTemplates, setScheduleTemplates] = useState<TemplateLike[]>([]);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [treatmentSaveError, setTreatmentSaveError] = useState<string | null>(null);
+  const [isSavingTreatment, setIsSavingTreatment] = useState(false);
+  // Applied schedule instance lifecycle (pause/resume/cancel/regenerate). The
+  // instance id is captured when a template is applied this session.
+  const [scheduleInstanceId, setScheduleInstanceId] = useState<string | null>(null);
+  const [schedulePaused, setSchedulePaused] = useState(false);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
   const readOnly = encounter.viewOnly;
   // Once the encounter is ready for billing, destructive removal of un-billed
   // items is locked. Already-billed items lock per-row inside each editor (read
@@ -336,12 +312,55 @@ const TreatmentStep = ({
         force: true,
         notify: false,
       });
+      // Track the applied instance so its lifecycle controls (pause/resume/
+      // cancel/regenerate) become available.
+      setScheduleInstanceId(instance.id);
+      setSchedulePaused(false);
       await loadTasksForPrimaryOrg({ force: true, silent: true });
     } catch (error) {
       console.error('Failed to apply inpatient schedule template:', error);
       setScheduleError('Unable to load schedule template. Please try again.');
     }
   };
+
+  // Run a schedule lifecycle action against the backend, then refresh tasks so the
+  // timeline reflects the new state. Errors surface and do not flip local state.
+  const runScheduleAction = async (
+    action: (org: string, instanceId: string) => Promise<unknown>,
+    onSuccess?: () => void
+  ) => {
+    if (!organisationId || !scheduleInstanceId || scheduleBusy) return;
+    setScheduleError(null);
+    setScheduleBusy(true);
+    try {
+      await action(organisationId, scheduleInstanceId);
+      onSuccess?.();
+      await loadTasksForPrimaryOrg({ force: true, silent: true });
+    } catch (error) {
+      console.error('Failed to update inpatient schedule:', error);
+      setScheduleError('Unable to update the schedule. Please try again.');
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const handlePauseSchedule = () =>
+    runScheduleAction(
+      (org, id) => pauseInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setSchedulePaused(true)
+    );
+  const handleResumeSchedule = () =>
+    runScheduleAction(
+      (org, id) => resumeInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setSchedulePaused(false)
+    );
+  const handleCancelSchedule = () =>
+    runScheduleAction(
+      (org, id) => cancelInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setScheduleInstanceId(null)
+    );
+  const handleRegenerateSchedule = () =>
+    runScheduleAction((org, id) => regenerateInpatientScheduleTemplate(org, id, { notify: false }));
 
   const prescriptionCatalogItems = useMemo(
     () =>
@@ -384,8 +403,33 @@ const TreatmentStep = ({
     }
   };
 
-  const handleSaveTreatment = () => {
+  const handleSaveTreatment = async () => {
+    if (isSavingTreatment) return;
+    setTreatmentSaveError(null);
+    // Without an org/encounter we cannot persist; keep the legacy local-only
+    // behaviour (prescriptions already persist per-add; services stay staged).
+    if (!organisationId || !encounterId) {
+      setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
+      onOpenInvoice();
+      return;
+    }
+    setIsSavingTreatment(true);
+    try {
+      // Persist any staged service/package rows, then rehydrate from the backend
+      // bootstrap so the rows carry real ids/billing status before Invoice opens.
+      await persistTreatmentItems(organisationId, encounterId, encounter.services);
+      const bootstrap = await getAppointmentWorkspaceBootstrap(organisationId, appointmentId);
+      mergeEncounterData(appointmentId, normalizeWorkspaceBootstrapForEncounter(bootstrap));
+    } catch (error) {
+      // Do NOT open Invoice when persistence fails — staged rows would otherwise
+      // appear billable without a backing record.
+      console.error('Failed to save treatment items:', error);
+      setTreatmentSaveError('Unable to save treatment items. Please try again.');
+      setIsSavingTreatment(false);
+      return;
+    }
     setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
+    setIsSavingTreatment(false);
     onOpenInvoice();
   };
 
@@ -400,6 +444,15 @@ const TreatmentStep = ({
           onAddTask={(task) => addScheduleTask(appointmentId, task)}
           onUpdateTask={(id, patch) => updateScheduleTask(appointmentId, id, patch)}
           onApplyTemplate={handleApplyScheduleTemplate}
+          scheduleLifecycle={{
+            instanceId: scheduleInstanceId,
+            paused: schedulePaused,
+            busy: scheduleBusy,
+            onPause: handlePauseSchedule,
+            onResume: handleResumeSchedule,
+            onCancel: handleCancelSchedule,
+            onRegenerate: handleRegenerateSchedule,
+          }}
         />
       )}
       {scheduleError && <p className="text-caption-1 text-red-600">{scheduleError}</p>}
@@ -426,6 +479,12 @@ const TreatmentStep = ({
       />
       {prescriptionError && <p className="text-caption-1 text-red-600">{prescriptionError}</p>}
 
+      {treatmentSaveError && (
+        <p role="alert" className="text-caption-1 text-red-600">
+          {treatmentSaveError}
+        </p>
+      )}
+
       <div className="flex flex-wrap justify-between gap-3">
         <Secondary
           text="Prescription"
@@ -433,10 +492,10 @@ const TreatmentStep = ({
           onClick={handlePrint}
         />
         <Primary
-          text="Save treatment"
+          text={isSavingTreatment ? 'Saving…' : 'Save treatment'}
           icon={<LuSave aria-hidden="true" />}
-          onClick={handleSaveTreatment}
-          isDisabled={readOnly}
+          onClick={() => void handleSaveTreatment()}
+          isDisabled={readOnly || isSavingTreatment}
         />
       </div>
     </div>

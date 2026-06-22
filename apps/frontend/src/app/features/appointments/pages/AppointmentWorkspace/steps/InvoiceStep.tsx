@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LuArrowRight,
   LuBanknote,
@@ -19,6 +19,7 @@ import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type {
   AppointmentEncounter,
+  BillableKind,
   InvoiceLineItem,
   InvoiceStatus,
   PastInvoice,
@@ -42,6 +43,8 @@ import { useInventoryStore } from '@/app/stores/inventoryStore';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
+import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
+import type { PrescriptionItem } from '@/app/features/appointments/types/workspace';
 
 type InvoiceStepProps = {
   appointmentId: string;
@@ -68,14 +71,16 @@ const STATUS_CLASSES: Record<InvoiceStatus, string> = {
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   ONLINE: 'Paid Online',
   CASH: 'Paid via Cash',
-  CARD: 'Paid via Card',
   DEPOSIT: 'Paid from Deposit',
 };
 
-/** Origin of a searchable bill item, surfaced as a pill in the search dropdown. */
-type BillableKind = 'SERVICE' | 'PACKAGE' | 'MEDICATION' | 'INVENTORY';
-
-export type BillableCandidate = Omit<InvoiceLineItem, 'id'> & { kind: BillableKind };
+export type BillableCandidate = Omit<InvoiceLineItem, 'id'> & {
+  kind: BillableKind;
+  // Present when this candidate is a dispensable drug; used to backfill a linked
+  // prescription row when the item is billed without one (the bill/prescription
+  // interlink), so clinical details can't be skipped before finalizing.
+  prescription?: Omit<PrescriptionItem, 'id'>;
+};
 
 const DEFAULT_CURRENCY = 'USD';
 
@@ -151,12 +156,18 @@ const serviceToInvoiceCandidate = (service: ServiceRevamp) =>
     service.grossAmount,
     service.defaultDiscount ?? 0,
     service.maxDiscount ?? 0,
-    'SERVICE'
+    'BILLING_ONLY'
   );
 
 const packageToInvoiceCandidate = (pkg: PackageRevamp) => {
   const { totalCost } = computePackageTotals(pkg);
-  return toDiscountedCandidate(pkg.name, totalCost, 0, pkg.additionalDiscount ?? 0, 'PACKAGE');
+  return toDiscountedCandidate(
+    pkg.name,
+    totalCost,
+    0,
+    pkg.additionalDiscount ?? 0,
+    'PACKAGE_COMPONENT'
+  );
 };
 
 const uniqueByName = (
@@ -172,9 +183,34 @@ const uniqueByName = (
   });
 };
 
-const inventoryToInvoiceCandidate = (item: InventoryItem) => {
+/**
+ * Treat an inventory item as a dispensable drug when it is explicitly typed as a
+ * Drug, carries a controlled-substance schedule, or is marked prescription-
+ * required. Relying on `itemType` alone misses drugs whose type field was never
+ * set, so we also accept the drug-only schedule/prescription attributes.
+ */
+const isDispensableDrug = (item: InventoryItem): boolean => {
+  const info = item.basicInfo;
+  if (info.itemType?.trim().toLowerCase() === 'drug') return true;
+  if (info.drugSchedule?.trim()) return true;
+  const requiresRx = info.prescriptionRequired?.trim().toLowerCase();
+  return requiresRx === 'yes' || requiresRx === 'true' || requiresRx === 'required';
+};
+
+const inventoryToInvoiceCandidate = (item: InventoryItem): BillableCandidate => {
   const sellingDollars = Number(item.pricing?.selling ?? 0);
-  return toInvoiceCandidate(item.basicInfo.name, moneyToCents(sellingDollars), 'INVENTORY');
+  const candidate = toInvoiceCandidate(
+    item.basicInfo.name,
+    moneyToCents(sellingDollars),
+    'INVENTORY'
+  );
+  // Drug stock billed here should also exist as a prescription so the Treatment
+  // step and the bill stay in sync; carry the prescription payload so the add
+  // handler can backfill one when none exists yet.
+  if (isDispensableDrug(item)) {
+    return { ...candidate, prescription: inventoryToPrescriptionItem(item) };
+  }
+  return candidate;
 };
 
 const buildBillableItems = (
@@ -190,7 +226,7 @@ const buildBillableItems = (
   const serviceItems = encounter.services
     .filter((item) => !item.billed && item.amountCents > 0)
     .filter((item) => !existingNames.has(item.name.trim().toLowerCase()))
-    .map((item) => toInvoiceCandidate(item.name, item.amountCents, 'SERVICE'));
+    .map((item) => toInvoiceCandidate(item.name, item.amountCents, 'EXISTING_TREATMENT'));
   // In-house medications prescribed this visit. Their price comes from the linked
   // inventory item; when it is missing we still surface them at 0 so they can be
   // added and priced inline rather than silently dropped from the bill.
@@ -198,7 +234,11 @@ const buildBillableItems = (
     .filter((item) => !item.billed && item.fulfillment === 'IN_HOUSE')
     .filter((item) => !existingNames.has(item.medicineName.trim().toLowerCase()))
     .map((item) =>
-      toInvoiceCandidate(item.medicineName, Math.max(0, item.priceCents ?? 0), 'MEDICATION')
+      toInvoiceCandidate(
+        item.medicineName,
+        Math.max(0, item.priceCents ?? 0),
+        'IN_HOUSE_PRESCRIPTION'
+      )
     );
   const catalogItems = organisationId
     ? [
@@ -244,7 +284,6 @@ const invoiceDateFormatter = new Intl.DateTimeFormat('en-US', {
 const formatInvoiceDate = (iso: string): string => invoiceDateFormatter.format(new Date(iso));
 
 const getDepositMethodLabel = (option: PaymentMethod): string => {
-  if (option === 'CARD') return 'Card present';
   if (option === 'ONLINE') return 'Online link';
   return 'Cash';
 };
@@ -625,6 +664,7 @@ const InvoiceStep = ({
     (s) => s.setOverallDiscountPercent
   );
   const addInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.addInvoiceLineItem);
+  const addPrescription = useAppointmentWorkspaceStore((s) => s.addPrescription);
   const updateInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.updateInvoiceLineItem);
   const removeInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.removeInvoiceLineItem);
   const recordInvoicePayment = useAppointmentWorkspaceStore((s) => s.recordInvoicePayment);
@@ -647,8 +687,43 @@ const InvoiceStep = ({
   const canBuildBill = !readOnly && !hideBillBuilder;
   // Currency is encounter-scoped (hydrated from finance, defaults to USD). The
   // finance API works in lower-case ISO codes; display uses the upper-case code.
-  const currency = encounter.currency || DEFAULT_CURRENCY;
+  // Currency precedence: the finance-hydrated encounter currency (server truth),
+  // else the organisation's catalog currency (its configured/ country-derived
+  // pricing currency), and only then a last-resort default — so a fresh, not-yet-
+  // invoiced appointment shows the org's currency instead of a hardcoded USD.
+  // Scope the currency to this appointment's organisation: in a multi-org
+  // session the catalog store can hold another org's services/packages, so an
+  // unfiltered lookup could surface the wrong currency on a fresh invoice.
+  const catalogCurrency = organisationId
+    ? (catalogServices.find(
+        (service) => service.organisationId === organisationId && service.currency
+      )?.currency ??
+      catalogPackages.find((pkg) => pkg.organisationId === organisationId && pkg.currency)
+        ?.currency)
+    : undefined;
+  const currency = encounter.currency || catalogCurrency?.toUpperCase() || DEFAULT_CURRENCY;
   const financeCurrency = currency.toLowerCase();
+
+  // Clinical safety: an in-house medication on the bill must have its
+  // prescription details (dose, route, frequency, duration) filled before the
+  // invoice can be finalized. Flag the billed meds that are still incomplete.
+  const billItemNames = useMemo(
+    () => new Set(encounter.invoiceLineItems.map((item) => item.name.trim().toLowerCase())),
+    [encounter.invoiceLineItems]
+  );
+  const incompleteMedicationNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const rx of encounter.prescription) {
+      if (rx.fulfillment !== 'IN_HOUSE') continue;
+      if (!billItemNames.has(rx.medicineName.trim().toLowerCase())) continue;
+      const complete = Boolean(
+        rx.dosage?.trim() && rx.route?.trim() && rx.frequency?.trim() && rx.durationDays?.trim()
+      );
+      if (!complete) names.add(rx.medicineName.trim().toLowerCase());
+    }
+    return names;
+  }, [encounter.prescription, billItemNames]);
+  const hasIncompleteMedications = incompleteMedicationNames.size > 0;
   const inventoryIds = useMemo(
     () => (organisationId ? (itemIdsByOrgId[organisationId] ?? []) : []),
     [itemIdsByOrgId, organisationId]
@@ -714,6 +789,23 @@ const InvoiceStep = ({
     };
   }, [appointmentId, hydrateInvoiceBilling, organisationId]);
 
+  // Refetch the appointment's finance state (invoices, deposit, currency) from
+  // the backend so the bill, payment status, and deposit summary reflect server
+  // truth after a payment action rather than only the optimistic store write.
+  const reloadBilling = useCallback(async () => {
+    if (!organisationId || !appointmentId) return;
+    try {
+      const billing = await loadAppointmentBilling(organisationId, appointmentId);
+      hydrateInvoiceBilling(appointmentId, {
+        pastInvoices: billing.pastInvoices,
+        depositCents: billing.depositCents,
+        currency: billing.currency,
+      });
+    } catch (error) {
+      console.error('Failed to refresh appointment billing:', error);
+    }
+  }, [appointmentId, hydrateInvoiceBilling, organisationId]);
+
   const persistCurrentInvoice = async () => {
     if (!organisationId) return undefined;
     const invoice = await seedAppointmentInvoice(appointmentId);
@@ -746,12 +838,13 @@ const InvoiceStep = ({
         } else {
           setConfirmation('Invoice prepared for online payment');
         }
+        await reloadBilling();
         return;
       }
       if (invoice?.id) {
         await recordManualInvoicePayment(invoice.id, {
           provider: 'MANUAL',
-          settlementChannel: method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
+          settlementChannel: 'CASH',
           amount: centsToMajor(computeInvoiceTotalCents(encounter)),
           currency: financeCurrency,
           receivedAt: new Date().toISOString(),
@@ -762,6 +855,7 @@ const InvoiceStep = ({
         byName: encounter.leadName ?? 'Front desk',
       });
       setConfirmation(`${PAYMENT_LABELS[method]} recorded`);
+      await reloadBilling();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to process payment.');
     } finally {
@@ -796,7 +890,7 @@ const InvoiceStep = ({
     }
     await recordManualInvoicePayment(invoice.id, {
       provider: 'MANUAL',
-      settlementChannel: input.method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
+      settlementChannel: 'CASH',
       amount: input.amount,
       currency: financeCurrency,
       reference: input.reference || undefined,
@@ -826,6 +920,7 @@ const InvoiceStep = ({
             ? `Deposit payment link generated: ${checkoutUrl}`
             : 'Deposit payment link generated'
         );
+        await reloadBilling();
         return;
       }
       recordDepositCollection(appointmentId, {
@@ -835,6 +930,7 @@ const InvoiceStep = ({
       });
       setConfirmation(`${PAYMENT_LABELS[input.method]} deposit recorded`);
       setIsDepositModalOpen(false);
+      await reloadBilling();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to collect deposit.');
     } finally {
@@ -847,12 +943,36 @@ const InvoiceStep = ({
   };
 
   const handleFinishInvoice = () => {
+    if (hasIncompleteMedications) {
+      setErrorMessage(
+        'Fill information in previous step for prescribed medications before finalizing.'
+      );
+      return;
+    }
     setStepStatus(appointmentId, 'INVOICE', 'COMPLETED');
     onOpenSummary();
   };
 
   const handleAddItem = (item: Omit<InvoiceLineItem, 'id'>) => {
     addInvoiceLineItem(appointmentId, item);
+
+    // Interlink: when a billed item is a dispensable drug and no prescription row
+    // exists for it yet, create a linked one so it shows in the Treatment step.
+    // The new row inherits whatever clinical detail the inventory item provides;
+    // any missing dose/route/frequency/duration keeps it flagged incomplete and
+    // blocks invoice finalize until a clinician fills it in.
+    const candidate = billableItems.find(
+      (entry) => entry.name.trim().toLowerCase() === item.name.trim().toLowerCase()
+    );
+    const prescription = candidate?.prescription;
+    if (!prescription) return;
+    const targetName = prescription.medicineName.trim().toLowerCase();
+    const alreadyPrescribed = encounter.prescription.some(
+      (rx) => rx.medicineName.trim().toLowerCase() === targetName
+    );
+    if (!alreadyPrescribed) {
+      addPrescription(appointmentId, prescription);
+    }
   };
 
   return (
@@ -864,10 +984,12 @@ const InvoiceStep = ({
           <TotalBillContainer
             items={encounter.invoiceLineItems}
             billableItems={billableItems}
+            incompleteItemNames={incompleteMedicationNames}
             currency={currency}
             depositCents={encounter.depositCents}
             withdrawDeposit={encounter.withdrawDeposit}
             overallDiscountPercent={encounter.overallDiscountPercent}
+            taxPercent={encounter.taxPercent}
             onToggleWithdrawDeposit={(value) => setWithdrawDeposit(appointmentId, value)}
             onChangeOverallDiscount={(percent) => setOverallDiscountPercent(appointmentId, percent)}
             onAddItem={handleAddItem}
@@ -908,12 +1030,18 @@ const InvoiceStep = ({
       <InvoicesSection invoices={encounter.pastInvoices} readOnly={readOnly} currency={currency} />
 
       {!readOnly && (
-        <div className="flex justify-end">
+        <div className="flex flex-col items-end gap-2">
+          {hasIncompleteMedications && (
+            <p className="text-body-4 text-pill-warning-text">
+              Fill prescription details in the Treatment step before finalizing.
+            </p>
+          )}
           <Primary
             text="Summary"
             icon={<LuArrowRight aria-hidden="true" />}
             iconPosition="right"
             onClick={handleFinishInvoice}
+            isDisabled={hasIncompleteMedications}
           />
         </div>
       )}

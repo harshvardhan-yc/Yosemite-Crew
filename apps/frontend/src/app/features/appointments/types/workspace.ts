@@ -45,6 +45,8 @@ export type SoapNoteEntry = {
   assessment: string;
   plan: string;
   templateId?: string;
+  /** Backend template version that prefilled this note (provenance for the saved artifact). */
+  templateVersion?: number;
   signedByName?: string;
   signedAt?: string;
   signedOffline?: boolean;
@@ -57,6 +59,24 @@ export type SoapTemplate = {
   name: string;
   serviceId?: string;
   isDefault?: boolean;
+  /**
+   * Backend template version, stamped onto the SOAP draft as provenance when the
+   * template is applied (`templateVersion`). Carried from the resolver/list so the
+   * saved note records exactly which template version prefilled it.
+   */
+  version?: number;
+  /**
+   * Section content the template prefills into the SOAP editors. Populated from the
+   * template's schema snapshot (via the resolver or list). When present, applying
+   * the template hydrates the matching S/O/A/P editors instead of only setting an id.
+   */
+  content?: {
+    chiefComplaint?: string;
+    subjective?: string;
+    objective?: string;
+    assessment?: string;
+    plan?: string;
+  };
 };
 
 export type Vitals = {
@@ -106,12 +126,22 @@ export type DiagnosticResultRow = {
   meter: string;
 };
 
+export type DiagnosticQueueKind = 'LAB_ORDER' | 'LAB_RESULT' | 'PROVIDER_TEST';
+
 export type DiagnosticOrder = {
   id: string;
   orderCode: string;
   createdAt: string;
   status: DiagnosticOrderStatus;
   results?: DiagnosticResultRow[];
+  /** Backend diagnostic read-model item kind (order, result, or preloaded test). */
+  kind?: DiagnosticQueueKind;
+  /** Diagnostic provider (e.g. IDEXX). */
+  provider?: string;
+  /** Human-readable test/order label. */
+  name?: string;
+  /** Origin of a preloaded test: PRODUCT_ITEM (service) or PACKAGE_ITEM (package). */
+  sourceKind?: string;
 };
 
 export type DiagnosticTestCard = {
@@ -125,6 +155,14 @@ export type DiagnosticTestCard = {
 };
 
 export type LineItemKind = 'SERVICE' | 'PACKAGE';
+
+/** Origin of a searchable bill item, surfaced as a pill in the search dropdown. */
+export type BillableKind =
+  | 'EXISTING_TREATMENT'
+  | 'IN_HOUSE_PRESCRIPTION'
+  | 'PACKAGE_COMPONENT'
+  | 'BILLING_ONLY'
+  | 'INVENTORY';
 
 /** A component line shown when a package line item is expanded. */
 export type LineItemBreakdown = {
@@ -230,7 +268,7 @@ export type ScheduleTask = {
   sourceRefId?: string;
 };
 
-export type PaymentMethod = 'ONLINE' | 'CASH' | 'CARD' | 'DEPOSIT';
+export type PaymentMethod = 'ONLINE' | 'CASH' | 'DEPOSIT';
 
 export type InvoiceStatus = 'PAID_FULL' | 'UNPAID' | 'PARTIAL';
 
@@ -335,6 +373,95 @@ export type AppointmentEncounter = {
   stepStatus: Record<WorkspaceStep, StepStatus>;
   lockedAt?: string;
   viewOnly: boolean;
+  /**
+   * Backend-owned per-section lock decisions from the workspace bootstrap. When a
+   * section is present here it is authoritative; when absent, sections fall back to
+   * the client-derived `viewOnly`/lock-window behaviour. Ready for the backend
+   * "Section Locks And Capabilities" contract landing in parallel.
+   */
+  sectionLocks?: WorkspaceLockState;
+  /** Backend-owned effective capability flags from the workspace bootstrap. */
+  capabilities?: WorkspaceCapabilities;
+  /** Backend-owned recommended next action from the workspace bootstrap. */
+  primaryAction?: WorkspacePrimaryAction;
+  /** Backend-owned finalization (discharge/finalize) readiness from the bootstrap. */
+  finalizationGate?: WorkspaceFinalizationGate;
+};
+
+/**
+ * Backend-owned lock decision for a single workspace section. When the workspace
+ * bootstrap returns these (BE "Backend-Owned Section Locks And Capabilities"),
+ * sections read `locked` + `reason` from here instead of deriving a single
+ * client-side `viewOnly` flag. Absent until the backend ships the contract — the
+ * UI must fall back to the existing `viewOnly`/lock-window behaviour when missing.
+ */
+export type SectionLock = {
+  locked: boolean;
+  reason?: string;
+};
+
+/** The workspace sections the backend can lock independently. */
+export type WorkspaceLockSection =
+  | 'appointment'
+  | 'soap'
+  | 'vitals'
+  | 'treatment'
+  | 'diagnostics'
+  | 'prescriptions'
+  | 'inpatientSchedule'
+  | 'forms'
+  | 'documents'
+  | 'roomUnit'
+  | 'discharge'
+  | 'invoice';
+
+export type WorkspaceLockState = Partial<Record<WorkspaceLockSection, SectionLock>>;
+
+/** Effective per-action capability flags returned by the backend bootstrap. */
+export type WorkspaceCapability =
+  | 'canEditSoap'
+  | 'canRecordVitals'
+  | 'canEditTreatment'
+  | 'canOrderDiagnostics'
+  | 'canPrescribe'
+  | 'canDispenseInventory'
+  | 'canAssignForms'
+  | 'canManageTasks'
+  | 'canMarkReadyForBilling'
+  | 'canMarkReadyForDischarge'
+  | 'canFinalizeDischarge'
+  | 'canViewFinance'
+  | 'canCollectPayment';
+
+export type WorkspaceCapabilities = Partial<Record<WorkspaceCapability, boolean>>;
+
+/**
+ * Backend-owned "next action" for the encounter (workspace header / board CTA).
+ * Rendered as the recommended next step; never re-derived client-side.
+ */
+export type WorkspacePrimaryAction = {
+  kind?: string;
+  label: string;
+  detail?: string;
+  enabled: boolean;
+  disabledReason?: string;
+};
+
+/**
+ * Backend-owned finalization (discharge/finalize) readiness. `enabled === true` is
+ * the only safe signal that finalize/discharge may proceed; the boolean fields are
+ * a per-requirement checklist for the UI.
+ */
+export type WorkspaceFinalizationGate = {
+  enabled: boolean;
+  disabledReason?: string;
+  requiredSoapOrDischargeComplete?: boolean;
+  requiredFormsSigned?: boolean;
+  pendingLabsResolved?: boolean;
+  billingReady?: boolean;
+  pendingDispenseRequestsResolved?: boolean;
+  inpatientRoomAdmissionReady?: boolean;
+  requiredTasksComplete?: boolean;
 };
 
 export type SideAction = 'RECORD' | 'TASKS' | 'DOCUMENTS' | 'CHAT' | 'ACTIVITY' | 'MSD';

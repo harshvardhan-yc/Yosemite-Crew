@@ -146,30 +146,25 @@ const toSignerIdentity = (
 };
 
 const normalizeAssignmentStatus = (
-  status: FormAssignmentDbStatus | FormAssignmentLike["status"],
+  status: string,
 ): FormAssignmentLike["status"] => {
-  switch (status) {
+  switch (status.toUpperCase()) {
     case "DRAFT":
-    case "draft":
-      return "draft";
+      return "draft" as FormAssignmentLike["status"];
     case "SENT":
-    case "sent":
-      return "sent";
+      return "sent" as FormAssignmentLike["status"];
     case "VIEWED":
-    case "viewed":
-      return "viewed";
+      return "viewed" as FormAssignmentLike["status"];
     case "SUBMITTED":
-    case "submitted":
-      return "submitted";
+      return "submitted" as FormAssignmentLike["status"];
     case "SIGNED":
-    case "signed":
-      return "signed";
+      return "signed" as FormAssignmentLike["status"];
     case "EXPIRED":
-    case "expired":
-      return "expired";
+      return "expired" as FormAssignmentLike["status"];
     case "CANCELLED":
-    case "cancelled":
-      return "cancelled";
+      return "cancelled" as FormAssignmentLike["status"];
+    default:
+      return "draft" as FormAssignmentLike["status"];
   }
 };
 
@@ -216,6 +211,29 @@ const isUppercaseAssignmentStatus = (
       return true;
     default:
       return false;
+  }
+};
+
+const normalizeLifecycleAssignmentStatus = (
+  status: string,
+): FormAssignmentListItem["status"] => {
+  switch (status.toUpperCase()) {
+    case "DRAFT":
+      return "DRAFT" as FormAssignmentListItem["status"];
+    case "SENT":
+      return "SENT" as FormAssignmentListItem["status"];
+    case "VIEWED":
+      return "VIEWED" as FormAssignmentListItem["status"];
+    case "SUBMITTED":
+      return "SUBMITTED" as FormAssignmentListItem["status"];
+    case "SIGNED":
+      return "SIGNED" as FormAssignmentListItem["status"];
+    case "EXPIRED":
+      return "EXPIRED" as FormAssignmentListItem["status"];
+    case "CANCELLED":
+      return "CANCELLED" as FormAssignmentListItem["status"];
+    default:
+      return "DRAFT" as FormAssignmentListItem["status"];
   }
 };
 
@@ -313,7 +331,7 @@ const toOrganisationListItem = (
     parentId: appointmentParent.parentId ?? null,
     parentName: appointmentParent.parentName ?? null,
     appointmentId: row.appointmentId,
-    status: row.status,
+    status: normalizeLifecycleAssignmentStatus(row.status),
     signingRequired: row.signingRequired,
     mobileVisible: row.mobileVisible,
     sentAt: row.sentAt,

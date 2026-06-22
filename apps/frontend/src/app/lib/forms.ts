@@ -274,6 +274,7 @@ type TemplateFieldType = TemplateSchemaSnapshot['sections'][number]['fields'][nu
 const templateFieldTypeMap: Record<FormField['type'], TemplateFieldType> = {
   input: 'text',
   textarea: 'richText',
+  richtext: 'richText',
   number: 'number',
   dropdown: 'select',
   radio: 'select',

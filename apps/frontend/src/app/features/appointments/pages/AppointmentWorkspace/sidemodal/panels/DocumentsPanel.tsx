@@ -6,6 +6,7 @@ import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import CompanionDocumentsSection from '@/app/features/documents/components/CompanionDocumentsSection';
 import { fetchAppointmentForms } from '@/app/features/forms/services/appointmentFormsService';
+import { downloadSubmissionPdf } from '@/app/features/forms/services/formSigningService';
 import { isAuthRedirectError } from '@/app/services/axios';
 
 type DocumentsPanelProps = {
@@ -28,6 +29,8 @@ type SubmittedForm = {
   auth: FormAuthState;
   date: string;
   time: string;
+  /** Backend submission id, present once the parent has submitted — enables PDF download. */
+  submissionId?: string;
 };
 
 const AUTH_META: Record<FormAuthState, { label: string; tone: string; icon: React.ReactNode }> = {
@@ -95,38 +98,73 @@ const renderFormsPanelContent = (
 const FormRow = ({ form }: { form: SubmittedForm }) => {
   const meta = AUTH_META[form.auth];
   const isPending = form.auth === 'PENDING';
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // A completed submission has a backend submission id we can render to PDF.
+  // Pending forms have nothing to download yet, so the action is disabled.
+  const canDownload = !isPending && Boolean(form.submissionId);
+
+  const handleDownload = async () => {
+    if (!form.submissionId || busy) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const blob = await downloadSubmissionPdf(form.submissionId);
+      const url = URL.createObjectURL(blob);
+      globalThis.window.open(url, '_blank', 'noopener');
+      // Revoke shortly after so the new tab has time to load the blob.
+      globalThis.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (downloadError) {
+      console.error('Unable to download the signed form:', downloadError);
+      setError('Unable to download this form. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <li className="flex items-center justify-between gap-3 border-b border-card-border py-3 last:border-0">
-      <div className="flex flex-col gap-0.5 leading-[130%]">
-        <span className="text-body-4 font-medium text-text-primary">{form.title}</span>
-        <span className={`flex items-center gap-1 text-[12px] ${meta.tone}`}>
-          {meta.icon}
-          {meta.label}
-        </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="flex flex-col items-end leading-[120%] text-[12px] text-pill-success-text">
-          <span>{form.date}</span>
-          <span>{form.time}</span>
+    <li className="flex flex-col gap-1 border-b border-card-border py-3 last:border-0">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5 leading-[130%]">
+          <span className="text-body-4 font-medium text-text-primary">{form.title}</span>
+          <span className={`flex items-center gap-1 text-[12px] ${meta.tone}`}>
+            {meta.icon}
+            {meta.label}
+          </span>
         </div>
-        <CircleIconButton
-          icon={
-            isPending ? (
-              <LuEye size={16} aria-hidden="true" />
-            ) : (
-              <LuDownload size={16} aria-hidden="true" />
-            )
-          }
-          label={isPending ? `View ${form.title}` : `Download ${form.title}`}
-          variant="dark"
-          onClick={() => undefined}
-        />
-        <CircleIconButton
-          icon={<LuPrinter size={16} aria-hidden="true" />}
-          label={`Print ${form.title}`}
-          onClick={() => globalThis.window.print()}
-        />
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col items-end leading-[120%] text-[12px] text-pill-success-text">
+            <span>{form.date}</span>
+            <span>{form.time}</span>
+          </div>
+          <CircleIconButton
+            icon={
+              isPending ? (
+                <LuEye size={16} aria-hidden="true" />
+              ) : (
+                <LuDownload size={16} aria-hidden="true" />
+              )
+            }
+            label={
+              isPending ? `Awaiting parent submission for ${form.title}` : `Download ${form.title}`
+            }
+            variant="dark"
+            disabled={!canDownload || busy}
+            onClick={() => void handleDownload()}
+          />
+          <CircleIconButton
+            icon={<LuPrinter size={16} aria-hidden="true" />}
+            label={`Print ${form.title}`}
+            disabled={!canDownload || busy}
+            onClick={() => void handleDownload()}
+          />
+        </div>
       </div>
+      {error && (
+        <p role="alert" className="text-[12px] text-danger-600">
+          {error}
+        </p>
+      )}
     </li>
   );
 };
@@ -151,6 +189,7 @@ const AppointmentFormsPanel = ({ appointmentId }: { appointmentId: string }) => 
               auth: formStatus === 'completed' ? 'AUTHORIZED_CLIENT' : 'PENDING',
               date: formatDate(updatedAt),
               time: formatTime(updatedAt),
+              submissionId: submission?._id,
             };
           })
         );

@@ -321,7 +321,15 @@ export const CategoryTemplates: Record<FormsCategory, FormField[]> = {
   Custom: [],
   'Prescription Template': [],
   'Inpatient Schedule': [],
-  'Task Template': [],
+  'Task Template': [
+    {
+      id: 'tasks_group',
+      type: 'group',
+      label: 'Tasks',
+      meta: { taskGroup: true } as any,
+      fields: [],
+    },
+  ],
   'Consent form': [
     textInputField('pet_name', 'Companion name', 'Enter Companion name', { required: true }),
     textInputField('owner_name', 'Pet parent name', 'Enter pet parent name', { required: true }),
@@ -1008,3 +1016,12 @@ export const CategoryTemplates: Record<FormsCategory, FormField[]> = {
 };
 
 export type BackendFormStatus = BackendForm['status'];
+
+// Organisation-wide form-assignment contract (shared with the backend so the
+// read-model has a single source of truth).
+export type {
+  FormAssignmentLifecycleStatus,
+  FormAssignmentSignedDocumentLike,
+  FormAssignmentListItem,
+  FormAssignmentListFilters,
+} from '@yosemite-crew/types';

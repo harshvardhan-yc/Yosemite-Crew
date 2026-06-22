@@ -68,6 +68,13 @@ describe('invoiceService', () => {
     await loadInvoicesForOrgPrimaryOrg();
 
     expect(invoiceState.startLoading).toHaveBeenCalled();
+    expect(getData).toHaveBeenCalledWith(
+      '/v1/finance/invoices',
+      expect.objectContaining({
+        organisationId: 'org-1',
+        _cacheBust: expect.any(Number),
+      })
+    );
     expect(invoiceState.setInvoicesForOrg).toHaveBeenCalledWith('org-1', []);
   });
 
@@ -169,10 +176,14 @@ describe('invoiceService', () => {
 
     await loadInvoicesForAppointment('apt-1');
 
-    expect(getData).toHaveBeenCalledWith('/v1/finance/invoices', {
-      organisationId: 'org-1',
-      appointmentId: 'apt-1',
-    });
+    expect(getData).toHaveBeenCalledWith(
+      '/v1/finance/invoices',
+      expect.objectContaining({
+        organisationId: 'org-1',
+        appointmentId: 'apt-1',
+        _cacheBust: expect.any(Number),
+      })
+    );
     expect(invoiceState.upsertInvoice).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'inv-1', appointmentId: 'apt-1' })
     );
@@ -643,6 +654,14 @@ describe('invoiceService', () => {
 
     const billing = await loadAppointmentBilling('org-1', 'appt-1');
 
+    expect(getData).toHaveBeenCalledWith(
+      '/v1/finance/invoices',
+      expect.objectContaining({
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        _cacheBust: expect.any(Number),
+      })
+    );
     expect(billing.pastInvoices).toHaveLength(1);
     expect(billing.pastInvoices[0].items.map((item) => item.name)).toEqual([
       'bookable procedure',

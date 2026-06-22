@@ -1,30 +1,15 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import SoapStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/SoapStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
-import {
-  getRenderedDocument,
-  saveSoapNote,
-} from '@/app/features/appointments/services/workspaceClinicalService';
+import { saveSoapNote } from '@/app/features/appointments/services/workspaceClinicalService';
 
 expect.extend(toHaveNoViolations);
 
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
-  getRenderedDocument: jest.fn(),
   saveSoapNote: jest.fn(),
-}));
-
-jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
-  __esModule: true,
-  default: ({ open, title, pdfUrl }: { open: boolean; title: string; pdfUrl: string | null }) =>
-    open ? (
-      <div data-testid="pdf-preview">
-        <span>{title}</span>
-        <span>{pdfUrl}</span>
-      </div>
-    ) : null,
 }));
 
 const APPT = 'appt-soap';
@@ -66,7 +51,6 @@ describe('SoapStep', () => {
     onRecordVitals.mockClear();
     onSaveAndNext.mockClear();
     (saveSoapNote as jest.Mock).mockResolvedValue({ id: 'soap-saved' });
-    (getRenderedDocument as jest.Mock).mockResolvedValue({ pdfUrl: 'https://files.test/soap.pdf' });
   });
 
   const renderSoapStep = (encounter = seedAndGet()) =>
@@ -155,7 +139,6 @@ describe('SoapStep', () => {
     // new SOAP can be started.
     expect(screen.getByText('All SOAP notes')).toBeInTheDocument();
     expect(screen.getByText(/By Dr\. Tim Apple/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Print to Sign' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save & Next' })).not.toBeDisabled();
   });
 
@@ -172,13 +155,13 @@ describe('SoapStep', () => {
     expect(soap.find((n) => n.status !== 'COMPLETED')?.subjective).toBe('<p>new visit</p>');
   });
 
-  it('keeps Print to Sign and Save & Next available after signing', () => {
+  it('keeps Save & Next available after signing without rendering Print to Sign', () => {
     seedAndGet();
     const store = useAppointmentWorkspaceStore.getState();
     store.upsertSoap(APPT, { subjective: '<p>history</p>' });
     store.signSoap(APPT, 'Dr Tim', false);
     renderSoapStep(store.getEncounter(APPT)!);
-    expect(screen.getByRole('button', { name: 'Print to Sign' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Print to Sign' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save & Next' })).toBeInTheDocument();
   });
 
@@ -222,15 +205,25 @@ describe('SoapStep', () => {
     expect(onRecordVitals).toHaveBeenCalledTimes(1);
   });
 
-  it('invokes print on the Print to Sign path', () => {
-    const printSpy = jest.spyOn(window, 'print').mockImplementation(() => undefined);
+  it('advances without saving or recording a SOAP note when Save & Next is clicked on an empty draft', () => {
+    onSaveAndNext.mockClear();
     renderSoapStep();
-    fireEvent.click(screen.getByRole('button', { name: 'Print to Sign' }));
-    expect(printSpy).toHaveBeenCalled();
-    printSpy.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Next' }));
+    expect(onSaveAndNext).toHaveBeenCalledTimes(1);
+    expect(saveSoapNote).not.toHaveBeenCalled();
+    expect(
+      useAppointmentWorkspaceStore
+        .getState()
+        .getEncounter(APPT)
+        ?.soap.some((entry) => entry.status === 'COMPLETED')
+    ).toBe(false);
   });
 
-  it('opens a rendered SOAP PDF overlay on the Print to Sign path when the backend provides one', async () => {
+  it('surfaces the backend error and does NOT sign or advance when the save fails', async () => {
+    // Override the global throwing console.error spy: the handler logs on failure.
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (saveSoapNote as jest.Mock).mockRejectedValueOnce(new Error('SOAP save rejected'));
+    onSaveAndNext.mockClear();
     seedAndGet();
     useAppointmentWorkspaceStore.getState().upsertSoap(APPT, { subjective: '<p>history</p>' });
     const enc = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
@@ -245,24 +238,15 @@ describe('SoapStep', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Print to Sign' }));
-
-    await waitFor(() => {
-      expect(saveSoapNote).toHaveBeenCalled();
-      expect(getRenderedDocument).toHaveBeenCalledWith('org-1', 'soap-saved');
-    });
-    expect(screen.getByTestId('pdf-preview')).toHaveTextContent('SOAP note - print to sign');
-    expect(screen.getByTestId('pdf-preview')).toHaveTextContent('https://files.test/soap.pdf');
-    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.soap[0]?.id).toBe(
-      'soap-saved'
-    );
-  });
-
-  it('advances from the SOAP step when Save & Next is clicked', () => {
-    onSaveAndNext.mockClear();
-    renderSoapStep();
     fireEvent.click(screen.getByRole('button', { name: 'Save & Next' }));
-    expect(onSaveAndNext).toHaveBeenCalledTimes(1);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('SOAP save rejected');
+    // Critical: a failed save must not advance the step or mark the note COMPLETED.
+    expect(onSaveAndNext).not.toHaveBeenCalled();
+    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.soap[0]?.status).not.toBe(
+      'COMPLETED'
+    );
+    errorSpy.mockRestore();
   });
 
   it('falls back to the encounter lead name and omits date/time when not recorded', () => {

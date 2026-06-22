@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, jest } from "@jest/globals";
 import { Request, Response } from "express";
 import { FinanceController } from "../../../src/controllers/app/finance.controller";
 import { StripeService } from "../../../src/services/stripe.service";
+import { InvoiceService } from "../../../src/services/invoice.service";
 import logger from "../../../src/utils/logger";
 
 jest.mock("../../../src/services/stripe.service", () => ({
@@ -159,6 +160,52 @@ describe("FinanceController", () => {
     expect(statusMock).toHaveBeenCalledWith(500);
     expect(jsonMock).toHaveBeenCalledWith({
       message: "Internal server error",
+    });
+  });
+
+  describe("listInvoices", () => {
+    const mockedInvoiceService = jest.mocked(InvoiceService);
+
+    it("scopes to the appointment when both organisationId and appointmentId are provided", async () => {
+      req.query = { organisationId: "org-1", appointmentId: "appt-1" };
+      mockedInvoiceService.getByAppointmentId.mockResolvedValueOnce([
+        { id: "inv-1" },
+      ] as never);
+
+      await FinanceController.listInvoices(req as Request, res as Response);
+
+      // Regression: with both filters present, the result must stay scoped to the
+      // appointment AND the authorized organisation rather than returning every
+      // invoice in the organisation or another org's appointment invoices.
+      expect(mockedInvoiceService.getByAppointmentId).toHaveBeenCalledWith(
+        "appt-1",
+        "org-1",
+      );
+      expect(mockedInvoiceService.listForOrganisation).not.toHaveBeenCalled();
+      expect(statusMock).toHaveBeenCalledWith(200);
+    });
+
+    it("lists organisation invoices when only organisationId is provided", async () => {
+      req.query = { organisationId: "org-1" };
+      mockedInvoiceService.listForOrganisation.mockResolvedValueOnce(
+        [] as never,
+      );
+
+      await FinanceController.listInvoices(req as Request, res as Response);
+
+      expect(mockedInvoiceService.listForOrganisation).toHaveBeenCalledWith(
+        "org-1",
+      );
+      expect(mockedInvoiceService.getByAppointmentId).not.toHaveBeenCalled();
+      expect(statusMock).toHaveBeenCalledWith(200);
+    });
+
+    it("rejects when no filter is provided", async () => {
+      req.query = {};
+
+      await FinanceController.listInvoices(req as Request, res as Response);
+
+      expect(statusMock).toHaveBeenCalledWith(400);
     });
   });
 });

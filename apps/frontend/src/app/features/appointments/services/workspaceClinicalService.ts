@@ -612,6 +612,21 @@ export const saveVitalRecord = async (
   return res.data;
 };
 
+/** Map a backend observation-tool submission to the workspace ObservationRecord. */
+const submissionToObservationRecord = (
+  submission: ObservationToolSubmission,
+  index: number
+): ObservationRecord => ({
+  id: submission.id ?? stringifyObjectId(submission._id) ?? `ot-${index + 1}`,
+  code: `OT-${String(index + 1).padStart(3, '0')}`,
+  toolKey: submission.toolId ?? submission.toolCategory ?? 'OBSERVATION_TOOL',
+  toolName: submission.toolName ?? submission.toolCategory ?? 'Observation tool',
+  scores: answerPreviewToScores(submission.answers),
+  total: typeof submission.score === 'number' ? submission.score : undefined,
+  recordedByName: submission.filledByName ?? submission.filledBy ?? 'Parent',
+  recordedAt: asIso(submission.createdAt ?? submission.updatedAt),
+});
+
 export const listObservationSubmissionsForAppointment = async (
   appointmentId: string
 ): Promise<ObservationRecord[]> => {
@@ -619,21 +634,45 @@ export const listObservationSubmissionsForAppointment = async (
     `/v1/observation-tools/pms/appointments/${appointmentId}/submissions`,
     {}
   );
-  return res.data.map((submission, index) => {
-    const id = submission.id ?? stringifyObjectId(submission._id) ?? `ot-${index + 1}`;
-    const toolKey = submission.toolId ?? submission.toolCategory ?? 'OBSERVATION_TOOL';
-    const toolName = submission.toolName ?? submission.toolCategory ?? 'Observation tool';
-    return {
-      id,
-      code: `OT-${String(index + 1).padStart(3, '0')}`,
-      toolKey,
-      toolName,
-      scores: answerPreviewToScores(submission.answers),
-      total: typeof submission.score === 'number' ? submission.score : undefined,
-      recordedByName: submission.filledByName ?? submission.filledBy ?? 'Parent',
-      recordedAt: asIso(submission.createdAt ?? submission.updatedAt),
-    };
-  });
+  return res.data.map(submissionToObservationRecord);
+};
+
+export type PmsObservationSubmissionInput = {
+  organisationId: string;
+  appointmentId: string;
+  encounterId?: string;
+  companionId: string;
+  toolId: string;
+  taskId?: string;
+  filledBy: string;
+  answers: Record<string, unknown>;
+  summary?: string;
+};
+
+/**
+ * Create a clinician-recorded observation-tool submission via the existing PMS
+ * route. The BACKEND computes the score from the tool definition — the returned
+ * submission's `score` is authoritative (we never derive clinical math here).
+ * Returns the mapped ObservationRecord so the workspace can show the real result.
+ */
+export const createPmsObservationSubmission = async (
+  input: PmsObservationSubmissionInput
+): Promise<ObservationRecord> => {
+  const res = await postData<ObservationToolSubmission>(
+    `/v1/observation-tools/pms/appointments/${input.appointmentId}/submissions`,
+    {
+      organisationId: input.organisationId,
+      appointmentId: input.appointmentId,
+      encounterId: input.encounterId,
+      companionId: input.companionId,
+      toolId: input.toolId,
+      taskId: input.taskId,
+      filledBy: input.filledBy,
+      answers: input.answers,
+      summary: input.summary,
+    }
+  );
+  return submissionToObservationRecord(res.data, 0);
 };
 
 export const listPmsObservationSubmissions = async (

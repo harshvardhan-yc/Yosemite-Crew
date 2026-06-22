@@ -1,5 +1,4 @@
 export type FormAssignmentStatus =
-  | 'draft'
   | 'sent'
   | 'viewed'
   | 'submitted'
@@ -8,7 +7,6 @@ export type FormAssignmentStatus =
   | 'cancelled';
 
 export type FormAssignmentLifecycleStatus =
-  | 'DRAFT'
   | 'SENT'
   | 'VIEWED'
   | 'SUBMITTED'
@@ -78,6 +76,13 @@ export interface FormAssignmentListItem {
   expiredAt: Date | null;
   cancelledAt: Date | null;
   signedDocument: FormAssignmentSignedDocumentLike | null;
+}
+
+/** Optional filters for the organisation-wide assignments list. */
+export interface FormAssignmentListFilters {
+  parentId?: string;
+  companionId?: string;
+  status?: FormAssignmentLifecycleStatus[];
 }
 
 export interface FormAssignmentCreateInput {

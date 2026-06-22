@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { LuCopy, LuEye, LuEyeOff, LuPlus, LuTrash2 } from 'react-icons/lu';
+import { LuCopy, LuEye, LuEyeOff, LuTrash2 } from 'react-icons/lu';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
+import WorkspaceSearchResultRow from '@/app/features/appointments/pages/AppointmentWorkspace/components/WorkspaceSearchResultRow';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
@@ -139,20 +140,15 @@ const ServicesPackagesEditor = ({
           >
             <ul>
               {matches.map((item) => (
-                <li key={item.refId}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddItem(item);
-                      setSearch('');
-                    }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                  >
-                    <LuPlus aria-hidden="true" />
-                    <span className="flex-1">{item.name}</span>
-                    <ItemTag kind={item.kind} />
-                  </button>
-                </li>
+                <WorkspaceSearchResultRow
+                  key={item.refId}
+                  name={item.name}
+                  badge={<ItemTag kind={item.kind} />}
+                  onSelect={() => {
+                    onAddItem(item);
+                    setSearch('');
+                  }}
+                />
               ))}
             </ul>
           </SearchResultsDropdown>

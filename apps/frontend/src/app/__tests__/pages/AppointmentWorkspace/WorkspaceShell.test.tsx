@@ -122,6 +122,21 @@ describe('WorkspaceHeader', () => {
     expect(onQuickActions).toHaveBeenCalled();
   });
 
+  it('surfaces client (parent) alerts as read-only Client-labelled pills', () => {
+    render(
+      <WorkspaceHeader
+        appointment={headerAppointment}
+        companionName="Gigi Hadid"
+        alerts={[{ id: 'p1', label: 'Needs muzzle', severity: 'high' }]}
+        clientAlerts={[{ id: 'c1', label: 'Aggressive owner', severity: 'critical' }]}
+        onBack={jest.fn()}
+        onQuickActions={jest.fn()}
+      />
+    );
+    expect(screen.getByText('Needs muzzle')).toBeInTheDocument();
+    expect(screen.getByText('Client: Aggressive owner')).toBeInTheDocument();
+  });
+
   it('fires the add-alert action when provided', () => {
     const onAddAlert = jest.fn();
     render(

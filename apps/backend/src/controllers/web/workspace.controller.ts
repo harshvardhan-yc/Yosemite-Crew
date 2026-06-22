@@ -41,6 +41,7 @@ const treatmentItemParamsSchema = z.object({
 
 const signPacketBodySchema = z.object({
   signerName: z.string().trim().min(1).optional(),
+  signerEmail: z.string().trim().email().optional(),
 });
 
 const treatmentItemBodySchema = z.object({
@@ -188,6 +189,24 @@ export const WorkspaceController = {
     }
   },
 
+  async getEncounterDocumentPacketPdf(req: Request, res: Response) {
+    try {
+      const params = encounterParamsSchema.parse(req.params);
+      const pdf = await WorkspaceDocumentPacketService.buildEncounterPacketPdf(
+        params.organisationId,
+        params.encounterId,
+      );
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="clinical-packet-${params.encounterId}.pdf"`,
+      );
+      return res.status(200).send(pdf);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async getDocumentPacket(req: Request, res: Response) {
     try {
       const params = packetParamsSchema.parse(req.params);
@@ -216,6 +235,7 @@ export const WorkspaceController = {
         packetId: params.packetId,
         signerId,
         signerName: body.signerName,
+        signerEmail: body.signerEmail,
       });
       return res.status(200).json(data);
     } catch (error) {

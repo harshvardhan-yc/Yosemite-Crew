@@ -3,6 +3,8 @@ import type {
   TemplateInstanceUpsertInput,
   TemplateKind,
   TemplateLike,
+  TemplateResolveResponse,
+  TemplateSchemaSnapshot,
 } from '@yosemite-crew/types';
 import type { Task as FhirTask } from '@yosemite-crew/fhir';
 import { getData, patchData, postData } from '@/app/services/axios';
@@ -45,12 +47,115 @@ export const listWorkspaceTemplates = async (
   );
 };
 
+const SOAP_FIELD_BY_KEYWORD: Array<{
+  field: keyof NonNullable<SoapTemplate['content']>;
+  keywords: string[];
+}> = [
+  { field: 'chiefComplaint', keywords: ['chief', 'complaint', 'presenting', 'reason'] },
+  { field: 'subjective', keywords: ['subjective', 'history'] },
+  { field: 'objective', keywords: ['objective', 'examination', 'exam', 'vitals', 'findings'] },
+  { field: 'assessment', keywords: ['assessment', 'differential', 'diagnosis'] },
+  { field: 'plan', keywords: ['plan', 'treatment', 'next steps'] },
+];
+
+/** Map a section/field title to one of the four S/O/A/P fields by keyword. */
+const soapFieldForTitle = (
+  title: string
+): keyof NonNullable<SoapTemplate['content']> | undefined => {
+  const normalized = title.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return SOAP_FIELD_BY_KEYWORD.find((entry) =>
+    entry.keywords.some((keyword) => normalized.includes(keyword))
+  )?.field;
+};
+
+const hasSchemaSnapshot = (value: unknown): value is TemplateSchemaSnapshot =>
+  Boolean(
+    value && typeof value === 'object' && Array.isArray((value as { sections?: unknown }).sections)
+  );
+
+const soapSchemaSnapshot = (template: TemplateLike): TemplateSchemaSnapshot | undefined => {
+  const root = (template as TemplateLike & { schemaSnapshot?: unknown }).schemaSnapshot;
+  if (hasSchemaSnapshot(root)) return root;
+  const version = template.versions?.find(
+    (item) => item.version === template.publishedVersion || item.version === template.latestVersion
+  );
+  return hasSchemaSnapshot(version?.schemaSnapshot) ? version.schemaSnapshot : undefined;
+};
+
+/**
+ * Build the prefill content for the four S/O/A/P editors from a template schema
+ * snapshot. Each section whose title maps to an S/O/A/P field contributes its
+ * fields' default values (or labels) as the section's starting HTML, so selecting
+ * a template hydrates the editors instead of only stamping an id.
+ */
+export const schemaSnapshotToSoapContent = (
+  snapshot: TemplateSchemaSnapshot | undefined
+): SoapTemplate['content'] => {
+  const sections = snapshot?.sections ?? [];
+  if (sections.length === 0) return undefined;
+  const content: NonNullable<SoapTemplate['content']> = {};
+  for (const section of sections) {
+    const field = soapFieldForTitle(section.title);
+    if (!field) continue;
+    const body = section.fields
+      .map((definition) => {
+        const value = definition.defaultValue;
+        if (typeof value === 'string' && value.trim()) return value;
+        return definition.label ? `<p>${definition.label}</p>` : '';
+      })
+      .filter(Boolean)
+      .join('');
+    if (body) content[field] = (content[field] ?? '') + body;
+  }
+  return Object.keys(content).length > 0 ? content : undefined;
+};
+
 export const templateToSoapTemplate = (template: TemplateLike): SoapTemplate => ({
   id: template.id,
   name: template.name,
   serviceId: template.catalogItemIds?.[0],
   isDefault: template.ownership === 'YC_LIBRARY',
+  version: template.publishedVersion ?? template.latestVersion ?? undefined,
+  content: schemaSnapshotToSoapContent(soapSchemaSnapshot(template)),
 });
+
+/**
+ * Resolve the SOAP template that best matches the encounter context via the shared
+ * `GET /pms/resolve` endpoint (kind `SOAP_NOTE`). Returns the resolved template as a
+ * `SoapTemplate` (content snapshot + version) or `null` when none is configured —
+ * the backend answers 404, which we treat as "no default", so the editor stays blank.
+ */
+export const resolveSoapTemplate = async (
+  context: TemplateResolveContext
+): Promise<SoapTemplate | null> => {
+  const params: Record<string, string> = {
+    organisationId: context.organisationId,
+    kind: 'SOAP_NOTE',
+  };
+  if (context.appointmentId) params.appointmentId = context.appointmentId;
+  if (context.encounterId) params.encounterId = context.encounterId;
+  if (context.companionId) params.companionId = context.companionId;
+  if (context.species) params.species = context.species;
+  if (context.serviceId) params.serviceId = context.serviceId;
+  if (context.packageId) params.packageId = context.packageId;
+  if (context.mode) params.mode = context.mode;
+
+  try {
+    const res = await getData<TemplateResolveResponse>('/v1/templates/pms/resolve', params);
+    const resolved = res.data;
+    if (!resolved?.templateId) return null;
+    return {
+      id: resolved.templateId,
+      name: resolved.name,
+      isDefault: resolved.source === 'YC_LIBRARY',
+      version: resolved.templateVersion,
+      content: schemaSnapshotToSoapContent(resolved.schemaSnapshot),
+    };
+  } catch {
+    return null;
+  }
+};
 
 export const listSoapTemplatesForWorkspace = async (
   organisationId: string
@@ -79,6 +184,49 @@ export const listDischargeSummaryTemplates = async (organisationId: string) =>
     kind: 'DISCHARGE_SUMMARY',
     status: 'PUBLISHED',
   });
+
+export type TemplateResolveContext = {
+  organisationId: string;
+  appointmentId?: string;
+  encounterId?: string;
+  companionId?: string;
+  species?: string;
+  serviceId?: string;
+  packageId?: string;
+  mode?: 'OUTPATIENT' | 'INPATIENT';
+};
+
+/**
+ * Resolve the discharge-summary template that best matches the encounter context
+ * (service / package / species / mode) via the shared `GET /pms/resolve` endpoint.
+ * Returns the resolved template (content snapshot + `templateId`/`templateVersion`)
+ * or `null` when no template is configured — the backend answers 404 in that case,
+ * which we treat as "no default template" so callers fall back to a blank editor.
+ */
+export const resolveDischargeTemplate = async (
+  context: TemplateResolveContext
+): Promise<TemplateResolveResponse | null> => {
+  const params: Record<string, string> = {
+    organisationId: context.organisationId,
+    kind: 'DISCHARGE_SUMMARY',
+  };
+  if (context.appointmentId) params.appointmentId = context.appointmentId;
+  if (context.encounterId) params.encounterId = context.encounterId;
+  if (context.companionId) params.companionId = context.companionId;
+  if (context.species) params.species = context.species;
+  if (context.serviceId) params.serviceId = context.serviceId;
+  if (context.packageId) params.packageId = context.packageId;
+  if (context.mode) params.mode = context.mode;
+
+  try {
+    const res = await getData<TemplateResolveResponse>('/v1/templates/pms/resolve', params);
+    return res.data ?? null;
+  } catch {
+    // 404 (no template configured for this context) and any transient resolve
+    // failure fall back to a blank discharge editor rather than blocking the step.
+    return null;
+  }
+};
 
 export const getWorkspaceTemplateById = async (organisationId: string, templateId: string) => {
   const res = await getData<TemplateLike>(

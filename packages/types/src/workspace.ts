@@ -37,6 +37,22 @@ export interface WorkspaceDocumentRow {
 
 export type WorkspaceDocumentPacketStatus = 'DRAFT' | 'FINAL';
 
+export type WorkspaceDocumentPacketSigningStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'SIGNED';
+
+export interface WorkspaceDocumentPacketSigning {
+  required: boolean;
+  provider: 'DOCUMENSO';
+  status: WorkspaceDocumentPacketSigningStatus;
+  documentId: string | null;
+  signerId: string;
+  signerEmail: string;
+  signerName: string | null;
+  signingUrl: string | null;
+  /** Ids of the child RenderedDocuments bundled into the signed packet. */
+  documentIds: string[];
+  pdf?: { url: string | null };
+}
+
 export interface WorkspaceDocumentPacketRow {
   packetId: string;
   organisationId: string;
@@ -45,6 +61,7 @@ export interface WorkspaceDocumentPacketRow {
   companionId: string | null;
   documents: WorkspaceDocumentRow[];
   status: WorkspaceDocumentPacketStatus;
+  signing: WorkspaceDocumentPacketSigning | null;
   signedBy: string | null;
   signedByName: string | null;
   signedAt: Date | null;

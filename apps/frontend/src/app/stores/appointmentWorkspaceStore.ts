@@ -19,8 +19,11 @@ import type {
   PastInvoice,
   PaymentMethod,
   WorkspaceDocument,
+  WorkspaceLockState,
+  WorkspaceCapabilities,
 } from '@/app/features/appointments/types/workspace';
 import { buildEmptyEncounter } from '@/app/features/appointments/services/workspaceInitialData';
+import { isRichTextEmpty } from '@/app/lib/richText';
 
 let idCounter = 0;
 const nextId = (prefix: string): string => {
@@ -105,10 +108,23 @@ type AppointmentWorkspaceState = {
         | 'admittedAt'
         | 'dischargedAt'
         | 'mode'
+        | 'sectionLocks'
+        | 'capabilities'
+        | 'primaryAction'
+        | 'finalizationGate'
       >
     > & { stepStatus?: Partial<Record<WorkspaceStep, StepStatus>> }
   ) => void;
   setEncounterMode: (appointmentId: string, mode: EncounterMode) => void;
+  /**
+   * Apply backend-owned section locks + capabilities from the workspace bootstrap.
+   * Merges into any existing values so a partial refresh never wipes them.
+   */
+  applyWorkspaceLocks: (
+    appointmentId: string,
+    locks?: WorkspaceLockState,
+    capabilities?: WorkspaceCapabilities
+  ) => void;
 
   setActiveStep: (step: WorkspaceStep) => void;
   setActiveSideAction: (action: SideAction | null) => void;
@@ -137,6 +153,8 @@ type AppointmentWorkspaceState = {
     persistedId?: string
   ) => void;
   addObservation: (appointmentId: string, record: Omit<ObservationRecord, 'id' | 'code'>) => void;
+  /** Add an already-formed observation record (e.g. a backend-scored submission). */
+  addObservationRecord: (appointmentId: string, record: ObservationRecord) => void;
 
   removeDiagnosticTest: (appointmentId: string, id: string) => void;
   addDiagnosticOrder: (appointmentId: string, order?: Partial<DiagnosticOrder>) => void;
@@ -253,10 +271,24 @@ const mergeEncounterDataPatch = (
       | 'admittedAt'
       | 'dischargedAt'
       | 'mode'
+      | 'sectionLocks'
+      | 'capabilities'
+      | 'primaryAction'
+      | 'finalizationGate'
     >
   > & { stepStatus?: Partial<Record<WorkspaceStep, StepStatus>> }
 ) => ({
   ...enc,
+  sectionLocks: patch.sectionLocks
+    ? { ...enc.sectionLocks, ...patch.sectionLocks }
+    : enc.sectionLocks,
+  capabilities: patch.capabilities
+    ? { ...enc.capabilities, ...patch.capabilities }
+    : enc.capabilities,
+  // primaryAction/finalizationGate are whole-object backend snapshots — replace
+  // (not merge) when present so a stale field never lingers after a refresh.
+  primaryAction: patch.primaryAction ?? enc.primaryAction,
+  finalizationGate: patch.finalizationGate ?? enc.finalizationGate,
   soap: preferNonEmpty(patch.soap, enc.soap),
   vitals: preferNonEmpty(patch.vitals, enc.vitals),
   observations: preferNonEmpty(patch.observations, enc.observations),
@@ -351,6 +383,13 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       };
     }),
 
+  applyWorkspaceLocks: (appointmentId, locks, capabilities) =>
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      sectionLocks: locks ? { ...enc.sectionLocks, ...locks } : enc.sectionLocks,
+      capabilities: capabilities ? { ...enc.capabilities, ...capabilities } : enc.capabilities,
+    })),
+
   setActiveStep: (step) => set({ activeStep: step }),
   setActiveSideAction: (action) => set({ activeSideAction: action }),
 
@@ -396,22 +435,39 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
 
   applySoapTemplate: (appointmentId, template) =>
     patchEnc(set, appointmentId, (enc) => {
+      const content = template.content ?? {};
+      // Only prefill a field the template actually carries content for, and never
+      // clobber text the clinician has already typed in that field. This makes
+      // selecting a template hydrate empty S/O/A/P sections without losing edits.
+      const prefill = (current: string, value?: string): string =>
+        value && isRichTextEmpty(current) ? value : current;
       const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
       if (draftIndex >= 0) {
+        const existing = enc.soap[draftIndex];
         const soap = [...enc.soap];
-        soap[draftIndex] = { ...soap[draftIndex], templateId: template.id };
+        soap[draftIndex] = {
+          ...existing,
+          templateId: template.id,
+          templateVersion: template.version ?? existing.templateVersion,
+          chiefComplaint: prefill(existing.chiefComplaint, content.chiefComplaint),
+          subjective: prefill(existing.subjective, content.subjective),
+          objective: prefill(existing.objective, content.objective),
+          assessment: prefill(existing.assessment, content.assessment),
+          plan: prefill(existing.plan, content.plan),
+        };
         return { ...enc, soap };
       }
       const created: SoapNoteEntry = {
         id: nextId('soap'),
-        chiefComplaint: '',
-        subjective: '',
-        objective: '',
-        assessment: '',
-        plan: '',
+        chiefComplaint: content.chiefComplaint ?? '',
+        subjective: content.subjective ?? '',
+        objective: content.objective ?? '',
+        assessment: content.assessment ?? '',
+        plan: content.plan ?? '',
         status: 'IN_PROGRESS',
         createdAt: nowIso(),
         templateId: template.id,
+        templateVersion: template.version,
       };
       return { ...enc, soap: [created, ...enc.soap] };
     }),
@@ -464,6 +520,12 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
         },
         ...enc.observations,
       ],
+    })),
+
+  addObservationRecord: (appointmentId, record) =>
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      observations: [record, ...enc.observations.filter((entry) => entry.id !== record.id)],
     })),
 
   removeDiagnosticTest: (appointmentId, id) =>

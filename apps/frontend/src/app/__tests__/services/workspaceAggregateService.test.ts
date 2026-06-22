@@ -11,9 +11,11 @@ import {
   listEncounterTreatmentItems,
   listEncounterWorkspaceDocuments,
   normalizeWorkspaceBootstrapForEncounter,
+  persistTreatmentItems,
   signWorkspaceDocumentPacket,
   updateEncounterTreatmentItem,
 } from '@/app/features/appointments/services/workspaceAggregateService';
+import type { LineItem } from '@/app/features/appointments/types/workspace';
 import { deleteData, getData, patchData, postData } from '@/app/services/axios';
 
 jest.mock('@/app/services/axios', () => ({
@@ -105,6 +107,47 @@ describe('workspaceAggregateService', () => {
     );
     expect(deleteData).toHaveBeenCalledWith(
       '/v1/workspace/organisations/org-1/treatment-items/item-1'
+    );
+  });
+
+  it('persists only not-yet-saved (local-) treatment line items', async () => {
+    const items: LineItem[] = [
+      {
+        id: 'svc-persisted',
+        refId: 'prod-1',
+        kind: 'SERVICE',
+        name: 'Saved service',
+        qty: 1,
+        unitPriceCents: 5000,
+        amountCents: 5000,
+      },
+      {
+        id: 'local-li-2',
+        refId: 'prod-2',
+        kind: 'PACKAGE',
+        name: 'New package',
+        qty: 2,
+        instructions: 'Apply twice',
+        unitPriceCents: 12000,
+        amountCents: 24000,
+      },
+    ];
+
+    await persistTreatmentItems('org-1', 'enc-1', items);
+
+    // Only the local- row is POSTed; the already-persisted row is skipped.
+    expect(postData).toHaveBeenCalledTimes(1);
+    expect(postData).toHaveBeenCalledWith(
+      '/v1/workspace/organisations/org-1/encounters/enc-1/treatment-items',
+      expect.objectContaining({
+        productItemId: 'prod-2',
+        productKind: 'PACKAGE',
+        name: 'New package',
+        quantity: 2,
+        instructions: 'Apply twice',
+        priceSnapshot: { unitPrice: 120 },
+        billable: true,
+      })
     );
   });
 
@@ -226,6 +269,86 @@ describe('workspaceAggregateService', () => {
     expect(patch.readyForDischarge?.value).toBe(true);
   });
 
+  it('normalizes backend section locks and capabilities when present', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      sectionLocks: {
+        soap: { locked: true, reason: 'Record finalized' },
+        invoice: { locked: false },
+        // Unknown sections and malformed entries are ignored.
+        unknownSection: { locked: true },
+        treatment: { reason: 'no locked flag' },
+      },
+      capabilities: {
+        canEditSoap: false,
+        canCollectPayment: true,
+        notACapability: true,
+      },
+    });
+    expect(patch.sectionLocks).toEqual({
+      soap: { locked: true, reason: 'Record finalized' },
+      invoice: { locked: false, reason: undefined },
+    });
+    expect(patch.capabilities).toEqual({ canEditSoap: false, canCollectPayment: true });
+  });
+
+  it('reads section locks from the legacy `locks` key and omits absent contracts', () => {
+    const withLocks = normalizeWorkspaceBootstrapForEncounter({
+      locks: { discharge: { locked: true } },
+    });
+    expect(withLocks.sectionLocks).toEqual({ discharge: { locked: true, reason: undefined } });
+
+    const without = normalizeWorkspaceBootstrapForEncounter({ encounter: { id: 'enc-1' } });
+    expect(without.sectionLocks).toBeUndefined();
+    expect(without.capabilities).toBeUndefined();
+  });
+
+  it('reads capability flags from the backend `permissions` key', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      permissions: { canEditSoap: true, canCollectPayment: false, notACapability: true },
+    });
+    expect(patch.capabilities).toEqual({ canEditSoap: true, canCollectPayment: false });
+  });
+
+  it('normalizes the primary action and finalization gate from the bootstrap', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      primaryAction: {
+        kind: 'DISCHARGE',
+        label: 'Discharge patient',
+        detail: 'All requirements met',
+        enabled: true,
+      },
+      finalizationGate: {
+        enabled: false,
+        disabledReason: 'Forms not signed',
+        requiredFormsSigned: false,
+        billingReady: true,
+        notAGateFlag: true,
+      },
+    });
+    expect(patch.primaryAction).toEqual({
+      kind: 'DISCHARGE',
+      label: 'Discharge patient',
+      detail: 'All requirements met',
+      enabled: true,
+      disabledReason: undefined,
+    });
+    expect(patch.finalizationGate).toEqual({
+      enabled: false,
+      disabledReason: 'Forms not signed',
+      requiredFormsSigned: false,
+      billingReady: true,
+    });
+  });
+
+  it('skips an unlabelled primary action and a gate without an enabled flag', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      primaryAction: { kind: 'NONE' },
+      finalizationGate: { disabledReason: 'no enabled flag' },
+    });
+    expect(patch.primaryAction).toBeUndefined();
+    expect(patch.finalizationGate).toBeUndefined();
+  });
+
   it('splits package-expanded treatment items into services and prescriptions by kind', () => {
     const patch = normalizeWorkspaceBootstrapForEncounter({
       treatmentItems: [
@@ -329,6 +452,56 @@ describe('workspaceAggregateService', () => {
       expect.objectContaining({ id: 'ti-med-2', medicineName: 'Gabapentin' }),
     ]);
     // The PRESCRIPTION-kind treatment item is not also rendered as a service row.
+    expect(patch.services).toBeUndefined();
+  });
+
+  it('reads the nested { artifact, prescription } envelope and per-line items', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      prescriptions: [
+        {
+          artifact: {
+            id: 'artifact-1',
+            kind: 'PRESCRIPTION',
+            status: 'COMPLETED',
+            summary: 'Carprofen 75 mg Tablets',
+          },
+          prescription: {
+            id: 'rx-1',
+            items: [
+              {
+                id: 'line-1',
+                medication: '',
+                dosage: '75mg',
+                route: 'PO',
+                frequency: 'BID',
+              },
+            ],
+            medications: [{ medication: '', inventoryItemId: 'inv-1' }],
+          },
+        },
+      ],
+      // Same backend id as the artifact — must not produce a duplicate row.
+      treatmentItems: [
+        {
+          id: 'rx-1',
+          prescriptionId: 'rx-1',
+          servicePackageKind: 'PRESCRIPTION',
+          name: 'Treatment items',
+          quantity: 1,
+        },
+      ],
+    });
+
+    expect(patch.prescription).toEqual([
+      expect.objectContaining({
+        id: 'line-1',
+        // Per-line medication is blank, so the artifact summary is the label.
+        medicineName: 'Carprofen 75 mg Tablets',
+        dosage: '75mg',
+        route: 'PO',
+        frequency: 'BID',
+      }),
+    ]);
     expect(patch.services).toBeUndefined();
   });
 });

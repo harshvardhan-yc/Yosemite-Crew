@@ -11,6 +11,7 @@ import {
   listWorkspaceTemplates,
   pauseInpatientScheduleTemplate,
   regenerateInpatientScheduleTemplate,
+  resolveSoapTemplate,
   resumeInpatientScheduleTemplate,
   submitWorkspaceTemplateInstance,
   templateToSoapTemplate,
@@ -138,7 +139,87 @@ describe('workspaceTemplateService', () => {
       name: 'tpl-yc',
       serviceId: 'svc-1',
       isDefault: true,
+      version: 1,
+      content: undefined,
     });
+  });
+
+  it('prefills S/O/A/P content from a template schema snapshot', () => {
+    const withSchema = {
+      ...template('tpl-content'),
+      schemaSnapshot: {
+        sections: [
+          {
+            id: 's1',
+            title: 'Subjective History',
+            fields: [{ key: 'subj', label: 'History', type: 'richtext' }],
+          },
+          {
+            id: 's2',
+            title: 'Plan',
+            fields: [{ key: 'plan', label: 'Plan', type: 'richtext', defaultValue: '<p>Rx</p>' }],
+          },
+          {
+            id: 's3',
+            title: 'Unmapped section',
+            fields: [{ key: 'x', label: 'X', type: 'text' }],
+          },
+        ],
+      },
+    } as unknown as TemplateLike;
+    const mapped = templateToSoapTemplate(withSchema);
+    expect(mapped.content?.subjective).toBe('<p>History</p>');
+    // defaultValue wins over the label fallback.
+    expect(mapped.content?.plan).toBe('<p>Rx</p>');
+    // Sections that map to no S/O/A/P field are ignored.
+    expect(mapped.content?.objective).toBeUndefined();
+  });
+
+  it('resolves the SOAP template for an encounter context', async () => {
+    getDataMock.mockResolvedValueOnce({
+      data: {
+        templateId: 'tpl-resolved',
+        templateVersion: 3,
+        name: 'Resolved SOAP',
+        source: 'ORG_LINKED',
+        schemaSnapshot: {
+          sections: [
+            { id: 'a', title: 'Assessment', fields: [{ key: 'a', label: 'Dx', type: 'text' }] },
+          ],
+        },
+      },
+    });
+
+    const resolved = await resolveSoapTemplate({
+      organisationId: 'org-1',
+      appointmentId: 'appt-1',
+      serviceId: 'svc-1',
+      mode: 'OUTPATIENT',
+    });
+
+    expect(getDataMock).toHaveBeenCalledWith('/v1/templates/pms/resolve', {
+      organisationId: 'org-1',
+      kind: 'SOAP_NOTE',
+      appointmentId: 'appt-1',
+      serviceId: 'svc-1',
+      mode: 'OUTPATIENT',
+    });
+    expect(resolved).toMatchObject({
+      id: 'tpl-resolved',
+      version: 3,
+      isDefault: false,
+    });
+    expect(resolved?.content?.assessment).toBe('<p>Dx</p>');
+  });
+
+  it('returns null when no SOAP template is configured (404)', async () => {
+    getDataMock.mockRejectedValueOnce(new Error('not found'));
+    await expect(resolveSoapTemplate({ organisationId: 'org-1' })).resolves.toBeNull();
+  });
+
+  it('returns null when the resolver responds without a templateId', async () => {
+    getDataMock.mockResolvedValueOnce({ data: { name: 'empty' } });
+    await expect(resolveSoapTemplate({ organisationId: 'org-1' })).resolves.toBeNull();
   });
 
   it('loads a single workspace template by id', async () => {

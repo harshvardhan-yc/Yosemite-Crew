@@ -385,7 +385,11 @@ const fieldToFormField = (field: TemplateFieldDefinition): FormField => {
     return { ...base, type: 'number' } as FormField;
   }
 
-  if (field.type === 'textarea' || field.type === 'richText') {
+  if (field.type === 'richText') {
+    return { ...base, type: 'richtext' } as FormField;
+  }
+
+  if (field.type === 'textarea') {
     return { ...base, type: 'textarea' } as FormField;
   }
 
@@ -414,7 +418,9 @@ const formFieldToTemplateField = (field: FormField): TemplateFieldDefinition => 
           ? 'select'
           : field.type === 'group'
             ? 'repeater'
-            : (field.type as TemplateFieldType),
+            : field.type === 'richtext'
+              ? 'richText'
+              : (field.type as TemplateFieldType),
     required: field.required,
     repeatable:
       'multiple' in field ? Boolean((field as { multiple?: boolean }).multiple) : undefined,

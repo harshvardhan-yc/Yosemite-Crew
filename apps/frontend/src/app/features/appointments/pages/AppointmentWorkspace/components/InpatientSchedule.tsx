@@ -15,7 +15,7 @@ import Search from '@/app/ui/inputs/Search';
 import Datepicker from '@/app/ui/inputs/Datepicker';
 import Timepicker from '@/app/ui/inputs/Timepicker';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
-import { Primary } from '@/app/ui/primitives/Buttons';
+import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import type { ScheduleTask, ScheduleTaskStatus } from '@/app/features/appointments/types/workspace';
@@ -32,6 +32,20 @@ type InpatientScheduleProps = {
   onAddTask: (task: Omit<ScheduleTask, 'id'>) => void;
   onUpdateTask: (id: string, patch: Partial<ScheduleTask>) => void;
   onApplyTemplate?: (templateId: string) => void;
+  /**
+   * Lifecycle state of the applied schedule, when one exists. When `active` is a
+   * non-null instance id the pause/resume/cancel/regenerate controls are shown and
+   * call the matching backend action. `paused` toggles pause⇄resume.
+   */
+  scheduleLifecycle?: {
+    instanceId: string | null;
+    paused: boolean;
+    busy: boolean;
+    onPause: () => void;
+    onResume: () => void;
+    onCancel: () => void;
+    onRegenerate: () => void;
+  };
 };
 
 const STATUS_OPTIONS: { label: string; value: ScheduleTaskStatus }[] = [
@@ -247,6 +261,7 @@ const InpatientSchedule = ({
   onAddTask,
   onUpdateTask,
   onApplyTemplate,
+  scheduleLifecycle,
 }: InpatientScheduleProps) => {
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(tasks[0]?.id ?? null);
@@ -309,6 +324,34 @@ const InpatientSchedule = ({
                 }))}
                 searchable
                 onSelect={(option) => onApplyTemplate?.(option.value)}
+              />
+            </div>
+          )}
+          {scheduleLifecycle?.instanceId && !readOnly && (
+            <div className="flex flex-wrap items-center gap-2">
+              {scheduleLifecycle.paused ? (
+                <Secondary
+                  text="Resume"
+                  onClick={scheduleLifecycle.onResume}
+                  isDisabled={scheduleLifecycle.busy}
+                />
+              ) : (
+                <Secondary
+                  text="Pause"
+                  onClick={scheduleLifecycle.onPause}
+                  isDisabled={scheduleLifecycle.busy}
+                />
+              )}
+              <Secondary
+                text="Regenerate"
+                onClick={scheduleLifecycle.onRegenerate}
+                isDisabled={scheduleLifecycle.busy}
+                icon={<LuRefreshCw aria-hidden="true" />}
+              />
+              <Secondary
+                text="Cancel schedule"
+                onClick={scheduleLifecycle.onCancel}
+                isDisabled={scheduleLifecycle.busy}
               />
             </div>
           )}

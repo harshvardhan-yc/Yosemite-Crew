@@ -1926,6 +1926,7 @@ model WorkspaceDocumentPacket {
   companionId    String?
   status         WorkspaceDocumentPacketStatus @default(DRAFT)
   documents      Json
+  signing        Json?
   signedBy       String?
   signedByName   String?
   signedAt       DateTime?
