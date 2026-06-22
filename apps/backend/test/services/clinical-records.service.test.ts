@@ -38,6 +38,12 @@ jest.mock("src/config/prisma", () => ({
       findUnique: jest.fn(),
       findMany: jest.fn(),
     },
+    user: {
+      findFirst: jest.fn(),
+    },
+    appointment: {
+      updateMany: jest.fn(),
+    },
   },
 }));
 
@@ -77,6 +83,12 @@ describe("ClinicalArtifactService clinical records", () => {
       findUnique: jest.Mock;
       findMany: jest.Mock;
     };
+    user: {
+      findFirst: jest.Mock;
+    };
+    appointment: {
+      updateMany: jest.Mock;
+    };
   };
 
   const buildArtifact = (
@@ -104,6 +116,13 @@ describe("ClinicalArtifactService clinical records", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedPrisma.user.findFirst.mockResolvedValue({
+      id: "user-1",
+      userId: "nurse-1",
+      firstName: "Nina",
+      lastName: "Nurse",
+      displayName: "Nina Nurse",
+    });
     mockedPrisma.$transaction.mockImplementation(async (callback: unknown) => {
       if (typeof callback === "function") {
         return callback(prisma);

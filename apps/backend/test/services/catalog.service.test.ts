@@ -297,6 +297,7 @@ describe("CatalogService", () => {
 
     expect(resolved.appointmentKinds).toEqual(["OUTPATIENT", "INPATIENT"]);
     expect(resolved.templateKinds).toEqual([
+      "TASK_ASSIGNMENT",
       "INPATIENT_SCHEDULE",
       "SOAP_NOTE",
       "DISCHARGE_SUMMARY",
