@@ -9,6 +9,7 @@ import DocumentsPanel from '@/app/features/appointments/pages/AppointmentWorkspa
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type { SideAction } from '@/app/features/appointments/types/workspace';
 import { fetchAppointmentForms } from '@/app/features/forms/services/appointmentFormsService';
+import { downloadSubmissionPdf } from '@/app/features/forms/services/formSigningService';
 import {
   saveVitalRecord,
   createPmsObservationSubmission,
@@ -44,6 +45,9 @@ jest.mock('@/app/features/documents/components/CompanionDocumentsSection', () =>
 
 jest.mock('@/app/features/forms/services/appointmentFormsService', () => ({
   fetchAppointmentForms: jest.fn(),
+}));
+jest.mock('@/app/features/forms/services/formSigningService', () => ({
+  downloadSubmissionPdf: jest.fn(),
 }));
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
   saveVitalRecord: jest.fn(),
@@ -584,6 +588,53 @@ describe('DocumentsPanel', () => {
   beforeEach(() => {
     reset();
     (fetchAppointmentForms as jest.Mock).mockResolvedValue(appointmentFormsResponse);
+    (downloadSubmissionPdf as jest.Mock).mockReset();
+    (downloadSubmissionPdf as jest.Mock).mockResolvedValue(new Blob(['pdf']));
+  });
+
+  it('downloads a completed form via the backend PDF and disables pending forms', async () => {
+    const openSpy = jest.spyOn(window, 'open').mockReturnValue(null);
+    // jsdom has no URL.createObjectURL/revokeObjectURL — define them for this test.
+    const createObjectURL = jest.fn().mockReturnValue('blob:form-pdf');
+    const revokeObjectURL = jest.fn();
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectURL,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectURL,
+      writable: true,
+      configurable: true,
+    });
+
+    render(<DocumentsPanel appointmentId={APPT} companionId="comp-9" />);
+    // Completed form (has submission id) is downloadable; pending one is disabled.
+    const downloadBtn = await screen.findByRole('button', {
+      name: /download medication admin - id 67890/i,
+    });
+    expect(downloadBtn).not.toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /awaiting parent submission for consent form/i })
+    ).toBeDisabled();
+
+    fireEvent.click(downloadBtn);
+    await waitFor(() => expect(downloadSubmissionPdf).toHaveBeenCalledWith('sub-1'));
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledWith('blob:form-pdf', '_blank', 'noopener');
+
+    openSpy.mockRestore();
+  });
+
+  it('surfaces an error when the form PDF download fails', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (downloadSubmissionPdf as jest.Mock).mockRejectedValueOnce(new Error('pdf failed'));
+    render(<DocumentsPanel appointmentId={APPT} companionId="comp-9" />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: /download medication admin - id 67890/i })
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to download this form');
+    errorSpy.mockRestore();
   });
 
   it('lists API forms and filters by search', async () => {
