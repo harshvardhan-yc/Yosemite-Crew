@@ -8,6 +8,7 @@ jest.mock("src/services/form-assignment.service", () => ({
     createForAppointment: jest.fn(),
     listForAppointment: jest.fn(),
     listForCompanion: jest.fn(),
+    listForOrganisation: jest.fn(),
     resend: jest.fn(),
     cancel: jest.fn(),
   },
@@ -154,5 +155,67 @@ describe("FormAssignmentController", () => {
 
     expect(status).toHaveBeenCalledWith(400);
     expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  describe("listForOrganisation", () => {
+    it("lists assignments and parses comma-separated status + filters", async () => {
+      req.params = { organisationId: "org-1" };
+      req.query = {
+        parentId: "par-1",
+        companionId: "comp-1",
+        status: "sent, SIGNED",
+      } as never;
+      (
+        FormAssignmentService.listForOrganisation as jest.Mock
+      ).mockResolvedValue([{ id: "fa-1" }]);
+
+      await FormAssignmentController.listForOrganisation(
+        req as Request,
+        res as Response,
+      );
+
+      expect(FormAssignmentService.listForOrganisation).toHaveBeenCalledWith(
+        "org-1",
+        {
+          parentId: "par-1",
+          companionId: "comp-1",
+          status: ["SENT", "SIGNED"],
+        },
+      );
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith([{ id: "fa-1" }]);
+    });
+
+    it("omits status when no filter is supplied", async () => {
+      req.params = { organisationId: "org-1" };
+      req.query = {} as never;
+      (
+        FormAssignmentService.listForOrganisation as jest.Mock
+      ).mockResolvedValue([]);
+
+      await FormAssignmentController.listForOrganisation(
+        req as Request,
+        res as Response,
+      );
+
+      expect(FormAssignmentService.listForOrganisation).toHaveBeenCalledWith(
+        "org-1",
+        { parentId: undefined, companionId: undefined, status: undefined },
+      );
+      expect(status).toHaveBeenCalledWith(200);
+    });
+
+    it("rejects an unknown status value", async () => {
+      req.params = { organisationId: "org-1" };
+      req.query = { status: "BOGUS" } as never;
+
+      await FormAssignmentController.listForOrganisation(
+        req as Request,
+        res as Response,
+      );
+
+      expect(FormAssignmentService.listForOrganisation).not.toHaveBeenCalled();
+      expect(status).toHaveBeenCalledWith(400);
+    });
   });
 });
