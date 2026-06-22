@@ -26,6 +26,7 @@ jest.mock('@/app/features/appointments/services/workspaceAggregateService', () =
     packetId: 'packet-1',
     signing: { status: 'IN_PROGRESS', signingUrl: 'https://sign.test/abc' },
   }),
+  getEncounterDocumentPacketPdfUrl: jest.fn().mockResolvedValue('blob:packet-pdf'),
 }));
 
 jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
@@ -197,7 +198,7 @@ describe('SummaryStep', () => {
     expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.followUpAt).toBeUndefined();
   });
 
-  it('prints all documents', () => {
+  it('falls back to the browser print dialog without encounter context', () => {
     const printSpy = jest.spyOn(window, 'print').mockImplementation(() => undefined);
     renderSummary(seedAndGet());
 
@@ -205,6 +206,17 @@ describe('SummaryStep', () => {
 
     expect(printSpy).toHaveBeenCalled();
     printSpy.mockRestore();
+  });
+
+  it('opens the merged packet PDF when printing with encounter context', async () => {
+    const enc = seedAndGet();
+    render(<SummaryStep appointmentId={APPT} appointment={appointment} encounter={enc} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^print$/i }));
+
+    const preview = await screen.findByTestId('pdf-preview');
+    expect(preview).toHaveTextContent('Clinical packet');
+    expect(preview).toHaveTextContent('blob:packet-pdf');
   });
 
   it('opens an existing workspace document PDF', async () => {

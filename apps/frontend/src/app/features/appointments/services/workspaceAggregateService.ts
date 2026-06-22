@@ -1,4 +1,4 @@
-import { deleteData, getData, patchData, postData } from '@/app/services/axios';
+import api, { deleteData, getData, patchData, postData } from '@/app/services/axios';
 import type {
   AppointmentEncounter,
   DiagnosticOrder,
@@ -465,6 +465,22 @@ export const signWorkspaceDocumentPacket = async (
     body
   );
   return res.data;
+};
+
+/**
+ * Fetch the merged clinical packet (SOAP + Prescription + Discharge, …) as a
+ * single PDF and return a blob URL for preview/print. Caller is responsible for
+ * revoking the URL when done.
+ */
+export const getEncounterDocumentPacketPdfUrl = async (
+  organisationId: string,
+  encounterId: string
+): Promise<string> => {
+  const res = await api.get<Blob>(
+    `/v1/workspace/organisations/${organisationId}/encounters/${encounterId}/document-packet/pdf`,
+    { responseType: 'blob' }
+  );
+  return URL.createObjectURL(res.data);
 };
 
 export const listEncounterTreatmentItems = async (organisationId: string, encounterId: string) => {

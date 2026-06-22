@@ -33,6 +33,7 @@ import {
 import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
 import {
   createEncounterDocumentPacket,
+  getEncounterDocumentPacketPdfUrl,
   signWorkspaceDocumentPacket,
 } from '@/app/features/appointments/services/workspaceAggregateService';
 
@@ -294,6 +295,8 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   const closeSigningOverlay = useSigningOverlayStore((s) => s.close);
   const [isSigning, setIsSigning] = useState(false);
   const [signError, setSignError] = useState<string | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [packetPreviewUrl, setPacketPreviewUrl] = useState<string | null>(null);
   const [templateQuery, setTemplateQuery] = useState('');
   const [templateState, setTemplateState] = useState<{
     templates: TemplateLike[];
@@ -369,6 +372,35 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
     }
   };
 
+  // Open the merged clinical packet (SOAP + Prescription + Discharge) as one PDF.
+  // Falls back to the browser print dialog if the combined PDF isn't available
+  // (e.g. documents not yet rendered, or no org/encounter context).
+  const handlePrint = async () => {
+    if (isPrinting) return;
+    const organisationId = appointment?.organisationId;
+    const encounterId = appointment?.encounterId;
+    if (!organisationId || !encounterId) {
+      globalThis.window.print();
+      return;
+    }
+    setIsPrinting(true);
+    try {
+      const url = await getEncounterDocumentPacketPdfUrl(organisationId, encounterId);
+      setPacketPreviewUrl(url);
+    } catch {
+      globalThis.window.print();
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const closePacketPreview = () => {
+    setPacketPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+  };
+
   const handleSave = async () => {
     if (isSaving) return;
     setIsSaving(true);
@@ -404,6 +436,12 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   return (
     <div className="flex flex-col gap-5">
       <SigningOverlay />
+      <PdfPreviewOverlay
+        open={Boolean(packetPreviewUrl)}
+        title="Clinical packet"
+        pdfUrl={packetPreviewUrl}
+        onClose={closePacketPreview}
+      />
 
       {/* Discharge-template search sits above the container (like the SOAP step's
           template search) — selecting a template fills the editor. */}
@@ -533,9 +571,10 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
         )}
         <div className="flex flex-wrap items-center justify-end gap-3">
           <Secondary
-            text="Print"
+            text={isPrinting ? 'Preparing…' : 'Print'}
             icon={<LuPrinter aria-hidden="true" />}
-            onClick={() => globalThis.window.print()}
+            onClick={handlePrint}
+            isDisabled={isPrinting}
           />
           {!dischargeSaved && (
             <Secondary
