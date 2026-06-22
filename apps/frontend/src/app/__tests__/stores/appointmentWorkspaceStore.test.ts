@@ -176,6 +176,86 @@ describe('appointmentWorkspaceStore', () => {
     expect(soap.filter((n) => n.status === 'COMPLETED')).toHaveLength(1);
   });
 
+  it('prefills S/O/A/P content and version when a template carries content', () => {
+    seed();
+    const tpl = {
+      id: 'tpl-content',
+      name: 'Wellness',
+      version: 4,
+      content: {
+        chiefComplaint: '<p>Annual check</p>',
+        subjective: '<p>History</p>',
+        objective: '<p>Exam</p>',
+        assessment: '<p>Healthy</p>',
+        plan: '<p>Vaccinate</p>',
+      },
+    };
+    getStore().applySoapTemplate(APPT, tpl);
+    const draft = getStore().getEncounter(APPT)!.soap[0];
+    expect(draft.templateId).toBe('tpl-content');
+    expect(draft.templateVersion).toBe(4);
+    expect(draft.subjective).toBe('<p>History</p>');
+    expect(draft.plan).toBe('<p>Vaccinate</p>');
+  });
+
+  it('does not overwrite typed SOAP content when applying a template', () => {
+    seed();
+    getStore().upsertSoap(APPT, { subjective: '<p>clinician typed</p>' });
+    const tpl = {
+      id: 'tpl-content',
+      name: 'Wellness',
+      content: { subjective: '<p>template</p>', plan: '<p>template plan</p>' },
+    };
+    getStore().applySoapTemplate(APPT, tpl);
+    const draft = getStore()
+      .getEncounter(APPT)!
+      .soap.find((n) => n.status !== 'COMPLETED');
+    // Typed subjective is preserved; the empty plan gets the template default.
+    expect(draft?.subjective).toBe('<p>clinician typed</p>');
+    expect(draft?.plan).toBe('<p>template plan</p>');
+  });
+
+  it('applies and merges backend section locks and capabilities', () => {
+    seed();
+    getStore().applyWorkspaceLocks(
+      APPT,
+      { soap: { locked: true, reason: 'Window closed' } },
+      {
+        canEditSoap: false,
+      }
+    );
+    let enc = getStore().getEncounter(APPT);
+    expect(enc?.sectionLocks?.soap).toEqual({ locked: true, reason: 'Window closed' });
+    expect(enc?.capabilities?.canEditSoap).toBe(false);
+    // A later partial apply merges rather than replacing existing sections.
+    getStore().applyWorkspaceLocks(APPT, { invoice: { locked: false } }, undefined);
+    enc = getStore().getEncounter(APPT);
+    expect(enc?.sectionLocks?.soap?.locked).toBe(true);
+    expect(enc?.sectionLocks?.invoice?.locked).toBe(false);
+    expect(enc?.capabilities?.canEditSoap).toBe(false);
+  });
+
+  it('adds a backend observation record and de-dupes by id', () => {
+    seed();
+    const record = {
+      id: 'sub-1',
+      code: 'OT-001',
+      toolKey: 'FGS',
+      toolName: 'Feline grimace scale',
+      scores: { Pain: 1 },
+      total: 3,
+      recordedByName: 'Dr Vet',
+      recordedAt: '2026-06-22T10:00:00.000Z',
+    };
+    getStore().addObservationRecord(APPT, record);
+    expect(getStore().getEncounter(APPT)?.observations).toHaveLength(1);
+    // Re-adding the same id replaces (de-dupes) rather than duplicating.
+    getStore().addObservationRecord(APPT, { ...record, total: 5 });
+    const obs = getStore().getEncounter(APPT)!.observations;
+    expect(obs).toHaveLength(1);
+    expect(obs[0].total).toBe(5);
+  });
+
   it('no-ops signing when there is no active draft', () => {
     seed();
     // Nothing typed yet — signing must not create an empty completed note.

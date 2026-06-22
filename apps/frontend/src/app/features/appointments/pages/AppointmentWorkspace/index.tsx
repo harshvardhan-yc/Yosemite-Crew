@@ -15,8 +15,10 @@ import {
 import {
   WORKSPACE_STEPS,
   type CompanionAlert,
+  type SoapNoteEntry,
   type WorkspaceStep,
 } from '@/app/features/appointments/types/workspace';
+import { isRichTextEmpty } from '@/app/lib/richText';
 import { resolveLockHours } from '@/app/lib/appointmentLockWindow';
 import { getAppointmentCompanion, normalizeAppointmentStatus } from '@/app/lib/appointments';
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
@@ -60,7 +62,10 @@ import {
   updateAppointment,
 } from '@/app/features/appointments/services/appointmentService';
 import { loadWorkspaceClinicalArtifacts } from '@/app/features/appointments/services/workspaceClinicalService';
-import { listSoapTemplatesForWorkspace } from '@/app/features/appointments/services/workspaceTemplateService';
+import {
+  listSoapTemplatesForWorkspace,
+  resolveSoapTemplate,
+} from '@/app/features/appointments/services/workspaceTemplateService';
 import {
   getAppointmentWorkspaceBootstrap,
   normalizeWorkspaceBootstrapForEncounter,
@@ -250,6 +255,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const initEncounter = useAppointmentWorkspaceStore((s) => s.initEncounter);
   const encounter = useAppointmentWorkspaceStore((s) => s.encountersById[appointmentId]);
   const mergeEncounterData = useAppointmentWorkspaceStore((s) => s.mergeEncounterData);
+  const applySoapTemplate = useAppointmentWorkspaceStore((s) => s.applySoapTemplate);
+  const getEncounter = useAppointmentWorkspaceStore((s) => s.getEncounter);
   const activeStep = useAppointmentWorkspaceStore((s) => s.activeStep);
   const setActiveStep = useAppointmentWorkspaceStore((s) => s.setActiveStep);
   const activeSideAction = useAppointmentWorkspaceStore((s) => s.activeSideAction);
@@ -334,8 +341,19 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         authorName: actor.name,
       }),
       listSoapTemplatesForWorkspace(organisationId),
+      // Resolve the service/package/species-linked SOAP template so the active
+      // draft prefills before YC defaults. 404 → null (no default) so it no-ops.
+      resolveSoapTemplate({
+        organisationId,
+        appointmentId,
+        encounterId: appointment.encounterId,
+        companionId: companion.id,
+        species: companion.species,
+        serviceId: appointment.appointmentType?.id,
+        mode: encounter.mode === 'INPATIENT' ? 'INPATIENT' : 'OUTPATIENT',
+      }),
     ])
-      .then(([aggregateResult, clinicalResult, templatesResult]) => {
+      .then(([aggregateResult, clinicalResult, templatesResult, resolvedSoapResult]) => {
         if (aggregateResult.status === 'fulfilled') {
           lifecycleEncounterIdRef.current =
             getWorkspaceBootstrapEncounterId(aggregateResult.value) ??
@@ -348,6 +366,25 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           ...(clinicalResult.status === 'fulfilled' ? clinicalResult.value : {}),
           soapTemplates: templatesResult.status === 'fulfilled' ? templatesResult.value : [],
         });
+        // Prefill the active SOAP draft from the resolved template only when there
+        // is no saved/typed SOAP content yet, so we never overwrite a real record.
+        const resolvedSoap =
+          resolvedSoapResult.status === 'fulfilled' ? resolvedSoapResult.value : null;
+        const liveEncounter = getEncounter(appointmentId);
+        const hasSoapContent = (liveEncounter?.soap ?? []).some(
+          (note: SoapNoteEntry) =>
+            note.status === 'COMPLETED' ||
+            ![
+              note.chiefComplaint,
+              note.subjective,
+              note.objective,
+              note.assessment,
+              note.plan,
+            ].every((value) => isRichTextEmpty(value))
+        );
+        if (resolvedSoap && !hasSoapContent) {
+          applySoapTemplate(appointmentId, resolvedSoap);
+        }
       })
       .catch((error) => {
         console.error('Unable to hydrate workspace data:', error);
@@ -355,11 +392,16 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   }, [
     appointment.encounterId,
     appointment.organisationId,
+    appointment.appointmentType?.id,
     appointmentId,
     actor.id,
     actor.name,
+    companion.id,
+    companion.species,
     encounter,
     mergeEncounterData,
+    applySoapTemplate,
+    getEncounter,
   ]);
 
   const encounterMode = encounter?.mode ?? initialMode;
