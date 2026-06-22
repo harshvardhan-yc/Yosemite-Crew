@@ -72,6 +72,11 @@ export const DocumensoWebhookController = {
         return res.status(400).json({ message: "Invalid payload" });
       }
 
+      // A document id may map to a form submission, a rendered document, or a
+      // document packet (packet signing stores the id only on the packet, not on
+      // a submission). Run whichever handlers match and fall through to the
+      // rendered-document and packet lookups below — never return early just
+      // because there is no submission, or packet-only signings never complete.
       if (isReadFromPostgres()) {
         const submission = await prisma.formSubmission.findFirst({
           where: {
@@ -82,38 +87,32 @@ export const DocumensoWebhookController = {
           },
         });
 
-        if (!submission) {
-          logger.warn("[DocumensoWebhook] No submission found for document");
-          return res.status(200).json({ received: true });
-        }
+        if (submission) {
+          switch (eventType) {
+            case "DOCUMENT_COMPLETED":
+              await handleDocumentCompletedPrisma(submission);
+              break;
 
-        switch (eventType) {
-          case "DOCUMENT_COMPLETED":
-            await handleDocumentCompletedPrisma(submission);
-            break;
-
-          case "DOCUMENT_DELETED":
-            await handleDocumentDeletedPrisma(submission);
-            break;
+            case "DOCUMENT_DELETED":
+              await handleDocumentDeletedPrisma(submission);
+              break;
+          }
         }
       } else {
         const submission = await FormSubmissionModel.findOne({
           "signing.documentId": String(documentId),
         });
 
-        if (!submission) {
-          logger.warn("[DocumensoWebhook] No submission found for document");
-          return res.status(200).json({ received: true });
-        }
+        if (submission) {
+          switch (eventType) {
+            case "DOCUMENT_COMPLETED":
+              await handleDocumentCompleted(submission);
+              break;
 
-        switch (eventType) {
-          case "DOCUMENT_COMPLETED":
-            await handleDocumentCompleted(submission);
-            break;
-
-          case "DOCUMENT_DELETED":
-            await handleDocumentDeleted(submission);
-            break;
+            case "DOCUMENT_DELETED":
+              await handleDocumentDeleted(submission);
+              break;
+          }
         }
       }
 

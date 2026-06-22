@@ -292,8 +292,11 @@ export const FinanceController = {
       // appointmentId; checking appointmentId first keeps the result scoped to the
       // appointment instead of returning every invoice in the organisation.
       if (resolved.appointmentId) {
+        // Keep the lookup scoped to the authorized organisation so an
+        // appointment id from another org can't surface its invoices.
         const invoices = await InvoiceService.getByAppointmentId(
           resolved.appointmentId,
+          resolved.organisationId,
         );
         return res.status(200).json(toFinanceSuccess(invoices));
       }

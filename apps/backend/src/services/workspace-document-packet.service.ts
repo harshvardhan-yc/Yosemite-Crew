@@ -108,6 +108,28 @@ const mapPacket = (row: PacketRecord): WorkspaceDocumentPacketRow => ({
   updatedAt: row.updatedAt,
 });
 
+/**
+ * Only rendered documents can be merged into the signing PDF — the merge loader
+ * resolves bytes from the rendered-document pipeline. Direct uploads
+ * (`sourceKind: "DOCUMENT"`) have no rendered source (their content lives in
+ * uploaded attachments), so including them would fail the whole merge. Skip them
+ * here (with an audit log) so the renderable documents still sign instead of the
+ * packet hard-failing. Merging uploaded attachments is a separate follow-up.
+ */
+const selectMergeableDocuments = (
+  documents: WorkspaceDocumentRow[],
+  context: string,
+): WorkspaceDocumentRow[] => {
+  const mergeable = documents.filter((doc) => doc.sourceKind !== "DOCUMENT");
+  const skipped = documents.length - mergeable.length;
+  if (skipped > 0) {
+    logger.warn(
+      `[WorkspaceDocumentPacket] Skipping ${skipped} non-rendered document(s) when ${context}; only rendered documents are included in the merged PDF.`,
+    );
+  }
+  return mergeable;
+};
+
 const ensurePacket = async (
   organisationId: string,
   packetId: string,
@@ -130,7 +152,7 @@ const resolveSignerEmail = async (
   signerId: string,
   explicit?: string,
 ): Promise<string | null> => {
-  if (explicit && explicit.trim()) {
+  if (explicit?.trim()) {
     return explicit.trim();
   }
   const user = await prisma.user.findFirst({
@@ -233,11 +255,22 @@ export const WorkspaceDocumentPacketService = {
 
     const title = `Clinical Packet ${packet.encounterId}`;
 
+    const mergeableDocuments = selectMergeableDocuments(
+      documents,
+      "signing the document packet",
+    );
+    if (!mergeableDocuments.length) {
+      throw new WorkspaceServiceError(
+        "Document packet has no rendered documents to sign",
+        409,
+      );
+    }
+
     const merged = await buildMergedClinicalPacketPdf({
       organisationId: packet.organisationId,
       title,
       signerName: input.signerName ?? null,
-      documents: documents.map((doc) => ({
+      documents: mergeableDocuments.map((doc) => ({
         documentId: doc.documentId,
         title: doc.title,
         kind: doc.kind,
@@ -281,7 +314,7 @@ export const WorkspaceDocumentPacketService = {
       signerEmail,
       signerName: input.signerName ?? null,
       signingUrl,
-      documentIds: documents.map((d) => d.documentId),
+      documentIds: mergeableDocuments.map((d) => d.documentId),
     };
 
     const updated = (await prisma.workspaceDocumentPacket.update({
@@ -439,12 +472,13 @@ export const WorkspaceDocumentPacketService = {
       [],
     );
 
-    const documents = bootstrap.documents.filter((doc) =>
-      Boolean(doc.documentId),
+    const documents = selectMergeableDocuments(
+      bootstrap.documents.filter((doc) => Boolean(doc.documentId)),
+      "building the encounter packet PDF",
     );
     if (!documents.length) {
       throw new WorkspaceServiceError(
-        "Encounter has no documents to print",
+        "Encounter has no rendered documents to print",
         409,
       );
     }

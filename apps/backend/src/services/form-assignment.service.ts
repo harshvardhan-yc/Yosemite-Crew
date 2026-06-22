@@ -362,21 +362,22 @@ export const FormAssignmentService = {
       if (!parentCompanionIds.length) return [];
     }
 
-    const companionIds = [
-      filters.companionId,
-      ...(parentCompanionIds ?? []),
-    ].filter((value): value is string => Boolean(value));
-
     const where: Prisma.FormAssignmentWhereInput = {
       organisationId,
       status: filters.status?.length
         ? { in: filters.status }
         : { not: "DRAFT" },
     };
-    if (companionIds.length === 1) {
-      where.companionId = companionIds[0];
-    } else if (companionIds.length > 1) {
-      where.companionId = { in: companionIds };
+    // parentId and companionId narrow (intersect) rather than broaden: when both
+    // are given, the companion must belong to the parent, otherwise there is no
+    // overlap and the result is empty.
+    if (filters.companionId && parentCompanionIds) {
+      if (!parentCompanionIds.includes(filters.companionId)) return [];
+      where.companionId = filters.companionId;
+    } else if (filters.companionId) {
+      where.companionId = filters.companionId;
+    } else if (parentCompanionIds) {
+      where.companionId = { in: parentCompanionIds };
     }
 
     const rows = await prisma.formAssignment.findMany({
