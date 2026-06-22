@@ -26,6 +26,9 @@ jest.mock("../../src/middlewares/upload", () => ({
 jest.mock("src/config/prisma", () => ({
   prisma: {
     $transaction: jest.fn(),
+    appointment: {
+      updateMany: jest.fn(),
+    },
     clinicalArtifact: {
       create: jest.fn(),
       update: jest.fn(),
@@ -73,6 +76,9 @@ describe("ClinicalArtifactService", () => {
 
   const mockedPrisma = prisma as unknown as {
     $transaction: jest.Mock;
+    appointment: {
+      updateMany: jest.Mock;
+    };
     clinicalArtifact: {
       create: jest.Mock;
       update: jest.Mock;
@@ -123,6 +129,7 @@ describe("ClinicalArtifactService", () => {
       }
       return undefined;
     });
+    mockedPrisma.appointment.updateMany.mockResolvedValue({ count: 0 });
     mockedRenderedDocumentRenderer.mockResolvedValue({
       pdf: Buffer.from("rendered-pdf"),
       pageCount: 1,
@@ -546,6 +553,18 @@ describe("ClinicalArtifactService", () => {
         data: expect.objectContaining({
           artifactId,
         }),
+      }),
+    );
+    expect(mockedPrisma.appointment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "appt-1",
+          organisationId,
+          status: "CHECKED_IN",
+        },
+        data: {
+          status: "IN_PROGRESS",
+        },
       }),
     );
     expect(mockedPrisma.renderedDocument.create).toHaveBeenCalledWith(

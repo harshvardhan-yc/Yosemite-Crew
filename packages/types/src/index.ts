@@ -349,6 +349,7 @@ export type {
   WorkspaceDocumentRow,
   WorkspaceDocumentPacketRow,
   WorkspaceDocumentPacketStatus,
+  WorkspaceFinalizationGate,
   WorkspaceLabSummary,
   WorkspaceLockState,
   WorkspacePermissionSnapshot,

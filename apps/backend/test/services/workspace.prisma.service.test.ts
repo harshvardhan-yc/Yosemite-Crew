@@ -15,12 +15,14 @@ jest.mock("src/config/prisma", () => ({
     organization: { findUnique: jest.fn() },
     patient: { findFirst: jest.fn() },
     parent: { findFirst: jest.fn() },
+    admission: { findUnique: jest.fn() },
     productItem: { findFirst: jest.fn(), findMany: jest.fn() },
     task: { findMany: jest.fn() },
     taskSchedule: { findMany: jest.fn() },
     templateInstance: { findMany: jest.fn() },
     document: { findMany: jest.fn() },
     renderedDocument: { findMany: jest.fn() },
+    prescriptionDispenseRequest: { findMany: jest.fn() },
     workspaceTreatmentItem: {
       findMany: jest.fn(),
       create: jest.fn(),
@@ -61,12 +63,14 @@ describe("WorkspaceService", () => {
     organization: { findUnique: jest.Mock };
     patient: { findFirst: jest.Mock };
     parent: { findFirst: jest.Mock };
+    admission: { findUnique: jest.Mock };
     productItem: { findFirst: jest.Mock; findMany: jest.Mock };
     task: { findMany: jest.Mock };
     taskSchedule: { findMany: jest.Mock };
     templateInstance: { findMany: jest.Mock };
     document: { findMany: jest.Mock };
     renderedDocument: { findMany: jest.Mock };
+    prescriptionDispenseRequest: { findMany: jest.Mock };
     workspaceTreatmentItem: {
       findMany: jest.Mock;
       create: jest.Mock;
@@ -101,12 +105,14 @@ describe("WorkspaceService", () => {
     mockedPrisma.organization.findUnique.mockResolvedValue(null);
     mockedPrisma.patient.findFirst.mockResolvedValue(null);
     mockedPrisma.parent.findFirst.mockResolvedValue(null);
+    mockedPrisma.admission.findUnique.mockResolvedValue(null);
     mockedPrisma.productItem.findFirst.mockResolvedValue(null);
     mockedPrisma.task.findMany.mockResolvedValue([]);
     mockedPrisma.taskSchedule.findMany.mockResolvedValue([]);
     mockedPrisma.templateInstance.findMany.mockResolvedValue([]);
     mockedPrisma.document.findMany.mockResolvedValue([]);
     mockedPrisma.renderedDocument.findMany.mockResolvedValue([]);
+    mockedPrisma.prescriptionDispenseRequest.findMany.mockResolvedValue([]);
     mockedPrisma.productItem.findMany.mockResolvedValue([]);
     mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([]);
     mockedPrisma.workspaceTreatmentItem.findFirst.mockResolvedValue(null);
@@ -391,6 +397,23 @@ describe("WorkspaceService", () => {
       }),
     ]);
     expect(result.primaryAction.kind).toBe("COMPLETE_FORMS");
+    expect(result.primaryAction.enabled).toBe(false);
+    expect(result.primaryAction.disabledReason).toBe(
+      "You do not have permission to edit clinical forms.",
+    );
+    expect(result.finalizationGate).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        disabledReason: "Required forms are still pending.",
+        requiredSoapOrDischargeComplete: true,
+        requiredFormsSigned: false,
+        pendingLabsResolved: false,
+        billingReady: true,
+        pendingDispenseRequestsResolved: true,
+        inpatientRoomAdmissionReady: true,
+        requiredTasksComplete: false,
+      }),
+    );
     expect(result.treatmentItems).toHaveLength(2);
     expect(result.diagnosticQueue).toHaveLength(3);
     expect(result.labSummary.pendingCount).toBe(1);
@@ -575,6 +598,20 @@ describe("WorkspaceService", () => {
     expect(result.appointment).toBeNull();
     expect(result.forms).toEqual([]);
     expect(result.primaryAction.kind).toBe("VIEW_SUMMARY");
+    expect(result.primaryAction.enabled).toBe(true);
+    expect(result.finalizationGate).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        disabledReason: "Inpatient admission or room state is incomplete.",
+        requiredSoapOrDischargeComplete: true,
+        requiredFormsSigned: true,
+        pendingLabsResolved: true,
+        billingReady: true,
+        pendingDispenseRequestsResolved: true,
+        inpatientRoomAdmissionReady: false,
+        requiredTasksComplete: true,
+      }),
+    );
     expect(result.permissions.canEditSoap).toBe(false);
     expect(result.permissions.canPrescribe).toBe(false);
     expect(result.permissions.canSignDocuments).toBe(false);

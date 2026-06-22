@@ -81,6 +81,11 @@ type VitalRecordPresentation = VitalRecordModel & {
 };
 
 type ClinicalPrisma = typeof prisma & {
+  appointment: {
+    updateMany(
+      args: Prisma.AppointmentUpdateManyArgs,
+    ): Promise<Prisma.BatchPayload>;
+  };
   prescription: {
     findUnique(
       args: Prisma.PrescriptionFindUniqueArgs,
@@ -961,6 +966,26 @@ const FINAL_CLINICAL_ARTIFACT_STATUSES = new Set<ClinicalArtifactStatus>([
 const isFinalClinicalArtifactStatus = (status: ClinicalArtifactStatus) =>
   FINAL_CLINICAL_ARTIFACT_STATUSES.has(status);
 
+const advanceCheckedInAppointment = async (
+  txPrisma: ClinicalPrisma,
+  input: { organisationId: string; appointmentId?: string },
+) => {
+  if (!input.appointmentId) {
+    return;
+  }
+
+  await txPrisma.appointment.updateMany({
+    where: {
+      id: input.appointmentId,
+      organisationId: input.organisationId,
+      status: "CHECKED_IN",
+    },
+    data: {
+      status: "IN_PROGRESS",
+    },
+  });
+};
+
 export const ClinicalArtifactService = {
   async createSoapNote(input: SoapNoteInput): Promise<SoapNoteRecord> {
     const organisationId = ensureId(input.organisationId, "organisationId");
@@ -992,6 +1017,11 @@ export const ClinicalArtifactService = {
           diagnoses: toNullableJsonInput(input.diagnoses),
           metadata: toNullableJsonInput(input.metadata),
         },
+      });
+
+      await advanceCheckedInAppointment(txPrisma, {
+        organisationId,
+        appointmentId: input.appointmentId,
       });
 
       if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
@@ -1189,6 +1219,11 @@ export const ClinicalArtifactService = {
           metadata: toNullableJsonInput(input.metadata),
         },
         include: { items: true },
+      });
+
+      await advanceCheckedInAppointment(txPrisma, {
+        organisationId,
+        appointmentId: input.appointmentId,
       });
 
       if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
@@ -1429,6 +1464,11 @@ export const ClinicalArtifactService = {
         },
       });
 
+      await advanceCheckedInAppointment(txPrisma, {
+        organisationId,
+        appointmentId: input.appointmentId,
+      });
+
       if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
         await createRenderedDocumentRecord(
           buildClinicalArtifactRenderedDocumentInput({
@@ -1629,6 +1669,11 @@ export const ClinicalArtifactService = {
             ),
           ),
         },
+      });
+
+      await advanceCheckedInAppointment(txPrisma, {
+        organisationId,
+        appointmentId: input.appointmentId,
       });
 
       if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {

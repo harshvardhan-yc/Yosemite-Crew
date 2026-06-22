@@ -38,6 +38,14 @@ router.get(
 );
 
 router.get(
+  "/organisations/:organisationId/encounters/:encounterId/finalization-gate",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission(["appointments:view:any", "appointments:view:own"]),
+  (req, res) => WorkspaceController.getEncounterFinalizationGate(req, res),
+);
+
+router.get(
   "/organisations/:organisationId/encounters/:encounterId/treatment-items",
   authorizeCognito,
   withOrgPermissions(),

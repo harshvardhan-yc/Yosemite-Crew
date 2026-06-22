@@ -84,6 +84,20 @@ export interface WorkspacePrimaryAction {
   kind: 'COMPLETE_FORMS' | 'REVIEW_TASKS' | 'CONTINUE_CHARTING' | 'VIEW_LABS' | 'VIEW_SUMMARY';
   label: string;
   detail: string;
+  enabled: boolean;
+  disabledReason: string | null;
+}
+
+export interface WorkspaceFinalizationGate {
+  enabled: boolean;
+  disabledReason: string | null;
+  requiredSoapOrDischargeComplete: boolean;
+  requiredFormsSigned: boolean;
+  pendingLabsResolved: boolean;
+  billingReady: boolean;
+  pendingDispenseRequestsResolved: boolean;
+  inpatientRoomAdmissionReady: boolean;
+  requiredTasksComplete: boolean;
 }
 
 export interface WorkspaceFormRow extends Omit<FormAssignmentLike, 'status'> {
@@ -191,6 +205,7 @@ export interface WorkspaceBootstrapResponse {
   documents: WorkspaceDocumentRow[];
   locks: WorkspaceLockState;
   permissions: WorkspacePermissionSnapshot;
+  finalizationGate: WorkspaceFinalizationGate;
   primaryAction: WorkspacePrimaryAction;
 }
 

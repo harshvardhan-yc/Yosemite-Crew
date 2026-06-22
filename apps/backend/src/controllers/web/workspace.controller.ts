@@ -118,6 +118,19 @@ export const WorkspaceController = {
     }
   },
 
+  async getEncounterFinalizationGate(req: Request, res: Response) {
+    try {
+      const params = encounterParamsSchema.parse(req.params);
+      const data = await WorkspaceService.getEncounterFinalizationGate(
+        params,
+        resolvePermissions(req),
+      );
+      return res.status(200).json(data);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async getAppointmentDocuments(req: Request, res: Response) {
     try {
       const params = appointmentParamsSchema.parse(req.params);

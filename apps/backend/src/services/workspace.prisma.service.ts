@@ -9,6 +9,7 @@ import type {
   WorkspaceBootstrapResponse,
   WorkspaceDiagnosticQueueItem,
   WorkspaceDocumentRow,
+  WorkspaceFinalizationGate,
   WorkspaceLabSummary,
   WorkspaceLockState,
   WorkspacePermissionSnapshot,
@@ -142,6 +143,25 @@ type WorkspaceBootstrapBillingState = {
   readyForDischarge: boolean;
 };
 
+type AdmissionRow = {
+  encounterId: string;
+  organisationId: string;
+  patientId: string;
+  unitId: string | null;
+  dischargedAt: Date | null;
+};
+
+type PrescriptionDispenseRequestRow = {
+  id: string;
+  status: string;
+  prescription: {
+    artifact: {
+      appointmentId: string | null;
+      encounterId: string | null;
+    };
+  };
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -245,6 +265,30 @@ const buildPermissionSnapshot = (
   };
 };
 
+const resolvePrimaryActionDisabledReason = (input: {
+  kind: WorkspacePrimaryAction["kind"];
+  permissions: WorkspacePermissionSnapshot;
+}): string | null => {
+  switch (input.kind) {
+    case "COMPLETE_FORMS":
+    case "CONTINUE_CHARTING":
+      return input.permissions.canEditSoap
+        ? null
+        : "You do not have permission to edit clinical forms.";
+    case "REVIEW_TASKS":
+      return input.permissions.canViewTasks || input.permissions.canAssignTasks
+        ? null
+        : "You do not have permission to view tasks.";
+    case "VIEW_LABS":
+      return input.permissions.canViewLabs
+        ? null
+        : "You do not have permission to view labs.";
+    case "VIEW_SUMMARY":
+    default:
+      return null;
+  }
+};
+
 const resolveLockWindowMinutes = (
   organisation: OrganizationLockWindowRow | null,
   appointmentKind: string | undefined,
@@ -325,6 +369,133 @@ const loadBootstrapBillingState = async (input: {
   };
 };
 
+const loadAdmission = async (encounterId?: string) => {
+  if (!encounterId) {
+    return null;
+  }
+
+  return (await prisma.admission.findUnique({
+    where: { encounterId },
+  })) as AdmissionRow | null;
+};
+
+const loadPendingDispenseRequests = async (input: {
+  organisationId: string;
+  appointmentId?: string;
+  encounterId?: string;
+}) => {
+  const requests = (await prisma.prescriptionDispenseRequest.findMany({
+    where: {
+      organisationId: input.organisationId,
+      status: "PENDING",
+    },
+    include: {
+      prescription: {
+        include: {
+          artifact: {
+            select: {
+              appointmentId: true,
+              encounterId: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+  })) as PrescriptionDispenseRequestRow[];
+
+  return requests.filter((request) => {
+    const artifact = request.prescription.artifact;
+    if (input.encounterId && artifact.encounterId === input.encounterId) {
+      return true;
+    }
+    if (input.appointmentId && artifact.appointmentId === input.appointmentId) {
+      return true;
+    }
+    return false;
+  });
+};
+
+const buildFinalizationGate = (input: {
+  appointment: AppointmentRow | null;
+  encounter: Encounter | null;
+  forms: WorkspaceFormRow[];
+  tasks: Array<{ status: string }>;
+  clinicalArtifacts: Array<{
+    artifact?: { status?: string; kind?: string };
+    status?: string;
+  }>;
+  labSummary: WorkspaceLabSummary;
+  billingState: WorkspaceBootstrapBillingState;
+  pendingDispenseRequests: PrescriptionDispenseRequestRow[];
+  admission: AdmissionRow | null;
+}): WorkspaceFinalizationGate => {
+  const requiredFormsSigned = !input.forms.some(
+    (form) => form.status === "pending",
+  );
+  const requiredTasksComplete = !input.tasks.some(
+    (task) => task.status !== "COMPLETED" && task.status !== "CANCELLED",
+  );
+  const requiredSoapOrDischargeComplete = !input.clinicalArtifacts.some(
+    (artifact) => {
+      const status = artifact.artifact?.status ?? artifact.status ?? "DRAFT";
+      const kind = artifact.artifact?.kind;
+      if (kind !== "SOAP_NOTE" && kind !== "DISCHARGE_SUMMARY") {
+        return false;
+      }
+      return status === "DRAFT" || status === "IN_PROGRESS";
+    },
+  );
+  const pendingLabsResolved = !input.labSummary.blockingFinalization;
+  const billingReady =
+    input.billingState.invoice == null ||
+    input.billingState.readyForBilling ||
+    input.billingState.visitBillingStage === "SETTLED";
+  const pendingDispenseRequestsResolved =
+    input.pendingDispenseRequests.length === 0;
+  const isInpatient =
+    normalizeAppointmentKind(
+      input.appointment?.appointmentKind ?? input.encounter?.appointmentKind,
+    ) === "INPATIENT";
+  const inpatientRoomAdmissionReady =
+    !isInpatient || input.admission?.dischargedAt != null;
+
+  const blockerReasons: string[] = [];
+  if (!requiredSoapOrDischargeComplete) {
+    blockerReasons.push("SOAP notes or discharge summaries are still open.");
+  }
+  if (!requiredFormsSigned) {
+    blockerReasons.push("Required forms are still pending.");
+  }
+  if (!pendingLabsResolved) {
+    blockerReasons.push("Pending labs still block finalization.");
+  }
+  if (!billingReady) {
+    blockerReasons.push("Billing is not ready for finalization.");
+  }
+  if (!pendingDispenseRequestsResolved) {
+    blockerReasons.push("Pending dispense requests still need review.");
+  }
+  if (!inpatientRoomAdmissionReady) {
+    blockerReasons.push("Inpatient admission or room state is incomplete.");
+  }
+  if (!requiredTasksComplete) {
+    blockerReasons.push("There are active tasks that still need attention.");
+  }
+
+  return {
+    enabled: blockerReasons.length === 0,
+    disabledReason: blockerReasons[0] ?? null,
+    requiredSoapOrDischargeComplete,
+    requiredFormsSigned,
+    pendingLabsResolved,
+    billingReady,
+    pendingDispenseRequestsResolved,
+    inpatientRoomAdmissionReady,
+    requiredTasksComplete,
+  };
+};
+
 const buildLocks = (locked: boolean): WorkspaceLockState => ({
   appointment: locked,
   encounter: locked,
@@ -341,52 +512,70 @@ const buildPrimaryAction = (input: {
   tasks: Array<{ status: string }>;
   clinicalArtifacts: Array<{ status: string }>;
   labSummary: WorkspaceLabSummary;
+  permissions: WorkspacePermissionSnapshot;
 }): WorkspacePrimaryAction => {
+  let action: WorkspacePrimaryAction = {
+    kind: "VIEW_SUMMARY",
+    label: "View summary",
+    detail: "No outstanding action was detected for this workspace.",
+    enabled: true,
+    disabledReason: null,
+  };
+
   if (input.forms.some((form) => form.status === "pending")) {
-    return {
+    action = {
       kind: "COMPLETE_FORMS",
       label: "Complete forms",
       detail: "There are outstanding forms to finish before continuing.",
+      enabled: true,
+      disabledReason: null,
     };
-  }
-
-  if (
+  } else if (
     input.tasks.some(
       (task) => task.status !== "COMPLETED" && task.status !== "CANCELLED",
     )
   ) {
-    return {
+    action = {
       kind: "REVIEW_TASKS",
       label: "Review tasks",
       detail: "There are active tasks that still need attention.",
+      enabled: true,
+      disabledReason: null,
     };
-  }
-
-  if (
+  } else if (
     input.clinicalArtifacts.some(
       (artifact) =>
         artifact.status === "DRAFT" || artifact.status === "IN_PROGRESS",
     )
   ) {
-    return {
+    action = {
       kind: "CONTINUE_CHARTING",
       label: "Continue charting",
       detail: "An open clinical record can be resumed.",
+      enabled: true,
+      disabledReason: null,
     };
-  }
-
-  if (input.labSummary.pendingCount > 0) {
-    return {
+  } else if (input.labSummary.pendingCount > 0) {
+    action = {
       kind: "VIEW_LABS",
       label: "Review labs",
       detail: "There are pending lab items to review.",
+      enabled: true,
+      disabledReason: null,
     };
   }
 
   return {
-    kind: "VIEW_SUMMARY",
-    label: "View summary",
-    detail: "No outstanding action was detected for this workspace.",
+    ...action,
+    enabled:
+      resolvePrimaryActionDisabledReason({
+        kind: action.kind,
+        permissions: input.permissions,
+      }) == null,
+    disabledReason: resolvePrimaryActionDisabledReason({
+      kind: action.kind,
+      permissions: input.permissions,
+    }),
   };
 };
 
@@ -1378,6 +1567,8 @@ const buildBootstrapAggregate = async (
     templateInstances,
     documents,
     ordersAndResults,
+    admission,
+    pendingDispenseRequests,
   ] = await Promise.all([
     loadForms(input.organisationId, appointmentId),
     loadClinicalArtifacts({
@@ -1418,6 +1609,12 @@ const buildBootstrapAggregate = async (
       appointmentId,
       companionId,
     }),
+    loadAdmission(encounterId),
+    loadPendingDispenseRequests({
+      organisationId: input.organisationId,
+      appointmentId,
+      encounterId,
+    }),
   ]);
 
   const diagnosticPreloads = await loadDiagnosticPreloads({
@@ -1438,6 +1635,21 @@ const buildBootstrapAggregate = async (
     organisationId: input.organisationId,
     appointmentId,
     encounter: context.encounter,
+  });
+  const permissionsSnapshot = buildPermissionSnapshot(permissions);
+  const finalizationGate = buildFinalizationGate({
+    appointment: context.appointment,
+    encounter: context.encounter,
+    forms: forms.items,
+    tasks,
+    clinicalArtifacts: clinical.clinicalArtifacts as Array<{
+      artifact?: { status?: string; kind?: string };
+      status?: string;
+    }>,
+    labSummary,
+    billingState,
+    pendingDispenseRequests,
+    admission,
   });
 
   return {
@@ -1506,7 +1718,8 @@ const buildBootstrapAggregate = async (
     forms: forms.items,
     documents,
     locks: buildLocks(locked),
-    permissions: buildPermissionSnapshot(permissions),
+    permissions: permissionsSnapshot,
+    finalizationGate,
     invoice: billingState.invoice,
     visitBillingStage: billingState.visitBillingStage,
     readyForBilling: billingState.readyForBilling,
@@ -1521,6 +1734,7 @@ const buildBootstrapAggregate = async (
           "DRAFT",
       })),
       labSummary,
+      permissions: permissionsSnapshot,
     }),
   } as WorkspaceBootstrapResponse;
 };
@@ -1556,6 +1770,18 @@ export const WorkspaceService = {
       },
       permissions,
     );
+  },
+
+  async getEncounterFinalizationGate(
+    input: WorkspaceBootstrapInput,
+    permissions?: string[],
+  ): Promise<WorkspaceFinalizationGate> {
+    const bootstrap = await WorkspaceService.getEncounterBootstrap(
+      input,
+      permissions,
+    );
+
+    return bootstrap.finalizationGate;
   },
 
   async getAppointmentDocuments(
