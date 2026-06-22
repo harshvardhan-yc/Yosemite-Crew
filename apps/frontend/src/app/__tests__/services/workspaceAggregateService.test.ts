@@ -302,6 +302,53 @@ describe('workspaceAggregateService', () => {
     expect(without.capabilities).toBeUndefined();
   });
 
+  it('reads capability flags from the backend `permissions` key', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      permissions: { canEditSoap: true, canCollectPayment: false, notACapability: true },
+    });
+    expect(patch.capabilities).toEqual({ canEditSoap: true, canCollectPayment: false });
+  });
+
+  it('normalizes the primary action and finalization gate from the bootstrap', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      primaryAction: {
+        kind: 'DISCHARGE',
+        label: 'Discharge patient',
+        detail: 'All requirements met',
+        enabled: true,
+      },
+      finalizationGate: {
+        enabled: false,
+        disabledReason: 'Forms not signed',
+        requiredFormsSigned: false,
+        billingReady: true,
+        notAGateFlag: true,
+      },
+    });
+    expect(patch.primaryAction).toEqual({
+      kind: 'DISCHARGE',
+      label: 'Discharge patient',
+      detail: 'All requirements met',
+      enabled: true,
+      disabledReason: undefined,
+    });
+    expect(patch.finalizationGate).toEqual({
+      enabled: false,
+      disabledReason: 'Forms not signed',
+      requiredFormsSigned: false,
+      billingReady: true,
+    });
+  });
+
+  it('skips an unlabelled primary action and a gate without an enabled flag', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      primaryAction: { kind: 'NONE' },
+      finalizationGate: { disabledReason: 'no enabled flag' },
+    });
+    expect(patch.primaryAction).toBeUndefined();
+    expect(patch.finalizationGate).toBeUndefined();
+  });
+
   it('splits package-expanded treatment items into services and prescriptions by kind', () => {
     const patch = normalizeWorkspaceBootstrapForEncounter({
       treatmentItems: [

@@ -256,6 +256,21 @@ describe('appointmentWorkspaceStore', () => {
     expect(obs[0].total).toBe(5);
   });
 
+  it('merges backend primaryAction and finalizationGate into the encounter', () => {
+    seed();
+    getStore().mergeEncounterData(APPT, {
+      primaryAction: { label: 'Discharge patient', enabled: true },
+      finalizationGate: { enabled: false, disabledReason: 'Forms not signed' },
+    });
+    const enc = getStore().getEncounter(APPT);
+    expect(enc?.primaryAction).toEqual({ label: 'Discharge patient', enabled: true });
+    expect(enc?.finalizationGate?.enabled).toBe(false);
+    expect(enc?.finalizationGate?.disabledReason).toBe('Forms not signed');
+    // A later merge without these keys preserves the existing snapshot.
+    getStore().mergeEncounterData(APPT, { soap: [] });
+    expect(getStore().getEncounter(APPT)?.primaryAction?.label).toBe('Discharge patient');
+  });
+
   it('no-ops signing when there is no active draft', () => {
     seed();
     // Nothing typed yet — signing must not create an empty completed note.

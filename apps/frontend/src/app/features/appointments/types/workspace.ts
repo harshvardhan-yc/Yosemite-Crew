@@ -382,6 +382,10 @@ export type AppointmentEncounter = {
   sectionLocks?: WorkspaceLockState;
   /** Backend-owned effective capability flags from the workspace bootstrap. */
   capabilities?: WorkspaceCapabilities;
+  /** Backend-owned recommended next action from the workspace bootstrap. */
+  primaryAction?: WorkspacePrimaryAction;
+  /** Backend-owned finalization (discharge/finalize) readiness from the bootstrap. */
+  finalizationGate?: WorkspaceFinalizationGate;
 };
 
 /**
@@ -430,5 +434,34 @@ export type WorkspaceCapability =
   | 'canCollectPayment';
 
 export type WorkspaceCapabilities = Partial<Record<WorkspaceCapability, boolean>>;
+
+/**
+ * Backend-owned "next action" for the encounter (workspace header / board CTA).
+ * Rendered as the recommended next step; never re-derived client-side.
+ */
+export type WorkspacePrimaryAction = {
+  kind?: string;
+  label: string;
+  detail?: string;
+  enabled: boolean;
+  disabledReason?: string;
+};
+
+/**
+ * Backend-owned finalization (discharge/finalize) readiness. `enabled === true` is
+ * the only safe signal that finalize/discharge may proceed; the boolean fields are
+ * a per-requirement checklist for the UI.
+ */
+export type WorkspaceFinalizationGate = {
+  enabled: boolean;
+  disabledReason?: string;
+  requiredSoapOrDischargeComplete?: boolean;
+  requiredFormsSigned?: boolean;
+  pendingLabsResolved?: boolean;
+  billingReady?: boolean;
+  pendingDispenseRequestsResolved?: boolean;
+  inpatientRoomAdmissionReady?: boolean;
+  requiredTasksComplete?: boolean;
+};
 
 export type SideAction = 'RECORD' | 'TASKS' | 'DOCUMENTS' | 'CHAT' | 'ACTIVITY' | 'MSD';

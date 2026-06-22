@@ -10,8 +10,10 @@ import type {
   WorkspaceCapabilities,
   WorkspaceCapability,
   WorkspaceDocument,
+  WorkspaceFinalizationGate,
   WorkspaceLockSection,
   WorkspaceLockState,
+  WorkspacePrimaryAction,
   WorkspaceStep,
 } from '@/app/features/appointments/types/workspace';
 
@@ -413,6 +415,47 @@ const normalizeCapabilities = (value: unknown): WorkspaceCapabilities | undefine
   return Object.keys(capabilities).length > 0 ? capabilities : undefined;
 };
 
+const normalizePrimaryAction = (value: unknown): WorkspacePrimaryAction | undefined => {
+  if (!isRecord(value)) return undefined;
+  const label = asString(value.label);
+  const enabled = asBoolean(value.enabled);
+  // A primary action without a label is not renderable; skip it.
+  if (!label) return undefined;
+  return {
+    kind: asString(value.kind),
+    label,
+    detail: asString(value.detail),
+    enabled: enabled ?? true,
+    disabledReason: asString(value.disabledReason),
+  };
+};
+
+const FINALIZATION_GATE_FLAGS: (keyof WorkspaceFinalizationGate)[] = [
+  'requiredSoapOrDischargeComplete',
+  'requiredFormsSigned',
+  'pendingLabsResolved',
+  'billingReady',
+  'pendingDispenseRequestsResolved',
+  'inpatientRoomAdmissionReady',
+  'requiredTasksComplete',
+];
+
+const normalizeFinalizationGate = (value: unknown): WorkspaceFinalizationGate | undefined => {
+  if (!isRecord(value)) return undefined;
+  const enabled = asBoolean(value.enabled);
+  if (enabled === undefined) return undefined;
+  const gate: WorkspaceFinalizationGate = {
+    enabled,
+    disabledReason: asString(value.disabledReason),
+  };
+  for (const flag of FINALIZATION_GATE_FLAGS) {
+    const parsed = asBoolean(value[flag]);
+    // `flag` keys all map to optional booleans; the dynamic index needs a cast.
+    if (parsed !== undefined) (gate as unknown as Record<string, boolean>)[flag] = parsed;
+  }
+  return gate;
+};
+
 export const normalizeWorkspaceBootstrapForEncounter = (
   bootstrap: WorkspaceBootstrapDTO
 ): Omit<Partial<AppointmentEncounter>, 'stepStatus'> & {
@@ -441,8 +484,16 @@ export const normalizeWorkspaceBootstrapForEncounter = (
   const sectionLocks =
     normalizeSectionLocks(bootstrap.sectionLocks) ?? normalizeSectionLocks(bootstrap.locks);
   if (sectionLocks) patch.sectionLocks = sectionLocks;
-  const capabilities = normalizeCapabilities(bootstrap.capabilities);
+  // The backend bootstrap returns capability flags under `permissions`; accept
+  // `capabilities` too for forward-compatibility.
+  const capabilities =
+    normalizeCapabilities(bootstrap.permissions) ?? normalizeCapabilities(bootstrap.capabilities);
   if (capabilities) patch.capabilities = capabilities;
+
+  const primaryAction = normalizePrimaryAction(bootstrap.primaryAction);
+  if (primaryAction) patch.primaryAction = primaryAction;
+  const finalizationGate = normalizeFinalizationGate(bootstrap.finalizationGate);
+  if (finalizationGate) patch.finalizationGate = finalizationGate;
 
   const stepStatus = Object.entries(STEP_STATUS_BY_AGGREGATE_KEY).reduce<
     Partial<Record<WorkspaceStep, 'COMPLETED'>>

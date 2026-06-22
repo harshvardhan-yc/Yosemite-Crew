@@ -14,6 +14,7 @@ import {
 } from '@/app/lib/appointmentWorkspace';
 import {
   WORKSPACE_STEPS,
+  type AppointmentEncounter,
   type CompanionAlert,
   type SoapNoteEntry,
   type WorkspaceStep,
@@ -169,6 +170,10 @@ type DischargeDateTimeModalProps = {
   setDischargeTime: (next: string) => void;
   onConfirm: () => void;
   isSaving: boolean;
+  /** Backend-owned discharge readiness; when disabled, an override reason is required. */
+  gate?: AppointmentEncounter['finalizationGate'];
+  overrideReason: string;
+  setOverrideReason: (next: string) => void;
 };
 
 const DischargeDateTimeModal = ({
@@ -180,16 +185,45 @@ const DischargeDateTimeModal = ({
   setDischargeTime,
   onConfirm,
   isSaving,
+  gate,
+  overrideReason,
+  setOverrideReason,
 }: DischargeDateTimeModalProps) => {
   const handleCancel = () => {
     if (isSaving) return;
     setShowModal(false);
   };
 
+  // When the backend gate blocks discharge, the clinician must give an override
+  // reason before confirming — this is the audited, exceptional discharge path.
+  const gateBlocked = gate ? gate.enabled === false : false;
+  const overrideMissing = gateBlocked && !overrideReason.trim();
+  const confirmLabel = (() => {
+    if (isSaving) return 'Discharging...';
+    return gateBlocked ? 'Override & discharge' : 'Confirm discharge';
+  })();
+
   return (
     <CenterModal showModal={showModal} setShowModal={setShowModal} onClose={handleCancel}>
       <div className="flex w-full flex-col gap-4">
         <ModalHeader title="Discharge date & time" onClose={handleCancel} />
+        {gateBlocked && (
+          <div className="flex flex-col gap-2 rounded-2xl bg-danger-100 p-3">
+            <p className="text-body-4 text-danger-700">
+              {gate?.disabledReason ?? 'This encounter is not ready for discharge.'}
+            </p>
+            <label className="flex flex-col gap-1 text-caption-2 text-text-secondary">
+              Override reason (required)
+              <textarea
+                value={overrideReason}
+                onChange={(event) => setOverrideReason(event.target.value)}
+                rows={2}
+                className="rounded-xl border border-input-border-default px-3 py-2 text-body-4 text-text-primary"
+                placeholder="Explain why discharge proceeds despite the open requirements"
+              />
+            </label>
+          </div>
+        )}
         <div className={`${isSaving ? 'pointer-events-none opacity-60' : ''} flex flex-col gap-3`}>
           <Datepicker
             type="input"
@@ -209,9 +243,9 @@ const DischargeDateTimeModal = ({
           />
           <Primary
             href="#"
-            text={isSaving ? 'Discharging...' : 'Confirm discharge'}
+            text={confirmLabel}
             onClick={onConfirm}
-            isDisabled={isSaving}
+            isDisabled={isSaving || overrideMissing}
             className="w-auto min-w-36"
           />
         </div>
@@ -276,6 +310,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const [summaryDischargeTime, setSummaryDischargeTime] = useState<string>(() =>
     toTimeString(new Date())
   );
+  const [dischargeOverrideReason, setDischargeOverrideReason] = useState('');
   const lifecycleEncounterIdRef = useRef<string | undefined>(appointment.encounterId);
   const supportStaffMember = useMemo(() => {
     const leadName = (appointment.lead?.name ?? '').trim();
@@ -971,13 +1006,14 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   }, [appointment, isCompletedAppointment]);
 
   const handleDischarge = useCallback(
-    async (dischargedAt: string) => {
+    async (dischargedAt: string, overrideReason?: string) => {
       if (isFinalizing) return;
       setIsFinalizing(true);
       try {
         await dischargeEncounter(
           lifecycleEncounterIdRef.current ?? appointment.encounterId,
-          dischargedAt
+          dischargedAt,
+          { overrideReason }
         );
         await completeAppointmentStatus();
         markDischarged(appointmentId, dischargedAt);
@@ -1036,12 +1072,14 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   }, [effectiveEncounter, handleComplete, isFinalizing]);
 
   const handleConfirmSummaryDischarge = useCallback(() => {
-    void handleDischarge(buildAdmissionDateTime(summaryDischargeDate, summaryDischargeTime)).then(
-      () => {
-        setIsSummaryDischargeModalOpen(false);
-      }
-    );
-  }, [handleDischarge, summaryDischargeDate, summaryDischargeTime]);
+    void handleDischarge(
+      buildAdmissionDateTime(summaryDischargeDate, summaryDischargeTime),
+      dischargeOverrideReason.trim() || undefined
+    ).then(() => {
+      setIsSummaryDischargeModalOpen(false);
+      setDischargeOverrideReason('');
+    });
+  }, [dischargeOverrideReason, handleDischarge, summaryDischargeDate, summaryDischargeTime]);
 
   const summaryPrimaryCta = useMemo(() => {
     if (activeStep !== 'SUMMARY' || !effectiveEncounter) return undefined;
@@ -1179,6 +1217,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         setDischargeTime={setSummaryDischargeTime}
         onConfirm={handleConfirmSummaryDischarge}
         isSaving={isFinalizing}
+        gate={effectiveEncounter?.finalizationGate}
+        overrideReason={dischargeOverrideReason}
+        setOverrideReason={setDischargeOverrideReason}
       />
 
       <QuickActionsModal

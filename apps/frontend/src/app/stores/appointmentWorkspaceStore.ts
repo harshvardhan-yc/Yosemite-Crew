@@ -110,6 +110,8 @@ type AppointmentWorkspaceState = {
         | 'mode'
         | 'sectionLocks'
         | 'capabilities'
+        | 'primaryAction'
+        | 'finalizationGate'
       >
     > & { stepStatus?: Partial<Record<WorkspaceStep, StepStatus>> }
   ) => void;
@@ -271,6 +273,8 @@ const mergeEncounterDataPatch = (
       | 'mode'
       | 'sectionLocks'
       | 'capabilities'
+      | 'primaryAction'
+      | 'finalizationGate'
     >
   > & { stepStatus?: Partial<Record<WorkspaceStep, StepStatus>> }
 ) => ({
@@ -281,6 +285,10 @@ const mergeEncounterDataPatch = (
   capabilities: patch.capabilities
     ? { ...enc.capabilities, ...patch.capabilities }
     : enc.capabilities,
+  // primaryAction/finalizationGate are whole-object backend snapshots — replace
+  // (not merge) when present so a stale field never lingers after a refresh.
+  primaryAction: patch.primaryAction ?? enc.primaryAction,
+  finalizationGate: patch.finalizationGate ?? enc.finalizationGate,
   soap: preferNonEmpty(patch.soap, enc.soap),
   vitals: preferNonEmpty(patch.vitals, enc.vitals),
   observations: preferNonEmpty(patch.observations, enc.observations),
