@@ -8,6 +8,7 @@ jest.mock("src/services/form-assignment.service", () => ({
     createForAppointment: jest.fn(),
     listForAppointment: jest.fn(),
     listForCompanion: jest.fn(),
+    listForOrganisation: jest.fn(),
     resend: jest.fn(),
     cancel: jest.fn(),
   },
@@ -122,6 +123,32 @@ describe("FormAssignmentController", () => {
       "org-1",
       "comp-1",
     );
+    expect(status).toHaveBeenCalledWith(200);
+  });
+
+  it("lists organisation assignments", async () => {
+    req.params = {
+      organisationId: "org-1",
+    };
+    req.query = {
+      parentId: "parent-1",
+      status: "signed",
+    } as never;
+    (FormAssignmentService.listForOrganisation as jest.Mock).mockResolvedValue([
+      { id: "assignment-1" },
+    ]);
+
+    await FormAssignmentController.listForOrganisation(
+      req as Request,
+      res as Response,
+    );
+
+    expect(FormAssignmentService.listForOrganisation).toHaveBeenCalledWith({
+      organisationId: "org-1",
+      parentId: "parent-1",
+      companionId: undefined,
+      status: "signed",
+    });
     expect(status).toHaveBeenCalledWith(200);
   });
 

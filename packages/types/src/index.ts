@@ -429,7 +429,10 @@ export {
 export type {
   FormAssignmentLike,
   FormAssignmentStatus,
+  FormAssignmentLifecycleStatus,
   FormSignerIdentity,
+  FormAssignmentSignedDocumentLike,
+  FormAssignmentListItem,
   FormAssignmentCreateInput,
 } from './form-assignment';
 export type {

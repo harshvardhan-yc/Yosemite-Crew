@@ -22,6 +22,14 @@ router.get(
 );
 
 router.get(
+  "/organisations/:organisationId/assignments",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("forms:view:any"),
+  (req, res) => FormAssignmentController.listForOrganisation(req, res),
+);
+
+router.get(
   "/organisations/:organisationId/companions/:companionId/assignments",
   authorizeCognito,
   withOrgPermissions(),

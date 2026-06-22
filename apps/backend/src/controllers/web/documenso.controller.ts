@@ -13,6 +13,7 @@ import {
   DocumensoExternalRole,
   DocumensoService,
 } from "src/services/documenso.service";
+import { FormAssignmentService } from "src/services/form-assignment.service";
 import { completePersistedRenderedDocumentSigning } from "src/services/rendered-document.service";
 import { OrganizationService } from "src/services/organization.service";
 import type { AuthenticatedRequest } from "src/middlewares/auth";
@@ -489,6 +490,26 @@ async function handleDocumentCompleted(
   submission.signing.status = "SIGNED";
 
   await submission.save();
+
+  try {
+    const formId = submission.formId as unknown as Types.ObjectId;
+    await FormAssignmentService.markSignedFromSubmission({
+      organisationId: String(form.orgId),
+      templateId: formId.toHexString(),
+      templateVersion: submission.formVersion,
+      appointmentId: submission.appointmentId ?? undefined,
+      companionId: submission.patientId ?? undefined,
+      parentId: submission.parentId ?? undefined,
+    });
+  } catch (error) {
+    logger.warn(
+      "[DocumensoWebhook] Failed to sync form assignment signed status",
+      {
+        error,
+        submissionId: submission._id.toString(),
+      },
+    );
+  }
 }
 
 async function handleDocumentDeleted(
@@ -508,6 +529,10 @@ async function handleDocumentDeleted(
 async function handleDocumentCompletedPrisma(submission: {
   id: string;
   formId: string;
+  formVersion: number;
+  appointmentId: string | null;
+  patientId: string | null;
+  parentId: string | null;
   signing: Prisma.JsonValue | null;
 }) {
   const signing = submission.signing as {
@@ -556,6 +581,25 @@ async function handleDocumentCompletedPrisma(submission: {
     where: { id: submission.id },
     data: { signing: signing as unknown as Prisma.InputJsonValue },
   });
+
+  try {
+    await FormAssignmentService.markSignedFromSubmission({
+      organisationId: String(form.orgId),
+      templateId: submission.formId,
+      templateVersion: submission.formVersion,
+      appointmentId: submission.appointmentId ?? undefined,
+      companionId: submission.patientId ?? undefined,
+      parentId: submission.parentId ?? undefined,
+    });
+  } catch (error) {
+    logger.warn(
+      "[DocumensoWebhook] Failed to sync form assignment signed status",
+      {
+        error,
+        submissionId: submission.id,
+      },
+    );
+  }
 }
 
 async function handleDocumentDeletedPrisma(submission: {

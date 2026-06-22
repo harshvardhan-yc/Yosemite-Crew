@@ -7,6 +7,15 @@ export type FormAssignmentStatus =
   | 'expired'
   | 'cancelled';
 
+export type FormAssignmentLifecycleStatus =
+  | 'DRAFT'
+  | 'SENT'
+  | 'VIEWED'
+  | 'SUBMITTED'
+  | 'SIGNED'
+  | 'EXPIRED'
+  | 'CANCELLED';
+
 export interface FormSignerIdentity {
   userId?: string | null;
   name?: string | null;
@@ -41,6 +50,34 @@ export interface FormAssignmentLike {
   updatedBy: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface FormAssignmentSignedDocumentLike {
+  documentId: string;
+  pdfUrl: string | null;
+}
+
+export interface FormAssignmentListItem {
+  id: string;
+  templateId: string;
+  templateVersion: number;
+  templateName: string;
+  templateTitle: string;
+  companionId: string | null;
+  companionName: string | null;
+  parentId: string | null;
+  parentName: string | null;
+  appointmentId: string | null;
+  status: FormAssignmentLifecycleStatus;
+  signingRequired: boolean;
+  mobileVisible: boolean;
+  sentAt: Date | null;
+  viewedAt: Date | null;
+  submittedAt: Date | null;
+  signedAt: Date | null;
+  expiredAt: Date | null;
+  cancelledAt: Date | null;
+  signedDocument: FormAssignmentSignedDocumentLike | null;
 }
 
 export interface FormAssignmentCreateInput {

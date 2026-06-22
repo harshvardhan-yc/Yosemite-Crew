@@ -8,6 +8,7 @@ const FormAssignmentController = {
   createForAppointment: jest.fn(),
   listForAppointment: jest.fn(),
   listForCompanion: jest.fn(),
+  listForOrganisation: jest.fn(),
   resend: jest.fn(),
   cancel: jest.fn(),
 };
@@ -61,6 +62,9 @@ describe("form-assignment.router", () => {
         "/organisations/:organisationId/appointments/:appointmentId/assignments",
         "get",
       ),
+    ).toBeDefined();
+    expect(
+      findRoute("/organisations/:organisationId/assignments", "get"),
     ).toBeDefined();
     expect(
       findRoute(
