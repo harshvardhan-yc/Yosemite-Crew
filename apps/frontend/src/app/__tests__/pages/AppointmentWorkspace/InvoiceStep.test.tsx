@@ -322,6 +322,37 @@ describe('InvoiceStep', () => {
     );
   });
 
+  it('backfills a prescription for a drug identified by schedule without an explicit item type', async () => {
+    mockFetchInventoryItems.mockResolvedValue([
+      {
+        id: 'inv-trama',
+        status: 'ACTIVE',
+        basicInfo: { name: 'Tramadol 50mg', drugSchedule: 'Schedule IV' },
+        classification: {},
+        pricing: { selling: '8' },
+        stock: { reorderLevel: 5 },
+        batch: {},
+      },
+    ]);
+    const enc = {
+      ...seedAndGet(),
+      services: [],
+      invoiceLineItems: [],
+      prescription: [],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    await waitFor(() => expect(mockFetchInventoryItems).toHaveBeenCalledWith('org-1'));
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'tramadol' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /tramadol/i }));
+
+    await waitFor(() =>
+      expect(getEnc().prescription.some((rx) => rx.medicineName === 'Tramadol 50mg')).toBe(true)
+    );
+  });
+
   it('does not create a prescription when billing a non-drug stock item', async () => {
     mockFetchInventoryItems.mockResolvedValue([
       {
@@ -372,6 +403,43 @@ describe('InvoiceStep', () => {
       expect(getEnc().pastInvoices.some((invoice) => invoice.id === 'finance-inv-99')).toBe(true)
     );
     expect(getEnc().depositCents).toBe(20000);
+  });
+
+  it('falls back to the organisation catalog currency when the encounter has none', async () => {
+    useRevampCatalogStore.setState({
+      services: [
+        {
+          id: 'svc-gbp',
+          code: 'PR-0002',
+          name: 'Consult GBP',
+          description: '',
+          type: 'PROCEDURE',
+          specialityId: 'spec-1',
+          organisationId: 'org-1',
+          grossAmount: 50,
+          currency: 'GBP',
+          defaultDiscount: 0,
+          maxDiscount: 0,
+          durationMinutes: 15,
+          isBookable: true,
+          isInpatientPreferred: false,
+          status: 'ACTIVE',
+          createdAt: '2026-06-18T10:00:00.000Z',
+        },
+      ],
+    });
+    const enc = {
+      ...seedAndGet(),
+      currency: '',
+      services: [],
+      invoiceLineItems: [],
+      prescription: [],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    // With no encounter currency yet, totals render in the org's catalog currency
+    // (GBP) rather than a hardcoded USD default.
+    await waitFor(() => expect(screen.getAllByText(/£/).length).toBeGreaterThan(0));
   });
 
   it('does nothing when the dark add button has no current match', () => {

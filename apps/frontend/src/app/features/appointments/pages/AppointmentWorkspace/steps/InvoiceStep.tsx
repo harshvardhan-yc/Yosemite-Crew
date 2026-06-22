@@ -190,6 +190,20 @@ const uniqueByName = (
   });
 };
 
+/**
+ * Treat an inventory item as a dispensable drug when it is explicitly typed as a
+ * Drug, carries a controlled-substance schedule, or is marked prescription-
+ * required. Relying on `itemType` alone misses drugs whose type field was never
+ * set, so we also accept the drug-only schedule/prescription attributes.
+ */
+const isDispensableDrug = (item: InventoryItem): boolean => {
+  const info = item.basicInfo;
+  if (info.itemType?.trim().toLowerCase() === 'drug') return true;
+  if (info.drugSchedule?.trim()) return true;
+  const requiresRx = info.prescriptionRequired?.trim().toLowerCase();
+  return requiresRx === 'yes' || requiresRx === 'true' || requiresRx === 'required';
+};
+
 const inventoryToInvoiceCandidate = (item: InventoryItem): BillableCandidate => {
   const sellingDollars = Number(item.pricing?.selling ?? 0);
   const candidate = toInvoiceCandidate(
@@ -200,7 +214,7 @@ const inventoryToInvoiceCandidate = (item: InventoryItem): BillableCandidate => 
   // Drug stock billed here should also exist as a prescription so the Treatment
   // step and the bill stay in sync; carry the prescription payload so the add
   // handler can backfill one when none exists yet.
-  if (item.basicInfo.itemType === 'Drug') {
+  if (isDispensableDrug(item)) {
     return { ...candidate, prescription: inventoryToPrescriptionItem(item) };
   }
   return candidate;
@@ -680,7 +694,14 @@ const InvoiceStep = ({
   const canBuildBill = !readOnly && !hideBillBuilder;
   // Currency is encounter-scoped (hydrated from finance, defaults to USD). The
   // finance API works in lower-case ISO codes; display uses the upper-case code.
-  const currency = encounter.currency || DEFAULT_CURRENCY;
+  // Currency precedence: the finance-hydrated encounter currency (server truth),
+  // else the organisation's catalog currency (its configured/ country-derived
+  // pricing currency), and only then a last-resort default — so a fresh, not-yet-
+  // invoiced appointment shows the org's currency instead of a hardcoded USD.
+  const catalogCurrency =
+    catalogServices.find((service) => service.currency)?.currency ??
+    catalogPackages.find((pkg) => pkg.currency)?.currency;
+  const currency = encounter.currency || catalogCurrency?.toUpperCase() || DEFAULT_CURRENCY;
   const financeCurrency = currency.toLowerCase();
 
   // Clinical safety: an in-house medication on the bill must have its
