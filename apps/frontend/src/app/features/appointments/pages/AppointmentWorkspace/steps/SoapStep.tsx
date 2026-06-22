@@ -22,6 +22,8 @@ import {
 } from '@/app/lib/appointmentWorkspace';
 import { isRichTextEmpty } from '@/app/lib/richText';
 import { saveSoapNote } from '@/app/features/appointments/services/workspaceClinicalService';
+import FormRenderer from '@/app/features/forms/pages/Forms/Sections/AddForm/components/FormRenderer';
+import { collectMissingRequiredFields } from '@/app/features/forms/pages/Forms/Sections/AddForm/validationUtils';
 
 type SoapStepProps = {
   appointmentId: string;
@@ -51,10 +53,12 @@ const EMPTY_SOAP: SoapNoteEntry = {
 const isPersistedSoapId = (value?: string) =>
   Boolean(value && value !== 'draft' && !value.startsWith('local-'));
 
-const hasSoapContent = (note: SoapNoteEntry) =>
+const hasNativeSoapContent = (note: SoapNoteEntry) =>
   [note.chiefComplaint, note.subjective, note.objective, note.assessment, note.plan].some(
     (value) => !isRichTextEmpty(value)
   );
+
+const isCustomSoap = (note: SoapNoteEntry) => Boolean(note.customSchema?.length);
 
 const SoapSignActions = ({
   disabled,
@@ -170,11 +174,30 @@ const SoapStep = ({
     [appointmentReason, encounter.leadName, encounter.soap]
   );
 
+  const customMode = isCustomSoap(note);
+
+  const handleCustomAnswerChange = (fieldId: string, value: unknown) =>
+    upsertSoap(appointmentId, {
+      customAnswers: { ...(note.customAnswers ?? {}), [fieldId]: value },
+    });
+
   const handleSaveAndNext = async () => {
     if (isSaving) return;
-    if (!hasSoapContent(note)) {
+    // Native SOAP with nothing typed simply advances; a custom template always persists its
+    // structured answers (validation below gates required fields).
+    if (!customMode && !hasNativeSoapContent(note)) {
       onSaveAndNext();
       return;
+    }
+    if (customMode) {
+      const missing = collectMissingRequiredFields(
+        note.customSchema ?? [],
+        note.customAnswers ?? {}
+      );
+      if (missing.length > 0) {
+        setSaveError(`Please complete required field(s): ${missing.join(', ')}`);
+        return;
+      }
     }
     setIsSaving(true);
     setSaveError(null);
@@ -193,6 +216,10 @@ const SoapStep = ({
             authorId,
             authorName,
             templateId: note.templateId,
+            // Forward full template provenance so the saved artifact records the exact
+            // template version that prefilled/structured it (parity with discharge).
+            templateVersion: note.templateVersion,
+            templateVersionId: note.templateVersionId,
           },
           noteForSave
         );
@@ -263,68 +290,93 @@ const SoapStep = ({
             </div>
           </div>
 
-          <SectionContainer
-            titleClassName="text-yc-20-b-primary"
-            title="Subjective (History)"
-            compactTop
-          >
-            <RichTextEditor
-              ariaLabel="Subjective history"
-              value={note.subjective}
-              readOnly={false}
-              toolbarPlacement="inset"
-              onChange={(html) => upsertSoap(appointmentId, { subjective: html })}
-              placeholder="Patient history and owner-reported information"
-            />
-          </SectionContainer>
-
-          <SectionContainer
-            titleClassName="text-yc-20-b-primary"
-            title="Objective (Examination)"
-            compactTop
-          >
-            <RichTextEditor
-              ariaLabel="Objective examination"
-              value={note.objective}
-              readOnly={false}
-              toolbarPlacement="inset"
-              onChange={(html) => upsertSoap(appointmentId, { objective: html })}
-              placeholder="Examination findings and recorded vitals"
-            />
-            <div className="mt-3 flex justify-end">
-              <Secondary
-                text="Record Vitals"
-                onClick={onRecordVitals}
-                icon={<LuClipboardList aria-hidden="true" />}
+          {customMode ? (
+            // A custom template overrides the native structure: render its typed fields via the
+            // shared FormRenderer and capture answers keyed by field id.
+            <SectionContainer
+              titleClassName="text-yc-20-b-primary"
+              title="Clinical note"
+              compactTop
+            >
+              <FormRenderer
+                fields={note.customSchema ?? []}
+                values={note.customAnswers ?? {}}
+                onChange={handleCustomAnswerChange}
               />
-            </div>
-          </SectionContainer>
+              <div className="mt-3 flex justify-end">
+                <Secondary
+                  text="Record Vitals"
+                  onClick={onRecordVitals}
+                  icon={<LuClipboardList aria-hidden="true" />}
+                />
+              </div>
+            </SectionContainer>
+          ) : (
+            <>
+              <SectionContainer
+                titleClassName="text-yc-20-b-primary"
+                title="Subjective (History)"
+                compactTop
+              >
+                <RichTextEditor
+                  ariaLabel="Subjective history"
+                  value={note.subjective}
+                  readOnly={false}
+                  toolbarPlacement="inset"
+                  onChange={(html) => upsertSoap(appointmentId, { subjective: html })}
+                  placeholder="Patient history and owner-reported information"
+                />
+              </SectionContainer>
 
-          <SectionContainer
-            titleClassName="text-yc-20-b-primary"
-            title="Assessment (Differential)"
-            compactTop
-          >
-            <RichTextEditor
-              ariaLabel="Assessment differential"
-              value={note.assessment}
-              readOnly={false}
-              toolbarPlacement="inset"
-              onChange={(html) => upsertSoap(appointmentId, { assessment: html })}
-              placeholder="Diagnosis and differentials"
-            />
-          </SectionContainer>
+              <SectionContainer
+                titleClassName="text-yc-20-b-primary"
+                title="Objective (Examination)"
+                compactTop
+              >
+                <RichTextEditor
+                  ariaLabel="Objective examination"
+                  value={note.objective}
+                  readOnly={false}
+                  toolbarPlacement="inset"
+                  onChange={(html) => upsertSoap(appointmentId, { objective: html })}
+                  placeholder="Examination findings and recorded vitals"
+                />
+                <div className="mt-3 flex justify-end">
+                  <Secondary
+                    text="Record Vitals"
+                    onClick={onRecordVitals}
+                    icon={<LuClipboardList aria-hidden="true" />}
+                  />
+                </div>
+              </SectionContainer>
 
-          <SectionContainer titleClassName="text-yc-20-b-primary" title="Plan" compactTop>
-            <RichTextEditor
-              ariaLabel="Plan"
-              value={note.plan}
-              readOnly={false}
-              toolbarPlacement="inset"
-              onChange={(html) => upsertSoap(appointmentId, { plan: html })}
-              placeholder="Treatment plan and next steps"
-            />
-          </SectionContainer>
+              <SectionContainer
+                titleClassName="text-yc-20-b-primary"
+                title="Assessment (Differential)"
+                compactTop
+              >
+                <RichTextEditor
+                  ariaLabel="Assessment differential"
+                  value={note.assessment}
+                  readOnly={false}
+                  toolbarPlacement="inset"
+                  onChange={(html) => upsertSoap(appointmentId, { assessment: html })}
+                  placeholder="Diagnosis and differentials"
+                />
+              </SectionContainer>
+
+              <SectionContainer titleClassName="text-yc-20-b-primary" title="Plan" compactTop>
+                <RichTextEditor
+                  ariaLabel="Plan"
+                  value={note.plan}
+                  readOnly={false}
+                  toolbarPlacement="inset"
+                  onChange={(html) => upsertSoap(appointmentId, { plan: html })}
+                  placeholder="Treatment plan and next steps"
+                />
+              </SectionContainer>
+            </>
+          )}
 
           {saveError && (
             <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">

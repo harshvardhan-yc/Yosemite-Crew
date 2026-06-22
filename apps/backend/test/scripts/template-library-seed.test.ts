@@ -2,8 +2,28 @@ import { describe, expect, it } from "@jest/globals";
 import { DEFAULT_LIBRARY_TEMPLATE_SEEDS } from "../../src/scripts/template-library-seed.data";
 
 describe("template-library-seed", () => {
-  it("defines default library templates for clinical resolution", () => {
-    expect(DEFAULT_LIBRARY_TEMPLATE_SEEDS).toHaveLength(4);
+  it("defines default library templates for every resolver fallback kind", () => {
+    expect(DEFAULT_LIBRARY_TEMPLATE_SEEDS).toHaveLength(7);
+
+    // Every storage kind the resolver can normalise to must have a YC default so
+    // resolve() never 404s when no org/user template is linked (FORM also covers CONSENT,
+    // TASK_TEMPLATE covers TASK_ASSIGNMENT, CARE_PATHWAY covers INPATIENT_SCHEDULE).
+    expect(
+      DEFAULT_LIBRARY_TEMPLATE_SEEDS.map((seed) => seed.kind).sort(),
+    ).toEqual([
+      "CARE_PATHWAY",
+      "DISCHARGE_SUMMARY",
+      "FORM",
+      "PRESCRIPTION",
+      "SOAP_NOTE",
+      "TASK_TEMPLATE",
+      "VITAL_RECORD",
+    ]);
+    for (const seed of DEFAULT_LIBRARY_TEMPLATE_SEEDS) {
+      expect(seed.ownership).toBe("YC_LIBRARY");
+      expect(seed.rules.appliesTo.defaultForKind).toBe(true);
+      expect(seed.schemaSnapshot.sections.length).toBeGreaterThan(0);
+    }
 
     const soap = DEFAULT_LIBRARY_TEMPLATE_SEEDS.find(
       (seed) => seed.kind === "SOAP_NOTE",
@@ -20,15 +40,33 @@ describe("template-library-seed", () => {
         },
       }),
     );
-    expect(soap?.schemaSnapshot.sections).toHaveLength(1);
-    expect(soap?.schemaSnapshot.sections[0]?.id).toBe("soap");
-    expect(
-      soap?.schemaSnapshot.sections[0]?.fields.map((field) => field.key),
-    ).toEqual(["subjective", "objective", "assessment", "plan"]);
-    expect(
-      soap?.schemaSnapshot.sections[0]?.fields.every(
-        (field) => field.type === "richText",
-      ),
-    ).toBe(true);
+    // Single-sourced canonical SOAP: four S/O/A/P sections (mapped by field key in the
+    // workspace) with a chief-complaint field, all S/O/A/P bodies rich text.
+    expect(soap?.schemaSnapshot.sections.map((section) => section.id)).toEqual([
+      "subjective",
+      "objective",
+      "assessment",
+      "plan",
+    ]);
+    const fieldKeys = soap?.schemaSnapshot.sections.flatMap((section) =>
+      section.fields.map((field) => field.key),
+    );
+    expect(fieldKeys).toEqual(
+      expect.arrayContaining([
+        "chiefComplaint",
+        "subjective",
+        "objective",
+        "assessment",
+        "plan",
+      ]),
+    );
+    const soapBodyFields = soap?.schemaSnapshot.sections
+      .flatMap((section) => section.fields)
+      .filter((field) =>
+        ["subjective", "objective", "assessment", "plan"].includes(field.key),
+      );
+    expect(soapBodyFields?.every((field) => field.type === "richText")).toBe(
+      true,
+    );
   });
 });

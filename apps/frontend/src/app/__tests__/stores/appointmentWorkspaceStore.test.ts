@@ -198,6 +198,43 @@ describe('appointmentWorkspaceStore', () => {
     expect(draft.plan).toBe('<p>Vaccinate</p>');
   });
 
+  it('swaps to a custom template structure and clears it when a native template is applied', () => {
+    seed();
+    const customTpl = {
+      id: 'tpl-custom',
+      name: 'Mobility',
+      version: 2,
+      versionId: 'ver-2',
+      customSchema: [
+        {
+          id: 'grp',
+          type: 'group' as const,
+          label: 'Mobility',
+          fields: [{ id: 'gait', type: 'input' as const, label: 'Gait', defaultValue: 'normal' }],
+        },
+      ],
+    };
+    getStore().applySoapTemplate(APPT, customTpl);
+    let draft = getStore().getEncounter(APPT)!.soap[0];
+    // Custom template swaps STRUCTURE: schema rendered, answers seeded from defaults, provenance kept.
+    expect(draft.customSchema).toBeDefined();
+    expect(draft.customAnswers).toEqual({ gait: 'normal' });
+    expect(draft.templateVersionId).toBe('ver-2');
+
+    // Switching back to a native template clears the override and prefills the editors.
+    getStore().applySoapTemplate(APPT, {
+      id: 'tpl-native',
+      name: 'Native',
+      content: { subjective: '<p>S</p>' },
+    });
+    draft = getStore()
+      .getEncounter(APPT)!
+      .soap.find((n) => n.status !== 'COMPLETED')!;
+    expect(draft.customSchema).toBeUndefined();
+    expect(draft.customAnswers).toBeUndefined();
+    expect(draft.subjective).toBe('<p>S</p>');
+  });
+
   it('does not overwrite typed SOAP content when applying a template', () => {
     seed();
     getStore().upsertSoap(APPT, { subjective: '<p>clinician typed</p>' });

@@ -249,6 +249,44 @@ describe('SoapStep', () => {
     errorSpy.mockRestore();
   });
 
+  it('renders a custom template structure and blocks save until required custom fields are filled', async () => {
+    seedAndGet();
+    // Apply a CUSTOM template (structure override) via the store before rendering.
+    useAppointmentWorkspaceStore.getState().applySoapTemplate(APPT, {
+      id: 'tpl-custom',
+      name: 'Mobility',
+      customSchema: [
+        {
+          id: 'grp',
+          type: 'group',
+          label: 'Mobility',
+          fields: [{ id: 'gait', type: 'input', label: 'Gait quality', required: true }],
+        },
+      ],
+    });
+    const enc = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
+    render(
+      <SoapStep
+        appointmentId={APPT}
+        organisationId="org-1"
+        appointmentReason={APPOINTMENT_REASON}
+        encounter={enc}
+        onRecordVitals={onRecordVitals}
+        onSaveAndNext={onSaveAndNext}
+      />
+    );
+
+    // The custom structure REPLACES the four native editors.
+    expect(screen.queryByText('Subjective (History)')).not.toBeInTheDocument();
+    expect(screen.getByText('Gait quality')).toBeInTheDocument();
+
+    // A required custom field left empty blocks the save with a validation alert.
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Next' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Gait quality/i);
+    expect(saveSoapNote).not.toHaveBeenCalled();
+    expect(onSaveAndNext).not.toHaveBeenCalled();
+  });
+
   it('falls back to the encounter lead name and omits date/time when not recorded', () => {
     const enc = {
       ...seedAndGet(),

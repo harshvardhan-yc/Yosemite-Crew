@@ -36,6 +36,28 @@ const nextId = (prefix: string): string => {
 const nowIso = (): string => new Date().toISOString();
 
 /**
+ * Seed a custom SOAP template's answer map from its field default values (recursing groups),
+ * so a freshly applied custom template renders any authored defaults before the clinician edits.
+ */
+const defaultAnswersFromSchema = (
+  fields: NonNullable<SoapTemplate['customSchema']>
+): Record<string, unknown> => {
+  const answers: Record<string, unknown> = {};
+  const walk = (items: NonNullable<SoapTemplate['customSchema']>) => {
+    items.forEach((field) => {
+      if (field.type === 'group') {
+        walk(field.fields ?? []);
+        return;
+      }
+      const def = (field as { defaultValue?: unknown }).defaultValue;
+      if (def !== undefined) answers[field.id] = def;
+    });
+  };
+  walk(fields);
+  return answers;
+};
+
+/**
  * Re-derive a line item's gross/amount after qty or discount changes so the
  * bill always stays internally consistent. Per-line discount is preserved as a
  * flat cent value (clamped to the gross).
@@ -437,39 +459,74 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
   applySoapTemplate: (appointmentId, template) =>
     patchEnc(set, appointmentId, (enc) => {
       const content = template.content ?? {};
+      const isCustom = Boolean(template.customSchema?.length);
       // Only prefill a field the template actually carries content for, and never
       // clobber text the clinician has already typed in that field. This makes
-      // selecting a template hydrate empty S/O/A/P sections without losing edits.
+      // selecting a YC-default template hydrate empty S/O/A/P sections without losing edits.
       const prefill = (current: string, value?: string): string =>
         value && isRichTextEmpty(current) ? value : current;
+      const provenance = {
+        templateId: template.id,
+        templateVersionId: template.versionId,
+      };
       const draftIndex = enc.soap.findIndex((entry) => entry.status !== 'COMPLETED');
       if (draftIndex >= 0) {
         const existing = enc.soap[draftIndex];
         const soap = [...enc.soap];
-        soap[draftIndex] = {
-          ...existing,
-          templateId: template.id,
-          templateVersion: template.version ?? existing.templateVersion,
-          chiefComplaint: prefill(existing.chiefComplaint, content.chiefComplaint),
-          subjective: prefill(existing.subjective, content.subjective),
-          objective: prefill(existing.objective, content.objective),
-          assessment: prefill(existing.assessment, content.assessment),
-          plan: prefill(existing.plan, content.plan),
-        };
+        soap[draftIndex] = isCustom
+          ? {
+              // Custom template: swap STRUCTURE — render its typed fields and seed answers.
+              ...existing,
+              ...provenance,
+              templateVersion: template.version ?? existing.templateVersion,
+              customSchema: template.customSchema,
+              customAnswers: {
+                ...defaultAnswersFromSchema(template.customSchema ?? []),
+                ...(existing.customAnswers ?? {}),
+              },
+            }
+          : {
+              // YC-default template: keep the native structure, swap CONTENT only.
+              ...existing,
+              ...provenance,
+              templateVersion: template.version ?? existing.templateVersion,
+              customSchema: undefined,
+              customAnswers: undefined,
+              chiefComplaint: prefill(existing.chiefComplaint, content.chiefComplaint),
+              subjective: prefill(existing.subjective, content.subjective),
+              objective: prefill(existing.objective, content.objective),
+              assessment: prefill(existing.assessment, content.assessment),
+              plan: prefill(existing.plan, content.plan),
+            };
         return { ...enc, soap };
       }
-      const created: SoapNoteEntry = {
-        id: nextId('soap'),
-        chiefComplaint: content.chiefComplaint ?? '',
-        subjective: content.subjective ?? '',
-        objective: content.objective ?? '',
-        assessment: content.assessment ?? '',
-        plan: content.plan ?? '',
-        status: 'IN_PROGRESS',
-        createdAt: nowIso(),
-        templateId: template.id,
-        templateVersion: template.version,
-      };
+      const created: SoapNoteEntry = isCustom
+        ? {
+            id: nextId('soap'),
+            chiefComplaint: '',
+            subjective: '',
+            objective: '',
+            assessment: '',
+            plan: '',
+            status: 'IN_PROGRESS',
+            createdAt: nowIso(),
+            ...provenance,
+            templateVersion: template.version,
+            customSchema: template.customSchema,
+            customAnswers: defaultAnswersFromSchema(template.customSchema ?? []),
+          }
+        : {
+            id: nextId('soap'),
+            chiefComplaint: content.chiefComplaint ?? '',
+            subjective: content.subjective ?? '',
+            objective: content.objective ?? '',
+            assessment: content.assessment ?? '',
+            plan: content.plan ?? '',
+            status: 'IN_PROGRESS',
+            createdAt: nowIso(),
+            ...provenance,
+            templateVersion: template.version,
+          };
       return { ...enc, soap: [created, ...enc.soap] };
     }),
 

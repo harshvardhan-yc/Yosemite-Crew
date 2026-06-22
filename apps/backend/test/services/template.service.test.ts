@@ -534,6 +534,71 @@ describe("TemplateService", () => {
     );
   });
 
+  it("resolves a template linked by packageId (not only serviceId)", async () => {
+    const versionId = "ver-pkg-1";
+    mockedPrisma.template.findMany.mockResolvedValueOnce([
+      {
+        id: "org-template-pkg",
+        ownership: "ORG_TEMPLATE",
+        organisationId,
+        ownerUserId: null,
+        kind: "SOAP_NOTE",
+        name: "Package SOAP",
+        description: null,
+        status: "PUBLISHED",
+        scope: "SERVICE",
+        rules: {
+          appliesTo: {
+            packageIds: ["pkg-1"],
+          },
+        },
+        latestVersion: 1,
+        publishedVersion: 1,
+        createdBy: "user-1",
+        updatedBy: "user-1",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        versions: [
+          {
+            id: versionId,
+            version: 1,
+            schemaSnapshot: { sections: [] },
+            renderConfigSnapshot: {},
+            validationSnapshot: {},
+            publishedAt: new Date(),
+            createdBy: "user-1",
+          },
+        ],
+        catalogLinks: [],
+      },
+    ]);
+    mockedPrisma.templateVersion.findUnique.mockResolvedValueOnce({
+      id: versionId,
+      templateId: "org-template-pkg",
+      version: 1,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
+      publishedAt: new Date(),
+      createdBy: "user-1",
+    });
+
+    const result = await TemplateService.resolve({
+      organisationId,
+      kind: "SOAP_NOTE",
+      packageId: "pkg-1",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        templateId: "org-template-pkg",
+        templateVersion: 1,
+        templateVersionId: versionId,
+        kind: "SOAP_NOTE",
+      }),
+    );
+  });
+
   it("falls back to the organisation default template and reports not found when no match exists", async () => {
     mockedPrisma.template.findMany
       .mockResolvedValueOnce([])

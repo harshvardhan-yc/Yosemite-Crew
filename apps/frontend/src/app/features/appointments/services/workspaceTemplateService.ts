@@ -1,13 +1,16 @@
-import type {
-  TemplateInstanceLike,
-  TemplateInstanceUpsertInput,
-  TemplateKind,
-  TemplateLike,
-  TemplateResolveResponse,
-  TemplateSchemaSnapshot,
+import {
+  CANONICAL_SOAP_FIELD_KEYS,
+  templateSchemaToFormFields,
+  type TemplateInstanceLike,
+  type TemplateInstanceUpsertInput,
+  type TemplateKind,
+  type TemplateLike,
+  type TemplateResolveResponse,
+  type TemplateSchemaSnapshot,
 } from '@yosemite-crew/types';
 import type { Task as FhirTask } from '@yosemite-crew/fhir';
 import { getData, patchData, postData } from '@/app/services/axios';
+import type { FormField } from '@/app/features/forms/types/forms';
 import type { SoapTemplate } from '@/app/features/appointments/types/workspace';
 
 type TemplateListParams = {
@@ -83,11 +86,20 @@ const soapSchemaSnapshot = (template: TemplateLike): TemplateSchemaSnapshot | un
   return hasSchemaSnapshot(version?.schemaSnapshot) ? version.schemaSnapshot : undefined;
 };
 
+const SOAP_CONTENT_KEYS = CANONICAL_SOAP_FIELD_KEYS;
+
+const isSoapContentKey = (key: string): key is keyof NonNullable<SoapTemplate['content']> =>
+  (SOAP_CONTENT_KEYS as readonly string[]).includes(key);
+
 /**
  * Build the prefill content for the four S/O/A/P editors from a template schema
- * snapshot. Each section whose title maps to an S/O/A/P field contributes its
- * fields' default values (or labels) as the section's starting HTML, so selecting
- * a template hydrates the editors instead of only stamping an id.
+ * snapshot. Canonical templates expose fields keyed exactly by `chiefComplaint`/
+ * `subjective`/`objective`/`assessment`/`plan`, so we map by field key first (any
+ * section), carrying the authored rich-text default value through losslessly. Legacy
+ * templates whose field keys don't match fall back to keyword-by-section-title mapping,
+ * preserving prior behaviour. This keeps the builder, resolver seed, and workspace
+ * editors single-sourced — selecting/resolving a template hydrates content with no
+ * section dropped.
  */
 export const schemaSnapshotToSoapContent = (
   snapshot: TemplateSchemaSnapshot | undefined
@@ -95,10 +107,24 @@ export const schemaSnapshotToSoapContent = (
   const sections = snapshot?.sections ?? [];
   if (sections.length === 0) return undefined;
   const content: NonNullable<SoapTemplate['content']> = {};
+
+  // 1) Canonical field-key mapping (any section). Carries authored rich-text content as-is.
+  for (const section of sections) {
+    for (const definition of section.fields ?? []) {
+      if (!isSoapContentKey(definition.key)) continue;
+      const value = definition.defaultValue;
+      if (typeof value === 'string' && value.trim()) {
+        content[definition.key] = (content[definition.key] ?? '') + value;
+      }
+    }
+  }
+
+  // 2) Keyword-by-title fallback for legacy templates without canonical field keys.
   for (const section of sections) {
     const field = soapFieldForTitle(section.title);
-    if (!field) continue;
-    const body = section.fields
+    if (!field || content[field]) continue;
+    const body = (section.fields ?? [])
+      .filter((definition) => !isSoapContentKey(definition.key))
       .map((definition) => {
         const value = definition.defaultValue;
         if (typeof value === 'string' && value.trim()) return value;
@@ -108,17 +134,49 @@ export const schemaSnapshotToSoapContent = (
       .join('');
     if (body) content[field] = (content[field] ?? '') + body;
   }
+
   return Object.keys(content).length > 0 ? content : undefined;
 };
 
-export const templateToSoapTemplate = (template: TemplateLike): SoapTemplate => ({
-  id: template.id,
-  name: template.name,
-  serviceId: template.catalogItemIds?.[0],
-  isDefault: template.ownership === 'YC_LIBRARY',
-  version: template.publishedVersion ?? template.latestVersion ?? undefined,
-  content: schemaSnapshotToSoapContent(soapSchemaSnapshot(template)),
-});
+const SOAP_KEY_SET = new Set<string>(CANONICAL_SOAP_FIELD_KEYS);
+
+/**
+ * A SOAP template is CUSTOM (structure-overriding) when it carries fields but NONE of them map
+ * onto the native four S/O/A/P editors — neither by canonical field key (chiefComplaint /
+ * subjective / objective / assessment / plan) nor by a section title that keyword-maps to one.
+ * Native (YC-default) snapshots map cleanly onto the editors and only swap content; a snapshot
+ * with a genuinely different structure replaces it.
+ */
+const isCustomSoapSnapshot = (snapshot: TemplateSchemaSnapshot | undefined): boolean => {
+  const sections = snapshot?.sections ?? [];
+  const hasFields = sections.some((section) => (section.fields ?? []).length > 0);
+  if (!hasFields) return false;
+  const mapsToNativeSoap = sections.some(
+    (section) =>
+      (section.fields ?? []).some((field) => SOAP_KEY_SET.has(field.key)) ||
+      Boolean(soapFieldForTitle(section.title))
+  );
+  return !mapsToNativeSoap;
+};
+
+/** Convert a custom SOAP snapshot to renderable FormFields; undefined when the snapshot is native. */
+const soapCustomSchema = (snapshot: TemplateSchemaSnapshot | undefined): FormField[] | undefined =>
+  snapshot && isCustomSoapSnapshot(snapshot) ? templateSchemaToFormFields(snapshot) : undefined;
+
+export const templateToSoapTemplate = (template: TemplateLike): SoapTemplate => {
+  const snapshot = soapSchemaSnapshot(template);
+  const customSchema = soapCustomSchema(snapshot);
+  return {
+    id: template.id,
+    name: template.name,
+    serviceId: template.catalogItemIds?.[0],
+    isDefault: template.ownership === 'YC_LIBRARY',
+    version: template.publishedVersion ?? template.latestVersion ?? undefined,
+    // Custom templates swap structure (render their fields); native templates swap content only.
+    customSchema,
+    content: customSchema ? undefined : schemaSnapshotToSoapContent(snapshot),
+  };
+};
 
 /**
  * Resolve the SOAP template that best matches the encounter context via the shared
@@ -145,12 +203,16 @@ export const resolveSoapTemplate = async (
     const res = await getData<TemplateResolveResponse>('/v1/templates/pms/resolve', params);
     const resolved = res.data;
     if (!resolved?.templateId) return null;
+    const customSchema = soapCustomSchema(resolved.schemaSnapshot);
     return {
       id: resolved.templateId,
       name: resolved.name,
       isDefault: resolved.source === 'YC_LIBRARY',
       version: resolved.templateVersion,
-      content: schemaSnapshotToSoapContent(resolved.schemaSnapshot),
+      versionId: resolved.templateVersionId,
+      // Custom resolved templates swap structure; native ones swap content into the editors.
+      customSchema,
+      content: customSchema ? undefined : schemaSnapshotToSoapContent(resolved.schemaSnapshot),
     };
   } catch {
     return null;

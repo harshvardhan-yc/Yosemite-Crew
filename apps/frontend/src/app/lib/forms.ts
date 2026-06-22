@@ -1,4 +1,7 @@
 import {
+  CANONICAL_DISCHARGE_STRUCTURE,
+  CANONICAL_SOAP_STRUCTURE,
+  CANONICAL_VITALS_STRUCTURE,
   Form,
   FormField,
   FormRequestDTO,
@@ -324,109 +327,9 @@ const fieldsToTemplateSection = (
 });
 
 const clinicalBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> = {
-  SOAP_NOTE: {
-    sections: [
-      {
-        id: 'subjective',
-        title: 'Subjective',
-        order: 1,
-        fields: [
-          {
-            key: 'chiefComplaint',
-            label: 'Chief complaint',
-            type: 'textarea',
-            required: true,
-            order: 1,
-          },
-          { key: 'history', label: 'History', type: 'richText', order: 2 },
-          { key: 'ownerConcern', label: 'Owner concern', type: 'text', order: 3 },
-        ],
-      },
-      {
-        id: 'objective',
-        title: 'Objective',
-        order: 2,
-        fields: [
-          {
-            key: 'vitals',
-            label: 'Vitals',
-            type: 'vitalRow',
-            repeatable: true,
-            order: 1,
-            rules: { columns: ['label', 'value', 'unit'] },
-          },
-          { key: 'examFindings', label: 'Exam findings', type: 'richText', order: 2 },
-          {
-            key: 'testResults',
-            label: 'Test results',
-            type: 'table',
-            order: 3,
-            rules: { columns: ['testName', 'result', 'unit'] },
-          },
-        ],
-      },
-      {
-        id: 'assessment',
-        title: 'Assessment',
-        order: 3,
-        fields: [
-          {
-            key: 'diagnoses',
-            label: 'Diagnoses',
-            type: 'diagnosis',
-            required: true,
-            repeatable: true,
-            order: 1,
-          },
-          { key: 'assessmentNotes', label: 'Assessment notes', type: 'richText', order: 2 },
-          {
-            key: 'severity',
-            label: 'Severity',
-            type: 'select',
-            order: 3,
-            options: [
-              { label: 'Mild', value: 'mild' },
-              { label: 'Moderate', value: 'moderate' },
-              { label: 'Severe', value: 'severe' },
-            ],
-            rules: { allowCustom: false },
-          },
-        ],
-      },
-      {
-        id: 'plan',
-        title: 'Plan',
-        order: 4,
-        fields: [
-          {
-            key: 'medications',
-            label: 'Medications',
-            type: 'medicationLine',
-            required: true,
-            repeatable: true,
-            order: 1,
-            rules: { columns: ['drug', 'dose', 'frequency', 'duration'] },
-          },
-          {
-            key: 'procedures',
-            label: 'Procedures',
-            type: 'procedure',
-            repeatable: true,
-            order: 2,
-            rules: { columns: ['procedure', 'notes'] },
-          },
-          {
-            key: 'instructions',
-            label: 'Instructions',
-            type: 'instructionBlock',
-            required: true,
-            order: 3,
-          },
-          { key: 'followUp', label: 'Follow up', type: 'datetime', order: 4 },
-        ],
-      },
-    ],
-  },
+  // Single-sourced from @yosemite-crew/types so the builder, workspace editors, and the
+  // backend resolver/validation blueprint all agree on keys + rich-text field types.
+  SOAP_NOTE: CANONICAL_SOAP_STRUCTURE,
   PRESCRIPTION: {
     sections: [
       {
@@ -465,109 +368,8 @@ const clinicalBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> 
       },
     ],
   },
-  DISCHARGE_SUMMARY: {
-    sections: [
-      {
-        id: 'summary',
-        title: 'Summary',
-        order: 1,
-        fields: [
-          { key: 'summaryText', label: 'Summary text', type: 'richText', required: true, order: 1 },
-        ],
-      },
-      {
-        id: 'diagnoses',
-        title: 'Diagnoses',
-        order: 2,
-        fields: [
-          {
-            key: 'diagnosisItems',
-            label: 'Diagnosis items',
-            type: 'diagnosis',
-            required: true,
-            repeatable: true,
-            order: 1,
-          },
-        ],
-      },
-      {
-        id: 'medications',
-        title: 'Medications',
-        order: 3,
-        fields: [
-          {
-            key: 'medicationLines',
-            label: 'Medication lines',
-            type: 'medicationLine',
-            required: true,
-            repeatable: true,
-            order: 1,
-            rules: { columns: ['drug', 'dose', 'frequency', 'duration'] },
-          },
-        ],
-      },
-      {
-        id: 'follow_up',
-        title: 'Follow Up',
-        order: 4,
-        fields: [{ key: 'followUpDate', label: 'Follow up date', type: 'datetime', order: 1 }],
-      },
-      {
-        id: 'instructions',
-        title: 'Instructions',
-        order: 5,
-        fields: [
-          {
-            key: 'dischargeInstructions',
-            label: 'Discharge instructions',
-            type: 'instructionBlock',
-            required: true,
-            order: 1,
-          },
-        ],
-      },
-    ],
-  },
-  VITAL_RECORD: {
-    sections: [
-      {
-        id: 'measured_at',
-        title: 'Measured At',
-        order: 1,
-        fields: [
-          { key: 'measuredAt', label: 'Measured at', type: 'datetime', required: true, order: 1 },
-        ],
-      },
-      {
-        id: 'vitals',
-        title: 'Vitals',
-        order: 2,
-        fields: [
-          {
-            key: 'vitalRows',
-            label: 'Vital rows',
-            type: 'vitalRow',
-            required: true,
-            repeatable: true,
-            order: 1,
-            rules: { columns: ['label', 'value', 'unit'] },
-          },
-        ],
-      },
-      {
-        id: 'notes',
-        title: 'Notes',
-        order: 3,
-        fields: [{ key: 'recordNotes', label: 'Record notes', type: 'richText', order: 1 }],
-      },
-      {
-        id: 'metadata',
-        title: 'Metadata',
-        order: 4,
-        fields: [{ key: 'recordedBy', label: 'Recorded by', type: 'text', order: 1 }],
-      },
-    ],
-  },
+  DISCHARGE_SUMMARY: CANONICAL_DISCHARGE_STRUCTURE,
+  VITAL_RECORD: CANONICAL_VITALS_STRUCTURE,
 };
 
 const workflowBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> = {

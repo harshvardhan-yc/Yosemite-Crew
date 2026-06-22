@@ -174,6 +174,71 @@ describe('workspaceClinicalService', () => {
     expect(postDataMock).not.toHaveBeenCalled();
   });
 
+  const SOAP_METADATA_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-metadata';
+  const customSchema = [{ id: 'gait', type: 'input' as const, label: 'Gait' }];
+
+  it('persists a custom-template structure override (schema + answers) and full provenance', async () => {
+    postDataMock.mockResolvedValueOnce({ data: { resourceType: 'Composition', id: 'soap-c' } });
+
+    await saveSoapNote(
+      {
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        encounterId: 'enc-1',
+        templateId: 'tpl-custom',
+        templateVersion: 2,
+        templateVersionId: 'ver-2',
+      },
+      {
+        id: 'draft',
+        chiefComplaint: '',
+        subjective: '',
+        objective: '',
+        assessment: '',
+        plan: '',
+        status: 'IN_PROGRESS',
+        createdAt: '2026-04-20T09:00:00.000Z',
+        customSchema,
+        customAnswers: { gait: 'normal' },
+      }
+    );
+
+    const body = postDataMock.mock.calls[0][1] as {
+      templateVersion?: number;
+      templateVersionId?: string;
+      extension: Array<{ url: string; valueString?: string }>;
+    };
+    expect(body.templateVersion).toBe(2);
+    expect(body.templateVersionId).toBe('ver-2');
+    const meta = body.extension.find((ext) => ext.url === SOAP_METADATA_URL);
+    expect(meta).toBeDefined();
+    expect(JSON.parse(meta?.valueString ?? '{}')).toEqual({
+      customTemplate: { schema: customSchema, answers: { gait: 'normal' } },
+    });
+  });
+
+  it('rehydrates a custom-template structure override from the SOAP metadata extension', async () => {
+    postDataMock.mockResolvedValueOnce({
+      data: bundle('Composition', {
+        id: 'soap-c',
+        status: 'final',
+        date: '2026-04-20T09:00:00.000Z',
+        extension: [
+          {
+            url: SOAP_METADATA_URL,
+            valueString: JSON.stringify({
+              customTemplate: { schema: customSchema, answers: { gait: 'normal' } },
+            }),
+          },
+        ],
+      }),
+    });
+
+    const notes = await listSoapNotesForAppointment('org-1', 'appt-1', { encounterId: 'enc-1' });
+    expect(notes[0].customSchema).toEqual(customSchema);
+    expect(notes[0].customAnswers).toEqual({ gait: 'normal' });
+  });
+
   it('loads encounter-scoped SOAP notes and gets a SOAP note by id', async () => {
     postDataMock
       .mockResolvedValueOnce({

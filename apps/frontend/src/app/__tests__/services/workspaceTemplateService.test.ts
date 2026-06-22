@@ -212,6 +212,73 @@ describe('workspaceTemplateService', () => {
     expect(resolved?.content?.assessment).toBe('<p>Dx</p>');
   });
 
+  it('classifies a custom (non-S/O/A/P) template as a structure override', () => {
+    const customTpl = {
+      ...template('tpl-custom'),
+      schemaSnapshot: {
+        sections: [
+          {
+            id: 'ortho',
+            title: 'Mobility scoring',
+            fields: [
+              { key: 'gaitScore', label: 'Gait score', type: 'number' },
+              { key: 'lameness', label: 'Lameness', type: 'text' },
+            ],
+          },
+        ],
+      },
+    } as unknown as TemplateLike;
+    const mapped = templateToSoapTemplate(customTpl);
+    // Custom templates swap STRUCTURE: no native content, a renderable schema instead.
+    expect(mapped.content).toBeUndefined();
+    expect(mapped.customSchema).toBeDefined();
+    expect(mapped.customSchema?.[0]?.type).toBe('group');
+    const leaves = (mapped.customSchema?.[0] as { fields?: Array<{ id: string }> }).fields ?? [];
+    expect(leaves.map((f) => f.id)).toEqual(['gaitScore', 'lameness']);
+  });
+
+  it('keeps a native S/O/A/P template as content-only (no structure override)', () => {
+    const nativeTpl = {
+      ...template('tpl-native'),
+      schemaSnapshot: {
+        sections: [
+          {
+            id: 'subjective',
+            title: 'Subjective',
+            fields: [{ key: 'subjective', label: 'Subjective', type: 'richText' }],
+          },
+        ],
+      },
+    } as unknown as TemplateLike;
+    const mapped = templateToSoapTemplate(nativeTpl);
+    expect(mapped.customSchema).toBeUndefined();
+  });
+
+  it('resolves a custom template as a structure override with provenance', async () => {
+    getDataMock.mockResolvedValueOnce({
+      data: {
+        templateId: 'tpl-custom-resolved',
+        templateVersion: 2,
+        templateVersionId: 'ver-2',
+        name: 'Ortho SOAP',
+        source: 'USER_LINKED',
+        schemaSnapshot: {
+          sections: [
+            {
+              id: 'ortho',
+              title: 'Mobility scoring',
+              fields: [{ key: 'gaitScore', label: 'Gait score', type: 'number' }],
+            },
+          ],
+        },
+      },
+    });
+    const resolved = await resolveSoapTemplate({ organisationId: 'org-1' });
+    expect(resolved?.customSchema).toBeDefined();
+    expect(resolved?.content).toBeUndefined();
+    expect(resolved?.versionId).toBe('ver-2');
+  });
+
   it('returns null when no SOAP template is configured (404)', async () => {
     getDataMock.mockRejectedValueOnce(new Error('not found'));
     await expect(resolveSoapTemplate({ organisationId: 'org-1' })).resolves.toBeNull();

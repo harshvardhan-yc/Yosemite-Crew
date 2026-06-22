@@ -55,14 +55,14 @@ const seedTemplate = async (
     create: {
       templateId: template.id,
       version: 1,
-      schemaSnapshot: seed.schemaSnapshot as Prisma.InputJsonValue,
+      schemaSnapshot: seed.schemaSnapshot as unknown as Prisma.InputJsonValue,
       renderConfigSnapshot: {},
       validationSnapshot: {},
       publishedAt: new Date(),
       createdBy: "SYSTEM",
     },
     update: {
-      schemaSnapshot: seed.schemaSnapshot as Prisma.InputJsonValue,
+      schemaSnapshot: seed.schemaSnapshot as unknown as Prisma.InputJsonValue,
       renderConfigSnapshot: {},
       validationSnapshot: {},
       publishedAt: new Date(),

@@ -322,6 +322,11 @@ export {
   type TemplateSection,
   type TemplateUpsertInput,
   type TemplateInstanceUpsertInput,
+  CANONICAL_SOAP_STRUCTURE,
+  CANONICAL_DISCHARGE_STRUCTURE,
+  CANONICAL_VITALS_STRUCTURE,
+  CANONICAL_SOAP_FIELD_KEYS,
+  templateSchemaToFormFields,
 } from './template';
 export {
   taskFhirMapper,

@@ -196,6 +196,10 @@ const SOAP_EXT = {
   objective: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-objective',
   assessment: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-assessment',
   plan: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-plan',
+  // The shared clinical-artifact mapper round-trips this extension into the SoapNote.metadata
+  // JSON column, so a custom-template structure override (schema + answers) persists and
+  // rehydrates without any backend change.
+  metadata: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-metadata',
 };
 
 const DISCHARGE_EXT = {
@@ -255,6 +259,15 @@ const soapNoteFromComposition = (
 ): SoapNoteEntry => {
   const input = clinicalArtifactFhirMapper.compositionToSoapNoteInput(resource, context);
   const signedByName = getClinicalAuthorName(resource, context);
+  // Rehydrate a custom-template structure override from the metadata channel so a saved custom
+  // SOAP note re-renders via FormRenderer (not the four native editors) after refresh.
+  const metadata =
+    input.metadata && typeof input.metadata === 'object'
+      ? (input.metadata as Record<string, unknown>)
+      : undefined;
+  const customTemplate = metadata?.customTemplate as
+    | { schema?: SoapNoteEntry['customSchema']; answers?: Record<string, unknown> }
+    | undefined;
   return {
     id: resource.id ?? `soap-${resource.date ?? Date.now()}`,
     chiefComplaint: '',
@@ -263,6 +276,9 @@ const soapNoteFromComposition = (
     assessment: toText(input.assessment),
     plan: toText(input.plan),
     templateId: input.templateId,
+    templateVersionId: (input as { templateVersionId?: string }).templateVersionId,
+    customSchema: customTemplate?.schema,
+    customAnswers: customTemplate?.answers,
     // A SOAP note that came back from the backend is a saved record and belongs in the
     // "All SOAP notes" history, not the active draft. The backend stores saved notes as
     // `preliminary` (only `$finalize` flips it to `final`), so persisted id — not status —
@@ -399,6 +415,11 @@ export const amendSoapNote = (
 ) => clinicalArtifactAction<Composition>(organisationId, 'soap-note', soapNoteId, '$amend', body);
 
 export const saveSoapNote = async (context: ClinicalContext, note: SoapNoteEntry) => {
+  // Custom-template override (structure swap): persist the schema + answers in the metadata
+  // channel so the workspace re-renders the custom form after refresh.
+  const customMetadata = note.customSchema?.length
+    ? { customTemplate: { schema: note.customSchema, answers: note.customAnswers ?? {} } }
+    : undefined;
   const body = buildComposition(
     context,
     'SOAP_NOTE',
@@ -408,6 +429,7 @@ export const saveSoapNote = async (context: ClinicalContext, note: SoapNoteEntry
       jsonExtension(SOAP_EXT.objective, note.objective),
       jsonExtension(SOAP_EXT.assessment, note.assessment),
       jsonExtension(SOAP_EXT.plan, note.plan),
+      jsonExtension(SOAP_EXT.metadata, customMetadata),
     ])
   );
   const endpoint = `/fhir/v1/clinical-artifact/organisation/${context.organisationId}/soap-note`;

@@ -27,6 +27,9 @@ import { FormsCategory } from '@/app/features/forms/types/forms';
 
 // Mock external library functions to verify they are called
 jest.mock('@yosemite-crew/types', () => ({
+  // Keep the real shared constants (e.g. CANONICAL_* clinical structures) so the
+  // single-sourced clinical blueprints resolve; only the DTO/mapper helpers are mocked.
+  ...jest.requireActual('@yosemite-crew/types'),
   // Pass through relevant types if needed, or just mock functions
   fromFormRequestDTO: jest.fn((dto) => ({
     ...dto,
@@ -429,7 +432,7 @@ describe('Forms Utils', () => {
         })
       );
       expect(payload.schemaSnapshot.sections.map((section) => section.id)).toEqual(
-        expect.arrayContaining(['measured_at', 'vitals', 'notes', 'metadata'])
+        expect.arrayContaining(['vitals', 'notes'])
       );
     });
   });

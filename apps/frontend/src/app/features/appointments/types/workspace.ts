@@ -1,3 +1,5 @@
+import type { FormField } from '@/app/features/forms/types/forms';
+
 /** The five workspace steps, in order. */
 export type WorkspaceStep = 'SOAP' | 'DIAGNOSTICS' | 'TREATMENT' | 'INVOICE' | 'SUMMARY';
 
@@ -47,6 +49,16 @@ export type SoapNoteEntry = {
   templateId?: string;
   /** Backend template version that prefilled this note (provenance for the saved artifact). */
   templateVersion?: number;
+  /** Backend template version id (full provenance, mirrors the discharge artifact). */
+  templateVersionId?: string;
+  /**
+   * When a CUSTOM (non-native) SOAP template is selected, its structure replaces the four
+   * native S/O/A/P editors. `customSchema` holds the template's typed fields and
+   * `customAnswers` holds the per-field answers (keyed by field id). Both are persisted to /
+   * rehydrated from the clinical-artifact `metadata` channel so the override survives refresh.
+   */
+  customSchema?: FormField[];
+  customAnswers?: Record<string, unknown>;
   signedByName?: string;
   signedAt?: string;
   signedOffline?: boolean;
@@ -65,6 +77,15 @@ export type SoapTemplate = {
    * saved note records exactly which template version prefilled it.
    */
   version?: number;
+  /** Backend template version id (full provenance, carried onto the saved artifact). */
+  versionId?: string;
+  /**
+   * When set, this template is CUSTOM (its structure differs from the native four S/O/A/P
+   * sections). Selecting it swaps the workspace SOAP structure: the typed fields render via
+   * the shared FormRenderer instead of the four rich-text editors. Derived from the template's
+   * schema snapshot. Native (YC-default) templates leave this undefined and only swap content.
+   */
+  customSchema?: FormField[];
   /**
    * Section content the template prefills into the SOAP editors. Populated from the
    * template's schema snapshot (via the resolver or list). When present, applying
