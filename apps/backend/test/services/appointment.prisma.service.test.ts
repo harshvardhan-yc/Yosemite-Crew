@@ -61,7 +61,7 @@ jest.mock("../../src/config/prisma", () => ({
     roomUnitGroup: {
       findUnique: jest.fn(),
     },
-    companion: {
+    patient: {
       findUnique: jest.fn(),
     },
     roomUnitAssignment: {
@@ -208,7 +208,7 @@ describe("AppointmentPrismaService", () => {
     mockedPrisma.occupancy.deleteMany.mockResolvedValue({ count: 1 } as any);
     mockedPrisma.roomUnit.findUnique.mockResolvedValue(null);
     mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue(null);
-    mockedPrisma.companion.findUnique.mockResolvedValue({
+    mockedPrisma.patient.findUnique.mockResolvedValue({
       id: "comp_1",
       type: "dog",
       speciesCode: "canislf",
@@ -733,7 +733,11 @@ describe("AppointmentPrismaService", () => {
     });
     expect(mockedPrisma.admission.upsert).toHaveBeenNthCalledWith(2, {
       where: { encounterId: "enc_1" },
-      update: { unitId: "unit_1" },
+      update: {
+        unitId: "unit_1",
+        admittedAt: new Date("2026-06-11T12:00:00.000Z"),
+        expectedStayDays: 5,
+      },
       create: {
         encounterId: "enc_1",
         organisationId: "org_1",
@@ -780,6 +784,106 @@ describe("AppointmentPrismaService", () => {
     expect((result as any).appointment.encounterId).toBe("enc_1");
     expect(result.admission.unitId).toBe("unit_1");
     expect(result.unitAssignment?.unitId).toBe("unit_1");
+  });
+
+  it("continues inpatient admission when the admission already exists", async () => {
+    mockedPrisma.appointment.findUnique.mockResolvedValue(
+      makeRow({
+        status: "CHECKED_IN",
+        appointmentKind: "INPATIENT",
+        caseId: "case_1",
+        encounterId: "enc_1",
+      }),
+    );
+    mockedPrisma.encounter.findUnique.mockResolvedValue({
+      id: "enc_1",
+      caseId: "case_1",
+      organisationId: "org_1",
+      patientId: "comp_1",
+      status: "arrived",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      periodStart: null,
+      periodEnd: null,
+    } as any);
+    mockedPrisma.admission.findUnique
+      .mockResolvedValueOnce({
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        patientId: "comp_1",
+        unitId: null,
+        expectedStayDays: null,
+        admittedAt: new Date("2026-06-11T11:30:00.000Z"),
+        dischargedAt: null,
+        createdAt: new Date("2026-06-11T11:30:00.000Z"),
+        updatedAt: new Date("2026-06-11T11:30:00.000Z"),
+      } as any)
+      .mockResolvedValueOnce({
+        encounterId: "enc_1",
+        organisationId: "org_1",
+        patientId: "comp_1",
+        unitId: "unit_1",
+        expectedStayDays: 5,
+        admittedAt: new Date("2026-06-11T12:00:00.000Z"),
+        dischargedAt: null,
+        createdAt: new Date("2026-06-11T11:30:00.000Z"),
+        updatedAt: new Date("2026-06-11T12:00:00.000Z"),
+      } as any);
+    mockedPrisma.roomUnit.findUnique.mockResolvedValue({
+      id: "unit_1",
+      organisationId: "org_1",
+      roomId: "room_1",
+      unitGroupId: null,
+      code: "ICU-01",
+      displayName: "ICU Unit 1",
+      size: "L",
+      speciesConstraints: ["dog"],
+      isActive: true,
+      createdAt: new Date("2026-06-11T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:00:00.000Z"),
+    } as any);
+    mockedPrisma.encounter.update.mockResolvedValue({
+      id: "enc_1",
+      caseId: "case_1",
+      organisationId: "org_1",
+      patientId: "comp_1",
+      status: "in-progress",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      periodStart: new Date("2026-06-11T12:00:00.000Z"),
+      periodEnd: null,
+      createdAt: new Date("2026-06-11T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-11T12:00:00.000Z"),
+    } as any);
+    mockedPrisma.appointment.update.mockResolvedValue(
+      makeRow({
+        status: "CHECKED_IN",
+        appointmentKind: "INPATIENT",
+        caseId: "case_1",
+        encounterId: "enc_1",
+      }),
+    );
+
+    const result = await AppointmentPrismaService.admitAppointmentToInpatient(
+      "appt_1",
+      {
+        admittedAt: new Date("2026-06-11T12:00:00.000Z"),
+        expectedStayDays: 5,
+        roomUnitId: "unit_1",
+      },
+    );
+
+    expect(mockedPrisma.admission.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { encounterId: "enc_1" },
+        update: expect.objectContaining({
+          unitId: "unit_1",
+          admittedAt: new Date("2026-06-11T12:00:00.000Z"),
+          expectedStayDays: 5,
+        }),
+      }),
+    );
+    expect(result.admission.unitId).toBe("unit_1");
   });
 
   it("admits a checked-in inpatient-marked appointment when admission is missing", async () => {

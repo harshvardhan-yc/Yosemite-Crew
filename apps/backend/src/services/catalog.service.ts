@@ -944,41 +944,7 @@ export const ensurePackageItemsValid = async (params: {
     childProducts.map((product) => [product.id, product]),
   );
   for (const item of params.packageItems) {
-    const child = childMap.get(item.childProductItemId);
-    if (!child?.isActive) {
-      throw new CatalogServiceError(
-        "One or more package child items are unavailable.",
-        409,
-        "PACKAGE_CHILD_UNAVAILABLE",
-        { childProductItemId: item.childProductItemId },
-      );
-    }
-    if (
-      params.currentProductId &&
-      item.childProductItemId === params.currentProductId
-    ) {
-      throw new CatalogServiceError(
-        "Package cannot include itself.",
-        409,
-        "PACKAGE_HAS_CYCLE",
-      );
-    }
-
-    if (item.discountPercent != null) {
-      const childPrice = getDefaultPrice(child.prices);
-      const maxDiscountPercent = childPrice?.maxDiscountPercent ?? 0;
-      if (item.discountPercent > maxDiscountPercent) {
-        throw new CatalogServiceError(
-          "Package item discountPercent cannot exceed the child item's max discount.",
-          409,
-          "PACKAGE_ITEM_DISCOUNT_TOO_HIGH",
-          {
-            childProductItemId: item.childProductItemId,
-            maxDiscountPercent,
-          },
-        );
-      }
-    }
+    assertPackageItemValid(item, childMap, params.currentProductId);
   }
 
   const graph = await buildPackageGraph(params.organisationId);
@@ -990,21 +956,7 @@ export const ensurePackageItemsValid = async (params: {
   }
 
   for (const item of params.packageItems) {
-    if (!graph.has(item.childProductItemId)) continue;
-    if (
-      params.currentProductId &&
-      packageContainsTarget(
-        graph,
-        item.childProductItemId,
-        params.currentProductId,
-      )
-    ) {
-      throw new CatalogServiceError(
-        "Package composition would create a cycle.",
-        409,
-        "PACKAGE_HAS_CYCLE",
-      );
-    }
+    assertPackageGraphItemValid(item, graph, params.currentProductId);
   }
 
   if (params.currentProductId) {
@@ -1017,6 +969,63 @@ export const ensurePackageItemsValid = async (params: {
         { maxDepth: MAX_PACKAGE_NESTING_DEPTH },
       );
     }
+  }
+};
+
+const assertPackageItemValid = (
+  item: CatalogPackageItemInput,
+  childMap: Map<string, { isActive: boolean; prices: ProductPriceRecord[] }>,
+  currentProductId?: string,
+) => {
+  const child = childMap.get(item.childProductItemId);
+  if (!child?.isActive) {
+    throw new CatalogServiceError(
+      "One or more package child items are unavailable.",
+      409,
+      "PACKAGE_CHILD_UNAVAILABLE",
+      { childProductItemId: item.childProductItemId },
+    );
+  }
+  if (currentProductId && item.childProductItemId === currentProductId) {
+    throw new CatalogServiceError(
+      "Package cannot include itself.",
+      409,
+      "PACKAGE_HAS_CYCLE",
+    );
+  }
+
+  if (item.discountPercent != null) {
+    const childPrice = getDefaultPrice(child.prices);
+    const maxDiscountPercent = childPrice?.maxDiscountPercent ?? 0;
+    if (item.discountPercent > maxDiscountPercent) {
+      throw new CatalogServiceError(
+        "Package item discountPercent cannot exceed the child item's max discount.",
+        409,
+        "PACKAGE_ITEM_DISCOUNT_TOO_HIGH",
+        {
+          childProductItemId: item.childProductItemId,
+          maxDiscountPercent,
+        },
+      );
+    }
+  }
+};
+
+const assertPackageGraphItemValid = (
+  item: CatalogPackageItemInput,
+  graph: Map<string, string[]>,
+  currentProductId?: string,
+) => {
+  if (!graph.has(item.childProductItemId)) return;
+  if (
+    currentProductId &&
+    packageContainsTarget(graph, item.childProductItemId, currentProductId)
+  ) {
+    throw new CatalogServiceError(
+      "Package composition would create a cycle.",
+      409,
+      "PACKAGE_HAS_CYCLE",
+    );
   }
 };
 
@@ -1400,97 +1409,88 @@ const resolveSelectionTemplateKinds = (params: {
   productKind: ProductKind;
   appointmentKinds: AppointmentKind[];
 }): TemplateKind[] => {
-  const templateKinds: TemplateKind[] = [];
-
-  const pushUnique = (templateKind: TemplateKind) => {
-    if (!templateKinds.includes(templateKind)) {
-      templateKinds.push(templateKind);
-    }
-  };
-
   if (params.productKind === "MEDICATION") {
-    pushUnique("PRESCRIPTION");
-    return templateKinds;
+    return ["PRESCRIPTION"];
   }
 
   if (params.productKind === "PACKAGE") {
     if (params.appointmentKinds.includes("INPATIENT")) {
-      pushUnique("INPATIENT_SCHEDULE");
-      pushUnique("SOAP_NOTE");
-      pushUnique("DISCHARGE_SUMMARY");
-      return templateKinds;
+      return [
+        "TASK_ASSIGNMENT",
+        "INPATIENT_SCHEDULE",
+        "SOAP_NOTE",
+        "DISCHARGE_SUMMARY",
+      ];
     }
 
-    pushUnique("SOAP_NOTE");
-    return templateKinds;
+    return ["TASK_ASSIGNMENT", "SOAP_NOTE"];
   }
 
-  pushUnique("SOAP_NOTE");
-  return templateKinds;
+  return ["SOAP_NOTE"];
 };
 
-export const resolveCatalogSelectionFromRecord = (
-  product: ProductRecord,
-  templateBindings: CatalogTemplateBinding[] = [],
-): ResolvedCatalogSelection => {
-  if (!product.isActive) {
-    throw new CatalogServiceError("Selected product is inactive.", 400);
-  }
-
-  const appointmentKinds = toAppointmentKinds(product.bookable);
-  const parentPrice = getDefaultPrice(product.prices);
-  const isBookable = appointmentKinds.length > 0;
-  const templateKinds = resolveSelectionTemplateKinds({
-    productKind: product.kind,
-    appointmentKinds,
+const resolveNonPackageCatalogSelection = (params: {
+  product: ProductRecord;
+  parentPrice: ReturnType<typeof getDefaultPrice>;
+  appointmentKinds: AppointmentKind[];
+  isBookable: boolean;
+  templateKinds: TemplateKind[];
+  templateBindings: CatalogTemplateBinding[];
+}) => {
+  const parentAmounts = computeLineAmounts({
+    unitPrice: params.parentPrice?.unitPrice ?? 0,
+    quantity: 1,
+    discountPercent: params.parentPrice?.defaultDiscountPercent ?? 0,
   });
 
-  if (product.kind !== "PACKAGE") {
-    const parentAmounts = computeLineAmounts({
-      unitPrice: parentPrice?.unitPrice ?? 0,
-      quantity: 1,
-      discountPercent: parentPrice?.defaultDiscountPercent ?? 0,
-    });
+  return {
+    productItemId: params.product.id,
+    productKind: params.product.kind,
+    name: params.product.name,
+    code: params.product.code,
+    currency: params.parentPrice?.currency ?? null,
+    legacyServiceId: params.product.legacyServiceId,
+    isBookable: params.isBookable,
+    appointmentKinds: params.appointmentKinds,
+    leadCount: null,
+    supportCount: null,
+    additionalDiscountPercent: null,
+    grossAmount: parentAmounts.grossAmount,
+    itemDiscountAmount: parentAmounts.discountAmount,
+    additionalDiscountAmount: 0,
+    finalAmount: parentAmounts.finalAmount,
+    breakdownItemCount: 1,
+    templateKinds: params.templateKinds,
+    templateBindings: params.templateBindings,
+    billingItems: [
+      buildResolvedItem({
+        productItemId: params.product.id,
+        code: params.product.code,
+        name: params.product.name,
+        kind: params.product.kind,
+        quantity: 1,
+        unitPrice: params.parentPrice?.unitPrice ?? 0,
+        currency: params.parentPrice?.currency ?? null,
+        defaultDiscountPercent:
+          params.parentPrice?.defaultDiscountPercent ?? null,
+        maxDiscountPercent: params.parentPrice?.maxDiscountPercent ?? null,
+        discountPercent: params.parentPrice?.defaultDiscountPercent ?? 0,
+        isPackageComponent: false,
+      }),
+    ],
+    includedItems: [],
+  };
+};
 
-    return {
-      productItemId: product.id,
-      productKind: product.kind,
-      name: product.name,
-      code: product.code,
-      currency: parentPrice?.currency ?? null,
-      legacyServiceId: product.legacyServiceId,
-      isBookable,
-      appointmentKinds,
-      leadCount: null,
-      supportCount: null,
-      additionalDiscountPercent: null,
-      grossAmount: parentAmounts.grossAmount,
-      itemDiscountAmount: parentAmounts.discountAmount,
-      additionalDiscountAmount: 0,
-      finalAmount: parentAmounts.finalAmount,
-      breakdownItemCount: 1,
-      templateKinds,
-      templateBindings,
-      billingItems: [
-        buildResolvedItem({
-          productItemId: product.id,
-          code: product.code,
-          name: product.name,
-          kind: product.kind,
-          quantity: 1,
-          unitPrice: parentPrice?.unitPrice ?? 0,
-          currency: parentPrice?.currency ?? null,
-          defaultDiscountPercent: parentPrice?.defaultDiscountPercent ?? null,
-          maxDiscountPercent: parentPrice?.maxDiscountPercent ?? null,
-          discountPercent: parentPrice?.defaultDiscountPercent ?? 0,
-          isPackageComponent: false,
-        }),
-      ],
-      includedItems: [],
-    };
-  }
-
-  if (!product.package) {
+const resolvePackageCatalogSelection = (params: {
+  product: ProductRecord;
+  parentPrice: ReturnType<typeof getDefaultPrice>;
+  appointmentKinds: AppointmentKind[];
+  isBookable: boolean;
+  templateKinds: TemplateKind[];
+  templateBindings: CatalogTemplateBinding[];
+}) => {
+  if (!params.product.package) {
     throw new CatalogServiceError(
       "Package product is missing package configuration.",
       500,
@@ -1499,22 +1499,23 @@ export const resolveCatalogSelectionFromRecord = (
 
   const billingItems: ResolvedCatalogItem[] = [
     buildResolvedItem({
-      productItemId: product.id,
-      code: product.code,
-      name: product.name,
-      kind: product.kind,
+      productItemId: params.product.id,
+      code: params.product.code,
+      name: params.product.name,
+      kind: params.product.kind,
       quantity: 1,
-      unitPrice: parentPrice?.unitPrice ?? 0,
-      currency: parentPrice?.currency ?? null,
-      defaultDiscountPercent: parentPrice?.defaultDiscountPercent ?? null,
-      maxDiscountPercent: parentPrice?.maxDiscountPercent ?? null,
-      discountPercent: parentPrice?.defaultDiscountPercent ?? 0,
+      unitPrice: params.parentPrice?.unitPrice ?? 0,
+      currency: params.parentPrice?.currency ?? null,
+      defaultDiscountPercent:
+        params.parentPrice?.defaultDiscountPercent ?? null,
+      maxDiscountPercent: params.parentPrice?.maxDiscountPercent ?? null,
+      discountPercent: params.parentPrice?.defaultDiscountPercent ?? 0,
       isPackageComponent: false,
     }),
   ];
   const includedItems: ResolvedCatalogItem[] = [];
 
-  for (const item of product.package.items) {
+  for (const item of params.product.package.items) {
     if (!item.childProductItem.isActive) {
       throw new CatalogServiceError(
         `Package component ${item.childProductItem.name} is inactive.`,
@@ -1539,7 +1540,7 @@ export const resolveCatalogSelectionFromRecord = (
           maxDiscountPercent: childPrice?.maxDiscountPercent ?? null,
           discountPercent: 0,
           isPackageComponent: true,
-          packageProductItemId: product.id,
+          packageProductItemId: params.product.id,
         }),
       );
       continue;
@@ -1577,7 +1578,7 @@ export const resolveCatalogSelectionFromRecord = (
         discountPercent:
           item.discountPercent ?? childPrice?.defaultDiscountPercent ?? 0,
         isPackageComponent: true,
-        packageProductItemId: product.id,
+        packageProductItemId: params.product.id,
       }),
     );
   }
@@ -1591,38 +1592,75 @@ export const resolveCatalogSelectionFromRecord = (
     0,
   );
   const packageDiscountPercent =
-    product.package?.additionalDiscountPercent ?? 0;
+    params.product.package.additionalDiscountPercent ?? 0;
   const additionalDiscountAmount =
     (grossAmount - itemDiscountAmount) * (packageDiscountPercent / 100);
   const finalAmount =
     grossAmount - itemDiscountAmount - additionalDiscountAmount;
   const currency =
-    parentPrice?.currency ??
+    params.parentPrice?.currency ??
     billingItems.find((item) => item.currency != null)?.currency ??
     null;
 
   return {
-    productItemId: product.id,
-    productKind: product.kind,
-    name: product.name,
-    code: product.code,
+    productItemId: params.product.id,
+    productKind: params.product.kind,
+    name: params.product.name,
+    code: params.product.code,
     currency,
-    legacyServiceId: product.legacyServiceId,
-    isBookable,
-    appointmentKinds,
-    leadCount: product.package?.leadCount ?? 1,
-    supportCount: product.package?.supportCount ?? 0,
+    legacyServiceId: params.product.legacyServiceId,
+    isBookable: params.isBookable,
+    appointmentKinds: params.appointmentKinds,
+    leadCount: params.product.package.leadCount ?? 1,
+    supportCount: params.product.package.supportCount ?? 0,
     additionalDiscountPercent: packageDiscountPercent,
     grossAmount,
     itemDiscountAmount,
     additionalDiscountAmount,
     finalAmount,
     breakdownItemCount: billingItems.length + includedItems.length,
-    templateKinds,
-    templateBindings,
+    templateKinds: params.templateKinds,
+    templateBindings: params.templateBindings,
     billingItems,
     includedItems,
   };
+};
+
+export const resolveCatalogSelectionFromRecord = (
+  product: ProductRecord,
+  templateBindings: CatalogTemplateBinding[] = [],
+): ResolvedCatalogSelection => {
+  if (!product.isActive) {
+    throw new CatalogServiceError("Selected product is inactive.", 400);
+  }
+
+  const appointmentKinds = toAppointmentKinds(product.bookable);
+  const parentPrice = getDefaultPrice(product.prices);
+  const isBookable = appointmentKinds.length > 0;
+  const templateKinds = resolveSelectionTemplateKinds({
+    productKind: product.kind,
+    appointmentKinds,
+  });
+
+  if (product.kind !== "PACKAGE") {
+    return resolveNonPackageCatalogSelection({
+      product,
+      parentPrice,
+      appointmentKinds,
+      isBookable,
+      templateKinds,
+      templateBindings,
+    });
+  }
+
+  return resolvePackageCatalogSelection({
+    product,
+    parentPrice,
+    appointmentKinds,
+    isBookable,
+    templateKinds,
+    templateBindings,
+  });
 };
 
 const productSelectionInclude = {

@@ -279,6 +279,7 @@ describe("ParentService", () => {
       phoneNumber: "123",
       birthDate: new Date("2026-01-01"),
       timezone: "UTC+05:30 - Asia/Kolkata",
+      alerts: [{ title: "Allergy", severity: "high" }],
       address: {
         addressLine: "Line 1",
         country: "US",
@@ -294,6 +295,14 @@ describe("ParentService", () => {
       expect.objectContaining({
         where: { id: "parent-1" },
         data: expect.objectContaining({ timezone: "Asia/Kolkata" }),
+      }),
+    );
+    expect(mockedPrisma.parent.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "parent-1" },
+        data: expect.objectContaining({
+          alerts: [{ title: "Allergy", severity: "high" }],
+        }),
       }),
     );
     expect(result?.response.id).toBe("parent-1");

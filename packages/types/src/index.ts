@@ -345,6 +345,7 @@ export type {
   WorkspaceBootstrapResponse,
   WorkspaceBootstrapAggregate,
   WorkspaceBootstrapInput,
+  WorkspaceFinalizationGate,
   WorkspaceDiagnosticQueueItem,
   WorkspaceDocumentRow,
   WorkspaceDocumentPacketRow,
@@ -431,11 +432,11 @@ export {
 export type {
   FormAssignmentLike,
   FormAssignmentStatus,
-  FormSignerIdentity,
-  FormAssignmentCreateInput,
   FormAssignmentLifecycleStatus,
-  FormAssignmentSignedDocumentLike,
+  FormSignerIdentity,
   FormAssignmentListItem,
+  FormAssignmentCreateInput,
+  FormAssignmentSignedDocumentLike,
   FormAssignmentListFilters,
 } from './form-assignment';
 export type {

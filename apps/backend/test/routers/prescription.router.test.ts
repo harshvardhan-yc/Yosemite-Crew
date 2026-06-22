@@ -5,7 +5,11 @@ const withOrgPermissions = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
 
 const PrescriptionController = {
+  listDispenseRequests: jest.fn(),
+  getDispenseRequest: jest.fn(),
+  finalize: jest.fn(),
   reserve: jest.fn(),
+  notDispensed: jest.fn(),
   dispense: jest.fn(),
   returnPrescription: jest.fn(),
   voidDispense: jest.fn(),
@@ -47,25 +51,55 @@ describe("prescription.router", () => {
   it("exposes prescription action routes", () => {
     expect(
       findRoute(
-        "/organisations/:organisationId/:prescriptionId/$reserve",
+        "/organisations/:organisationId/prescription-dispense-requests",
+        "get",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        "/organisations/:organisationId/prescription-dispense-requests/:dispenseRequestId",
+        "get",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        String.raw`/organisations/:organisationId/:prescriptionId/\$reserve`,
         "post",
       ),
     ).toBeDefined();
     expect(
       findRoute(
-        "/organisations/:organisationId/:prescriptionId/$dispense",
+        String.raw`/organisations/:organisationId/:prescriptionId/\$finalize`,
         "post",
       ),
     ).toBeDefined();
     expect(
       findRoute(
-        "/organisations/:organisationId/:prescriptionId/$return",
+        String.raw`/organisations/:organisationId/:prescriptionId/\$approve`,
         "post",
       ),
     ).toBeDefined();
     expect(
       findRoute(
-        "/organisations/:organisationId/:prescriptionId/$void-dispense",
+        String.raw`/organisations/:organisationId/:prescriptionId/\$not-dispensed`,
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        String.raw`/organisations/:organisationId/:prescriptionId/\$dispense`,
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        String.raw`/organisations/:organisationId/:prescriptionId/\$return`,
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        String.raw`/organisations/:organisationId/:prescriptionId/\$void-dispense`,
         "post",
       ),
     ).toBeDefined();
@@ -73,15 +107,12 @@ describe("prescription.router", () => {
 
   it("protects routes with auth and permission middleware", () => {
     const route = findRoute(
-      "/organisations/:organisationId/:prescriptionId/$dispense",
+      String.raw`/organisations/:organisationId/:prescriptionId/\$finalize`,
       "post",
     );
 
     expect(route?.stack[0]?.handle).toBe(authorizeCognito);
     expect(route?.stack.length).toBeGreaterThanOrEqual(3);
-    expect(requirePermission).toHaveBeenCalledWith([
-      "prescription:edit:any",
-      "inventory:edit:any",
-    ]);
+    expect(requirePermission).toHaveBeenCalledWith(["prescription:edit:any"]);
   });
 });

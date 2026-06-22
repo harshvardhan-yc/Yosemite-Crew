@@ -7,6 +7,7 @@ const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const WorkspaceController = {
   getAppointmentBootstrap: jest.fn(),
   getEncounterBootstrap: jest.fn(),
+  getEncounterFinalizationGate: jest.fn(),
   getAppointmentDocuments: jest.fn(),
   getEncounterDocuments: jest.fn(),
   getCompanionDocuments: jest.fn(),
@@ -74,6 +75,10 @@ describe("workspace.router", () => {
       "/organisations/:organisationId/encounters/:encounterId/documents",
       "get",
     );
+    const finalizationGateRoute = findRoute(
+      "/organisations/:organisationId/encounters/:encounterId/finalization-gate",
+      "get",
+    );
     const companionDocumentsRoute = findRoute(
       "/organisations/:organisationId/companions/:companionId/documents",
       "get",
@@ -127,6 +132,9 @@ describe("workspace.router", () => {
     expect(
       encounterDocumentsRoute?.stack.map((layer) => layer.handle),
     ).toContain(authorizeCognito);
+    expect(finalizationGateRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
     expect(
       companionDocumentsRoute?.stack.map((layer) => layer.handle),
     ).toContain(authorizeCognito);
@@ -157,7 +165,7 @@ describe("workspace.router", () => {
     expect(packetSignRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
-    expect(withOrgPermissions).toHaveBeenCalledTimes(14);
+    expect(withOrgPermissions).toHaveBeenCalledTimes(15);
     expect(requirePermission).toHaveBeenCalled();
     expect(WorkspaceController.getAppointmentBootstrap).toHaveBeenCalledTimes(
       0,

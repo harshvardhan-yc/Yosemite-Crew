@@ -1,11 +1,13 @@
-import { Prisma, TemplateKind } from "@prisma/client";
+import {
+  Prisma,
+  TemplateKind,
+  FormAssignmentStatus as PrismaFormAssignmentStatus,
+} from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "src/config/prisma";
 import type {
   FormAssignmentCreateInput,
   FormAssignmentLike,
-  FormAssignmentLifecycleStatus,
-  FormAssignmentListFilters,
   FormAssignmentListItem,
   FormSignerIdentity,
   WorkspaceFormRow,
@@ -54,6 +56,41 @@ type AppointmentRow = {
 type FormAssignmentRow = Prisma.FormAssignmentGetPayload<Record<string, never>>;
 type FormAssignmentDbStatus = FormAssignmentRow["status"];
 
+type FormAssignmentOrgRow = Prisma.FormAssignmentGetPayload<{
+  include: {
+    template: {
+      select: {
+        id: true;
+        name: true;
+      };
+    };
+    companion: {
+      select: {
+        id: true;
+        name: true;
+      };
+    };
+    appointment: {
+      select: {
+        patient: true;
+      };
+    };
+  };
+}>;
+
+type FormSubmissionRow = Prisma.FormSubmissionGetPayload<{
+  select: {
+    id: true;
+    formId: true;
+    formVersion: true;
+    appointmentId: true;
+    patientId: true;
+    parentId: true;
+    submittedAt: true;
+    signing: true;
+  };
+}>;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -74,6 +111,16 @@ const getNestedString = (
 
 const resolvePatientId = (patient: unknown): string | undefined =>
   getNestedString(patient, ["id"]);
+
+const resolveAppointmentParent = (patient: unknown) => ({
+  parentId: getNestedString(patient, ["parent", "id"]) ?? null,
+  parentName: getNestedString(patient, ["parent", "name"]) ?? null,
+});
+
+const resolveAppointmentCompanion = (patient: unknown) => ({
+  companionId: resolvePatientId(patient) ?? null,
+  companionName: getNestedString(patient, ["name"]) ?? null,
+});
 
 const toSignerIdentity = (
   row: Pick<
@@ -99,30 +146,25 @@ const toSignerIdentity = (
 };
 
 const normalizeAssignmentStatus = (
-  status: FormAssignmentDbStatus | FormAssignmentLike["status"],
+  status: string,
 ): FormAssignmentLike["status"] => {
-  switch (status) {
+  switch (status.toUpperCase()) {
     case "DRAFT":
-    case "draft":
-      return "draft";
+      return "draft" as FormAssignmentLike["status"];
     case "SENT":
-    case "sent":
-      return "sent";
+      return "sent" as FormAssignmentLike["status"];
     case "VIEWED":
-    case "viewed":
-      return "viewed";
+      return "viewed" as FormAssignmentLike["status"];
     case "SUBMITTED":
-    case "submitted":
-      return "submitted";
+      return "submitted" as FormAssignmentLike["status"];
     case "SIGNED":
-    case "signed":
-      return "signed";
+      return "signed" as FormAssignmentLike["status"];
     case "EXPIRED":
-    case "expired":
-      return "expired";
+      return "expired" as FormAssignmentLike["status"];
     case "CANCELLED":
-    case "cancelled":
-      return "cancelled";
+      return "cancelled" as FormAssignmentLike["status"];
+    default:
+      return "draft" as FormAssignmentLike["status"];
   }
 };
 
@@ -154,6 +196,224 @@ const toAssignmentLike = (row: FormAssignmentRow): FormAssignmentLike => ({
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
+
+const isUppercaseAssignmentStatus = (
+  value: string,
+): value is PrismaFormAssignmentStatus => {
+  switch (value) {
+    case "DRAFT":
+    case "SENT":
+    case "VIEWED":
+    case "SUBMITTED":
+    case "SIGNED":
+    case "EXPIRED":
+    case "CANCELLED":
+      return true;
+    default:
+      return false;
+  }
+};
+
+const normalizeLifecycleAssignmentStatus = (
+  status: string,
+): FormAssignmentListItem["status"] => {
+  switch (status.toUpperCase()) {
+    case "DRAFT":
+      return "DRAFT" as FormAssignmentListItem["status"];
+    case "SENT":
+      return "SENT" as FormAssignmentListItem["status"];
+    case "VIEWED":
+      return "VIEWED" as FormAssignmentListItem["status"];
+    case "SUBMITTED":
+      return "SUBMITTED" as FormAssignmentListItem["status"];
+    case "SIGNED":
+      return "SIGNED" as FormAssignmentListItem["status"];
+    case "EXPIRED":
+      return "EXPIRED" as FormAssignmentListItem["status"];
+    case "CANCELLED":
+      return "CANCELLED" as FormAssignmentListItem["status"];
+    default:
+      return "DRAFT" as FormAssignmentListItem["status"];
+  }
+};
+
+const normalizeOrganisationListStatuses = (
+  status?: string,
+): PrismaFormAssignmentStatus[] | undefined => {
+  if (!status) return undefined;
+
+  const resolved = status
+    .split(",")
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean);
+
+  if (!resolved.length) return undefined;
+
+  for (const value of resolved) {
+    if (!isUppercaseAssignmentStatus(value)) {
+      throw new FormAssignmentServiceError("Invalid assignment status", 400);
+    }
+  }
+
+  return [...new Set(resolved)] as PrismaFormAssignmentStatus[];
+};
+
+const buildAssignmentKey = (params: {
+  templateId: string;
+  templateVersion: number;
+  appointmentId: string | null;
+  companionId: string | null;
+  parentId: string | null;
+}) =>
+  [
+    params.templateId,
+    params.templateVersion,
+    params.appointmentId ?? "",
+    params.companionId ?? "",
+    params.parentId ?? "",
+  ].join(":");
+
+const buildSubmissionKey = (params: {
+  formId: string;
+  formVersion: number;
+  appointmentId: string | null;
+  companionId: string | null;
+  parentId: string | null;
+}) =>
+  buildAssignmentKey({
+    templateId: params.formId,
+    templateVersion: params.formVersion,
+    appointmentId: params.appointmentId,
+    companionId: params.companionId,
+    parentId: params.parentId,
+  });
+
+const extractSignedDocument = (signing: Prisma.JsonValue | null) => {
+  if (!signing || typeof signing !== "object" || Array.isArray(signing)) {
+    return null;
+  }
+
+  const status = (signing as Record<string, unknown>).status;
+  if (status !== "SIGNED") {
+    return null;
+  }
+
+  const documentId = (signing as Record<string, unknown>).documentId;
+  const pdf = (signing as Record<string, unknown>).pdf;
+  const pdfUrl =
+    pdf &&
+    typeof pdf === "object" &&
+    !Array.isArray(pdf) &&
+    typeof (pdf as Record<string, unknown>).url === "string"
+      ? ((pdf as Record<string, unknown>).url as string)
+      : null;
+
+  return typeof documentId === "string" ? { documentId, pdfUrl } : null;
+};
+
+const toOrganisationListItem = (
+  row: FormAssignmentOrgRow,
+  signedDocument: { documentId: string; pdfUrl: string | null } | null,
+): FormAssignmentListItem => {
+  const patient = row.appointment?.patient;
+  const appointmentParent = resolveAppointmentParent(patient);
+  const appointmentCompanion = resolveAppointmentCompanion(patient);
+
+  return {
+    id: row.id,
+    templateId: row.templateId,
+    templateVersion: row.templateVersion,
+    templateName: row.template?.name ?? "",
+    templateTitle: row.template?.name ?? "",
+    companionId: row.companionId ?? appointmentCompanion.companionId,
+    companionName:
+      row.companion?.name ?? appointmentCompanion.companionName ?? null,
+    parentId: appointmentParent.parentId ?? null,
+    parentName: appointmentParent.parentName ?? null,
+    appointmentId: row.appointmentId,
+    status: normalizeLifecycleAssignmentStatus(row.status),
+    signingRequired: row.signingRequired,
+    mobileVisible: row.mobileVisible,
+    sentAt: row.sentAt,
+    viewedAt: row.viewedAt,
+    submittedAt: row.submittedAt,
+    signedAt: row.signedAt,
+    expiredAt: row.expiredAt,
+    cancelledAt: row.cancelledAt,
+    signedDocument,
+  };
+};
+
+const buildSubmissionDocumentMap = (
+  rows: FormSubmissionRow[],
+): Map<string, { documentId: string; pdfUrl: string | null }> => {
+  const map = new Map<string, { documentId: string; pdfUrl: string | null }>();
+
+  for (const row of rows) {
+    const signedDocument = extractSignedDocument(row.signing);
+    if (!signedDocument) {
+      continue;
+    }
+
+    const key = buildSubmissionKey({
+      formId: row.formId,
+      formVersion: row.formVersion,
+      appointmentId: row.appointmentId,
+      companionId: row.patientId,
+      parentId: row.parentId,
+    });
+
+    if (!map.has(key)) {
+      map.set(key, signedDocument);
+    }
+  }
+
+  return map;
+};
+
+const findAssignmentForSubmission = async (params: {
+  organisationId: string;
+  templateId: string;
+  templateVersion: number;
+  appointmentId?: string | null;
+  companionId?: string | null;
+  parentId?: string | null;
+}) => {
+  const assignments = await prisma.formAssignment.findMany({
+    where: {
+      organisationId: params.organisationId,
+      templateId: params.templateId,
+      templateVersion: params.templateVersion,
+      ...(params.appointmentId ? { appointmentId: params.appointmentId } : {}),
+      ...(params.companionId ? { companionId: params.companionId } : {}),
+    },
+    include: {
+      appointment: {
+        select: {
+          patient: true,
+        },
+      },
+    },
+  });
+
+  if (!assignments.length) {
+    return null;
+  }
+
+  if (!params.parentId) {
+    return assignments[0] ?? null;
+  }
+
+  return (
+    assignments.find((assignment) => {
+      const parentId = getNestedString(assignment.appointment?.patient, [
+        "parent",
+        "id",
+      ]);
+      return parentId === params.parentId;
+    }) ?? null
+  );
+};
 
 const ensureTemplate = async (
   organisationId: string,
@@ -271,6 +531,12 @@ const ensureCancellable = (
   }
 };
 
+const isSubmittableAssignmentStatus = (status: FormAssignmentDbStatus) =>
+  status === "SENT" || status === "VIEWED";
+
+const isSignableAssignmentStatus = (status: FormAssignmentDbStatus) =>
+  status === "SENT" || status === "VIEWED" || status === "SUBMITTED";
+
 export const FormAssignmentService = {
   async createForAppointment(input: FormAssignmentCreateInput) {
     const parsed = createFormAssignmentSchema.parse(input);
@@ -339,161 +605,99 @@ export const FormAssignmentService = {
     return rows.map((row) => toAssignmentLike(row));
   },
 
-  /**
-   * Organisation-wide assignments read-model for the /forms "Assigned forms"
-   * view. Enriches each row with the template name, companion name, and the
-   * companion's PRIMARY parent name, plus a signed-document reference derived
-   * from the matching signed template instance. DRAFT assignments are excluded
-   * because they have not yet been sent to the parent.
-   */
-  async listForOrganisation(
-    organisationId: string,
-    filters: FormAssignmentListFilters = {},
-  ): Promise<FormAssignmentListItem[]> {
-    // Assignments are companion-scoped, so a parentId filter is resolved to the
-    // parent's linked companions first.
-    let parentCompanionIds: string[] | undefined;
-    if (filters.parentId) {
-      const links = await prisma.parentPatient.findMany({
-        where: { parentId: filters.parentId },
-        select: { patientId: true },
-      });
-      parentCompanionIds = links.map((link) => link.patientId);
-      if (!parentCompanionIds.length) return [];
-    }
-
-    const where: Prisma.FormAssignmentWhereInput = {
-      organisationId,
-      status: filters.status?.length
-        ? { in: filters.status }
-        : { not: "DRAFT" },
-    };
-    // parentId and companionId narrow (intersect) rather than broaden: when both
-    // are given, the companion must belong to the parent, otherwise there is no
-    // overlap and the result is empty.
-    if (filters.companionId && parentCompanionIds) {
-      if (!parentCompanionIds.includes(filters.companionId)) return [];
-      where.companionId = filters.companionId;
-    } else if (filters.companionId) {
-      where.companionId = filters.companionId;
-    } else if (parentCompanionIds) {
-      where.companionId = { in: parentCompanionIds };
-    }
+  async listForOrganisation(params: {
+    organisationId: string;
+    parentId?: string;
+    companionId?: string;
+    status?: string;
+  }): Promise<FormAssignmentListItem[]> {
+    const statuses = normalizeOrganisationListStatuses(params.status);
 
     const rows = await prisma.formAssignment.findMany({
-      where,
+      where: {
+        organisationId: params.organisationId,
+        ...(params.companionId ? { companionId: params.companionId } : {}),
+        ...(statuses ? { status: { in: statuses } } : {}),
+      },
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       include: {
-        template: { select: { name: true } },
+        template: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         companion: {
           select: {
+            id: true,
             name: true,
-            parentLinks: {
-              where: { role: "PRIMARY", status: "ACTIVE" },
-              select: { parentId: true },
-              take: 1,
-            },
+          },
+        },
+        appointment: {
+          select: {
+            patient: true,
           },
         },
       },
     });
 
-    // Resolve PRIMARY-parent display names in a single query.
-    const parentIds = [
+    const filteredRows = params.parentId
+      ? rows.filter((row) => {
+          const parentId = getNestedString(row.appointment?.patient, [
+            "parent",
+            "id",
+          ]);
+          return parentId === params.parentId;
+        })
+      : rows;
+
+    const formIds = [...new Set(filteredRows.map((row) => row.templateId))];
+    const appointmentIds = [
       ...new Set(
-        rows
-          .map((row) => row.companion?.parentLinks?.[0]?.parentId)
-          .filter((value): value is string => Boolean(value)),
+        filteredRows
+          .map((row) => row.appointmentId)
+          .filter((id): id is string => Boolean(id)),
       ),
     ];
-    const parents = parentIds.length
-      ? await prisma.parent.findMany({
-          where: { id: { in: parentIds } },
-          select: { id: true, firstName: true, lastName: true },
-        })
-      : [];
-    const parentNameById = new Map(
-      parents.map((parent) => [
-        parent.id,
-        [parent.firstName, parent.lastName].filter(Boolean).join(" ").trim(),
-      ]),
-    );
 
-    // Signed-document references come from the matching SIGNED template instance.
-    const signedRows = rows.filter((row) => row.status === "SIGNED");
-    const signedInstanceByKey = new Map<
-      string,
-      { id: string; generatedPdfUrl: string | null }
-    >();
-    if (signedRows.length) {
-      const instances = await prisma.templateInstance.findMany({
-        where: {
-          organisationId,
-          status: "SIGNED",
-          OR: signedRows.map((row) => ({
-            templateId: row.templateId,
-            templateVersion: row.templateVersion,
-            appointmentId: row.appointmentId,
-          })),
-        },
-        select: {
-          id: true,
-          templateId: true,
-          templateVersion: true,
-          appointmentId: true,
-          generatedPdfUrl: true,
-        },
+    const submissions =
+      formIds.length && appointmentIds.length
+        ? await prisma.formSubmission.findMany({
+            where: {
+              formId: { in: formIds },
+              appointmentId: { in: appointmentIds },
+            },
+            select: {
+              id: true,
+              formId: true,
+              formVersion: true,
+              appointmentId: true,
+              patientId: true,
+              parentId: true,
+              submittedAt: true,
+              signing: true,
+            },
+            orderBy: [{ submittedAt: "desc" }],
+          })
+        : [];
+
+    const submissionDocuments = buildSubmissionDocumentMap(submissions);
+
+    return filteredRows.map((row) => {
+      const key = buildSubmissionKey({
+        formId: row.templateId,
+        formVersion: row.templateVersion,
+        appointmentId: row.appointmentId,
+        companionId:
+          row.companionId ??
+          getNestedString(row.appointment?.patient, ["id"]) ??
+          null,
+        parentId:
+          getNestedString(row.appointment?.patient, ["parent", "id"]) ?? null,
       });
-      for (const instance of instances) {
-        signedInstanceByKey.set(
-          `${instance.templateId}:${instance.templateVersion}:${instance.appointmentId ?? ""}`,
-          { id: instance.id, generatedPdfUrl: instance.generatedPdfUrl },
-        );
-      }
-    }
 
-    return rows
-      .filter((row) => row.status !== "DRAFT")
-      .map((row) => {
-        const primaryParentId =
-          row.companion?.parentLinks?.[0]?.parentId ?? null;
-        const templateName = row.template?.name ?? "";
-        const signedInstance =
-          row.status === "SIGNED"
-            ? signedInstanceByKey.get(
-                `${row.templateId}:${row.templateVersion}:${row.appointmentId ?? ""}`,
-              )
-            : undefined;
-
-        return {
-          id: row.id,
-          templateId: row.templateId,
-          templateVersion: row.templateVersion,
-          templateName,
-          templateTitle: templateName,
-          companionId: row.companionId,
-          companionName: row.companion?.name ?? null,
-          parentId: primaryParentId,
-          parentName: primaryParentId
-            ? parentNameById.get(primaryParentId) || null
-            : null,
-          appointmentId: row.appointmentId,
-          status: row.status as FormAssignmentLifecycleStatus,
-          signingRequired: row.signingRequired,
-          mobileVisible: row.mobileVisible,
-          viewedAt: row.viewedAt?.toISOString() ?? null,
-          submittedAt: row.submittedAt?.toISOString() ?? null,
-          signedAt: row.signedAt?.toISOString() ?? null,
-          expiredAt: row.expiredAt?.toISOString() ?? null,
-          cancelledAt: row.cancelledAt?.toISOString() ?? null,
-          signedDocument: signedInstance
-            ? {
-                documentId: signedInstance.id,
-                pdfUrl: signedInstance.generatedPdfUrl,
-              }
-            : null,
-        } satisfies FormAssignmentListItem;
-      });
+      return toOrganisationListItem(row, submissionDocuments.get(key) ?? null);
+    });
   },
 
   async resend(
@@ -516,6 +720,94 @@ export const FormAssignmentService = {
     });
 
     return toAssignmentLike(row);
+  },
+
+  async markViewedForAppointment(params: {
+    organisationId: string;
+    appointmentId: string;
+  }) {
+    await prisma.formAssignment.updateMany({
+      where: {
+        organisationId: params.organisationId,
+        appointmentId: params.appointmentId,
+        status: "SENT",
+      },
+      data: {
+        status: "VIEWED",
+        viewedAt: new Date(),
+      },
+    });
+  },
+
+  async markSubmittedFromSubmission(params: {
+    organisationId: string;
+    templateId: string;
+    templateVersion: number;
+    appointmentId?: string | null;
+    companionId?: string | null;
+    parentId?: string | null;
+    submittedAt?: Date;
+  }) {
+    const assignment = await findAssignmentForSubmission({
+      organisationId: params.organisationId,
+      templateId: params.templateId,
+      templateVersion: params.templateVersion,
+      appointmentId: params.appointmentId,
+      companionId: params.companionId,
+      parentId: params.parentId,
+    });
+
+    if (!assignment) {
+      return null;
+    }
+
+    if (!isSubmittableAssignmentStatus(assignment.status)) {
+      return assignment;
+    }
+
+    return prisma.formAssignment.update({
+      where: { id: assignment.id },
+      data: {
+        status: "SUBMITTED",
+        submittedAt: params.submittedAt ?? new Date(),
+        updatedAt: new Date(),
+      },
+    });
+  },
+
+  async markSignedFromSubmission(params: {
+    organisationId: string;
+    templateId: string;
+    templateVersion: number;
+    appointmentId?: string | null;
+    companionId?: string | null;
+    parentId?: string | null;
+  }) {
+    const assignment = await findAssignmentForSubmission({
+      organisationId: params.organisationId,
+      templateId: params.templateId,
+      templateVersion: params.templateVersion,
+      appointmentId: params.appointmentId,
+      companionId: params.companionId,
+      parentId: params.parentId,
+    });
+
+    if (!assignment) {
+      return null;
+    }
+
+    if (!isSignableAssignmentStatus(assignment.status)) {
+      return assignment;
+    }
+
+    return prisma.formAssignment.update({
+      where: { id: assignment.id },
+      data: {
+        status: "SIGNED",
+        signedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
   },
 
   async cancel(

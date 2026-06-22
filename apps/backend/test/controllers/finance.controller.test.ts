@@ -359,6 +359,37 @@ describe("FinanceController", () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it("lists invoices by appointment when both appointment and organisation filters are present", async () => {
+    (InvoiceService.getByAppointmentId as jest.Mock).mockResolvedValueOnce([
+      { id: "inv_appt" },
+    ]);
+
+    const req = {
+      query: {
+        organisationId: "org_1",
+        appointmentId: "appt_1",
+      },
+    } as unknown as Request;
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as Response;
+
+    await FinanceController.listInvoices(req, res);
+
+    expect(InvoiceService.getByAppointmentId).toHaveBeenCalledWith(
+      "appt_1",
+      "org_1",
+    );
+    expect(InvoiceService.listForOrganisation).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      data: [{ id: "inv_appt" }],
+      meta: null,
+      error: null,
+    });
+  });
+
   it("lists organisation invoices through the finance alias", async () => {
     (InvoiceService.listForOrganisation as jest.Mock).mockResolvedValueOnce([
       { id: "inv_org" },
