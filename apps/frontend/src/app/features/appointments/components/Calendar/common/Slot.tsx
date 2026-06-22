@@ -628,9 +628,18 @@ const SlotComponent: React.FC<SlotProps> = ({
                 const tall = !multiLane && blockHeightPx >= 72;
                 // medium: ≥44px single-lane — smaller pic, one subtitle line
                 const medium = !multiLane && blockHeightPx >= 44;
-                const showImage = medium || tall;
-                // tall: scales 48px (30-min/90px) → 60px (60-min/180px); medium: 34px
-                const imgSize = tall ? Math.min(60, Math.round(blockHeightPx * 0.52)) : 34;
+                // small: short single-lane slots (e.g. 5-min) — compact avatar, name only
+                const small = !multiLane && !medium && !tall;
+                const showImage = small || medium || tall;
+                // tall: scales 48px (30-min/90px) → 60px (60-min/180px); medium: 34px; small: 24px
+                let imgSize: number;
+                if (tall) {
+                  imgSize = Math.min(60, Math.round(blockHeightPx * 0.52));
+                } else if (medium) {
+                  imgSize = 34;
+                } else {
+                  imgSize = 24;
+                }
 
                 let verticalPadding: string;
                 if (tall) {
@@ -638,8 +647,10 @@ const SlotComponent: React.FC<SlotProps> = ({
                 } else if (medium) {
                   verticalPadding = 'py-2';
                 } else {
-                  verticalPadding = 'py-1';
+                  verticalPadding = 'py-0.5';
                 }
+                const horizontalPadding = small ? 'pl-1.5 pr-2' : 'pl-3 pr-3';
+                const buttonGap = small ? 'gap-1.5' : 'gap-2.5';
                 const cursorClass = draggable
                   ? 'cursor-grab active:cursor-grabbing'
                   : 'cursor-pointer';
@@ -708,7 +719,7 @@ const SlotComponent: React.FC<SlotProps> = ({
                   >
                     <button
                       type="button"
-                      className={`size-full flex items-center justify-between gap-2.5 pl-3 pr-3 text-left ${verticalPadding} ${cursorClass}`}
+                      className={`size-full flex items-center justify-between ${buttonGap} ${horizontalPadding} text-left ${verticalPadding} ${cursorClass}`}
                       aria-haspopup="dialog"
                       aria-expanded={activePopoverKey === itemKey}
                       aria-controls={appointmentPopoverId}
