@@ -6,6 +6,7 @@ import SummaryStep from '@/app/features/appointments/pages/AppointmentWorkspace/
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
+import type { WorkspaceDocumentRow } from '@yosemite-crew/types';
 import {
   listDischargeSummaryTemplates,
   resolveDischargeTemplate,
@@ -14,6 +15,10 @@ import {
   getRenderedDocument,
   saveDischargeSummaryArtifact,
 } from '@/app/features/appointments/services/workspaceClinicalService';
+import {
+  getAppointmentWorkspaceBootstrap,
+  listEncounterWorkspaceDocuments,
+} from '@/app/features/appointments/services/workspaceAggregateService';
 
 jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
   listDischargeSummaryTemplates: jest.fn(),
@@ -25,6 +30,11 @@ jest.mock('@/app/features/appointments/services/workspaceClinicalService', () =>
   saveDischargeSummaryArtifact: jest.fn().mockResolvedValue({ id: 'saved-summary' }),
 }));
 
+// Capability gating: grant document:view:any so document actions render.
+jest.mock('@/app/hooks/usePermissions', () => ({
+  usePermissions: () => ({ can: () => true }),
+}));
+
 // Packet-signing behaviour is covered in
 // __tests__/features/appointments/AppointmentWorkspace/SummaryStep.test.tsx.
 jest.mock('@/app/features/appointments/services/workspaceAggregateService', () => ({
@@ -34,7 +44,29 @@ jest.mock('@/app/features/appointments/services/workspaceAggregateService', () =
     signing: { status: 'IN_PROGRESS', signingUrl: 'https://sign.test/abc' },
   }),
   getEncounterDocumentPacketPdfUrl: jest.fn().mockResolvedValue('blob:packet-pdf'),
+  listEncounterWorkspaceDocuments: jest.fn(),
+  getAppointmentWorkspaceBootstrap: jest.fn().mockResolvedValue({}),
+  normalizeWorkspaceBootstrapForEncounter: jest.fn(() => ({})),
 }));
+
+const makeDocumentRow = (overrides: Partial<WorkspaceDocumentRow> = {}): WorkspaceDocumentRow => ({
+  documentId: 'doc-1',
+  sourceKind: 'SOAP_NOTE',
+  sourceId: 'src-1',
+  appointmentId: 'appt-summary',
+  encounterId: 'enc-1',
+  companionId: null,
+  templateId: null,
+  templateVersion: null,
+  title: 'Signed SOAP note',
+  kind: 'SOAP_NOTE',
+  status: 'FINAL',
+  signingStatus: 'SIGNED',
+  pdfUrl: null,
+  createdAt: new Date('2026-04-20T12:30:00Z'),
+  updatedAt: new Date('2026-04-20T12:45:00Z'),
+  ...overrides,
+});
 
 jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
   __esModule: true,
@@ -97,6 +129,7 @@ const reset = () => {
   });
   (listDischargeSummaryTemplates as jest.Mock).mockResolvedValue([]);
   (resolveDischargeTemplate as jest.Mock).mockResolvedValue(null);
+  (listEncounterWorkspaceDocuments as jest.Mock).mockResolvedValue([]);
   (getRenderedDocument as jest.Mock).mockResolvedValue({ pdfUrl: 'https://files.test/doc.pdf' });
 };
 
@@ -112,29 +145,23 @@ const renderSummary = (encounter: AppointmentEncounter) => {
 describe('SummaryStep', () => {
   beforeEach(reset);
 
-  it('renders discharge summary, follow-up date field and all documents', () => {
+  it('renders discharge summary, follow-up date field and backend documents', async () => {
+    (listEncounterWorkspaceDocuments as jest.Mock).mockResolvedValue([
+      makeDocumentRow({ title: 'Signed SOAP note' }),
+    ]);
     const enc = seedAndGet();
-    const withDocument = {
-      ...enc,
-      documents: [
-        {
-          id: 'doc-soap-1',
-          createdAt: '2026-04-20T12:30:00Z',
-          category: 'SOAP' as const,
-          description: 'Signed SOAP note',
-          signedByName: 'Dr. Tim Apple',
-          lastModifiedAt: '2026-04-20T12:45:00Z',
-        },
-      ],
-    };
-    renderSummary(withDocument);
+    await act(async () => {
+      render(<SummaryStep appointmentId={APPT} appointment={appointment} encounter={enc} />);
+    });
 
     expect(screen.getByText('Discharge Summary')).toBeInTheDocument();
     expect(screen.getByLabelText('Discharge summary')).toBeInTheDocument();
     // Follow-up is now a date-picker field labelled "Follow up date".
     expect(screen.getByRole('button', { name: /follow up date/i })).toBeInTheDocument();
     expect(screen.getByText('All Documents')).toBeInTheDocument();
-    expect(screen.getByText('Signed SOAP note')).toBeInTheDocument();
+    // Documents are sourced from the backend read-model, not rebuilt client-side.
+    expect(await screen.findByText('Signed SOAP note')).toBeInTheDocument();
+    expect(listEncounterWorkspaceDocuments).toHaveBeenCalledWith('org-1', 'enc-1');
   });
 
   it('places the follow-up date field after the discharge editor', () => {
@@ -279,24 +306,50 @@ describe('SummaryStep', () => {
     expect(preview).toHaveTextContent('blob:packet-pdf');
   });
 
-  it('opens an existing workspace document PDF', async () => {
-    const enc = {
-      ...seedAndGet(),
-      documents: [
-        {
-          id: 'doc-1',
-          pdfUrl: 'https://files.test/direct.pdf',
-          createdAt: '2026-04-20T12:30:00Z',
-          category: 'SOAP' as const,
-          description: 'Signed SOAP note',
-          signedByName: 'Dr. Tim Apple',
-          lastModifiedAt: '2026-04-20T12:45:00Z',
-        },
-      ],
-    };
-    renderSummary(enc);
+  it('refreshes documents and encounter after the signing overlay closes', async () => {
+    const enc = seedAndGet();
+    await act(async () => {
+      render(<SummaryStep appointmentId={APPT} appointment={appointment} encounter={enc} />);
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: /view signed soap note/i }));
+    // Start signing and wait until the signing URL is set (the point at which the
+    // post-sign refresh is armed), not merely until the overlay opens.
+    fireEvent.click(screen.getByRole('button', { name: /^sign$/i }));
+    await waitFor(() =>
+      expect(useSigningOverlayStore.getState().url).toBe('https://sign.test/abc')
+    );
+
+    (listEncounterWorkspaceDocuments as jest.Mock).mockClear();
+    (getAppointmentWorkspaceBootstrap as jest.Mock).mockClear();
+
+    // Closing the overlay (signing finished server-side via the Documenso webhook)
+    // triggers a refetch of documents + the encounter read-model so the documents
+    // list, discharge status, and finalization gate reflect the signature.
+    await act(async () => {
+      useSigningOverlayStore.getState().close();
+    });
+
+    await waitFor(() => {
+      expect(getAppointmentWorkspaceBootstrap).toHaveBeenCalledWith('org-1', APPT);
+      expect(listEncounterWorkspaceDocuments).toHaveBeenCalledWith('org-1', 'enc-1');
+    });
+  });
+
+  it('opens an existing workspace document PDF', async () => {
+    (listEncounterWorkspaceDocuments as jest.Mock).mockResolvedValue([
+      makeDocumentRow({
+        documentId: 'doc-1',
+        title: 'Signed SOAP note',
+        pdfUrl: 'https://files.test/direct.pdf',
+      }),
+    ]);
+    await act(async () => {
+      render(
+        <SummaryStep appointmentId={APPT} appointment={appointment} encounter={seedAndGet()} />
+      );
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /view signed soap note/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId('pdf-preview')).toHaveTextContent('Signed SOAP note');
@@ -306,21 +359,21 @@ describe('SummaryStep', () => {
   });
 
   it('looks up a rendered document PDF when the document row has no direct URL', async () => {
-    const enc = {
-      ...seedAndGet(),
-      documents: [
-        {
-          id: 'rendered-1',
-          createdAt: '2026-04-20T12:30:00Z',
-          category: 'Discharge' as const,
-          description: 'Discharge summary',
-          lastModifiedAt: '2026-04-20T12:45:00Z',
-        },
-      ],
-    };
-    render(<SummaryStep appointmentId={APPT} appointment={appointment} encounter={enc} />);
+    (listEncounterWorkspaceDocuments as jest.Mock).mockResolvedValue([
+      makeDocumentRow({
+        documentId: 'rendered-1',
+        title: 'Discharge summary',
+        sourceKind: 'DISCHARGE_SUMMARY',
+        pdfUrl: null,
+      }),
+    ]);
+    await act(async () => {
+      render(
+        <SummaryStep appointmentId={APPT} appointment={appointment} encounter={seedAndGet()} />
+      );
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: /view discharge summary/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /view discharge summary/i }));
 
     await waitFor(() => {
       expect(getRenderedDocument).toHaveBeenCalledWith('org-1', 'rendered-1');
@@ -333,22 +386,20 @@ describe('SummaryStep', () => {
     const clickSpy = jest
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => undefined);
-    const enc = {
-      ...seedAndGet(),
-      documents: [
-        {
-          id: 'doc-download',
-          pdfUrl: 'https://files.test/download.pdf',
-          createdAt: '2026-04-20T12:30:00Z',
-          category: 'SOAP' as const,
-          description: 'Signed SOAP note',
-          lastModifiedAt: '2026-04-20T12:45:00Z',
-        },
-      ],
-    };
-    renderSummary(enc);
+    (listEncounterWorkspaceDocuments as jest.Mock).mockResolvedValue([
+      makeDocumentRow({
+        documentId: 'doc-download',
+        title: 'Signed SOAP note',
+        pdfUrl: 'https://files.test/download.pdf',
+      }),
+    ]);
+    await act(async () => {
+      render(
+        <SummaryStep appointmentId={APPT} appointment={appointment} encounter={seedAndGet()} />
+      );
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: /download signed soap note/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /download signed soap note/i }));
 
     await waitFor(() => {
       expect(clickSpy).toHaveBeenCalled();
@@ -378,27 +429,27 @@ describe('SummaryStep', () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  it('derives document rows from saved SOAP notes and prescriptions', () => {
-    const enc = {
-      ...seedAndGet(),
-      soap: [
-        {
-          id: 'note-1',
-          chiefComplaint: '',
-          subjective: '<p>Lethargy</p>',
-          objective: '',
-          assessment: '',
-          plan: '',
-          status: 'COMPLETED' as const,
-          createdAt: '2026-04-20T12:30:00Z',
-        },
-      ],
-      prescription: [{ id: 'rx-1', medicineName: 'Amoxicillin', fulfillment: 'IN_HOUSE' as const }],
-    } as AppointmentEncounter;
-    renderSummary(enc);
+  it('renders backend document rows with humanised source, status and signing state', async () => {
+    (listEncounterWorkspaceDocuments as jest.Mock).mockResolvedValue([
+      makeDocumentRow({
+        documentId: 'doc-soap',
+        title: 'SOAP note',
+        sourceKind: 'SOAP_NOTE',
+        status: 'FINAL',
+        signingStatus: 'NOT_REQUIRED',
+      }),
+    ]);
+    await act(async () => {
+      render(
+        <SummaryStep appointmentId={APPT} appointment={appointment} encounter={seedAndGet()} />
+      );
+    });
 
-    expect(screen.getByText('SOAP note')).toBeInTheDocument();
-    expect(screen.getByText(/Prescription — Amoxicillin/)).toBeInTheDocument();
+    expect(await screen.findByText('SOAP note')).toBeInTheDocument();
+    // Raw backend enums are humanised before display.
+    expect(screen.getByText('Soap note')).toBeInTheDocument(); // source pill
+    expect(screen.getByText('Final')).toBeInTheDocument(); // document status
+    expect(screen.getByText('Not required')).toBeInTheDocument(); // signing status
   });
 
   it('does not render the terminal Complete button inside the summary body', () => {

@@ -10,6 +10,10 @@ import {
 jest.mock('@/app/features/appointments/services/workspaceAggregateService', () => ({
   createEncounterDocumentPacket: jest.fn(),
   signWorkspaceDocumentPacket: jest.fn(),
+  getEncounterDocumentPacketPdfUrl: jest.fn(),
+  listEncounterWorkspaceDocuments: jest.fn().mockResolvedValue([]),
+  getAppointmentWorkspaceBootstrap: jest.fn().mockResolvedValue({}),
+  normalizeWorkspaceBootstrapForEncounter: jest.fn(() => ({})),
 }));
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
   getRenderedDocument: jest.fn(),
@@ -17,6 +21,10 @@ jest.mock('@/app/features/appointments/services/workspaceClinicalService', () =>
 }));
 jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
   listDischargeSummaryTemplates: jest.fn().mockResolvedValue([]),
+  resolveDischargeTemplate: jest.fn().mockResolvedValue(null),
+}));
+jest.mock('@/app/hooks/usePermissions', () => ({
+  usePermissions: () => ({ can: () => true }),
 }));
 
 // --- Store mocks (selector-based) ---
@@ -37,6 +45,7 @@ jest.mock('@/app/stores/appointmentWorkspaceStore', () => ({
       reopenDischargeSummary: jest.fn(),
       setFollowUp: jest.fn(),
       setStepStatus,
+      mergeEncounterData: jest.fn(),
     }),
 }));
 

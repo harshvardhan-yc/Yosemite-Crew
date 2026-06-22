@@ -1,4 +1,5 @@
 import api, { deleteData, getData, patchData, postData } from '@/app/services/axios';
+import type { WorkspaceDocumentRow } from '@yosemite-crew/types';
 import type {
   AppointmentEncounter,
   DiagnosticOrder,
@@ -412,8 +413,8 @@ export const listAppointmentWorkspaceDocuments = async (
 export const listEncounterWorkspaceDocuments = async (
   organisationId: string,
   encounterId: string
-) => {
-  const res = await getData<WorkspaceDocumentDTO[]>(
+): Promise<WorkspaceDocumentRow[]> => {
+  const res = await getData<WorkspaceDocumentRow[]>(
     `/v1/workspace/organisations/${organisationId}/encounters/${encounterId}/documents`
   );
   return res.data ?? [];
