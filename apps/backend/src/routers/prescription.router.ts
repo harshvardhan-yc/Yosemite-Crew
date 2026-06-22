@@ -21,6 +21,14 @@ router.get(
   (req, res) => PrescriptionController.getDispenseRequest(req, res),
 );
 
+router.get(
+  "/organisations/:organisationId/:prescriptionId/label.pdf",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission(["prescription:view:any"]),
+  (req, res) => PrescriptionController.generateLabelPdf(req, res),
+);
+
 router.post(
   String.raw`/organisations/:organisationId/:prescriptionId/\$finalize`,
   authorizeCognito,

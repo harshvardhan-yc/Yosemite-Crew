@@ -9,6 +9,7 @@ import {
   InventoryConsumptionServiceError,
 } from "../../src/services/inventory-consumption.service";
 import { clinicalArtifactFhirMapper } from "../../src/services/fhir-clinical-artifact.mapper";
+import { renderPrescriptionLabelPdf } from "../../src/services/rendered-document-renderer.service";
 
 jest.mock("../../src/services/clinical-artifact.service", () => ({
   ClinicalArtifactService: {
@@ -51,6 +52,19 @@ jest.mock("../../src/services/fhir-clinical-artifact.mapper", () => ({
   },
 }));
 
+jest.mock("../../src/services/rendered-document-renderer.service", () => ({
+  renderPrescriptionLabelPdf: jest.fn(),
+}));
+
+jest.mock("../../src/utils/logger", () => ({
+  __esModule: true,
+  default: {
+    error: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+  },
+}));
+
 const mockedClinicalService = ClinicalArtifactService as jest.Mocked<
   typeof ClinicalArtifactService
 >;
@@ -60,19 +74,26 @@ const mockedInventoryService = InventoryConsumptionService as jest.Mocked<
 const mockedMapper = clinicalArtifactFhirMapper as jest.Mocked<
   typeof clinicalArtifactFhirMapper
 >;
+const mockedRenderLabelPdf = renderPrescriptionLabelPdf as jest.Mock;
 
 describe("PrescriptionController", () => {
   let req: Partial<Request>;
   let res: Partial<Response>;
   let jsonMock: jest.Mock;
   let statusMock: jest.Mock;
+  let sendMock: jest.Mock;
+  let setHeaderMock: jest.Mock;
 
   const buildResponse = () => {
     jsonMock = jest.fn();
-    statusMock = jest.fn().mockReturnValue({ json: jsonMock });
+    sendMock = jest.fn();
+    setHeaderMock = jest.fn();
+    statusMock = jest.fn().mockReturnValue({ json: jsonMock, send: sendMock });
     res = {
       status: statusMock,
       json: jsonMock,
+      send: sendMock,
+      setHeader: setHeaderMock,
     } as unknown as Response;
   };
 
@@ -317,6 +338,76 @@ describe("PrescriptionController", () => {
     expect(statusMock).toHaveBeenCalledWith(404);
     expect(jsonMock).toHaveBeenCalledWith({
       message: "Prescription not found",
+    });
+  });
+
+  it("streams a prescription label PDF", async () => {
+    const pdf = Buffer.from("%PDF-label");
+    mockedRenderLabelPdf.mockResolvedValueOnce(pdf);
+
+    await PrescriptionController.generateLabelPdf(
+      req as Request,
+      res as Response,
+    );
+
+    expect(mockedRenderLabelPdf).toHaveBeenCalledWith({
+      organisationId: "org-1",
+      prescriptionId: "rx-1",
+    });
+    expect(setHeaderMock).toHaveBeenCalledWith(
+      "Content-Type",
+      "application/pdf",
+    );
+    expect(setHeaderMock).toHaveBeenCalledWith(
+      "Content-Disposition",
+      'inline; filename="prescription-label-rx-1.pdf"',
+    );
+    expect(statusMock).toHaveBeenCalledWith(200);
+    expect(sendMock).toHaveBeenCalledWith(pdf);
+  });
+
+  it("returns 404 when the prescription label is not found", async () => {
+    mockedRenderLabelPdf.mockRejectedValueOnce(
+      new Error("Prescription not found"),
+    );
+
+    await PrescriptionController.generateLabelPdf(
+      req as Request,
+      res as Response,
+    );
+
+    expect(statusMock).toHaveBeenCalledWith(404);
+    expect(jsonMock).toHaveBeenCalledWith({
+      message: "Prescription not found",
+    });
+  });
+
+  it("returns 400 for an invalid prescription label request", async () => {
+    req.params = { organisationId: "org-1", prescriptionId: "" };
+
+    await PrescriptionController.generateLabelPdf(
+      req as Request,
+      res as Response,
+    );
+
+    expect(mockedRenderLabelPdf).not.toHaveBeenCalled();
+    expect(statusMock).toHaveBeenCalledWith(400);
+    expect(jsonMock).toHaveBeenCalledWith({
+      message: "Invalid prescription label request.",
+    });
+  });
+
+  it("returns 500 when label rendering fails unexpectedly", async () => {
+    mockedRenderLabelPdf.mockRejectedValueOnce(new Error("boom"));
+
+    await PrescriptionController.generateLabelPdf(
+      req as Request,
+      res as Response,
+    );
+
+    expect(statusMock).toHaveBeenCalledWith(500);
+    expect(jsonMock).toHaveBeenCalledWith({
+      message: "Failed to generate prescription label PDF.",
     });
   });
 });

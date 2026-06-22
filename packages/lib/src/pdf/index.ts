@@ -21,6 +21,7 @@ export type {
   PdfSectionContent,
   PdfRichTextRun,
   PrescriptionDocumentData,
+  PrescriptionLabelDocumentData,
   PrescriptionItem,
   VitalRecordMeasurement,
   RenderFooterInput,

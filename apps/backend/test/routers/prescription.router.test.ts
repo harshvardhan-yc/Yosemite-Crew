@@ -7,6 +7,7 @@ const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const PrescriptionController = {
   listDispenseRequests: jest.fn(),
   getDispenseRequest: jest.fn(),
+  generateLabelPdf: jest.fn(),
   finalize: jest.fn(),
   reserve: jest.fn(),
   notDispensed: jest.fn(),
@@ -103,6 +104,31 @@ describe("prescription.router", () => {
         "post",
       ),
     ).toBeDefined();
+  });
+
+  it("exposes the prescription label PDF route", () => {
+    expect(
+      findRoute(
+        "/organisations/:organisationId/:prescriptionId/label.pdf",
+        "get",
+      ),
+    ).toBeDefined();
+    expect(requirePermission).toHaveBeenCalledWith(["prescription:view:any"]);
+  });
+
+  it("does not shadow the action routes with the label route", () => {
+    const labelRoute = findRoute(
+      "/organisations/:organisationId/:prescriptionId/label.pdf",
+      "get",
+    );
+    const finalizeRoute = findRoute(
+      String.raw`/organisations/:organisationId/:prescriptionId/\$finalize`,
+      "post",
+    );
+
+    expect(labelRoute?.path).not.toBe(finalizeRoute?.path);
+    expect(labelRoute?.methods?.get).toBe(true);
+    expect(labelRoute?.methods?.post).toBeUndefined();
   });
 
   it("protects routes with auth and permission middleware", () => {

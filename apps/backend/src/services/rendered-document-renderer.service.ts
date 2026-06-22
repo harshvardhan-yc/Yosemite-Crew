@@ -1,12 +1,15 @@
 import { TemplateKind } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import {
+  generateClinicalPdf,
   generateClinicalPdfWithMetadata,
   generateResolvedTemplatePdfWithMetadata,
   type ClinicalDocumentType,
   type DischargeSummaryDocumentData,
   type OrganizationBranding,
   type PrescriptionDocumentData,
+  type PrescriptionItem,
+  type PrescriptionLabelDocumentData,
   type ResolvedTemplatePdfInput,
   type SoapNoteDocumentData,
   type VitalRecordDocumentData,
@@ -1483,3 +1486,184 @@ export const renderRenderedDocumentPdfWithMetadata = async (
 export const renderRenderedDocumentPdf = async (
   input: RenderedDocumentPdfSource,
 ) => (await renderRenderedDocumentPdfWithMetadata(input)).pdf;
+
+type PrescriptionItemRow = {
+  medication: string;
+  strength: string | null;
+  dosage: string | null;
+  route: string | null;
+  frequency: string | null;
+  duration: string | null;
+  quantity: string | null;
+  instructions: string | null;
+  sortOrder: number;
+};
+
+type PrescriptionLabelRecord = {
+  id: string;
+  organisationId: string;
+  appointmentId: string | null;
+  authorId: string | null;
+  updatedAt: Date;
+  items: PrescriptionItemRow[];
+  medications: Prisma.JsonValue | null;
+  metadata: Prisma.JsonValue | null;
+};
+
+export type PrescriptionLabelPdfInput = {
+  organisationId: string;
+  prescriptionId: string;
+  title?: string;
+};
+
+const PRESCRIPTION_LABEL_DEFAULT_TITLE = "Prescription Label";
+
+const readInventoryItemId = (line: unknown): string | undefined =>
+  isRecord(line) ? readString(line.inventoryItemId) : undefined;
+
+const collectMedicationInventoryIds = (medications: unknown): string[] => {
+  if (!Array.isArray(medications)) {
+    return [];
+  }
+
+  return medications.map((line) => readInventoryItemId(line) ?? "");
+};
+
+const loadControlledItemFlags = async (
+  organisationId: string,
+  inventoryItemIds: string[],
+): Promise<Map<string, boolean>> => {
+  const uniqueIds = Array.from(
+    new Set(inventoryItemIds.filter((id) => id.length > 0)),
+  );
+
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const records = await prisma.inventoryItem.findMany({
+    where: { organisationId, id: { in: uniqueIds } },
+    select: { id: true, controlledItem: true },
+  });
+
+  return new Map(records.map((record) => [record.id, record.controlledItem]));
+};
+
+const buildPrescriptionLabelItems = (
+  rows: PrescriptionItemRow[],
+  inventoryIdsByIndex: string[],
+  controlledFlags: Map<string, boolean>,
+): PrescriptionItem[] =>
+  rows
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((row, index) => {
+      const inventoryItemId = inventoryIdsByIndex[index] ?? "";
+      const controlled =
+        inventoryItemId.length > 0
+          ? (controlledFlags.get(inventoryItemId) ?? false)
+          : false;
+
+      return {
+        medication: row.medication,
+        strength: row.strength ?? undefined,
+        dosage: row.dosage ?? undefined,
+        route: row.route ?? undefined,
+        frequency: row.frequency ?? undefined,
+        duration: row.duration ?? undefined,
+        quantity: row.quantity ?? undefined,
+        instructions: row.instructions ?? undefined,
+        controlled,
+      };
+    });
+
+const loadPrescriptionLabelRecord = async (
+  organisationId: string,
+  prescriptionId: string,
+): Promise<PrescriptionLabelRecord> => {
+  const record = await prisma.prescription.findFirst({
+    where: {
+      OR: [{ id: prescriptionId }, { artifactId: prescriptionId }],
+      artifact: { organisationId, kind: "PRESCRIPTION" },
+    },
+    include: { artifact: true, items: true },
+  });
+
+  if (!record) {
+    throw new Error("Prescription not found");
+  }
+
+  return {
+    id: record.id,
+    organisationId: record.artifact.organisationId,
+    appointmentId: record.artifact.appointmentId,
+    authorId: record.artifact.authorId,
+    updatedAt: record.artifact.updatedAt,
+    items: record.items,
+    medications: record.medications,
+    metadata: record.metadata,
+  };
+};
+
+export const buildPrescriptionLabelPdfInput = async (
+  input: PrescriptionLabelPdfInput,
+): Promise<{
+  documentType: ClinicalDocumentType;
+  organization: OrganizationBranding;
+  data: PrescriptionLabelDocumentData;
+}> => {
+  const record = await loadPrescriptionLabelRecord(
+    input.organisationId,
+    input.prescriptionId,
+  );
+  const organizationBrand = await loadOrganizationBrand(input.organisationId);
+  const organization = buildSharedOrganizationBranding(organizationBrand);
+  const metadata = readMetadata(record.metadata);
+  const header = await loadAppointmentClinicalHeader(record.appointmentId);
+
+  const inventoryIdsByIndex = collectMedicationInventoryIds(record.medications);
+  const controlledFlags = await loadControlledItemFlags(
+    input.organisationId,
+    inventoryIdsByIndex,
+  );
+
+  return {
+    documentType: "PRESCRIPTION_LABEL",
+    organization,
+    data: {
+      title: input.title ?? PRESCRIPTION_LABEL_DEFAULT_TITLE,
+      date: record.updatedAt,
+      prescriptionId: record.id,
+      patientName:
+        header.patientName ??
+        readFirstString(metadata, ["patientName", "patient"]) ??
+        "—",
+      clientName:
+        header.clientName ??
+        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
+        "—",
+      prescriberName:
+        header.leadName ??
+        readFirstString(metadata, [
+          "leadName",
+          "prescriberName",
+          "doctorName",
+          "providerName",
+          "doctor",
+        ]) ??
+        readString(record.authorId) ??
+        "—",
+      organisationName: organization.name,
+      items: buildPrescriptionLabelItems(
+        record.items,
+        inventoryIdsByIndex,
+        controlledFlags,
+      ),
+    },
+  };
+};
+
+export const renderPrescriptionLabelPdf = async (
+  input: PrescriptionLabelPdfInput,
+): Promise<Buffer> =>
+  generateClinicalPdf(await buildPrescriptionLabelPdfInput(input));

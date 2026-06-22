@@ -1,8 +1,13 @@
 import { TemplateKind } from "@prisma/client";
 import { prisma } from "src/config/prisma";
-import { renderRenderedDocumentPdf } from "../../src/services/rendered-document-renderer.service";
+import {
+  buildPrescriptionLabelPdfInput,
+  renderPrescriptionLabelPdf,
+  renderRenderedDocumentPdf,
+} from "../../src/services/rendered-document-renderer.service";
 import { renderPdf } from "../../src/services/formPDF.service";
 import {
+  generateClinicalPdf,
   generateClinicalPdfWithMetadata,
   generateResolvedTemplatePdfWithMetadata,
 } from "@yosemite-crew/lib";
@@ -47,6 +52,9 @@ jest.mock("src/config/prisma", () => ({
       findUnique: jest.fn(),
       findFirst: jest.fn(),
     },
+    inventoryItem: {
+      findMany: jest.fn(),
+    },
   },
 }));
 
@@ -55,6 +63,7 @@ jest.mock("../../src/services/formPDF.service", () => ({
 }));
 
 jest.mock("@yosemite-crew/lib", () => ({
+  generateClinicalPdf: jest.fn(),
   generateClinicalPdfWithMetadata: jest.fn(),
   generateResolvedTemplatePdfWithMetadata: jest.fn(),
 }));
@@ -72,8 +81,10 @@ describe("rendered-document-renderer service", () => {
     prescription: { findUnique: jest.Mock; findFirst: jest.Mock };
     dischargeSummary: { findUnique: jest.Mock; findFirst: jest.Mock };
     vitalRecord: { findUnique: jest.Mock; findFirst: jest.Mock };
+    inventoryItem: { findMany: jest.Mock };
   };
   const mockedRenderPdf = renderPdf as jest.Mock;
+  const mockedGenerateClinicalPdf = generateClinicalPdf as jest.Mock;
   const mockedGenerateClinicalPdfWithMetadata =
     generateClinicalPdfWithMetadata as jest.Mock;
   const mockedGenerateResolvedTemplatePdfWithMetadata =
@@ -82,7 +93,9 @@ describe("rendered-document-renderer service", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedRenderPdf.mockResolvedValue(Buffer.from("pdf"));
+    mockedGenerateClinicalPdf.mockResolvedValue(Buffer.from("label-pdf"));
     mockedPrisma.appointment.findUnique.mockResolvedValue(null);
+    mockedPrisma.inventoryItem.findMany.mockResolvedValue([]);
     mockedGenerateClinicalPdfWithMetadata.mockResolvedValue({
       pdf: Buffer.from("pdf"),
       pageCount: 1,
@@ -850,5 +863,187 @@ describe("rendered-document-renderer service", () => {
         }),
       }),
     );
+  });
+
+  describe("prescription label PDF", () => {
+    const labelOrganization = {
+      name: "MediCare Hospital",
+      imageUrl: null,
+      phoneNo: "+91 99999 00000",
+      website: "https://medicare.example",
+      address: {
+        addressLine: "123 Clinic Road",
+        city: "Mumbai",
+        state: "MH",
+        postalCode: "400001",
+        country: "IN",
+      },
+    };
+
+    const buildLabelPrescription = (
+      overrides: {
+        items?: unknown[];
+        medications?: unknown;
+      } = {},
+    ) => ({
+      id: "rx-1",
+      items: overrides.items ?? [
+        {
+          medication: "Carprofen",
+          strength: "25mg",
+          dosage: "1 tablet",
+          route: "PO",
+          frequency: "BID",
+          duration: "7 days",
+          quantity: "14",
+          instructions: "Give with food.",
+          sortOrder: 0,
+        },
+      ],
+      medications: overrides.medications ?? [
+        { inventoryItemId: "inv-controlled" },
+      ],
+      instructions: null,
+      notes: null,
+      metadata: { clientName: "Yasmin Hadid" },
+      artifact: {
+        id: "artifact-2",
+        organisationId: "org-1",
+        appointmentId: "appt-1",
+        caseId: null,
+        encounterId: "enc-1",
+        kind: "PRESCRIPTION",
+        status: "SIGNED",
+        templateId: "template-2",
+        templateVersion: 1,
+        templateVersionId: "template-version-2",
+        authorId: "author-1",
+        signedBy: "user-1",
+        signedAt: new Date("2026-06-14T00:00:00.000Z"),
+        summary: "Prescription summary",
+        createdAt: new Date("2026-06-14T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-14T00:00:00.000Z"),
+      },
+    });
+
+    it("maps prescription fields and marks controlled items", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        labelOrganization,
+      );
+      mockedPrisma.appointment.findUnique.mockResolvedValueOnce({
+        patient: {
+          name: "Bella Hadid",
+          parent: { id: "CL-1001", name: "Yasmin Hadid" },
+        },
+        lead: { name: "Dr. Tim Apple" },
+      });
+      mockedPrisma.prescription.findFirst.mockResolvedValueOnce(
+        buildLabelPrescription(),
+      );
+      mockedPrisma.inventoryItem.findMany.mockResolvedValueOnce([
+        { id: "inv-controlled", controlledItem: true },
+      ]);
+
+      const input = await buildPrescriptionLabelPdfInput({
+        organisationId: "org-1",
+        prescriptionId: "rx-1",
+      });
+
+      expect(mockedPrisma.inventoryItem.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { organisationId: "org-1", id: { in: ["inv-controlled"] } },
+        }),
+      );
+      expect(input.documentType).toBe("PRESCRIPTION_LABEL");
+      expect(input.organization.name).toBe("MediCare Hospital");
+      expect(input.data).toEqual(
+        expect.objectContaining({
+          patientName: "Bella Hadid",
+          clientName: "Yasmin Hadid",
+          prescriberName: "Dr. Tim Apple",
+          organisationName: "MediCare Hospital",
+          prescriptionId: "rx-1",
+        }),
+      );
+      expect(input.data.items[0]).toEqual(
+        expect.objectContaining({
+          medication: "Carprofen",
+          strength: "25mg",
+          dosage: "1 tablet",
+          route: "PO",
+          frequency: "BID",
+          duration: "7 days",
+          quantity: "14",
+          instructions: "Give with food.",
+          controlled: true,
+        }),
+      );
+    });
+
+    it("treats items as not controlled when the inventory item is not controlled", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        labelOrganization,
+      );
+      mockedPrisma.prescription.findFirst.mockResolvedValueOnce(
+        buildLabelPrescription(),
+      );
+      mockedPrisma.inventoryItem.findMany.mockResolvedValueOnce([
+        { id: "inv-controlled", controlledItem: false },
+      ]);
+
+      const input = await buildPrescriptionLabelPdfInput({
+        organisationId: "org-1",
+        prescriptionId: "rx-1",
+      });
+
+      expect(input.data.items[0].controlled).toBe(false);
+    });
+
+    it("treats items with no inventory link as not controlled", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        labelOrganization,
+      );
+      mockedPrisma.prescription.findFirst.mockResolvedValueOnce(
+        buildLabelPrescription({ medications: [] }),
+      );
+
+      const input = await buildPrescriptionLabelPdfInput({
+        organisationId: "org-1",
+        prescriptionId: "rx-1",
+      });
+
+      expect(mockedPrisma.inventoryItem.findMany).not.toHaveBeenCalled();
+      expect(input.data.items[0].controlled).toBe(false);
+    });
+
+    it("renders label PDF bytes via the clinical PDF engine", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        labelOrganization,
+      );
+      mockedPrisma.prescription.findFirst.mockResolvedValueOnce(
+        buildLabelPrescription({ medications: [] }),
+      );
+
+      const pdf = await renderPrescriptionLabelPdf({
+        organisationId: "org-1",
+        prescriptionId: "rx-1",
+      });
+
+      expect(mockedGenerateClinicalPdf).toHaveBeenCalledWith(
+        expect.objectContaining({ documentType: "PRESCRIPTION_LABEL" }),
+      );
+      expect(pdf).toEqual(Buffer.from("label-pdf"));
+    });
+
+    it("throws when the prescription label record is missing", async () => {
+      mockedPrisma.prescription.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        renderPrescriptionLabelPdf({
+          organisationId: "org-1",
+          prescriptionId: "rx-missing",
+        }),
+      ).rejects.toThrow("Prescription not found");
+    });
   });
 });
