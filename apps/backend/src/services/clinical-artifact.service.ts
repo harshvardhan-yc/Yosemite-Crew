@@ -87,6 +87,9 @@ type ClinicalPrisma = typeof prisma & {
     ): Promise<Prisma.BatchPayload>;
   };
   prescription: {
+    findFirst(
+      args: Prisma.PrescriptionFindFirstArgs,
+    ): Promise<PrescriptionWithArtifact | null>;
     findUnique(
       args: Prisma.PrescriptionFindUniqueArgs,
     ): Promise<PrescriptionWithArtifact | null>;
@@ -821,8 +824,11 @@ const loadSoapNoteOrThrow = async (soapNoteId: string) => {
 };
 
 const loadPrescriptionOrThrow = async (prescriptionId: string) => {
-  const prescription = await clinicalPrisma.prescription.findUnique({
-    where: { id: ensureId(prescriptionId, "prescriptionId") },
+  const identifier = ensureId(prescriptionId, "prescriptionId");
+  const prescription = await clinicalPrisma.prescription.findFirst({
+    where: {
+      OR: [{ id: identifier }, { artifactId: identifier }],
+    },
     include: { artifact: true, items: true },
   });
 

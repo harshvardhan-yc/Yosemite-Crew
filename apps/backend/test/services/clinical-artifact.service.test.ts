@@ -48,6 +48,7 @@ jest.mock("src/config/prisma", () => ({
     prescription: {
       create: jest.fn(),
       update: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       findMany: jest.fn(),
     },
@@ -98,6 +99,7 @@ describe("ClinicalArtifactService", () => {
     prescription: {
       create: jest.Mock;
       update: jest.Mock;
+      findFirst: jest.Mock;
       findUnique: jest.Mock;
       findMany: jest.Mock;
     };
@@ -130,6 +132,7 @@ describe("ClinicalArtifactService", () => {
       return undefined;
     });
     mockedPrisma.appointment.updateMany.mockResolvedValue({ count: 0 });
+    mockedPrisma.prescription.findFirst.mockReset();
     mockedRenderedDocumentRenderer.mockResolvedValue({
       pdf: Buffer.from("rendered-pdf"),
       pageCount: 1,
@@ -823,7 +826,7 @@ describe("ClinicalArtifactService", () => {
     const signedMedications = [
       { inventoryItemId: "item-1", quantity: 2, sourceLineKey: "line-1" },
     ];
-    mockedPrisma.prescription.findUnique.mockResolvedValueOnce({
+    mockedPrisma.prescription.findFirst.mockResolvedValueOnce({
       id: "prescription-1",
       artifactId,
       medications: signedMedications,
@@ -910,7 +913,7 @@ describe("ClinicalArtifactService", () => {
     const revisedMedications = [
       { inventoryItemId: "item-1", quantity: 3, sourceLineKey: "line-1" },
     ];
-    mockedPrisma.prescription.findUnique.mockResolvedValueOnce({
+    mockedPrisma.prescription.findFirst.mockResolvedValueOnce({
       id: "prescription-2",
       artifactId,
       medications: originalMedications,
@@ -1478,6 +1481,52 @@ describe("ClinicalArtifactService", () => {
         data: expect.objectContaining({ status: "IN_PROGRESS" }),
       }),
     );
+  });
+
+  it("loads prescriptions by prescription id or clinical artifact id", async () => {
+    mockedPrisma.prescription.findFirst.mockResolvedValueOnce({
+      id: "prescription-1",
+      artifactId,
+      medications: [],
+      instructions: null,
+      notes: null,
+      metadata: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      items: [],
+      artifact: {
+        id: artifactId,
+        organisationId,
+        appointmentId: null,
+        caseId: null,
+        encounterId: null,
+        kind: "PRESCRIPTION",
+        status: "SIGNED",
+        templateId: null,
+        templateVersion: null,
+        templateVersionId: null,
+        authorId: null,
+        signedBy: null,
+        signedAt: null,
+        summary: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    } as never);
+
+    const result = await ClinicalArtifactService.getPrescription(
+      artifactId,
+      organisationId,
+    );
+
+    expect(mockedPrisma.prescription.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [{ id: artifactId }, { artifactId }],
+        },
+      }),
+    );
+    expect(result.prescription.id).toBe("prescription-1");
   });
 
   it("amends a discharge summary into a fresh draft record", async () => {
