@@ -62,6 +62,16 @@ jest.mock("../../src/config/prisma", () => ({
       findMany: jest.fn(),
       create: jest.fn(),
     },
+    templateInstance: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+    },
+    clinicalArtifact: {
+      create: jest.fn(),
+    },
+    prescription: {
+      create: jest.fn(),
+    },
     admission: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -121,6 +131,17 @@ describe("CaseEncounterService", () => {
     mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([]);
     mockedPrisma.workspaceTreatmentItem.create.mockResolvedValue({
       id: "ti_1",
+    } as never);
+    mockedPrisma.templateInstance.findFirst.mockResolvedValue(null);
+    mockedPrisma.templateInstance.create.mockResolvedValue({
+      id: "template_instance_pkg_1",
+    } as never);
+    mockedPrisma.clinicalArtifact.create.mockResolvedValue({
+      id: "artifact_pkg_rx_1",
+      organisationId: "org_1",
+    } as never);
+    mockedPrisma.prescription.create.mockResolvedValue({
+      id: "rx_pkg_1",
     } as never);
     mockedCatalogService.resolveSelection.mockResolvedValue(null as never);
   });
@@ -249,7 +270,18 @@ describe("CaseEncounterService", () => {
       additionalDiscountAmount: 0,
       finalAmount: 100,
       templateKinds: [],
-      templateBindings: [],
+      templateBindings: [
+        {
+          templateKind: "INPATIENT_SCHEDULE",
+          templateId: "tmpl_schedule_1",
+          templateVersion: 3,
+        },
+        {
+          templateKind: "TASK_ASSIGNMENT",
+          templateId: "tmpl_task_1",
+          templateVersion: 1,
+        },
+      ],
       billingItems: [
         {
           productItemId: "pkg_1",
@@ -330,6 +362,52 @@ describe("CaseEncounterService", () => {
       "org_1",
     );
     expect(mockedPrisma.workspaceTreatmentItem.create).toHaveBeenCalledTimes(3);
+    expect(mockedPrisma.clinicalArtifact.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        kind: "PRESCRIPTION",
+        status: "DRAFT",
+        summary: "Bundle medication package",
+      }),
+    });
+    expect(mockedPrisma.templateInstance.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        templateId: "tmpl_schedule_1",
+        templateVersion: 3,
+        data: expect.objectContaining({
+          origin: "PACKAGE_EXPANSION",
+          packageId: "pkg_1",
+          templateKind: "INPATIENT_SCHEDULE",
+        }),
+      }),
+    });
+    expect(mockedPrisma.templateInstance.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        templateId: "tmpl_task_1",
+        templateVersion: 1,
+        data: expect.objectContaining({
+          origin: "PACKAGE_EXPANSION",
+          packageId: "pkg_1",
+          templateKind: "TASK_ASSIGNMENT",
+        }),
+      }),
+    });
+    expect(mockedPrisma.prescription.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        artifactId: "artifact_pkg_rx_1",
+        metadata: expect.objectContaining({
+          origin: "PACKAGE_EXPANSION",
+          packageId: "pkg_1",
+        }),
+        items: {
+          create: [
+            expect.objectContaining({
+              medication: "Medication",
+              quantity: "1",
+            }),
+          ],
+        },
+      }),
+    });
     expect(mockedPrisma.workspaceTreatmentItem.create).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -340,6 +418,7 @@ describe("CaseEncounterService", () => {
           priceSnapshot: expect.objectContaining({
             unitPrice: 100,
             packageProductItemId: "pkg_1",
+            origin: "PACKAGE_EXPANSION",
           }),
         }),
       }),
@@ -354,9 +433,11 @@ describe("CaseEncounterService", () => {
             unitPrice: 0,
             finalAmount: 0,
             packageProductItemId: "pkg_1",
+            origin: "PACKAGE_EXPANSION",
           }),
           productSnapshot: expect.objectContaining({
             packageProductItemId: "pkg_1",
+            origin: "PACKAGE_EXPANSION",
           }),
         }),
       }),
@@ -399,7 +480,18 @@ describe("CaseEncounterService", () => {
       additionalDiscountAmount: 0,
       finalAmount: 100,
       templateKinds: [],
-      templateBindings: [],
+      templateBindings: [
+        {
+          templateKind: "INPATIENT_SCHEDULE",
+          templateId: "tmpl_schedule_1",
+          templateVersion: 3,
+        },
+        {
+          templateKind: "TASK_ASSIGNMENT",
+          templateId: "tmpl_task_1",
+          templateVersion: 1,
+        },
+      ],
       billingItems: [],
       includedItems: [],
     } as never);
@@ -415,6 +507,9 @@ describe("CaseEncounterService", () => {
     });
 
     expect(mockedPrisma.workspaceTreatmentItem.create).not.toHaveBeenCalled();
+    expect(mockedPrisma.clinicalArtifact.create).not.toHaveBeenCalled();
+    expect(mockedPrisma.prescription.create).not.toHaveBeenCalled();
+    expect(mockedPrisma.templateInstance.create).not.toHaveBeenCalled();
   });
 
   it("rejects encounter creation when appointment belongs to another companion", async () => {

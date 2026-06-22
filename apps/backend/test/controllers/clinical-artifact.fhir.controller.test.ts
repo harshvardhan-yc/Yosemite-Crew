@@ -332,7 +332,16 @@ describe("ClinicalArtifactFhirController", () => {
     await ClinicalArtifactFhirController.createVitalRecord(
       {
         ...req,
-        body: { resourceType: "Observation", code: { text: "Vitals" } },
+        body: {
+          resourceType: "Observation",
+          code: { text: "Vitals" },
+          performer: [
+            {
+              reference: "Practitioner/nurse-1",
+              display: "Nurse Joy",
+            },
+          ],
+        },
       } as Request,
       res as Response,
     );
@@ -343,13 +352,41 @@ describe("ClinicalArtifactFhirController", () => {
     await ClinicalArtifactFhirController.updateVitalRecord(
       {
         ...req,
-        body: { resourceType: "Observation", code: { text: "Vitals" } },
+        body: {
+          resourceType: "Observation",
+          code: { text: "Vitals" },
+          performer: [
+            {
+              reference: "Practitioner/nurse-1",
+              display: "Nurse Joy",
+            },
+          ],
+        },
       } as Request,
       res as Response,
     );
 
     expect(mockedService.createVitalRecord).toHaveBeenCalledWith(
       expect.objectContaining({ status: "COMPLETED" }),
+    );
+    const firstVitalCall =
+      mockedMapper.observationToVitalRecordInput.mock.calls[0];
+    expect(firstVitalCall?.[0]).toEqual(
+      expect.objectContaining({
+        resourceType: "Observation",
+        performer: [
+          expect.objectContaining({
+            reference: "Practitioner/nurse-1",
+            display: "Nurse Joy",
+          }),
+        ],
+      }),
+    );
+    expect(firstVitalCall?.[1]).toEqual(
+      expect.objectContaining({
+        organisationId: "org-1",
+        recordedByDisplay: "Nurse Joy",
+      }),
     );
     expect(mockedMapper.vitalRecordToObservation).toHaveBeenCalledTimes(3);
   });

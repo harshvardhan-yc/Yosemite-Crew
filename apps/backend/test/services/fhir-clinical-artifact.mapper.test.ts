@@ -124,6 +124,7 @@ describe("clinicalArtifactFhirMapper", () => {
       artifactId: "artifact-4",
       measuredAt: now,
       recordedBy: "nurse-1",
+      recordedByDisplay: "Nurse Joy",
       vitals: { temperature: 39.1, pulse: 120 },
       notes: "stable",
       metadata: { source: "template" },
@@ -228,6 +229,10 @@ describe("clinicalArtifactFhirMapper", () => {
     expect(resource.resourceType).toBe("Observation");
     expect(resource.id).toBe("artifact-4");
     expect(resource.component).toHaveLength(2);
+    expect(resource.performer?.[0]).toEqual({
+      reference: "Practitioner/nurse-1",
+      display: "Nurse Joy",
+    });
     expect(
       resource.extension?.some((extension) =>
         extension.url.includes("vital-record-vitals"),
@@ -240,6 +245,12 @@ describe("clinicalArtifactFhirMapper", () => {
         status: "final",
         code: { text: "Vitals" },
         effectiveDateTime: now.toISOString(),
+        performer: [
+          {
+            reference: "Practitioner/nurse-1",
+            display: "Nurse Joy",
+          },
+        ],
         extension: resource.extension,
       },
       { organisationId: "org-1", recordedBy: "nurse-1" },
@@ -248,6 +259,7 @@ describe("clinicalArtifactFhirMapper", () => {
     expect(input.status).toBe("COMPLETED");
     expect(input.vitals).toEqual({ temperature: 39.1, pulse: 120 });
     expect(input.recordedBy).toBe("nurse-1");
+    expect(input.recordedByDisplay).toBe("Nurse Joy");
   });
 
   it("builds list bundles for each clinical record kind", () => {

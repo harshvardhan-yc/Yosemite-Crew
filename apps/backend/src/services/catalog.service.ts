@@ -1415,10 +1415,15 @@ const resolveSelectionTemplateKinds = (params: {
 
   if (params.productKind === "PACKAGE") {
     if (params.appointmentKinds.includes("INPATIENT")) {
-      return ["INPATIENT_SCHEDULE", "SOAP_NOTE", "DISCHARGE_SUMMARY"];
+      return [
+        "TASK_ASSIGNMENT",
+        "INPATIENT_SCHEDULE",
+        "SOAP_NOTE",
+        "DISCHARGE_SUMMARY",
+      ];
     }
 
-    return ["SOAP_NOTE"];
+    return ["TASK_ASSIGNMENT", "SOAP_NOTE"];
   }
 
   return ["SOAP_NOTE"];

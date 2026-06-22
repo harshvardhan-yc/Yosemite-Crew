@@ -206,8 +206,80 @@ type WorkspaceTreatmentItemDelegate = {
       billingStatus?: string;
       invoiceRowId?: string | null;
       lockState?: unknown;
+      prescriptionId?: string | null;
     };
   }): Promise<unknown>;
+};
+
+type ClinicalArtifactDelegate = {
+  create(args: {
+    data: {
+      organisationId: string;
+      appointmentId?: string | null;
+      caseId?: string | null;
+      encounterId?: string | null;
+      kind: "PRESCRIPTION";
+      status: string;
+      summary?: string | null;
+      authorId?: string | null;
+      templateId?: string | null;
+      templateVersion?: number | null;
+      templateVersionId?: string | null;
+    };
+  }): Promise<{ id: string; organisationId: string }>;
+};
+
+type PrescriptionDelegate = {
+  create(args: {
+    data: {
+      artifactId: string;
+      medications: Prisma.InputJsonValue | Prisma.NullTypes.JsonNull | null;
+      instructions?: Prisma.InputJsonValue | Prisma.NullTypes.JsonNull | null;
+      notes?: Prisma.InputJsonValue | Prisma.NullTypes.JsonNull | null;
+      metadata?: Prisma.InputJsonValue | Prisma.NullTypes.JsonNull | null;
+      items?: {
+        create: Array<{
+          medication: string;
+          strength?: string;
+          dosage?: string;
+          route?: string;
+          frequency?: string;
+          duration?: string;
+          quantity?: string;
+          instructions?: string;
+          sortOrder?: number;
+        }>;
+      };
+    };
+  }): Promise<{ id: string }>;
+};
+
+type TemplateInstanceDelegate = {
+  findFirst(args: {
+    where: {
+      organisationId: string;
+      templateId: string;
+      OR?: Array<{
+        appointmentId?: string;
+        encounterId?: string;
+        caseId?: string;
+      }>;
+    };
+    select: { id: true };
+  }): Promise<{ id: string } | null>;
+  create(args: {
+    data: {
+      templateId: string;
+      templateVersion: number;
+      organisationId: string;
+      appointmentId?: string;
+      caseId?: string;
+      encounterId?: string;
+      status?: "DRAFT";
+      data: Prisma.InputJsonValue;
+      authorId?: string | null;
+    };
+  }): Promise<{ id: string }>;
 };
 
 export class CaseEncounterServiceError extends Error {
@@ -341,6 +413,15 @@ const resolveAssignableUnitContext = async (params: {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const toPositiveInteger = (value: number | undefined): number => {
+  if (!value || !Number.isFinite(value)) {
+    return 1;
+  }
+
+  const quantity = Math.trunc(value);
+  return quantity > 0 ? quantity : 1;
+};
+
 const getPackageProductItemId = (value: unknown): string | undefined => {
   if (!isRecord(value)) return undefined;
   return typeof value.packageProductItemId === "string" &&
@@ -348,6 +429,109 @@ const getPackageProductItemId = (value: unknown): string | undefined => {
     ? value.packageProductItemId.trim()
     : undefined;
 };
+
+const getPackageMetadata = (
+  item: Record<string, unknown>,
+  packageProductItemId: string,
+) => ({
+  origin: "PACKAGE_EXPANSION" as const,
+  packageId: packageProductItemId,
+  packageItemId:
+    typeof item.packageItemId === "string" && item.packageItemId.trim()
+      ? item.packageItemId.trim()
+      : item.productItemId,
+  productKind:
+    typeof item.kind === "string" && item.kind.trim()
+      ? item.kind.trim()
+      : undefined,
+  sourceVersion:
+    typeof item.sourceVersion === "number" &&
+    Number.isFinite(item.sourceVersion)
+      ? item.sourceVersion
+      : null,
+});
+
+const createPackageTemplateInstances = async (params: {
+  tx: {
+    templateInstance: TemplateInstanceDelegate;
+  };
+  organisationId: string;
+  appointmentId: string;
+  caseId: string;
+  encounterId: string;
+  selection: Awaited<ReturnType<typeof CatalogService.resolveSelection>>;
+}) => {
+  const bindings = params.selection.templateBindings.filter(
+    (binding) =>
+      typeof binding.templateId === "string" && binding.templateId.trim(),
+  );
+
+  for (const binding of bindings) {
+    const templateId = binding.templateId!.trim();
+    const existing = await params.tx.templateInstance.findFirst({
+      where: {
+        organisationId: params.organisationId,
+        templateId,
+        OR: [
+          { appointmentId: params.appointmentId },
+          { encounterId: params.encounterId },
+          { caseId: params.caseId },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      continue;
+    }
+
+    await params.tx.templateInstance.create({
+      data: {
+        templateId,
+        templateVersion: binding.templateVersion ?? 1,
+        organisationId: params.organisationId,
+        appointmentId: params.appointmentId,
+        caseId: params.caseId,
+        encounterId: params.encounterId,
+        status: "DRAFT",
+        data: {
+          origin: "PACKAGE_EXPANSION",
+          packageId: params.selection.productItemId,
+          packageItemId: params.selection.productItemId,
+          productItemId: params.selection.productItemId,
+          productKind: params.selection.productKind,
+          templateKind: binding.templateKind,
+        } as Prisma.InputJsonValue,
+        authorId: null,
+      },
+    });
+  }
+};
+
+const buildPrescriptionMedicationRows = (
+  items: Array<{
+    productItemId: string;
+    code: string | null;
+    name: string;
+    kind: string;
+    quantity: number;
+    packageProductItemId?: string | null;
+    isPackageComponent: boolean;
+  }>,
+) =>
+  items.map((item, index) => ({
+    medication: item.name,
+    strength: item.code ?? undefined,
+    dosage: item.kind,
+    route: item.isPackageComponent ? "PACKAGE" : undefined,
+    frequency: item.packageProductItemId ?? undefined,
+    duration: String(toPositiveInteger(item.quantity)),
+    quantity: String(toPositiveInteger(item.quantity)),
+    instructions: item.isPackageComponent
+      ? `Package component from ${item.packageProductItemId ?? item.productItemId}`
+      : undefined,
+    sortOrder: index,
+  }));
 
 const resolveSelectionSafe = async (
   productItemId: string,
@@ -424,9 +608,13 @@ const assertAppointmentMatchesEncounterContext = (
 const maybeExpandPackageTreatmentItems = async (params: {
   tx: {
     workspaceTreatmentItem: WorkspaceTreatmentItemDelegate;
+    clinicalArtifact: ClinicalArtifactDelegate;
+    prescription: PrescriptionDelegate;
+    templateInstance: TemplateInstanceDelegate;
   };
   organisationId: string;
   appointmentId: string;
+  caseId: string;
   encounterId: string;
   selection: Awaited<ReturnType<typeof CatalogService.resolveSelection>>;
 }) => {
@@ -440,9 +628,13 @@ const maybeExpandPackageTreatmentItems = async (params: {
 const expandPackageTreatmentItems = async (params: {
   tx: {
     workspaceTreatmentItem: WorkspaceTreatmentItemDelegate;
+    clinicalArtifact: ClinicalArtifactDelegate;
+    prescription: PrescriptionDelegate;
+    templateInstance: TemplateInstanceDelegate;
   };
   organisationId: string;
   appointmentId: string;
+  caseId: string;
   encounterId: string;
   selection: Awaited<ReturnType<typeof CatalogService.resolveSelection>>;
 }) => {
@@ -467,10 +659,65 @@ const expandPackageTreatmentItems = async (params: {
     ...params.selection.billingItems,
     ...params.selection.includedItems,
   ];
+  const medicationItems = items.filter((item) => item.kind === "MEDICATION");
+
+  let packagePrescriptionId: string | null = null;
+  if (medicationItems.length > 0) {
+    const medicationRows = buildPrescriptionMedicationRows(medicationItems);
+    const createdArtifact = await params.tx.clinicalArtifact.create({
+      data: {
+        organisationId: params.organisationId,
+        appointmentId: params.appointmentId,
+        encounterId: params.encounterId,
+        kind: "PRESCRIPTION",
+        status: "DRAFT",
+        summary: `${params.selection.name} medication package`,
+        authorId: null,
+      },
+    });
+
+    const createdPrescription = await params.tx.prescription.create({
+      data: {
+        artifactId: createdArtifact.id,
+        medications: medicationRows as Prisma.InputJsonValue,
+        items: {
+          create: medicationRows,
+        },
+        metadata: {
+          origin: "PACKAGE_EXPANSION",
+          packageId: packageProductItemId,
+          packageItemId: packageProductItemId,
+          productKind: params.selection.productKind,
+          sourceVersion: null,
+        } as Prisma.InputJsonValue,
+      },
+    });
+    packagePrescriptionId = createdPrescription.id;
+  }
+
+  await createPackageTemplateInstances({
+    tx: params.tx,
+    organisationId: params.organisationId,
+    appointmentId: params.appointmentId,
+    caseId: params.caseId,
+    encounterId: params.encounterId,
+    selection: params.selection,
+  });
 
   for (const item of items) {
     const included = params.selection.includedItems.some(
       (includedItem) => includedItem.productItemId === item.productItemId,
+    );
+    const packageMetadata = getPackageMetadata(
+      {
+        productItemId: item.productItemId,
+        code: item.code,
+        name: item.name,
+        kind: item.kind,
+        packageProductItemId: item.packageProductItemId,
+        isPackageComponent: item.isPackageComponent,
+      },
+      packageProductItemId,
     );
     const priceSnapshot = {
       productItemId: item.productItemId,
@@ -489,6 +736,7 @@ const expandPackageTreatmentItems = async (params: {
       finalAmount: included ? 0 : item.finalAmount,
       isPackageComponent: item.isPackageComponent,
       packageProductItemId,
+      ...packageMetadata,
     };
 
     await params.tx.workspaceTreatmentItem.create({
@@ -504,6 +752,7 @@ const expandPackageTreatmentItems = async (params: {
           name: item.name,
           kind: item.kind,
           packageProductItemId,
+          ...packageMetadata,
           isPackageComponent: item.isPackageComponent,
         },
         servicePackageKind: item.kind,
@@ -512,6 +761,10 @@ const expandPackageTreatmentItems = async (params: {
         billingStatus: "UNBILLED",
         invoiceRowId: null,
         lockState: null,
+        prescriptionId:
+          packagePrescriptionId && item.kind === "MEDICATION"
+            ? packagePrescriptionId
+            : null,
       },
     });
   }
@@ -971,9 +1224,13 @@ export const CaseEncounterService = {
             await maybeExpandPackageTreatmentItems({
               tx: tx as unknown as {
                 workspaceTreatmentItem: WorkspaceTreatmentItemDelegate;
+                clinicalArtifact: ClinicalArtifactDelegate;
+                prescription: PrescriptionDelegate;
+                templateInstance: TemplateInstanceDelegate;
               },
               organisationId,
               appointmentId,
+              caseId,
               encounterId: createdEncounter.id,
               selection,
             });

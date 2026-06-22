@@ -54,6 +54,9 @@ jest.mock("src/config/prisma", () => ({
       findUnique: jest.fn(),
       findMany: jest.fn(),
     },
+    user: {
+      findFirst: jest.fn(),
+    },
     vitalRecord: {
       create: jest.fn(),
       update: jest.fn(),
@@ -98,6 +101,9 @@ describe("ClinicalArtifactService", () => {
       findUnique: jest.Mock;
       findMany: jest.Mock;
     };
+    user: {
+      findFirst: jest.Mock;
+    };
     vitalRecord: {
       create: jest.Mock;
       update: jest.Mock;
@@ -134,6 +140,7 @@ describe("ClinicalArtifactService", () => {
       originalname: "rendered.pdf",
       mimetype: "application/pdf",
     });
+    mockedPrisma.user.findFirst.mockResolvedValue(null);
   });
 
   const mockClinicalRenderedDocumentPersistence = (params: {

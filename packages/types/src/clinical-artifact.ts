@@ -124,6 +124,7 @@ export type DischargeSummaryRecord = {
 export type VitalRecordInput = ClinicalArtifactBaseInput & {
   measuredAt: Date | string;
   recordedBy?: string | null;
+  recordedByDisplay?: string | null;
   vitals: unknown;
   notes?: unknown;
   metadata?: unknown;
@@ -138,6 +139,7 @@ export type VitalRecordRecord = {
     artifactId: string;
     measuredAt: Date;
     recordedBy: string | null;
+    recordedByDisplay?: string | null;
     vitals: unknown;
     notes: unknown;
     metadata: unknown;
@@ -162,6 +164,7 @@ export type ClinicalArtifactFhirInputDefaults = {
   templateVersion?: number;
   templateVersionId?: string;
   recordedBy?: string | null;
+  recordedByDisplay?: string | null;
 };
 
 const SOAP_SUBJECTIVE_EXTENSION_URL =
@@ -613,7 +616,12 @@ const vitalRecordToObservation = (record: VitalRecordRecord): Observation => {
     encounter: toReference(clinicalContextReference(record.artifact)),
     effectiveDateTime: toIso(record.vitalRecord.measuredAt),
     performer: record.vitalRecord.recordedBy
-      ? [{ reference: `Practitioner/${record.vitalRecord.recordedBy}` }]
+      ? [
+          {
+            reference: `Practitioner/${record.vitalRecord.recordedBy}`,
+            display: record.vitalRecord.recordedByDisplay ?? undefined,
+          },
+        ]
       : undefined,
     note:
       typeof record.vitalRecord.notes === 'string'
@@ -638,6 +646,14 @@ const observationToVitalRecordInput = (
   encounterId: defaults.encounterId,
   authorId: defaults.authorId,
   recordedBy: defaults.recordedBy,
+  recordedByDisplay:
+    typeof resource.performer === 'object' &&
+    Array.isArray(resource.performer) &&
+    typeof resource.performer[0] === 'object' &&
+    resource.performer[0] !== null &&
+    typeof (resource.performer[0] as { display?: unknown }).display === 'string'
+      ? String((resource.performer[0] as { display: string }).display).trim()
+      : defaults.recordedByDisplay,
   templateId: defaults.templateId,
   templateVersion: defaults.templateVersion,
   templateVersionId: defaults.templateVersionId,
