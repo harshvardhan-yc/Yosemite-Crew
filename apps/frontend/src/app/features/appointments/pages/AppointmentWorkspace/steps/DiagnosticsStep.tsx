@@ -49,6 +49,7 @@ import {
   getAppointmentWorkspaceBootstrap,
   normalizeWorkspaceBootstrapForEncounter,
 } from '@/app/features/appointments/services/workspaceAggregateService';
+import { getIdexxCombinedResultsPdfBlob } from '@/app/features/integrations/services/idexxService';
 
 type DiagnosticProvider = 'IDEXX' | 'RAD_ANALYZER';
 
@@ -778,6 +779,39 @@ const DiagnosticsStep = ({
     }
   }, [s, appointment.organisationId, appointment.id, mergeEncounterData]);
 
+  // "Print all Results": fetch one backend-merged PDF of every result and open it
+  // in the preview overlay. Falls back to the browser print dialog when there are
+  // no results yet or the combined PDF can't be built.
+  const [combinedPdfUrl, setCombinedPdfUrl] = useState<string | null>(null);
+  const [printingAll, setPrintingAll] = useState(false);
+
+  const handlePrintAllResults = useCallback(async () => {
+    if (printingAll) return;
+    const organisationId = appointment.organisationId;
+    const resultIds = s.results.map((result) => result.resultId).filter(Boolean);
+    if (!organisationId || resultIds.length === 0) {
+      globalThis.window.print();
+      return;
+    }
+    setPrintingAll(true);
+    try {
+      const blob = await getIdexxCombinedResultsPdfBlob({ organisationId, resultIds });
+      setCombinedPdfUrl(URL.createObjectURL(blob));
+    } catch (error) {
+      console.error('Unable to build combined results PDF:', error);
+      globalThis.window.print();
+    } finally {
+      setPrintingAll(false);
+    }
+  }, [printingAll, appointment.organisationId, s.results]);
+
+  const closeCombinedPdf = useCallback(() => {
+    setCombinedPdfUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+  }, []);
+
   let orderButtonText = 'Open IDEXX';
   if (s.needsInitialOrderPlacement) orderButtonText = 'Resume order placement';
   else if (s.canOpenFollowUpInCurrentOrder) orderButtonText = 'Follow up';
@@ -801,9 +835,10 @@ const DiagnosticsStep = ({
         <ResultsSection s={s} />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Secondary
-            text="Print all Results"
+            text={printingAll ? 'Preparing…' : 'Print all Results'}
             icon={<LuPrinter aria-hidden="true" />}
-            onClick={() => globalThis.window.print()}
+            onClick={() => void handlePrintAllResults()}
+            isDisabled={printingAll}
           />
           <div className="flex flex-wrap items-center gap-3">
             <Secondary
@@ -826,6 +861,13 @@ const DiagnosticsStep = ({
           title={s.pdfPreviewTitle}
           closeLabel="Close IDEXX PDF preview"
           onClose={s.closePdfPreview}
+        />
+        <PdfPreviewOverlay
+          open={Boolean(combinedPdfUrl)}
+          pdfUrl={combinedPdfUrl}
+          title="All lab results"
+          closeLabel="Close combined results PDF"
+          onClose={closeCombinedPdf}
         />
       </>
     );
