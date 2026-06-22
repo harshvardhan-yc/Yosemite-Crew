@@ -345,13 +345,12 @@ export const loadAppointmentBilling = async (
     { organisationId, appointmentId }
   );
   const invoicePayload = unwrapFinanceData(res.data) ?? [];
-  const invoices = invoicePayload
-    .map((invoice) => normalizeFinanceInvoice(invoice, organisationId))
-    // Guard against a backend that ignores the appointmentId filter: only keep
-    // invoices for this appointment (when the field is present on the row).
-    .filter(
-      (invoice) => invoice.appointmentId === undefined || invoice.appointmentId === appointmentId
-    );
+  // The backend scopes `GET /invoices?organisationId&appointmentId` to the
+  // appointment (appointmentId takes precedence over organisationId), so the
+  // response is already appointment-scoped — no client-side guard needed.
+  const invoices = invoicePayload.map((invoice) =>
+    normalizeFinanceInvoice(invoice, organisationId)
+  );
 
   const invoicedItemNames = new Set<string>();
   let depositCents = 0;
