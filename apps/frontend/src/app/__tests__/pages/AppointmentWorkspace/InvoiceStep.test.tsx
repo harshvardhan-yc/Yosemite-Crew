@@ -399,6 +399,17 @@ describe('InvoiceStep', () => {
     expect(getEnc().pastInvoices[0].paymentMethod).not.toBe('ONLINE');
   });
 
+  it('refetches finance after a cash payment so the bill reflects server truth', async () => {
+    const enc = seedAndGet();
+    renderInvoice(enc);
+    // Ignore the mount-time hydration call; assert the post-payment refetch.
+    mockLoadAppointmentBilling.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
+
+    await waitFor(() => expect(mockLoadAppointmentBilling).toHaveBeenCalledWith('org-1', APPT));
+  });
+
   it('collects a deposit payment and reduces the remaining deposit', () => {
     const enc = seedAndGet();
     const startDeposit = enc.depositCents;

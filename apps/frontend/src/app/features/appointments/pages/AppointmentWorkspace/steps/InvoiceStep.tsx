@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LuArrowRight,
   LuBanknote,
@@ -748,6 +748,23 @@ const InvoiceStep = ({
     };
   }, [appointmentId, hydrateInvoiceBilling, organisationId]);
 
+  // Refetch the appointment's finance state (invoices, deposit, currency) from
+  // the backend so the bill, payment status, and deposit summary reflect server
+  // truth after a payment action rather than only the optimistic store write.
+  const reloadBilling = useCallback(async () => {
+    if (!organisationId || !appointmentId) return;
+    try {
+      const billing = await loadAppointmentBilling(organisationId, appointmentId);
+      hydrateInvoiceBilling(appointmentId, {
+        pastInvoices: billing.pastInvoices,
+        depositCents: billing.depositCents,
+        currency: billing.currency,
+      });
+    } catch (error) {
+      console.error('Failed to refresh appointment billing:', error);
+    }
+  }, [appointmentId, hydrateInvoiceBilling, organisationId]);
+
   const persistCurrentInvoice = async () => {
     if (!organisationId) return undefined;
     const invoice = await seedAppointmentInvoice(appointmentId);
@@ -780,6 +797,7 @@ const InvoiceStep = ({
         } else {
           setConfirmation('Invoice prepared for online payment');
         }
+        await reloadBilling();
         return;
       }
       if (invoice?.id) {
@@ -796,6 +814,7 @@ const InvoiceStep = ({
         byName: encounter.leadName ?? 'Front desk',
       });
       setConfirmation(`${PAYMENT_LABELS[method]} recorded`);
+      await reloadBilling();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to process payment.');
     } finally {
@@ -860,6 +879,7 @@ const InvoiceStep = ({
             ? `Deposit payment link generated: ${checkoutUrl}`
             : 'Deposit payment link generated'
         );
+        await reloadBilling();
         return;
       }
       recordDepositCollection(appointmentId, {
@@ -869,6 +889,7 @@ const InvoiceStep = ({
       });
       setConfirmation(`${PAYMENT_LABELS[input.method]} deposit recorded`);
       setIsDepositModalOpen(false);
+      await reloadBilling();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to collect deposit.');
     } finally {
