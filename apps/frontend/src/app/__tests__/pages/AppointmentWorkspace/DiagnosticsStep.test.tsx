@@ -201,7 +201,9 @@ describe('DiagnosticsStep (workspace, real IDEXX backend)', () => {
   it('shows provider and modality origin badges on order rows', () => {
     renderStep();
 
-    const orderRow = screen.getByText('1. Order 100358709').parentElement as HTMLElement;
+    // The same order id also appears in the Results section, so target the
+    // first occurrence — the Order Status row, which carries the origin badges.
+    const orderRow = screen.getAllByText('1. Order 100358709')[0].parentElement as HTMLElement;
     expect(orderRow).toHaveTextContent('IDEXX');
     expect(orderRow).toHaveTextContent('Reference lab');
   });

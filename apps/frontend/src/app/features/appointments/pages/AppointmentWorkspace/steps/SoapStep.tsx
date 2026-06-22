@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
+import WorkspaceSearchResultRow from '@/app/features/appointments/pages/AppointmentWorkspace/components/WorkspaceSearchResultRow';
 import { IoArrowForward } from 'react-icons/io5';
 import { LuClipboardList, LuPrinter } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
@@ -329,18 +330,15 @@ const SoapStep = ({
               >
                 <ul>
                   {templateMatches.map((tpl) => (
-                    <li key={tpl.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          applySoapTemplate(appointmentId, tpl);
-                          setTemplateQuery('');
-                        }}
-                        className="flex w-full items-center px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                      >
-                        {tpl.name}
-                      </button>
-                    </li>
+                    <WorkspaceSearchResultRow
+                      key={tpl.id}
+                      name={tpl.name}
+                      leadingIcon={null}
+                      onSelect={() => {
+                        applySoapTemplate(appointmentId, tpl);
+                        setTemplateQuery('');
+                      }}
+                    />
                   ))}
                 </ul>
               </SearchResultsDropdown>

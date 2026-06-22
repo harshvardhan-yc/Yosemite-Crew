@@ -1,10 +1,11 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import InvoiceStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/InvoiceStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
+import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import {
   loadAppointmentBilling,
@@ -64,6 +65,10 @@ const reset = () => {
     error: undefined,
     loadedSpecialityIds: [],
   });
+  // Reset inventory so each test starts with an empty store; otherwise the
+  // bill builder's "load inventory once" guard sees a prior test's items and
+  // skips the fetchInventoryItems call this suite asserts on.
+  useInventoryStore.setState({ itemsById: {}, itemIdsByOrgId: {} });
 };
 
 const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
@@ -532,6 +537,9 @@ describe('InvoiceStep', () => {
     expect(newest.paymentMethod).toBe('CASH');
     expect(newest.status).toBe('PAID_FULL');
     expect(newest.paidByName).toBe('Front desk');
+    // Flush the trailing post-payment state update (processing flag/refetch) so
+    // it doesn't surface as an act() warning in the next test.
+    await act(async () => {});
   });
 
   it('prepares an online payment without marking it paid locally', async () => {
@@ -541,20 +549,23 @@ describe('InvoiceStep', () => {
     fireEvent.click(screen.getByRole('button', { name: /pay online/i }));
     expect(await screen.findByText(/invoice prepared for online payment/i)).toBeInTheDocument();
     expect(getEnc().pastInvoices[0].paymentMethod).not.toBe('ONLINE');
+    await act(async () => {});
   });
 
   it('refetches finance after a cash payment so the bill reflects server truth', async () => {
     const enc = seedAndGet();
-    renderInvoice(enc);
+    // organisationId is required for the post-payment refetch to fire.
+    renderInvoice(enc, jest.fn(), false, 'org-1');
     // Ignore the mount-time hydration call; assert the post-payment refetch.
     mockLoadAppointmentBilling.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
 
     await waitFor(() => expect(mockLoadAppointmentBilling).toHaveBeenCalledWith('org-1', APPT));
+    await act(async () => {});
   });
 
-  it('collects a deposit payment and reduces the remaining deposit', () => {
+  it('collects a deposit payment and reduces the remaining deposit', async () => {
     const enc = seedAndGet();
     const startDeposit = enc.depositCents;
     renderInvoice(enc);
@@ -565,6 +576,8 @@ describe('InvoiceStep', () => {
     const after = getEnc();
     expect(after.pastInvoices[0].paymentMethod).toBe('CASH');
     expect(after.depositCents).toBeGreaterThan(startDeposit);
+    // Flush the deposit handler's trailing processing-flag update.
+    await act(async () => {});
   });
 
   it('does not record an invoice payment when there are no line items', () => {
@@ -576,7 +589,7 @@ describe('InvoiceStep', () => {
     expect(getEnc().pastInvoices.length).toBe(before);
   });
 
-  it('allows deposit collection when there are no invoice line items', () => {
+  it('allows deposit collection when there are no invoice line items', async () => {
     const enc = { ...seedAndGet(), invoiceLineItems: [] };
     const beforeDeposit = getEnc().depositCents;
     renderInvoice(enc);
@@ -587,6 +600,8 @@ describe('InvoiceStep', () => {
 
     expect(getEnc().depositCents).toBe(beforeDeposit + 2500);
     expect(getEnc().pastInvoices[0].paymentMethod).toBe('CASH');
+    // Flush the deposit handler's trailing processing-flag update.
+    await act(async () => {});
   });
 
   it('renders the inpatient send-to-client action', async () => {
@@ -595,6 +610,7 @@ describe('InvoiceStep', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /send to client/i }));
     expect(await screen.findByText(/invoice prepared for online payment/i)).toBeInTheDocument();
+    await act(async () => {});
   });
 
   it('omits send-to-client for outpatient encounters', () => {

@@ -24,6 +24,25 @@ const assignmentParamsSchema = z.object({
   assignmentId: z.string().min(1),
 });
 
+const organisationParamsSchema = z.object({
+  organisationId: z.string().min(1),
+});
+
+const lifecycleStatusSchema = z.enum([
+  "SENT",
+  "VIEWED",
+  "SUBMITTED",
+  "SIGNED",
+  "EXPIRED",
+  "CANCELLED",
+]);
+
+const organisationQuerySchema = z.object({
+  parentId: z.string().min(1).optional(),
+  companionId: z.string().min(1).optional(),
+  status: z.string().optional(),
+});
+
 const createBodySchema = createFormAssignmentSchema
   .omit({
     organisationId: true,
@@ -100,6 +119,31 @@ export const FormAssignmentController = {
       const assignments = await FormAssignmentService.listForCompanion(
         params.organisationId,
         params.companionId,
+      );
+      return res.status(200).json(assignments);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async listForOrganisation(req: Request, res: Response) {
+    try {
+      const params = organisationParamsSchema.parse(req.params);
+      const query = organisationQuerySchema.parse(req.query ?? {});
+      const status = query.status
+        ? query.status
+            .split(",")
+            .map((value) => value.trim().toUpperCase())
+            .filter(Boolean)
+            .map((value) => lifecycleStatusSchema.parse(value))
+        : undefined;
+      const assignments = await FormAssignmentService.listForOrganisation(
+        params.organisationId,
+        {
+          parentId: query.parentId,
+          companionId: query.companionId,
+          status,
+        },
       );
       return res.status(200).json(assignments);
     } catch (error) {

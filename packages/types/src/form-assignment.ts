@@ -43,6 +43,60 @@ export interface FormAssignmentLike {
   updatedAt: Date;
 }
 
+/**
+ * Lifecycle status of a parent-assigned form as exposed by the organisation-wide
+ * assignments read-model (GET /v1/forms/organisations/:organisationId/assignments).
+ * Uppercase to match the persisted enum; `DRAFT` assignments are not surfaced here
+ * because they have not yet been sent to the parent.
+ */
+export type FormAssignmentLifecycleStatus =
+  | 'SENT'
+  | 'VIEWED'
+  | 'SUBMITTED'
+  | 'SIGNED'
+  | 'EXPIRED'
+  | 'CANCELLED';
+
+/** Reference to the signed PDF; only populated once the assignment is SIGNED. */
+export interface FormAssignmentSignedDocumentLike {
+  documentId?: string | null;
+  pdfUrl?: string | null;
+}
+
+/**
+ * Enriched read-model row for the /forms assignments view: the assignment joined
+ * with its template name and the companion/primary-parent display names.
+ */
+export interface FormAssignmentListItem {
+  id: string;
+  templateId: string;
+  templateVersion: number;
+  templateName: string;
+  /** Currently an alias of templateName. */
+  templateTitle: string;
+  companionId?: string | null;
+  companionName?: string | null;
+  parentId?: string | null;
+  parentName?: string | null;
+  appointmentId?: string | null;
+  status: FormAssignmentLifecycleStatus;
+  signingRequired: boolean;
+  mobileVisible: boolean;
+  viewedAt?: string | null;
+  submittedAt?: string | null;
+  signedAt?: string | null;
+  expiredAt?: string | null;
+  cancelledAt?: string | null;
+  signedDocument?: FormAssignmentSignedDocumentLike | null;
+}
+
+/** Optional filters for the organisation-wide assignments list. */
+export interface FormAssignmentListFilters {
+  parentId?: string;
+  companionId?: string;
+  status?: FormAssignmentLifecycleStatus[];
+}
+
 export interface FormAssignmentCreateInput {
   organisationId: string;
   templateId: string;

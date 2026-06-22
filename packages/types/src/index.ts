@@ -433,6 +433,10 @@ export type {
   FormAssignmentStatus,
   FormSignerIdentity,
   FormAssignmentCreateInput,
+  FormAssignmentLifecycleStatus,
+  FormAssignmentSignedDocumentLike,
+  FormAssignmentListItem,
+  FormAssignmentListFilters,
 } from './form-assignment';
 export type {
   AdverseEventReporterType,

@@ -1016,3 +1016,12 @@ export const CategoryTemplates: Record<FormsCategory, FormField[]> = {
 };
 
 export type BackendFormStatus = BackendForm['status'];
+
+// Organisation-wide form-assignment contract (shared with the backend so the
+// read-model has a single source of truth).
+export type {
+  FormAssignmentLifecycleStatus,
+  FormAssignmentSignedDocumentLike,
+  FormAssignmentListItem,
+  FormAssignmentListFilters,
+} from '@yosemite-crew/types';

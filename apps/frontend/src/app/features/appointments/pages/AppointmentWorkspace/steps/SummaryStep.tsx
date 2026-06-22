@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
+import WorkspaceSearchResultRow from '@/app/features/appointments/pages/AppointmentWorkspace/components/WorkspaceSearchResultRow';
 import type {
   Appointment,
   TemplateLike,
@@ -379,8 +380,8 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
     if (!organisationId || dischargeSaved) return;
     if (!isRichTextEmpty(encounter.dischargeSummary) || dischargeTemplate) return;
     let cancelled = false;
-    const serviceLine = encounter.services.find((item) => item.kind === 'SERVICE');
-    const packageLine = encounter.services.find((item) => item.kind === 'PACKAGE');
+    const serviceLine = encounter.services?.find((item) => item.kind === 'SERVICE');
+    const packageLine = encounter.services?.find((item) => item.kind === 'PACKAGE');
     resolveDischargeTemplate({
       organisationId,
       appointmentId,
@@ -555,16 +556,12 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
             {templateMatches.length > 0 ? (
               <ul>
                 {templateMatches.map((template) => (
-                  <li key={template.id}>
-                    <button
-                      type="button"
-                      onClick={() => handleTemplateSelect(template)}
-                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                    >
-                      <LuSearch aria-hidden="true" />
-                      <span>{template.name}</span>
-                    </button>
-                  </li>
+                  <WorkspaceSearchResultRow
+                    key={template.id}
+                    name={template.name}
+                    leadingIcon={<LuSearch aria-hidden="true" className="shrink-0" />}
+                    onSelect={() => handleTemplateSelect(template)}
+                  />
                 ))}
               </ul>
             ) : (

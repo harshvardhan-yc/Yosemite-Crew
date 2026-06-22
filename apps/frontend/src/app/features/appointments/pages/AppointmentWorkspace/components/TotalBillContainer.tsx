@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { LuInfo, LuPlus, LuTrash2 } from 'react-icons/lu';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
+import WorkspaceSearchResultRow from '@/app/features/appointments/pages/AppointmentWorkspace/components/WorkspaceSearchResultRow';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
@@ -481,23 +482,16 @@ const TotalBillContainer = ({
             >
               <ul>
                 {matches.map((item) => (
-                  <li key={item.name}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        addCandidate(item);
-                        setSearch('');
-                      }}
-                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                    >
-                      <LuPlus aria-hidden="true" className="shrink-0" />
-                      <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                      {item.kind && <KindPill kind={item.kind} />}
-                      <span className="shrink-0 text-text-secondary">
-                        {formatCents(item.amountCents, currency)}
-                      </span>
-                    </button>
-                  </li>
+                  <WorkspaceSearchResultRow
+                    key={item.name}
+                    name={item.name}
+                    badge={item.kind ? <KindPill kind={item.kind} /> : undefined}
+                    meta={formatCents(item.amountCents, currency)}
+                    onSelect={() => {
+                      addCandidate(item);
+                      setSearch('');
+                    }}
+                  />
                 ))}
               </ul>
             </SearchResultsDropdown>

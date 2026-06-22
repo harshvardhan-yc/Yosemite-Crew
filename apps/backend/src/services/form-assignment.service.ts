@@ -4,6 +4,9 @@ import { prisma } from "src/config/prisma";
 import type {
   FormAssignmentCreateInput,
   FormAssignmentLike,
+  FormAssignmentLifecycleStatus,
+  FormAssignmentListFilters,
+  FormAssignmentListItem,
   FormSignerIdentity,
   WorkspaceFormRow,
 } from "@yosemite-crew/types";
@@ -334,6 +337,162 @@ export const FormAssignmentService = {
     });
 
     return rows.map((row) => toAssignmentLike(row));
+  },
+
+  /**
+   * Organisation-wide assignments read-model for the /forms "Assigned forms"
+   * view. Enriches each row with the template name, companion name, and the
+   * companion's PRIMARY parent name, plus a signed-document reference derived
+   * from the matching signed template instance. DRAFT assignments are excluded
+   * because they have not yet been sent to the parent.
+   */
+  async listForOrganisation(
+    organisationId: string,
+    filters: FormAssignmentListFilters = {},
+  ): Promise<FormAssignmentListItem[]> {
+    // Assignments are companion-scoped, so a parentId filter is resolved to the
+    // parent's linked companions first.
+    let parentCompanionIds: string[] | undefined;
+    if (filters.parentId) {
+      const links = await prisma.parentPatient.findMany({
+        where: { parentId: filters.parentId },
+        select: { patientId: true },
+      });
+      parentCompanionIds = links.map((link) => link.patientId);
+      if (!parentCompanionIds.length) return [];
+    }
+
+    const companionIds = [
+      filters.companionId,
+      ...(parentCompanionIds ?? []),
+    ].filter((value): value is string => Boolean(value));
+
+    const where: Prisma.FormAssignmentWhereInput = {
+      organisationId,
+      status: filters.status?.length
+        ? { in: filters.status }
+        : { not: "DRAFT" },
+    };
+    if (companionIds.length === 1) {
+      where.companionId = companionIds[0];
+    } else if (companionIds.length > 1) {
+      where.companionId = { in: companionIds };
+    }
+
+    const rows = await prisma.formAssignment.findMany({
+      where,
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      include: {
+        template: { select: { name: true } },
+        companion: {
+          select: {
+            name: true,
+            parentLinks: {
+              where: { role: "PRIMARY", status: "ACTIVE" },
+              select: { parentId: true },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    // Resolve PRIMARY-parent display names in a single query.
+    const parentIds = [
+      ...new Set(
+        rows
+          .map((row) => row.companion?.parentLinks?.[0]?.parentId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    const parents = parentIds.length
+      ? await prisma.parent.findMany({
+          where: { id: { in: parentIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const parentNameById = new Map(
+      parents.map((parent) => [
+        parent.id,
+        [parent.firstName, parent.lastName].filter(Boolean).join(" ").trim(),
+      ]),
+    );
+
+    // Signed-document references come from the matching SIGNED template instance.
+    const signedRows = rows.filter((row) => row.status === "SIGNED");
+    const signedInstanceByKey = new Map<
+      string,
+      { id: string; generatedPdfUrl: string | null }
+    >();
+    if (signedRows.length) {
+      const instances = await prisma.templateInstance.findMany({
+        where: {
+          organisationId,
+          status: "SIGNED",
+          OR: signedRows.map((row) => ({
+            templateId: row.templateId,
+            templateVersion: row.templateVersion,
+            appointmentId: row.appointmentId,
+          })),
+        },
+        select: {
+          id: true,
+          templateId: true,
+          templateVersion: true,
+          appointmentId: true,
+          generatedPdfUrl: true,
+        },
+      });
+      for (const instance of instances) {
+        signedInstanceByKey.set(
+          `${instance.templateId}:${instance.templateVersion}:${instance.appointmentId ?? ""}`,
+          { id: instance.id, generatedPdfUrl: instance.generatedPdfUrl },
+        );
+      }
+    }
+
+    return rows
+      .filter((row) => row.status !== "DRAFT")
+      .map((row) => {
+        const primaryParentId =
+          row.companion?.parentLinks?.[0]?.parentId ?? null;
+        const templateName = row.template?.name ?? "";
+        const signedInstance =
+          row.status === "SIGNED"
+            ? signedInstanceByKey.get(
+                `${row.templateId}:${row.templateVersion}:${row.appointmentId ?? ""}`,
+              )
+            : undefined;
+
+        return {
+          id: row.id,
+          templateId: row.templateId,
+          templateVersion: row.templateVersion,
+          templateName,
+          templateTitle: templateName,
+          companionId: row.companionId,
+          companionName: row.companion?.name ?? null,
+          parentId: primaryParentId,
+          parentName: primaryParentId
+            ? parentNameById.get(primaryParentId) || null
+            : null,
+          appointmentId: row.appointmentId,
+          status: row.status as FormAssignmentLifecycleStatus,
+          signingRequired: row.signingRequired,
+          mobileVisible: row.mobileVisible,
+          viewedAt: row.viewedAt?.toISOString() ?? null,
+          submittedAt: row.submittedAt?.toISOString() ?? null,
+          signedAt: row.signedAt?.toISOString() ?? null,
+          expiredAt: row.expiredAt?.toISOString() ?? null,
+          cancelledAt: row.cancelledAt?.toISOString() ?? null,
+          signedDocument: signedInstance
+            ? {
+                documentId: signedInstance.id,
+                pdfUrl: signedInstance.generatedPdfUrl,
+              }
+            : null,
+        } satisfies FormAssignmentListItem;
+      });
   },
 
   async resend(

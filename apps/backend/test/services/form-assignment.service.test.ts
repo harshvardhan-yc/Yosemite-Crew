@@ -15,6 +15,9 @@ jest.mock("src/config/prisma", () => ({
       findMany: jest.fn(),
       update: jest.fn(),
     },
+    parentPatient: { findMany: jest.fn() },
+    parent: { findMany: jest.fn() },
+    templateInstance: { findMany: jest.fn() },
   },
 }));
 
@@ -29,6 +32,9 @@ describe("FormAssignmentService", () => {
       findMany: jest.Mock;
       update: jest.Mock;
     };
+    parentPatient: { findMany: jest.Mock };
+    parent: { findMany: jest.Mock };
+    templateInstance: { findMany: jest.Mock };
   };
 
   beforeEach(() => {
@@ -322,5 +328,127 @@ describe("FormAssignmentService", () => {
       }),
     );
     expect(assignment.status).toBe("cancelled");
+  });
+
+  describe("listForOrganisation", () => {
+    it("enriches rows with template, companion, primary parent, and signed doc", async () => {
+      mockedPrisma.formAssignment.findMany.mockResolvedValue([
+        {
+          id: "fa-1",
+          templateId: "tpl-1",
+          templateVersion: 3,
+          companionId: "comp-1",
+          appointmentId: "appt-1",
+          status: "SIGNED",
+          signingRequired: true,
+          mobileVisible: true,
+          viewedAt: new Date("2026-06-22T08:00:00.000Z"),
+          submittedAt: new Date("2026-06-22T08:10:00.000Z"),
+          signedAt: new Date("2026-06-22T08:15:00.000Z"),
+          expiredAt: null,
+          cancelledAt: null,
+          template: { name: "Intake Form" },
+          companion: { name: "Milo", parentLinks: [{ parentId: "par-1" }] },
+        },
+      ]);
+      mockedPrisma.parent.findMany.mockResolvedValue([
+        { id: "par-1", firstName: "Jane", lastName: "Doe" },
+      ]);
+      mockedPrisma.templateInstance.findMany.mockResolvedValue([
+        {
+          id: "inst-1",
+          templateId: "tpl-1",
+          templateVersion: 3,
+          appointmentId: "appt-1",
+          generatedPdfUrl: "https://pdf",
+        },
+      ]);
+
+      const result = await FormAssignmentService.listForOrganisation("org-1");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: "fa-1",
+        templateName: "Intake Form",
+        templateTitle: "Intake Form",
+        companionName: "Milo",
+        parentId: "par-1",
+        parentName: "Jane Doe",
+        status: "SIGNED",
+        signedAt: "2026-06-22T08:15:00.000Z",
+        signedDocument: { documentId: "inst-1", pdfUrl: "https://pdf" },
+      });
+      // DRAFT assignments must be filtered out of the default query.
+      expect(mockedPrisma.formAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organisationId: "org-1",
+            status: { not: "DRAFT" },
+          }),
+        }),
+      );
+    });
+
+    it("leaves signedDocument null when the assignment is not signed", async () => {
+      mockedPrisma.formAssignment.findMany.mockResolvedValue([
+        {
+          id: "fa-2",
+          templateId: "tpl-1",
+          templateVersion: 1,
+          companionId: "comp-1",
+          appointmentId: "appt-1",
+          status: "SENT",
+          signingRequired: true,
+          mobileVisible: true,
+          viewedAt: null,
+          submittedAt: null,
+          signedAt: null,
+          expiredAt: null,
+          cancelledAt: null,
+          template: { name: "Intake Form" },
+          companion: { name: "Milo", parentLinks: [] },
+        },
+      ]);
+
+      const result = await FormAssignmentService.listForOrganisation("org-1");
+
+      expect(result[0].signedDocument).toBeNull();
+      expect(result[0].parentId).toBeNull();
+      expect(result[0].parentName).toBeNull();
+      // No signed rows => no template-instance lookup.
+      expect(mockedPrisma.templateInstance.findMany).not.toHaveBeenCalled();
+    });
+
+    it("resolves a parentId filter to the parent's companions", async () => {
+      mockedPrisma.parentPatient.findMany.mockResolvedValue([
+        { patientId: "comp-9" },
+      ]);
+      mockedPrisma.formAssignment.findMany.mockResolvedValue([]);
+
+      await FormAssignmentService.listForOrganisation("org-1", {
+        parentId: "par-9",
+      });
+
+      expect(mockedPrisma.parentPatient.findMany).toHaveBeenCalledWith({
+        where: { parentId: "par-9" },
+        select: { patientId: true },
+      });
+      expect(mockedPrisma.formAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ companionId: "comp-9" }),
+        }),
+      );
+    });
+
+    it("returns an empty list when a parent has no linked companions", async () => {
+      mockedPrisma.parentPatient.findMany.mockResolvedValue([]);
+
+      const result = await FormAssignmentService.listForOrganisation("org-1", {
+        parentId: "par-none",
+      });
+
+      expect(result).toEqual([]);
+      expect(mockedPrisma.formAssignment.findMany).not.toHaveBeenCalled();
+    });
   });
 });
