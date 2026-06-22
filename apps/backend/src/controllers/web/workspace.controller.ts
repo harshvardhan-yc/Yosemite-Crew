@@ -176,6 +176,24 @@ export const WorkspaceController = {
     }
   },
 
+  async getEncounterDocumentPacketPdf(req: Request, res: Response) {
+    try {
+      const params = encounterParamsSchema.parse(req.params);
+      const pdf = await WorkspaceDocumentPacketService.buildEncounterPacketPdf(
+        params.organisationId,
+        params.encounterId,
+      );
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="clinical-packet-${params.encounterId}.pdf"`,
+      );
+      return res.status(200).send(pdf);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async getDocumentPacket(req: Request, res: Response) {
     try {
       const params = packetParamsSchema.parse(req.params);

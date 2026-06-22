@@ -436,3 +436,54 @@ describe("WorkspaceDocumentPacketService.resetSigning", () => {
     expect(mockedPrisma.workspaceDocumentPacket.update).not.toHaveBeenCalled();
   });
 });
+
+describe("WorkspaceDocumentPacketService.buildEncounterPacketPdf", () => {
+  it("merges the encounter documents into a single PDF for print", async () => {
+    mockedWorkspaceService.getEncounterBootstrap.mockResolvedValue({
+      appointment: null,
+      encounter: { id: "enc-1" },
+      companion: null,
+      documents: [docRow("d1"), docRow("d2")],
+    });
+    mockedBuildPacketPdf.mockResolvedValue({
+      pdf: Buffer.from("merged-print"),
+      pageCount: 3,
+      signaturePlacement: {
+        pageNumber: 3,
+        pageX: 80,
+        pageY: 690,
+        width: 240,
+        height: 96,
+      },
+    });
+
+    const pdf = await WorkspaceDocumentPacketService.buildEncounterPacketPdf(
+      "org-1",
+      "enc-1",
+    );
+
+    expect(pdf).toBeInstanceOf(Buffer);
+    expect(mockedBuildPacketPdf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId: "org-1",
+        documents: [
+          expect.objectContaining({ documentId: "d1" }),
+          expect.objectContaining({ documentId: "d2" }),
+        ],
+      }),
+    );
+  });
+
+  it("rejects when the encounter has no documents", async () => {
+    mockedWorkspaceService.getEncounterBootstrap.mockResolvedValue({
+      appointment: null,
+      encounter: { id: "enc-1" },
+      companion: null,
+      documents: [],
+    });
+
+    await expect(
+      WorkspaceDocumentPacketService.buildEncounterPacketPdf("org-1", "enc-1"),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+});

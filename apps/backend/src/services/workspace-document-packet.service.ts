@@ -424,4 +424,41 @@ export const WorkspaceDocumentPacketService = {
       },
     });
   },
+
+  /**
+   * Build the merged clinical packet PDF for an encounter for print/download
+   * (SOAP + Prescription + Discharge, etc.). Unlike sign(), this does not create
+   * a packet record or involve Documenso — it just returns the combined bytes.
+   */
+  async buildEncounterPacketPdf(
+    organisationId: string,
+    encounterId: string,
+  ): Promise<Buffer> {
+    const bootstrap = await WorkspaceService.getEncounterBootstrap(
+      { organisationId, encounterId },
+      [],
+    );
+
+    const documents = bootstrap.documents.filter((doc) =>
+      Boolean(doc.documentId),
+    );
+    if (!documents.length) {
+      throw new WorkspaceServiceError(
+        "Encounter has no documents to print",
+        409,
+      );
+    }
+
+    const merged = await buildMergedClinicalPacketPdf({
+      organisationId,
+      title: `Clinical Packet ${encounterId}`,
+      documents: documents.map((doc) => ({
+        documentId: doc.documentId,
+        title: doc.title,
+        kind: doc.kind,
+      })),
+    });
+
+    return merged.pdf;
+  },
 };
