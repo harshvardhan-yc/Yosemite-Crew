@@ -15,7 +15,9 @@ import RichTextBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/c
 import InputBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Input/InputBuilder';
 import DropdownBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Dropdown/DropdownBuilder';
 import SignatureBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Signature/SignatureBuilder';
-import BuilderWrapper from '@/app/features/forms/pages/Forms/Sections/AddForm/components/BuildWrapper';
+import BuilderWrapper, {
+  StructureLockContext,
+} from '@/app/features/forms/pages/Forms/Sections/AddForm/components/BuildWrapper';
 import BooleanBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Boolean/BooleanBuilder';
 import DateBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Date/DateBuilder';
 import { useOrgStore } from '@/app/stores/orgStore';
@@ -386,6 +388,7 @@ const GroupBuilder: React.FC<GroupBuilderProps> = ({
   createField,
   serviceOptions,
 }) => {
+  const structureLocked = React.useContext(StructureLockContext);
   const groupField: FormField & { type: 'group'; fields?: FormField[] } = {
     ...field,
     fields: field.fields ?? [],
@@ -465,7 +468,7 @@ const GroupBuilder: React.FC<GroupBuilderProps> = ({
         <div className="font-satoshi text-black-text text-[18px] font-medium">
           {groupField.label || 'Group'}
         </div>
-        <AddFieldDropdown onSelect={addNestedField} />
+        {!structureLocked && <AddFieldDropdown onSelect={addNestedField} />}
       </div>
 
       <FormInput
@@ -626,6 +629,7 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
   onChange,
   createField,
 }) => {
+  const structureLocked = React.useContext(StructureLockContext);
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const [medicines, setMedicines] = useState<InventoryApiItem[]>([]);
   const [selectedMedicines, setSelectedMedicines] = useState<string[]>([]);
@@ -770,16 +774,18 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
         className="min-h-12!"
       />
 
-      <Dropdown
-        placeholder="Select medicine from inventory"
-        value=""
-        onChange={handleMedicineSelect}
-        options={medicineOptions.filter((opt) => !selectedMedicines.includes(opt.value))}
-        search={true}
-        className="min-h-12!"
-        dropdownClassName="!h-fit max-h-[300px] overflow-y-auto"
-        disabled={loadingMedicines}
-      />
+      {!structureLocked && (
+        <Dropdown
+          placeholder="Select medicine from inventory"
+          value=""
+          onChange={handleMedicineSelect}
+          options={medicineOptions.filter((opt) => !selectedMedicines.includes(opt.value))}
+          search={true}
+          className="min-h-12!"
+          dropdownClassName="!h-fit max-h-[300px] overflow-y-auto"
+          disabled={loadingMedicines}
+        />
+      )}
 
       {(field.fields ?? []).map((nested) =>
         renderNestedField(nested, updateNestedField, removeMedicine, createField)
@@ -795,6 +801,7 @@ type TaskGroupBuilderProps = {
 };
 
 const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange, createField }) => {
+  const structureLocked = React.useContext(StructureLockContext);
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   // Select stable store slices and derive the list with useMemo. Returning a new
   // array straight from the selector would change the snapshot every render and
@@ -860,15 +867,17 @@ const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange, cr
         className="min-h-12!"
       />
 
-      <Dropdown
-        placeholder="Select task"
-        value=""
-        onChange={handleTaskSelect}
-        options={taskOptions.filter((opt) => !selectedTasks.includes(opt.value))}
-        search={true}
-        className="min-h-12!"
-        dropdownClassName="!h-fit max-h-[300px] overflow-y-auto"
-      />
+      {!structureLocked && (
+        <Dropdown
+          placeholder="Select task"
+          value=""
+          onChange={handleTaskSelect}
+          options={taskOptions.filter((opt) => !selectedTasks.includes(opt.value))}
+          search={true}
+          className="min-h-12!"
+          dropdownClassName="!h-fit max-h-[300px] overflow-y-auto"
+        />
+      )}
 
       {(field.fields ?? []).map((nested) =>
         renderNestedField(nested, updateNestedField, removeTask, createField)
@@ -910,9 +919,10 @@ const Build = ({
 
   // YC-library templates are content-only: their field structure (add / delete /
   // reorder) is locked; only field content may be edited. Mirrors the FormInfo rule.
-  const structureLocked = Boolean(
-    formData.isTemplateBacked && formData.templateSource === 'YC_LIBRARY'
-  );
+  // YC-default templates lock their structure (content stays editable). Use the single
+  // ownership flag so this matches Details.tsx's isYcDefault and cannot drift if
+  // isTemplateBacked is ever cleared independently.
+  const structureLocked = formData.templateSource === 'YC_LIBRARY';
 
   const canUseSignature =
     formData.category !== 'SOAP' &&
@@ -1137,126 +1147,128 @@ const Build = ({
   }, [registerValidator, validate]);
 
   return (
-    <div className="flex flex-col gap-6 w-full flex-1 justify-between" ref={builderRef}>
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <div className="font-satoshi text-black-text text-[23px] font-medium">Build form</div>
-          {!structureLocked && (
-            <AddFieldDropdown
-              onSelect={addField}
-              buttonClassName="w-fit"
-              options={addOptionsForContext}
-            />
-          )}
-        </div>
-
-        {formData.schema?.map((field, index) => {
-          const fieldId = field.id; // Store ID to avoid TypeScript narrowing issues
-          const canMoveUp = index > 0;
-          const canMoveDown = index < (formData.schema?.length ?? 0) - 1;
-
-          if (field.type === 'group') {
-            const isDragging = dragIndex === index;
-            // Service groups seed a checkbox first; every other group kind renders
-            // the field as-is. All kinds share the same draggable wrapper, so only
-            // the inner builder differs.
-            const ensured = isServiceGroup(field)
-              ? ensureServiceCheckbox(field, serviceOptions).group
-              : field;
-
-            let groupBuilder: React.ReactNode;
-            if (isMedicationGroup(field)) {
-              groupBuilder = (
-                <MedicationGroupBuilder
-                  field={field}
-                  onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                  createField={createField}
-                />
-              );
-            } else if (isTaskGroup(field)) {
-              groupBuilder = (
-                <TaskGroupBuilder
-                  field={field}
-                  onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                  createField={createField}
-                />
-              );
-            } else {
-              groupBuilder = (
-                <GroupBuilder
-                  field={ensured}
-                  onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                  createField={createField}
-                  serviceOptions={serviceOptions}
-                />
-              );
-            }
-
-            return (
-              <BuilderWrapper
-                key={ensured.id}
-                field={ensured}
-                onDelete={() => handleDeleteField(fieldId)}
-                onMoveUp={() => moveField(index, 'up')}
-                onMoveDown={() => moveField(index, 'down')}
-                canMoveUp={canMoveUp}
-                canMoveDown={canMoveDown}
-                draggable
-                onDragStart={handleDragStart(index)}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop(index)}
-                onDragEnd={handleDragEnd}
-                isDragging={isDragging}
-              >
-                {groupBuilder}
-              </BuilderWrapper>
-            );
-          }
-          return (
-            <FieldBuilder
-              key={fieldId}
-              field={field}
-              onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-              onDelete={() => handleDeleteField(fieldId)}
-              onMoveUp={() => moveField(index, 'up')}
-              onMoveDown={() => moveField(index, 'down')}
-              canMoveUp={canMoveUp}
-              canMoveDown={canMoveDown}
-              createField={createField}
-              draggable
-              onDragStart={handleDragStart(index)}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop(index)}
-              onDragEnd={handleDragEnd}
-              isDragging={dragIndex === index}
-            />
-          );
-        })}
-        {buildError && (
-          <div className="mt-1.5 flex items-center gap-1 px-2 text-caption-2 text-text-error">
-            <IoIosWarning className="text-text-error" size={14} />
-            <span>{buildError}</span>
-          </div>
-        )}
-
-        {/* Add Field Button at bottom */}
-        {!structureLocked && (
-          <div className="flex flex-col items-center gap-2 py-4 border-2 border-dashed border-grey-light rounded-2xl hover:border-grey-noti transition-colors">
-            <div className="flex flex-col items-center gap-1">
+    <StructureLockContext.Provider value={structureLocked}>
+      <div className="flex flex-col gap-6 w-full flex-1 justify-between" ref={builderRef}>
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div className="font-satoshi text-black-text text-[23px] font-medium">Build form</div>
+            {!structureLocked && (
               <AddFieldDropdown
                 onSelect={addField}
                 buttonClassName="w-fit"
                 options={addOptionsForContext}
               />
-              <span className="text-sm font-satoshi font-medium text-grey-noti">Add Field</span>
-            </div>
+            )}
           </div>
-        )}
+
+          {formData.schema?.map((field, index) => {
+            const fieldId = field.id; // Store ID to avoid TypeScript narrowing issues
+            const canMoveUp = index > 0;
+            const canMoveDown = index < (formData.schema?.length ?? 0) - 1;
+
+            if (field.type === 'group') {
+              const isDragging = dragIndex === index;
+              // Service groups seed a checkbox first; every other group kind renders
+              // the field as-is. All kinds share the same draggable wrapper, so only
+              // the inner builder differs.
+              const ensured = isServiceGroup(field)
+                ? ensureServiceCheckbox(field, serviceOptions).group
+                : field;
+
+              let groupBuilder: React.ReactNode;
+              if (isMedicationGroup(field)) {
+                groupBuilder = (
+                  <MedicationGroupBuilder
+                    field={field}
+                    onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
+                    createField={createField}
+                  />
+                );
+              } else if (isTaskGroup(field)) {
+                groupBuilder = (
+                  <TaskGroupBuilder
+                    field={field}
+                    onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
+                    createField={createField}
+                  />
+                );
+              } else {
+                groupBuilder = (
+                  <GroupBuilder
+                    field={ensured}
+                    onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
+                    createField={createField}
+                    serviceOptions={serviceOptions}
+                  />
+                );
+              }
+
+              return (
+                <BuilderWrapper
+                  key={ensured.id}
+                  field={ensured}
+                  onDelete={() => handleDeleteField(fieldId)}
+                  onMoveUp={() => moveField(index, 'up')}
+                  onMoveDown={() => moveField(index, 'down')}
+                  canMoveUp={canMoveUp}
+                  canMoveDown={canMoveDown}
+                  draggable
+                  onDragStart={handleDragStart(index)}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop(index)}
+                  onDragEnd={handleDragEnd}
+                  isDragging={isDragging}
+                >
+                  {groupBuilder}
+                </BuilderWrapper>
+              );
+            }
+            return (
+              <FieldBuilder
+                key={fieldId}
+                field={field}
+                onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
+                onDelete={() => handleDeleteField(fieldId)}
+                onMoveUp={() => moveField(index, 'up')}
+                onMoveDown={() => moveField(index, 'down')}
+                canMoveUp={canMoveUp}
+                canMoveDown={canMoveDown}
+                createField={createField}
+                draggable
+                onDragStart={handleDragStart(index)}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop(index)}
+                onDragEnd={handleDragEnd}
+                isDragging={dragIndex === index}
+              />
+            );
+          })}
+          {buildError && (
+            <div className="mt-1.5 flex items-center gap-1 px-2 text-caption-2 text-text-error">
+              <IoIosWarning className="text-text-error" size={14} />
+              <span>{buildError}</span>
+            </div>
+          )}
+
+          {/* Add Field Button at bottom */}
+          {!structureLocked && (
+            <div className="flex flex-col items-center gap-2 py-4 border-2 border-dashed border-grey-light rounded-2xl hover:border-grey-noti transition-colors">
+              <div className="flex flex-col items-center gap-1">
+                <AddFieldDropdown
+                  onSelect={addField}
+                  buttonClassName="w-fit"
+                  options={addOptionsForContext}
+                />
+                <span className="text-sm font-satoshi font-medium text-grey-noti">Add Field</span>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="px-3 pb-3 flex justify-center">
+          <Primary href="#" text="Next" onClick={onNext} className="w-fit" />
+        </div>
       </div>
-      <div className="px-3 pb-3 flex justify-center">
-        <Primary href="#" text="Next" onClick={onNext} className="w-fit" />
-      </div>
-    </div>
+    </StructureLockContext.Provider>
   );
 };
 
