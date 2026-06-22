@@ -18,6 +18,16 @@ jest.mock('@/app/features/appointments/services/workspaceClinicalService', () =>
   saveDischargeSummaryArtifact: jest.fn().mockResolvedValue({ id: 'saved-summary' }),
 }));
 
+// Packet-signing behaviour is covered in
+// __tests__/features/appointments/AppointmentWorkspace/SummaryStep.test.tsx.
+jest.mock('@/app/features/appointments/services/workspaceAggregateService', () => ({
+  createEncounterDocumentPacket: jest.fn().mockResolvedValue({ packetId: 'packet-1' }),
+  signWorkspaceDocumentPacket: jest.fn().mockResolvedValue({
+    packetId: 'packet-1',
+    signing: { status: 'IN_PROGRESS', signingUrl: 'https://sign.test/abc' },
+  }),
+}));
+
 jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
   __esModule: true,
   default: ({ open, title, pdfUrl }: { open: boolean; title: string; pdfUrl: string | null }) =>
@@ -185,21 +195,6 @@ describe('SummaryStep', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'mock clear date' }));
     expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.followUpAt).toBeUndefined();
-  });
-
-  it('signs summary, adds a document and opens the signing overlay', () => {
-    const enc = seedAndGet();
-    const before = enc.documents.length;
-    renderSummary(enc);
-
-    fireEvent.click(screen.getByRole('button', { name: /^sign$/i }));
-
-    const updated = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
-    expect(updated.documents).toHaveLength(before + 1);
-    expect(updated.documents[0].description).toBe('Signed discharge summary');
-    expect(updated.stepStatus.SUMMARY).toBe('COMPLETED');
-    expect(useSigningOverlayStore.getState().open).toBe(true);
-    expect(screen.getByText('Preparing signing session...')).toBeInTheDocument();
   });
 
   it('prints all documents', () => {

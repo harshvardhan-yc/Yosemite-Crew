@@ -31,6 +31,10 @@ import {
   saveDischargeSummaryArtifact,
 } from '@/app/features/appointments/services/workspaceClinicalService';
 import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
+import {
+  createEncounterDocumentPacket,
+  signWorkspaceDocumentPacket,
+} from '@/app/features/appointments/services/workspaceAggregateService';
 
 type SummaryStepProps = {
   appointmentId: string;
@@ -284,9 +288,12 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   const saveDischargeSummary = useAppointmentWorkspaceStore((s) => s.saveDischargeSummary);
   const reopenDischargeSummary = useAppointmentWorkspaceStore((s) => s.reopenDischargeSummary);
   const setFollowUp = useAppointmentWorkspaceStore((s) => s.setFollowUp);
-  const addDocument = useAppointmentWorkspaceStore((s) => s.addDocument);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
   const openSigningOverlay = useSigningOverlayStore((s) => s.openOverlay);
+  const setSigningUrl = useSigningOverlayStore((s) => s.setUrl);
+  const closeSigningOverlay = useSigningOverlayStore((s) => s.close);
+  const [isSigning, setIsSigning] = useState(false);
+  const [signError, setSignError] = useState<string | null>(null);
   const [templateQuery, setTemplateQuery] = useState('');
   const [templateState, setTemplateState] = useState<{
     templates: TemplateLike[];
@@ -323,18 +330,43 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
     setTemplateQuery('');
   };
 
-  const handleSign = () => {
-    const now = new Date().toISOString();
-    addDocument(appointmentId, {
-      createdAt: now,
-      category: 'Discharge',
-      description: 'Signed discharge summary',
-      signedByName: encounter.leadName ?? 'Clinician',
-      lastModifiedAt: now,
-      signatureRequired: true,
-    });
-    setStepStatus(appointmentId, 'SUMMARY', 'COMPLETED');
-    openSigningOverlay(`workspace-summary-${appointmentId}`);
+  // Build the merged clinical packet for this encounter and start signing it as
+  // a single document via Documenso. The packet stays DRAFT until the Documenso
+  // webhook confirms completion, at which point every bundled document is marked
+  // signed against the one signed packet PDF.
+  const handleSign = async () => {
+    if (isSigning) return;
+    const organisationId = appointment?.organisationId;
+    const encounterId = appointment?.encounterId;
+    if (!organisationId || !encounterId) {
+      setSignError('Missing organisation or encounter for signing.');
+      return;
+    }
+
+    setSignError(null);
+    setIsSigning(true);
+    openSigningOverlay(`packet-${encounterId}`);
+    try {
+      const packet = await createEncounterDocumentPacket(organisationId, encounterId);
+      const packetId = packet?.packetId;
+      if (!packetId) {
+        throw new Error('Document packet could not be created.');
+      }
+      const signed = await signWorkspaceDocumentPacket(organisationId, packetId, {
+        signerName: encounter.leadName ?? undefined,
+      });
+      const signingUrl = signed?.signing?.signingUrl;
+      if (!signingUrl) {
+        throw new Error('Signing link is not available yet.');
+      }
+      setSigningUrl(signingUrl);
+      setStepStatus(appointmentId, 'SUMMARY', 'COMPLETED');
+    } catch (error) {
+      setSignError(error instanceof Error ? error.message : 'Unable to start signing.');
+      closeSigningOverlay();
+    } finally {
+      setIsSigning(false);
+    }
   };
 
   const handleSave = async () => {
@@ -493,26 +525,33 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
         )}
       </SectionContainer>
 
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <Secondary
-          text="Print"
-          icon={<LuPrinter aria-hidden="true" />}
-          onClick={() => globalThis.window.print()}
-        />
-        {!dischargeSaved && (
-          <Secondary
-            text="Save"
-            icon={<LuSave aria-hidden="true" />}
-            onClick={handleSave}
-            isDisabled={encounter.viewOnly || isSaving}
-          />
+      <div className="flex flex-col items-end gap-2">
+        {signError && (
+          <p role="alert" className="text-body-4 text-danger-700">
+            {signError}
+          </p>
         )}
-        <Secondary
-          text="Sign"
-          icon={<LuFileSignature aria-hidden="true" />}
-          onClick={handleSign}
-          isDisabled={encounter.viewOnly}
-        />
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <Secondary
+            text="Print"
+            icon={<LuPrinter aria-hidden="true" />}
+            onClick={() => globalThis.window.print()}
+          />
+          {!dischargeSaved && (
+            <Secondary
+              text="Save"
+              icon={<LuSave aria-hidden="true" />}
+              onClick={handleSave}
+              isDisabled={encounter.viewOnly || isSaving}
+            />
+          )}
+          <Secondary
+            text={isSigning ? 'Signing…' : 'Sign'}
+            icon={<LuFileSignature aria-hidden="true" />}
+            onClick={handleSign}
+            isDisabled={encounter.viewOnly || isSigning}
+          />
+        </div>
       </div>
 
       <AllDocumentsTable

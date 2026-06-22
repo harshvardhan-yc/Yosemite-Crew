@@ -12,8 +12,20 @@ import type {
 
 export type WorkspaceBootstrapDTO = Record<string, unknown>;
 export type WorkspaceDocumentDTO = Record<string, unknown>;
-export type WorkspaceDocumentPacketDTO = Record<string, unknown>;
 export type TreatmentItemDTO = Record<string, unknown>;
+
+export interface WorkspaceDocumentPacketSigningDTO {
+  status?: string;
+  signingUrl?: string | null;
+  pdf?: { url?: string | null };
+}
+
+export interface WorkspaceDocumentPacketDTO {
+  packetId?: string;
+  status?: string;
+  signing?: WorkspaceDocumentPacketSigningDTO | null;
+  [key: string]: unknown;
+}
 
 const STEP_STATUS_BY_AGGREGATE_KEY: Partial<Record<string, WorkspaceStep>> = {
   clinicalArtifacts: 'SOAP',
