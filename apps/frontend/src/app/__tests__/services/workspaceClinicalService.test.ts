@@ -22,6 +22,7 @@ import {
   listSoapNotesForEncounter,
   listSoapNotesForAppointment,
   listVitalRecordsForEncounter,
+  createPmsObservationSubmission,
   listObservationSubmissionsForAppointment,
   loadWorkspaceClinicalArtifacts,
   reopenDischargeSummary,
@@ -544,6 +545,47 @@ describe('workspaceClinicalService', () => {
         scores: { posture: 1, painful: 'Yes', notes: 'Guarded' },
         total: 2,
       })
+    );
+  });
+
+  it('creates a clinician observation submission and maps the backend-scored result', async () => {
+    postDataMock.mockResolvedValueOnce({
+      data: {
+        id: 'obs-new',
+        toolId: 'CSU_CAP',
+        toolName: 'Canine acute pain scale',
+        answers: { posture: 2 },
+        score: 4,
+        filledByName: 'Dr Vet',
+        createdAt: '2026-06-22T10:00:00.000Z',
+      },
+    });
+
+    const record = await createPmsObservationSubmission({
+      organisationId: 'org-1',
+      appointmentId: 'appt-1',
+      encounterId: 'enc-1',
+      companionId: 'comp-9',
+      toolId: 'CSU_CAP',
+      filledBy: 'vet-1',
+      answers: {},
+    });
+
+    expect(postDataMock).toHaveBeenCalledWith(
+      '/v1/observation-tools/pms/appointments/appt-1/submissions',
+      expect.objectContaining({
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        encounterId: 'enc-1',
+        companionId: 'comp-9',
+        toolId: 'CSU_CAP',
+        filledBy: 'vet-1',
+        answers: {},
+      })
+    );
+    // The backend score is authoritative — we never derive it on the client.
+    expect(record).toEqual(
+      expect.objectContaining({ id: 'obs-new', toolKey: 'CSU_CAP', total: 4 })
     );
   });
 

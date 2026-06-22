@@ -167,6 +167,8 @@ const QuickActionsModal = ({
               organisationId={organisationId}
               encounterId={encounterId}
               authorId={authorId}
+              authorName={appointment.lead?.name}
+              companionId={companion.id}
             />
           )}
           {activeAction === 'TASKS' && (
