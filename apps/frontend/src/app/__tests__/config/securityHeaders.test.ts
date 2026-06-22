@@ -71,6 +71,8 @@ describe('security headers', () => {
     expect(directives.get('script-src')).toContain('https://js.stripe.com');
     expect(directives.get('script-src')).toContain('https://connect-js.stripe.com');
     expect(directives.get('script-src')).toContain('https://*.js.stripe.com');
+    expect(directives.get('script-src')).toContain('https://eu-assets.i.posthog.com');
+    expect(directives.get('script-src')).not.toContain('https://us-assets.i.posthog.com');
     expect(directives.get('script-src')).toContain("'unsafe-eval'");
     expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
     expect(directives.get('style-src')).toContain('https://fonts.googleapis.com');
@@ -110,6 +112,24 @@ describe('security headers', () => {
     expect(directives.get('script-src')).not.toContain("'nonce-");
     expect(directives.get('style-src')).toContain("'unsafe-inline'");
     expect(directives.get('style-src-elem')).toContain("'unsafe-inline'");
+  });
+
+  test('does not allow the US PostHog host from env', () => {
+    const originalHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
+    process.env.NEXT_PUBLIC_POSTHOG_HOST = 'https://us.i.posthog.com';
+
+    const directives = parseCspDirectives(
+      buildContentSecurityPolicy({
+        nonce: 'test-nonce',
+        documensoHost: 'https://sign.example.com',
+      })
+    );
+
+    process.env.NEXT_PUBLIC_POSTHOG_HOST = originalHost;
+
+    expect(directives.get('script-src')).not.toContain('https://us.i.posthog.com');
+    expect(directives.get('connect-src')).not.toContain('https://us.i.posthog.com');
+    expect(directives.get('script-src')).not.toContain('https://us-assets.i.posthog.com');
   });
 
   test('omits dev-only CSP relaxations in production', () => {

@@ -47,6 +47,10 @@ const POSTHOG_DEFAULT_CONNECT_HOSTS = [
   'https://eu-assets.i.posthog.com',
 ];
 const getPostHogHost = () => process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim();
+const getAllowedPostHogHost = () => {
+  const host = getPostHogHost();
+  return host === 'https://eu.i.posthog.com' ? host : undefined;
+};
 
 export const buildContentSecurityPolicy = ({
   nonce,
@@ -60,7 +64,7 @@ export const buildContentSecurityPolicy = ({
   const isProduction = process.env.NODE_ENV === 'production';
   const isDevelopment = !isProduction;
   const nonceSource = getNonceSource(nonce);
-  const postHogHost = getPostHogHost();
+  const postHogHost = getAllowedPostHogHost();
   const postHogScriptHosts = [...POSTHOG_DEFAULT_SCRIPT_HOSTS, postHogHost].filter(Boolean);
   const postHogConnectHosts = [...POSTHOG_DEFAULT_CONNECT_HOSTS, postHogHost].filter(Boolean);
 

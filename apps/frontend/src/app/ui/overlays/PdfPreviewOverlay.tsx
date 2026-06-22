@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { LuDownload } from 'react-icons/lu';
 import Close from '@/app/ui/primitives/Icons/Close';
 import { YosemiteLoader } from '@/app/ui/overlays/Loader';
-import { getSafeIdexxIframeUrl } from '@/app/lib/urls';
+import { getSafePdfPreviewUrl } from '@/app/lib/urls';
 
 type PdfPreviewOverlayProps = {
   open: boolean;
@@ -27,7 +27,7 @@ const PdfPreviewOverlay = ({
   onClose,
 }: PdfPreviewOverlayProps) => {
   const [loaded, setLoaded] = useState(false);
-  const safePdfUrl = getSafeIdexxIframeUrl(pdfUrl, { allowBlob: true });
+  const safePdfUrl = getSafePdfPreviewUrl(pdfUrl, { allowBlob: true });
   if (!open || !safePdfUrl || typeof document === 'undefined') return null;
 
   return createPortal(
