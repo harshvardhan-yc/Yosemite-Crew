@@ -217,6 +217,19 @@ export const LabResultController = {
 
       const buffers: Buffer[] = [];
       for (const resultId of resultIds) {
+        // Verify the result is stored for this organisation before fetching its
+        // PDF from IDEXX — otherwise a user could pull PDFs for arbitrary result
+        // ids belonging to other organisations.
+        const stored = await LabResultService.getByResultId(
+          organisationId,
+          provider,
+          resultId,
+        );
+        if (!stored) {
+          return res
+            .status(404)
+            .json({ message: `Result not found for ${resultId}.` });
+        }
         const payload = await IdexxResultsQueryService.getResultPdf(resultId);
         if (!payload) {
           return res

@@ -575,6 +575,10 @@ const createCompanionFlow = async (
       alerts: toStoredCompanionAlerts(companionFormData.alerts),
       parentId: normalizedParent.id,
     };
+    // Persist parent-level edits (e.g. client alerts) for the existing parent;
+    // createCompanion/linkCompanion only upsert the parent into the local store,
+    // so without this the alerts would disappear after a refresh.
+    await updateParent(normalizedParent);
     if (companionFormData.id) {
       return (await linkCompanion(payload, normalizedParent)) ?? undefined;
     }

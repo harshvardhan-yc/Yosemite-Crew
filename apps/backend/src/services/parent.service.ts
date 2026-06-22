@@ -487,9 +487,13 @@ export const ParentService = {
         profileImageUrl: parent.profileImageUrl ?? undefined,
         isProfileComplete: false,
         createdFrom: parent.createdFrom as ParentCreatedFrom | undefined,
-        alerts: (parent as Parent & { alerts?: Parent["alerts"] }).alerts as
-          | Prisma.InputJsonValue
-          | undefined,
+        // This update carries the full alert set from the DTO, so an absent
+        // alerts value means "cleared". Use JsonNull (not undefined, which Prisma
+        // treats as "leave unchanged") so removing the last alert persists.
+        alerts:
+          ((parent as Parent & { alerts?: Parent["alerts"] }).alerts as
+            | Prisma.InputJsonValue
+            | undefined) ?? Prisma.JsonNull,
       },
     });
 

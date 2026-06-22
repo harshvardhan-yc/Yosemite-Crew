@@ -691,9 +691,16 @@ const InvoiceStep = ({
   // else the organisation's catalog currency (its configured/ country-derived
   // pricing currency), and only then a last-resort default — so a fresh, not-yet-
   // invoiced appointment shows the org's currency instead of a hardcoded USD.
-  const catalogCurrency =
-    catalogServices.find((service) => service.currency)?.currency ??
-    catalogPackages.find((pkg) => pkg.currency)?.currency;
+  // Scope the currency to this appointment's organisation: in a multi-org
+  // session the catalog store can hold another org's services/packages, so an
+  // unfiltered lookup could surface the wrong currency on a fresh invoice.
+  const catalogCurrency = organisationId
+    ? (catalogServices.find(
+        (service) => service.organisationId === organisationId && service.currency
+      )?.currency ??
+      catalogPackages.find((pkg) => pkg.organisationId === organisationId && pkg.currency)
+        ?.currency)
+    : undefined;
   const currency = encounter.currency || catalogCurrency?.toUpperCase() || DEFAULT_CURRENCY;
   const financeCurrency = currency.toLowerCase();
 

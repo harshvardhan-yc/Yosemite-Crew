@@ -435,7 +435,7 @@ describe("FormAssignmentService", () => {
       });
       expect(mockedPrisma.formAssignment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ companionId: "comp-9" }),
+          where: expect.objectContaining({ companionId: { in: ["comp-9"] } }),
         }),
       );
     });
@@ -449,6 +449,39 @@ describe("FormAssignmentService", () => {
 
       expect(result).toEqual([]);
       expect(mockedPrisma.formAssignment.findMany).not.toHaveBeenCalled();
+    });
+
+    it("intersects parentId and companionId: empty when companion is not the parent's", async () => {
+      mockedPrisma.parentPatient.findMany.mockResolvedValue([
+        { patientId: "comp-9" },
+      ]);
+
+      const result = await FormAssignmentService.listForOrganisation("org-1", {
+        parentId: "par-9",
+        companionId: "comp-OTHER",
+      });
+
+      expect(result).toEqual([]);
+      expect(mockedPrisma.formAssignment.findMany).not.toHaveBeenCalled();
+    });
+
+    it("intersects parentId and companionId: scopes to the companion when it belongs to the parent", async () => {
+      mockedPrisma.parentPatient.findMany.mockResolvedValue([
+        { patientId: "comp-9" },
+        { patientId: "comp-10" },
+      ]);
+      mockedPrisma.formAssignment.findMany.mockResolvedValue([]);
+
+      await FormAssignmentService.listForOrganisation("org-1", {
+        parentId: "par-9",
+        companionId: "comp-9",
+      });
+
+      expect(mockedPrisma.formAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ companionId: "comp-9" }),
+        }),
+      );
     });
   });
 });

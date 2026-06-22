@@ -75,6 +75,17 @@ describe('collectMissingRequiredFields', () => {
     expect(collectMissingRequiredFields(fields, { hr: '120' })).toEqual(['Temperature']);
   });
 
+  it('treats empty rich-text markup as unanswered for required richtext fields', () => {
+    const fields: FormField[] = [
+      field({ id: 'notes', label: 'Clinical notes', type: 'richtext', required: true }),
+    ];
+    expect(collectMissingRequiredFields(fields, { notes: '<p></p>' })).toEqual(['Clinical notes']);
+    expect(collectMissingRequiredFields(fields, { notes: '<p>&nbsp;</p>' })).toEqual([
+      'Clinical notes',
+    ]);
+    expect(collectMissingRequiredFields(fields, { notes: '<p>Seen and treated</p>' })).toEqual([]);
+  });
+
   it('falls back to the field id when no label is set', () => {
     const fields: FormField[] = [field({ id: 'field_123', label: '', required: true })];
     expect(collectMissingRequiredFields(fields, {})).toEqual(['field_123']);

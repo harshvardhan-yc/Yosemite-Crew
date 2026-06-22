@@ -175,9 +175,11 @@ describe("FinanceController", () => {
       await FinanceController.listInvoices(req as Request, res as Response);
 
       // Regression: with both filters present, the result must stay scoped to the
-      // appointment rather than returning every invoice in the organisation.
+      // appointment AND the authorized organisation rather than returning every
+      // invoice in the organisation or another org's appointment invoices.
       expect(mockedInvoiceService.getByAppointmentId).toHaveBeenCalledWith(
         "appt-1",
+        "org-1",
       );
       expect(mockedInvoiceService.listForOrganisation).not.toHaveBeenCalled();
       expect(statusMock).toHaveBeenCalledWith(200);
