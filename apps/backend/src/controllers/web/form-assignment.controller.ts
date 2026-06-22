@@ -24,23 +24,10 @@ const assignmentParamsSchema = z.object({
   assignmentId: z.string().min(1),
 });
 
-const organisationParamsSchema = z.object({
-  organisationId: z.string().min(1),
-});
-
-const lifecycleStatusSchema = z.enum([
-  "SENT",
-  "VIEWED",
-  "SUBMITTED",
-  "SIGNED",
-  "EXPIRED",
-  "CANCELLED",
-]);
-
-const organisationQuerySchema = z.object({
+const organisationListQuerySchema = z.object({
   parentId: z.string().min(1).optional(),
   companionId: z.string().min(1).optional(),
-  status: z.string().optional(),
+  status: z.string().trim().min(1).optional(),
 });
 
 const createBodySchema = createFormAssignmentSchema
@@ -128,23 +115,17 @@ export const FormAssignmentController = {
 
   async listForOrganisation(req: Request, res: Response) {
     try {
-      const params = organisationParamsSchema.parse(req.params);
-      const query = organisationQuerySchema.parse(req.query ?? {});
-      const status = query.status
-        ? query.status
-            .split(",")
-            .map((value) => value.trim().toUpperCase())
-            .filter(Boolean)
-            .map((value) => lifecycleStatusSchema.parse(value))
-        : undefined;
-      const assignments = await FormAssignmentService.listForOrganisation(
-        params.organisationId,
-        {
-          parentId: query.parentId,
-          companionId: query.companionId,
-          status,
-        },
-      );
+      const params = appointmentParamsSchema
+        .pick({ organisationId: true })
+        .parse(req.params);
+      const query = organisationListQuerySchema.parse(req.query ?? {});
+
+      const assignments = await FormAssignmentService.listForOrganisation({
+        organisationId: params.organisationId,
+        parentId: query.parentId,
+        companionId: query.companionId,
+        status: query.status,
+      });
       return res.status(200).json(assignments);
     } catch (error) {
       return handleError(error, res);

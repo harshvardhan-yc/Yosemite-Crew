@@ -324,6 +324,60 @@ const resolveParentRecord = async (id: string) =>
     include: { address: true },
   });
 
+const resolveParentLinkedUserId = async (
+  source: ParentCreateContext["source"],
+  authUserId: string | undefined,
+) => {
+  if (source !== "mobile") {
+    return null;
+  }
+
+  if (!authUserId) {
+    throw new ParentServiceError("Authenticated user ID required.", 401);
+  }
+
+  const linkedUserId =
+    await AuthUserMobileService.getAuthUserMobileIdByProviderId(authUserId);
+  if (!linkedUserId) {
+    throw new ParentServiceError("Authenticated user not found.", 404);
+  }
+
+  return linkedUserId;
+};
+
+const resolveParentExistingByLinkedUser = async (
+  linkedUserId: string | null,
+) => {
+  if (!linkedUserId) {
+    return null;
+  }
+
+  return prisma.parent.findFirst({
+    where: { linkedUserId },
+    select: { id: true },
+  });
+};
+
+const maybeSyncParentProfileImage = async (
+  parentId: string,
+  profileImageUrl: string | undefined,
+) => {
+  if (!profileImageUrl) {
+    return;
+  }
+
+  try {
+    const finalKey = buildS3Key("parent", parentId, "image/jpg");
+    const uploadedUrl = await moveFile(profileImageUrl, finalKey);
+    await prisma.parent.update({
+      where: { id: parentId },
+      data: { profileImageUrl: uploadedUrl },
+    });
+  } catch (error) {
+    logger.warn("Invalid key has been sent", error);
+  }
+};
+
 export const ParentService = {
   toFHIR,
   toFHIRFromPrisma,
@@ -336,30 +390,14 @@ export const ParentService = {
       parent.timezone = validateTimezone(parent.timezone, "Timezone");
     }
 
-    if (ctx.source === "mobile") {
-      if (!ctx.authUserId) {
-        throw new ParentServiceError("Authenticated user ID required.", 401);
-      }
+    parent.linkedUserId = await resolveParentLinkedUserId(
+      ctx.source,
+      ctx.authUserId,
+    );
 
-      const linkedUserId =
-        await AuthUserMobileService.getAuthUserMobileIdByProviderId(
-          ctx.authUserId,
-        );
-      if (!linkedUserId) {
-        throw new ParentServiceError("Authenticated user not found.", 404);
-      }
-
-      parent.linkedUserId = linkedUserId;
-    } else {
-      parent.linkedUserId = null;
-    }
-
-    const existing = parent.linkedUserId
-      ? await prisma.parent.findFirst({
-          where: { linkedUserId: parent.linkedUserId },
-          select: { id: true },
-        })
-      : null;
+    const existing = await resolveParentExistingByLinkedUser(
+      parent.linkedUserId,
+    );
     if (existing) {
       throw new ParentServiceError("Parent already exists for this user.", 409);
     }
@@ -401,28 +439,15 @@ export const ParentService = {
       address: refreshed.address,
     });
 
-    const finalRecord =
-      refreshed.isProfileComplete === profileComplete
-        ? refreshed
-        : await prisma.parent.update({
-            where: { id: created.id },
-            data: { isProfileComplete: profileComplete },
-            include: { address: true },
-          });
-
-    if (parent.profileImageUrl) {
-      try {
-        const finalKey = buildS3Key("parent", created.id, "image/jpg");
-        const profileUrl = await moveFile(parent.profileImageUrl, finalKey);
-        await prisma.parent.update({
-          where: { id: created.id },
-          data: { profileImageUrl: profileUrl },
-        });
-        finalRecord.profileImageUrl = profileUrl;
-      } catch (error) {
-        logger.warn("Invalid key has been sent", error);
-      }
+    if (refreshed.isProfileComplete !== profileComplete) {
+      await prisma.parent.update({
+        where: { id: created.id },
+        data: { isProfileComplete: profileComplete },
+        include: { address: true },
+      });
     }
+
+    await maybeSyncParentProfileImage(created.id, parent.profileImageUrl);
 
     if (ctx.source === "mobile" && ctx.authUserId) {
       await AuthUserMobileService.linkParent(ctx.authUserId, created.id);

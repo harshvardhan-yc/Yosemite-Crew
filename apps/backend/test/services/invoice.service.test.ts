@@ -396,6 +396,31 @@ describe("InvoiceService", () => {
     expect(updated?.depositTargetAmount).toBe(20);
   });
 
+  it("rejects negative deposit targets", async () => {
+    await expect(
+      InvoiceService.setInvoiceDepositTarget("inv_deposit", -1),
+    ).rejects.toMatchObject({
+      message: "Deposit target amount must be greater than or equal to zero",
+      statusCode: 400,
+    });
+
+    expect(prisma.invoice.findUnique).not.toHaveBeenCalled();
+    expect(prisma.invoice.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing invoices when setting deposit targets", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(
+      InvoiceService.setInvoiceDepositTarget("inv_missing", 20),
+    ).rejects.toMatchObject({
+      message: "Invoice not found",
+      statusCode: 404,
+    });
+
+    expect(prisma.invoice.update).not.toHaveBeenCalled();
+  });
+
   it("issues a credit note and records a finance event", async () => {
     (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
       id: "inv_credit_1",

@@ -90,6 +90,219 @@ const ensureQuantity = (quantity: number) => {
   return safe;
 };
 
+const createInventoryConsumptionSkippedEvent = (
+  tx: Prisma.TransactionClient,
+  params: {
+    organisationId: string;
+    sourceType: InventoryConsumptionSourceType;
+    sourceId: string;
+    sourceLineKey: string;
+    action: InventoryConsumptionAction;
+    idempotencyKey: string;
+    inventoryItemId: string;
+    quantity: number;
+    metadata?: Prisma.InputJsonValue;
+  },
+) =>
+  createInventoryConsumptionEvent(tx, {
+    ...params,
+    status: "SKIPPED",
+  });
+
+const createInventoryConsumptionAppliedEvent = (
+  tx: Prisma.TransactionClient,
+  params: {
+    organisationId: string;
+    sourceType: InventoryConsumptionSourceType;
+    sourceId: string;
+    sourceLineKey: string;
+    action: InventoryConsumptionAction;
+    idempotencyKey: string;
+    inventoryItemId: string;
+    quantity: number;
+    metadata?: Prisma.InputJsonValue;
+  },
+) =>
+  createInventoryConsumptionEvent(tx, {
+    ...params,
+    status: "APPLIED",
+  });
+
+const applyInventoryRelease = async (
+  tx: Prisma.TransactionClient,
+  params: {
+    organisationId: string;
+    inventoryItemId: string;
+    quantity: number;
+    metadata?: Prisma.InputJsonValue;
+    sourceType: InventoryConsumptionSourceType;
+    sourceId: string;
+    sourceLineKey: string;
+    idempotencyKey: string;
+    batchId?: string;
+    movementReason?: string;
+  },
+) => {
+  const movements = await tx.inventoryStockMovement.findMany({
+    where: {
+      itemId: params.inventoryItemId,
+      referenceId: params.sourceId,
+      change: { lt: 0 },
+      ...(params.batchId ? { batchId: params.batchId } : {}),
+    },
+    orderBy: [{ createdAt: "desc" }],
+  });
+
+  if (!movements.length) {
+    throw new InventoryConsumptionServiceError(
+      "No prior consumption found to release",
+      400,
+    );
+  }
+
+  let remainingRelease = params.quantity;
+  for (const movement of movements) {
+    if (remainingRelease <= 0) break;
+
+    const consumedQuantity = Math.abs(movement.change ?? 0);
+    if (consumedQuantity <= 0) continue;
+
+    const restore = Math.min(remainingRelease, consumedQuantity);
+    remainingRelease -= restore;
+
+    if (movement.batchId) {
+      await tx.inventoryBatch.update({
+        where: { id: movement.batchId },
+        data: { quantity: { increment: restore } },
+      });
+    }
+
+    await tx.inventoryStockMovement.create({
+      data: {
+        itemId: params.inventoryItemId,
+        batchId: movement.batchId ?? undefined,
+        change: restore,
+        reason: params.movementReason ?? "PRESCRIPTION_RELEASE",
+        referenceId: params.sourceId,
+      },
+    });
+  }
+
+  if (remainingRelease > 0) {
+    throw new InventoryConsumptionServiceError(
+      "Failed to release full requested quantity",
+      500,
+    );
+  }
+
+  await updateInventoryItemTotals(
+    tx,
+    params.organisationId,
+    params.inventoryItemId,
+  );
+
+  return createInventoryConsumptionAppliedEvent(tx, {
+    organisationId: params.organisationId,
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
+    sourceLineKey: params.sourceLineKey,
+    action: "RELEASE",
+    idempotencyKey: params.idempotencyKey,
+    inventoryItemId: params.inventoryItemId,
+    quantity: params.quantity,
+    metadata: params.metadata,
+  });
+};
+
+const applyInventoryConsumption = async (
+  tx: Prisma.TransactionClient,
+  params: {
+    organisationId: string;
+    inventoryItemId: string;
+    quantity: number;
+    metadata?: Prisma.InputJsonValue;
+    sourceType: InventoryConsumptionSourceType;
+    sourceId: string;
+    sourceLineKey: string;
+    idempotencyKey: string;
+    batchId?: string;
+    movementReason?: string;
+  },
+) => {
+  const item = await tx.inventoryItem.findFirst({
+    where: {
+      id: params.inventoryItemId,
+      organisationId: params.organisationId,
+    },
+  });
+  if (!item) {
+    throw new InventoryConsumptionServiceError("Inventory item not found", 404);
+  }
+  if ((item.onHand ?? 0) < params.quantity) {
+    throw new InventoryConsumptionServiceError("Insufficient stock", 400);
+  }
+
+  let remaining = params.quantity;
+  const batches = await tx.inventoryBatch.findMany({
+    where: {
+      itemId: params.inventoryItemId,
+      organisationId: params.organisationId,
+      ...(params.batchId ? { id: params.batchId } : {}),
+    },
+    orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  for (const batch of batches) {
+    if (remaining <= 0) break;
+
+    const available = batch.quantity ?? 0;
+    if (available <= 0) continue;
+
+    const consume = Math.min(available, remaining);
+    remaining -= consume;
+
+    await tx.inventoryBatch.update({
+      where: { id: batch.id },
+      data: { quantity: available - consume },
+    });
+
+    await tx.inventoryStockMovement.create({
+      data: {
+        itemId: params.inventoryItemId,
+        batchId: batch.id,
+        change: -consume,
+        reason: params.movementReason ?? "MANUAL_ADJUSTMENT",
+        referenceId: params.sourceId,
+      },
+    });
+  }
+
+  if (remaining > 0) {
+    throw new InventoryConsumptionServiceError(
+      "Failed to consume full requested quantity",
+      500,
+    );
+  }
+
+  await updateInventoryItemTotals(
+    tx,
+    params.organisationId,
+    params.inventoryItemId,
+  );
+
+  return createInventoryConsumptionAppliedEvent(tx, {
+    organisationId: params.organisationId,
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
+    sourceLineKey: params.sourceLineKey,
+    action: "CONSUME",
+    idempotencyKey: params.idempotencyKey,
+    inventoryItemId: params.inventoryItemId,
+    quantity: params.quantity,
+    metadata: params.metadata,
+  });
+};
+
 const consumeInventoryItem = async (
   tx: Prisma.TransactionClient,
   organisationId: string,
@@ -112,76 +325,36 @@ const consumeInventoryItem = async (
   }
 
   if (action === "RESERVE") {
-    return tx.inventoryConsumptionEvent.create({
-      data: {
-        organisationId,
-        sourceType,
-        sourceId,
-        sourceLineKey,
-        action,
-        idempotencyKey,
-        inventoryItemId,
-        quantity,
-        status: "APPLIED",
-        metadata,
-      },
+    return createInventoryConsumptionAppliedEvent(tx, {
+      organisationId,
+      sourceType,
+      sourceId,
+      sourceLineKey,
+      action,
+      idempotencyKey,
+      inventoryItemId,
+      quantity,
+      metadata,
     });
   }
 
   if (action === "RELEASE") {
-    const movements = await tx.inventoryStockMovement.findMany({
-      where: {
-        itemId: inventoryItemId,
-        referenceId: sourceId,
-        change: { lt: 0 },
-        ...(batchId ? { batchId } : {}),
-      },
-      orderBy: [{ createdAt: "desc" }],
+    return applyInventoryRelease(tx, {
+      organisationId,
+      sourceType,
+      sourceId,
+      sourceLineKey,
+      idempotencyKey,
+      inventoryItemId,
+      quantity,
+      metadata,
+      batchId,
+      movementReason,
     });
+  }
 
-    if (!movements.length) {
-      throw new InventoryConsumptionServiceError(
-        "No prior consumption found to release",
-        400,
-      );
-    }
-
-    let remainingRelease = quantity;
-    for (const movement of movements) {
-      if (remainingRelease <= 0) break;
-      const consumedQuantity = Math.abs(movement.change ?? 0);
-      if (consumedQuantity <= 0) continue;
-      const restore = Math.min(remainingRelease, consumedQuantity);
-      remainingRelease -= restore;
-
-      if (movement.batchId) {
-        await tx.inventoryBatch.update({
-          where: { id: movement.batchId },
-          data: { quantity: { increment: restore } },
-        });
-      }
-
-      await tx.inventoryStockMovement.create({
-        data: {
-          itemId: inventoryItemId,
-          batchId: movement.batchId ?? undefined,
-          change: restore,
-          reason: movementReason ?? "PRESCRIPTION_RELEASE",
-          referenceId: sourceId,
-        },
-      });
-    }
-
-    if (remainingRelease > 0) {
-      throw new InventoryConsumptionServiceError(
-        "Failed to release full requested quantity",
-        500,
-      );
-    }
-
-    await updateInventoryItemTotals(tx, organisationId, inventoryItemId);
-
-    return createInventoryConsumptionEvent(tx, {
+  if (action !== "CONSUME") {
+    return createInventoryConsumptionSkippedEvent(tx, {
       organisationId,
       sourceType,
       sourceId,
@@ -190,87 +363,21 @@ const consumeInventoryItem = async (
       idempotencyKey,
       inventoryItemId,
       quantity,
-      status: "APPLIED",
-      metadata,
-    });
-  } else if (action !== "CONSUME") {
-    return createInventoryConsumptionEvent(tx, {
-      organisationId,
-      sourceType,
-      sourceId,
-      sourceLineKey,
-      action,
-      idempotencyKey,
-      inventoryItemId,
-      quantity,
-      status: "SKIPPED",
       metadata,
     });
   }
 
-  const item = await tx.inventoryItem.findFirst({
-    where: { id: inventoryItemId, organisationId },
-  });
-  if (!item) {
-    throw new InventoryConsumptionServiceError("Inventory item not found", 404);
-  }
-  if ((item.onHand ?? 0) < quantity) {
-    throw new InventoryConsumptionServiceError("Insufficient stock", 400);
-  }
-
-  let remaining = quantity;
-  const batches = await tx.inventoryBatch.findMany({
-    where: {
-      itemId: inventoryItemId,
-      organisationId,
-      ...(batchId ? { id: batchId } : {}),
-    },
-    orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
-  });
-
-  for (const batch of batches) {
-    if (remaining <= 0) break;
-    const available = batch.quantity ?? 0;
-    if (available <= 0) continue;
-    const consume = Math.min(available, remaining);
-    remaining -= consume;
-
-    await tx.inventoryBatch.update({
-      where: { id: batch.id },
-      data: { quantity: available - consume },
-    });
-
-    await tx.inventoryStockMovement.create({
-      data: {
-        itemId: inventoryItemId,
-        batchId: batch.id,
-        change: -consume,
-        reason: movementReason ?? "MANUAL_ADJUSTMENT",
-        referenceId: sourceId,
-      },
-    });
-  }
-
-  if (remaining > 0) {
-    throw new InventoryConsumptionServiceError(
-      "Failed to consume full requested quantity",
-      500,
-    );
-  }
-
-  await updateInventoryItemTotals(tx, organisationId, inventoryItemId);
-
-  return createInventoryConsumptionEvent(tx, {
+  return applyInventoryConsumption(tx, {
     organisationId,
     sourceType,
     sourceId,
     sourceLineKey,
-    action,
     idempotencyKey,
     inventoryItemId,
     quantity,
-    status: "APPLIED",
     metadata,
+    batchId,
+    movementReason,
   });
 };
 

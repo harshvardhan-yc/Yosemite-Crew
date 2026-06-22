@@ -9,6 +9,7 @@ import {
   type PrescriptionDocumentData,
   type ResolvedTemplatePdfInput,
   type SoapNoteDocumentData,
+  type VitalRecordDocumentData,
 } from "@yosemite-crew/lib";
 import { prisma } from "src/config/prisma";
 import {
@@ -606,6 +607,92 @@ const normalizePrescriptionItems = (
   });
 };
 
+const normalizeVitalMeasurements = (
+  value: unknown,
+): VitalRecordDocumentData["measurements"] => {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => {
+      if (isRecord(item)) {
+        const label =
+          readFirstString(item, ["label", "name", "title", "key"]) ??
+          `Measurement ${index + 1}`;
+        const measurementValue = readFirstString(item, ["value", "reading"]);
+        const unit = readFirstString(item, ["unit", "units"]);
+        const referenceRange = readFirstString(item, [
+          "referenceRange",
+          "reference",
+          "range",
+        ]);
+
+        if (
+          measurementValue !== undefined ||
+          unit !== undefined ||
+          referenceRange !== undefined
+        ) {
+          return [
+            {
+              label,
+              value: measurementValue ?? stringifyValue(item),
+              unit,
+              referenceRange,
+            },
+          ];
+        }
+      }
+
+      return [
+        {
+          label: `Measurement ${index + 1}`,
+          value: readString(item) ?? stringifyValue(item),
+        },
+      ];
+    });
+  }
+
+  if (isRecord(value)) {
+    if (
+      readFirstString(value, ["label", "name", "title", "key"]) !== undefined ||
+      readFirstString(value, ["value", "reading"]) !== undefined ||
+      readFirstString(value, ["unit", "units"]) !== undefined ||
+      readFirstString(value, ["referenceRange", "reference", "range"]) !==
+        undefined
+    ) {
+      return [
+        {
+          label:
+            readFirstString(value, ["label", "name", "title", "key"]) ??
+            "Measurement",
+          value:
+            readFirstString(value, ["value", "reading"]) ??
+            stringifyValue(value),
+          unit: readFirstString(value, ["unit", "units"]),
+          referenceRange: readFirstString(value, [
+            "referenceRange",
+            "reference",
+            "range",
+          ]),
+        },
+      ];
+    }
+
+    return Object.entries(value).map(([key, item]) => ({
+      label: humanizeLabel(key),
+      value: readString(item) ?? stringifyValue(item),
+    }));
+  }
+
+  return [
+    {
+      label: "Measurement 1",
+      value: readString(value) ?? stringifyValue(value),
+    },
+  ];
+};
+
 type AppointmentClinicalHeader = {
   leadName?: string;
   patientName?: string;
@@ -767,6 +854,11 @@ const buildTemplateFreePrescriptionPdfInput = async (
   const header = await loadAppointmentClinicalHeader(
     record.artifact.appointmentId,
   );
+  const notes =
+    readString(record.data.notes) ??
+    readString(metadata.recordNotes) ??
+    readString(metadata.notes) ??
+    "";
 
   return {
     documentType: "PRESCRIPTION",
@@ -821,7 +913,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
       items: normalizePrescriptionItems(
         record.data.items ?? record.data.medications,
       ),
-      notes: (record.data.notes ?? metadata.notes ?? "") as unknown as string,
+      notes,
       printedBy:
         readFirstString(metadata, [
           "printedBy",
@@ -937,6 +1029,91 @@ const buildTemplateFreeDischargeSummaryPdfInput = async (
   };
 };
 
+const buildTemplateFreeVitalRecordPdfInput = async (
+  input: RenderedDocumentPdfSource,
+  record: ClinicalArtifactDocumentSource,
+  organization: OrganizationBranding,
+): Promise<{
+  documentType: ClinicalDocumentType;
+  organization: OrganizationBranding;
+  data: VitalRecordDocumentData;
+}> => {
+  const metadata = readMetadata(record.data.metadata);
+  const header = await loadAppointmentClinicalHeader(
+    record.artifact.appointmentId,
+  );
+  const notes =
+    readString(record.data.notes) ??
+    readString(metadata.recordNotes) ??
+    readString(metadata.notes) ??
+    "";
+
+  return {
+    documentType: "VITAL_RECORD",
+    organization,
+    data: {
+      title: input.title,
+      date: record.artifact.updatedAt,
+      appointmentId:
+        record.artifact.appointmentId ??
+        readFirstString(metadata, ["appointmentId"]) ??
+        "—",
+      recordedBy:
+        header.leadName ??
+        readFirstString(metadata, [
+          "recordedBy",
+          "recordedByName",
+          "doctorName",
+          "providerName",
+          "doctor",
+          "authorName",
+        ]) ??
+        readString(record.artifact.authorId) ??
+        "—",
+      patientName:
+        header.patientName ??
+        readFirstString(metadata, ["patientName", "patient"]) ??
+        "—",
+      speciesBreed:
+        header.speciesBreed ??
+        readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
+        "—",
+      ageSex:
+        header.ageSex ??
+        readFirstString(metadata, ["ageSex", "age", "sex"]) ??
+        "—",
+      clientName:
+        header.clientName ??
+        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
+        "—",
+      clientId:
+        header.clientId ??
+        readFirstString(metadata, ["clientId", "ownerId"]) ??
+        "—",
+      contact:
+        header.clientContact ??
+        readFirstString(metadata, ["contact", "phone", "phoneNo", "email"]) ??
+        "—",
+      measurements: normalizeVitalMeasurements(
+        record.data.vitals ?? metadata.vitals ?? metadata.vitalRows,
+      ),
+      notes,
+      metadata:
+        record.data.metadata !== undefined ? record.data.metadata : metadata,
+      printedBy:
+        readFirstString(metadata, [
+          "printedBy",
+          "printedByName",
+          "authorName",
+        ]) ?? readString(record.artifact.authorId),
+      signature: {
+        status: "PENDING",
+        label: "Signature",
+      },
+    },
+  };
+};
+
 const renderTemplateFreeClinicalArtifactPdf = async (
   input: RenderedDocumentPdfSource,
   record: ClinicalArtifactDocumentSource,
@@ -963,6 +1140,10 @@ const renderTemplateFreeClinicalArtifactPdf = async (
           organization,
         ),
       );
+    case "VITAL_RECORD":
+      return generateClinicalPdfWithMetadata(
+        await buildTemplateFreeVitalRecordPdfInput(input, record, organization),
+      );
     default:
       return undefined;
   }
@@ -976,13 +1157,25 @@ const buildClinicalArtifactResolvedTemplate = async (
     return undefined;
   }
 
-  const templateVersion =
-    record.artifact.templateVersion === null
-      ? await loadLatestTemplateVersionOrThrow(record.artifact.templateId)
-      : await loadTemplateVersionOrThrow(
-          record.artifact.templateId,
-          record.artifact.templateVersion,
-        );
+  let templateVersion;
+  try {
+    templateVersion =
+      record.artifact.templateVersion === null
+        ? await loadLatestTemplateVersionOrThrow(record.artifact.templateId)
+        : await loadTemplateVersionOrThrow(
+            record.artifact.templateId,
+            record.artifact.templateVersion,
+          );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "Template version not found"
+    ) {
+      return undefined;
+    }
+
+    throw error;
+  }
 
   return {
     templateId: record.artifact.templateId,
@@ -1252,7 +1445,12 @@ export const renderRenderedDocumentPdfWithMetadata = async (
         input.source.organisationId,
       );
 
-      if (record.artifact.templateId === null) {
+      const template = await buildClinicalArtifactResolvedTemplate(
+        input,
+        record,
+      );
+
+      if (!template) {
         const templateFreeRender = await renderTemplateFreeClinicalArtifactPdf(
           input,
           record,
@@ -1262,19 +1460,13 @@ export const renderRenderedDocumentPdfWithMetadata = async (
         if (templateFreeRender) {
           return templateFreeRender;
         }
+
+        throw new Error("Clinical artifact template version not found");
       }
 
-      const template = await buildClinicalArtifactResolvedTemplate(
-        input,
-        record,
-      );
       const appointmentHeader = await loadAppointmentClinicalHeader(
         record.artifact.appointmentId,
       );
-
-      if (!template) {
-        throw new Error("Clinical artifact template version not found");
-      }
 
       return generateResolvedTemplatePdfWithMetadata(
         buildResolvedTemplatePdfInput(input, organization, template, {

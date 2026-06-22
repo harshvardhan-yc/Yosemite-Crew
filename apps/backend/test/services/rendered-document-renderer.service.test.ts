@@ -501,6 +501,90 @@ describe("rendered-document-renderer service", () => {
     );
   });
 
+  it("renders a vital record document without template metadata through the fallback path", async () => {
+    mockedPrisma.organization.findUnique.mockResolvedValueOnce({
+      name: "MediCare Hospital",
+      imageUrl: null,
+      phoneNo: "+91 99999 00000",
+      website: "https://medicare.example",
+      address: null,
+    });
+    mockedPrisma.vitalRecord.findUnique.mockResolvedValueOnce({
+      id: "vital-plain-1",
+      measuredAt: new Date("2026-06-14T00:00:00.000Z"),
+      recordedBy: null,
+      vitals: [
+        { label: "Heart rate", value: 88, unit: "bpm" },
+        { label: "Temperature", value: 38.7, unit: "C" },
+      ],
+      notes: "Patient stable",
+      metadata: { author: "vet-1", ward: "ICU" },
+      artifact: {
+        id: "artifact-plain-3",
+        organisationId: "org-1",
+        appointmentId: "appt-1",
+        caseId: null,
+        encounterId: null,
+        kind: "VITAL_RECORD",
+        status: "DRAFT",
+        templateId: "template-3",
+        templateVersion: null,
+        templateVersionId: null,
+        authorId: "author-1",
+        signedBy: null,
+        signedAt: null,
+        summary: "Vital summary",
+        createdAt: new Date("2026-06-14T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-14T00:00:00.000Z"),
+      },
+    });
+    mockedPrisma.templateVersion.findFirst.mockResolvedValueOnce(null);
+
+    await renderRenderedDocumentPdf({
+      title: "Vital Record",
+      source: {
+        sourceKind: "CLINICAL_ARTIFACT",
+        sourceId: "vital-plain-1",
+        organisationId: "org-1",
+        templateKind: "VITAL_RECORD",
+      },
+    });
+
+    expect(mockedPrisma.templateVersion.findUnique).not.toHaveBeenCalled();
+    expect(mockedPrisma.templateVersion.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { templateId: "template-3" },
+        orderBy: { version: "desc" },
+      }),
+    );
+    expect(mockedGenerateClinicalPdfWithMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentType: "VITAL_RECORD",
+        data: expect.objectContaining({
+          title: "Vital Record",
+          recordedBy: "author-1",
+          measurements: [
+            {
+              label: "Heart rate",
+              value: "88",
+              unit: "bpm",
+            },
+            {
+              label: "Temperature",
+              value: "38.7",
+              unit: "C",
+            },
+          ],
+          notes: "Patient stable",
+          metadata: { author: "vet-1", ward: "ICU" },
+          signature: expect.objectContaining({
+            status: "PENDING",
+          }),
+        }),
+      }),
+    );
+  });
+
   it("renders a clinical artifact without loading template metadata when templateId is missing", async () => {
     mockedPrisma.organization.findUnique.mockResolvedValueOnce({
       name: "MediCare Hospital",

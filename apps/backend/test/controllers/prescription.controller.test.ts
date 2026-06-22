@@ -13,6 +13,7 @@ import { clinicalArtifactFhirMapper } from "../../src/services/fhir-clinical-art
 jest.mock("../../src/services/clinical-artifact.service", () => ({
   ClinicalArtifactService: {
     getPrescription: jest.fn(),
+    finalizePrescription: jest.fn(),
   },
   ClinicalArtifactServiceError: class ClinicalArtifactServiceError extends Error {
     statusCode: number;
@@ -150,6 +151,26 @@ describe("PrescriptionController", () => {
       expect.objectContaining({
         action: "VOID_DISPENSE",
         prescriptionId: "rx-1",
+      }),
+    );
+  });
+
+  it("finalizes a prescription", async () => {
+    mockedClinicalService.finalizePrescription.mockResolvedValueOnce({
+      artifact: { id: "artifact-1" },
+      prescription: { id: "rx-1", medications: [{ quantity: 1 }] },
+    } as never);
+
+    await PrescriptionController.finalize(req as Request, res as Response);
+
+    expect(mockedClinicalService.finalizePrescription).toHaveBeenCalledWith(
+      "rx-1",
+      "org-1",
+    );
+    expect(statusMock).toHaveBeenCalledWith(200);
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: "MedicationRequest",
       }),
     );
   });

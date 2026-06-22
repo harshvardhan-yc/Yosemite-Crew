@@ -529,6 +529,47 @@ export const buildClinicalTemplateSchemaSnapshot = (
   })),
 });
 
+export const buildDefaultSoapNoteSchemaSnapshot =
+  (): ClinicalTemplateSchemaSnapshot => ({
+    sections: [
+      {
+        id: "soap",
+        title: "SOAP",
+        order: 1,
+        fields: [
+          {
+            key: "subjective",
+            label: "S",
+            type: "richText",
+            required: true,
+            order: 1,
+          },
+          {
+            key: "objective",
+            label: "O",
+            type: "richText",
+            required: true,
+            order: 2,
+          },
+          {
+            key: "assessment",
+            label: "A",
+            type: "richText",
+            required: true,
+            order: 3,
+          },
+          {
+            key: "plan",
+            label: "P",
+            type: "richText",
+            required: true,
+            order: 4,
+          },
+        ],
+      },
+    ],
+  });
+
 export const validateClinicalTemplateBlueprint = (
   kind: TemplateKind,
   snapshot: unknown,

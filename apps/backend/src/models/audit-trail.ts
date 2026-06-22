@@ -5,6 +5,7 @@ export type AuditActorType = "PMS_USER" | "PARENT" | "SYSTEM";
 export type AuditEntityType =
   | "PATIENT_ORGANISATION"
   | "APPOINTMENT"
+  | "ENCOUNTER"
   | "INVOICE"
   | "DOCUMENT"
   | "FORM"
@@ -25,6 +26,8 @@ export type AuditEventType =
   | "APPOINTMENT_CANCELLED"
   | "APPOINTMENT_RESCHEDULED"
   | "APPOINTMENT_CHECKED_IN"
+  | "ENCOUNTER_DISCHARGE_OVERRIDDEN"
+  | "ENCOUNTER_DISCHARGED"
   | "INVOICE_CREATED"
   | "INVOICE_UPDATED"
   | "INVOICE_PAID"
@@ -77,6 +80,7 @@ const AuditTrailSchema = new Schema(
       enum: [
         "PATIENT_ORGANISATION",
         "APPOINTMENT",
+        "ENCOUNTER",
         "INVOICE",
         "DOCUMENT",
         "FORM",
