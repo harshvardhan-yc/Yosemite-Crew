@@ -454,4 +454,54 @@ describe('workspaceAggregateService', () => {
     // The PRESCRIPTION-kind treatment item is not also rendered as a service row.
     expect(patch.services).toBeUndefined();
   });
+
+  it('reads the nested { artifact, prescription } envelope and per-line items', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      prescriptions: [
+        {
+          artifact: {
+            id: 'artifact-1',
+            kind: 'PRESCRIPTION',
+            status: 'COMPLETED',
+            summary: 'Carprofen 75 mg Tablets',
+          },
+          prescription: {
+            id: 'rx-1',
+            items: [
+              {
+                id: 'line-1',
+                medication: '',
+                dosage: '75mg',
+                route: 'PO',
+                frequency: 'BID',
+              },
+            ],
+            medications: [{ medication: '', inventoryItemId: 'inv-1' }],
+          },
+        },
+      ],
+      // Same backend id as the artifact — must not produce a duplicate row.
+      treatmentItems: [
+        {
+          id: 'rx-1',
+          prescriptionId: 'rx-1',
+          servicePackageKind: 'PRESCRIPTION',
+          name: 'Treatment items',
+          quantity: 1,
+        },
+      ],
+    });
+
+    expect(patch.prescription).toEqual([
+      expect.objectContaining({
+        id: 'line-1',
+        // Per-line medication is blank, so the artifact summary is the label.
+        medicineName: 'Carprofen 75 mg Tablets',
+        dosage: '75mg',
+        route: 'PO',
+        frequency: 'BID',
+      }),
+    ]);
+    expect(patch.services).toBeUndefined();
+  });
 });

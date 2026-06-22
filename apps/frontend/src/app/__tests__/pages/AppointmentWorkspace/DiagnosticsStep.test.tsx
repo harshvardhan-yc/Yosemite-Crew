@@ -427,6 +427,18 @@ describe('DiagnosticsStep (workspace, real IDEXX backend)', () => {
     expect(screen.getByTitle('IDEXX order UI')).toBeInTheDocument();
   });
 
+  it('shows the IDEXX loader when the follow-up iframe modal opens', () => {
+    renderStep({
+      showOrderIframe: true,
+      iframeOrderUiUrl: 'https://idexx.test/follow-up',
+      iframeOpenSource: 'followup',
+    });
+
+    expect(screen.getByText('IDEXX follow-up ordering')).toBeInTheDocument();
+    expect(screen.getByTestId('idexx-order-loader')).toBeInTheDocument();
+    expect(screen.getByText('Loading IDEXX')).toBeInTheDocument();
+  });
+
   it('renders the PDF preview overlay when showPdfPreview is set', () => {
     renderStep({
       showPdfPreview: true,

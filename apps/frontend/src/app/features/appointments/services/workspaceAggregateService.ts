@@ -220,38 +220,96 @@ const medicationTreatmentItemToPrescription = (
 // Prescriptions come from two server sources: explicitly stored prescription artifacts
 // (`bootstrap.prescriptions`) and medication-kind treatment items the backend expands from
 // a booked package. Merge both, de-duplicating by id.
+// A single `bootstrap.prescriptions` entry is the server's
+// `{ artifact, prescription }` envelope: `artifact` carries the clinical record
+// (id/summary/status) and `prescription` carries the orderable rows
+// (`items[]`). Older/flat payloads put the fields at the top level. Read both,
+// expanding each prescription line into its own PrescriptionItem so dose/route/
+// frequency render per medication.
+const fulfillmentFrom = (value: unknown): PrescriptionItem['fulfillment'] =>
+  asString(value) === 'PRESCRIPTION_ONLY' ? 'PRESCRIPTION_ONLY' : 'IN_HOUSE';
+
+const prescriptionLinesFromEnvelope = (item: Record<string, unknown>): PrescriptionItem[] => {
+  const artifact = isRecord(item.artifact) ? item.artifact : item;
+  const prescription = isRecord(item.prescription) ? item.prescription : item;
+  const productSnapshot = isRecord(item.productSnapshot) ? item.productSnapshot : {};
+  const priceSnapshot = isRecord(item.priceSnapshot) ? item.priceSnapshot : {};
+  // Prefer the artifact `summary` as the human medication label — the per-line
+  // `medication` field is often blank when the order came from an inventory pick.
+  const summaryName = asString(artifact.summary);
+  const fallbackName =
+    summaryName ??
+    asString(item.medicineName) ??
+    asString(item.name) ??
+    asString(productSnapshot.name) ??
+    'Medication';
+  const baseId =
+    asString(prescription.id) ?? asString(artifact.id) ?? asString(item.id) ?? 'prescription';
+  const fulfillment = fulfillmentFrom(item.fulfillment ?? prescription.fulfillment);
+  const priceCents =
+    asNumber(item.priceCents) ?? Math.round((asNumber(priceSnapshot.unitPrice) ?? 0) * 100);
+
+  const lines = asArray(prescription.items);
+  if (lines.length === 0) {
+    return [
+      {
+        id: baseId,
+        medicineName: fallbackName,
+        dosage: asString(item.dosage),
+        route: asString(item.route),
+        frequency: asString(item.frequency),
+        durationDays: asString(item.durationDays) ?? asString(item.duration),
+        refill: asString(item.refill),
+        instructions: asString(item.instructions) ?? asString(productSnapshot.instructions),
+        fulfillment,
+        priceCents,
+        inventoryItemId: asString(item.inventoryItemId) ?? asString(item.productId),
+      },
+    ];
+  }
+  return lines.map((line, lineIndex) => ({
+    id: asString(line.id) ?? `${baseId}-${lineIndex + 1}`,
+    medicineName: asString(line.medication) ?? fallbackName,
+    dosage: asString(line.dosage),
+    route: asString(line.route),
+    frequency: asString(line.frequency),
+    durationDays: asString(line.durationDays) ?? asString(line.duration),
+    refill: asString(line.refill),
+    instructions: asString(line.instructions) ?? asString(productSnapshot.instructions),
+    fulfillment,
+    priceCents,
+    inventoryItemId:
+      asString(line.inventoryItemId) ?? asString(item.inventoryItemId) ?? asString(item.productId),
+  }));
+};
+
+// The id a prescription envelope is sourced from (artifact/prescription id),
+// used to suppress the medication-kind treatment item the backend expands from
+// the same record — its per-line ids differ, so we match on the source id.
+const prescriptionSourceId = (item: Record<string, unknown>): string | undefined => {
+  const artifact = isRecord(item.artifact) ? item.artifact : item;
+  const prescription = isRecord(item.prescription) ? item.prescription : item;
+  return asString(prescription.id) ?? asString(artifact.id) ?? asString(item.id);
+};
+
 const normalizePrescriptions = (
   prescriptions: Record<string, unknown>[],
   treatmentItems: Record<string, unknown>[]
 ): PrescriptionItem[] => {
   const byId = new Map<string, PrescriptionItem>();
-  prescriptions.forEach((item, index) => {
-    const productSnapshot = isRecord(item.productSnapshot) ? item.productSnapshot : {};
-    const priceSnapshot = isRecord(item.priceSnapshot) ? item.priceSnapshot : {};
-    const prescription: PrescriptionItem = {
-      id: asString(item.id) ?? `prescription-artifact-${index + 1}`,
-      medicineName:
-        asString(item.medicineName) ??
-        asString(item.name) ??
-        asString(productSnapshot.name) ??
-        'Medication',
-      dosage: asString(item.dosage),
-      route: asString(item.route),
-      frequency: asString(item.frequency),
-      durationDays: asString(item.durationDays),
-      refill: asString(item.refill),
-      instructions: asString(item.instructions) ?? asString(productSnapshot.instructions),
-      fulfillment:
-        asString(item.fulfillment) === 'PRESCRIPTION_ONLY' ? 'PRESCRIPTION_ONLY' : 'IN_HOUSE',
-      priceCents:
-        asNumber(item.priceCents) ?? Math.round((asNumber(priceSnapshot.unitPrice) ?? 0) * 100),
-      inventoryItemId: asString(item.inventoryItemId) ?? asString(item.productId),
-    };
-    byId.set(prescription.id, prescription);
+  const sourceIds = new Set<string>();
+  prescriptions.forEach((item) => {
+    const sourceId = prescriptionSourceId(item);
+    if (sourceId) sourceIds.add(sourceId);
+    prescriptionLinesFromEnvelope(item).forEach((line) => byId.set(line.id, line));
   });
   treatmentItems.filter(isMedicationTreatmentItem).forEach((item, index) => {
     const prescription = medicationTreatmentItemToPrescription(item, index);
-    if (!byId.has(prescription.id)) byId.set(prescription.id, prescription);
+    // The medication-kind treatment item and its prescription artifact share the
+    // same backend id, so skip it when the artifact already produced lines.
+    const linkedId = asString(item.prescriptionId) ?? asString(item.id) ?? prescription.id;
+    if (byId.has(prescription.id) || sourceIds.has(linkedId)) return;
+    byId.set(prescription.id, prescription);
   });
   return Array.from(byId.values());
 };

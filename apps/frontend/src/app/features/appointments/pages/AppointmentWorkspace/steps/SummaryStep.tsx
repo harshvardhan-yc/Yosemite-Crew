@@ -370,6 +370,13 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   // sign was started as the signal to refetch (the Documenso webhook has run
   // server-side by then).
   const signingInitiatedRef = useRef(false);
+  const resolvedDischargeEncounterRef = useRef<string | null>(null);
+  const dischargeResolveKey = encounterId ?? appointmentId;
+  const companionId = appointment?.patient?.id;
+  const companionSpecies = appointment?.patient?.species;
+  const dischargeSummary = encounter.dischargeSummary;
+  const encounterMode = encounter.mode;
+  const encounterServices = encounter.services;
   useEffect(() => {
     if (signingOverlayOpen || !signingInitiatedRef.current) return;
     signingInitiatedRef.current = false;
@@ -378,19 +385,21 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
 
   useEffect(() => {
     if (!organisationId || dischargeSaved) return;
-    if (!isRichTextEmpty(encounter.dischargeSummary) || dischargeTemplate) return;
+    if (resolvedDischargeEncounterRef.current === dischargeResolveKey) return;
+    if (!isRichTextEmpty(dischargeSummary) || dischargeTemplate) return;
+    resolvedDischargeEncounterRef.current = dischargeResolveKey;
     let cancelled = false;
-    const serviceLine = encounter.services?.find((item) => item.kind === 'SERVICE');
-    const packageLine = encounter.services?.find((item) => item.kind === 'PACKAGE');
+    const serviceLine = encounterServices?.find((item) => item.kind === 'SERVICE');
+    const packageLine = encounterServices?.find((item) => item.kind === 'PACKAGE');
     resolveDischargeTemplate({
       organisationId,
       appointmentId,
       encounterId,
-      companionId: appointment?.patient?.id,
-      species: appointment?.patient?.species,
+      companionId,
+      species: companionSpecies,
       serviceId: serviceLine?.refId,
       packageId: packageLine?.refId,
-      mode: encounter.mode,
+      mode: encounterMode,
     })
       .then((resolved) => {
         if (cancelled || !resolved) return;
@@ -408,9 +417,20 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
     return () => {
       cancelled = true;
     };
-    // Resolve once per encounter; guarded above against overwriting content.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organisationId, encounterId, appointmentId, dischargeSaved]);
+  }, [
+    appointmentId,
+    companionId,
+    companionSpecies,
+    dischargeResolveKey,
+    dischargeSaved,
+    dischargeSummary,
+    dischargeTemplate,
+    encounterId,
+    encounterMode,
+    encounterServices,
+    organisationId,
+    setDischargeSummary,
+  ]);
 
   const handleTemplateSelect = (template: TemplateLike) => {
     setDischargeSummary(appointmentId, templateToDischargeHtml(template));

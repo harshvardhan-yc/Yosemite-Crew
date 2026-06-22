@@ -8,7 +8,6 @@ import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 const FORMS_PAGE_SKELETON = <PageSkeleton variant="list" />;
 import { Primary } from '@/app/ui/primitives/Buttons';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
-import TabToggle from '@/app/ui/primitives/TabToggle/TabToggle';
 import { IoInformationCircleOutline } from 'react-icons/io5';
 import { FormsProps } from '@/app/features/forms/types/forms';
 import FormsFilters from '@/app/ui/filters/FormsFilters';
@@ -28,16 +27,6 @@ import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
 
 const AddForm = dynamic(() => import('@/app/features/forms/pages/Forms/Sections/AddForm'));
 const FormInfo = dynamic(() => import('@/app/features/forms/pages/Forms/Sections/FormInfo'));
-const FormAssignmentsSection = dynamic(
-  () => import('@/app/features/forms/pages/Forms/Sections/FormAssignmentsSection')
-);
-
-type FormsTab = 'templates' | 'assigned';
-
-const FORMS_TABS: { key: FormsTab; label: string }[] = [
-  { key: 'templates', label: 'Templates' },
-  { key: 'assigned', label: 'Assigned forms' },
-];
 
 const Forms = () => {
   const permissions = usePermissions();
@@ -52,7 +41,6 @@ const Forms = () => {
   const [viewPopup, setViewPopup] = useState(false);
   const [editingForm, setEditingForm] = useState<FormsProps | null>(null);
   const [draftForm, setDraftForm] = useState<FormsProps | null>(null);
-  const [activeTab, setActiveTab] = useState<FormsTab>('templates');
   const { plannerSectionRef } = usePlannerAutoLock({ activeView: 'list', topOffset: 72 });
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const specialities = useRevampCatalogStore((s) => s.specialities);
@@ -223,22 +211,16 @@ const Forms = () => {
         <div className="flex flex-col gap-1">
           <h1 className="text-text-primary text-heading-2 flex items-center gap-2">
             <span>
-              {activeTab === 'templates' ? 'Templates' : 'Assigned forms'}
-              {activeTab === 'templates' ? (
-                <span className="text-body-2 text-text-tertiary">{` (${list.length})`}</span>
-              ) : null}
+              Templates
+              <span className="text-body-2 text-text-tertiary">{` (${list.length})`}</span>
             </span>
             <GlassTooltip
-              content={
-                activeTab === 'templates'
-                  ? 'Build and reuse templates, link them to services, and use custom available templates.'
-                  : 'Forms assigned to pet parents, with their pending, signed, expired, or cancelled status.'
-              }
+              content="Build and reuse templates, link them to services, and use custom available templates."
               side="bottom"
             >
               <button
                 type="button"
-                aria-label={activeTab === 'templates' ? 'Templates info' : 'Assigned forms info'}
+                aria-label="Templates info"
                 className="inline-flex size-5 shrink-0 items-center justify-center leading-none translate-y-px text-text-secondary hover:text-text-primary transition-colors"
               >
                 <IoInformationCircleOutline size={20} />
@@ -248,38 +230,26 @@ const Forms = () => {
         </div>
       </div>
 
-      <TabToggle
-        tabs={FORMS_TABS}
-        activeKey={activeTab}
-        onChange={(key) => setActiveTab(key as FormsTab)}
-      />
-
       <MobileSearchBar placeholder="Search templates" />
       <PermissionGate allOf={[PERMISSIONS.FORMS_VIEW_ANY]} fallback={<Fallback />}>
-        {activeTab === 'templates' ? (
-          <div className={wrapperClassName}>
-            <FormsFilters
-              list={list}
-              setFilteredList={setFilteredList}
-              searchQuery={headerSearchQuery}
-              categoryAction={
-                canEditForms ? <Primary href="#" text="Add" onClick={openAddForm} /> : null
-              }
+        <div className={wrapperClassName}>
+          <FormsFilters
+            list={list}
+            setFilteredList={setFilteredList}
+            searchQuery={headerSearchQuery}
+            categoryAction={
+              canEditForms ? <Primary href="#" text="Add" onClick={openAddForm} /> : null
+            }
+          />
+          <div ref={plannerSectionRef} className={plannerSectionClassName}>
+            <FormsTable
+              filteredList={filteredList}
+              setActiveForm={handleSelectForm}
+              setViewPopup={setViewPopup}
+              loading={loading}
             />
-            <div ref={plannerSectionRef} className={plannerSectionClassName}>
-              <FormsTable
-                filteredList={filteredList}
-                setActiveForm={handleSelectForm}
-                setViewPopup={setViewPopup}
-                loading={loading}
-              />
-            </div>
           </div>
-        ) : (
-          <div className={wrapperClassName}>
-            <FormAssignmentsSection organisationId={primaryOrgId} />
-          </div>
-        )}
+        </div>
 
         <AddForm
           key={editingForm?._id ? `edit-${editingForm._id}` : 'add-form'}

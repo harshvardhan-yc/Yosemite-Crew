@@ -2,12 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import WorkspaceSearchResultRow from '@/app/features/appointments/pages/AppointmentWorkspace/components/WorkspaceSearchResultRow';
 import { IoArrowForward } from 'react-icons/io5';
-import { LuClipboardList, LuPrinter } from 'react-icons/lu';
+import { LuClipboardList } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import RichTextEditor from '@/app/ui/primitives/RichTextEditor/RichTextEditor';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
-import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
 import SoapNotesList, {
   type SoapNoteListItem,
 } from '@/app/features/appointments/pages/AppointmentWorkspace/components/SoapNotesList';
@@ -22,10 +21,7 @@ import {
   resolveSectionLock,
 } from '@/app/lib/appointmentWorkspace';
 import { isRichTextEmpty } from '@/app/lib/richText';
-import {
-  getRenderedDocument,
-  saveSoapNote,
-} from '@/app/features/appointments/services/workspaceClinicalService';
+import { saveSoapNote } from '@/app/features/appointments/services/workspaceClinicalService';
 
 type SoapStepProps = {
   appointmentId: string;
@@ -62,21 +58,12 @@ const hasSoapContent = (note: SoapNoteEntry) =>
 
 const SoapSignActions = ({
   disabled,
-  onPrintToSign,
   onSaveAndNext,
 }: {
   disabled: boolean;
-  onPrintToSign: () => void;
   onSaveAndNext: () => void;
 }) => (
   <div className="flex flex-wrap items-center justify-end gap-3">
-    <Secondary
-      text="Print to Sign"
-      onClick={onPrintToSign}
-      isDisabled={disabled}
-      icon={<LuPrinter aria-hidden="true" />}
-      iconPosition="right"
-    />
     <Primary
       text="Save & Next"
       onClick={onSaveAndNext}
@@ -135,10 +122,6 @@ const SoapStep = ({
   const signSoap = useAppointmentWorkspaceStore((s) => s.signSoap);
   const [templateQuery, setTemplateQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [isPreparingPdf, setIsPreparingPdf] = useState(false);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
-  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('SOAP note');
-  const [pdfError, setPdfError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [persistedDraftId, setPersistedDraftId] = useState<string | undefined>(undefined);
 
@@ -189,6 +172,10 @@ const SoapStep = ({
 
   const handleSaveAndNext = async () => {
     if (isSaving) return;
+    if (!hasSoapContent(note)) {
+      onSaveAndNext();
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
     let persistedId: string | undefined;
@@ -225,75 +212,6 @@ const SoapStep = ({
     signSoap(appointmentId, encounter.leadName ?? 'Clinician', false, persistedId);
     setIsSaving(false);
     onSaveAndNext();
-  };
-
-  const resolveSoapPdfUrl = async (soapNoteId: string) => {
-    if (!organisationId) throw new Error('Organisation missing for SOAP document lookup.');
-    const rendered = await getRenderedDocument(organisationId, soapNoteId);
-    const pdfUrl = rendered.pdfUrl?.trim();
-    if (pdfUrl) return pdfUrl;
-    throw new Error('SOAP note PDF is not available yet.');
-  };
-
-  const openSoapPdfPreview = async (soapNoteId: string, title: string) => {
-    setPdfError(null);
-    setIsPreparingPdf(true);
-    try {
-      const pdfUrl = await resolveSoapPdfUrl(soapNoteId);
-      setPdfPreviewTitle(title);
-      setPdfPreviewUrl(pdfUrl);
-    } catch (error) {
-      console.error('Unable to open SOAP PDF:', error);
-      setPdfError(
-        error instanceof Error
-          ? `${error.message} Using browser print.`
-          : 'Unable to open SOAP PDF.'
-      );
-      globalThis.window.print();
-    } finally {
-      setIsPreparingPdf(false);
-    }
-  };
-
-  const handlePrintToSign = async () => {
-    if (isSaving || isPreparingPdf) return;
-    let soapNoteId = isPersistedSoapId(note.id) ? note.id : undefined;
-    if (!soapNoteId && persistedDraftId) {
-      soapNoteId = persistedDraftId;
-    }
-    if (!soapNoteId && organisationId && hasSoapContent(note)) {
-      setIsPreparingPdf(true);
-      try {
-        const saved = await saveSoapNote(
-          {
-            organisationId,
-            appointmentId,
-            encounterId,
-            authorId,
-            authorName,
-            templateId: note.templateId,
-          },
-          note
-        );
-        soapNoteId = (saved as { id?: string } | undefined)?.id;
-        if (soapNoteId) {
-          setPersistedDraftId(soapNoteId);
-          upsertSoap(appointmentId, { id: soapNoteId });
-        }
-      } catch (error) {
-        console.error('Unable to persist SOAP note before printing:', error);
-      } finally {
-        setIsPreparingPdf(false);
-      }
-    }
-
-    if (soapNoteId) {
-      await openSoapPdfPreview(soapNoteId, 'SOAP note - print to sign');
-      return;
-    }
-
-    setPdfError('SOAP note PDF is not available yet. Using browser print.');
-    globalThis.window.print();
   };
 
   return (
@@ -414,11 +332,7 @@ const SoapStep = ({
             </p>
           )}
           <div className="flex justify-end">
-            <SoapSignActions
-              disabled={isSaving || isPreparingPdf}
-              onPrintToSign={() => void handlePrintToSign()}
-              onSaveAndNext={handleSaveAndNext}
-            />
+            <SoapSignActions disabled={isSaving} onSaveAndNext={handleSaveAndNext} />
           </div>
         </>
       )}
@@ -429,17 +343,6 @@ const SoapStep = ({
       )}
 
       <SoapNotesList items={pastNotes} />
-      {pdfError && (
-        <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">
-          {pdfError}
-        </p>
-      )}
-      <PdfPreviewOverlay
-        open={Boolean(pdfPreviewUrl)}
-        title={pdfPreviewTitle}
-        pdfUrl={pdfPreviewUrl}
-        onClose={() => setPdfPreviewUrl(null)}
-      />
     </div>
   );
 };

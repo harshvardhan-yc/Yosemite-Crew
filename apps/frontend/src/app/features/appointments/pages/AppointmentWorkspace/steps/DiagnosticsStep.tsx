@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import type { Appointment } from '@yosemite-crew/types';
@@ -685,6 +685,9 @@ const OrderIframeOverlay = ({ s }: { s: UseLabTestsReturn }) => {
   const url = s.iframeOrderUiUrl || resolveOrderUiUrl(s.latestOrder);
   const safeUrl = getSafeIdexxIframeUrl(url);
   const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (s.showOrderIframe) setLoaded(false);
+  }, [safeUrl, s.iframeOpenSource, s.showOrderIframe]);
   if (!s.showOrderIframe || !safeUrl || typeof document === 'undefined') return null;
   const title = s.iframeOpenSource === 'followup' ? 'IDEXX follow-up ordering' : 'IDEXX ordering';
   return createPortal(

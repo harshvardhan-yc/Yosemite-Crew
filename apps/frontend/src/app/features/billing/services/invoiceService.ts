@@ -82,6 +82,15 @@ const FINANCE_BASE_PATH = '/v1/finance';
 const APPOINTMENT_ID_EXTENSION_URL =
   'https://yosemitecrew.com/fhir/StructureDefinition/appointment-id';
 
+const withFreshFinanceParams = <T extends Record<string, unknown>>(
+  params: T
+): T & {
+  _cacheBust: number;
+} => ({
+  ...params,
+  _cacheBust: Date.now(),
+});
+
 const normalizeReferenceTail = (value: unknown): string | undefined => {
   let raw = '';
   if (typeof value === 'string') {
@@ -243,9 +252,9 @@ export const loadInvoicesForOrgPrimaryOrg = async (opts?: {
   try {
     const res = await getData<FinanceEnvelope<unknown[]> | unknown[]>(
       `${FINANCE_BASE_PATH}/invoices`,
-      {
+      withFreshFinanceParams({
         organisationId: primaryOrgId,
-      }
+      })
     );
     const invoicePayload = unwrapFinanceData(res.data) ?? [];
     const invoices = invoicePayload.map((invoice) =>
@@ -273,10 +282,10 @@ export const loadInvoicesForAppointment = async (appointmentId: string): Promise
   try {
     const res = await getData<FinanceEnvelope<unknown[]> | unknown[]>(
       `${FINANCE_BASE_PATH}/invoices`,
-      {
+      withFreshFinanceParams({
         organisationId: primaryOrgId,
         appointmentId,
-      }
+      })
     );
     const invoicePayload = unwrapFinanceData(res.data) ?? [];
     const invoices = invoicePayload.map((invoice) =>
@@ -342,7 +351,7 @@ export const loadAppointmentBilling = async (
 
   const res = await getData<FinanceEnvelope<unknown[]> | unknown[]>(
     `${FINANCE_BASE_PATH}/invoices`,
-    { organisationId, appointmentId }
+    withFreshFinanceParams({ organisationId, appointmentId })
   );
   const invoicePayload = unwrapFinanceData(res.data) ?? [];
   // The backend scopes `GET /invoices?organisationId&appointmentId` to the
