@@ -167,16 +167,18 @@ export const getIdexxOrderById = async (opts: {
 export const listIdexxOrders = async (opts: {
   organisationId: string;
   appointmentId?: string;
+  patientId?: string;
   companionId?: string;
   status?: string;
   limit?: number;
 }): Promise<LabOrder[]> => {
-  const { organisationId, appointmentId, companionId, status, limit } = opts;
+  const { organisationId, appointmentId, patientId, companionId, status, limit } = opts;
+  const resolvedPatientId = patientId ?? companionId;
   const res = await postData<LabOrder[] | { orders?: LabOrder[] }, Record<string, string | number>>(
     `/v1/labs/pms/organisation/${organisationId}/idexx/orders/search`,
     {
       ...(appointmentId ? { appointmentId } : {}),
-      ...(companionId ? { companionId } : {}),
+      ...(resolvedPatientId ? { patientId: resolvedPatientId } : {}),
       ...(status ? { status } : {}),
       ...(limit === undefined ? {} : { limit }),
     }

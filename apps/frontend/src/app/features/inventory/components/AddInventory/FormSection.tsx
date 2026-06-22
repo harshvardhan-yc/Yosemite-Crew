@@ -7,14 +7,28 @@ import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
 import FormDesc from '@/app/ui/inputs/FormDesc/FormDesc';
 import Datepicker from '@/app/ui/inputs/Datepicker';
 import { BusinessType } from '@/app/features/organization/types/org';
+import { RiUploadCloud2Fill } from 'react-icons/ri';
 
-import { InventoryItem, InventoryErrors } from '@/app/features/inventory/pages/Inventory/types';
+import {
+  InventoryItem,
+  InventoryErrors,
+  getSubCategoryOptions,
+} from '@/app/features/inventory/pages/Inventory/types';
 import {
   InventoryFormConfig,
   ConfigItem,
   FieldDef,
   InventorySectionKey,
 } from '@/app/features/inventory/components/AddInventory/InventoryConfig';
+import {
+  formatCurrencyValue,
+  formatPercentValue,
+  getAvailableStock,
+  getGrossProfitPerUnit,
+  getMarginPercent,
+  getStockValue,
+  toNumberSafe,
+} from '@/app/features/inventory/pages/Inventory/utils';
 
 const parseDate = (value?: string): Date | null => {
   if (!value) return null;
@@ -62,7 +76,43 @@ type FormSectionProps = {
   onAddBatch?: () => void;
   onRemoveBatch?: (index: number) => void;
   stockLocationOptions?: string[];
+  headerSlot?: React.ReactNode;
 };
+
+const PricingSummary = ({ formData }: { formData: InventoryItem }) => (
+  <div className="flex flex-col gap-2 px-4 text-body-4 text-text-primary">
+    <div>
+      <span>Gross profit per unit : </span>
+      <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
+        {formatCurrencyValue(getGrossProfitPerUnit(formData), formData.currency)}
+      </span>
+    </div>
+    <div>
+      <span>Margin : </span>
+      <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
+        {formatPercentValue(getMarginPercent(formData))}
+      </span>
+    </div>
+    <FormInput
+      intype="text"
+      inname="stockValue"
+      value={formatCurrencyValue(getStockValue(formData), formData.currency)}
+      inlabel="Total stock value"
+      readonly
+    />
+  </div>
+);
+
+const drugOnlyClassificationFields = new Set([
+  'drugSchedule',
+  'form',
+  'administration',
+  'strength',
+  'unitofMeasure',
+  'controlledSubstance',
+  'prescriptionRequired',
+  'reportableToGovernment',
+]);
 
 const FormSection: React.FC<FormSectionProps> = ({
   businessType,
@@ -78,8 +128,9 @@ const FormSection: React.FC<FormSectionProps> = ({
   onAddBatch,
   onRemoveBatch,
   stockLocationOptions,
+  headerSlot,
 }) => {
-  const configForBusiness = InventoryFormConfig[businessType] || {};
+  const configForBusiness = InventoryFormConfig[businessType] ?? {};
   const sectionConfig = configForBusiness[sectionKey];
 
   if (!sectionConfig || sectionConfig.length === 0) {
@@ -89,45 +140,100 @@ const FormSection: React.FC<FormSectionProps> = ({
   const sectionData = formData[sectionKey] as any;
   const sectionErrors = (errors as Record<InventorySectionKey, any>)[sectionKey];
 
-  const getValue = (field: FieldDef<any>): string => sectionData?.[field.name] ?? '';
-  const getError = (field: FieldDef<any>): string | undefined => sectionErrors?.[field.name];
-
   const handleChange = (field: FieldDef<any>, value: string | string[], batchIndex?: number) => {
     onFieldChange(sectionKey, field.name, value, batchIndex);
   };
 
-  const resolveDateChange = (
-    next: Date | null | ((prev: Date | null) => Date | null),
-    currentDate: Date | null,
-    field: FieldDef<any>,
-    index?: number
+  const renderField = (field: FieldDef<any>, key?: React.Key, index?: number) =>
+    renderInventoryField({
+      field,
+      key,
+      index,
+      sectionKey,
+      formData,
+      sectionData,
+      sectionErrors,
+      stockLocationOptions,
+      handleChange,
+    });
+
+  const getResolvedDropdownOptions = (
+    sectionKey: string,
+    fieldName: string,
+    stockLocationOptions: Array<string | { label: string; value: string }> | undefined,
+    sectionCategory: string | undefined,
+    options: Array<string | { label: string; value: string }> | undefined
   ) => {
-    const resolved = typeof next === 'function' ? next(currentDate) : next;
-    if (!resolved) {
-      handleChange(field, '', index);
-      return;
+    if (sectionKey === 'stock' && fieldName === 'stockLocation' && stockLocationOptions?.length) {
+      return stockLocationOptions;
     }
-    handleChange(field, formatDate(resolved), index);
+    if (fieldName === 'subCategory') {
+      return getSubCategoryOptions(sectionCategory);
+    }
+    return options || [];
   };
 
-  const renderField = (field: FieldDef<any>, key?: React.Key, index?: number) => {
+  const getMultiSelectValues = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const text = String(value);
+      if (!text) return [];
+      return text.split(',').map((v) => v.trim());
+    }
+    return [];
+  };
+
+  const renderInventoryField = ({
+    field,
+    key,
+    index,
+    sectionKey,
+    formData,
+    sectionData,
+    sectionErrors,
+    stockLocationOptions,
+    handleChange,
+  }: {
+    field: FieldDef<any>;
+    key?: React.Key;
+    index?: number;
+    sectionKey: InventorySectionKey;
+    formData: InventoryItem;
+    sectionData: any;
+    sectionErrors: any;
+    stockLocationOptions?: string[];
+    handleChange: (field: FieldDef<any>, value: string | string[], batchIndex?: number) => void;
+  }) => {
     const { placeholder, component, options } = field;
     const isBatch = sectionKey === 'batch' && typeof index === 'number';
     const value = isBatch
       ? ((formData.batches?.[index] as any)?.[field.name] ?? '')
-      : getValue(field);
-    const error = isBatch ? (errors.batch as any)?.[field.name] : getError(field);
+      : (sectionData?.[field.name] ?? '');
+    const error = sectionErrors?.[field.name];
+
+    if (
+      sectionKey === 'classification' &&
+      String(formData.classification?.itemType ?? '').toLowerCase() === 'non-drug' &&
+      drugOnlyClassificationFields.has(String(field.name))
+    ) {
+      return null;
+    }
 
     if (component === 'text') {
+      const isReadOnlyAvailable = sectionKey === 'stock' && field.name === 'available';
+      const resolvedValue = isReadOnlyAvailable
+        ? String(getAvailableStock(formData) ?? toNumberSafe(value) ?? '')
+        : value;
       return (
         <FormInput
           key={key ?? field.name}
           intype="text"
           inname={field.name}
-          value={value}
+          value={resolvedValue}
           inlabel={placeholder || ''}
           onChange={(e) => handleChange(field, e.target.value, index)}
           error={error}
+          readonly={isReadOnlyAvailable}
           className="min-h-12!"
         />
       );
@@ -139,9 +245,10 @@ const FormSection: React.FC<FormSectionProps> = ({
         <div key={key ?? field.name} className="flex flex-col gap-1">
           <Datepicker
             currentDate={currentDate}
-            setCurrentDate={(next: Date | null | ((prev: Date | null) => Date | null)) =>
-              resolveDateChange(next, currentDate, field, index)
-            }
+            setCurrentDate={(next: Date | null | ((prev: Date | null) => Date | null)) => {
+              const resolved = typeof next === 'function' ? next(currentDate) : next;
+              handleChange(field, resolved ? formatDate(resolved) : '', index);
+            }}
             placeholder={placeholder || ''}
             type="input"
             className="min-h-12!"
@@ -152,13 +259,13 @@ const FormSection: React.FC<FormSectionProps> = ({
     }
 
     if (component === 'dropdown') {
-      const resolvedOptions =
-        sectionKey === 'stock' &&
-        field.name === 'stockLocation' &&
-        stockLocationOptions &&
-        stockLocationOptions.length > 0
-          ? stockLocationOptions
-          : options || [];
+      const resolvedOptions = getResolvedDropdownOptions(
+        sectionKey,
+        field.name,
+        stockLocationOptions,
+        sectionData?.category,
+        options
+      );
       const dropdownOptions = resolvedOptions.map((opt) =>
         typeof opt === 'string' ? { label: opt, value: opt } : opt
       );
@@ -175,16 +282,7 @@ const FormSection: React.FC<FormSectionProps> = ({
     }
 
     if (component === 'multiSelect') {
-      let arrayValue: string[];
-      if (Array.isArray(value)) {
-        arrayValue = value;
-      } else if (value) {
-        arrayValue = String(value)
-          .split(',')
-          .map((v) => v.trim());
-      } else {
-        arrayValue = [];
-      }
+      const arrayValue = getMultiSelectValues(value);
       return (
         <MultiSelectDropdown
           key={key ?? field.name}
@@ -211,6 +309,54 @@ const FormSection: React.FC<FormSectionProps> = ({
       );
     }
 
+    if (component === 'checkbox') {
+      const checked = value === 'true' || value === 'Yes';
+      return (
+        <label
+          key={key ?? field.name}
+          className="flex min-h-10 cursor-pointer items-center gap-3 text-body-4 text-text-primary"
+        >
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => handleChange(field, e.target.checked ? 'true' : 'false', index)}
+            className="size-5 rounded border-input-border-default accent-blue-text"
+          />
+          <span>{placeholder}</span>
+        </label>
+      );
+    }
+
+    if (component === 'upload') {
+      return (
+        <div key={key ?? field.name} className="relative">
+          <div className="mb-1 px-4 text-caption-1 text-text-secondary">{placeholder}</div>
+          <button
+            type="button"
+            className="flex min-h-35 w-full flex-col items-center justify-center rounded-2xl border border-input-border-default bg-white px-4 py-5 text-center text-text-primary"
+            onClick={() => document.getElementById(`inventory-upload-${field.name}`)?.click()}
+          >
+            <RiUploadCloud2Fill size={34} className="text-blue-text" aria-hidden="true" />
+            <span className="mt-2 text-body-4-emphasis">Upload document</span>
+            <span className="text-caption-1 text-text-secondary">PNG, JPG, WebP</span>
+            <span className="text-caption-1 text-text-secondary">Max size 2mb</span>
+          </button>
+          <input
+            id={`inventory-upload-${field.name}`}
+            type="file"
+            className="hidden"
+            aria-label={placeholder || 'Upload inventory image'}
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              handleChange(field, URL.createObjectURL(file), index);
+            }}
+          />
+        </div>
+      );
+    }
+
     return null;
   };
 
@@ -234,7 +380,7 @@ const FormSection: React.FC<FormSectionProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full flex-1 justify-between">
+    <div className="flex w-full flex-1 flex-col justify-between gap-6">
       <div className="flex flex-col gap-6">
         <div className="font-satoshi text-black-text text-[23px] font-medium">{sectionTitle}</div>
 
@@ -277,7 +423,9 @@ const FormSection: React.FC<FormSectionProps> = ({
             </div>
           ) : (
             <div className="flex flex-col gap-3">
+              {headerSlot}
               {sectionConfig.map((item, index) => renderItem(item, index))}
+              {sectionKey === 'pricing' && <PricingSummary formData={formData} />}
             </div>
           )}
         </Accordion>

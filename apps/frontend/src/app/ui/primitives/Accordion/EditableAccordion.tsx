@@ -268,6 +268,20 @@ const RenderField = (
   );
 };
 
+const EditableField = ({
+  field,
+  value,
+  error,
+  onChange,
+  onMultiChange,
+}: {
+  field: any;
+  value: any;
+  error: string | undefined;
+  onChange: (value: any) => void;
+  onMultiChange?: (values: Record<string, any>) => void;
+}) => RenderField(field, value, error, onChange, onMultiChange);
+
 const isCurrencyField = (fieldKey: string) => {
   return fieldKey === 'purchaseCost' || fieldKey === 'selling';
 };
@@ -573,13 +587,13 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
               <div key={field.key}>
                 {canEditThisField ? (
                   <div className="flex-1 mb-3">
-                    {RenderField(
-                      field,
-                      formValues[field.key],
-                      formValuesErrors[field.key],
-                      (value) => handleChange(field.key, value),
-                      handleMultiChange
-                    )}
+                    <EditableField
+                      field={field}
+                      value={formValues[field.key]}
+                      error={formValuesErrors[field.key]}
+                      onChange={(value) => handleChange(field.key, value)}
+                      onMultiChange={handleMultiChange}
+                    />
                   </div>
                 ) : (
                   <div className="flex-1">{RenderValue(field, displayValues)}</div>

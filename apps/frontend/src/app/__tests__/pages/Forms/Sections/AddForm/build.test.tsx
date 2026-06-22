@@ -257,6 +257,14 @@ describe('Build form step', () => {
     expect(screen.getByText('Only one signature field is allowed per form.')).toBeInTheDocument();
   });
 
+  it('hides signature fields for SOAP templates', () => {
+    renderBuild(baseFormData({ category: 'SOAP', requiredSigner: 'CLIENT' }));
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'toggle-add-field' })[0]);
+
+    expect(screen.queryByRole('button', { name: 'Signature' })).not.toBeInTheDocument();
+  });
+
   it('uses ensureSingleSignatureAtEnd for Prescription forms', () => {
     renderBuild(baseFormData({ category: 'Prescription', requiredSigner: 'CLIENT' }));
 

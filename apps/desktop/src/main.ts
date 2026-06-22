@@ -1050,9 +1050,7 @@ const runTabCommand = (id: string): void => {
         const activeId = attachedTabId ?? state?.activeId ?? null;
         const activeIndex = tabs.findIndex((t) => t.id === activeId);
         const other =
-          tabs.length > 1
-            ? tabs[(Math.max(0, activeIndex) + 1) % tabs.length]?.id ?? null
-            : null;
+          tabs.length > 1 ? (tabs[(Math.max(0, activeIndex) + 1) % tabs.length]?.id ?? null) : null;
         if (other && other !== activeId) setSplitTab(other);
       }
       break;

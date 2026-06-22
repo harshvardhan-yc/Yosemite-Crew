@@ -26,7 +26,7 @@ type BuildProps = {
   formData: FormsProps;
   setFormData: React.Dispatch<React.SetStateAction<FormsProps>>;
   onNext: () => void;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
   registerValidator?: (fn: () => boolean) => void;
 };
 
@@ -233,7 +233,7 @@ const getServiceCheckbox = (
 
 const ensureServiceCheckbox = (
   field: FormField & { type: 'group' },
-  serviceOptions: { label: string; value: string }[]
+  serviceOptions: { label: string; value: string; badge?: string }[]
 ): { group: FormField & { type: 'group' }; selected: string[] } => {
   const existingCheckbox = getServiceCheckbox(field);
   const selected = existingCheckbox?.options?.map((opt) => opt.value) ?? [];
@@ -354,7 +354,7 @@ type GroupBuilderProps = {
   field: FormField & { type: 'group'; fields?: FormField[] };
   onChange: (f: FormField) => void;
   createField: (t: OptionKey) => FormField;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
 };
 
 const GroupBuilder: React.FC<GroupBuilderProps> = ({
@@ -779,7 +779,10 @@ const Build = ({
     return fieldFactory[key](id, serviceOptions);
   };
 
-  const canUseSignature = formData.requiredSigner !== undefined && formData.requiredSigner !== '';
+  const canUseSignature =
+    formData.category !== 'SOAP' &&
+    formData.requiredSigner !== undefined &&
+    formData.requiredSigner !== '';
   const addOptionsForContext = React.useMemo(
     () => addOptions.filter((opt) => opt.key !== 'signature' || canUseSignature),
     [canUseSignature]
@@ -815,6 +818,10 @@ const Build = ({
 
   const addField = (key: OptionKey) => {
     if (key === 'signature') {
+      if (formData.category === 'SOAP') {
+        setBuildError('SOAP templates cannot include signature fields.');
+        return;
+      }
       if (!canUseSignature) {
         setBuildError("Select 'Signed by' in Form details before adding a signature field.");
         return;
@@ -840,8 +847,7 @@ const Build = ({
     setFormData((prev) => ({
       ...prev,
       schema:
-        key === 'signature' &&
-        new Set(['Prescription', 'SOAP', 'Discharge Form']).has(prev.category)
+        key === 'signature' && new Set(['Prescription', 'Discharge Form']).has(prev.category)
           ? ensureSingleSignatureAtEnd([...(prev.schema ?? []), newField])
           : [...(prev.schema ?? []), newField],
     }));

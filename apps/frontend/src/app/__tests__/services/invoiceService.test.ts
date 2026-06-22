@@ -1,8 +1,10 @@
 import {
   addLineItemsToAppointments,
   getPaymentLink,
+  loadAppointmentBilling,
   loadInvoicesForAppointment,
   loadInvoicesForOrgPrimaryOrg,
+  markAppointmentReadyForBilling,
   markInvoicePaid,
   updateInvoicePaymentCollectionMethod,
 } from '@/app/features/billing/services/invoiceService';
@@ -14,6 +16,7 @@ type InvoiceState = {
   startLoading: jest.Mock;
   setInvoicesForOrg: jest.Mock;
   upsertInvoice: jest.Mock;
+  getInvoicesByOrgId: jest.Mock;
   status: 'idle' | 'loading' | 'loaded' | 'error';
 };
 
@@ -49,6 +52,7 @@ describe('invoiceService', () => {
       startLoading: jest.fn(),
       setInvoicesForOrg: jest.fn(),
       upsertInvoice: jest.fn(),
+      getInvoicesByOrgId: jest.fn().mockReturnValue([]),
       status: 'idle',
     };
     orgState = { primaryOrgId: 'org-1' };
@@ -123,15 +127,29 @@ describe('invoiceService', () => {
   });
 
   it('calls mark-paid endpoint', async () => {
+    (getData as jest.Mock).mockResolvedValue({
+      data: {
+        data: { id: 'inv-1', organisationId: 'org-1', totalAmount: 125, currency: 'usd' },
+        meta: null,
+        error: null,
+      },
+    });
+
     await markInvoicePaid('inv-1');
 
-    expect(postData).toHaveBeenCalledWith('/fhir/v1/invoice/inv-1/mark-paid', {});
+    expect(postData).toHaveBeenCalledWith('/v1/finance/invoices/inv-1/payments', {
+      provider: 'MANUAL',
+      settlementChannel: 'CASH',
+      amount: 125,
+      currency: 'usd',
+      receivedAt: expect.any(String),
+    });
   });
 
   it('updates payment collection method before offline settlement', async () => {
     await updateInvoicePaymentCollectionMethod('inv-1', 'PAYMENT_AT_CLINIC');
 
-    expect(patchData).toHaveBeenCalledWith('/fhir/v1/invoice/inv-1/payment-collection-method', {
+    expect(patchData).toHaveBeenCalledWith('/v1/finance/invoices/inv-1/payment-collection-method', {
       paymentCollectionMethod: 'PAYMENT_AT_CLINIC',
     });
   });
@@ -143,7 +161,7 @@ describe('invoiceService', () => {
   });
 
   it('loads invoices for appointment and upserts them', async () => {
-    (postData as jest.Mock).mockResolvedValue({
+    (getData as jest.Mock).mockResolvedValue({
       data: [
         { id: 'inv-1', resourceType: 'Invoice', organisationId: 'org-1', appointmentId: 'apt-1' },
       ],
@@ -151,7 +169,10 @@ describe('invoiceService', () => {
 
     await loadInvoicesForAppointment('apt-1');
 
-    expect(postData).toHaveBeenCalledWith('/fhir/v1/invoice/appointment/apt-1', {});
+    expect(getData).toHaveBeenCalledWith('/v1/finance/invoices', {
+      organisationId: 'org-1',
+      appointmentId: 'apt-1',
+    });
     expect(invoiceState.upsertInvoice).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'inv-1', appointmentId: 'apt-1' })
     );
@@ -166,10 +187,111 @@ describe('invoiceService', () => {
   });
 
   it('adds line items successfully', async () => {
+    invoiceState.getInvoicesByOrgId = jest.fn().mockReturnValue([
+      {
+        id: 'inv-1',
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        status: 'AWAITING_PAYMENT',
+      },
+    ]);
     await addLineItemsToAppointments([{ id: 'li-1' } as any], 'appt-1', 'USD');
     expect(postData).toHaveBeenCalledWith(
-      '/fhir/v1/invoice/appointment/appt-1/charges',
+      '/v1/finance/invoices/inv-1/lines',
       expect.objectContaining({ currency: 'usd' })
+    );
+  });
+
+  it('only appends line items missing from an existing appointment invoice', async () => {
+    invoiceState.getInvoicesByOrgId = jest.fn().mockReturnValue([
+      {
+        id: 'inv-1',
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        status: 'AWAITING_PAYMENT',
+        items: [
+          {
+            id: 'li-existing',
+            name: 'Consult',
+            quantity: 1,
+            unitPrice: 1000,
+            total: 1000,
+          },
+        ],
+      },
+    ]);
+
+    await addLineItemsToAppointments(
+      [
+        {
+          id: 'li-existing',
+          name: 'Consult',
+          quantity: 1,
+          unitPrice: 1000,
+          total: 1000,
+        },
+        {
+          id: 'li-new',
+          name: 'Medication',
+          quantity: 1,
+          unitPrice: 500,
+          total: 500,
+        },
+      ],
+      'appt-1',
+      'USD'
+    );
+
+    expect(postData).toHaveBeenCalledWith('/v1/finance/invoices/inv-1/lines', {
+      currency: 'usd',
+      items: [
+        {
+          name: 'Medication',
+          description: 'Medication',
+          quantity: 1,
+          unitPrice: 500,
+          total: 500,
+        },
+      ],
+    });
+  });
+
+  it('skips appending line items when the appointment invoice already has them', async () => {
+    invoiceState.getInvoicesByOrgId = jest.fn().mockReturnValue([
+      {
+        id: 'inv-1',
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        status: 'AWAITING_PAYMENT',
+        items: [
+          {
+            id: 'li-existing',
+            name: 'Consult',
+            quantity: 1,
+            unitPrice: 1000,
+            total: 1000,
+          },
+        ],
+      },
+    ]);
+
+    await addLineItemsToAppointments(
+      [
+        {
+          id: 'li-existing',
+          name: 'Consult',
+          quantity: 1,
+          unitPrice: 1000,
+          total: 1000,
+        },
+      ],
+      'appt-1',
+      'USD'
+    );
+
+    expect(postData).not.toHaveBeenCalledWith(
+      '/v1/finance/invoices/inv-1/lines',
+      expect.anything()
     );
   });
 
@@ -191,10 +313,16 @@ describe('invoiceService', () => {
 
   it('gets payment link successfully', async () => {
     (postData as jest.Mock).mockResolvedValue({
-      data: { checkout: { url: 'https://stripe.test' } },
+      data: {
+        data: { checkoutUrl: 'https://stripe.test' },
+        meta: null,
+        error: null,
+      },
     });
     const result = await getPaymentLink('inv-1');
-    expect(postData).toHaveBeenCalledWith('/fhir/v1/invoice/inv-1/checkout-session');
+    expect(postData).toHaveBeenCalledWith('/v1/finance/invoices/inv-1/payments/sessions', {
+      provider: 'STRIPE',
+    });
     expect(result).toBe('https://stripe.test');
   });
 
@@ -240,6 +368,187 @@ describe('invoiceService', () => {
     await updateInvoicePaymentCollectionMethod('inv-1', 'PAYMENT_AT_CLINIC');
     expect(patchData).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+
+  it('marks appointment ready for billing through finance endpoint', async () => {
+    (postData as jest.Mock).mockResolvedValueOnce({
+      data: {
+        data: { appointmentId: 'appt-1', billingState: 'READY_FOR_BILLING' },
+        meta: null,
+        error: null,
+      },
+    });
+
+    await markAppointmentReadyForBilling('appt-1', {
+      organisationId: 'org-1',
+      visitId: 'enc-1',
+      notes: 'Ready',
+    });
+
+    expect(postData).toHaveBeenCalledWith('/v1/finance/appointments/appt-1/ready-for-billing', {
+      organisationId: 'org-1',
+      visitId: 'enc-1',
+      notes: 'Ready',
+    });
+  });
+
+  it('creates a draft billing handoff invoice and retries when ready-for-billing has no invoice', async () => {
+    (postData as jest.Mock)
+      .mockRejectedValueOnce({
+        response: { status: 404, data: { message: 'Invoice not found' } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            id: 'inv-1',
+            appointmentId: 'appt-1',
+            organisationId: 'org-1',
+            items: [],
+            totalAmount: 0,
+          },
+          meta: null,
+          error: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            appointmentId: 'appt-1',
+            billingState: 'READY_FOR_BILLING',
+            invoiceId: 'inv-1',
+          },
+          meta: null,
+          error: null,
+        },
+      });
+
+    await markAppointmentReadyForBilling('appt-1', {
+      organisationId: 'org-1',
+      parentId: 'parent-1',
+      patientId: 'patient-1',
+      visitId: 'enc-1',
+      notes: 'Ready',
+    });
+
+    expect(postData).toHaveBeenNthCalledWith(
+      1,
+      '/v1/finance/appointments/appt-1/ready-for-billing',
+      {
+        organisationId: 'org-1',
+        parentId: 'parent-1',
+        patientId: 'patient-1',
+        visitId: 'enc-1',
+        notes: 'Ready',
+      }
+    );
+    expect(postData).toHaveBeenNthCalledWith(
+      2,
+      '/v1/finance/invoices',
+      expect.objectContaining({
+        appointmentId: 'appt-1',
+        parentId: 'parent-1',
+        patientId: 'patient-1',
+        organisationId: 'org-1',
+        paymentCollectionMethod: 'PAYMENT_AT_CLINIC',
+        items: [
+          {
+            name: 'Billing handoff',
+            description: 'Ready',
+            quantity: 1,
+            unitPrice: 0,
+            total: 0,
+          },
+        ],
+      })
+    );
+    expect(postData).toHaveBeenNthCalledWith(
+      3,
+      '/v1/finance/appointments/appt-1/ready-for-billing',
+      {
+        organisationId: 'org-1',
+        parentId: 'parent-1',
+        patientId: 'patient-1',
+        visitId: 'enc-1',
+        notes: 'Ready',
+      }
+    );
+  });
+
+  it('falls back to appointment ready-for-billing route when finance route is not deployed', async () => {
+    (postData as jest.Mock).mockRejectedValueOnce({
+      response: { status: 404, data: { message: 'Finance route not found' } },
+    });
+    (patchData as jest.Mock).mockResolvedValueOnce({
+      data: {
+        data: { appointmentId: 'appt-1', billingState: 'READY_FOR_BILLING' },
+        meta: null,
+        error: null,
+      },
+    });
+
+    await markAppointmentReadyForBilling('appt-1', {
+      organisationId: 'org-1',
+      visitId: 'enc-1',
+      notes: 'Ready',
+    });
+
+    expect(patchData).toHaveBeenCalledWith(
+      '/fhir/v1/appointment/pms/org-1/appt-1/ready-for-billing',
+      {
+        organisationId: 'org-1',
+        visitId: 'enc-1',
+        notes: 'Ready',
+      }
+    );
+  });
+
+  it('falls back to appointment ready-for-billing route when finance retry is still 404', async () => {
+    (postData as jest.Mock)
+      .mockRejectedValueOnce({
+        response: { status: 404, data: { message: 'Invoice not found' } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            id: 'inv-1',
+            appointmentId: 'appt-1',
+            organisationId: 'org-1',
+            items: [],
+            totalAmount: 0,
+          },
+          meta: null,
+          error: null,
+        },
+      })
+      .mockRejectedValueOnce({
+        response: { status: 404, data: { message: 'Finance route not found' } },
+      });
+    (patchData as jest.Mock).mockResolvedValueOnce({
+      data: {
+        data: { appointmentId: 'appt-1', billingState: 'READY_FOR_BILLING' },
+        meta: null,
+        error: null,
+      },
+    });
+
+    await markAppointmentReadyForBilling('appt-1', {
+      organisationId: 'org-1',
+      parentId: 'parent-1',
+      patientId: 'patient-1',
+      visitId: 'enc-1',
+      notes: 'Ready',
+    });
+
+    expect(patchData).toHaveBeenCalledWith(
+      '/fhir/v1/appointment/pms/org-1/appt-1/ready-for-billing',
+      {
+        organisationId: 'org-1',
+        parentId: 'parent-1',
+        patientId: 'patient-1',
+        visitId: 'enc-1',
+        notes: 'Ready',
+      }
+    );
   });
 
   it('extracts appointmentId from account reference with query string (normalizeReferenceTail)', async () => {
@@ -306,5 +615,40 @@ describe('invoiceService', () => {
       'org-1',
       expect.arrayContaining([expect.objectContaining({ appointmentId: 'appt-ext-1' })])
     );
+  });
+
+  it('maps a plain finance invoice envelope into workspace line items', async () => {
+    (getData as jest.Mock).mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 'ed0f6c19',
+            appointmentId: 'appt-1',
+            organisationId: 'org-1',
+            items: [
+              { name: 'bookable procedure', total: 10, quantity: 1, unitPrice: 10 },
+              { name: 'IDEXX test 3196', total: 195.65, quantity: 1, unitPrice: 195.65 },
+            ],
+            subtotal: 205.65,
+            totalAmount: 205.65,
+            currency: 'usd',
+            status: 'AWAITING_PAYMENT',
+            createdAt: '2026-06-20T19:18:22.990Z',
+          },
+        ],
+        meta: null,
+        error: null,
+      },
+    });
+
+    const billing = await loadAppointmentBilling('org-1', 'appt-1');
+
+    expect(billing.pastInvoices).toHaveLength(1);
+    expect(billing.pastInvoices[0].items.map((item) => item.name)).toEqual([
+      'bookable procedure',
+      'IDEXX test 3196',
+    ]);
+    expect(billing.pastInvoices[0].items[1].amountCents).toBe(19565);
+    expect(billing.pastInvoices[0].totalCents).toBe(20565);
   });
 });

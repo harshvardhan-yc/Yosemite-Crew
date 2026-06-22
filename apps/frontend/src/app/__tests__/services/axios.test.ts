@@ -1,4 +1,11 @@
-import { getData, postData, putData, deleteData, patchData } from '@/app/services/axios';
+import {
+  getData,
+  postData,
+  putData,
+  deleteData,
+  patchData,
+  isAuthRedirectError,
+} from '@/app/services/axios';
 import { useAuthStore } from '@/app/stores/authStore';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { logger } from '@/app/lib/logger';
@@ -92,6 +99,7 @@ describe('Axios Service', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    globalThis.window.history.replaceState({}, '', '/');
     mockOrgGetState.mockReturnValue({ primaryOrgId: 'org-1', clearOrgs: jest.fn() });
   });
 
@@ -343,6 +351,35 @@ describe('Axios Service', () => {
       expect(result.headers.Authorization).toBeUndefined();
     });
 
+    it('rejects protected API requests before hitting the backend when auth is gone', async () => {
+      const mockSignout = jest.fn().mockResolvedValue(undefined);
+      globalThis.window.history.replaceState({}, '', '/appointments');
+      mockGetState.mockReturnValue({
+        status: 'unauthenticated',
+        getValidSession: jest.fn().mockResolvedValue(null),
+        signout: mockSignout,
+      });
+
+      try {
+        await requestSuccessHandler({ url: '/fhir/v1/appointments', headers: {} });
+        throw new Error('Expected request interceptor to reject');
+      } catch (error) {
+        expect(isAuthRedirectError(error)).toBe(true);
+      }
+
+      expect(mockSignout).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows public API requests without a session', async () => {
+      mockGetState.mockReturnValue({
+        status: 'unauthenticated',
+        getValidSession: jest.fn().mockResolvedValue(null),
+      });
+
+      const config = { url: '/v1/contact-us/contact-web', headers: {} };
+      await expect(requestSuccessHandler(config)).resolves.toBe(config);
+    });
+
     it('logs warning if accessing store fails', async () => {
       // Simulate error accessing state
       mockGetState.mockImplementationOnce(() => {
@@ -404,7 +441,12 @@ describe('Axios Service', () => {
         config: { _retry: true },
       };
 
-      await expect(responseErrorHandler(error)).rejects.toEqual(error);
+      try {
+        await responseErrorHandler(error);
+        throw new Error('Expected response interceptor to reject');
+      } catch (caughtError) {
+        expect(isAuthRedirectError(caughtError)).toBe(true);
+      }
       expect(mockSignout).toHaveBeenCalled();
     });
 
@@ -445,7 +487,12 @@ describe('Axios Service', () => {
       });
 
       const error = { response: { status: 401 }, config: {} };
-      await expect(responseErrorHandler(error)).rejects.toEqual(error);
+      try {
+        await responseErrorHandler(error);
+        throw new Error('Expected response interceptor to reject');
+      } catch (caughtError) {
+        expect(isAuthRedirectError(caughtError)).toBe(true);
+      }
       expect(mockSignout).toHaveBeenCalled();
     });
 
@@ -458,7 +505,12 @@ describe('Axios Service', () => {
       });
 
       const error = { response: { status: 401 }, config: {} };
-      await expect(responseErrorHandler(error)).rejects.toEqual(error);
+      try {
+        await responseErrorHandler(error);
+        throw new Error('Expected response interceptor to reject');
+      } catch (caughtError) {
+        expect(isAuthRedirectError(caughtError)).toBe(true);
+      }
       expect(mockSignout).toHaveBeenCalled();
     });
   });

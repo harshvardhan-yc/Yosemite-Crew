@@ -54,11 +54,16 @@ import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { useResolvedMerckIntegrationForPrimaryOrg } from '@/app/hooks/useMerckIntegration';
 import {
   getAppointmentCompanionPhotoUrl,
+  getClinicalNotesIntent,
   normalizeAppointmentStatus,
+  toStatusLabel,
 } from '@/app/lib/appointments';
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
+import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
+import { buildWorkspaceHrefForIntent } from '@/app/lib/appointmentWorkspace';
+import { IoCardOutline, IoDocumentTextOutline, IoFlaskOutline } from 'react-icons/io5';
 
 const COMPANION_IMAGE_TYPES = new Set<ImageType>(['dog', 'cat', 'horse', 'other']);
 
@@ -66,6 +71,32 @@ const SPECIES_DISPLAY_TO_IMAGE_TYPE: Record<string, ImageType> = {
   canine: 'dog',
   feline: 'cat',
   equine: 'horse',
+};
+
+const getAppointmentStateSummary = (status?: string | null): string => {
+  const normalized = normalizeAppointmentStatus(status);
+  if (normalized === 'CANCELLED') {
+    return 'This appointment was cancelled. Scheduling actions are limited, but records and finance history remain available.';
+  }
+  if (normalized === 'NO_SHOW') {
+    return 'This appointment was marked no-show. Use the record, finance, and lab tabs for any follow-up documentation.';
+  }
+  if (normalized === 'COMPLETED') {
+    return 'This appointment is completed. Review finalized medical records, invoices, lab results, and summaries.';
+  }
+  if (normalized === 'IN_PROGRESS') {
+    return 'This appointment is in progress. Continue in the workspace for clinical records, labs, treatment, and billing.';
+  }
+  if (normalized === 'CHECKED_IN') {
+    return 'This appointment is checked in and ready to continue in the workspace.';
+  }
+  if (normalized === 'UPCOMING') {
+    return 'This appointment is upcoming. Confirm details or start the visit from the workspace.';
+  }
+  if (normalized === 'REQUESTED') {
+    return 'This appointment request is waiting for confirmation.';
+  }
+  return 'Review appointment details and related records.';
 };
 
 const resolveCompanionImageType = (species?: string | null): ImageType => {
@@ -592,6 +623,15 @@ const normalizeInfoSubLabel = (label: string, subLabel?: string) => {
   return subLabel;
 };
 
+const SOAP_SUB_LABELS = new Set([
+  'forms',
+  'subjective',
+  'objective',
+  'assessment',
+  'plan',
+  'discharge-summary',
+]);
+
 const resolveIntentLabel = (
   availableLabels: Array<{ key: string }>,
   label: string
@@ -772,6 +812,17 @@ const AppoitmentInfo = ({
     (orgTypeOverride as Organisation['type'] | undefined) ||
     (activeAppointment?.organisationId && orgsById[activeAppointment.organisationId]?.type) ||
     'HOSPITAL';
+  const statusSummary = getAppointmentStateSummary(activeAppointment?.status);
+  const statusLabel = toStatusLabel(activeAppointment?.status);
+  const clinicalWorkspaceIntent = getClinicalNotesIntent(orgType);
+  const openWorkspaceIntent = useCallback(
+    (intent: AppointmentViewIntent) => {
+      if (!activeAppointment?.id) return;
+      router.push(buildWorkspaceHrefForIntent(activeAppointment.id, intent));
+      setShowModal(false);
+    },
+    [activeAppointment?.id, router, setShowModal]
+  );
   const formsById = useFormsStore((s) => s.formsById);
   useLoadFormsForPrimaryOrg();
   const formIds = useFormsStore((s) => s.formIds);
@@ -1019,6 +1070,9 @@ const AppoitmentInfo = ({
         setFormData(createEmptyFormData());
         return;
       }
+      if (activeLabel !== 'prescription' || !SOAP_SUB_LABELS.has(activeSubLabel)) {
+        return;
+      }
       try {
         const soap = await fetchSubmissions(appointmentId);
         if (cancelled) return;
@@ -1046,7 +1100,7 @@ const AppoitmentInfo = ({
     return () => {
       cancelled = true;
     };
-  }, [activeAppointment?.id]);
+  }, [activeAppointment?.id, activeLabel, activeSubLabel]);
 
   useEffect(() => {
     void loadAppointmentForms();
@@ -1091,34 +1145,78 @@ const AppoitmentInfo = ({
       <SigningOverlay />
       <div className={`flex flex-col h-full ${activeLabel === 'labs' ? 'gap-1' : 'gap-3'}`}>
         <div className="flex flex-col gap-3">
-          <div className="flex justify-between items-center">
-            <div className="flex justify-center items-center gap-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex items-start gap-3">
               <Image
                 alt="pet image"
                 src={companionImageSrc}
-                className="size-10 rounded-full object-cover border border-card-border bg-white"
+                className="size-10 shrink-0 rounded-full object-cover border border-card-border bg-white"
                 height={40}
                 width={40}
               />
-              <button
-                type="button"
-                className="text-body-1 text-text-primary cursor-pointer text-left hover:underline underline-offset-2"
-                onClick={() => {
-                  router.push(
-                    buildAppointmentCompanionHistoryHref(
-                      activeAppointment?.id,
-                      companion.id,
-                      '/appointments'
-                    )
-                  );
-                  setShowModal(false);
-                }}
-              >
-                {formatCompanionNameWithOwnerLastName(companion.name, companion.parent)}
-              </button>
-              <div className="text-body-4 text-text-primary mt-1">{companion.breed}</div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="text-body-1 text-text-primary cursor-pointer text-left hover:underline underline-offset-2"
+                    onClick={() => {
+                      router.push(
+                        buildAppointmentCompanionHistoryHref(
+                          activeAppointment?.id,
+                          companion.id,
+                          '/appointments'
+                        )
+                      );
+                      setShowModal(false);
+                    }}
+                  >
+                    {formatCompanionNameWithOwnerLastName(companion.name, companion.parent)}
+                  </button>
+                  {activeAppointment ? (
+                    <AppointmentStatusPill
+                      appointment={activeAppointment}
+                      canEdit={canEditAppointments}
+                    />
+                  ) : null}
+                </div>
+                <div className="text-body-4 text-text-primary mt-1">{companion.breed}</div>
+                <div className="mt-2 max-w-3xl rounded-2xl border border-card-border bg-card-bg px-3 py-2 text-caption-1 text-text-secondary">
+                  <span className="font-medium text-text-primary">{statusLabel}:</span>{' '}
+                  {statusSummary}
+                </div>
+              </div>
             </div>
             <Close onClick={() => setShowModal(false)} />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-label="Open medical records in workspace"
+              onClick={() => openWorkspaceIntent(clinicalWorkspaceIntent)}
+              className="inline-flex h-9 items-center gap-2 rounded-2xl border border-card-border px-3 text-caption-1 font-medium text-text-primary hover:bg-card-hover"
+            >
+              <IoDocumentTextOutline size={16} aria-hidden="true" />
+              <span>Medical records</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Open finance in workspace"
+              onClick={() => openWorkspaceIntent({ label: 'finance', subLabel: 'summary' })}
+              className="inline-flex h-9 items-center gap-2 rounded-2xl border border-card-border px-3 text-caption-1 font-medium text-text-primary hover:bg-card-hover"
+            >
+              <IoCardOutline size={16} aria-hidden="true" />
+              <span>Finance</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Open labs in workspace"
+              onClick={() => openWorkspaceIntent({ label: 'labs', subLabel: 'idexx-labs' })}
+              className="inline-flex h-9 items-center gap-2 rounded-2xl border border-card-border px-3 text-caption-1 font-medium text-text-primary hover:bg-card-hover"
+            >
+              <IoFlaskOutline size={16} aria-hidden="true" />
+              <span>Labs</span>
+            </button>
           </div>
 
           <Labels
