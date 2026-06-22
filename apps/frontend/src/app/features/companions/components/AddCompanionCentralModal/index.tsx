@@ -669,6 +669,12 @@ const getSexLabel = (gender: string | undefined, isneutered: boolean | undefined
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+const isCompanionModalBusy = (isSubmitting: boolean, savingStatus: boolean): boolean =>
+  isSubmitting || savingStatus;
+
+const getCompanionModalLoadingLabel = (savingStatus: boolean): string =>
+  savingStatus ? 'Updating status…' : 'Saving companion…';
+
 const AddCompanionCentralModal = ({
   showModal,
   setShowModal,
@@ -1156,8 +1162,8 @@ const AddCompanionCentralModal = ({
         setShowModal={setShowModal}
         title={modalTitle}
         canClose={canCloseModal}
-        isLoading={isSubmitting || savingStatus}
-        loadingLabel={savingStatus ? 'Updating status…' : 'Saving companion…'}
+        isLoading={isCompanionModalBusy(isSubmitting, savingStatus)}
+        loadingLabel={getCompanionModalLoadingLabel(savingStatus)}
       >
         <div className="flex flex-col gap-6">
           {/* ══ VIEW MODE ═══════════════════════════════════════════════════════ */}
