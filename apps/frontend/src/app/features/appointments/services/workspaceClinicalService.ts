@@ -656,7 +656,7 @@ export const listObservationSubmissionsForAppointment = async (
     `/v1/observation-tools/pms/appointments/${appointmentId}/submissions`,
     {}
   );
-  return res.data.map(submissionToObservationRecord);
+  return res.data.map((submission, index) => submissionToObservationRecord(submission, index));
 };
 
 export type PmsObservationSubmissionInput = {

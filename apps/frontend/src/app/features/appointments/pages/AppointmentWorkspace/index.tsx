@@ -171,10 +171,21 @@ type DischargeDateTimeModalProps = {
   onConfirm: () => void;
   isSaving: boolean;
   /** Backend-owned discharge readiness; when disabled, an override reason is required. */
-  gate?: AppointmentEncounter['finalizationGate'];
+  gate?: NonNullable<AppointmentEncounter['finalizationGate']>;
   overrideReason: string;
   setOverrideReason: (next: string) => void;
 };
+
+// A SOAP note carries real content if it is completed or any of its rich-text
+// sections is non-empty. Hoisted to module scope to keep the hydration effect flat.
+const hasMeaningfulSoapContent = (notes: SoapNoteEntry[]): boolean =>
+  notes.some(
+    (note) =>
+      note.status === 'COMPLETED' ||
+      ![note.chiefComplaint, note.subjective, note.objective, note.assessment, note.plan].every(
+        (value) => isRichTextEmpty(value)
+      )
+  );
 
 const DischargeDateTimeModal = ({
   showModal,
@@ -213,7 +224,7 @@ const DischargeDateTimeModal = ({
               {gate?.disabledReason ?? 'This encounter is not ready for discharge.'}
             </p>
             <label className="flex flex-col gap-1 text-caption-2 text-text-secondary">
-              Override reason (required)
+              {'Override reason (required)'}
               <textarea
                 value={overrideReason}
                 onChange={(event) => setOverrideReason(event.target.value)}
@@ -406,17 +417,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         const resolvedSoap =
           resolvedSoapResult.status === 'fulfilled' ? resolvedSoapResult.value : null;
         const liveEncounter = getEncounter(appointmentId);
-        const hasSoapContent = (liveEncounter?.soap ?? []).some(
-          (note: SoapNoteEntry) =>
-            note.status === 'COMPLETED' ||
-            ![
-              note.chiefComplaint,
-              note.subjective,
-              note.objective,
-              note.assessment,
-              note.plan,
-            ].every((value) => isRichTextEmpty(value))
-        );
+        const hasSoapContent = hasMeaningfulSoapContent(liveEncounter?.soap ?? []);
         if (resolvedSoap && !hasSoapContent) {
           applySoapTemplate(appointmentId, resolvedSoap);
         }

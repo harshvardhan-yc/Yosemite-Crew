@@ -60,8 +60,12 @@ const resolveRetryDelayMs = (
     return Math.min(retryAfter * 1000, 15_000);
   }
   // Exponential backoff with jitter, capped so a stuck call can't hang for long.
+  // Jitter is drawn from the crypto RNG so it does not trip security linters; the value
+  // is non-security (it only spreads retry timing), but Math.random is flagged regardless.
   const backoff = TRANSIENT_RETRY_BASE_MS * 2 ** attempt;
-  return Math.min(backoff + Math.random() * TRANSIENT_RETRY_BASE_MS, 8_000);
+  const jitterRatio =
+    (globalThis.crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) / 0x1_0000_0000;
+  return Math.min(backoff + jitterRatio * TRANSIENT_RETRY_BASE_MS, 8_000);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

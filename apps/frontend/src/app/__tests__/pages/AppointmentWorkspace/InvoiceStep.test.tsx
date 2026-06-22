@@ -655,7 +655,7 @@ describe('InvoiceStep', () => {
     // neither, so provide them and assert the handlers fire.
     const printSpy = jest.fn();
     const openSpy = jest.spyOn(globalThis.window, 'open').mockReturnValue({
-      document: { write: jest.fn(), close: jest.fn() },
+      document: { head: {}, body: {}, write: jest.fn(), close: jest.fn() },
       focus: jest.fn(),
       print: printSpy,
     } as unknown as Window);

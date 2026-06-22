@@ -90,6 +90,59 @@ type ContextMenuState = {
   y: number;
 };
 
+type MarkerSizing = {
+  multiLane: boolean;
+  tall: boolean;
+  medium: boolean;
+  showImage: boolean;
+  imgSize: number;
+  verticalPadding: string;
+  horizontalPadding: string;
+  buttonGap: string;
+};
+
+// Derive the responsive display tier for a zoom-in appointment marker from its lane count
+// and rendered height. Extracted to keep the marker map callback under the complexity limit.
+const getMarkerSizing = (laneCount: number, blockHeightPx: number): MarkerSizing => {
+  const multiLane = laneCount > 1;
+  // tall: ≥72px single-lane — big pic, service + reason on separate lines with •
+  const tall = !multiLane && blockHeightPx >= 72;
+  // medium: ≥44px single-lane — smaller pic, one subtitle line
+  const medium = !multiLane && blockHeightPx >= 44;
+  // small: short single-lane slots (e.g. 5-min) — compact avatar, name only
+  const small = !multiLane && !medium && !tall;
+  const showImage = small || medium || tall;
+  // tall: scales 48px (30-min/90px) → 60px (60-min/180px); medium: 34px; small: 24px
+  let imgSize: number;
+  if (tall) {
+    imgSize = Math.min(60, Math.round(blockHeightPx * 0.52));
+  } else if (medium) {
+    imgSize = 34;
+  } else {
+    imgSize = 24;
+  }
+  let verticalPadding: string;
+  if (tall) {
+    verticalPadding = 'py-2.5';
+  } else if (medium) {
+    verticalPadding = 'py-2';
+  } else {
+    verticalPadding = 'py-0.5';
+  }
+  const horizontalPadding = small ? 'pl-1.5 pr-2' : 'pl-3 pr-3';
+  const buttonGap = small ? 'gap-1.5' : 'gap-2.5';
+  return {
+    multiLane,
+    tall,
+    medium,
+    showImage,
+    imgSize,
+    verticalPadding,
+    horizontalPadding,
+    buttonGap,
+  };
+};
+
 const SlotComponent: React.FC<SlotProps> = ({
   slotEvents,
   height,
@@ -621,36 +674,17 @@ const SlotComponent: React.FC<SlotProps> = ({
                 const topPx = (startMinute / 60) * height;
                 const blockHeightPx = Math.max((visibleDurationMinutes / 60) * height, 40);
 
-                // Responsive tiers based on available pixel height (hour row = 180px at zoom-in)
-                // 30-min slot = 90px, 15-min = 45px
-                const multiLane = laneCount > 1;
-                // tall: ≥72px single-lane — big pic, service + reason on separate lines with •
-                const tall = !multiLane && blockHeightPx >= 72;
-                // medium: ≥44px single-lane — smaller pic, one subtitle line
-                const medium = !multiLane && blockHeightPx >= 44;
-                // small: short single-lane slots (e.g. 5-min) — compact avatar, name only
-                const small = !multiLane && !medium && !tall;
-                const showImage = small || medium || tall;
-                // tall: scales 48px (30-min/90px) → 60px (60-min/180px); medium: 34px; small: 24px
-                let imgSize: number;
-                if (tall) {
-                  imgSize = Math.min(60, Math.round(blockHeightPx * 0.52));
-                } else if (medium) {
-                  imgSize = 34;
-                } else {
-                  imgSize = 24;
-                }
-
-                let verticalPadding: string;
-                if (tall) {
-                  verticalPadding = 'py-2.5';
-                } else if (medium) {
-                  verticalPadding = 'py-2';
-                } else {
-                  verticalPadding = 'py-0.5';
-                }
-                const horizontalPadding = small ? 'pl-1.5 pr-2' : 'pl-3 pr-3';
-                const buttonGap = small ? 'gap-1.5' : 'gap-2.5';
+                // Responsive display tier derived from lane count + rendered height.
+                const {
+                  multiLane,
+                  tall,
+                  medium,
+                  showImage,
+                  imgSize,
+                  verticalPadding,
+                  horizontalPadding,
+                  buttonGap,
+                } = getMarkerSizing(laneCount, blockHeightPx);
                 const cursorClass = draggable
                   ? 'cursor-grab active:cursor-grabbing'
                   : 'cursor-pointer';

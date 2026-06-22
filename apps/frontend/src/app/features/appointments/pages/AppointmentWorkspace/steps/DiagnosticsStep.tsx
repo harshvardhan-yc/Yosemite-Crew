@@ -91,6 +91,12 @@ const ProviderContent = ({ provider }: { provider: ProviderOption }) => {
   return <span>{provider.label}</span>;
 };
 
+const getIntegrationPillClass = (disabled: boolean, active: boolean): string => {
+  if (disabled) return 'cursor-not-allowed border-neutral-300 text-text-secondary opacity-60';
+  if (active) return 'border-text-brand bg-primary-100 text-text-brand';
+  return 'border-neutral-300 text-text-primary hover:bg-neutral-100';
+};
+
 const IntegrationPills = ({
   selected,
   onSelect,
@@ -112,13 +118,10 @@ const IntegrationPills = ({
           onClick={() => {
             if (!disabled) onSelect(provider.key);
           }}
-          className={`inline-flex h-12 items-center gap-2 rounded-2xl border px-5 text-body-4 font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand ${
-            disabled
-              ? 'cursor-not-allowed border-neutral-300 text-text-secondary opacity-60'
-              : active
-                ? 'border-text-brand bg-primary-100 text-text-brand'
-                : 'border-neutral-300 text-text-primary hover:bg-neutral-100'
-          }`}
+          className={`inline-flex h-12 items-center gap-2 rounded-2xl border px-5 text-body-4 font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand ${getIntegrationPillClass(
+            disabled,
+            active
+          )}`}
         >
           <ProviderContent provider={provider} />
           {disabled ? (

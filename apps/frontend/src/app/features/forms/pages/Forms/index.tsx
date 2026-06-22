@@ -211,7 +211,7 @@ const Forms = () => {
         <div className="flex flex-col gap-1">
           <h1 className="text-text-primary text-heading-2 flex items-center gap-2">
             <span>
-              Templates
+              {'Templates'}
               <span className="text-body-2 text-text-tertiary">{` (${list.length})`}</span>
             </span>
             <GlassTooltip

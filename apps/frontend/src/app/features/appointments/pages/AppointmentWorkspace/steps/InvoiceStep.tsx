@@ -24,6 +24,7 @@ import type {
   InvoiceStatus,
   PastInvoice,
   PaymentMethod,
+  PrescriptionItem,
 } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
@@ -44,7 +45,6 @@ import { fetchInventoryItems } from '@/app/features/inventory/services/inventory
 import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
-import type { PrescriptionItem } from '@/app/features/appointments/types/workspace';
 
 type InvoiceStepProps = {
   appointmentId: string;
@@ -87,7 +87,7 @@ const DEFAULT_CURRENCY = 'USD';
 // Open a Stripe checkout URL in a new tab. `noopener` prevents the opened page
 // from accessing this window; guarded for SSR / non-browser contexts.
 const openCheckoutUrl = (url: string): void => {
-  if (typeof globalThis.window === 'undefined') return;
+  if (globalThis.window === undefined) return;
   globalThis.window.open(url, '_blank', 'noopener,noreferrer');
 };
 
@@ -105,7 +105,7 @@ const escapeHtml = (value: string): string =>
 // dialog (print-to-PDF). There is no backend invoice-PDF endpoint, so this is the
 // portable way to produce a downloadable PDF from the invoice the user sees.
 const printInvoice = (invoice: PastInvoice, currency: string): void => {
-  if (typeof globalThis.window === 'undefined') return;
+  if (globalThis.window === undefined) return;
   const printWindow = globalThis.window.open(
     '',
     '_blank',
@@ -120,21 +120,21 @@ const printInvoice = (invoice: PastInvoice, currency: string): void => {
         )}</td></tr>`
     )
     .join('');
-  printWindow.document.write(
-    `<!doctype html><html><head><title>Invoice ${escapeHtml(invoice.id)}</title>` +
-      `<style>body{font-family:Arial,Helvetica,sans-serif;padding:32px;color:#1a1a1a}` +
-      `h1{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}` +
-      `td,th{padding:8px 0;border-bottom:1px solid #e5e5e5;font-size:13px}` +
-      `tfoot td{font-weight:bold;border-bottom:none}</style></head><body>` +
-      `<h1>Invoice ${escapeHtml(invoice.id)}</h1>` +
-      `<div>Date: ${escapeHtml(new Date(invoice.createdAt).toLocaleString())}</div>` +
-      `<table><thead><tr><th style="text-align:left">Item</th><th style="text-align:right">Amount</th></tr></thead>` +
-      `<tbody>${rows}</tbody>` +
-      `<tfoot><tr><td>Total</td><td style="text-align:right">${escapeHtml(
-        formatCents(invoice.totalCents, currency)
-      )}</td></tr></tfoot></table></body></html>`
-  );
-  printWindow.document.close();
+  // document.write is deprecated; populate the popup's head/body directly instead.
+  printWindow.document.head.innerHTML =
+    `<title>Invoice ${escapeHtml(invoice.id)}</title>` +
+    `<style>body{font-family:Arial,Helvetica,sans-serif;padding:32px;color:#1a1a1a}` +
+    `h1{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}` +
+    `td,th{padding:8px 0;border-bottom:1px solid #e5e5e5;font-size:13px}` +
+    `tfoot td{font-weight:bold;border-bottom:none}</style>`;
+  printWindow.document.body.innerHTML =
+    `<h1>Invoice ${escapeHtml(invoice.id)}</h1>` +
+    `<div>Date: ${escapeHtml(new Date(invoice.createdAt).toLocaleString())}</div>` +
+    `<table><thead><tr><th style="text-align:left">Item</th><th style="text-align:right">Amount</th></tr></thead>` +
+    `<tbody>${rows}</tbody>` +
+    `<tfoot><tr><td>Total</td><td style="text-align:right">${escapeHtml(
+      formatCents(invoice.totalCents, currency)
+    )}</td></tr></tfoot></table>`;
   printWindow.focus();
   printWindow.print();
 };

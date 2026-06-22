@@ -28,7 +28,7 @@ export function PaymentStatusContent() {
   // the status lookup. Strip any surrounding quotes/whitespace before using it.
   const rawSessionId = searchParams.get('session_id');
   const session_id = rawSessionId
-    ? rawSessionId.trim().replace(/^["']+|["'\s]+$/g, '') || null
+    ? rawSessionId.trim().replaceAll('"', '').replaceAll("'", '') || null
     : rawSessionId;
 
   const [state, setState] = useState<PaymentStatusState>({

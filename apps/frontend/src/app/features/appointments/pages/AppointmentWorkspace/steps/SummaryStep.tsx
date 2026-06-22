@@ -187,15 +187,17 @@ const AllDocumentsTable = ({
       title="All Documents"
       className="flex flex-col gap-4"
     >
-      {error ? (
+      {error && (
         <p role="alert" className="rounded-2xl bg-danger-100 p-4 text-body-4 text-danger-700">
           {error}
         </p>
-      ) : documents.length === 0 ? (
+      )}
+      {!error && documents.length === 0 && (
         <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
           No documents recorded yet.
         </p>
-      ) : (
+      )}
+      {!error && documents.length > 0 && (
         <div className="flex flex-col gap-3">
           <div
             className={`${DOCUMENT_ROW_GRID} hidden border border-transparent px-4 text-caption-2 font-medium tracking-wide text-text-secondary uppercase [&>span]:truncate sm:grid`}

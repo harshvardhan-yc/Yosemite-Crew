@@ -455,9 +455,9 @@ const TreatmentStep = ({
     // Optimistically reflect the change in the task store so the derived schedule
     // row (appointmentEmployeeTasks) re-renders immediately.
     const nextStatus =
-      patch.status !== undefined
-        ? scheduleStatusToTaskStatus(patch.status as ScheduleTaskStatus)
-        : backingTask.status;
+      patch.status === undefined
+        ? backingTask.status
+        : scheduleStatusToTaskStatus(patch.status as ScheduleTaskStatus);
     const nextAssignedTo = patch.assignedToId ?? backingTask.assignedTo;
     const nextDescription = patch.description ?? backingTask.description;
     const optimisticTask = {

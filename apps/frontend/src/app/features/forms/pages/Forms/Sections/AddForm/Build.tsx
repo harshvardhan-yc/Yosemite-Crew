@@ -27,6 +27,20 @@ import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskServic
 import { useTaskStore } from '@/app/stores/taskStore';
 import { ensureSingleSignatureAtEnd, hasSignatureField } from '@/app/lib/forms';
 
+// Builds a nested-field updater for a group field. Shared by the service/medication/task
+// group builders so their (otherwise identical) update handlers aren't duplicated.
+const makeNestedFieldUpdater =
+  (
+    group: FormField & { type: 'group'; fields?: FormField[] },
+    onChange: (next: FormField) => void
+  ) =>
+  (id: string, updatedField: FormField): void => {
+    onChange({
+      ...group,
+      fields: (group.fields ?? []).map((f) => (f.id === id ? updatedField : f)),
+    });
+  };
+
 type BuildProps = {
   formData: FormsProps;
   setFormData: React.Dispatch<React.SetStateAction<FormsProps>>;
@@ -441,12 +455,7 @@ const GroupBuilder: React.FC<GroupBuilderProps> = ({
     );
   }
 
-  const updateNestedField = (id: string, updatedField: FormField) => {
-    onChange({
-      ...groupField,
-      fields: (groupField.fields ?? []).map((f) => (f.id === id ? updatedField : f)),
-    });
-  };
+  const updateNestedField = makeNestedFieldUpdater(groupField, onChange);
 
   const removeNestedField = (id: string) =>
     onChange({
@@ -750,12 +759,7 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
     });
   };
 
-  const updateNestedField = (id: string, updatedField: FormField) => {
-    onChange({
-      ...field,
-      fields: (field.fields ?? []).map((f) => (f.id === id ? updatedField : f)),
-    });
-  };
+  const updateNestedField = makeNestedFieldUpdater(field, onChange);
 
   return (
     <div className="flex flex-col gap-4">
@@ -849,12 +853,7 @@ const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange, cr
     onChange({ ...field, fields: (field.fields ?? []).filter((f) => f.id !== taskFieldId) });
   };
 
-  const updateNestedField = (id: string, updatedField: FormField) => {
-    onChange({
-      ...field,
-      fields: (field.fields ?? []).map((f) => (f.id === id ? updatedField : f)),
-    });
-  };
+  const updateNestedField = makeNestedFieldUpdater(field, onChange);
 
   return (
     <div className="flex flex-col gap-4">
