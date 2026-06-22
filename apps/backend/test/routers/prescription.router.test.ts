@@ -7,6 +7,7 @@ const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const PrescriptionController = {
   listDispenseRequests: jest.fn(),
   getDispenseRequest: jest.fn(),
+  finalize: jest.fn(),
   reserve: jest.fn(),
   notDispensed: jest.fn(),
   dispense: jest.fn(),
@@ -68,6 +69,12 @@ describe("prescription.router", () => {
     ).toBeDefined();
     expect(
       findRoute(
+        String.raw`/organisations/:organisationId/:prescriptionId/\$finalize`,
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
         String.raw`/organisations/:organisationId/:prescriptionId/\$approve`,
         "post",
       ),
@@ -100,15 +107,12 @@ describe("prescription.router", () => {
 
   it("protects routes with auth and permission middleware", () => {
     const route = findRoute(
-      String.raw`/organisations/:organisationId/:prescriptionId/\$dispense`,
+      String.raw`/organisations/:organisationId/:prescriptionId/\$finalize`,
       "post",
     );
 
     expect(route?.stack[0]?.handle).toBe(authorizeCognito);
     expect(route?.stack.length).toBeGreaterThanOrEqual(3);
-    expect(requirePermission).toHaveBeenCalledWith([
-      "prescription:edit:any",
-      "inventory:edit:any",
-    ]);
+    expect(requirePermission).toHaveBeenCalledWith(["prescription:edit:any"]);
   });
 });

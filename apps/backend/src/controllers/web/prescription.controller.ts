@@ -92,6 +92,24 @@ export const PrescriptionController = {
     }
   },
 
+  async finalize(req: Request, res: Response) {
+    try {
+      const prescription = await ClinicalArtifactService.finalizePrescription(
+        req.params.prescriptionId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(
+          clinicalArtifactFhirMapper.prescriptionToMedicationRequest(
+            prescription,
+          ),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async reserve(req: Request, res: Response) {
     try {
       const body = actionBodySchema.parse(req.body);

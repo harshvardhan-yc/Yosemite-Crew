@@ -22,6 +22,14 @@ router.get(
 );
 
 router.post(
+  String.raw`/organisations/:organisationId/:prescriptionId/\$finalize`,
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission(["prescription:edit:any"]),
+  (req, res) => PrescriptionController.finalize(req, res),
+);
+
+router.post(
   String.raw`/organisations/:organisationId/:prescriptionId/\$reserve`,
   authorizeCognito,
   withOrgPermissions(),
