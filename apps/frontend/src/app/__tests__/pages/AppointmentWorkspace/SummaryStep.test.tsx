@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import SummaryStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/SummaryStep';
@@ -70,11 +70,28 @@ const makeDocumentRow = (overrides: Partial<WorkspaceDocumentRow> = {}): Workspa
 
 jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
   __esModule: true,
-  default: ({ open, title, pdfUrl }: { open: boolean; title: string; pdfUrl: string | null }) =>
+  default: ({
+    open,
+    title,
+    pdfUrl,
+    downloadLabel,
+    onDownload,
+  }: {
+    open: boolean;
+    title: string;
+    pdfUrl: string | null;
+    downloadLabel?: string;
+    onDownload?: () => void;
+  }) =>
     open ? (
       <div data-testid="pdf-preview">
         <span>{title}</span>
         <span>{pdfUrl}</span>
+        {onDownload && (
+          <button type="button" aria-label={downloadLabel} onClick={onDownload}>
+            Download
+          </button>
+        )}
       </div>
     ) : null,
 }));
@@ -304,6 +321,7 @@ describe('SummaryStep', () => {
     const preview = await screen.findByTestId('pdf-preview');
     expect(preview).toHaveTextContent('Clinical packet');
     expect(preview).toHaveTextContent('blob:packet-pdf');
+    expect(screen.getByRole('button', { name: 'Download clinical packet' })).toBeInTheDocument();
   });
 
   it('refreshes documents and encounter after the signing overlay closes', async () => {
@@ -356,6 +374,38 @@ describe('SummaryStep', () => {
     });
     expect(screen.getByTestId('pdf-preview')).toHaveTextContent('https://files.test/direct.pdf');
     expect(getRenderedDocument).not.toHaveBeenCalled();
+    expect(
+      within(screen.getByTestId('pdf-preview')).getByRole('button', {
+        name: 'Download Signed SOAP note',
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('opens the same document PDF overlay from the download action', async () => {
+    (listEncounterWorkspaceDocuments as jest.Mock).mockResolvedValue([
+      makeDocumentRow({
+        documentId: 'doc-1',
+        title: 'Signed SOAP note',
+        pdfUrl: 'https://files.test/direct.pdf',
+      }),
+    ]);
+    await act(async () => {
+      render(
+        <SummaryStep appointmentId={APPT} appointment={appointment} encounter={seedAndGet()} />
+      );
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /download signed soap note/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pdf-preview')).toHaveTextContent('Signed SOAP note');
+    });
+    expect(screen.getByTestId('pdf-preview')).toHaveTextContent('https://files.test/direct.pdf');
+    expect(
+      within(screen.getByTestId('pdf-preview')).getByRole('button', {
+        name: 'Download Signed SOAP note',
+      })
+    ).toBeInTheDocument();
   });
 
   it('looks up a rendered document PDF when the document row has no direct URL', async () => {
@@ -400,6 +450,13 @@ describe('SummaryStep', () => {
     });
 
     fireEvent.click(await screen.findByRole('button', { name: /download signed soap note/i }));
+
+    await screen.findByTestId('pdf-preview');
+    fireEvent.click(
+      within(screen.getByTestId('pdf-preview')).getByRole('button', {
+        name: 'Download Signed SOAP note',
+      })
+    );
 
     await waitFor(() => {
       expect(clickSpy).toHaveBeenCalled();

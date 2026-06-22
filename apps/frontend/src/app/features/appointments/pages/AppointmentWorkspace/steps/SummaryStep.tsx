@@ -168,14 +168,10 @@ const AllDocumentsTable = ({
     throw new Error('Document PDF is not available yet.');
   };
 
-  const handleDocumentAction = async (document: WorkspaceDocumentRow, download: boolean) => {
+  const handleDocumentAction = async (document: WorkspaceDocumentRow) => {
     setDocumentError(null);
     try {
       const url = await resolveDocumentUrl(document);
-      if (download) {
-        downloadDocumentUrl(url);
-        return;
-      }
       setPreview({ title: document.title, url });
     } catch (actionError) {
       console.error('Unable to open workspace document:', actionError);
@@ -237,12 +233,12 @@ const AllDocumentsTable = ({
                         icon={<LuEye aria-hidden="true" />}
                         label={`View ${document.title}`}
                         variant="dark"
-                        onClick={() => void handleDocumentAction(document, false)}
+                        onClick={() => void handleDocumentAction(document)}
                       />
                       <CircleIconButton
                         icon={<LuDownload aria-hidden="true" />}
                         label={`Download ${document.title}`}
-                        onClick={() => void handleDocumentAction(document, true)}
+                        onClick={() => void handleDocumentAction(document)}
                       />
                     </>
                   )}
@@ -261,6 +257,8 @@ const AllDocumentsTable = ({
         open={Boolean(preview)}
         title={preview?.title ?? 'Document'}
         pdfUrl={preview?.url ?? null}
+        downloadLabel={`Download ${preview?.title ?? 'document'}`}
+        onDownload={preview ? () => downloadDocumentUrl(preview.url) : undefined}
         onClose={() => setPreview(null)}
       />
     </SectionContainer>
@@ -554,6 +552,8 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
         open={Boolean(packetPreviewUrl)}
         title="Clinical packet"
         pdfUrl={packetPreviewUrl}
+        downloadLabel="Download clinical packet"
+        onDownload={packetPreviewUrl ? () => downloadDocumentUrl(packetPreviewUrl) : undefined}
         onClose={closePacketPreview}
       />
 

@@ -30,6 +30,14 @@ type DetailsProps = {
   registerValidator?: (fn: () => boolean) => void;
 };
 
+const YC_DEFAULT_CATEGORIES = new Set<FormsCategory>([
+  'SOAP',
+  'Prescription',
+  'Task Template',
+  'Discharge Form',
+  'Consent form',
+]);
+
 const Details = ({
   formData,
   setFormData,
@@ -52,7 +60,15 @@ const Details = ({
     | Organisation['type']
     | undefined;
   const effectiveOrgType = orgTypeOverride || orgType;
+  // Ownership: a "YC default" template is structure-locked (content-only, see
+  // Build.tsx `structureLocked`); a "Custom" template is fully editable and may
+  // be scoped to the whole org or a single user. The selector lives above
+  // Category because it gates what the rest of the builder can do.
+  const isYcDefault = formData.templateSource === 'YC_LIBRARY';
   const categoryOptions = useMemo(() => {
+    if (isYcDefault) {
+      return FormsCategoryOptions.filter((c) => YC_DEFAULT_CATEGORIES.has(c));
+    }
     const base = new Set([
       'Consent form',
       'Prescription',
@@ -77,19 +93,15 @@ const Details = ({
       return FormsCategoryOptions.filter((c) => base.has(c) || c.startsWith('Groomer'));
     }
     return FormsCategoryOptions;
-  }, [effectiveOrgType]);
+  }, [effectiveOrgType, isYcDefault]);
 
-  // Ownership: a "YC default" template is structure-locked (content-only, see
-  // Build.tsx `structureLocked`); a "Custom" template is fully editable and may
-  // be scoped to the whole org or a single user. The selector lives above
-  // Category because it gates what the rest of the builder can do.
-  const isYcDefault = formData.templateSource === 'YC_LIBRARY';
   const handleOwnershipChange = (value: string) => {
     if (value === 'YC_LIBRARY') {
       setFormData((prev) => ({
         ...prev,
         templateSource: 'YC_LIBRARY',
         isTemplateBacked: true,
+        category: YC_DEFAULT_CATEGORIES.has(prev.category) ? prev.category : ('' as FormsCategory),
       }));
       return;
     }

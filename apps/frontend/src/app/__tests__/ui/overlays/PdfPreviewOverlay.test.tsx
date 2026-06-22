@@ -61,6 +61,25 @@ describe('PdfPreviewOverlay', () => {
     expect(screen.queryByRole('status', { name: 'Loading PDF' })).not.toBeInTheDocument();
   });
 
+  it('renders optional download action without making it required for existing viewers', () => {
+    const onDownload = jest.fn();
+    const onClose = jest.fn();
+    render(
+      <PdfPreviewOverlay
+        open
+        pdfUrl="https://integration.vetconnectplus.com/acknowledgment/1"
+        title="Preview"
+        downloadLabel="Download preview"
+        onDownload={onDownload}
+        onClose={onClose}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download preview' }));
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('does not render iframe for unsafe URL schemes', () => {
     render(
       <PdfPreviewOverlay open pdfUrl="javascript:alert(1)" title="Blocked" onClose={jest.fn()} />

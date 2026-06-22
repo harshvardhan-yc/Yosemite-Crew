@@ -10,6 +10,9 @@ import * as formUtils from '@/app/lib/forms';
 // Mock Utils
 jest.mock('@/app/lib/forms', () => ({
   getCategoryTemplate: jest.fn(),
+  ensureSingleSignatureAtEnd: jest.fn((fields) => fields),
+  hasSignatureField: jest.fn(() => false),
+  removeSignatureFields: jest.fn((fields) => fields),
 }));
 
 // Mock Child Components to simplify testing logic
@@ -36,7 +39,7 @@ jest.mock('@/app/ui/inputs/FormInput/FormInput', () => ({
 
 jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
   __esModule: true,
-  default: ({ placeholder, defaultOption, onSelect, error }: any) => (
+  default: ({ placeholder, defaultOption, onSelect, options = [], error }: any) => (
     <div data-testid={`dropdown-${placeholder}`}>
       <span data-testid={`dropdown-value-${placeholder}`}>{defaultOption}</span>
       <button
@@ -45,6 +48,18 @@ jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
       >
         Select
       </button>
+      <div data-testid={`dropdown-options-${placeholder}`}>
+        {options.map((option: { label: string; value: string }) => (
+          <button
+            key={option.value}
+            type="button"
+            data-testid={`dropdown-option-${placeholder}-${option.value}`}
+            onClick={() => onSelect(option)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
       {error && <span data-testid={`dropdown-error-${placeholder}`}>{error}</span>}
     </div>
   ),
@@ -146,6 +161,43 @@ describe('Details Component', () => {
     expect(screen.queryByTestId('dropdown-Template scope')).not.toBeInTheDocument();
   });
 
+  it('restricts category options to canonical structures for YC default templates', () => {
+    render(
+      <Details
+        formData={{ ...defaultFormData, templateSource: 'YC_LIBRARY' }}
+        setFormData={mockSetFormData}
+        onNext={mockOnNext}
+        serviceOptions={serviceOptions}
+      />
+    );
+
+    const categoryOptions = screen.getByTestId('dropdown-options-Category');
+    expect(categoryOptions).toHaveTextContent('SOAP');
+    expect(categoryOptions).toHaveTextContent('Prescription');
+    expect(categoryOptions).toHaveTextContent('Task Template');
+    expect(categoryOptions).toHaveTextContent('Discharge Form');
+    expect(categoryOptions).toHaveTextContent('Consent form');
+    expect(categoryOptions).not.toHaveTextContent('Vitals');
+    expect(categoryOptions).not.toHaveTextContent('Custom');
+    expect(categoryOptions).not.toHaveTextContent('Inpatient Schedule');
+  });
+
+  it('keeps the full hospital category set for custom templates', () => {
+    render(
+      <Details
+        formData={{ ...defaultFormData, templateSource: 'ORG_TEMPLATE' }}
+        setFormData={mockSetFormData}
+        onNext={mockOnNext}
+        serviceOptions={serviceOptions}
+      />
+    );
+
+    const categoryOptions = screen.getByTestId('dropdown-options-Category');
+    expect(categoryOptions).toHaveTextContent('Vitals');
+    expect(categoryOptions).toHaveTextContent('Custom');
+    expect(categoryOptions).toHaveTextContent('Inpatient Schedule');
+  });
+
   it('switching to YC default marks the template backed and locked', () => {
     const setFormData = jest.fn();
     // Drive the YC_LIBRARY branch by selecting from a dropdown that emits it.
@@ -165,6 +217,30 @@ describe('Details Component', () => {
     const next = typeof updater === 'function' ? updater(defaultFormData) : updater;
     expect(next).toEqual(
       expect.objectContaining({ templateSource: 'ORG_TEMPLATE', isTemplateBacked: false })
+    );
+  });
+
+  it('clears categories that are not allowed when switching to YC default', () => {
+    const setFormData = jest.fn();
+    render(
+      <Details
+        formData={{ ...defaultFormData, category: 'Vitals' }}
+        setFormData={setFormData}
+        onNext={mockOnNext}
+        serviceOptions={serviceOptions}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('dropdown-option-Template type-YC_LIBRARY'));
+    const updater = setFormData.mock.calls.at(-1)?.[0];
+    const next =
+      typeof updater === 'function' ? updater({ ...defaultFormData, category: 'Vitals' }) : updater;
+    expect(next).toEqual(
+      expect.objectContaining({
+        templateSource: 'YC_LIBRARY',
+        isTemplateBacked: true,
+        category: '',
+      })
     );
   });
 
