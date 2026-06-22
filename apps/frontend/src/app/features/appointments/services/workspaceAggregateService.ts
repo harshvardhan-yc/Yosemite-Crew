@@ -7,7 +7,11 @@ import type {
   LineItem,
   PrescriptionItem,
   ReadyState,
+  WorkspaceCapabilities,
+  WorkspaceCapability,
   WorkspaceDocument,
+  WorkspaceLockSection,
+  WorkspaceLockState,
   WorkspaceStep,
 } from '@/app/features/appointments/types/workspace';
 
@@ -350,6 +354,65 @@ const applyBootstrapCollections = (
   }
 };
 
+const LOCK_SECTIONS: WorkspaceLockSection[] = [
+  'appointment',
+  'soap',
+  'vitals',
+  'treatment',
+  'diagnostics',
+  'prescriptions',
+  'inpatientSchedule',
+  'forms',
+  'documents',
+  'roomUnit',
+  'discharge',
+  'invoice',
+];
+
+const CAPABILITY_KEYS: WorkspaceCapability[] = [
+  'canEditSoap',
+  'canRecordVitals',
+  'canEditTreatment',
+  'canOrderDiagnostics',
+  'canPrescribe',
+  'canDispenseInventory',
+  'canAssignForms',
+  'canManageTasks',
+  'canMarkReadyForBilling',
+  'canMarkReadyForDischarge',
+  'canFinalizeDischarge',
+  'canViewFinance',
+  'canCollectPayment',
+];
+
+/**
+ * Read the backend section-lock map (BE "Section Locks And Capabilities"). Each
+ * entry is `{ locked, reason? }`. Returns undefined when the backend has not yet
+ * shipped the contract so the UI keeps its client-derived lock fallback.
+ */
+const normalizeSectionLocks = (value: unknown): WorkspaceLockState | undefined => {
+  if (!isRecord(value)) return undefined;
+  const locks: WorkspaceLockState = {};
+  for (const section of LOCK_SECTIONS) {
+    const entry = value[section];
+    if (!isRecord(entry)) continue;
+    const locked = asBoolean(entry.locked);
+    if (locked === undefined) continue;
+    locks[section] = { locked, reason: asString(entry.reason) };
+  }
+  return Object.keys(locks).length > 0 ? locks : undefined;
+};
+
+const normalizeCapabilities = (value: unknown): WorkspaceCapabilities | undefined => {
+  if (!isRecord(value)) return undefined;
+  const capabilities: WorkspaceCapabilities = {};
+  for (const key of CAPABILITY_KEYS) {
+    const flag = asBoolean(value[key]);
+    if (flag !== undefined) capabilities[key] = flag;
+  }
+  return Object.keys(capabilities).length > 0 ? capabilities : undefined;
+};
+
 export const normalizeWorkspaceBootstrapForEncounter = (
   bootstrap: WorkspaceBootstrapDTO
 ): Omit<Partial<AppointmentEncounter>, 'stepStatus'> & {
@@ -374,6 +437,12 @@ export const normalizeWorkspaceBootstrapForEncounter = (
   const invoice = isRecord(bootstrap.invoice) ? bootstrap.invoice : {};
   applyEncounterReadiness(patch, bootstrap, encounter, invoice);
   applyBootstrapCollections(patch, bootstrap);
+
+  const sectionLocks =
+    normalizeSectionLocks(bootstrap.sectionLocks) ?? normalizeSectionLocks(bootstrap.locks);
+  if (sectionLocks) patch.sectionLocks = sectionLocks;
+  const capabilities = normalizeCapabilities(bootstrap.capabilities);
+  if (capabilities) patch.capabilities = capabilities;
 
   const stepStatus = Object.entries(STEP_STATUS_BY_AGGREGATE_KEY).reduce<
     Partial<Record<WorkspaceStep, 'COMPLETED'>>
@@ -523,4 +592,36 @@ export const updateEncounterTreatmentItem = async (
 
 export const deleteEncounterTreatmentItem = async (organisationId: string, itemId: string) => {
   await deleteData(`/v1/workspace/organisations/${organisationId}/treatment-items/${itemId}`);
+};
+
+/** A service/package line item is backend-persisted unless it still carries a local- id. */
+const isPersistedTreatmentId = (id: string): boolean => Boolean(id) && !id.startsWith('local-');
+
+/** Map a workspace service/package line item to the backend treatment-item create DTO. */
+const lineItemToTreatmentDTO = (item: LineItem): TreatmentItemDTO => ({
+  productItemId: item.refId,
+  productKind: item.kind,
+  servicePackageKind: item.kind,
+  name: item.name,
+  quantity: item.qty,
+  instructions: item.instructions,
+  priceSnapshot: { unitPrice: item.unitPriceCents / 100 },
+  billable: true,
+});
+
+/**
+ * Persist any not-yet-saved service/package rows to the backend treatment-item
+ * endpoint before the workspace moves on to Invoice. Already-persisted rows (real
+ * backend ids) are skipped so Save is idempotent and never duplicates them.
+ * Throws on the first failure so the caller can block the step and surface the error.
+ */
+export const persistTreatmentItems = async (
+  organisationId: string,
+  encounterId: string,
+  items: LineItem[]
+): Promise<void> => {
+  const unsaved = items.filter((item) => !isPersistedTreatmentId(item.id));
+  for (const item of unsaved) {
+    await createEncounterTreatmentItem(organisationId, encounterId, lineItemToTreatmentDTO(item));
+  }
 };

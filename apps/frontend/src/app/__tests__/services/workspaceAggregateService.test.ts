@@ -11,9 +11,11 @@ import {
   listEncounterTreatmentItems,
   listEncounterWorkspaceDocuments,
   normalizeWorkspaceBootstrapForEncounter,
+  persistTreatmentItems,
   signWorkspaceDocumentPacket,
   updateEncounterTreatmentItem,
 } from '@/app/features/appointments/services/workspaceAggregateService';
+import type { LineItem } from '@/app/features/appointments/types/workspace';
 import { deleteData, getData, patchData, postData } from '@/app/services/axios';
 
 jest.mock('@/app/services/axios', () => ({
@@ -105,6 +107,47 @@ describe('workspaceAggregateService', () => {
     );
     expect(deleteData).toHaveBeenCalledWith(
       '/v1/workspace/organisations/org-1/treatment-items/item-1'
+    );
+  });
+
+  it('persists only not-yet-saved (local-) treatment line items', async () => {
+    const items: LineItem[] = [
+      {
+        id: 'svc-persisted',
+        refId: 'prod-1',
+        kind: 'SERVICE',
+        name: 'Saved service',
+        qty: 1,
+        unitPriceCents: 5000,
+        amountCents: 5000,
+      },
+      {
+        id: 'local-li-2',
+        refId: 'prod-2',
+        kind: 'PACKAGE',
+        name: 'New package',
+        qty: 2,
+        instructions: 'Apply twice',
+        unitPriceCents: 12000,
+        amountCents: 24000,
+      },
+    ];
+
+    await persistTreatmentItems('org-1', 'enc-1', items);
+
+    // Only the local- row is POSTed; the already-persisted row is skipped.
+    expect(postData).toHaveBeenCalledTimes(1);
+    expect(postData).toHaveBeenCalledWith(
+      '/v1/workspace/organisations/org-1/encounters/enc-1/treatment-items',
+      expect.objectContaining({
+        productItemId: 'prod-2',
+        productKind: 'PACKAGE',
+        name: 'New package',
+        quantity: 2,
+        instructions: 'Apply twice',
+        priceSnapshot: { unitPrice: 120 },
+        billable: true,
+      })
     );
   });
 
@@ -224,6 +267,39 @@ describe('workspaceAggregateService', () => {
     });
     expect(patch.readyForBilling?.value).toBe(true);
     expect(patch.readyForDischarge?.value).toBe(true);
+  });
+
+  it('normalizes backend section locks and capabilities when present', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      sectionLocks: {
+        soap: { locked: true, reason: 'Record finalized' },
+        invoice: { locked: false },
+        // Unknown sections and malformed entries are ignored.
+        unknownSection: { locked: true },
+        treatment: { reason: 'no locked flag' },
+      },
+      capabilities: {
+        canEditSoap: false,
+        canCollectPayment: true,
+        notACapability: true,
+      },
+    });
+    expect(patch.sectionLocks).toEqual({
+      soap: { locked: true, reason: 'Record finalized' },
+      invoice: { locked: false, reason: undefined },
+    });
+    expect(patch.capabilities).toEqual({ canEditSoap: false, canCollectPayment: true });
+  });
+
+  it('reads section locks from the legacy `locks` key and omits absent contracts', () => {
+    const withLocks = normalizeWorkspaceBootstrapForEncounter({
+      locks: { discharge: { locked: true } },
+    });
+    expect(withLocks.sectionLocks).toEqual({ discharge: { locked: true, reason: undefined } });
+
+    const without = normalizeWorkspaceBootstrapForEncounter({ encounter: { id: 'enc-1' } });
+    expect(without.sectionLocks).toBeUndefined();
+    expect(without.capabilities).toBeUndefined();
   });
 
   it('splits package-expanded treatment items into services and prescriptions by kind', () => {

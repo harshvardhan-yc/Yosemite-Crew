@@ -7,6 +7,11 @@ import InpatientSchedule from '@/app/features/appointments/pages/AppointmentWork
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import { savePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
+import {
+  getAppointmentWorkspaceBootstrap,
+  normalizeWorkspaceBootstrapForEncounter,
+  persistTreatmentItems,
+} from '@/app/features/appointments/services/workspaceAggregateService';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
 import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
@@ -138,6 +143,7 @@ const TreatmentStep = ({
   const addScheduleTask = useAppointmentWorkspaceStore((s) => s.addScheduleTask);
   const updateScheduleTask = useAppointmentWorkspaceStore((s) => s.updateScheduleTask);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
+  const mergeEncounterData = useAppointmentWorkspaceStore((s) => s.mergeEncounterData);
   const itemIdsByOrgId = useInventoryStore((s) => s.itemIdsByOrgId);
   const inventoryById = useInventoryStore((s) => s.itemsById);
   const setInventoryForOrg = useInventoryStore((s) => s.setInventoryForOrg);
@@ -153,6 +159,8 @@ const TreatmentStep = ({
   const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
   const [scheduleTemplates, setScheduleTemplates] = useState<TemplateLike[]>([]);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [treatmentSaveError, setTreatmentSaveError] = useState<string | null>(null);
+  const [isSavingTreatment, setIsSavingTreatment] = useState(false);
   const readOnly = encounter.viewOnly;
   // Once the encounter is ready for billing, destructive removal of un-billed
   // items is locked. Already-billed items lock per-row inside each editor (read
@@ -343,8 +351,33 @@ const TreatmentStep = ({
     }
   };
 
-  const handleSaveTreatment = () => {
+  const handleSaveTreatment = async () => {
+    if (isSavingTreatment) return;
+    setTreatmentSaveError(null);
+    // Without an org/encounter we cannot persist; keep the legacy local-only
+    // behaviour (prescriptions already persist per-add; services stay staged).
+    if (!organisationId || !encounterId) {
+      setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
+      onOpenInvoice();
+      return;
+    }
+    setIsSavingTreatment(true);
+    try {
+      // Persist any staged service/package rows, then rehydrate from the backend
+      // bootstrap so the rows carry real ids/billing status before Invoice opens.
+      await persistTreatmentItems(organisationId, encounterId, encounter.services);
+      const bootstrap = await getAppointmentWorkspaceBootstrap(organisationId, appointmentId);
+      mergeEncounterData(appointmentId, normalizeWorkspaceBootstrapForEncounter(bootstrap));
+    } catch (error) {
+      // Do NOT open Invoice when persistence fails — staged rows would otherwise
+      // appear billable without a backing record.
+      console.error('Failed to save treatment items:', error);
+      setTreatmentSaveError('Unable to save treatment items. Please try again.');
+      setIsSavingTreatment(false);
+      return;
+    }
     setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
+    setIsSavingTreatment(false);
     onOpenInvoice();
   };
 
@@ -385,6 +418,12 @@ const TreatmentStep = ({
       />
       {prescriptionError && <p className="text-caption-1 text-red-600">{prescriptionError}</p>}
 
+      {treatmentSaveError && (
+        <p role="alert" className="text-caption-1 text-red-600">
+          {treatmentSaveError}
+        </p>
+      )}
+
       <div className="flex flex-wrap justify-between gap-3">
         <Secondary
           text="Prescription"
@@ -392,10 +431,10 @@ const TreatmentStep = ({
           onClick={handlePrint}
         />
         <Primary
-          text="Save treatment"
+          text={isSavingTreatment ? 'Saving…' : 'Save treatment'}
           icon={<LuSave aria-hidden="true" />}
-          onClick={handleSaveTreatment}
-          isDisabled={readOnly}
+          onClick={() => void handleSaveTreatment()}
+          isDisabled={readOnly || isSavingTreatment}
         />
       </div>
     </div>

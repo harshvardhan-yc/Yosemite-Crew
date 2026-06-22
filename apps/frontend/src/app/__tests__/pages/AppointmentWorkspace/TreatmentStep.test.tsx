@@ -14,9 +14,19 @@ import {
   listInpatientScheduleTemplates,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
+import {
+  getAppointmentWorkspaceBootstrap,
+  persistTreatmentItems,
+} from '@/app/features/appointments/services/workspaceAggregateService';
 
 jest.mock('@/app/features/inventory/services/inventoryService', () => ({
   fetchInventoryItems: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('@/app/features/appointments/services/workspaceAggregateService', () => ({
+  persistTreatmentItems: jest.fn().mockResolvedValue(undefined),
+  getAppointmentWorkspaceBootstrap: jest.fn().mockResolvedValue({}),
+  normalizeWorkspaceBootstrapForEncounter: jest.fn().mockReturnValue({}),
 }));
 
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
@@ -283,6 +293,10 @@ describe('TreatmentStep', () => {
     (createWorkspaceTemplateInstance as jest.Mock).mockClear();
     (listInpatientScheduleTemplates as jest.Mock).mockClear();
     (loadTasksForPrimaryOrg as jest.Mock).mockClear();
+    (persistTreatmentItems as jest.Mock).mockClear();
+    (persistTreatmentItems as jest.Mock).mockResolvedValue(undefined);
+    (getAppointmentWorkspaceBootstrap as jest.Mock).mockClear();
+    (getAppointmentWorkspaceBootstrap as jest.Mock).mockResolvedValue({});
     (applyInpatientScheduleTemplate as jest.Mock).mockResolvedValue({ resourceType: 'Task' });
     (createWorkspaceTemplateInstance as jest.Mock).mockResolvedValue({ id: 'instance-1' });
     (listInpatientScheduleTemplates as jest.Mock).mockResolvedValue([]);
@@ -531,6 +545,54 @@ describe('TreatmentStep', () => {
       'COMPLETED'
     );
     printSpy.mockRestore();
+  });
+
+  it('persists staged treatment items, rehydrates, then opens the invoice', async () => {
+    const onOpenInvoice = jest.fn();
+    const enc = seedAndGet();
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        encounter={enc}
+        onOpenInvoice={onOpenInvoice}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /save treatment/i }));
+
+    await waitFor(() => expect(onOpenInvoice).toHaveBeenCalled());
+    expect(persistTreatmentItems).toHaveBeenCalledWith(ORG, 'enc-1', enc.services);
+    expect(getAppointmentWorkspaceBootstrap).toHaveBeenCalledWith(ORG, APPT);
+    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.stepStatus.TREATMENT).toBe(
+      'COMPLETED'
+    );
+  });
+
+  it('blocks the invoice and shows an error when treatment persistence fails', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (persistTreatmentItems as jest.Mock).mockRejectedValueOnce(new Error('save failed'));
+    const onOpenInvoice = jest.fn();
+    const enc = seedAndGet();
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        encounter={enc}
+        onOpenInvoice={onOpenInvoice}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /save treatment/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to save treatment items');
+    expect(onOpenInvoice).not.toHaveBeenCalled();
+    expect(
+      useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.stepStatus.TREATMENT
+    ).not.toBe('COMPLETED');
+    errorSpy.mockRestore();
   });
 
   it('renders inpatient schedule and adds a manual task', () => {
