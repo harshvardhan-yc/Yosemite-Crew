@@ -1156,96 +1156,46 @@ const Build = ({
           const canMoveDown = index < (formData.schema?.length ?? 0) - 1;
 
           if (field.type === 'group') {
-            // Handle medication groups separately
+            const isDragging = dragIndex === index;
+            // Service groups seed a checkbox first; every other group kind renders
+            // the field as-is. All kinds share the same draggable wrapper, so only
+            // the inner builder differs.
+            const ensured = isServiceGroup(field)
+              ? ensureServiceCheckbox(field, serviceOptions).group
+              : field;
+
+            let groupBuilder: React.ReactNode;
             if (isMedicationGroup(field)) {
-              const isDragging = dragIndex === index;
-              return (
-                <BuilderWrapper
-                  key={fieldId}
+              groupBuilder = (
+                <MedicationGroupBuilder
                   field={field}
-                  onDelete={() => handleDeleteField(fieldId)}
-                  onMoveUp={() => moveField(index, 'up')}
-                  onMoveDown={() => moveField(index, 'down')}
-                  canMoveUp={canMoveUp}
-                  canMoveDown={canMoveDown}
-                  draggable
-                  onDragStart={handleDragStart(index)}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop(index)}
-                  onDragEnd={handleDragEnd}
-                  isDragging={isDragging}
-                >
-                  <MedicationGroupBuilder
-                    field={field}
-                    onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                    createField={createField}
-                  />
-                </BuilderWrapper>
+                  onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
+                  createField={createField}
+                />
               );
-            }
-
-            if (isTaskGroup(field)) {
-              const isDragging = dragIndex === index;
-              return (
-                <BuilderWrapper
-                  key={fieldId}
+            } else if (isTaskGroup(field)) {
+              groupBuilder = (
+                <TaskGroupBuilder
                   field={field}
-                  onDelete={() => handleDeleteField(fieldId)}
-                  onMoveUp={() => moveField(index, 'up')}
-                  onMoveDown={() => moveField(index, 'down')}
-                  canMoveUp={canMoveUp}
-                  canMoveDown={canMoveDown}
-                  draggable
-                  onDragStart={handleDragStart(index)}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop(index)}
-                  onDragEnd={handleDragEnd}
-                  isDragging={isDragging}
-                >
-                  <TaskGroupBuilder
-                    field={field}
-                    onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                    createField={createField}
-                  />
-                </BuilderWrapper>
+                  onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
+                  createField={createField}
+                />
               );
-            }
-
-            // Handle service groups and regular groups
-            if (isServiceGroup(field)) {
-              const ensured = ensureServiceCheckbox(field, serviceOptions).group;
-              const isDragging = dragIndex === index;
-              return (
-                <BuilderWrapper
-                  key={ensured.id}
+            } else {
+              groupBuilder = (
+                <GroupBuilder
                   field={ensured}
-                  onDelete={() => handleDeleteField(fieldId)}
-                  onMoveUp={() => moveField(index, 'up')}
-                  onMoveDown={() => moveField(index, 'down')}
-                  canMoveUp={canMoveUp}
-                  canMoveDown={canMoveDown}
-                  draggable
-                  onDragStart={handleDragStart(index)}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop(index)}
-                  onDragEnd={handleDragEnd}
-                  isDragging={isDragging}
-                >
-                  <GroupBuilder
-                    field={ensured}
-                    onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                    createField={createField}
-                    serviceOptions={serviceOptions}
-                  />
-                </BuilderWrapper>
+                  onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
+                  createField={createField}
+                  serviceOptions={serviceOptions}
+                />
               );
             }
 
-            // Regular groups
             return (
               <BuilderWrapper
-                key={fieldId}
-                field={field}
+                key={ensured.id}
+                field={ensured}
                 onDelete={() => handleDeleteField(fieldId)}
                 onMoveUp={() => moveField(index, 'up')}
                 onMoveDown={() => moveField(index, 'down')}
@@ -1256,14 +1206,9 @@ const Build = ({
                 onDragOver={handleDragOver}
                 onDrop={handleDrop(index)}
                 onDragEnd={handleDragEnd}
-                isDragging={dragIndex === index}
+                isDragging={isDragging}
               >
-                <GroupBuilder
-                  field={field}
-                  onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                  createField={createField}
-                  serviceOptions={serviceOptions}
-                />
+                {groupBuilder}
               </BuilderWrapper>
             );
           }
