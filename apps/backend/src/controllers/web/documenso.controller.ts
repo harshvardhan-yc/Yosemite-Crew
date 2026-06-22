@@ -14,6 +14,7 @@ import {
   DocumensoService,
 } from "src/services/documenso.service";
 import { completePersistedRenderedDocumentSigning } from "src/services/rendered-document.service";
+import { WorkspaceDocumentPacketService } from "src/services/workspace-document-packet.service";
 import { OrganizationService } from "src/services/organization.service";
 import type { AuthenticatedRequest } from "src/middlewares/auth";
 import logger from "src/utils/logger";
@@ -133,6 +134,32 @@ export const DocumensoWebhookController = {
 
           case "DOCUMENT_DELETED":
             await handleRenderedDocumentDeletedPrisma(renderedDocument.id);
+            break;
+        }
+      }
+
+      const documentPacket = await prisma.workspaceDocumentPacket.findFirst({
+        where: {
+          signing: {
+            path: ["documentId"],
+            equals: String(documentId),
+          } as Prisma.JsonFilter,
+        },
+        select: { id: true },
+      });
+
+      if (documentPacket) {
+        switch (eventType) {
+          case "DOCUMENT_COMPLETED":
+            await WorkspaceDocumentPacketService.completeSigning(
+              documentPacket.id,
+            );
+            break;
+
+          case "DOCUMENT_DELETED":
+            await WorkspaceDocumentPacketService.resetSigning(
+              documentPacket.id,
+            );
             break;
         }
       }

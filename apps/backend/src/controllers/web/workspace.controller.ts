@@ -41,6 +41,7 @@ const treatmentItemParamsSchema = z.object({
 
 const signPacketBodySchema = z.object({
   signerName: z.string().trim().min(1).optional(),
+  signerEmail: z.string().trim().email().optional(),
 });
 
 const treatmentItemBodySchema = z.object({
@@ -203,6 +204,7 @@ export const WorkspaceController = {
         packetId: params.packetId,
         signerId,
         signerName: body.signerName,
+        signerEmail: body.signerEmail,
       });
       return res.status(200).json(data);
     } catch (error) {
