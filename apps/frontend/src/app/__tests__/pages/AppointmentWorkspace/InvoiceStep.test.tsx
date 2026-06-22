@@ -550,7 +550,8 @@ describe('InvoiceStep', () => {
 
   it('refetches finance after a cash payment so the bill reflects server truth', async () => {
     const enc = seedAndGet();
-    renderInvoice(enc);
+    // organisationId is required for the post-payment refetch to fire.
+    renderInvoice(enc, jest.fn(), false, 'org-1');
     // Ignore the mount-time hydration call; assert the post-payment refetch.
     mockLoadAppointmentBilling.mockClear();
 
