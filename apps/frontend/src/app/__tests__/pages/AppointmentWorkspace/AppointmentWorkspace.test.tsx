@@ -140,6 +140,8 @@ jest.mock('@/app/features/appointments/services/workspaceTemplateService', () =>
   return {
     ...actual,
     listSoapTemplatesForWorkspace: jest.fn().mockResolvedValue([]),
+    // Resolver-on-load: no service-linked SOAP template in these tests.
+    resolveSoapTemplate: jest.fn().mockResolvedValue(null),
     listVitalsTemplates: jest.fn(() => new Promise(() => undefined)),
     listPrescriptionTemplates: jest.fn(() => new Promise(() => undefined)),
     listDischargeSummaryTemplates: jest.fn(() => new Promise(() => undefined)),
