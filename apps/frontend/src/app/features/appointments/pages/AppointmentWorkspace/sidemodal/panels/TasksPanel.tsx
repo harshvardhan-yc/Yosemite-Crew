@@ -162,7 +162,7 @@ const TaskRow = ({
     <div className="flex items-start justify-between gap-3">
       <div className="flex flex-col gap-1 leading-[130%]">
         <span className="text-[12px] font-medium text-pill-success-text">
-          {task.startDate ? formatStampDate(task.startDate) : '24 Apr, 2026'}
+          {task.startDate ? formatStampDate(task.startDate) : 'No date'}
         </span>
         <span className="text-[12px] text-text-secondary">{task.category}</span>
         <span className="text-body-4 text-text-primary">{task.description}</span>
