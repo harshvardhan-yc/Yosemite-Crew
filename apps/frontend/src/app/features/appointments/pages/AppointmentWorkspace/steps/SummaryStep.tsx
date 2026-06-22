@@ -1,6 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
-import type { Appointment, TemplateLike, TemplateSchemaSnapshot } from '@yosemite-crew/types';
+import type {
+  Appointment,
+  TemplateLike,
+  TemplateSchemaSnapshot,
+  WorkspaceDocumentRow,
+} from '@yosemite-crew/types';
 import {
   LuDownload,
   LuEye,
@@ -21,16 +26,25 @@ import SigningOverlay from '@/app/ui/overlays/SigningOverlay';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
 import { isRichTextEmpty, sanitizeRichText } from '@/app/lib/richText';
-import type {
-  AppointmentEncounter,
-  WorkspaceDocument,
-} from '@/app/features/appointments/types/workspace';
+import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
+import { usePermissions } from '@/app/hooks/usePermissions';
 import {
   getRenderedDocument,
   saveDischargeSummaryArtifact,
 } from '@/app/features/appointments/services/workspaceClinicalService';
-import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
+import {
+  listDischargeSummaryTemplates,
+  resolveDischargeTemplate,
+} from '@/app/features/appointments/services/workspaceTemplateService';
+import {
+  createEncounterDocumentPacket,
+  getAppointmentWorkspaceBootstrap,
+  getEncounterDocumentPacketPdfUrl,
+  listEncounterWorkspaceDocuments,
+  normalizeWorkspaceBootstrapForEncounter,
+  signWorkspaceDocumentPacket,
+} from '@/app/features/appointments/services/workspaceAggregateService';
 
 type SummaryStepProps = {
   appointmentId: string;
@@ -66,8 +80,8 @@ const getTemplateSchemaSnapshot = (template: TemplateLike): TemplateSchemaSnapsh
   return hasTemplateSchemaSnapshot(version?.schemaSnapshot) ? version.schemaSnapshot : undefined;
 };
 
-const templateToDischargeHtml = (template: TemplateLike): string => {
-  const sections = getTemplateSchemaSnapshot(template)?.sections ?? [];
+const schemaSnapshotToDischargeHtml = (snapshot?: TemplateSchemaSnapshot): string => {
+  const sections = snapshot?.sections ?? [];
   if (sections.length === 0) return '';
   return sections
     .map((section) => {
@@ -79,6 +93,9 @@ const templateToDischargeHtml = (template: TemplateLike): string => {
     .join('');
 };
 
+const templateToDischargeHtml = (template: TemplateLike): string =>
+  schemaSnapshotToDischargeHtml(getTemplateSchemaSnapshot(template));
+
 /** ISO follow-up timestamp ⇄ the Datepicker's `Date | null` value. */
 const toFollowUpDate = (iso?: string): Date | null => {
   if (!iso) return null;
@@ -86,9 +103,28 @@ const toFollowUpDate = (iso?: string): Date | null => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const DocumentCategoryPill = ({ category }: { category: WorkspaceDocument['category'] }) => (
+/** Humanise a backend enum token (e.g. "DISCHARGE_SUMMARY" → "Discharge summary",
+ *  "NOT_REQUIRED" → "Not required") so raw enums never reach the table. */
+const humanizeToken = (value?: string | null): string => {
+  if (!value) return '-';
+  const words = value
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .filter(Boolean);
+  if (words.length === 0) return '-';
+  return words
+    .map((word, index) => (index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+    .join(' ');
+};
+
+/** The documents read-model types timestamps as `Date` in the contract but they
+ *  arrive as JSON strings over the wire — normalise to ISO for formatting. */
+const toIsoString = (value: string | Date): string =>
+  typeof value === 'string' ? value : new Date(value).toISOString();
+
+const DocumentSourcePill = ({ source }: { source: string }) => (
   <span className="inline-flex rounded-2xl border border-[#D6D1CD] bg-[#FAF8F6] px-3 py-1 text-caption-1 text-text-primary">
-    {category}
+    {humanizeToken(source)}
   </span>
 );
 
@@ -108,87 +144,30 @@ const downloadDocumentUrl = (url: string) => {
   link.remove();
 };
 
-/**
- * Build the "All Documents" rows from the encounter's clinical artifacts so the
- * list stays in sync with every save (SOAP, prescription, discharge summary)
- * without a dedicated documents fetch. Any explicitly added/signed documents
- * (e.g. the signed discharge summary) are merged in and win on id collisions.
- */
-const deriveWorkspaceDocuments = (encounter: AppointmentEncounter): WorkspaceDocument[] => {
-  const derived: WorkspaceDocument[] = [];
-
-  encounter.soap.forEach((note, index) => {
-    const hasContent =
-      !isRichTextEmpty(note.subjective) ||
-      !isRichTextEmpty(note.objective) ||
-      !isRichTextEmpty(note.assessment) ||
-      !isRichTextEmpty(note.plan) ||
-      !isRichTextEmpty(note.chiefComplaint);
-    if (!hasContent) return;
-    derived.push({
-      id: note.id,
-      category: 'SOAP',
-      description: encounter.soap.length > 1 ? `SOAP note ${index + 1}` : 'SOAP note',
-      createdAt: note.createdAt,
-      lastModifiedAt: note.signedAt ?? note.createdAt,
-      signedByName: note.signedByName,
-      signatureRequired: note.status !== 'COMPLETED',
-    });
-  });
-
-  if (encounter.prescription.length > 0) {
-    const names = encounter.prescription
-      .map((item) => item.medicineName)
-      .filter(Boolean)
-      .join(', ');
-    derived.push({
-      id: 'prescription',
-      category: 'Treatment',
-      description: names ? `Prescription — ${names}` : 'Prescription',
-      createdAt: encounter.dischargeSavedAt ?? new Date().toISOString(),
-      lastModifiedAt: encounter.dischargeSavedAt ?? new Date().toISOString(),
-    });
-  }
-
-  if (encounter.dischargeSavedAt && !isRichTextEmpty(encounter.dischargeSummary)) {
-    derived.push({
-      id: encounter.dischargeSummaryId ?? 'discharge-summary',
-      category: 'Discharge',
-      description: 'Discharge summary',
-      createdAt: encounter.dischargeSavedAt,
-      lastModifiedAt: encounter.dischargeSavedAt,
-      signedByName: encounter.dischargeSavedByName,
-      signatureRequired: false,
-    });
-  }
-
-  const explicitIds = new Set(encounter.documents.map((document) => document.id));
-  return [
-    ...encounter.documents,
-    ...derived.filter((document) => !explicitIds.has(document.id)),
-  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-};
-
 const AllDocumentsTable = ({
   documents,
   organisationId,
+  canView,
+  error,
 }: {
-  documents: WorkspaceDocument[];
+  documents: WorkspaceDocumentRow[];
   organisationId?: string;
+  canView: boolean;
+  error?: string | null;
 }) => {
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; url: string } | null>(null);
 
-  const resolveDocumentUrl = async (document: WorkspaceDocument) => {
+  const resolveDocumentUrl = async (document: WorkspaceDocumentRow) => {
     if (document.pdfUrl) return document.pdfUrl;
     if (!organisationId) throw new Error('Organisation missing for document lookup.');
-    const rendered = await getRenderedDocument(organisationId, document.id);
+    const rendered = await getRenderedDocument(organisationId, document.documentId);
     const pdfUrl = (rendered as { pdfUrl?: unknown }).pdfUrl;
     if (typeof pdfUrl === 'string' && pdfUrl.trim()) return pdfUrl.trim();
     throw new Error('Document PDF is not available yet.');
   };
 
-  const handleDocumentAction = async (document: WorkspaceDocument, download: boolean) => {
+  const handleDocumentAction = async (document: WorkspaceDocumentRow, download: boolean) => {
     setDocumentError(null);
     try {
       const url = await resolveDocumentUrl(document);
@@ -196,10 +175,12 @@ const AllDocumentsTable = ({
         downloadDocumentUrl(url);
         return;
       }
-      setPreview({ title: document.description, url });
-    } catch (error) {
-      console.error('Unable to open workspace document:', error);
-      setDocumentError(error instanceof Error ? error.message : 'Unable to open document.');
+      setPreview({ title: document.title, url });
+    } catch (actionError) {
+      console.error('Unable to open workspace document:', actionError);
+      setDocumentError(
+        actionError instanceof Error ? actionError.message : 'Unable to open document.'
+      );
     }
   };
 
@@ -209,7 +190,11 @@ const AllDocumentsTable = ({
       title="All Documents"
       className="flex flex-col gap-4"
     >
-      {documents.length === 0 ? (
+      {error ? (
+        <p role="alert" className="rounded-2xl bg-danger-100 p-4 text-body-4 text-danger-700">
+          {error}
+        </p>
+      ) : documents.length === 0 ? (
         <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
           No documents recorded yet.
         </p>
@@ -219,45 +204,47 @@ const AllDocumentsTable = ({
             className={`${DOCUMENT_ROW_GRID} hidden border border-transparent px-4 text-caption-2 font-medium tracking-wide text-text-secondary uppercase [&>span]:truncate sm:grid`}
           >
             <span>Created</span>
-            <span>Category</span>
-            <span>Description</span>
-            <span>Signed by</span>
-            <span>Last modified</span>
+            <span>Source</span>
+            <span>Title</span>
+            <span>Status</span>
+            <span>Signing</span>
             <span className="text-right">Actions</span>
           </div>
           <ul className="flex flex-col gap-3">
             {documents.map((document) => (
               <li
-                key={document.id}
+                key={document.documentId}
                 className={`${DOCUMENT_ROW_GRID} rounded-2xl border border-card-border p-4`}
               >
                 <span className="truncate text-body-4 text-text-secondary">
-                  {formatDateTime(document.createdAt)}
+                  {formatDateTime(toIsoString(document.createdAt))}
                 </span>
                 <span>
-                  <DocumentCategoryPill category={document.category} />
+                  <DocumentSourcePill source={document.sourceKind} />
                 </span>
-                <span className="truncate font-medium text-text-primary">
-                  {document.description}
-                </span>
+                <span className="truncate font-medium text-text-primary">{document.title}</span>
                 <span className="truncate text-body-4 text-text-primary">
-                  {document.signedByName ?? '-'}
+                  {humanizeToken(document.status)}
                 </span>
                 <span className="truncate text-body-4 text-text-secondary">
-                  {formatDateTime(document.lastModifiedAt)}
+                  {humanizeToken(document.signingStatus)}
                 </span>
                 <div className="flex justify-end gap-2">
-                  <CircleIconButton
-                    icon={<LuEye aria-hidden="true" />}
-                    label={`View ${document.description}`}
-                    variant="dark"
-                    onClick={() => void handleDocumentAction(document, false)}
-                  />
-                  <CircleIconButton
-                    icon={<LuDownload aria-hidden="true" />}
-                    label={`Download ${document.description}`}
-                    onClick={() => void handleDocumentAction(document, true)}
-                  />
+                  {canView && (
+                    <>
+                      <CircleIconButton
+                        icon={<LuEye aria-hidden="true" />}
+                        label={`View ${document.title}`}
+                        variant="dark"
+                        onClick={() => void handleDocumentAction(document, false)}
+                      />
+                      <CircleIconButton
+                        icon={<LuDownload aria-hidden="true" />}
+                        label={`Download ${document.title}`}
+                        onClick={() => void handleDocumentAction(document, true)}
+                      />
+                    </>
+                  )}
                 </div>
               </li>
             ))}
@@ -284,20 +271,40 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   const saveDischargeSummary = useAppointmentWorkspaceStore((s) => s.saveDischargeSummary);
   const reopenDischargeSummary = useAppointmentWorkspaceStore((s) => s.reopenDischargeSummary);
   const setFollowUp = useAppointmentWorkspaceStore((s) => s.setFollowUp);
-  const addDocument = useAppointmentWorkspaceStore((s) => s.addDocument);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
+  const mergeEncounterData = useAppointmentWorkspaceStore((s) => s.mergeEncounterData);
   const openSigningOverlay = useSigningOverlayStore((s) => s.openOverlay);
+  const setSigningUrl = useSigningOverlayStore((s) => s.setUrl);
+  const closeSigningOverlay = useSigningOverlayStore((s) => s.close);
+  const signingOverlayOpen = useSigningOverlayStore((s) => s.open);
+  const [isSigning, setIsSigning] = useState(false);
+  const [signError, setSignError] = useState<string | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [packetPreviewUrl, setPacketPreviewUrl] = useState<string | null>(null);
   const [templateQuery, setTemplateQuery] = useState('');
   const [templateState, setTemplateState] = useState<{
     templates: TemplateLike[];
     error: string | null;
   }>({ templates: [], error: null });
+  // The template the discharge summary was hydrated from (resolved by context or
+  // chosen via search). Persisted alongside the artifact so the saved record
+  // carries provenance (`templateId` + `templateVersion`).
+  const [dischargeTemplate, setDischargeTemplate] = useState<{
+    templateId: string;
+    templateVersion: number;
+    templateVersionId?: string;
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   // The discharge summary becomes read-only once saved (or when the encounter
   // itself is view-only).
   const dischargeSaved = Boolean(encounter.dischargeSavedAt);
   const readOnly = encounter.viewOnly || dischargeSaved;
-  const derivedDocuments = useMemo(() => deriveWorkspaceDocuments(encounter), [encounter]);
+  const { can } = usePermissions(appointment?.organisationId);
+  const canViewDocuments = can('document:view:any');
+  // The All-Documents list comes from the backend documents read-model (same DTO
+  // as the Records panel) rather than being rebuilt client-side from artifacts.
+  const [documents, setDocuments] = useState<WorkspaceDocumentRow[]>([]);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
 
   const templateSearchRef = useRef<HTMLDivElement>(null);
   const templateMatches = useMemo(() => {
@@ -318,23 +325,170 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
       });
   }, [appointment?.organisationId]);
 
+  // Auto-resolve the discharge template for this encounter's context
+  // (service / package / species / mode) and prefill the rich-text editor. Runs
+  // once per encounter, and only when the summary is still blank and unsaved so
+  // it never clobbers a draft or a manually chosen template.
+  const organisationId = appointment?.organisationId;
+  const encounterId = appointment?.encounterId;
+
+  // Load (and expose a refetch of) the backend documents read-model for this
+  // encounter. The refetch is reused after signing so the list, statuses, and
+  // signing state stay in sync without a full page reload.
+  const refreshDocuments = useCallback(async () => {
+    if (!organisationId || !encounterId) return;
+    try {
+      const rows = await listEncounterWorkspaceDocuments(organisationId, encounterId);
+      setDocuments(rows);
+      setDocumentsError(null);
+    } catch (error) {
+      console.error('Unable to load documents:', error);
+      setDocumentsError('Unable to load documents.');
+    }
+  }, [organisationId, encounterId]);
+
+  useEffect(() => {
+    void refreshDocuments();
+  }, [refreshDocuments]);
+
+  // After a signing session closes, pull server truth so the documents list,
+  // discharge artifact status, and finalization gate (ready-for-discharge /
+  // ready-for-billing) reflect the completed Documenso signature.
+  const refreshAfterSigning = useCallback(async () => {
+    if (!organisationId || !appointmentId) return;
+    try {
+      const bootstrap = await getAppointmentWorkspaceBootstrap(organisationId, appointmentId);
+      mergeEncounterData(appointmentId, normalizeWorkspaceBootstrapForEncounter(bootstrap));
+    } catch (error) {
+      console.error('Unable to refresh encounter after signing:', error);
+    }
+    await refreshDocuments();
+  }, [organisationId, appointmentId, mergeEncounterData, refreshDocuments]);
+
+  // The signing overlay has no completion callback, so treat closing it after a
+  // sign was started as the signal to refetch (the Documenso webhook has run
+  // server-side by then).
+  const signingInitiatedRef = useRef(false);
+  useEffect(() => {
+    if (signingOverlayOpen || !signingInitiatedRef.current) return;
+    signingInitiatedRef.current = false;
+    void refreshAfterSigning();
+  }, [signingOverlayOpen, refreshAfterSigning]);
+
+  useEffect(() => {
+    if (!organisationId || dischargeSaved) return;
+    if (!isRichTextEmpty(encounter.dischargeSummary) || dischargeTemplate) return;
+    let cancelled = false;
+    const serviceLine = encounter.services.find((item) => item.kind === 'SERVICE');
+    const packageLine = encounter.services.find((item) => item.kind === 'PACKAGE');
+    resolveDischargeTemplate({
+      organisationId,
+      appointmentId,
+      encounterId,
+      companionId: appointment?.patient?.id,
+      species: appointment?.patient?.species,
+      serviceId: serviceLine?.refId,
+      packageId: packageLine?.refId,
+      mode: encounter.mode,
+    })
+      .then((resolved) => {
+        if (cancelled || !resolved) return;
+        const html = schemaSnapshotToDischargeHtml(resolved.schemaSnapshot);
+        if (html) setDischargeSummary(appointmentId, html);
+        setDischargeTemplate({
+          templateId: resolved.templateId,
+          templateVersion: resolved.templateVersion,
+          templateVersionId: resolved.templateVersionId,
+        });
+      })
+      .catch((error) => {
+        console.error('Unable to resolve discharge template:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Resolve once per encounter; guarded above against overwriting content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organisationId, encounterId, appointmentId, dischargeSaved]);
+
   const handleTemplateSelect = (template: TemplateLike) => {
     setDischargeSummary(appointmentId, templateToDischargeHtml(template));
+    setDischargeTemplate({
+      templateId: template.id,
+      templateVersion: template.publishedVersion ?? template.latestVersion,
+    });
     setTemplateQuery('');
   };
 
-  const handleSign = () => {
-    const now = new Date().toISOString();
-    addDocument(appointmentId, {
-      createdAt: now,
-      category: 'Discharge',
-      description: 'Signed discharge summary',
-      signedByName: encounter.leadName ?? 'Clinician',
-      lastModifiedAt: now,
-      signatureRequired: true,
+  // Build the merged clinical packet for this encounter and start signing it as
+  // a single document via Documenso. The packet stays DRAFT until the Documenso
+  // webhook confirms completion, at which point every bundled document is marked
+  // signed against the one signed packet PDF.
+  const handleSign = async () => {
+    if (isSigning) return;
+    const organisationId = appointment?.organisationId;
+    const encounterId = appointment?.encounterId;
+    if (!organisationId || !encounterId) {
+      setSignError('Missing organisation or encounter for signing.');
+      return;
+    }
+
+    setSignError(null);
+    setIsSigning(true);
+    openSigningOverlay(`packet-${encounterId}`);
+    try {
+      const packet = await createEncounterDocumentPacket(organisationId, encounterId);
+      const packetId = packet?.packetId;
+      if (!packetId) {
+        throw new Error('Document packet could not be created.');
+      }
+      const signed = await signWorkspaceDocumentPacket(organisationId, packetId, {
+        signerName: encounter.leadName ?? undefined,
+      });
+      const signingUrl = signed?.signing?.signingUrl;
+      if (!signingUrl) {
+        throw new Error('Signing link is not available yet.');
+      }
+      setSigningUrl(signingUrl);
+      // Arm the post-sign refresh: when the overlay closes we refetch documents,
+      // discharge status, and the finalization gate.
+      signingInitiatedRef.current = true;
+      setStepStatus(appointmentId, 'SUMMARY', 'COMPLETED');
+    } catch (error) {
+      setSignError(error instanceof Error ? error.message : 'Unable to start signing.');
+      closeSigningOverlay();
+    } finally {
+      setIsSigning(false);
+    }
+  };
+
+  // Open the merged clinical packet (SOAP + Prescription + Discharge) as one PDF.
+  // Falls back to the browser print dialog if the combined PDF isn't available
+  // (e.g. documents not yet rendered, or no org/encounter context).
+  const handlePrint = async () => {
+    if (isPrinting) return;
+    const organisationId = appointment?.organisationId;
+    const encounterId = appointment?.encounterId;
+    if (!organisationId || !encounterId) {
+      globalThis.window.print();
+      return;
+    }
+    setIsPrinting(true);
+    try {
+      const url = await getEncounterDocumentPacketPdfUrl(organisationId, encounterId);
+      setPacketPreviewUrl(url);
+    } catch {
+      globalThis.window.print();
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const closePacketPreview = () => {
+    setPacketPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
     });
-    setStepStatus(appointmentId, 'SUMMARY', 'COMPLETED');
-    openSigningOverlay(`workspace-summary-${appointmentId}`);
   };
 
   const handleSave = async () => {
@@ -349,6 +503,9 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
             appointmentId,
             encounterId: appointment.encounterId,
             dischargeSummaryId: encounter.dischargeSummaryId,
+            templateId: dischargeTemplate?.templateId,
+            templateVersion: dischargeTemplate?.templateVersion,
+            templateVersionId: dischargeTemplate?.templateVersionId,
           },
           encounter.dischargeSummary,
           encounter.followUpAt
@@ -372,6 +529,12 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   return (
     <div className="flex flex-col gap-5">
       <SigningOverlay />
+      <PdfPreviewOverlay
+        open={Boolean(packetPreviewUrl)}
+        title="Clinical packet"
+        pdfUrl={packetPreviewUrl}
+        onClose={closePacketPreview}
+      />
 
       {/* Discharge-template search sits above the container (like the SOAP step's
           template search) — selecting a template fills the editor. */}
@@ -493,31 +656,41 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
         )}
       </SectionContainer>
 
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <Secondary
-          text="Print"
-          icon={<LuPrinter aria-hidden="true" />}
-          onClick={() => globalThis.window.print()}
-        />
-        {!dischargeSaved && (
-          <Secondary
-            text="Save"
-            icon={<LuSave aria-hidden="true" />}
-            onClick={handleSave}
-            isDisabled={encounter.viewOnly || isSaving}
-          />
+      <div className="flex flex-col items-end gap-2">
+        {signError && (
+          <p role="alert" className="text-body-4 text-danger-700">
+            {signError}
+          </p>
         )}
-        <Secondary
-          text="Sign"
-          icon={<LuFileSignature aria-hidden="true" />}
-          onClick={handleSign}
-          isDisabled={encounter.viewOnly}
-        />
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <Secondary
+            text={isPrinting ? 'Preparing…' : 'Print'}
+            icon={<LuPrinter aria-hidden="true" />}
+            onClick={handlePrint}
+            isDisabled={isPrinting}
+          />
+          {!dischargeSaved && (
+            <Secondary
+              text="Save"
+              icon={<LuSave aria-hidden="true" />}
+              onClick={handleSave}
+              isDisabled={encounter.viewOnly || isSaving}
+            />
+          )}
+          <Secondary
+            text={isSigning ? 'Signing…' : 'Sign'}
+            icon={<LuFileSignature aria-hidden="true" />}
+            onClick={handleSign}
+            isDisabled={encounter.viewOnly || isSigning}
+          />
+        </div>
       </div>
 
       <AllDocumentsTable
-        documents={derivedDocuments}
-        organisationId={appointment?.organisationId}
+        documents={documents}
+        organisationId={organisationId}
+        canView={canViewDocuments}
+        error={documentsError}
       />
     </div>
   );

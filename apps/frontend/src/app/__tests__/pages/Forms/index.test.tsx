@@ -231,6 +231,11 @@ describe('Forms Page', () => {
       setActiveForm: mockSetActiveForm,
       loading: false,
     });
+    // Component reads the action imperatively via getState() inside effects
+    // to avoid re-subscribing; mirror that on the mock.
+    (useFormsStore as unknown as { getState: () => unknown }).getState = () => ({
+      setActiveForm: mockSetActiveForm,
+    });
   });
 
   // --- Section 1: Rendering & Initialization ---

@@ -1,28 +1,27 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { LuPlus, LuTrash2 } from 'react-icons/lu';
+import { LuInfo, LuPlus, LuTrash2 } from 'react-icons/lu';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
-import type { InvoiceLineItem } from '@/app/features/appointments/types/workspace';
+import type { BillableKind, InvoiceLineItem } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
-
-/** Origin of a searchable bill item; rendered as a pill in the search dropdown. */
-export type BillableKind = 'SERVICE' | 'PACKAGE' | 'MEDICATION' | 'INVENTORY';
 
 export type BillableSearchItem = Omit<InvoiceLineItem, 'id'> & { kind?: BillableKind };
 
 const KIND_LABELS: Record<BillableKind, string> = {
-  SERVICE: 'Service',
-  PACKAGE: 'Package',
-  MEDICATION: 'Medication',
-  INVENTORY: 'Inventory',
+  EXISTING_TREATMENT: 'Existing treatment',
+  IN_HOUSE_PRESCRIPTION: 'In-house prescription',
+  PACKAGE_COMPONENT: 'Package component',
+  BILLING_ONLY: 'Billing-only',
+  INVENTORY: 'Stock item',
 };
 
 const KIND_PILL_CLASSES: Record<BillableKind, string> = {
-  SERVICE: 'border-pill-info-border bg-pill-info-bg text-pill-info-text',
-  PACKAGE: 'border-pill-success-border bg-pill-success-bg text-pill-success-text',
-  MEDICATION: 'border-pill-warning-border bg-pill-warning-bg text-pill-warning-text',
+  EXISTING_TREATMENT: 'border-pill-info-border bg-pill-info-bg text-pill-info-text',
+  IN_HOUSE_PRESCRIPTION: 'border-pill-warning-border bg-pill-warning-bg text-pill-warning-text',
+  PACKAGE_COMPONENT: 'border-pill-success-border bg-pill-success-bg text-pill-success-text',
+  BILLING_ONLY: 'border-card-border bg-neutral-100 text-text-secondary',
   INVENTORY: 'border-card-border bg-neutral-100 text-text-secondary',
 };
 
@@ -37,11 +36,16 @@ const KindPill = ({ kind }: { kind: BillableKind }) => (
 type TotalBillContainerProps = {
   items: InvoiceLineItem[];
   billableItems: BillableSearchItem[];
+  /** Lower-cased names of billed medications missing prescription details; these
+   *  rows get an (i) "Fill information in previous step" hint. */
+  incompleteItemNames?: Set<string>;
   /** ISO currency code for money formatting (from the encounter/finance). */
   currency?: string;
   depositCents: number;
   withdrawDeposit: boolean;
   overallDiscountPercent: number;
+  /** Backend tax rate for this bill; drives the exclusive-of-tax footer copy. */
+  taxPercent?: number;
   onToggleWithdrawDeposit: (value: boolean) => void;
   onChangeOverallDiscount: (percent: number) => void;
   onAddItem: (item: Omit<InvoiceLineItem, 'id'>) => void;
@@ -57,8 +61,10 @@ const formatCents = (cents: number, currency = 'USD'): string => formatMoney(cen
 
 const useCurrency = () => React.useContext(CurrencyContext);
 
-// Totals are shown exclusive of taxes — taxes are finalised by the finance/tax provider at
-// invoice finalisation, not estimated in the workspace.
+// Totals are estimated exclusive of tax — the backend operates in exclusive-tax
+// mode, finalising tax via the finance/tax provider at invoice finalisation. The
+// footer copy reflects the backend tax rate (taxPercent) rather than asserting a
+// flat "exclusive of taxes" when no rate applies.
 const buildTotals = (
   items: InvoiceLineItem[],
   discountPercent: number,
@@ -194,10 +200,12 @@ const DiscountInput = ({
 
 const BillRow = ({
   item,
+  incomplete = false,
   onUpdateItem,
   onRemoveItem,
 }: {
   item: InvoiceLineItem;
+  incomplete?: boolean;
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
   onRemoveItem: (id: string) => void;
 }) => {
@@ -208,7 +216,16 @@ const BillRow = ({
   return (
     <li className={`${ROW_GRID} text-body-4 text-text-primary ${hasMaxHint ? 'pb-4' : ''}`}>
       <TextCell className="min-w-0">
-        <span className="truncate">{item.name}</span>
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <span className="truncate">{item.name}</span>
+          {incomplete && (
+            <LuInfo
+              aria-label="Fill information in previous step"
+              title="Fill information in previous step"
+              className="shrink-0 text-pill-warning-text"
+            />
+          )}
+        </span>
       </TextCell>
       <TextCell>{formatCents(item.unitPriceCents, currency)}</TextCell>
       <QtyInput item={item} onUpdateItem={onUpdateItem} />
@@ -321,6 +338,7 @@ const TotalsFooter = ({
   depositCents,
   overallDiscountPercent,
   withdrawDeposit,
+  taxPercent,
   onToggleWithdrawDeposit,
   onChangeOverallDiscount,
 }: {
@@ -328,6 +346,7 @@ const TotalsFooter = ({
   depositCents: number;
   overallDiscountPercent: number;
   withdrawDeposit: boolean;
+  taxPercent: number;
   onToggleWithdrawDeposit: (value: boolean) => void;
   onChangeOverallDiscount: (percent: number) => void;
 }) => {
@@ -394,7 +413,7 @@ const TotalsFooter = ({
         />
         <FooterBreakdownRow label="Estimated Total:" value={money(totals.estimatedTotalCents)} />
         <p className="text-right" style={FOOTER_HELPER_TEXT_STYLE}>
-          Exclusive of taxes
+          {taxPercent > 0 ? `Exclusive of ${taxPercent}% tax` : 'No tax applied'}
         </p>
       </div>
     </div>
@@ -404,10 +423,12 @@ const TotalsFooter = ({
 const TotalBillContainer = ({
   items,
   billableItems,
+  incompleteItemNames,
   currency = 'USD',
   depositCents,
   withdrawDeposit,
   overallDiscountPercent,
+  taxPercent = 0,
   onToggleWithdrawDeposit,
   onChangeOverallDiscount,
   onAddItem,
@@ -502,6 +523,7 @@ const TotalBillContainer = ({
                   <BillRow
                     key={item.id}
                     item={item}
+                    incomplete={incompleteItemNames?.has(item.name.trim().toLowerCase())}
                     onUpdateItem={onUpdateItem}
                     onRemoveItem={onRemoveItem}
                   />
@@ -515,6 +537,7 @@ const TotalBillContainer = ({
             depositCents={depositCents}
             overallDiscountPercent={overallDiscountPercent}
             withdrawDeposit={withdrawDeposit}
+            taxPercent={taxPercent}
             onToggleWithdrawDeposit={onToggleWithdrawDeposit}
             onChangeOverallDiscount={onChangeOverallDiscount}
           />

@@ -3,6 +3,7 @@ import type {
   TemplateInstanceUpsertInput,
   TemplateKind,
   TemplateLike,
+  TemplateResolveResponse,
 } from '@yosemite-crew/types';
 import type { Task as FhirTask } from '@yosemite-crew/fhir';
 import { getData, patchData, postData } from '@/app/services/axios';
@@ -79,6 +80,49 @@ export const listDischargeSummaryTemplates = async (organisationId: string) =>
     kind: 'DISCHARGE_SUMMARY',
     status: 'PUBLISHED',
   });
+
+export type TemplateResolveContext = {
+  organisationId: string;
+  appointmentId?: string;
+  encounterId?: string;
+  companionId?: string;
+  species?: string;
+  serviceId?: string;
+  packageId?: string;
+  mode?: 'OUTPATIENT' | 'INPATIENT';
+};
+
+/**
+ * Resolve the discharge-summary template that best matches the encounter context
+ * (service / package / species / mode) via the shared `GET /pms/resolve` endpoint.
+ * Returns the resolved template (content snapshot + `templateId`/`templateVersion`)
+ * or `null` when no template is configured — the backend answers 404 in that case,
+ * which we treat as "no default template" so callers fall back to a blank editor.
+ */
+export const resolveDischargeTemplate = async (
+  context: TemplateResolveContext
+): Promise<TemplateResolveResponse | null> => {
+  const params: Record<string, string> = {
+    organisationId: context.organisationId,
+    kind: 'DISCHARGE_SUMMARY',
+  };
+  if (context.appointmentId) params.appointmentId = context.appointmentId;
+  if (context.encounterId) params.encounterId = context.encounterId;
+  if (context.companionId) params.companionId = context.companionId;
+  if (context.species) params.species = context.species;
+  if (context.serviceId) params.serviceId = context.serviceId;
+  if (context.packageId) params.packageId = context.packageId;
+  if (context.mode) params.mode = context.mode;
+
+  try {
+    const res = await getData<TemplateResolveResponse>('/v1/templates/pms/resolve', params);
+    return res.data ?? null;
+  } catch {
+    // 404 (no template configured for this context) and any transient resolve
+    // failure fall back to a blank discharge editor rather than blocking the step.
+    return null;
+  }
+};
 
 export const getWorkspaceTemplateById = async (organisationId: string, templateId: string) => {
   const res = await getData<TemplateLike>(

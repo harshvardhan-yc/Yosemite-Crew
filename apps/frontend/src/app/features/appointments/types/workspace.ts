@@ -106,12 +106,22 @@ export type DiagnosticResultRow = {
   meter: string;
 };
 
+export type DiagnosticQueueKind = 'LAB_ORDER' | 'LAB_RESULT' | 'PROVIDER_TEST';
+
 export type DiagnosticOrder = {
   id: string;
   orderCode: string;
   createdAt: string;
   status: DiagnosticOrderStatus;
   results?: DiagnosticResultRow[];
+  /** Backend diagnostic read-model item kind (order, result, or preloaded test). */
+  kind?: DiagnosticQueueKind;
+  /** Diagnostic provider (e.g. IDEXX). */
+  provider?: string;
+  /** Human-readable test/order label. */
+  name?: string;
+  /** Origin of a preloaded test: PRODUCT_ITEM (service) or PACKAGE_ITEM (package). */
+  sourceKind?: string;
 };
 
 export type DiagnosticTestCard = {
@@ -125,6 +135,14 @@ export type DiagnosticTestCard = {
 };
 
 export type LineItemKind = 'SERVICE' | 'PACKAGE';
+
+/** Origin of a searchable bill item, surfaced as a pill in the search dropdown. */
+export type BillableKind =
+  | 'EXISTING_TREATMENT'
+  | 'IN_HOUSE_PRESCRIPTION'
+  | 'PACKAGE_COMPONENT'
+  | 'BILLING_ONLY'
+  | 'INVENTORY';
 
 /** A component line shown when a package line item is expanded. */
 export type LineItemBreakdown = {
@@ -230,7 +248,7 @@ export type ScheduleTask = {
   sourceRefId?: string;
 };
 
-export type PaymentMethod = 'ONLINE' | 'CASH' | 'CARD' | 'DEPOSIT';
+export type PaymentMethod = 'ONLINE' | 'CASH' | 'DEPOSIT';
 
 export type InvoiceStatus = 'PAID_FULL' | 'UNPAID' | 'PARTIAL';
 

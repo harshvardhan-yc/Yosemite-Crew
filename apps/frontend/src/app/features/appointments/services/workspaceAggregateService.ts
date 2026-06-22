@@ -1,4 +1,5 @@
-import { deleteData, getData, patchData, postData } from '@/app/services/axios';
+import api, { deleteData, getData, patchData, postData } from '@/app/services/axios';
+import type { WorkspaceDocumentRow, WorkspaceDocumentPacketSigning } from '@yosemite-crew/types';
 import type {
   AppointmentEncounter,
   DiagnosticOrder,
@@ -12,8 +13,17 @@ import type {
 
 export type WorkspaceBootstrapDTO = Record<string, unknown>;
 export type WorkspaceDocumentDTO = Record<string, unknown>;
-export type WorkspaceDocumentPacketDTO = Record<string, unknown>;
 export type TreatmentItemDTO = Record<string, unknown>;
+
+export interface WorkspaceDocumentPacketDTO {
+  packetId?: string;
+  status?: string;
+  // Use the shared signing contract type — it has no Date fields so it imports
+  // cleanly over the wire. (The full WorkspaceDocumentPacketRow has string-vs-Date
+  // drift, so we keep this thin DTO rather than importing the whole row.)
+  signing?: WorkspaceDocumentPacketSigning | null;
+  [key: string]: unknown;
+}
 
 const STEP_STATUS_BY_AGGREGATE_KEY: Partial<Record<string, WorkspaceStep>> = {
   clinicalArtifacts: 'SOAP',
@@ -117,6 +127,11 @@ const diagnosticStatus = (status: string | undefined): DiagnosticOrder['status']
   return 'CREATED';
 };
 
+const diagnosticQueueKind = (value: string | undefined): DiagnosticOrder['kind'] => {
+  if (value === 'LAB_ORDER' || value === 'LAB_RESULT' || value === 'PROVIDER_TEST') return value;
+  return undefined;
+};
+
 const normalizeDiagnosticQueue = (items: Record<string, unknown>[]): DiagnosticOrder[] =>
   items.map((item, index) => ({
     id: asString(item.id) ?? `diagnostic-${index + 1}`,
@@ -127,6 +142,10 @@ const normalizeDiagnosticQueue = (items: Record<string, unknown>[]): DiagnosticO
       `DX-${index + 1}`,
     createdAt: asIso(item.createdAt),
     status: diagnosticStatus(asString(item.status)),
+    kind: diagnosticQueueKind(asString(item.kind)),
+    provider: asString(item.provider),
+    name: asString(item.label),
+    sourceKind: asString(item.sourceKind),
   }));
 
 const normalizeDocuments = (items: Record<string, unknown>[]): WorkspaceDocument[] =>
@@ -400,8 +419,8 @@ export const listAppointmentWorkspaceDocuments = async (
 export const listEncounterWorkspaceDocuments = async (
   organisationId: string,
   encounterId: string
-) => {
-  const res = await getData<WorkspaceDocumentDTO[]>(
+): Promise<WorkspaceDocumentRow[]> => {
+  const res = await getData<WorkspaceDocumentRow[]>(
     `/v1/workspace/organisations/${organisationId}/encounters/${encounterId}/documents`
   );
   return res.data ?? [];
@@ -453,6 +472,22 @@ export const signWorkspaceDocumentPacket = async (
     body
   );
   return res.data;
+};
+
+/**
+ * Fetch the merged clinical packet (SOAP + Prescription + Discharge, …) as a
+ * single PDF and return a blob URL for preview/print. Caller is responsible for
+ * revoking the URL when done.
+ */
+export const getEncounterDocumentPacketPdfUrl = async (
+  organisationId: string,
+  encounterId: string
+): Promise<string> => {
+  const res = await api.get<Blob>(
+    `/v1/workspace/organisations/${organisationId}/encounters/${encounterId}/document-packet/pdf`,
+    { responseType: 'blob' }
+  );
+  return URL.createObjectURL(res.data);
 };
 
 export const listEncounterTreatmentItems = async (organisationId: string, encounterId: string) => {

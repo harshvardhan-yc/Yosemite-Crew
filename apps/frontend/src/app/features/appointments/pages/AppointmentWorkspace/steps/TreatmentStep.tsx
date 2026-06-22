@@ -8,10 +8,8 @@ import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceS
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import { savePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
-import {
-  getAvailableStock,
-  mapApiItemToInventoryItem,
-} from '@/app/features/inventory/pages/Inventory/utils';
+import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
+import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
 import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { useTaskStore } from '@/app/stores/taskStore';
@@ -56,45 +54,6 @@ const PRESCRIPTION_INVENTORY_CATEGORIES = new Set([
   'supplement',
   'iv/fluid therapy',
 ]);
-
-const toCents = (value: string | number | undefined): number | undefined => {
-  if (value === undefined || value === '') return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) : undefined;
-};
-
-const isLowStock = (item: InventoryItem) => {
-  const available = getAvailableStock(item);
-  const reorderLevel = Number(item.stock.reorderLevel);
-  if (available === undefined || !Number.isFinite(reorderLevel)) return false;
-  return available <= reorderLevel;
-};
-
-const joinNonEmpty = (...parts: Array<string | undefined>): string | undefined => {
-  const joined = parts
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join(' ');
-  return joined || undefined;
-};
-
-const inventoryToPrescriptionItem = (item: InventoryItem) => {
-  const classification = item.classification ?? {};
-  return {
-    medicineName: item.basicInfo.name,
-    // Pre-fill the prescribing fields from the inventory item so the clinician sees the
-    // medicine's strength/form, route, and default frequency instead of empty inputs.
-    dosage: joinNonEmpty(classification.strength, classification.dosageForm ?? classification.form),
-    route: classification.administration,
-    frequency: classification.frequency,
-    fulfillment: 'IN_HOUSE' as const,
-    inventoryItemId: item.id,
-    inventoryBatchId: item.batch?._id,
-    priceCents: toCents(item.pricing.selling),
-    stockQty: getAvailableStock(item),
-    lowStock: isLowStock(item),
-  };
-};
 
 const moneyToCents = (amount: number): number => Math.max(0, Math.round(amount * 100));
 

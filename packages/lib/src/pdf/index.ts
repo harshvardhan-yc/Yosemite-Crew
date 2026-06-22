@@ -42,4 +42,13 @@ export {
   generateResolvedTemplatePdfWithMetadata,
   type ResolvedTemplatePdfInput,
 } from './ResolvedTemplatePdfEngine.js';
+export {
+  buildMergedClinicalPacketPdf,
+  ClinicalPacketPdfError,
+  type BuildMergedClinicalPacketPdfInput,
+  type MergedClinicalPacketPdf,
+  type MergedPacketDocument,
+  type PacketDocumentPdfLoader,
+} from './clinicalPacket.js';
+export { mergePdfBuffers } from './mergePdf.js';
 export * from './examples/index.js';

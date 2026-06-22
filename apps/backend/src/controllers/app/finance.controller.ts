@@ -288,16 +288,19 @@ export const FinanceController = {
         });
       }
 
-      if (resolved.organisationId) {
-        const invoices = await InvoiceService.listForOrganisation(
-          resolved.organisationId,
+      // Most-specific filter wins. The workspace sends organisationId AND
+      // appointmentId; checking appointmentId first keeps the result scoped to the
+      // appointment instead of returning every invoice in the organisation.
+      if (resolved.appointmentId) {
+        const invoices = await InvoiceService.getByAppointmentId(
+          resolved.appointmentId,
         );
         return res.status(200).json(toFinanceSuccess(invoices));
       }
 
-      if (resolved.appointmentId) {
-        const invoices = await InvoiceService.getByAppointmentId(
-          resolved.appointmentId,
+      if (resolved.organisationId) {
+        const invoices = await InvoiceService.listForOrganisation(
+          resolved.organisationId,
         );
         return res.status(200).json(toFinanceSuccess(invoices));
       }

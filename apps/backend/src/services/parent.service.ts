@@ -487,6 +487,9 @@ export const ParentService = {
         profileImageUrl: parent.profileImageUrl ?? undefined,
         isProfileComplete: false,
         createdFrom: parent.createdFrom as ParentCreatedFrom | undefined,
+        alerts: (parent as Parent & { alerts?: Parent["alerts"] }).alerts as
+          | Prisma.InputJsonValue
+          | undefined,
       },
     });
 
