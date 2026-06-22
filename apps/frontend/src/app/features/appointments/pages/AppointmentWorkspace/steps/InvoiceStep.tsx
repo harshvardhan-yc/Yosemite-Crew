@@ -68,7 +68,6 @@ const STATUS_CLASSES: Record<InvoiceStatus, string> = {
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   ONLINE: 'Paid Online',
   CASH: 'Paid via Cash',
-  CARD: 'Paid via Card',
   DEPOSIT: 'Paid from Deposit',
 };
 
@@ -244,7 +243,6 @@ const invoiceDateFormatter = new Intl.DateTimeFormat('en-US', {
 const formatInvoiceDate = (iso: string): string => invoiceDateFormatter.format(new Date(iso));
 
 const getDepositMethodLabel = (option: PaymentMethod): string => {
-  if (option === 'CARD') return 'Card present';
   if (option === 'ONLINE') return 'Online link';
   return 'Cash';
 };
@@ -751,7 +749,7 @@ const InvoiceStep = ({
       if (invoice?.id) {
         await recordManualInvoicePayment(invoice.id, {
           provider: 'MANUAL',
-          settlementChannel: method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
+          settlementChannel: 'CASH',
           amount: centsToMajor(computeInvoiceTotalCents(encounter)),
           currency: financeCurrency,
           receivedAt: new Date().toISOString(),
@@ -796,7 +794,7 @@ const InvoiceStep = ({
     }
     await recordManualInvoicePayment(invoice.id, {
       provider: 'MANUAL',
-      settlementChannel: input.method === 'CARD' ? 'CARD_PRESENT' : 'CASH',
+      settlementChannel: 'CASH',
       amount: input.amount,
       currency: financeCurrency,
       reference: input.reference || undefined,

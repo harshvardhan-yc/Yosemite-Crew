@@ -230,7 +230,7 @@ export type ScheduleTask = {
   sourceRefId?: string;
 };
 
-export type PaymentMethod = 'ONLINE' | 'CASH' | 'CARD' | 'DEPOSIT';
+export type PaymentMethod = 'ONLINE' | 'CASH' | 'DEPOSIT';
 
 export type InvoiceStatus = 'PAID_FULL' | 'UNPAID' | 'PARTIAL';
 
