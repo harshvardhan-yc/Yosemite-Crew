@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import type { Appointment } from '@yosemite-crew/types';
@@ -40,9 +40,15 @@ import {
   type UseLabTestsReturn,
 } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/LabTests';
 import type { IdexxTest } from '@/app/features/integrations/services/types';
+import type { DiagnosticOrder } from '@/app/features/appointments/types/workspace';
 import { getSafeIdexxIframeUrl } from '@/app/lib/urls';
 import { formatDateTimeLocal } from '@/app/lib/date';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
+import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import {
+  getAppointmentWorkspaceBootstrap,
+  normalizeWorkspaceBootstrapForEncounter,
+} from '@/app/features/appointments/services/workspaceAggregateService';
 
 type DiagnosticProvider = 'IDEXX' | 'RAD_ANALYZER';
 
@@ -52,16 +58,24 @@ type DiagnosticsStepProps = {
   onOpenTreatment: () => void;
 };
 
-const PROVIDERS: { key: DiagnosticProvider; label: string }[] = [
-  { key: 'IDEXX', label: 'IDEXX' },
-  { key: 'RAD_ANALYZER', label: 'RadAnalyzer' },
+type ProviderOption = {
+  key: DiagnosticProvider;
+  label: string;
+  available: boolean;
+  unavailableReason?: string;
+};
+
+const PROVIDERS: ProviderOption[] = [
+  { key: 'IDEXX', label: 'IDEXX', available: true },
+  {
+    key: 'RAD_ANALYZER',
+    label: 'RadAnalyzer',
+    available: false,
+    unavailableReason: 'RadAnalyzer diagnostics are coming soon for the appointment workspace.',
+  },
 ];
 
-const ProviderContent = ({
-  provider,
-}: {
-  provider: { key: DiagnosticProvider; label: string };
-}) => {
+const ProviderContent = ({ provider }: { provider: ProviderOption }) => {
   if (provider.key === 'IDEXX') {
     return (
       <Image
@@ -86,20 +100,31 @@ const IntegrationPills = ({
   <div className="flex flex-wrap items-center gap-3">
     {PROVIDERS.map((provider) => {
       const active = selected === provider.key;
+      const disabled = !provider.available;
       return (
         <button
           key={provider.key}
           type="button"
           aria-pressed={active}
-          onClick={() => onSelect(provider.key)}
+          disabled={disabled}
+          title={disabled ? provider.unavailableReason : undefined}
+          onClick={() => {
+            if (!disabled) onSelect(provider.key);
+          }}
           className={`inline-flex h-12 items-center gap-2 rounded-2xl border px-5 text-body-4 font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand ${
-            active
-              ? 'border-text-brand bg-primary-100 text-text-brand'
-              : 'border-neutral-300 text-text-primary hover:bg-neutral-100'
+            disabled
+              ? 'cursor-not-allowed border-neutral-300 text-text-secondary opacity-60'
+              : active
+                ? 'border-text-brand bg-primary-100 text-text-brand'
+                : 'border-neutral-300 text-text-primary hover:bg-neutral-100'
           }`}
         >
           <ProviderContent provider={provider} />
-          {active && <LuExternalLink size={14} aria-hidden="true" />}
+          {disabled ? (
+            <span className="text-caption-2 text-text-secondary">Coming soon</span>
+          ) : (
+            active && <LuExternalLink size={14} aria-hidden="true" />
+          )}
         </button>
       );
     })}
@@ -132,6 +157,31 @@ const StatusPill = ({ status }: { status: string }) => (
     className={`inline-flex rounded-2xl border px-3 py-1 text-caption-1 ${getStatusPillClasses(status)}`}
   >
     {status}
+  </span>
+);
+
+const MODALITY_LABELS: Record<string, string> = {
+  REFERENCE_LAB: 'Reference lab',
+  INHOUSE: 'In-house',
+  IN_HOUSE: 'In-house',
+};
+
+/** "REFERENCE_LAB" → "Reference lab", "INHOUSE"/"IN_HOUSE" → "In-house". */
+const formatModality = (modality?: string | null): string | null => {
+  if (!modality) return null;
+  return MODALITY_LABELS[modality.trim().toUpperCase()] ?? null;
+};
+
+/** Small neutral/info origin badge (provider, modality, package origin, billing). */
+const MetaPill = ({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'info' }) => (
+  <span
+    className={`inline-flex shrink-0 rounded-2xl border px-2 py-0.5 text-caption-2 ${
+      tone === 'info'
+        ? 'border-pill-info-border bg-pill-info-bg text-pill-info-text'
+        : 'border-pill-neutral-border bg-pill-neutral-bg text-pill-neutral-text'
+    }`}
+  >
+    {label}
   </span>
 );
 
@@ -366,7 +416,54 @@ const OrderBuilderSection = ({ s, readOnly }: { s: UseLabTestsReturn; readOnly: 
   );
 };
 
-const TestQueueSection = ({ s, readOnly }: { s: UseLabTestsReturn; readOnly: boolean }) => (
+const ORIGIN_LABELS: Record<string, string> = {
+  PRODUCT_ITEM: 'Service',
+  PACKAGE_ITEM: 'Package',
+};
+
+/**
+ * Diagnostics included in this appointment's services/packages, preloaded from
+ * the workspace bootstrap's diagnostic queue so the clinician sees what to order.
+ */
+const PreloadedDiagnosticsSection = ({ items }: { items: DiagnosticOrder[] }) => {
+  if (items.length === 0) return null;
+  return (
+    <SectionContainer
+      titleClassName="text-yc-20-b-primary"
+      title="Preloaded from Services & Packages"
+      className="flex flex-col gap-3"
+    >
+      <p className="text-body-4 text-text-secondary">
+        Diagnostics included in this appointment&apos;s services and packages. Order them with the
+        provider when ready.
+      </p>
+      <ul className="flex flex-col gap-3">
+        {items.map((item) => (
+          <li
+            key={item.id}
+            className="flex flex-wrap items-center gap-2 rounded-2xl border border-card-border p-4"
+          >
+            <span className="font-medium text-text-primary">{item.name ?? item.orderCode}</span>
+            {item.sourceKind && ORIGIN_LABELS[item.sourceKind] && (
+              <MetaPill label={ORIGIN_LABELS[item.sourceKind]} />
+            )}
+            {item.provider && <MetaPill label={item.provider} tone="info" />}
+          </li>
+        ))}
+      </ul>
+    </SectionContainer>
+  );
+};
+
+const TestQueueSection = ({
+  s,
+  readOnly,
+  onCreateOrder,
+}: {
+  s: UseLabTestsReturn;
+  readOnly: boolean;
+  onCreateOrder: () => void;
+}) => (
   <SectionContainer
     titleClassName="text-yc-20-b-primary"
     title="Test Queue"
@@ -395,7 +492,7 @@ const TestQueueSection = ({ s, readOnly }: { s: UseLabTestsReturn; readOnly: boo
         <Primary
           text={s.creatingOrder ? 'Creating Lab Order…' : 'Create Lab Order'}
           icon={<LuFlaskConical aria-hidden="true" />}
-          onClick={s.handleCreateOrder}
+          onClick={onCreateOrder}
           isDisabled={
             s.creatingOrder || s.loading || s.selectedTests.length === 0 || !s.companionId
           }
@@ -437,8 +534,16 @@ const OrderStatusSection = ({
                 key={order._id ?? order.idexxOrderId ?? `order-${index}`}
                 className={`${ORDER_STATUS_ROW_GRID} rounded-2xl border border-card-border p-4`}
               >
-                <span className="truncate font-medium text-text-primary">
-                  {index + 1}. Order {order.idexxOrderId}
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="truncate font-medium text-text-primary">
+                    {index + 1}. Order {order.idexxOrderId}
+                  </span>
+                  <span className="flex flex-wrap items-center gap-1">
+                    {order.provider && <MetaPill label={order.provider} tone="info" />}
+                    {formatModality(order.modality) && (
+                      <MetaPill label={formatModality(order.modality) as string} />
+                    )}
+                  </span>
                 </span>
                 <span className="truncate text-body-4 text-text-secondary">
                   {formatDateTimeLocal(order.updatedAt ?? order.createdAt, '-')}
@@ -621,21 +726,6 @@ const OrderIframeOverlay = ({ s }: { s: UseLabTestsReturn }) => {
   );
 };
 
-const RadAnalyzerComingSoon = () => (
-  <SectionContainer
-    titleClassName="text-yc-20-b-primary"
-    title="RadAnalyzer"
-    className="flex flex-col gap-3"
-  >
-    <p className="text-body-4 text-text-secondary">
-      RadAnalyzer diagnostics are coming soon for the appointment workspace.
-    </p>
-    <p className="text-caption-1 text-text-secondary">
-      Use IDEXX for live diagnostic orders, IVLS census, results, and acknowledgements.
-    </p>
-  </SectionContainer>
-);
-
 const IdexxNotEnabled = () => (
   <SectionContainer
     titleClassName="text-yc-20-b-primary"
@@ -661,6 +751,32 @@ const DiagnosticsStep = ({
 }: DiagnosticsStepProps) => {
   const s = useLabTests(appointment);
   const [selectedProvider, setSelectedProvider] = useState<DiagnosticProvider>('IDEXX');
+  const mergeEncounterData = useAppointmentWorkspaceStore((store) => store.mergeEncounterData);
+  const preloadedDiagnostics = useAppointmentWorkspaceStore((store) =>
+    appointment.id ? store.encountersById[appointment.id]?.diagnosticOrders : undefined
+  );
+  // Diagnostics the backend preloaded from this appointment's services/packages
+  // (PROVIDER_TEST items), surfaced so they are not silently dropped from the queue.
+  const preloadedTests = useMemo(
+    () => (preloadedDiagnostics ?? []).filter((item) => item.kind === 'PROVIDER_TEST'),
+    [preloadedDiagnostics]
+  );
+
+  // Widen the post-order refresh beyond IDEXX orders/results: after a lab order is
+  // created, re-hydrate the encounter so the diagnostic queue, invoice candidates,
+  // and documents (requisitions) reflect the new order, not just the lab tables.
+  const handleCreateOrder = useCallback(async () => {
+    await s.handleCreateOrder();
+    const organisationId = appointment.organisationId;
+    const appointmentId = appointment.id;
+    if (!organisationId || !appointmentId) return;
+    try {
+      const bootstrap = await getAppointmentWorkspaceBootstrap(organisationId, appointmentId);
+      mergeEncounterData(appointmentId, normalizeWorkspaceBootstrapForEncounter(bootstrap));
+    } catch (error) {
+      console.error('Unable to refresh workspace after lab order:', error);
+    }
+  }, [s, appointment.organisationId, appointment.id, mergeEncounterData]);
 
   let orderButtonText = 'Open IDEXX';
   if (s.needsInitialOrderPlacement) orderButtonText = 'Resume order placement';
@@ -675,7 +791,12 @@ const DiagnosticsStep = ({
       <>
         {s.error ? <p className="text-body-4 text-text-error">{s.error}</p> : null}
         {!readOnly && <OrderBuilderSection s={s} readOnly={readOnly} />}
-        <TestQueueSection s={s} readOnly={readOnly} />
+        <PreloadedDiagnosticsSection items={preloadedTests} />
+        <TestQueueSection
+          s={s}
+          readOnly={readOnly}
+          onCreateOrder={() => void handleCreateOrder()}
+        />
         <OrderStatusSection s={s} orderButtonText={orderButtonText} />
         <ResultsSection s={s} />
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -713,7 +834,7 @@ const DiagnosticsStep = ({
   return (
     <div className="flex flex-col gap-5">
       <IntegrationPills selected={selectedProvider} onSelect={setSelectedProvider} />
-      {selectedProvider === 'RAD_ANALYZER' ? <RadAnalyzerComingSoon /> : renderIdexx()}
+      {renderIdexx()}
     </div>
   );
 };

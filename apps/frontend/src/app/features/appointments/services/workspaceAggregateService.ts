@@ -130,6 +130,11 @@ const diagnosticStatus = (status: string | undefined): DiagnosticOrder['status']
   return 'CREATED';
 };
 
+const diagnosticQueueKind = (value: string | undefined): DiagnosticOrder['kind'] => {
+  if (value === 'LAB_ORDER' || value === 'LAB_RESULT' || value === 'PROVIDER_TEST') return value;
+  return undefined;
+};
+
 const normalizeDiagnosticQueue = (items: Record<string, unknown>[]): DiagnosticOrder[] =>
   items.map((item, index) => ({
     id: asString(item.id) ?? `diagnostic-${index + 1}`,
@@ -140,6 +145,10 @@ const normalizeDiagnosticQueue = (items: Record<string, unknown>[]): DiagnosticO
       `DX-${index + 1}`,
     createdAt: asIso(item.createdAt),
     status: diagnosticStatus(asString(item.status)),
+    kind: diagnosticQueueKind(asString(item.kind)),
+    provider: asString(item.provider),
+    name: asString(item.label),
+    sourceKind: asString(item.sourceKind),
   }));
 
 const normalizeDocuments = (items: Record<string, unknown>[]): WorkspaceDocument[] =>

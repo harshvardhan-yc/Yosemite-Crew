@@ -106,12 +106,22 @@ export type DiagnosticResultRow = {
   meter: string;
 };
 
+export type DiagnosticQueueKind = 'LAB_ORDER' | 'LAB_RESULT' | 'PROVIDER_TEST';
+
 export type DiagnosticOrder = {
   id: string;
   orderCode: string;
   createdAt: string;
   status: DiagnosticOrderStatus;
   results?: DiagnosticResultRow[];
+  /** Backend diagnostic read-model item kind (order, result, or preloaded test). */
+  kind?: DiagnosticQueueKind;
+  /** Diagnostic provider (e.g. IDEXX). */
+  provider?: string;
+  /** Human-readable test/order label. */
+  name?: string;
+  /** Origin of a preloaded test: PRODUCT_ITEM (service) or PACKAGE_ITEM (package). */
+  sourceKind?: string;
 };
 
 export type DiagnosticTestCard = {
