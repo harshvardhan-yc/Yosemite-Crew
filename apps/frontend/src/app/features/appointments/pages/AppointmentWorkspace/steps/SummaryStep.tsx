@@ -30,7 +30,10 @@ import {
   getRenderedDocument,
   saveDischargeSummaryArtifact,
 } from '@/app/features/appointments/services/workspaceClinicalService';
-import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
+import {
+  listDischargeSummaryTemplates,
+  resolveDischargeTemplate,
+} from '@/app/features/appointments/services/workspaceTemplateService';
 import {
   createEncounterDocumentPacket,
   getEncounterDocumentPacketPdfUrl,
@@ -71,8 +74,8 @@ const getTemplateSchemaSnapshot = (template: TemplateLike): TemplateSchemaSnapsh
   return hasTemplateSchemaSnapshot(version?.schemaSnapshot) ? version.schemaSnapshot : undefined;
 };
 
-const templateToDischargeHtml = (template: TemplateLike): string => {
-  const sections = getTemplateSchemaSnapshot(template)?.sections ?? [];
+const schemaSnapshotToDischargeHtml = (snapshot?: TemplateSchemaSnapshot): string => {
+  const sections = snapshot?.sections ?? [];
   if (sections.length === 0) return '';
   return sections
     .map((section) => {
@@ -83,6 +86,9 @@ const templateToDischargeHtml = (template: TemplateLike): string => {
     })
     .join('');
 };
+
+const templateToDischargeHtml = (template: TemplateLike): string =>
+  schemaSnapshotToDischargeHtml(getTemplateSchemaSnapshot(template));
 
 /** ISO follow-up timestamp ⇄ the Datepicker's `Date | null` value. */
 const toFollowUpDate = (iso?: string): Date | null => {
@@ -302,6 +308,14 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
     templates: TemplateLike[];
     error: string | null;
   }>({ templates: [], error: null });
+  // The template the discharge summary was hydrated from (resolved by context or
+  // chosen via search). Persisted alongside the artifact so the saved record
+  // carries provenance (`templateId` + `templateVersion`).
+  const [dischargeTemplate, setDischargeTemplate] = useState<{
+    templateId: string;
+    templateVersion: number;
+    templateVersionId?: string;
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   // The discharge summary becomes read-only once saved (or when the encounter
   // itself is view-only).
@@ -328,8 +342,54 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
       });
   }, [appointment?.organisationId]);
 
+  // Auto-resolve the discharge template for this encounter's context
+  // (service / package / species / mode) and prefill the rich-text editor. Runs
+  // once per encounter, and only when the summary is still blank and unsaved so
+  // it never clobbers a draft or a manually chosen template.
+  const organisationId = appointment?.organisationId;
+  const encounterId = appointment?.encounterId;
+  useEffect(() => {
+    if (!organisationId || dischargeSaved) return;
+    if (!isRichTextEmpty(encounter.dischargeSummary) || dischargeTemplate) return;
+    let cancelled = false;
+    const serviceLine = encounter.services.find((item) => item.kind === 'SERVICE');
+    const packageLine = encounter.services.find((item) => item.kind === 'PACKAGE');
+    resolveDischargeTemplate({
+      organisationId,
+      appointmentId,
+      encounterId,
+      companionId: appointment?.patient?.id,
+      species: appointment?.patient?.species,
+      serviceId: serviceLine?.refId,
+      packageId: packageLine?.refId,
+      mode: encounter.mode,
+    })
+      .then((resolved) => {
+        if (cancelled || !resolved) return;
+        const html = schemaSnapshotToDischargeHtml(resolved.schemaSnapshot);
+        if (html) setDischargeSummary(appointmentId, html);
+        setDischargeTemplate({
+          templateId: resolved.templateId,
+          templateVersion: resolved.templateVersion,
+          templateVersionId: resolved.templateVersionId,
+        });
+      })
+      .catch((error) => {
+        console.error('Unable to resolve discharge template:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Resolve once per encounter; guarded above against overwriting content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organisationId, encounterId, appointmentId, dischargeSaved]);
+
   const handleTemplateSelect = (template: TemplateLike) => {
     setDischargeSummary(appointmentId, templateToDischargeHtml(template));
+    setDischargeTemplate({
+      templateId: template.id,
+      templateVersion: template.publishedVersion ?? template.latestVersion,
+    });
     setTemplateQuery('');
   };
 
@@ -413,6 +473,9 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
             appointmentId,
             encounterId: appointment.encounterId,
             dischargeSummaryId: encounter.dischargeSummaryId,
+            templateId: dischargeTemplate?.templateId,
+            templateVersion: dischargeTemplate?.templateVersion,
+            templateVersionId: dischargeTemplate?.templateVersionId,
           },
           encounter.dischargeSummary,
           encounter.followUpAt

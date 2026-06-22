@@ -6,11 +6,18 @@ import SummaryStep from '@/app/features/appointments/pages/AppointmentWorkspace/
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
-import { listDischargeSummaryTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
-import { getRenderedDocument } from '@/app/features/appointments/services/workspaceClinicalService';
+import {
+  listDischargeSummaryTemplates,
+  resolveDischargeTemplate,
+} from '@/app/features/appointments/services/workspaceTemplateService';
+import {
+  getRenderedDocument,
+  saveDischargeSummaryArtifact,
+} from '@/app/features/appointments/services/workspaceClinicalService';
 
 jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
   listDischargeSummaryTemplates: jest.fn(),
+  resolveDischargeTemplate: jest.fn(),
 }));
 
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
@@ -89,6 +96,7 @@ const reset = () => {
     submissionId: null,
   });
   (listDischargeSummaryTemplates as jest.Mock).mockResolvedValue([]);
+  (resolveDischargeTemplate as jest.Mock).mockResolvedValue(null);
   (getRenderedDocument as jest.Mock).mockResolvedValue({ pdfUrl: 'https://files.test/doc.pdf' });
 };
 
@@ -166,6 +174,58 @@ describe('SummaryStep', () => {
 
     expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.dischargeSummary).toContain(
       'Keep the patient rested'
+    );
+  });
+
+  it('resolves a discharge template by context and saves with template provenance', async () => {
+    (resolveDischargeTemplate as jest.Mock).mockResolvedValue({
+      templateId: 'tpl-resolved-1',
+      templateVersion: 4,
+      templateVersionId: 'tplv-9',
+      schemaSnapshot: {
+        sections: [
+          {
+            id: 'care',
+            title: 'Home care',
+            fields: [{ key: 'meds', label: 'Medication schedule' }],
+          },
+        ],
+      },
+    });
+    const enc = seedAndGet();
+    await act(async () => {
+      render(<SummaryStep appointmentId={APPT} appointment={appointment} encounter={enc} />);
+    });
+
+    // Resolve is asked for the discharge kind with the encounter's context.
+    expect(resolveDischargeTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId: 'org-1',
+        encounterId: 'enc-1',
+        appointmentId: APPT,
+      })
+    );
+
+    // The editor is hydrated from the resolved template's schema snapshot.
+    await waitFor(() =>
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.dischargeSummary
+      ).toContain('Medication schedule')
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    // The saved artifact carries the resolved template provenance.
+    await waitFor(() =>
+      expect(saveDischargeSummaryArtifact).toHaveBeenCalledWith(
+        expect.objectContaining({
+          templateId: 'tpl-resolved-1',
+          templateVersion: 4,
+          templateVersionId: 'tplv-9',
+        }),
+        expect.any(String),
+        undefined
+      )
     );
   });
 
