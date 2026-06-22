@@ -182,7 +182,12 @@ const QuickActionsModal = ({
             />
           )}
           {activeAction === 'DOCUMENTS' && (
-            <DocumentsPanel appointmentId={appointmentId} companionId={companion.id} />
+            <DocumentsPanel
+              appointmentId={appointmentId}
+              companionId={companion.id}
+              organisationId={organisationId}
+              encounterId={encounterId}
+            />
           )}
           {activeAction === 'CHAT' && <ChatPanel appointment={appointment} />}
           {activeAction === 'ACTIVITY' && <ActivityPanel appointment={appointment} />}

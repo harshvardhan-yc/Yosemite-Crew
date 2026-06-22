@@ -16,6 +16,12 @@ import {
 } from '@/app/features/appointments/services/workspaceClinicalService';
 import { listVitalsTemplates } from '@/app/features/appointments/services/workspaceTemplateService';
 import {
+  createEncounterDocumentPacket,
+  getEncounterDocumentPacketPdfUrl,
+  signWorkspaceDocumentPacket,
+} from '@/app/features/appointments/services/workspaceAggregateService';
+import { useSigningOverlayStore } from '@/app/stores/signingOverlayStore';
+import {
   createTask,
   loadTasksForPrimaryOrg,
   changeTaskStatus,
@@ -56,6 +62,27 @@ jest.mock('@/app/features/appointments/services/workspaceClinicalService', () =>
 jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
   listVitalsTemplates: jest.fn(),
 }));
+jest.mock('@/app/features/appointments/services/workspaceAggregateService', () => ({
+  createEncounterDocumentPacket: jest.fn(),
+  getEncounterDocumentPacketPdfUrl: jest.fn(),
+  signWorkspaceDocumentPacket: jest.fn(),
+}));
+// The signing overlay portals an iframe; stub it so the packet sign flow can
+// assert the store wiring without rendering the real Documenso frame.
+jest.mock('@/app/ui/overlays/SigningOverlay', () => ({
+  __esModule: true,
+  default: () => <div data-testid="signing-overlay" />,
+}));
+jest.mock('@/app/ui/overlays/PdfPreviewOverlay', () => ({
+  __esModule: true,
+  default: ({ open, title, pdfUrl }: { open: boolean; title: string; pdfUrl: string | null }) =>
+    open ? (
+      <div data-testid="pdf-preview">
+        <span>{title}</span>
+        <span>{pdfUrl}</span>
+      </div>
+    ) : null,
+}));
 jest.mock('@/app/hooks/useTeam', () => ({
   useTeamForPrimaryOrg: jest.fn(),
   useLoadTeam: jest.fn(),
@@ -73,9 +100,12 @@ const appointmentFormsResponse = {
   appointmentId: APPT,
   forms: [
     {
+      // Internal (staff) form, completed → authorized by the service provider.
       form: {
         _id: 'frm-1',
         name: 'Medication Admin - ID 67890',
+        category: 'Treatment',
+        visibilityType: 'Internal',
         createdAt: new Date('2026-04-21T09:45:00Z'),
         updatedAt: new Date('2026-04-21T09:45:00Z'),
       },
@@ -83,14 +113,30 @@ const appointmentFormsResponse = {
       status: 'completed',
     },
     {
+      // External (parent) consent, pending → acknowledgement pending.
       form: {
         _id: 'frm-2',
         name: 'Consent Form',
+        category: 'Consent',
+        visibilityType: 'External',
         createdAt: new Date('2026-04-21T10:45:00Z'),
         updatedAt: new Date('2026-04-21T10:45:00Z'),
       },
       submission: null,
       status: 'pending',
+    },
+    {
+      // External (parent) consent, completed → authorized by the client.
+      form: {
+        _id: 'frm-3',
+        name: 'Boarding Consent',
+        category: 'Consent',
+        visibilityType: 'External',
+        createdAt: new Date('2026-04-21T11:45:00Z'),
+        updatedAt: new Date('2026-04-21T11:45:00Z'),
+      },
+      submission: { _id: 'sub-3' },
+      status: 'completed',
     },
   ],
 };
@@ -589,9 +635,29 @@ describe('TasksPanel', () => {
 describe('DocumentsPanel', () => {
   beforeEach(() => {
     reset();
+    useSigningOverlayStore.setState({
+      open: false,
+      url: null,
+      pending: false,
+      submissionId: null,
+    });
     (fetchAppointmentForms as jest.Mock).mockResolvedValue(appointmentFormsResponse);
     (downloadSubmissionPdf as jest.Mock).mockReset();
     (downloadSubmissionPdf as jest.Mock).mockResolvedValue(new Blob(['pdf']));
+    (createEncounterDocumentPacket as jest.Mock).mockReset();
+    (createEncounterDocumentPacket as jest.Mock).mockResolvedValue({
+      packetId: 'packet-1',
+      status: 'DRAFT',
+      signing: { status: 'NOT_STARTED' },
+    });
+    (signWorkspaceDocumentPacket as jest.Mock).mockReset();
+    (signWorkspaceDocumentPacket as jest.Mock).mockResolvedValue({
+      packetId: 'packet-1',
+      status: 'DRAFT',
+      signing: { status: 'IN_PROGRESS', signingUrl: 'https://sign.test/packet' },
+    });
+    (getEncounterDocumentPacketPdfUrl as jest.Mock).mockReset();
+    (getEncounterDocumentPacketPdfUrl as jest.Mock).mockResolvedValue('blob:packet-pdf');
   });
 
   it('downloads a completed form via the backend PDF and disables pending forms', async () => {
@@ -643,13 +709,26 @@ describe('DocumentsPanel', () => {
     render(<DocumentsPanel appointmentId={APPT} companionId="comp-9" />);
     expect(await screen.findByText('Medication Admin - ID 67890')).toBeInTheDocument();
     expect(screen.getByText('Consent Form')).toBeInTheDocument();
+    expect(screen.getByText('Boarding Consent')).toBeInTheDocument();
+    // Completed staff (Internal) form → authorized by the service provider.
+    expect(screen.getByText('Authorized by Service Provider')).toBeInTheDocument();
+    // Completed parent (External) consent → authorized by the client.
     expect(screen.getByText('Authorized by Client')).toBeInTheDocument();
+    // Pending parent (External) consent → acknowledgement pending.
     expect(screen.getByText('Acknowledgement pending')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/search forms to add/i), {
       target: { value: 'no-such-form' },
     });
     expect(screen.getByText(/no forms match this search/i)).toBeInTheDocument();
+  });
+
+  it('derives the Staff vs Parent audience badge from form visibility', async () => {
+    render(<DocumentsPanel appointmentId={APPT} companionId="comp-9" />);
+    await screen.findByText('Medication Admin - ID 67890');
+    // Internal form → Staff form; External consents → Parent consent (x2).
+    expect(screen.getByText('Staff form')).toBeInTheDocument();
+    expect(screen.getAllByText('Parent consent')).toHaveLength(2);
   });
 
   it('shows companion records on the Records tab', async () => {
@@ -666,5 +745,131 @@ describe('DocumentsPanel', () => {
       fireEvent.click(screen.getByRole('tab', { name: /records/i }));
     });
     expect(screen.getByText(/no companion records available/i)).toBeInTheDocument();
+  });
+
+  it('prints the combined clinical packet via the reused aggregate service', async () => {
+    render(
+      <DocumentsPanel
+        appointmentId={APPT}
+        companionId="comp-9"
+        organisationId="org-1"
+        encounterId="enc-1"
+      />
+    );
+    // The packet is resolved on mount with the org + encounter context.
+    await waitFor(() =>
+      expect(createEncounterDocumentPacket).toHaveBeenCalledWith('org-1', 'enc-1')
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^print$/i }));
+    await waitFor(() =>
+      expect(getEncounterDocumentPacketPdfUrl).toHaveBeenCalledWith('org-1', 'enc-1')
+    );
+    expect(await screen.findByTestId('pdf-preview')).toHaveTextContent('blob:packet-pdf');
+  });
+
+  it('signs the combined clinical packet via the reused aggregate services', async () => {
+    render(
+      <DocumentsPanel
+        appointmentId={APPT}
+        companionId="comp-9"
+        organisationId="org-1"
+        encounterId="enc-1"
+      />
+    );
+    await waitFor(() =>
+      expect(createEncounterDocumentPacket).toHaveBeenCalledWith('org-1', 'enc-1')
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^sign$/i }));
+    await waitFor(() =>
+      expect(signWorkspaceDocumentPacket).toHaveBeenCalledWith('org-1', 'packet-1')
+    );
+    // The returned signing url drives the shared signing overlay store.
+    await waitFor(() =>
+      expect(useSigningOverlayStore.getState().url).toBe('https://sign.test/packet')
+    );
+  });
+
+  it('renders the NOT_STARTED packet matrix as plain-label badges with Sign enabled', async () => {
+    render(
+      <DocumentsPanel
+        appointmentId={APPT}
+        companionId="comp-9"
+        organisationId="org-1"
+        encounterId="enc-1"
+      />
+    );
+    await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
+    expect(await screen.findByText('Draft')).toBeInTheDocument();
+    expect(screen.getByText('Not started')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^sign$/i })).not.toBeDisabled();
+  });
+
+  it('shows "Signing in progress" and disables Sign for an IN_PROGRESS packet', async () => {
+    (createEncounterDocumentPacket as jest.Mock).mockResolvedValue({
+      packetId: 'packet-1',
+      status: 'DRAFT',
+      signing: { status: 'IN_PROGRESS' },
+    });
+    render(
+      <DocumentsPanel
+        appointmentId={APPT}
+        companionId="comp-9"
+        organisationId="org-1"
+        encounterId="enc-1"
+      />
+    );
+    await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
+    // The status badge and the collapsed Sign button both read "Signing in progress".
+    expect((await screen.findAllByText('Signing in progress')).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /signing in progress/i })).toBeDisabled();
+  });
+
+  it('marks a SIGNED packet as Final/Signed and disables the Sign action', async () => {
+    (createEncounterDocumentPacket as jest.Mock).mockResolvedValue({
+      packetId: 'packet-1',
+      status: 'FINAL',
+      signing: { status: 'SIGNED' },
+    });
+    render(
+      <DocumentsPanel
+        appointmentId={APPT}
+        companionId="comp-9"
+        organisationId="org-1"
+        encounterId="enc-1"
+      />
+    );
+    await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
+    expect(await screen.findByText('Final')).toBeInTheDocument();
+    // The status badge and the collapsed Sign button both read "Signed".
+    expect(screen.getAllByText('Signed').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /signed/i })).toBeDisabled();
+  });
+
+  it('surfaces an error and closes the overlay when packet signing fails', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (signWorkspaceDocumentPacket as jest.Mock).mockRejectedValueOnce(new Error('packet boom'));
+    render(
+      <DocumentsPanel
+        appointmentId={APPT}
+        companionId="comp-9"
+        organisationId="org-1"
+        encounterId="enc-1"
+      />
+    );
+    await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /^sign$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('packet boom');
+    expect(useSigningOverlayStore.getState().open).toBe(false);
+    errorSpy.mockRestore();
+  });
+
+  it('disables packet actions and explains when org/encounter context is missing', async () => {
+    render(<DocumentsPanel appointmentId={APPT} companionId="comp-9" />);
+    await screen.findByText('Medication Admin - ID 67890');
+    // No org/encounter → the packet is never fetched and the actions are disabled.
+    expect(createEncounterDocumentPacket).not.toHaveBeenCalled();
+    expect(screen.getByText(/open this from an encounter to print or sign/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^print$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^sign$/i })).toBeDisabled();
   });
 });
