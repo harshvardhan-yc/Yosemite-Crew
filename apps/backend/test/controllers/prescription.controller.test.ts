@@ -358,6 +358,8 @@ describe("PrescriptionController", () => {
       "Content-Type",
       "application/pdf",
     );
+    // The sensitive label response must not be cached by browsers or shared proxies.
+    expect(setHeaderMock).toHaveBeenCalledWith("Cache-Control", "no-store");
     expect(setHeaderMock).toHaveBeenCalledWith(
       "Content-Disposition",
       'inline; filename="prescription-label-rx-1.pdf"',

@@ -84,6 +84,9 @@ export const PrescriptionController = {
       });
 
       res.setHeader("Content-Type", "application/pdf");
+      // The label embeds patient/client/prescriber and controlled-substance details, so the
+      // response must never be cached by browsers or shared proxies (sensitive health data).
+      res.setHeader("Cache-Control", "no-store");
       res.setHeader(
         "Content-Disposition",
         `inline; filename="prescription-label-${params.prescriptionId}.pdf"`,
