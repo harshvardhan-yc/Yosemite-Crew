@@ -270,7 +270,8 @@ describe("ParentService", () => {
 
   it("updates a parent and normalizes timezone", async () => {
     mockedPrisma.parent.update.mockResolvedValueOnce(mockParent);
-    mockedPrisma.parent.findUnique.mockResolvedValueOnce(mockParent);
+    // findUnique is called for the pre-update alert snapshot and twice via resolveParentRecord.
+    mockedPrisma.parent.findUnique.mockResolvedValue(mockParent);
 
     const result = await ParentService.update("parent-1", {
       firstName: "Jane",
@@ -310,7 +311,7 @@ describe("ParentService", () => {
 
   it("persists client alerts on update", async () => {
     mockedPrisma.parent.update.mockResolvedValueOnce(mockParent);
-    mockedPrisma.parent.findUnique.mockResolvedValueOnce(mockParent);
+    mockedPrisma.parent.findUnique.mockResolvedValue(mockParent);
 
     const alerts = [{ title: "Aggressive", severity: "high" }];
     await ParentService.update("parent-1", {

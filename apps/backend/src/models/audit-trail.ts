@@ -9,7 +9,9 @@ export type AuditEntityType =
   | "INVOICE"
   | "DOCUMENT"
   | "FORM"
-  | "TASK";
+  | "TASK"
+  | "PARENT"
+  | "COMPANION";
 
 export type AuditEventType =
   | "PATIENT_ORG_LINK_CREATED"
@@ -41,7 +43,13 @@ export type AuditEventType =
   | "FORM_SUBMITTED"
   | "TASK_CREATED"
   | "TASK_REASSIGNED"
-  | "TASK_STATUS_CHANGED";
+  | "TASK_STATUS_CHANGED"
+  | "PARENT_ALERT_CREATED"
+  | "PARENT_ALERT_UPDATED"
+  | "PARENT_ALERT_DELETED"
+  | "COMPANION_ALERT_CREATED"
+  | "COMPANION_ALERT_UPDATED"
+  | "COMPANION_ALERT_DELETED";
 
 export interface AuditTrailMongo {
   organisationId: string;
@@ -85,6 +93,8 @@ const AuditTrailSchema = new Schema(
         "DOCUMENT",
         "FORM",
         "TASK",
+        "PARENT",
+        "COMPANION",
       ],
       default: null,
     },

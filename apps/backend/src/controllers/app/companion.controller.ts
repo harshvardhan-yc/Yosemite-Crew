@@ -10,7 +10,10 @@ import { CompanionOrganisationService } from "src/services/companion-organisatio
 import OrganizationModel from "src/models/organization";
 import { prisma } from "src/config/prisma";
 import { isReadFromPostgres } from "src/config/read-switch";
-import { resolveUserIdFromRequest } from "src/utils/request";
+import {
+  resolveOrganisationIdFromRequest,
+  resolveUserIdFromRequest,
+} from "src/utils/request";
 
 type CompanionRequestBody =
   | CompanionRequestDTO
@@ -197,7 +200,10 @@ export const CompanionController = {
       }
 
       const payload = extractFHIRPayload(req);
-      const result = await CompanionService.update(id, payload);
+      const result = await CompanionService.update(id, payload, {
+        organisationId: resolveOrganisationIdFromRequest(req),
+        authUserId: resolveUserIdFromRequest(req),
+      });
 
       if (!result) {
         return res.status(404).json({ message: "Companion not found." });

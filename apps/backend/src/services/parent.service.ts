@@ -6,6 +6,7 @@ import {
 } from "@yosemite-crew/types";
 import { ParentCreatedFrom, Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
+import { AuditTrailService } from "./audit-trail.service";
 import { AuthUserMobileService } from "./authUserMobile.service";
 import { buildS3Key, moveFile } from "src/middlewares/upload";
 import logger from "src/utils/logger";
@@ -316,6 +317,10 @@ const deleteParentAddress = async (parentId: string) => {
 export type ParentCreateContext = {
   source: "mobile" | "pms" | "invited";
   authUserId?: string;
+  /** Acting organisation + user for audit scoping (PMS edits). Optional: when absent,
+   *  the alert-mutation audit is skipped (the request still succeeds). */
+  organisationId?: string;
+  actorId?: string;
 };
 
 const resolveParentRecord = async (id: string) =>
@@ -499,6 +504,12 @@ export const ParentService = {
       parent.timezone = validateTimezone(parent.timezone, "Timezone");
     }
 
+    // Capture the prior alert set so an alert change can be audited (created/updated/deleted).
+    const beforeUpdate = await prisma.parent.findUnique({
+      where: { id },
+      select: { alerts: true },
+    });
+
     await prisma.parent.update({
       where: { id },
       data: {
@@ -525,6 +536,17 @@ export const ParentService = {
     if (hasAddressData(parent.address)) {
       await upsertParentAddress(id, parent.address);
     }
+
+    // Audit client (parent) alert mutations. No-ops when alerts are unchanged or no org
+    // context is available, so a plain profile update is never spuriously audited.
+    await AuditTrailService.recordAlertMutation({
+      entity: "PARENT",
+      organisationId: ctx?.organisationId,
+      patientId: id,
+      actorId: ctx?.actorId,
+      previousAlerts: beforeUpdate?.alerts,
+      nextAlerts: (parent as Parent & { alerts?: unknown }).alerts,
+    });
 
     const refreshed = await resolveParentRecord(id);
     if (!refreshed) {

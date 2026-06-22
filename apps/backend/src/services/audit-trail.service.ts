@@ -239,6 +239,41 @@ export const AuditTrailService = {
     }
   },
 
+  /**
+   * Record a parent/companion alert mutation, choosing CREATED / UPDATED / DELETED by diffing
+   * the previous and next alert sets. No-ops (no audit, never throws) when the alert set is
+   * unchanged or no organisation context is available, so it is safe to call from any update
+   * path. For companion alerts patientId is the companion id; for client (parent) alerts it is
+   * the parent id (client-scoped).
+   */
+  async recordAlertMutation(params: {
+    entity: "PARENT" | "COMPANION";
+    organisationId?: string;
+    patientId: string;
+    actorId?: string | null;
+    previousAlerts: unknown;
+    nextAlerts: unknown;
+  }): Promise<void> {
+    if (!params.organisationId) return;
+    const prev = Array.isArray(params.previousAlerts)
+      ? params.previousAlerts
+      : [];
+    const next = Array.isArray(params.nextAlerts) ? params.nextAlerts : [];
+    if (JSON.stringify(prev) === JSON.stringify(next)) return;
+    const action =
+      prev.length === 0 ? "CREATED" : next.length === 0 ? "DELETED" : "UPDATED";
+    await this.recordSafely({
+      organisationId: params.organisationId,
+      patientId: params.patientId,
+      eventType: `${params.entity}_ALERT_${action}` as AuditEventType,
+      actorType: "PMS_USER",
+      actorId: params.actorId ?? null,
+      entityType: params.entity,
+      entityId: params.patientId,
+      metadata: { previousCount: prev.length, nextCount: next.length },
+    });
+  },
+
   async listForOrganisation(params: {
     organisationId: string;
     patientId?: string;

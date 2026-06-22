@@ -7,6 +7,10 @@ import {
 import type { ParentRequestDTO } from "@yosemite-crew/types";
 import { generatePresignedUrl } from "src/middlewares/upload";
 import type { AuthenticatedRequest } from "src/middlewares/auth";
+import {
+  resolveOrganisationIdFromRequest,
+  resolveUserIdFromRequest,
+} from "src/utils/request";
 
 // Payload checker
 type ParentRequestBody = ParentRequestDTO | { payload?: unknown } | undefined;
@@ -236,6 +240,8 @@ export const ParentController = {
 
       const result = await ParentService.update(id, payload, {
         source: "pms",
+        organisationId: resolveOrganisationIdFromRequest(req),
+        actorId: resolveUserIdFromRequest(req),
       });
 
       if (!result) {

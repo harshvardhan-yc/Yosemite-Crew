@@ -20,6 +20,7 @@ import {
   ParentCompanionService,
   ParentCompanionServiceError,
 } from "./parent-companion.service";
+import { AuditTrailService } from "./audit-trail.service";
 import { ParentService } from "./parent.service";
 import { buildS3Key, moveFile } from "src/middlewares/upload";
 import escapeStringRegexp from "escape-string-regexp";
@@ -561,10 +562,20 @@ export const CompanionService = {
     };
   },
 
-  async update(id: string, payload: CompanionRequestDTO) {
+  async update(
+    id: string,
+    payload: CompanionRequestDTO,
+    context?: CompanionCreateContext,
+  ) {
     const persistable = toPersistable(payload);
     await validateCompanionCodes(persistable);
     persistable.isProfileComplete = computeIsProfileComplete(persistable);
+
+    // Capture the prior alert set so an alert change can be audited.
+    const beforeUpdate = await prisma.patient.findUnique({
+      where: { id },
+      select: { alerts: true },
+    });
 
     const doc = await prisma.patient.update({
       where: { id },
@@ -606,6 +617,17 @@ export const CompanionService = {
           : undefined,
         isProfileComplete: persistable.isProfileComplete ?? false,
       },
+    });
+
+    // Audit companion (patient) alert mutations. No-ops when alerts are unchanged or no org
+    // context is available, so a routine companion update is never spuriously audited.
+    await AuditTrailService.recordAlertMutation({
+      entity: "COMPANION",
+      organisationId: context?.organisationId,
+      patientId: id,
+      actorId: context?.authUserId,
+      previousAlerts: beforeUpdate?.alerts,
+      nextAlerts: persistable.alerts,
     });
 
     return { response: toFHIRFromPrisma(doc as CompanionRecord) };
