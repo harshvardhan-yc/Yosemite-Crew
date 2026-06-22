@@ -88,6 +88,8 @@ describe('security headers', () => {
     expect(directives.get('connect-src')).toContain('http:');
     expect(directives.get('connect-src')).toContain('ws:');
     expect(directives.get('img-src')).toContain('https://upload.wikimedia.org');
+    expect(directives.get('img-src')).toContain('https://d2il6osz49gpup.cloudfront.net');
+    expect(directives.get('img-src')).toContain('https://d2kyjiikho62xx.cloudfront.net');
     expect(directives.get('frame-src')).toContain('blob:');
     expect(directives.get('frame-src')).toContain('https://js.stripe.com');
     expect(directives.get('frame-src')).toContain('https://*.js.stripe.com');
@@ -96,6 +98,8 @@ describe('security headers', () => {
     expect(directives.get('frame-src')).toContain('https://*.merckvetmanual.com');
     expect(directives.get('frame-src')).toContain('https://*.idexx.com');
     expect(directives.get('frame-src')).toContain('https://*.vetconnectplus.com');
+    expect(directives.get('frame-src')).toContain('https://d2il6osz49gpup.cloudfront.net');
+    expect(directives.get('frame-src')).toContain('https://d2kyjiikho62xx.cloudfront.net');
     expect(directives.get('frame-src')).toContain('https://sign.example.com');
   });
 
