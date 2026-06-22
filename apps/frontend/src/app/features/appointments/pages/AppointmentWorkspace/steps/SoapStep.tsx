@@ -15,7 +15,11 @@ import type {
   AppointmentEncounter,
   SoapNoteEntry,
 } from '@/app/features/appointments/types/workspace';
-import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
+import {
+  formatStampDate,
+  formatStampTime,
+  resolveSectionLock,
+} from '@/app/lib/appointmentWorkspace';
 import { isRichTextEmpty } from '@/app/lib/richText';
 import {
   getRenderedDocument,
@@ -134,12 +138,17 @@ const SoapStep = ({
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState('SOAP note');
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [persistedDraftId, setPersistedDraftId] = useState<string | undefined>(undefined);
 
   // Work on the active draft (first not-yet-signed note); once a note is signed
   // it moves to "All SOAP notes" history and the form clears for a new entry.
   const note = encounter.soap.find((entry) => entry.status !== 'COMPLETED') ?? EMPTY_SOAP;
-  const readOnly = encounter.viewOnly;
+  // Prefer the backend-owned SOAP section lock when the workspace bootstrap supplies
+  // it; otherwise fall back to the clinical `viewOnly` flag (lock-window/discharge).
+  const soapLock = resolveSectionLock(encounter, 'soap', encounter.viewOnly);
+  const readOnly = soapLock.locked;
+  const lockReason = soapLock.reason;
 
   useEffect(() => {
     setPersistedDraftId(isPersistedSoapId(note.id) ? note.id : undefined);
@@ -180,6 +189,7 @@ const SoapStep = ({
   const handleSaveAndNext = async () => {
     if (isSaving) return;
     setIsSaving(true);
+    setSaveError(null);
     let persistedId: string | undefined;
     try {
       if (organisationId) {
@@ -201,12 +211,19 @@ const SoapStep = ({
         persistedId = (saved as { id?: string } | undefined)?.id;
       }
     } catch (error) {
+      // Do NOT advance or mark COMPLETED on a failed save — that would show an
+      // unsaved clinical note as signed. Surface the backend error and stop.
       console.error('Unable to persist SOAP note:', error);
-    } finally {
-      signSoap(appointmentId, encounter.leadName ?? 'Clinician', false, persistedId);
+      setSaveError(
+        error instanceof Error ? error.message : 'Unable to save the SOAP note. Please try again.'
+      );
       setIsSaving(false);
-      onSaveAndNext();
+      return;
     }
+    // Only reached when the save succeeded (or there was nothing to persist).
+    signSoap(appointmentId, encounter.leadName ?? 'Clinician', false, persistedId);
+    setIsSaving(false);
+    onSaveAndNext();
   };
 
   const resolveSoapPdfUrl = async (soapNoteId: string) => {
@@ -393,6 +410,11 @@ const SoapStep = ({
             />
           </SectionContainer>
 
+          {saveError && (
+            <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">
+              {saveError}
+            </p>
+          )}
           <div className="flex justify-end">
             <SoapSignActions
               disabled={isSaving || isPreparingPdf}
@@ -401,6 +423,11 @@ const SoapStep = ({
             />
           </div>
         </>
+      )}
+      {readOnly && lockReason && (
+        <p className="rounded-2xl bg-neutral-100 p-3 text-body-4 text-text-secondary">
+          {lockReason}
+        </p>
       )}
 
       <SoapNotesList items={pastNotes} />

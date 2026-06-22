@@ -265,6 +265,36 @@ describe('SoapStep', () => {
     expect(onSaveAndNext).toHaveBeenCalledTimes(1);
   });
 
+  it('surfaces the backend error and does NOT sign or advance when the save fails', async () => {
+    // Override the global throwing console.error spy: the handler logs on failure.
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (saveSoapNote as jest.Mock).mockRejectedValueOnce(new Error('SOAP save rejected'));
+    onSaveAndNext.mockClear();
+    seedAndGet();
+    useAppointmentWorkspaceStore.getState().upsertSoap(APPT, { subjective: '<p>history</p>' });
+    const enc = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!;
+    render(
+      <SoapStep
+        appointmentId={APPT}
+        organisationId="org-1"
+        appointmentReason={APPOINTMENT_REASON}
+        encounter={enc}
+        onRecordVitals={onRecordVitals}
+        onSaveAndNext={onSaveAndNext}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Next' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('SOAP save rejected');
+    // Critical: a failed save must not advance the step or mark the note COMPLETED.
+    expect(onSaveAndNext).not.toHaveBeenCalled();
+    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.soap[0]?.status).not.toBe(
+      'COMPLETED'
+    );
+    errorSpy.mockRestore();
+  });
+
   it('falls back to the encounter lead name and omits date/time when not recorded', () => {
     const enc = {
       ...seedAndGet(),
