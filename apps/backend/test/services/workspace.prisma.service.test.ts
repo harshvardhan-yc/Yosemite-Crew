@@ -772,6 +772,59 @@ describe("WorkspaceService", () => {
     );
   });
 
+  it("sources workspace documents from the rendered-document pipeline + direct uploads only (legacy forms retired)", async () => {
+    mockedPrisma.encounter.findFirst.mockResolvedValue({
+      id: "enc-doc-2",
+      organisationId: "org-doc",
+      caseId: "case-doc",
+      patientId: "patient-doc",
+      parentId: null,
+      status: "in-progress",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      title: "Docs",
+      reason: null,
+      periodStart: null,
+      periodEnd: null,
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.case.findFirst.mockResolvedValue({
+      id: "case-doc",
+      organisationId: "org-doc",
+      patientId: "patient-doc",
+      parentId: null,
+      status: "active",
+      appointmentKind: "INPATIENT",
+      title: "Episode",
+      description: null,
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.patient.findFirst.mockResolvedValue({
+      id: "patient-doc",
+      name: "Nova",
+      type: "PET",
+      status: "ACTIVE",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.document.findMany.mockResolvedValue([]);
+    mockedPrisma.renderedDocument.findMany.mockResolvedValue([]);
+
+    await WorkspaceService.getEncounterDocuments({
+      organisationId: "org-doc",
+      encounterId: "enc-doc-2",
+    });
+
+    // The read model is built from the rendered-document pipeline and direct uploads; the
+    // legacy form-submission store is never read (it is absent from the prisma mock, so any
+    // dependency on it would throw here). This locks in the legacy-forms retirement.
+    expect(mockedPrisma.renderedDocument.findMany).toHaveBeenCalled();
+    expect(mockedPrisma.document.findMany).toHaveBeenCalled();
+    expect(mockedPrisma).not.toHaveProperty("formSubmission");
+  });
+
   it("returns companion medical records only", async () => {
     mockedPrisma.patient.findFirst.mockResolvedValue({
       id: "patient-med",
