@@ -8,6 +8,8 @@ import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import {
+  createFinanceInvoice,
+  findOpenAppointmentInvoice,
   loadAppointmentBilling,
   seedAppointmentInvoice,
 } from '@/app/features/billing/services/invoiceService';
@@ -17,6 +19,7 @@ jest.mock('@/app/features/billing/services/invoiceService', () => ({
   __esModule: true,
   loadAppointmentBilling: jest.fn(),
   seedAppointmentInvoice: jest.fn(),
+  findOpenAppointmentInvoice: jest.fn(),
   addLineItemsToAppointments: jest.fn(),
   finalizeFinanceInvoice: jest.fn(),
   getPaymentLink: jest.fn(),
@@ -52,6 +55,10 @@ const reset = () => {
   });
   mockFetchInventoryItems.mockResolvedValue([]);
   mockSeedAppointmentInvoice.mockResolvedValue({ id: 'inv-seed' });
+  // No open invoice in the store by default → persistCurrentInvoice creates one
+  // via the web POST /invoices route (not the mobile /seed route).
+  (findOpenAppointmentInvoice as jest.Mock).mockReturnValue(undefined);
+  (createFinanceInvoice as jest.Mock).mockResolvedValue({ id: 'inv-created' });
   useAppointmentWorkspaceStore.setState({
     encountersById: {},
     activeStep: 'INVOICE',
@@ -642,13 +649,30 @@ describe('InvoiceStep', () => {
     expect(screen.getByText('Paid via Cash')).toBeInTheDocument();
   });
 
-  it('exposes download and share actions while editable', () => {
+  it('exposes download and share actions while editable', async () => {
     const enc = seedAndGet();
+    // Download opens a print window; Share copies to the clipboard. jsdom stubs
+    // neither, so provide them and assert the handlers fire.
+    const printSpy = jest.fn();
+    const openSpy = jest.spyOn(globalThis.window, 'open').mockReturnValue({
+      document: { write: jest.fn(), close: jest.fn() },
+      focus: jest.fn(),
+      print: printSpy,
+    } as unknown as Window);
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(globalThis.navigator, { clipboard: { writeText } });
+
     renderInvoice(enc);
 
     fireEvent.click(screen.getByRole('button', { name: /download invoice 20560dth/i }));
+    expect(openSpy).toHaveBeenCalled();
+    expect(printSpy).toHaveBeenCalled();
+
     fireEvent.click(screen.getByRole('button', { name: /share invoice 20560dth/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
     expect(screen.getByText('Invoices')).toBeInTheDocument();
+
+    openSpy.mockRestore();
   });
 
   it('shows an "Invoice Paid" badge when the invoice was not from deposit', () => {

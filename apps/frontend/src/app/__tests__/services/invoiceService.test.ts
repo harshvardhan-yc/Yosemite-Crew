@@ -102,6 +102,85 @@ describe('invoiceService', () => {
     );
   });
 
+  it('maps an enveloped finance invoice list into workspace past invoices', async () => {
+    // Exact shape returned by GET /v1/finance/invoices: a { data, meta, error }
+    // envelope wrapping plain finance invoices (no FHIR resourceType).
+    (getData as jest.Mock).mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: '672e7254-ae36-4658-b567-62e88ab4ecb7',
+            organisationId: 'org-1',
+            appointmentId: 'appt-1',
+            items: [
+              {
+                name: 'Sample testing package',
+                total: 272.3175,
+                quantity: 1,
+                unitPrice: 272.3175,
+                description: 'Sample testing package',
+              },
+            ],
+            subtotal: 272.32,
+            totalAmount: 272.32,
+            currency: 'usd',
+            visitBillingStage: 'DRAFT',
+            status: 'AWAITING_PAYMENT',
+            createdAt: '2026-06-22T18:11:58.870Z',
+            updatedAt: '2026-06-22T18:12:00.073Z',
+          },
+        ],
+        meta: null,
+        error: null,
+      },
+    });
+
+    const billing = await loadAppointmentBilling('org-1', 'appt-1');
+
+    expect(billing.pastInvoices).toHaveLength(1);
+    expect(billing.pastInvoices[0]).toMatchObject({
+      id: '672e7254-ae36-4658-b567-62e88ab4ecb7',
+      status: 'UNPAID',
+      totalCents: 27232,
+    });
+    expect(billing.pastInvoices[0].items[0]).toMatchObject({
+      name: 'Sample testing package',
+    });
+    expect(billing.currency).toBe('USD');
+  });
+
+  it('counts a paid deposit invoice toward the deposit balance', async () => {
+    // The backend records the deposit as a separate PAID invoice with the amount
+    // in totalAmount (depositCollectedAmount stays 0). It must still feed the
+    // deposit balance so it persists across a refresh.
+    (getData as jest.Mock).mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 'inv-deposit',
+            organisationId: 'org-1',
+            appointmentId: 'appt-1',
+            items: [{ name: 'Upfront visit deposit', total: 100, quantity: 1, unitPrice: 100 }],
+            totalAmount: 100,
+            currency: 'usd',
+            billingCollectionMode: 'PREPAY_AT_BOOKING',
+            visitBillingStage: 'SETTLED',
+            depositCollectedAmount: 0,
+            status: 'PAID',
+            paidAt: '2026-06-22T19:54:43.986Z',
+            createdAt: '2026-06-22T19:51:52.106Z',
+          },
+        ],
+        meta: null,
+        error: null,
+      },
+    });
+
+    const billing = await loadAppointmentBilling('org-1', 'appt-1');
+
+    expect(billing.depositCents).toBe(10000);
+  });
+
   it('skips loading when already loading', async () => {
     invoiceState.status = 'loading';
 
@@ -210,6 +289,38 @@ describe('invoiceService', () => {
     expect(postData).toHaveBeenCalledWith(
       '/v1/finance/invoices/inv-1/lines',
       expect.objectContaining({ currency: 'usd' })
+    );
+  });
+
+  it('adds line items to the open invoice, not a paid deposit invoice', async () => {
+    // Two invoices for the appointment: a PAID/SETTLED deposit and an open bill.
+    // Lines must target the open one — posting to the paid invoice 409s.
+    invoiceState.getInvoicesByOrgId = jest.fn().mockReturnValue([
+      {
+        id: 'inv-deposit',
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        status: 'PAID',
+        visitBillingStage: 'SETTLED',
+      },
+      {
+        id: 'inv-open',
+        organisationId: 'org-1',
+        appointmentId: 'appt-1',
+        status: 'AWAITING_PAYMENT',
+        visitBillingStage: 'DRAFT',
+      },
+    ]);
+
+    await addLineItemsToAppointments([{ id: 'li-1' } as any], 'appt-1', 'USD');
+
+    expect(postData).toHaveBeenCalledWith(
+      '/v1/finance/invoices/inv-open/lines',
+      expect.objectContaining({ currency: 'usd' })
+    );
+    expect(postData).not.toHaveBeenCalledWith(
+      '/v1/finance/invoices/inv-deposit/lines',
+      expect.anything()
     );
   });
 
@@ -335,6 +446,24 @@ describe('invoiceService', () => {
       provider: 'STRIPE',
     });
     expect(result).toBe('https://stripe.test');
+  });
+
+  it('reads the checkout link from the finance `url` field', async () => {
+    // The finance payments/sessions endpoint returns the Stripe link as `url`
+    // (with sessionId + paymentAttemptId), not `checkoutUrl`.
+    (postData as jest.Mock).mockResolvedValue({
+      data: {
+        data: {
+          sessionId: 'cs_test_123',
+          url: 'https://checkout.stripe.com/c/pay/cs_test_123',
+          paymentAttemptId: 'pa-1',
+        },
+        meta: null,
+        error: null,
+      },
+    });
+    const result = await getPaymentLink('inv-1');
+    expect(result).toBe('https://checkout.stripe.com/c/pay/cs_test_123');
   });
 
   it('throws when invoice id is missing in payment link call', async () => {

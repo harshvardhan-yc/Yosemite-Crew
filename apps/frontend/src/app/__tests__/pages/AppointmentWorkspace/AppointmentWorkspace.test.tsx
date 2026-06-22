@@ -806,6 +806,14 @@ describe('AppointmentWorkspace container', () => {
     );
 
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    // After the finance write succeeds the workspace re-hydrates from the
+    // bootstrap; the backend reports the persisted billing stage, which is what
+    // keeps the checkbox checked across a refresh. Model that for the post-mark
+    // re-hydration only (the encounter starts NOT ready on mount).
+    (getAppointmentWorkspaceBootstrap as jest.Mock).mockResolvedValue({
+      visitBillingStage: 'READY_FOR_BILLING',
+      readyForBilling: true,
+    });
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
     });
@@ -819,9 +827,13 @@ describe('AppointmentWorkspace container', () => {
         notes: 'Ready for billing from appointment workspace',
       });
     });
-    expect(
-      useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling.value
-    ).toBe(true);
+    // The persisted server flag (not just an optimistic flip) drives the checkbox.
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(true);
+    });
   });
 
   it('wires active step callbacks from Diagnostics through Invoice', async () => {

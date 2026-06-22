@@ -34,7 +34,7 @@ import {
   getPaymentLink,
   loadAppointmentBilling,
   recordManualInvoicePayment,
-  seedAppointmentInvoice,
+  findOpenAppointmentInvoice,
 } from '@/app/features/billing/services/invoiceService';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { computePackageTotals } from '@/app/features/organization/services/catalogCalculations';
@@ -84,8 +84,60 @@ export type BillableCandidate = Omit<InvoiceLineItem, 'id'> & {
 
 const DEFAULT_CURRENCY = 'USD';
 
+// Open a Stripe checkout URL in a new tab. `noopener` prevents the opened page
+// from accessing this window; guarded for SSR / non-browser contexts.
+const openCheckoutUrl = (url: string): void => {
+  if (typeof globalThis.window === 'undefined') return;
+  globalThis.window.open(url, '_blank', 'noopener,noreferrer');
+};
+
 const formatCents = (cents: number, currency: string = DEFAULT_CURRENCY): string =>
   formatMoney(cents / 100, currency);
+
+const escapeHtml = (value: string): string =>
+  value.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char
+  );
+
+// Render an invoice as a standalone printable document and open the browser print
+// dialog (print-to-PDF). There is no backend invoice-PDF endpoint, so this is the
+// portable way to produce a downloadable PDF from the invoice the user sees.
+const printInvoice = (invoice: PastInvoice, currency: string): void => {
+  if (typeof globalThis.window === 'undefined') return;
+  const printWindow = globalThis.window.open(
+    '',
+    '_blank',
+    'noopener,noreferrer,width=800,height=900'
+  );
+  if (!printWindow) return;
+  const rows = invoice.items
+    .map(
+      (item) =>
+        `<tr><td>${escapeHtml(item.name)}</td><td style="text-align:right">${escapeHtml(
+          formatCents(item.amountCents, currency)
+        )}</td></tr>`
+    )
+    .join('');
+  printWindow.document.write(
+    `<!doctype html><html><head><title>Invoice ${escapeHtml(invoice.id)}</title>` +
+      `<style>body{font-family:Arial,Helvetica,sans-serif;padding:32px;color:#1a1a1a}` +
+      `h1{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}` +
+      `td,th{padding:8px 0;border-bottom:1px solid #e5e5e5;font-size:13px}` +
+      `tfoot td{font-weight:bold;border-bottom:none}</style></head><body>` +
+      `<h1>Invoice ${escapeHtml(invoice.id)}</h1>` +
+      `<div>Date: ${escapeHtml(new Date(invoice.createdAt).toLocaleString())}</div>` +
+      `<table><thead><tr><th style="text-align:left">Item</th><th style="text-align:right">Amount</th></tr></thead>` +
+      `<tbody>${rows}</tbody>` +
+      `<tfoot><tr><td>Total</td><td style="text-align:right">${escapeHtml(
+        formatCents(invoice.totalCents, currency)
+      )}</td></tr></tfoot></table></body></html>`
+  );
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+};
 
 /** The workspace tracks money in integer cents; the finance API stores major units
  *  (dollars/decimals), so convert on the way out. */
@@ -386,6 +438,8 @@ const InvoiceRow = ({
   readOnly,
   currency,
   onToggle,
+  onDownload,
+  onShare,
 }: {
   invoice: PastInvoice;
   index: number;
@@ -393,6 +447,8 @@ const InvoiceRow = ({
   readOnly: boolean;
   currency: string;
   onToggle: (id: string) => void;
+  onDownload: (invoice: PastInvoice) => void;
+  onShare: (invoice: PastInvoice) => void;
 }) => (
   <li className="flex flex-col gap-4 rounded-2xl border border-card-border p-4">
     <div className={INVOICE_ROW_GRID}>
@@ -421,13 +477,13 @@ const InvoiceRow = ({
         <CircleIconButton
           icon={<LuDownload aria-hidden="true" />}
           label={`Download invoice ${invoice.id}`}
-          onClick={() => undefined}
+          onClick={() => onDownload(invoice)}
         />
         {!readOnly && (
           <CircleIconButton
             icon={<LuShare aria-hidden="true" />}
             label={`Share invoice ${invoice.id}`}
-            onClick={() => undefined}
+            onClick={() => onShare(invoice)}
           />
         )}
       </div>
@@ -460,10 +516,14 @@ const InvoicesSection = ({
   invoices,
   readOnly,
   currency,
+  onDownload,
+  onShare,
 }: {
   invoices: PastInvoice[];
   readOnly: boolean;
   currency: string;
+  onDownload: (invoice: PastInvoice) => void;
+  onShare: (invoice: PastInvoice) => void;
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(invoices[0]?.id ?? null);
 
@@ -492,6 +552,8 @@ const InvoicesSection = ({
                 readOnly={readOnly}
                 currency={currency}
                 onToggle={handleToggle}
+                onDownload={onDownload}
+                onShare={onShare}
               />
             ))}
           </ul>
@@ -633,8 +695,16 @@ const DepositModal = ({
           />
         </label>
         {generatedLink && (
-          <output className="rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
-            Payment link generated: {generatedLink}
+          <output className="flex flex-col gap-1 rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
+            <span>Payment link generated:</span>
+            <a
+              href={generatedLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all underline"
+            >
+              {generatedLink}
+            </a>
           </output>
         )}
         <div className="flex justify-end gap-3">
@@ -677,6 +747,9 @@ const InvoiceStep = ({
   const inventoryById = useInventoryStore((s) => s.itemsById);
   const setInventoryForOrg = useInventoryStore((s) => s.setInventoryForOrg);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  // A generated payment link shown under the confirmation; rendered as a wrapping
+  // anchor so a long Stripe URL never overflows the container width.
+  const [confirmationLink, setConfirmationLink] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
@@ -768,25 +841,24 @@ const InvoiceStep = ({
     const loadKey = `${organisationId}:${appointmentId}`;
     if (billingLoadedRef.current === loadKey) return undefined;
     billingLoadedRef.current = loadKey;
-    let active = true;
     loadAppointmentBilling(organisationId, appointmentId)
       .then((billing) => {
-        if (active) {
-          hydrateInvoiceBilling(appointmentId, {
-            pastInvoices: billing.pastInvoices,
-            depositCents: billing.depositCents,
-            currency: billing.currency,
-          });
-        }
+        // Always apply to the store — it's mount-independent (Zustand), so a
+        // transient unmount/remount between request and response must not drop the
+        // result. Skipping on unmount previously left pastInvoices empty with the
+        // load guard still set, so the invoices never appeared.
+        hydrateInvoiceBilling(appointmentId, {
+          pastInvoices: billing.pastInvoices,
+          depositCents: billing.depositCents,
+          currency: billing.currency,
+        });
       })
       .catch((error) => {
         // Allow a later retry if the load failed.
         if (billingLoadedRef.current === loadKey) billingLoadedRef.current = null;
         console.error('Failed to load appointment billing:', error);
       });
-    return () => {
-      active = false;
-    };
+    return undefined;
   }, [appointmentId, hydrateInvoiceBilling, organisationId]);
 
   // Refetch the appointment's finance state (invoices, deposit, currency) from
@@ -808,13 +880,27 @@ const InvoiceStep = ({
 
   const persistCurrentInvoice = async () => {
     if (!organisationId) return undefined;
-    const invoice = await seedAppointmentInvoice(appointmentId);
-    await addLineItemsToAppointments(
-      toFinanceLineItems(encounter.invoiceLineItems),
-      appointmentId,
-      currency
-    );
-    if (invoice.id) {
+    const lineItems = toFinanceLineItems(encounter.invoiceLineItems);
+    // Prefer an existing OPEN invoice for this appointment and append new lines to
+    // it (web /lines). When none exists, create one via the web POST /invoices —
+    // never the mobile /seed route, which requires a mobile Cognito token on web
+    // and 401s (logging the user out).
+    const openInvoice = findOpenAppointmentInvoice(organisationId, appointmentId);
+    let invoice = openInvoice;
+    if (invoice?.id) {
+      await addLineItemsToAppointments(lineItems, appointmentId, currency);
+    } else {
+      if (lineItems.length === 0) return undefined;
+      invoice = await createFinanceInvoice({
+        appointmentId,
+        parentId,
+        patientId,
+        organisationId,
+        paymentCollectionMethod: 'PAYMENT_LINK',
+        items: lineItems,
+      });
+    }
+    if (invoice?.id) {
       await finalizeFinanceInvoice(invoice.id);
     }
     return invoice;
@@ -832,9 +918,18 @@ const InvoiceStep = ({
     try {
       const invoice = await persistCurrentInvoice();
       if (method === 'ONLINE') {
+        setConfirmationLink(null);
         if (invoice?.id) {
           const url = await getPaymentLink(invoice.id);
-          setConfirmation(url ? `Payment link generated: ${url}` : 'Payment link generated');
+          if (url) {
+            // Open the Stripe checkout so the client can pay immediately; also
+            // keep the link visible (as a wrapping anchor) for copy/share.
+            openCheckoutUrl(url);
+            setConfirmation('Payment link generated:');
+            setConfirmationLink(url);
+          } else {
+            setConfirmation('Payment link generated');
+          }
         } else {
           setConfirmation('Invoice prepared for online payment');
         }
@@ -915,6 +1010,7 @@ const InvoiceStep = ({
         : undefined;
       if (input.method === 'ONLINE') {
         setDepositPaymentLink(checkoutUrl ?? null);
+        if (checkoutUrl) openCheckoutUrl(checkoutUrl);
         setConfirmation(
           checkoutUrl
             ? `Deposit payment link generated: ${checkoutUrl}`
@@ -940,6 +1036,34 @@ const InvoiceStep = ({
 
   const handleSendToClient = async () => {
     await handleCollect('ONLINE');
+  };
+
+  // Download = render the invoice and open the print dialog (print-to-PDF); there
+  // is no backend invoice-PDF endpoint to preview yet.
+  const handleDownloadInvoice = (invoice: PastInvoice) => {
+    printInvoice(invoice, currency);
+  };
+
+  // Share = copy a concise invoice summary to the clipboard for pasting into a
+  // message/email. Falls back to a confirmation when clipboard isn't available.
+  const handleShareInvoice = async (invoice: PastInvoice) => {
+    const summary = `Invoice ${invoice.id} — ${formatCents(invoice.totalCents, currency)} (${
+      invoice.status
+    })`;
+    try {
+      if (globalThis.navigator?.clipboard) {
+        await globalThis.navigator.clipboard.writeText(summary);
+        setConfirmationLink(null);
+        setConfirmation('Invoice summary copied to clipboard.');
+      } else {
+        setConfirmationLink(null);
+        setConfirmation(summary);
+      }
+    } catch (error) {
+      console.error('Failed to copy invoice summary:', error);
+      setConfirmationLink(null);
+      setConfirmation(summary);
+    }
   };
 
   const handleFinishInvoice = () => {
@@ -1012,8 +1136,18 @@ const InvoiceStep = ({
           )}
 
           {confirmation && (
-            <output className="rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
-              {confirmation}
+            <output className="flex flex-col gap-1 rounded-2xl bg-primary-100 p-3 text-body-4 text-text-brand">
+              <span>{confirmation}</span>
+              {confirmationLink && (
+                <a
+                  href={confirmationLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full break-all underline"
+                >
+                  {confirmationLink}
+                </a>
+              )}
             </output>
           )}
         </>
@@ -1027,7 +1161,13 @@ const InvoiceStep = ({
         onSubmit={handleDepositSubmit}
       />
 
-      <InvoicesSection invoices={encounter.pastInvoices} readOnly={readOnly} currency={currency} />
+      <InvoicesSection
+        invoices={encounter.pastInvoices}
+        readOnly={readOnly}
+        currency={currency}
+        onDownload={handleDownloadInvoice}
+        onShare={handleShareInvoice}
+      />
 
       {!readOnly && (
         <div className="flex flex-col items-end gap-2">

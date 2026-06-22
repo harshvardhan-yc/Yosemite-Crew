@@ -892,7 +892,18 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
 
   const handleReadyForBillingToggle = useCallback(async () => {
     const nextReady = !(encounter?.readyForBilling.value ?? false);
-    if (nextReady) {
+    // Marking ready persists by setting the invoice's visitBillingStage to
+    // READY_FOR_BILLING on the finance service; the workspace bootstrap reads that
+    // back on refresh. There is no server endpoint to revert the stage, so undoing
+    // can only ever be local — surface that instead of silently diverging on reload.
+    if (!nextReady) {
+      notify('warning', {
+        title: 'Can’t unmark on the server',
+        text: 'Ready for billing can’t be reverted once set. It will stay marked after refresh.',
+      });
+      return;
+    }
+    try {
       await markAppointmentReadyForBilling(appointmentId, {
         organisationId: appointment.organisationId,
         patientId: companion.id,
@@ -900,8 +911,27 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         visitId: lifecycleEncounterIdRef.current ?? appointment.encounterId,
         notes: 'Ready for billing from appointment workspace',
       });
+    } catch (error) {
+      // Do NOT flip local state if the write failed — otherwise the UI shows
+      // "ready" but a refresh reverts it, which reads as "not persisting".
+      console.error('Failed to mark appointment ready for billing:', error);
+      notify('error', {
+        title: 'Couldn’t mark ready for billing',
+        text: 'The change wasn’t saved. Please try again.',
+      });
+      return;
     }
-    toggleReadyForBilling(appointmentId, actor);
+    // Re-hydrate from the workspace bootstrap so the checkbox reflects confirmed
+    // server state (invoice visitBillingStage). This is what persists across a
+    // page refresh, so binding the UI to it — rather than only flipping local
+    // state — guarantees the checkbox stays checked after reload.
+    try {
+      await refreshWorkspaceEncounterId();
+    } catch (error) {
+      console.error('Failed to refresh billing state after marking ready:', error);
+      // Fall back to an optimistic flip so the user still sees their action.
+      toggleReadyForBilling(appointmentId, actor);
+    }
   }, [
     actor,
     appointment.encounterId,
@@ -910,6 +940,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     companion.id,
     companion.parent.id,
     encounter?.readyForBilling.value,
+    notify,
+    refreshWorkspaceEncounterId,
     toggleReadyForBilling,
   ]);
 

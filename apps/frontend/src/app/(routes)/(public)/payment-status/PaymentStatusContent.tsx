@@ -23,7 +23,13 @@ const shortId = (value: string) =>
 
 export function PaymentStatusContent() {
   const searchParams = useSearchParams();
-  const session_id = searchParams.get('session_id');
+  // Stripe's configured redirect appends a stray quote to the session id
+  // (…{CHECKOUT_SESSION_ID}"), which arrives here as a trailing " / %22 and breaks
+  // the status lookup. Strip any surrounding quotes/whitespace before using it.
+  const rawSessionId = searchParams.get('session_id');
+  const session_id = rawSessionId
+    ? rawSessionId.trim().replace(/^["']+|["'\s]+$/g, '') || null
+    : rawSessionId;
 
   const [state, setState] = useState<PaymentStatusState>({
     data: null,

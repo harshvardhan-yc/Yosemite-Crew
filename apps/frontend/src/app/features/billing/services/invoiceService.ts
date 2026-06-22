@@ -72,7 +72,11 @@ type ReadyForBillingInput = {
 
 type PaymentSessionResponse = {
   paymentAttemptId: string;
+  // The finance service returns the Stripe checkout URL as `url`; older/alt shapes
+  // used `checkoutUrl`. Read both so the link is never silently dropped.
+  url?: string;
   checkoutUrl?: string;
+  sessionId?: string;
   providerPaymentIntentId?: string;
   providerCheckoutSessionId?: string;
 };
@@ -191,6 +195,12 @@ const normalizeFinanceInvoice = (invoice: any, fallbackOrganisationId?: string):
     stripeCheckoutSessionId: invoice?.stripeCheckoutSessionId,
     stripeCheckoutUrl: invoice?.stripeCheckoutUrl,
     status: invoice?.status ?? 'PENDING',
+    // Carry billing-stage/deposit fields through so deposit totals persist and the
+    // open-invoice selector can exclude SETTLED invoices.
+    billingCollectionMode: invoice?.billingCollectionMode,
+    visitBillingStage: invoice?.visitBillingStage,
+    depositCollectedAmount: invoice?.depositCollectedAmount,
+    depositTargetAmount: invoice?.depositTargetAmount,
     metadata: invoice?.metadata,
     paidAt: invoice?.paidAt ? new Date(invoice.paidAt) : undefined,
     createdAt,
@@ -309,6 +319,21 @@ const financeAmountToCents = (amount: number | undefined): number =>
 
 const FINANCE_OPEN_STATUSES = new Set(['PENDING', 'AWAITING_PAYMENT', 'REQUIRES_ACTION']);
 
+// Deposit collection modes, and the deposit-line name the workspace creates. A
+// deposit invoice is recognised by either signal so its paid total feeds the
+// deposit balance even when the backend leaves depositCollectedAmount at 0.
+const DEPOSIT_COLLECTION_MODES = new Set(['PREPAY_AT_BOOKING', 'DEPOSIT_THEN_SETTLE']);
+const isDepositInvoice = (invoice: Invoice): boolean => {
+  const mode = String(invoice.billingCollectionMode ?? '').toUpperCase();
+  if (DEPOSIT_COLLECTION_MODES.has(mode)) return true;
+  const items = Array.isArray(invoice.items) ? invoice.items : [];
+  return items.some((item) =>
+    String(item?.name ?? '')
+      .toLowerCase()
+      .includes('deposit')
+  );
+};
+
 /** Map a finance invoice status to the workspace's coarse paid/unpaid pill state. */
 const toWorkspaceInvoiceStatus = (
   status: string | undefined,
@@ -374,9 +399,17 @@ export const loadAppointmentBilling = async (
     const totalCents =
       financeAmountToCents(invoice.totalAmount) ||
       items.reduce((sum, item) => sum + item.amountCents, 0);
-    const collectedCents = financeAmountToCents(invoice.depositCollectedAmount);
-    depositCents += collectedCents;
     const isPaid = invoice.status === 'PAID' || Boolean(invoice.paidAt);
+    // Deposit balance precedence: the explicit depositCollectedAmount when set;
+    // otherwise a paid deposit-style invoice contributes its full paid total
+    // (the backend records the deposit as a separate PAID invoice, not as a
+    // depositCollectedAmount on the main bill).
+    const explicitDepositCents = financeAmountToCents(invoice.depositCollectedAmount);
+    if (explicitDepositCents > 0) {
+      depositCents += explicitDepositCents;
+    } else if (isPaid && isDepositInvoice(invoice)) {
+      depositCents += totalCents;
+    }
     const outstandingCents = isPaid ? 0 : totalCents;
     return {
       id: String(invoice.id ?? appointmentId),
@@ -485,7 +518,7 @@ export const getPaymentLink = async (invoiceId: string): Promise<string | undefi
       { provider: 'STRIPE' }
     );
     const paymentSession = unwrapFinanceData(res.data);
-    const url = paymentSession.checkoutUrl;
+    const url = paymentSession.url ?? paymentSession.checkoutUrl;
     if (!url) throw new Error('No checkout URL returned from backend.');
     return url;
   } catch (err) {
@@ -654,14 +687,35 @@ export const markAppointmentReadyForBilling = async (
   }
 };
 
+// Statuses an invoice can no longer accept line edits in. A paid/settled invoice
+// (e.g. a collected deposit) returns 409 "Cannot modify a paid invoice" on /lines.
+const CLOSED_INVOICE_STATUSES = new Set(['PAID', 'CANCELLED', 'REFUNDED', 'VOID']);
+
+/**
+ * Find an OPEN invoice for an appointment from the invoice store. An appointment
+ * can carry several invoices (e.g. a paid deposit + the main bill); only an open
+ * one may receive new lines — a paid/settled invoice 409s on /lines.
+ */
+export const findOpenAppointmentInvoice = (
+  organisationId: string,
+  appointmentId: string
+): Invoice | undefined =>
+  useInvoiceStore
+    .getState()
+    .getInvoicesByOrgId(organisationId)
+    .find(
+      (invoice) =>
+        invoice.appointmentId === appointmentId &&
+        invoice.id &&
+        !CLOSED_INVOICE_STATUSES.has(String(invoice.status ?? '').toUpperCase()) &&
+        String(invoice.visitBillingStage ?? '').toUpperCase() !== 'SETTLED'
+    );
+
 export const seedAppointmentInvoice = async (appointmentId: string): Promise<Invoice> => {
   const primaryOrgId = useOrgStore.getState().primaryOrgId;
-  const state = useInvoiceStore.getState();
   if (primaryOrgId) {
-    const existing = state
-      .getInvoicesByOrgId(primaryOrgId)
-      .find((invoice) => invoice.appointmentId === appointmentId && invoice.status !== 'CANCELLED');
-    if (existing?.id) return existing;
+    const openInvoice = findOpenAppointmentInvoice(primaryOrgId, appointmentId);
+    if (openInvoice?.id) return openInvoice;
   }
 
   const res = await postData<FinanceResponse>(
