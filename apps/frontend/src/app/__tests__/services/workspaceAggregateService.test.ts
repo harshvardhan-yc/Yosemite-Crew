@@ -137,16 +137,20 @@ describe('workspaceAggregateService', () => {
 
     // Only the local- row is POSTed; the already-persisted row is skipped.
     expect(postData).toHaveBeenCalledTimes(1);
+    // Payload matches the backend create contract: productId + productSnapshot +
+    // servicePackageKind + quantity + priceSnapshot (display fields live in the snapshot).
     expect(postData).toHaveBeenCalledWith(
       '/v1/workspace/organisations/org-1/encounters/enc-1/treatment-items',
       expect.objectContaining({
-        productItemId: 'prod-2',
-        productKind: 'PACKAGE',
-        name: 'New package',
+        productId: 'prod-2',
+        servicePackageKind: 'PACKAGE',
         quantity: 2,
-        instructions: 'Apply twice',
         priceSnapshot: { unitPrice: 120 },
-        billable: true,
+        productSnapshot: expect.objectContaining({
+          name: 'New package',
+          kind: 'PACKAGE',
+          instructions: 'Apply twice',
+        }),
       })
     );
   });

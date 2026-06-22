@@ -5,7 +5,11 @@ import ServicesPackagesEditor from '@/app/features/appointments/pages/Appointmen
 import PrescriptionEditor from '@/app/features/appointments/pages/AppointmentWorkspace/components/PrescriptionEditor';
 import InpatientSchedule from '@/app/features/appointments/pages/AppointmentWorkspace/components/InpatientSchedule';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
-import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
+import type {
+  AppointmentEncounter,
+  ScheduleTask,
+  ScheduleTaskStatus,
+} from '@/app/features/appointments/types/workspace';
 import { savePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
 import {
   getAppointmentWorkspaceBootstrap,
@@ -19,7 +23,11 @@ import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { useTaskStore } from '@/app/stores/taskStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
-import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
+import {
+  changeTaskStatus,
+  loadTasksForPrimaryOrg,
+  updateTask,
+} from '@/app/features/tasks/services/taskService';
 import type { Task } from '@/app/features/tasks/types/task';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
@@ -113,7 +121,30 @@ const taskStatusToScheduleStatus = (status: Task['status']) => {
   return 'PENDING' as const;
 };
 
-const taskToScheduleTask = (task: Task) => ({
+const scheduleStatusToTaskStatus = (status: ScheduleTaskStatus): Task['status'] => {
+  if (status === 'COMPLETED') return 'COMPLETED';
+  if (status === 'CANCELLED') return 'CANCELLED';
+  if (status === 'UPCOMING') return 'IN_PROGRESS';
+  return 'PENDING';
+};
+
+// Combine a schedule task's start date ("MMM d, yyyy" or ISO) and "h:mm AM/PM"
+// time into a single Date for the backend `dueAt`. Returns null when the date is
+// unparseable so the caller can keep the existing value.
+const combineScheduleDateTime = (startDate?: string, time?: string): Date | null => {
+  if (!startDate) return null;
+  const base = new Date(startDate);
+  if (Number.isNaN(base.getTime())) return null;
+  const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec((time ?? '').trim());
+  if (match) {
+    let hours = Number(match[1]) % 12;
+    if (match[3].toUpperCase() === 'PM') hours += 12;
+    base.setHours(hours, Number(match[2]), 0, 0);
+  }
+  return base;
+};
+
+const taskToScheduleTask = (task: Task): ScheduleTask => ({
   id: task._id,
   description: task.description || task.name,
   category: 'Care' as const,
@@ -403,6 +434,68 @@ const TreatmentStep = ({
     }
   };
 
+  // Persist schedule-task edits. Tasks sourced from the task store carry a real
+  // backend id (`tasksById`); status changes route through the status endpoint and
+  // other edits through the task PATCH. Local state is always updated first so the
+  // timeline stays responsive; a failed sync surfaces an error and refreshes.
+  const handleUpdateScheduleTask = (id: string, patch: Partial<ScheduleTask>) => {
+    updateScheduleTask(appointmentId, id, patch);
+    const backingTask = tasksById[id];
+    if (!backingTask) return;
+    setScheduleError(null);
+    const persist = async () => {
+      try {
+        if (patch.status !== undefined) {
+          await changeTaskStatus({
+            ...backingTask,
+            status: scheduleStatusToTaskStatus(patch.status as ScheduleTaskStatus),
+          });
+        }
+        const nextAssignedTo = patch.assignedToId ?? backingTask.assignedTo;
+        const nextDescription = patch.description ?? backingTask.description;
+        if (patch.assignedToId !== undefined || patch.description !== undefined) {
+          await updateTask({
+            ...backingTask,
+            assignedTo: nextAssignedTo,
+            description: nextDescription,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to sync schedule task:', error);
+        setScheduleError('Unable to save the task change. Please try again.');
+        await loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+      }
+    };
+    void persist();
+  };
+
+  // "Record" commits a task's edited breakdown (start date + time) to the backend.
+  // Store-backed tasks PATCH their dueAt; the schedule timeline reflects the edit
+  // locally and a failed sync surfaces an error and re-pulls server truth.
+  const handleRecordScheduleTask = (id: string) => {
+    const scheduleTask = visibleScheduleTasks.find((task) => task.id === id);
+    const backingTask = tasksById[id];
+    if (!scheduleTask || !backingTask) {
+      setScheduleError('This task can’t be recorded yet. Please try again.');
+      return;
+    }
+    setScheduleError(null);
+    const dueAt = combineScheduleDateTime(scheduleTask.startDate, scheduleTask.time);
+    const persist = async () => {
+      try {
+        await updateTask({
+          ...backingTask,
+          dueAt: dueAt ?? backingTask.dueAt,
+        });
+      } catch (error) {
+        console.error('Failed to record schedule task:', error);
+        setScheduleError('Unable to record the task. Please try again.');
+        await loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+      }
+    };
+    void persist();
+  };
+
   const handleSaveTreatment = async () => {
     if (isSavingTreatment) return;
     setTreatmentSaveError(null);
@@ -442,7 +535,8 @@ const TreatmentStep = ({
           readOnly={readOnly}
           assigneeOptions={assigneeOptions}
           onAddTask={(task) => addScheduleTask(appointmentId, task)}
-          onUpdateTask={(id, patch) => updateScheduleTask(appointmentId, id, patch)}
+          onUpdateTask={handleUpdateScheduleTask}
+          onRecordTask={handleRecordScheduleTask}
           onApplyTemplate={handleApplyScheduleTemplate}
           scheduleLifecycle={{
             instanceId: scheduleInstanceId,

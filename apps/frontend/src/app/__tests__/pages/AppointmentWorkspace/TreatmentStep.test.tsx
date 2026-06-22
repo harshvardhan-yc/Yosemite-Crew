@@ -50,6 +50,8 @@ jest.mock('@/app/features/appointments/services/workspaceTemplateService', () =>
 
 jest.mock('@/app/features/tasks/services/taskService', () => ({
   loadTasksForPrimaryOrg: jest.fn().mockResolvedValue(undefined),
+  changeTaskStatus: jest.fn().mockResolvedValue(undefined),
+  updateTask: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/app/hooks/useTeam', () => ({
@@ -794,8 +796,7 @@ describe('TreatmentStep', () => {
     const enc = seedAndGet('INPATIENT');
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
 
-    // Header day navigation + filter are present and clickable.
-    fireEvent.click(screen.getByRole('button', { name: /filter schedule/i }));
+    // Header day navigation is present and clickable.
     fireEvent.click(screen.getByRole('button', { name: /previous day/i }));
     fireEvent.click(screen.getByRole('button', { name: /next day/i }));
     // The first row is expanded by default, exposing the breakdown Record button.

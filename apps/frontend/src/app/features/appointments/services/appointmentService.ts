@@ -529,7 +529,7 @@ export const assignEncounterUnit = async ({
   if (reason) parameters.push({ name: 'reason', valueString: reason });
 
   try {
-    await postData(`/fhir/v1/encounter/${encounterId}/assign-unit`, {
+    await postData(`/fhir/v1/encounter/${encounterId}/$assign-unit`, {
       resourceType: 'Parameters',
       parameter: parameters,
     });

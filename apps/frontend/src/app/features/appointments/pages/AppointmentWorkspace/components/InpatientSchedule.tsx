@@ -6,7 +6,6 @@ import {
   LuChevronRight,
   LuEye,
   LuEyeOff,
-  LuFilter,
   LuPlus,
   LuRefreshCw,
 } from 'react-icons/lu';
@@ -31,6 +30,8 @@ type InpatientScheduleProps = {
   assigneeOptions: AssigneeOption[];
   onAddTask: (task: Omit<ScheduleTask, 'id'>) => void;
   onUpdateTask: (id: string, patch: Partial<ScheduleTask>) => void;
+  /** Commit a task's edited breakdown (start/end/time) to the backend. */
+  onRecordTask?: (id: string) => void;
   onApplyTemplate?: (templateId: string) => void;
   /**
    * Lifecycle state of the applied schedule, when one exists. When `active` is a
@@ -149,6 +150,14 @@ const StatusPillSelect = ({
 /** "MMM d, yyyy" string ⇄ the Datepicker's `Date | null` value. */
 const parseTaskDate = (value?: string): Date | null => {
   if (!value) return null;
+  // ISO date-only strings ("2026-06-23") parse as UTC midnight, which shifts a
+  // calendar day in negative-offset timezones. Parse those as a local date so
+  // day comparisons line up with the locally-rendered "MMM d, yyyy" dates.
+  const isoDateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (isoDateOnly) {
+    const [, year, month, day] = isoDateOnly;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
@@ -202,10 +211,12 @@ const TaskBreakdown = ({
   task,
   readOnly,
   onUpdateTask,
+  onRecordTask,
 }: {
   task: ScheduleTask;
   readOnly: boolean;
   onUpdateTask: (id: string, patch: Partial<ScheduleTask>) => void;
+  onRecordTask?: (id: string) => void;
 }) => (
   <div className="mt-4">
     <SectionContainer title="Task breakdown" nested className="bg-neutral-0">
@@ -245,7 +256,7 @@ const TaskBreakdown = ({
           text="Record"
           icon={<LuArrowRight aria-hidden="true" />}
           iconPosition="right"
-          onClick={() => undefined}
+          onClick={() => onRecordTask?.(task.id)}
           isDisabled={readOnly}
         />
       </div>
@@ -260,6 +271,7 @@ const InpatientSchedule = ({
   assigneeOptions,
   onAddTask,
   onUpdateTask,
+  onRecordTask,
   onApplyTemplate,
   scheduleLifecycle,
 }: InpatientScheduleProps) => {
@@ -412,11 +424,6 @@ const InpatientSchedule = ({
             disabled={readOnly}
             onClick={handleAddTask}
           />
-          <CircleIconButton
-            icon={<LuFilter aria-hidden="true" />}
-            label="Filter schedule"
-            onClick={() => undefined}
-          />
           <Search
             value={search}
             setSearch={setSearch}
@@ -482,7 +489,12 @@ const InpatientSchedule = ({
                   </div>
                 </div>
                 {expanded && (
-                  <TaskBreakdown task={task} readOnly={readOnly} onUpdateTask={onUpdateTask} />
+                  <TaskBreakdown
+                    task={task}
+                    readOnly={readOnly}
+                    onUpdateTask={onUpdateTask}
+                    onRecordTask={onRecordTask}
+                  />
                 )}
               </div>
             </li>

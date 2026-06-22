@@ -706,16 +706,23 @@ export const deleteEncounterTreatmentItem = async (organisationId: string, itemI
 /** A service/package line item is backend-persisted unless it still carries a local- id. */
 const isPersistedTreatmentId = (id: string): boolean => Boolean(id) && !id.startsWith('local-');
 
-/** Map a workspace service/package line item to the backend treatment-item create DTO. */
+/**
+ * Map a workspace service/package line item to the backend treatment-item create
+ * DTO. The create endpoint requires `productId`, `productSnapshot`,
+ * `servicePackageKind`, `quantity`, and `priceSnapshot` — the snapshot carries the
+ * display fields the read path (`normalizeTreatmentItems`) reads back.
+ */
 const lineItemToTreatmentDTO = (item: LineItem): TreatmentItemDTO => ({
-  productItemId: item.refId,
-  productKind: item.kind,
+  productId: item.refId,
   servicePackageKind: item.kind,
-  name: item.name,
   quantity: item.qty,
-  instructions: item.instructions,
   priceSnapshot: { unitPrice: item.unitPriceCents / 100 },
-  billable: true,
+  productSnapshot: {
+    name: item.name,
+    kind: item.kind,
+    instructions: item.instructions,
+    breakdown: item.breakdown,
+  },
 });
 
 /**
