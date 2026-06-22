@@ -5,6 +5,7 @@ import { axe, toHaveNoViolations } from 'jest-axe';
 import InvoiceStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/InvoiceStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
+import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import {
   loadAppointmentBilling,
@@ -64,6 +65,10 @@ const reset = () => {
     error: undefined,
     loadedSpecialityIds: [],
   });
+  // Reset inventory so each test starts with an empty store; otherwise the
+  // bill builder's "load inventory once" guard sees a prior test's items and
+  // skips the fetchInventoryItems call this suite asserts on.
+  useInventoryStore.setState({ itemsById: {}, itemIdsByOrgId: {} });
 };
 
 const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
