@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { LuPlus, LuTrash2 } from 'react-icons/lu';
+import { LuInfo, LuPlus, LuTrash2 } from 'react-icons/lu';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
@@ -44,6 +44,9 @@ const KindPill = ({ kind }: { kind: BillableKind }) => (
 type TotalBillContainerProps = {
   items: InvoiceLineItem[];
   billableItems: BillableSearchItem[];
+  /** Lower-cased names of billed medications missing prescription details; these
+   *  rows get an (i) "Fill information in previous step" hint. */
+  incompleteItemNames?: Set<string>;
   /** ISO currency code for money formatting (from the encounter/finance). */
   currency?: string;
   depositCents: number;
@@ -201,10 +204,12 @@ const DiscountInput = ({
 
 const BillRow = ({
   item,
+  incomplete = false,
   onUpdateItem,
   onRemoveItem,
 }: {
   item: InvoiceLineItem;
+  incomplete?: boolean;
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
   onRemoveItem: (id: string) => void;
 }) => {
@@ -215,7 +220,16 @@ const BillRow = ({
   return (
     <li className={`${ROW_GRID} text-body-4 text-text-primary ${hasMaxHint ? 'pb-4' : ''}`}>
       <TextCell className="min-w-0">
-        <span className="truncate">{item.name}</span>
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <span className="truncate">{item.name}</span>
+          {incomplete && (
+            <LuInfo
+              aria-label="Fill information in previous step"
+              title="Fill information in previous step"
+              className="shrink-0 text-pill-warning-text"
+            />
+          )}
+        </span>
       </TextCell>
       <TextCell>{formatCents(item.unitPriceCents, currency)}</TextCell>
       <QtyInput item={item} onUpdateItem={onUpdateItem} />
@@ -411,6 +425,7 @@ const TotalsFooter = ({
 const TotalBillContainer = ({
   items,
   billableItems,
+  incompleteItemNames,
   currency = 'USD',
   depositCents,
   withdrawDeposit,
@@ -509,6 +524,7 @@ const TotalBillContainer = ({
                   <BillRow
                     key={item.id}
                     item={item}
+                    incomplete={incompleteItemNames?.has(item.name.trim().toLowerCase())}
                     onUpdateItem={onUpdateItem}
                     onRemoveItem={onRemoveItem}
                   />

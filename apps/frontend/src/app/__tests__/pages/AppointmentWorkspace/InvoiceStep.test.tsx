@@ -275,13 +275,13 @@ describe('InvoiceStep', () => {
       target: { value: 'carprofen' },
     });
     const medRow = screen.getByRole('button', { name: /carprofen/i });
-    expect(within(medRow).getByText('Medication')).toBeInTheDocument();
+    expect(within(medRow).getByText('In-house prescription')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/search invoice items/i), {
       target: { value: 'amoxicillin' },
     });
     const invRow = await screen.findByRole('button', { name: /amoxicillin/i });
-    expect(within(invRow).getByText('Inventory')).toBeInTheDocument();
+    expect(within(invRow).getByText('Stock item')).toBeInTheDocument();
   });
 
   it('hydrates existing invoices and deposit from finance on mount', async () => {
@@ -542,6 +542,78 @@ describe('InvoiceStep', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /summary/i }));
 
+    expect(onOpenSummary).toHaveBeenCalled();
+    expect(getEnc().stepStatus.INVOICE).toBe('COMPLETED');
+  });
+
+  it('blocks finalize and flags the row when a billed in-house medication is missing details', () => {
+    const enc = {
+      ...seedAndGet(),
+      invoiceLineItems: [
+        {
+          id: 'inv-rx',
+          name: 'Carprofen',
+          unitPriceCents: 1500,
+          qty: 1,
+          grossCents: 1500,
+          discountCents: 0,
+          amountCents: 1500,
+        },
+      ],
+      prescription: [
+        {
+          id: 'rx-1',
+          medicineName: 'Carprofen',
+          fulfillment: 'IN_HOUSE' as const,
+          priceCents: 1500,
+        },
+      ],
+    } as AppointmentEncounter;
+    const { onOpenSummary } = renderInvoice(enc);
+
+    // Row carries the "fill information" hint, and finalize is blocked.
+    expect(screen.getByLabelText('Fill information in previous step')).toBeInTheDocument();
+    expect(
+      screen.getByText(/fill prescription details in the treatment step/i)
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /summary/i }));
+    expect(onOpenSummary).not.toHaveBeenCalled();
+    expect(getEnc().stepStatus.INVOICE).not.toBe('COMPLETED');
+  });
+
+  it('allows finalize once the billed medication has full prescription details', () => {
+    const enc = {
+      ...seedAndGet(),
+      invoiceLineItems: [
+        {
+          id: 'inv-rx',
+          name: 'Carprofen',
+          unitPriceCents: 1500,
+          qty: 1,
+          grossCents: 1500,
+          discountCents: 0,
+          amountCents: 1500,
+        },
+      ],
+      prescription: [
+        {
+          id: 'rx-1',
+          medicineName: 'Carprofen',
+          fulfillment: 'IN_HOUSE' as const,
+          priceCents: 1500,
+          dosage: '50mg',
+          route: 'Oral',
+          frequency: 'BID',
+          durationDays: '5',
+        },
+      ],
+    } as AppointmentEncounter;
+    const { onOpenSummary } = renderInvoice(enc);
+
+    expect(screen.queryByLabelText('Fill information in previous step')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /summary/i }));
     expect(onOpenSummary).toHaveBeenCalled();
     expect(getEnc().stepStatus.INVOICE).toBe('COMPLETED');
   });

@@ -662,6 +662,27 @@ const InvoiceStep = ({
   // finance API works in lower-case ISO codes; display uses the upper-case code.
   const currency = encounter.currency || DEFAULT_CURRENCY;
   const financeCurrency = currency.toLowerCase();
+
+  // Clinical safety: an in-house medication on the bill must have its
+  // prescription details (dose, route, frequency, duration) filled before the
+  // invoice can be finalized. Flag the billed meds that are still incomplete.
+  const billItemNames = useMemo(
+    () => new Set(encounter.invoiceLineItems.map((item) => item.name.trim().toLowerCase())),
+    [encounter.invoiceLineItems]
+  );
+  const incompleteMedicationNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const rx of encounter.prescription) {
+      if (rx.fulfillment !== 'IN_HOUSE') continue;
+      if (!billItemNames.has(rx.medicineName.trim().toLowerCase())) continue;
+      const complete = Boolean(
+        rx.dosage?.trim() && rx.route?.trim() && rx.frequency?.trim() && rx.durationDays?.trim()
+      );
+      if (!complete) names.add(rx.medicineName.trim().toLowerCase());
+    }
+    return names;
+  }, [encounter.prescription, billItemNames]);
+  const hasIncompleteMedications = incompleteMedicationNames.size > 0;
   const inventoryIds = useMemo(
     () => (organisationId ? (itemIdsByOrgId[organisationId] ?? []) : []),
     [itemIdsByOrgId, organisationId]
@@ -860,6 +881,12 @@ const InvoiceStep = ({
   };
 
   const handleFinishInvoice = () => {
+    if (hasIncompleteMedications) {
+      setErrorMessage(
+        'Fill information in previous step for prescribed medications before finalizing.'
+      );
+      return;
+    }
     setStepStatus(appointmentId, 'INVOICE', 'COMPLETED');
     onOpenSummary();
   };
@@ -877,6 +904,7 @@ const InvoiceStep = ({
           <TotalBillContainer
             items={encounter.invoiceLineItems}
             billableItems={billableItems}
+            incompleteItemNames={incompleteMedicationNames}
             currency={currency}
             depositCents={encounter.depositCents}
             withdrawDeposit={encounter.withdrawDeposit}
@@ -921,12 +949,18 @@ const InvoiceStep = ({
       <InvoicesSection invoices={encounter.pastInvoices} readOnly={readOnly} currency={currency} />
 
       {!readOnly && (
-        <div className="flex justify-end">
+        <div className="flex flex-col items-end gap-2">
+          {hasIncompleteMedications && (
+            <p className="text-body-4 text-pill-warning-text">
+              Fill prescription details in the Treatment step before finalizing.
+            </p>
+          )}
           <Primary
             text="Summary"
             icon={<LuArrowRight aria-hidden="true" />}
             iconPosition="right"
             onClick={handleFinishInvoice}
+            isDisabled={hasIncompleteMedications}
           />
         </div>
       )}
