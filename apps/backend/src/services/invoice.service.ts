@@ -31,6 +31,7 @@ import { sendEmailTemplate } from "src/utils/email";
 import logger from "src/utils/logger";
 import type { AuditEventType } from "src/models/audit-trail";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
+import { getOrgBillingCurrency } from "src/utils/billing";
 import { assertSafeString } from "src/utils/sanitize";
 import type Stripe from "stripe";
 
@@ -558,7 +559,8 @@ const buildBootstrapInvoiceItems = async (params: {
   ] satisfies DraftInvoiceItemInput[];
 };
 
-const resolveOrganisationCurrency = (): string => "usd";
+const resolveOrganisationCurrency = (organisationId: string): Promise<string> =>
+  getOrgBillingCurrency(organisationId);
 
 const toStripeAddress = (
   address?: {
@@ -715,7 +717,9 @@ export const InvoiceService = {
       );
     }
 
-    const currency = resolveOrganisationCurrency();
+    const currency = await resolveOrganisationCurrency(
+      appointment.organisationId,
+    );
     const { data, taxSnapshot } = await normalizeCreateInput(
       input,
       patientId,
@@ -799,7 +803,9 @@ export const InvoiceService = {
       throw new InvoiceServiceError("Appointment not found", 404);
     }
 
-    const currency = resolveOrganisationCurrency();
+    const currency = await resolveOrganisationCurrency(
+      appointment.organisationId,
+    );
     const { patientId, parentId } = getAppointmentLinks(appointment);
     if (!patientId || !parentId) {
       throw new InvoiceServiceError(

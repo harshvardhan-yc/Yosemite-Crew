@@ -6,7 +6,7 @@ import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContai
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import type { BillableKind, InvoiceLineItem } from '@/app/features/appointments/types/workspace';
-import { formatMoney } from '@/app/lib/money';
+import { currencySymbol, formatMoney } from '@/app/lib/money';
 
 export type BillableSearchItem = Omit<InvoiceLineItem, 'id'> & { kind?: BillableKind };
 
@@ -167,6 +167,8 @@ const DiscountInput = ({
   item: InvoiceLineItem;
   onUpdateItem: (id: string, patch: Partial<InvoiceLineItem>) => void;
 }) => {
+  // Use the org currency symbol (not a hardcoded "$") so discounts read correctly for any org.
+  const symbol = currencySymbol(useCurrency());
   const maxDollars = item.maxDiscountCents == null ? undefined : item.maxDiscountCents / 100;
   return (
     <div className="relative">
@@ -174,7 +176,7 @@ const DiscountInput = ({
         aria-hidden="true"
         className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-body-4 text-pill-success-text"
       >
-        − $
+        − {symbol}
       </span>
       <input
         type="number"
@@ -192,7 +194,8 @@ const DiscountInput = ({
       />
       {maxDollars != null && maxDollars > 0 && (
         <span className="pointer-events-none absolute -bottom-4 left-3 text-caption-2 text-text-secondary">
-          Max ${maxDollars.toFixed(2)}
+          Max {symbol}
+          {maxDollars.toFixed(2)}
         </span>
       )}
     </div>
