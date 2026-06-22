@@ -72,7 +72,12 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 };
 
 /** Origin of a searchable bill item, surfaced as a pill in the search dropdown. */
-type BillableKind = 'SERVICE' | 'PACKAGE' | 'MEDICATION' | 'INVENTORY';
+type BillableKind =
+  | 'EXISTING_TREATMENT'
+  | 'IN_HOUSE_PRESCRIPTION'
+  | 'PACKAGE_COMPONENT'
+  | 'BILLING_ONLY'
+  | 'INVENTORY';
 
 export type BillableCandidate = Omit<InvoiceLineItem, 'id'> & { kind: BillableKind };
 
@@ -150,12 +155,18 @@ const serviceToInvoiceCandidate = (service: ServiceRevamp) =>
     service.grossAmount,
     service.defaultDiscount ?? 0,
     service.maxDiscount ?? 0,
-    'SERVICE'
+    'BILLING_ONLY'
   );
 
 const packageToInvoiceCandidate = (pkg: PackageRevamp) => {
   const { totalCost } = computePackageTotals(pkg);
-  return toDiscountedCandidate(pkg.name, totalCost, 0, pkg.additionalDiscount ?? 0, 'PACKAGE');
+  return toDiscountedCandidate(
+    pkg.name,
+    totalCost,
+    0,
+    pkg.additionalDiscount ?? 0,
+    'PACKAGE_COMPONENT'
+  );
 };
 
 const uniqueByName = (
@@ -189,7 +200,7 @@ const buildBillableItems = (
   const serviceItems = encounter.services
     .filter((item) => !item.billed && item.amountCents > 0)
     .filter((item) => !existingNames.has(item.name.trim().toLowerCase()))
-    .map((item) => toInvoiceCandidate(item.name, item.amountCents, 'SERVICE'));
+    .map((item) => toInvoiceCandidate(item.name, item.amountCents, 'EXISTING_TREATMENT'));
   // In-house medications prescribed this visit. Their price comes from the linked
   // inventory item; when it is missing we still surface them at 0 so they can be
   // added and priced inline rather than silently dropped from the bill.
@@ -197,7 +208,11 @@ const buildBillableItems = (
     .filter((item) => !item.billed && item.fulfillment === 'IN_HOUSE')
     .filter((item) => !existingNames.has(item.medicineName.trim().toLowerCase()))
     .map((item) =>
-      toInvoiceCandidate(item.medicineName, Math.max(0, item.priceCents ?? 0), 'MEDICATION')
+      toInvoiceCandidate(
+        item.medicineName,
+        Math.max(0, item.priceCents ?? 0),
+        'IN_HOUSE_PRESCRIPTION'
+      )
     );
   const catalogItems = organisationId
     ? [

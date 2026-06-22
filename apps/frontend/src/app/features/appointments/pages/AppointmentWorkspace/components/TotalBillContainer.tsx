@@ -8,21 +8,28 @@ import type { InvoiceLineItem } from '@/app/features/appointments/types/workspac
 import { formatMoney } from '@/app/lib/money';
 
 /** Origin of a searchable bill item; rendered as a pill in the search dropdown. */
-export type BillableKind = 'SERVICE' | 'PACKAGE' | 'MEDICATION' | 'INVENTORY';
+export type BillableKind =
+  | 'EXISTING_TREATMENT'
+  | 'IN_HOUSE_PRESCRIPTION'
+  | 'PACKAGE_COMPONENT'
+  | 'BILLING_ONLY'
+  | 'INVENTORY';
 
 export type BillableSearchItem = Omit<InvoiceLineItem, 'id'> & { kind?: BillableKind };
 
 const KIND_LABELS: Record<BillableKind, string> = {
-  SERVICE: 'Service',
-  PACKAGE: 'Package',
-  MEDICATION: 'Medication',
-  INVENTORY: 'Inventory',
+  EXISTING_TREATMENT: 'Existing treatment',
+  IN_HOUSE_PRESCRIPTION: 'In-house prescription',
+  PACKAGE_COMPONENT: 'Package component',
+  BILLING_ONLY: 'Billing-only',
+  INVENTORY: 'Stock item',
 };
 
 const KIND_PILL_CLASSES: Record<BillableKind, string> = {
-  SERVICE: 'border-pill-info-border bg-pill-info-bg text-pill-info-text',
-  PACKAGE: 'border-pill-success-border bg-pill-success-bg text-pill-success-text',
-  MEDICATION: 'border-pill-warning-border bg-pill-warning-bg text-pill-warning-text',
+  EXISTING_TREATMENT: 'border-pill-info-border bg-pill-info-bg text-pill-info-text',
+  IN_HOUSE_PRESCRIPTION: 'border-pill-warning-border bg-pill-warning-bg text-pill-warning-text',
+  PACKAGE_COMPONENT: 'border-pill-success-border bg-pill-success-bg text-pill-success-text',
+  BILLING_ONLY: 'border-card-border bg-neutral-100 text-text-secondary',
   INVENTORY: 'border-card-border bg-neutral-100 text-text-secondary',
 };
 
