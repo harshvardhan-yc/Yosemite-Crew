@@ -45,6 +45,8 @@ export type SoapNoteEntry = {
   assessment: string;
   plan: string;
   templateId?: string;
+  /** Backend template version that prefilled this note (provenance for the saved artifact). */
+  templateVersion?: number;
   signedByName?: string;
   signedAt?: string;
   signedOffline?: boolean;
@@ -57,6 +59,24 @@ export type SoapTemplate = {
   name: string;
   serviceId?: string;
   isDefault?: boolean;
+  /**
+   * Backend template version, stamped onto the SOAP draft as provenance when the
+   * template is applied (`templateVersion`). Carried from the resolver/list so the
+   * saved note records exactly which template version prefilled it.
+   */
+  version?: number;
+  /**
+   * Section content the template prefills into the SOAP editors. Populated from the
+   * template's schema snapshot (via the resolver or list). When present, applying
+   * the template hydrates the matching S/O/A/P editors instead of only setting an id.
+   */
+  content?: {
+    chiefComplaint?: string;
+    subjective?: string;
+    objective?: string;
+    assessment?: string;
+    plan?: string;
+  };
 };
 
 export type Vitals = {
@@ -353,6 +373,62 @@ export type AppointmentEncounter = {
   stepStatus: Record<WorkspaceStep, StepStatus>;
   lockedAt?: string;
   viewOnly: boolean;
+  /**
+   * Backend-owned per-section lock decisions from the workspace bootstrap. When a
+   * section is present here it is authoritative; when absent, sections fall back to
+   * the client-derived `viewOnly`/lock-window behaviour. Ready for the backend
+   * "Section Locks And Capabilities" contract landing in parallel.
+   */
+  sectionLocks?: WorkspaceLockState;
+  /** Backend-owned effective capability flags from the workspace bootstrap. */
+  capabilities?: WorkspaceCapabilities;
 };
+
+/**
+ * Backend-owned lock decision for a single workspace section. When the workspace
+ * bootstrap returns these (BE "Backend-Owned Section Locks And Capabilities"),
+ * sections read `locked` + `reason` from here instead of deriving a single
+ * client-side `viewOnly` flag. Absent until the backend ships the contract — the
+ * UI must fall back to the existing `viewOnly`/lock-window behaviour when missing.
+ */
+export type SectionLock = {
+  locked: boolean;
+  reason?: string;
+};
+
+/** The workspace sections the backend can lock independently. */
+export type WorkspaceLockSection =
+  | 'appointment'
+  | 'soap'
+  | 'vitals'
+  | 'treatment'
+  | 'diagnostics'
+  | 'prescriptions'
+  | 'inpatientSchedule'
+  | 'forms'
+  | 'documents'
+  | 'roomUnit'
+  | 'discharge'
+  | 'invoice';
+
+export type WorkspaceLockState = Partial<Record<WorkspaceLockSection, SectionLock>>;
+
+/** Effective per-action capability flags returned by the backend bootstrap. */
+export type WorkspaceCapability =
+  | 'canEditSoap'
+  | 'canRecordVitals'
+  | 'canEditTreatment'
+  | 'canOrderDiagnostics'
+  | 'canPrescribe'
+  | 'canDispenseInventory'
+  | 'canAssignForms'
+  | 'canManageTasks'
+  | 'canMarkReadyForBilling'
+  | 'canMarkReadyForDischarge'
+  | 'canFinalizeDischarge'
+  | 'canViewFinance'
+  | 'canCollectPayment';
+
+export type WorkspaceCapabilities = Partial<Record<WorkspaceCapability, boolean>>;
 
 export type SideAction = 'RECORD' | 'TASKS' | 'DOCUMENTS' | 'CHAT' | 'ACTIVITY' | 'MSD';
