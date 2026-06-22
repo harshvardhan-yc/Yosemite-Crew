@@ -57,6 +57,24 @@ function parseWebhookEvent(body: DocumensoWebhookBody) {
   return { eventType, documentId: String(documentId) };
 }
 
+const normalizeObjectIdString = (value: unknown): string | null => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  if (value && typeof value === "object") {
+    const candidate = value as { toHexString?: () => string };
+    if (typeof candidate.toHexString === "function") {
+      const hex = candidate.toHexString();
+      if (typeof hex === "string" && hex.trim().length > 0) {
+        return hex.trim();
+      }
+    }
+  }
+
+  return null;
+};
+
 async function findWebhookSubmission(documentId: string) {
   return isReadFromPostgres()
     ? prisma.formSubmission.findFirst({
@@ -492,10 +510,13 @@ async function handleDocumentCompleted(
   await submission.save();
 
   try {
-    const formId = submission.formId as unknown as Types.ObjectId;
+    const formId = normalizeObjectIdString(submission.formId);
+    if (!formId) {
+      throw new Error("Form id missing");
+    }
     await FormAssignmentService.markSignedFromSubmission({
       organisationId: String(form.orgId),
-      templateId: formId.toHexString(),
+      templateId: formId,
       templateVersion: submission.formVersion,
       appointmentId: submission.appointmentId ?? undefined,
       companionId: submission.patientId ?? undefined,
@@ -506,7 +527,10 @@ async function handleDocumentCompleted(
       "[DocumensoWebhook] Failed to sync form assignment signed status",
       {
         error,
-        submissionId: submission._id.toString(),
+        submissionId:
+          normalizeObjectIdString((submission as { _id?: unknown })._id) ??
+          normalizeObjectIdString((submission as { id?: unknown }).id) ??
+          "unknown",
       },
     );
   }
