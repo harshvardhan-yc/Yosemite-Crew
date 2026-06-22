@@ -24,9 +24,13 @@ import type { Task } from '@/app/features/tasks/types/task';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
   applyInpatientScheduleTemplate,
+  cancelInpatientScheduleTemplate,
   createWorkspaceTemplateInstance,
   getInpatientScheduleForEncounter,
   listInpatientScheduleTemplates,
+  pauseInpatientScheduleTemplate,
+  regenerateInpatientScheduleTemplate,
+  resumeInpatientScheduleTemplate,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import type { TemplateLike } from '@yosemite-crew/types';
 import type {
@@ -161,6 +165,11 @@ const TreatmentStep = ({
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [treatmentSaveError, setTreatmentSaveError] = useState<string | null>(null);
   const [isSavingTreatment, setIsSavingTreatment] = useState(false);
+  // Applied schedule instance lifecycle (pause/resume/cancel/regenerate). The
+  // instance id is captured when a template is applied this session.
+  const [scheduleInstanceId, setScheduleInstanceId] = useState<string | null>(null);
+  const [schedulePaused, setSchedulePaused] = useState(false);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
   const readOnly = encounter.viewOnly;
   // Once the encounter is ready for billing, destructive removal of un-billed
   // items is locked. Already-billed items lock per-row inside each editor (read
@@ -303,12 +312,55 @@ const TreatmentStep = ({
         force: true,
         notify: false,
       });
+      // Track the applied instance so its lifecycle controls (pause/resume/
+      // cancel/regenerate) become available.
+      setScheduleInstanceId(instance.id);
+      setSchedulePaused(false);
       await loadTasksForPrimaryOrg({ force: true, silent: true });
     } catch (error) {
       console.error('Failed to apply inpatient schedule template:', error);
       setScheduleError('Unable to load schedule template. Please try again.');
     }
   };
+
+  // Run a schedule lifecycle action against the backend, then refresh tasks so the
+  // timeline reflects the new state. Errors surface and do not flip local state.
+  const runScheduleAction = async (
+    action: (org: string, instanceId: string) => Promise<unknown>,
+    onSuccess?: () => void
+  ) => {
+    if (!organisationId || !scheduleInstanceId || scheduleBusy) return;
+    setScheduleError(null);
+    setScheduleBusy(true);
+    try {
+      await action(organisationId, scheduleInstanceId);
+      onSuccess?.();
+      await loadTasksForPrimaryOrg({ force: true, silent: true });
+    } catch (error) {
+      console.error('Failed to update inpatient schedule:', error);
+      setScheduleError('Unable to update the schedule. Please try again.');
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const handlePauseSchedule = () =>
+    runScheduleAction(
+      (org, id) => pauseInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setSchedulePaused(true)
+    );
+  const handleResumeSchedule = () =>
+    runScheduleAction(
+      (org, id) => resumeInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setSchedulePaused(false)
+    );
+  const handleCancelSchedule = () =>
+    runScheduleAction(
+      (org, id) => cancelInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setScheduleInstanceId(null)
+    );
+  const handleRegenerateSchedule = () =>
+    runScheduleAction((org, id) => regenerateInpatientScheduleTemplate(org, id, { notify: false }));
 
   const prescriptionCatalogItems = useMemo(
     () =>
@@ -392,6 +444,15 @@ const TreatmentStep = ({
           onAddTask={(task) => addScheduleTask(appointmentId, task)}
           onUpdateTask={(id, patch) => updateScheduleTask(appointmentId, id, patch)}
           onApplyTemplate={handleApplyScheduleTemplate}
+          scheduleLifecycle={{
+            instanceId: scheduleInstanceId,
+            paused: schedulePaused,
+            busy: scheduleBusy,
+            onPause: handlePauseSchedule,
+            onResume: handleResumeSchedule,
+            onCancel: handleCancelSchedule,
+            onRegenerate: handleRegenerateSchedule,
+          }}
         />
       )}
       {scheduleError && <p className="text-caption-1 text-red-600">{scheduleError}</p>}

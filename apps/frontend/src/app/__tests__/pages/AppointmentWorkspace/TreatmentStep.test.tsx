@@ -12,6 +12,8 @@ import {
   applyInpatientScheduleTemplate,
   createWorkspaceTemplateInstance,
   listInpatientScheduleTemplates,
+  pauseInpatientScheduleTemplate,
+  cancelInpatientScheduleTemplate,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
 import {
@@ -40,6 +42,10 @@ jest.mock('@/app/features/appointments/services/workspaceTemplateService', () =>
   getInpatientScheduleForEncounter: jest
     .fn()
     .mockResolvedValue({ resourceType: 'Bundle', entry: [] }),
+  pauseInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
+  resumeInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
+  cancelInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
+  regenerateInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
 }));
 
 jest.mock('@/app/features/tasks/services/taskService', () => ({
@@ -645,6 +651,81 @@ describe('TreatmentStep', () => {
       notify: false,
     });
     expect(loadTasksForPrimaryOrg).toHaveBeenCalledWith({ force: true, silent: true });
+  });
+
+  it('exposes schedule lifecycle controls after applying a template and pauses via backend', async () => {
+    (listInpatientScheduleTemplates as jest.Mock).mockResolvedValue([
+      {
+        id: 'tpl-care',
+        name: 'Post-op care pathway',
+        kind: 'INPATIENT_SCHEDULE',
+        status: 'PUBLISHED',
+      },
+    ]);
+    const enc = seedAndGet('INPATIENT');
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        authorId="user-1"
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
+
+    // No lifecycle controls until a schedule instance is applied.
+    expect(screen.queryByRole('button', { name: /^pause$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: /load schedule template/i }));
+    fireEvent.click(screen.getByRole('button', { name: /post-op care pathway/i }));
+    await waitFor(() => expect(applyInpatientScheduleTemplate).toHaveBeenCalled());
+
+    // Controls now appear; pausing calls the backend and refreshes tasks.
+    const pauseBtn = await screen.findByRole('button', { name: /^pause$/i });
+    fireEvent.click(pauseBtn);
+    await waitFor(() =>
+      expect(pauseInpatientScheduleTemplate).toHaveBeenCalledWith(ORG, 'instance-1', {
+        notify: false,
+      })
+    );
+    // After pausing, the control flips to Resume.
+    expect(await screen.findByRole('button', { name: /resume/i })).toBeInTheDocument();
+  });
+
+  it('cancels an applied schedule and hides the lifecycle controls', async () => {
+    (listInpatientScheduleTemplates as jest.Mock).mockResolvedValue([
+      {
+        id: 'tpl-care',
+        name: 'Post-op care pathway',
+        kind: 'INPATIENT_SCHEDULE',
+        status: 'PUBLISHED',
+      },
+    ]);
+    const enc = seedAndGet('INPATIENT');
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        authorId="user-1"
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /load schedule template/i }));
+    fireEvent.click(screen.getByRole('button', { name: /post-op care pathway/i }));
+    await waitFor(() => expect(applyInpatientScheduleTemplate).toHaveBeenCalled());
+
+    fireEvent.click(await screen.findByRole('button', { name: /cancel schedule/i }));
+    await waitFor(() =>
+      expect(cancelInpatientScheduleTemplate).toHaveBeenCalledWith(ORG, 'instance-1', {
+        notify: false,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /cancel schedule/i })).not.toBeInTheDocument()
+    );
   });
 
   it('reschedule expands the row so the real time picker is used', () => {
