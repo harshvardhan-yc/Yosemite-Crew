@@ -31,6 +31,7 @@ jest.mock('@/app/features/inventory/services/inventoryService', () => ({
 jest.mock('@/app/features/inventory/pages/Inventory/utils', () => ({
   __esModule: true,
   mapApiItemToInventoryItem: (item: unknown) => item,
+  getAvailableStock: () => 10,
 }));
 
 const mockLoadAppointmentBilling = loadAppointmentBilling as jest.Mock;
@@ -282,6 +283,70 @@ describe('InvoiceStep', () => {
     });
     const invRow = await screen.findByRole('button', { name: /amoxicillin/i });
     expect(within(invRow).getByText('Stock item')).toBeInTheDocument();
+  });
+
+  it('backfills a linked prescription when a billed drug has none', async () => {
+    mockFetchInventoryItems.mockResolvedValue([
+      {
+        id: 'inv-amoxi',
+        status: 'ACTIVE',
+        basicInfo: { name: 'Amoxicillin 250mg', itemType: 'Drug' },
+        classification: {},
+        pricing: { selling: '12' },
+        stock: { reorderLevel: 5 },
+        batch: {},
+      },
+    ]);
+    const enc = {
+      ...seedAndGet(),
+      services: [],
+      invoiceLineItems: [],
+      prescription: [],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    await waitFor(() => expect(mockFetchInventoryItems).toHaveBeenCalledWith('org-1'));
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'amoxicillin' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /amoxicillin/i }));
+
+    // The billed drug is interlinked into the Treatment step as an in-house
+    // prescription row so its clinical details can be required before finalize.
+    await waitFor(() =>
+      expect(
+        getEnc().prescription.some(
+          (rx) => rx.medicineName === 'Amoxicillin 250mg' && rx.fulfillment === 'IN_HOUSE'
+        )
+      ).toBe(true)
+    );
+  });
+
+  it('does not create a prescription when billing a non-drug stock item', async () => {
+    mockFetchInventoryItems.mockResolvedValue([
+      {
+        id: 'inv-gauze',
+        status: 'ACTIVE',
+        basicInfo: { name: 'Gauze pad' },
+        pricing: { selling: '3' },
+      },
+    ]);
+    const enc = {
+      ...seedAndGet(),
+      services: [],
+      invoiceLineItems: [],
+      prescription: [],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    await waitFor(() => expect(mockFetchInventoryItems).toHaveBeenCalledWith('org-1'));
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'gauze' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /gauze/i }));
+
+    await waitFor(() => expect(getEnc().invoiceLineItems.length).toBeGreaterThan(0));
+    expect(getEnc().prescription).toHaveLength(0);
   });
 
   it('hydrates existing invoices and deposit from finance on mount', async () => {

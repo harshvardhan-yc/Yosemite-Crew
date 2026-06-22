@@ -42,6 +42,8 @@ import { useInventoryStore } from '@/app/stores/inventoryStore';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
+import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
+import type { PrescriptionItem } from '@/app/features/appointments/types/workspace';
 
 type InvoiceStepProps = {
   appointmentId: string;
@@ -79,7 +81,13 @@ type BillableKind =
   | 'BILLING_ONLY'
   | 'INVENTORY';
 
-export type BillableCandidate = Omit<InvoiceLineItem, 'id'> & { kind: BillableKind };
+export type BillableCandidate = Omit<InvoiceLineItem, 'id'> & {
+  kind: BillableKind;
+  // Present when this candidate is a dispensable drug; used to backfill a linked
+  // prescription row when the item is billed without one (the bill/prescription
+  // interlink), so clinical details can't be skipped before finalizing.
+  prescription?: Omit<PrescriptionItem, 'id'>;
+};
 
 const DEFAULT_CURRENCY = 'USD';
 
@@ -182,9 +190,20 @@ const uniqueByName = (
   });
 };
 
-const inventoryToInvoiceCandidate = (item: InventoryItem) => {
+const inventoryToInvoiceCandidate = (item: InventoryItem): BillableCandidate => {
   const sellingDollars = Number(item.pricing?.selling ?? 0);
-  return toInvoiceCandidate(item.basicInfo.name, moneyToCents(sellingDollars), 'INVENTORY');
+  const candidate = toInvoiceCandidate(
+    item.basicInfo.name,
+    moneyToCents(sellingDollars),
+    'INVENTORY'
+  );
+  // Drug stock billed here should also exist as a prescription so the Treatment
+  // step and the bill stay in sync; carry the prescription payload so the add
+  // handler can backfill one when none exists yet.
+  if (item.basicInfo.itemType === 'Drug') {
+    return { ...candidate, prescription: inventoryToPrescriptionItem(item) };
+  }
+  return candidate;
 };
 
 const buildBillableItems = (
@@ -638,6 +657,7 @@ const InvoiceStep = ({
     (s) => s.setOverallDiscountPercent
   );
   const addInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.addInvoiceLineItem);
+  const addPrescription = useAppointmentWorkspaceStore((s) => s.addPrescription);
   const updateInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.updateInvoiceLineItem);
   const removeInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.removeInvoiceLineItem);
   const recordInvoicePayment = useAppointmentWorkspaceStore((s) => s.recordInvoicePayment);
@@ -914,6 +934,24 @@ const InvoiceStep = ({
 
   const handleAddItem = (item: Omit<InvoiceLineItem, 'id'>) => {
     addInvoiceLineItem(appointmentId, item);
+
+    // Interlink: when a billed item is a dispensable drug and no prescription row
+    // exists for it yet, create a linked one so it shows in the Treatment step.
+    // The new row inherits whatever clinical detail the inventory item provides;
+    // any missing dose/route/frequency/duration keeps it flagged incomplete and
+    // blocks invoice finalize until a clinician fills it in.
+    const candidate = billableItems.find(
+      (entry) => entry.name.trim().toLowerCase() === item.name.trim().toLowerCase()
+    );
+    const prescription = candidate?.prescription;
+    if (!prescription) return;
+    const targetName = prescription.medicineName.trim().toLowerCase();
+    const alreadyPrescribed = encounter.prescription.some(
+      (rx) => rx.medicineName.trim().toLowerCase() === targetName
+    );
+    if (!alreadyPrescribed) {
+      addPrescription(appointmentId, prescription);
+    }
   };
 
   return (
