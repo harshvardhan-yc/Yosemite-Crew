@@ -321,7 +321,15 @@ export const CategoryTemplates: Record<FormsCategory, FormField[]> = {
   Custom: [],
   'Prescription Template': [],
   'Inpatient Schedule': [],
-  'Task Template': [],
+  'Task Template': [
+    {
+      id: 'tasks_group',
+      type: 'group',
+      label: 'Tasks',
+      meta: { taskGroup: true } as any,
+      fields: [],
+    },
+  ],
   'Consent form': [
     textInputField('pet_name', 'Companion name', 'Enter Companion name', { required: true }),
     textInputField('owner_name', 'Pet parent name', 'Enter pet parent name', { required: true }),

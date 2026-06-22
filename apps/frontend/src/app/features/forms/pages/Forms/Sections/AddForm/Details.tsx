@@ -236,6 +236,20 @@ const Details = ({
               onSelect={(option) => setFormData({ ...formData, usage: option.value as FormsUsage })}
               options={FormsUsageOptions.map((opt) => ({ label: opt, value: opt }))}
             />
+            <LabelDropdown
+              placeholder="Template scope"
+              defaultOption={formData.templateSource ?? 'ORG_TEMPLATE'}
+              onSelect={(option) =>
+                setFormData({
+                  ...formData,
+                  templateSource: option.value as FormsProps['templateSource'],
+                })
+              }
+              options={[
+                { label: 'Organisation (shared with your team)', value: 'ORG_TEMPLATE' },
+                { label: 'Personal (only you)', value: 'USER_TEMPLATE' },
+              ]}
+            />
             <MultiSelectDropdown
               placeholder={formData.category === 'Custom' ? 'Service (Optional)' : 'Service'}
               value={formData.services || []}

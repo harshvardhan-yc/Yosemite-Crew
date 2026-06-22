@@ -11,6 +11,7 @@ import Dropdown from '@/app/ui/inputs/Dropdown/Dropdown';
 import React, { useEffect, useRef, useState } from 'react';
 import { IoIosAddCircleOutline, IoIosWarning } from 'react-icons/io';
 import TextBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Text/TextBuilder';
+import RichTextBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/RichText/RichTextBuilder';
 import InputBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Input/InputBuilder';
 import DropdownBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Dropdown/DropdownBuilder';
 import SignatureBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Signature/SignatureBuilder';
@@ -20,6 +21,8 @@ import DateBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/compo
 import { useOrgStore } from '@/app/stores/orgStore';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import { InventoryApiItem } from '@/app/features/inventory/pages/Inventory/types';
+import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
+import { useTaskStore } from '@/app/stores/taskStore';
 import { ensureSingleSignatureAtEnd, hasSignatureField } from '@/app/lib/forms';
 
 type BuildProps = {
@@ -30,7 +33,7 @@ type BuildProps = {
   registerValidator?: (fn: () => boolean) => void;
 };
 
-type OptionKey = FormFieldType | 'medication' | 'service-group';
+type OptionKey = FormFieldType | 'medication' | 'service-group' | 'task-group';
 
 type OptionProp = {
   name: string;
@@ -41,6 +44,10 @@ const addOptions: OptionProp[] = [
   {
     name: 'Long Text',
     key: 'textarea',
+  },
+  {
+    name: 'Rich Text',
+    key: 'richtext',
   },
   {
     name: 'Short Text',
@@ -86,6 +93,10 @@ const addOptions: OptionProp[] = [
     name: 'Services',
     key: 'service-group',
   },
+  {
+    name: 'Tasks',
+    key: 'task-group',
+  },
 ];
 
 type BuilderComponentProps = {
@@ -96,6 +107,7 @@ type BuilderComponentProps = {
 
 const builderComponentMap: Record<FormFieldType, React.ComponentType<BuilderComponentProps>> = {
   textarea: TextBuilder as any,
+  richtext: RichTextBuilder as any,
   input: InputBuilder as any,
   number: InputBuilder as any,
   dropdown: DropdownBuilder as any,
@@ -140,6 +152,7 @@ const fieldFactory: Record<
     fields: [buildMedicationTemplateGroup(id)],
   }),
   textarea: (id) => ({ id, type: 'textarea', label: 'Text area', placeholder: '' }),
+  richtext: (id) => ({ id, type: 'richtext', label: 'Rich text', defaultValue: '' }),
   input: (id) => ({ id, type: 'input', label: 'Input', placeholder: '' }),
   number: (id) => ({ id, type: 'number', label: 'Number', placeholder: '' }),
   dropdown: (id) => ({
@@ -172,6 +185,13 @@ const fieldFactory: Record<
     type: 'group',
     label: 'Services',
     meta: { serviceGroup: true } as any,
+    fields: [],
+  }),
+  'task-group': (id) => ({
+    id,
+    type: 'group',
+    label: 'Tasks',
+    meta: { taskGroup: true } as any,
     fields: [],
   }),
 };
@@ -222,6 +242,9 @@ const isMedicationGroup = (field: FormField): field is FormField & { type: 'grou
 
 const isServiceGroup = (field: FormField): field is FormField & { type: 'group' } =>
   field.type === 'group' && Boolean(field.meta?.serviceGroup);
+
+const isTaskGroup = (field: FormField): field is FormField & { type: 'group' } =>
+  field.type === 'group' && Boolean(field.meta?.taskGroup);
 
 const getServiceCheckbox = (
   field: FormField & { type: 'group'; fields?: FormField[] }
@@ -466,6 +489,23 @@ const GroupBuilder: React.FC<GroupBuilderProps> = ({
                 compact
               >
                 <MedicationGroupBuilder
+                  field={nested}
+                  onChange={(updated) => updateNestedField(nested.id, updated)}
+                  createField={createField}
+                />
+              </BuilderWrapper>
+            );
+          }
+
+          if (isTaskGroup(nested)) {
+            return (
+              <BuilderWrapper
+                key={nested.id}
+                field={nested}
+                onDelete={() => removeNestedField(nested.id)}
+                compact
+              >
+                <TaskGroupBuilder
                   field={nested}
                   onChange={(updated) => updateNestedField(nested.id, updated)}
                   createField={createField}
@@ -748,6 +788,95 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
   );
 };
 
+type TaskGroupBuilderProps = {
+  field: FormField & { type: 'group'; fields?: FormField[] };
+  onChange: (f: FormField) => void;
+  createField: (t: OptionKey) => FormField;
+};
+
+const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange, createField }) => {
+  const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
+  // Select stable store slices and derive the list with useMemo. Returning a new
+  // array straight from the selector would change the snapshot every render and
+  // cause an infinite store re-render loop.
+  const tasksById = useTaskStore((s) => s.tasksById);
+  const taskIdsByOrgId = useTaskStore((s) => s.taskIdsByOrgId);
+  const tasks = React.useMemo(() => {
+    if (!primaryOrgId) return [];
+    const ids = taskIdsByOrgId[primaryOrgId] ?? [];
+    return ids.flatMap((id) => (tasksById[id] ? [tasksById[id]] : []));
+  }, [primaryOrgId, tasksById, taskIdsByOrgId]);
+  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!primaryOrgId) return;
+    loadTasksForPrimaryOrg({ silent: true }).catch((err) =>
+      console.error('Failed to load tasks:', err)
+    );
+  }, [primaryOrgId]);
+
+  const taskOptions = tasks.map((task) => ({ label: task.name, value: task._id }));
+
+  const handleTaskSelect = (taskId: string) => {
+    if (!taskId || selectedTasks.includes(taskId)) return;
+    const task = tasks.find((t) => t._id === taskId);
+    if (!task) return;
+    const taskField: FormField = {
+      id: `${field.id}_task_${(field.fields ?? []).length + 1}`,
+      type: 'input',
+      label: 'Task',
+      placeholder: task.name,
+      defaultValue: task.name,
+      meta: { readonly: true, taskId },
+    };
+    setSelectedTasks([...selectedTasks, taskId]);
+    onChange({ ...field, fields: [...(field.fields ?? []), taskField] });
+  };
+
+  const removeTask = (taskFieldId: string) => {
+    const taskField = (field.fields ?? []).find((f) => f.id === taskFieldId);
+    const taskId = (taskField as { meta?: { taskId?: string } } | undefined)?.meta?.taskId;
+    if (taskId) {
+      setSelectedTasks(selectedTasks.filter((id) => id !== taskId));
+    }
+    onChange({ ...field, fields: (field.fields ?? []).filter((f) => f.id !== taskFieldId) });
+  };
+
+  const updateNestedField = (id: string, updatedField: FormField) => {
+    onChange({
+      ...field,
+      fields: (field.fields ?? []).map((f) => (f.id === id ? updatedField : f)),
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <FormInput
+        intype="text"
+        inname={`group-${field.id}-label`}
+        value={field.label || ''}
+        inlabel="Group name"
+        onChange={(e) => onChange({ ...field, label: e.target.value })}
+        className="min-h-12!"
+      />
+
+      <Dropdown
+        placeholder="Select task"
+        value=""
+        onChange={handleTaskSelect}
+        options={taskOptions.filter((opt) => !selectedTasks.includes(opt.value))}
+        search={true}
+        className="min-h-12!"
+        dropdownClassName="!h-fit max-h-[300px] overflow-y-auto"
+      />
+
+      {(field.fields ?? []).map((nested) =>
+        renderNestedField(nested, updateNestedField, removeTask, createField)
+      )}
+    </div>
+  );
+};
+
 const updateFieldInForm = (
   prev: FormsProps,
   fieldId: string,
@@ -779,6 +908,12 @@ const Build = ({
     return fieldFactory[key](id, serviceOptions);
   };
 
+  // YC-library templates are content-only: their field structure (add / delete /
+  // reorder) is locked; only field content may be edited. Mirrors the FormInfo rule.
+  const structureLocked = Boolean(
+    formData.isTemplateBacked && formData.templateSource === 'YC_LIBRARY'
+  );
+
   const canUseSignature =
     formData.category !== 'SOAP' &&
     formData.requiredSigner !== undefined &&
@@ -803,6 +938,7 @@ const Build = ({
   };
 
   const handleDeleteField = (fieldId: string) => {
+    if (structureLocked) return;
     if (!canDeleteField(fieldId)) return;
     setBuildError('');
     setFormData((prev) => removeFieldById(prev, fieldId));
@@ -817,6 +953,7 @@ const Build = ({
   };
 
   const addField = (key: OptionKey) => {
+    if (structureLocked) return;
     if (key === 'signature') {
       if (formData.category === 'SOAP') {
         setBuildError('SOAP templates cannot include signature fields.');
@@ -855,6 +992,7 @@ const Build = ({
   };
 
   const moveField = (index: number, direction: 'up' | 'down') => {
+    if (structureLocked) return;
     setFormData((prev) => {
       const schema = [...(prev.schema ?? [])];
       const newIndex = direction === 'up' ? index - 1 : index + 1;
@@ -870,6 +1008,7 @@ const Build = ({
   };
 
   const reorderField = (from: number, to: number) => {
+    if (structureLocked) return;
     if (from === to) return;
     setFormData((prev) => {
       const schema = [...(prev.schema ?? [])];
@@ -1002,11 +1141,13 @@ const Build = ({
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <div className="font-satoshi text-black-text text-[23px] font-medium">Build form</div>
-          <AddFieldDropdown
-            onSelect={addField}
-            buttonClassName="w-fit"
-            options={addOptionsForContext}
-          />
+          {!structureLocked && (
+            <AddFieldDropdown
+              onSelect={addField}
+              buttonClassName="w-fit"
+              options={addOptionsForContext}
+            />
+          )}
         </div>
 
         {formData.schema?.map((field, index) => {
@@ -1035,6 +1176,33 @@ const Build = ({
                   isDragging={isDragging}
                 >
                   <MedicationGroupBuilder
+                    field={field}
+                    onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
+                    createField={createField}
+                  />
+                </BuilderWrapper>
+              );
+            }
+
+            if (isTaskGroup(field)) {
+              const isDragging = dragIndex === index;
+              return (
+                <BuilderWrapper
+                  key={fieldId}
+                  field={field}
+                  onDelete={() => handleDeleteField(fieldId)}
+                  onMoveUp={() => moveField(index, 'up')}
+                  onMoveDown={() => moveField(index, 'down')}
+                  canMoveUp={canMoveUp}
+                  canMoveDown={canMoveDown}
+                  draggable
+                  onDragStart={handleDragStart(index)}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop(index)}
+                  onDragEnd={handleDragEnd}
+                  isDragging={isDragging}
+                >
+                  <TaskGroupBuilder
                     field={field}
                     onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
                     createField={createField}
@@ -1127,16 +1295,18 @@ const Build = ({
         )}
 
         {/* Add Field Button at bottom */}
-        <div className="flex flex-col items-center gap-2 py-4 border-2 border-dashed border-grey-light rounded-2xl hover:border-grey-noti transition-colors">
-          <div className="flex flex-col items-center gap-1">
-            <AddFieldDropdown
-              onSelect={addField}
-              buttonClassName="w-fit"
-              options={addOptionsForContext}
-            />
-            <span className="text-sm font-satoshi font-medium text-grey-noti">Add Field</span>
+        {!structureLocked && (
+          <div className="flex flex-col items-center gap-2 py-4 border-2 border-dashed border-grey-light rounded-2xl hover:border-grey-noti transition-colors">
+            <div className="flex flex-col items-center gap-1">
+              <AddFieldDropdown
+                onSelect={addField}
+                buttonClassName="w-fit"
+                options={addOptionsForContext}
+              />
+              <span className="text-sm font-satoshi font-medium text-grey-noti">Add Field</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
       <div className="px-3 pb-3 flex justify-center">
         <Primary href="#" text="Next" onClick={onNext} className="w-fit" />
