@@ -25,6 +25,7 @@ import { useTaskStore } from '@/app/stores/taskStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import {
   changeTaskStatus,
+  createTask,
   loadTasksForPrimaryOrg,
   updateTask,
 } from '@/app/features/tasks/services/taskService';
@@ -177,12 +178,14 @@ const TreatmentStep = ({
   const removePrescription = useAppointmentWorkspaceStore((s) => s.removePrescription);
   const addScheduleTask = useAppointmentWorkspaceStore((s) => s.addScheduleTask);
   const updateScheduleTask = useAppointmentWorkspaceStore((s) => s.updateScheduleTask);
+  const removeScheduleTask = useAppointmentWorkspaceStore((s) => s.removeScheduleTask);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
   const mergeEncounterData = useAppointmentWorkspaceStore((s) => s.mergeEncounterData);
   const itemIdsByOrgId = useInventoryStore((s) => s.itemIdsByOrgId);
   const inventoryById = useInventoryStore((s) => s.itemsById);
   const setInventoryForOrg = useInventoryStore((s) => s.setInventoryForOrg);
   const tasksById = useTaskStore((s) => s.tasksById);
+  const upsertTask = useTaskStore((s) => s.upsertTask);
   useLoadTeam();
   const teamMembers = useTeamForPrimaryOrg();
   const catalogSpecialities = useRevampCatalogStore((s) => s.specialities);
@@ -434,25 +437,41 @@ const TreatmentStep = ({
     }
   };
 
-  // Persist schedule-task edits. Tasks sourced from the task store carry a real
-  // backend id (`tasksById`); status changes route through the status endpoint and
-  // other edits through the task PATCH. Local state is always updated first so the
-  // timeline stays responsive; a failed sync surfaces an error and refreshes.
+  // Persist schedule-task edits. A schedule row comes from one of two sources and
+  // the optimistic local update MUST target the same one, or the UI won't reflect
+  // the change:
+  //   • store-backed employee task (in `tasksById`) → update the task store and
+  //     persist via the status/PATCH task endpoints;
+  //   • workspace-bootstrap schedule row (`encounter.schedule`) → update the
+  //     workspace store (no per-row task API exists for these).
   const handleUpdateScheduleTask = (id: string, patch: Partial<ScheduleTask>) => {
-    updateScheduleTask(appointmentId, id, patch);
     const backingTask = tasksById[id];
-    if (!backingTask) return;
+    if (!backingTask) {
+      // Bootstrap/template schedule row — local-only update.
+      updateScheduleTask(appointmentId, id, patch);
+      return;
+    }
     setScheduleError(null);
+    // Optimistically reflect the change in the task store so the derived schedule
+    // row (appointmentEmployeeTasks) re-renders immediately.
+    const nextStatus =
+      patch.status !== undefined
+        ? scheduleStatusToTaskStatus(patch.status as ScheduleTaskStatus)
+        : backingTask.status;
+    const nextAssignedTo = patch.assignedToId ?? backingTask.assignedTo;
+    const nextDescription = patch.description ?? backingTask.description;
+    const optimisticTask = {
+      ...backingTask,
+      status: nextStatus,
+      assignedTo: nextAssignedTo,
+      description: nextDescription,
+    };
+    upsertTask(optimisticTask);
     const persist = async () => {
       try {
         if (patch.status !== undefined) {
-          await changeTaskStatus({
-            ...backingTask,
-            status: scheduleStatusToTaskStatus(patch.status as ScheduleTaskStatus),
-          });
+          await changeTaskStatus({ ...backingTask, status: nextStatus });
         }
-        const nextAssignedTo = patch.assignedToId ?? backingTask.assignedTo;
-        const nextDescription = patch.description ?? backingTask.description;
         if (patch.assignedToId !== undefined || patch.description !== undefined) {
           await updateTask({
             ...backingTask,
@@ -470,30 +489,64 @@ const TreatmentStep = ({
   };
 
   // "Record" commits a task's edited breakdown (start date + time) to the backend.
-  // Store-backed tasks PATCH their dueAt; the schedule timeline reflects the edit
-  // locally and a failed sync surfaces an error and re-pulls server truth.
+  //  • A store-backed task PATCHes its dueAt.
+  //  • A locally-added schedule row (not yet on the backend) is CREATED as a real
+  //    employee task, then the local placeholder is removed and tasks re-pulled so
+  //    the row becomes a persistent, editable task.
   const handleRecordScheduleTask = (id: string) => {
     const scheduleTask = visibleScheduleTasks.find((task) => task.id === id);
-    const backingTask = tasksById[id];
-    if (!scheduleTask || !backingTask) {
+    if (!scheduleTask) {
       setScheduleError('This task can’t be recorded yet. Please try again.');
       return;
     }
     setScheduleError(null);
-    const dueAt = combineScheduleDateTime(scheduleTask.startDate, scheduleTask.time);
-    const persist = async () => {
+    const dueAt = combineScheduleDateTime(scheduleTask.startDate, scheduleTask.time) ?? new Date();
+    const backingTask = tasksById[id];
+
+    if (backingTask) {
+      const updatedTask = { ...backingTask, dueAt };
+      upsertTask(updatedTask);
+      void (async () => {
+        try {
+          await updateTask(updatedTask);
+        } catch (error) {
+          console.error('Failed to record schedule task:', error);
+          setScheduleError('Unable to record the task. Please try again.');
+          await loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+        }
+      })();
+      return;
+    }
+
+    // Local placeholder → create a persistent employee task on the backend.
+    if (!organisationId) {
+      setScheduleError('Select an organisation before recording tasks.');
+      return;
+    }
+    const assignedTo = scheduleTask.assignedToId ?? encounter.leadId ?? '';
+    void (async () => {
       try {
-        await updateTask({
-          ...backingTask,
-          dueAt: dueAt ?? backingTask.dueAt,
-        });
+        await createTask({
+          _id: '',
+          organisationId,
+          appointmentId,
+          assignedTo,
+          audience: 'EMPLOYEE_TASK',
+          source: 'CUSTOM',
+          category: scheduleTask.category ?? 'Care',
+          name: scheduleTask.description || 'Treatment task',
+          description: scheduleTask.description,
+          dueAt,
+          status: scheduleStatusToTaskStatus(scheduleTask.status),
+        } as Task);
+        // Replace the local placeholder with the freshly-created backend task.
+        removeScheduleTask(appointmentId, id);
+        await loadTasksForPrimaryOrg({ force: true, silent: true });
       } catch (error) {
-        console.error('Failed to record schedule task:', error);
+        console.error('Failed to create schedule task:', error);
         setScheduleError('Unable to record the task. Please try again.');
-        await loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
       }
-    };
-    void persist();
+    })();
   };
 
   const handleSaveTreatment = async () => {

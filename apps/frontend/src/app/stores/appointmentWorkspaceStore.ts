@@ -173,6 +173,7 @@ type AppointmentWorkspaceState = {
 
   addScheduleTask: (appointmentId: string, task: Omit<ScheduleTask, 'id'>) => void;
   updateScheduleTask: (appointmentId: string, id: string, patch: Partial<ScheduleTask>) => void;
+  removeScheduleTask: (appointmentId: string, id: string) => void;
   setScheduleTaskStatus: (appointmentId: string, id: string, status: ScheduleTaskStatus) => void;
 
   setDischargeSummary: (appointmentId: string, html: string) => void;
@@ -620,6 +621,12 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
     patchEnc(set, appointmentId, (enc) => ({
       ...enc,
       schedule: enc.schedule.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+    })),
+
+  removeScheduleTask: (appointmentId, id) =>
+    patchEnc(set, appointmentId, (enc) => ({
+      ...enc,
+      schedule: enc.schedule.filter((t) => t.id !== id),
     })),
 
   setScheduleTaskStatus: (appointmentId, id, status) =>

@@ -380,7 +380,6 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
   );
 
   const encounter = useAppointmentWorkspaceStore((s) => s.encountersById[appointmentId]);
-  const addScheduleTask = useAppointmentWorkspaceStore((s) => s.addScheduleTask);
   const updateScheduleTask = useAppointmentWorkspaceStore((s) => s.updateScheduleTask);
   const setScheduleTaskStatus = useAppointmentWorkspaceStore((s) => s.setScheduleTaskStatus);
   const tasksById = useTaskStore((s) => s.tasksById);
@@ -388,7 +387,10 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
   const allTasks = useMemo(() => Object.values(tasksById), [tasksById]);
 
   useEffect(() => {
-    loadTasksForPrimaryOrg({ silent: true }).catch((error) => {
+    // Force a fresh pull when the panel opens so newly-created/updated tasks for
+    // this appointment always show (the non-forced load short-circuits once the
+    // store is "loaded", which would hide tasks added elsewhere this session).
+    loadTasksForPrimaryOrg({ force: true, silent: true }).catch((error) => {
       console.error('Failed to load workspace tasks:', error);
     });
   }, []);
@@ -481,8 +483,10 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
     } else {
       setSaveError(null);
       try {
+        // createTask persists to the backend and (for EMPLOYEE_TASK) upserts into
+        // the task store, which the employee list already renders. Do NOT also add
+        // it to encounter.schedule — that would render the same task twice.
         await createTask(taskPayload);
-        if (!isParent) addScheduleTask(appointmentId, base);
       } catch (error) {
         console.error('Failed to create workspace task:', error);
         setSaveError('Unable to save task. Please try again.');

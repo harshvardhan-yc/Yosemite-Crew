@@ -425,7 +425,7 @@ describe('TasksPanel', () => {
     expect(after.status).not.toBe(before[0].status);
   });
 
-  it('creates a new employee task through the task API and mirrors it into the schedule', async () => {
+  it('creates a new employee task through the task API only (no duplicate schedule row)', async () => {
     render(<TasksPanel appointmentId={APPT} />);
     const countBefore = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!.schedule.length;
     fireEvent.click(screen.getByRole('button', { name: /new task/i }));
@@ -434,9 +434,11 @@ describe('TasksPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /save task/i }));
     await waitFor(() => expect(createTask).toHaveBeenCalled());
+    // The created EMPLOYEE_TASK surfaces via the task store (createTask upserts it);
+    // it must NOT also be added to encounter.schedule, or the card renders twice.
     const schedule = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!.schedule;
-    expect(schedule.length).toBe(countBefore + 1);
-    expect(schedule.some((t) => t.description === 'Recheck incision')).toBe(true);
+    expect(schedule.length).toBe(countBefore);
+    expect(schedule.some((t) => t.description === 'Recheck incision')).toBe(false);
   });
 
   it('switches to the parent tab and creates a parent task through the task API only', async () => {
