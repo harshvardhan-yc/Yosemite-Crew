@@ -662,11 +662,14 @@ const buildPmsUpdatePlanFromPrisma = (args: {
   const nextEndTime = args.parsed.endTimeFromDto ?? args.appointment.endTime;
 
   const timesProvided =
-    args.parsed.startTimeFromDto != null || args.parsed.endTimeFromDto != null;
-  const sameSlot = !timesProvided
-    ? true
-    : args.appointment.startTime.getTime() === nextStartTime.getTime() &&
+    args.parsed.startTimeFromDto !== undefined ||
+    args.parsed.endTimeFromDto !== undefined;
+  let sameSlot = true;
+  if (timesProvided) {
+    sameSlot =
+      args.appointment.startTime.getTime() === nextStartTime.getTime() &&
       args.appointment.endTime.getTime() === nextEndTime.getTime();
+  }
 
   const nextDurationMinutes =
     args.parsed.durationMinutesFromDto ??

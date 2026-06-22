@@ -166,6 +166,37 @@ const applyEntryQueryWhere = (
   ];
 };
 
+const buildCodeMappingFilter = (params: {
+  sourceSystem?: CodeSystem;
+  sourceCode?: string;
+  targetSystem?: CodeSystem;
+  targetCode?: string;
+  active?: boolean;
+}) => {
+  const filter: Record<string, unknown> = {};
+  const safeSourceSystem = normalizeTrimmedValue(params.sourceSystem);
+  const safeSourceCode = normalizeTrimmedValue(params.sourceCode);
+  const safeTargetSystem = normalizeTrimmedValue(params.targetSystem);
+  const safeTargetCode = normalizeTrimmedValue(params.targetCode);
+
+  if (safeSourceSystem) filter.sourceSystem = safeSourceSystem;
+  if (safeSourceCode) filter.sourceCode = safeSourceCode;
+  if (safeTargetSystem) filter.targetSystem = safeTargetSystem;
+  if (safeTargetCode) filter.targetCode = safeTargetCode;
+  if (typeof params.active === "boolean") filter.active = params.active;
+
+  return {
+    filter,
+    where: {
+      sourceSystem: safeSourceSystem,
+      sourceCode: safeSourceCode,
+      targetSystem: safeTargetSystem,
+      targetCode: safeTargetCode,
+      active: params.active,
+    },
+  };
+};
+
 export const CodeService = {
   async upsertEntry(input: CodeEntryMongo) {
     ensureNonEmpty(input.system, "system");
@@ -324,30 +355,11 @@ export const CodeService = {
     targetCode?: string;
     active?: boolean;
   }) {
-    const { sourceSystem, sourceCode, targetSystem, targetCode, active } =
-      params;
-    const filter: Record<string, unknown> = {};
-    const safeSourceSystem = normalizeTrimmedValue(sourceSystem);
-    const safeSourceCode = normalizeTrimmedValue(sourceCode);
-    const safeTargetSystem = normalizeTrimmedValue(targetSystem);
-    const safeTargetCode = normalizeTrimmedValue(targetCode);
-
-    if (safeSourceSystem) filter.sourceSystem = safeSourceSystem;
-    if (safeSourceCode) filter.sourceCode = safeSourceCode;
-    if (safeTargetSystem) filter.targetSystem = safeTargetSystem;
-    if (safeTargetCode) filter.targetCode = safeTargetCode;
-    if (typeof active === "boolean") filter.active = active;
+    const { filter, where } = buildCodeMappingFilter(params);
 
     if (isReadFromPostgres()) {
-      const where: Prisma.CodeMappingWhereInput = {};
-      if (safeSourceSystem) where.sourceSystem = safeSourceSystem;
-      if (safeSourceCode) where.sourceCode = safeSourceCode;
-      if (safeTargetSystem) where.targetSystem = safeTargetSystem;
-      if (safeTargetCode) where.targetCode = safeTargetCode;
-      if (typeof active === "boolean") where.active = active;
-
       return prisma.codeMapping.findMany({
-        where,
+        where: where as Prisma.CodeMappingWhereInput,
         orderBy: { createdAt: "desc" },
       });
     }

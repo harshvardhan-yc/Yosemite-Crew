@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
 import type {
@@ -271,6 +272,70 @@ const normalizeOptionalString = (value?: string | null) => {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const resolveAssignableUnitContext = async (params: {
+  tx: Prisma.TransactionClient;
+  encounter: EncounterRow;
+  unitId: string;
+}) => {
+  const { tx, encounter, unitId } = params;
+  const roomUnitDelegate = (tx as unknown as { roomUnit: RoomUnitDelegate })
+    .roomUnit;
+  const roomUnitGroupDelegate = (
+    tx as unknown as { roomUnitGroup: RoomUnitGroupDelegate }
+  ).roomUnitGroup;
+  const companionDelegate = (tx as unknown as { companion: CompanionDelegate })
+    .companion;
+
+  const unit = await roomUnitDelegate.findUnique({
+    where: { id: unitId },
+  });
+
+  if (!unit) {
+    throw new CaseEncounterServiceError("Room unit not found.", 404);
+  }
+
+  if (unit.organisationId !== encounter.organisationId) {
+    throw new CaseEncounterServiceError("Unit organisation mismatch.", 409);
+  }
+
+  if (!unit.isActive) {
+    throw new CaseEncounterServiceError("Selected unit is inactive.", 409);
+  }
+
+  const companion = await companionDelegate.findUnique({
+    where: { id: encounter.patientId },
+  });
+
+  if (!companion) {
+    throw new CaseEncounterServiceError("Companion not found.", 404);
+  }
+
+  assertRoomUnitSpeciesCompatibility(unit, companion);
+
+  if (!unit.unitGroupId) {
+    return { unit, companion };
+  }
+
+  const group = await roomUnitGroupDelegate.findUnique({
+    where: { id: unit.unitGroupId },
+  });
+
+  if (!group) {
+    throw new CaseEncounterServiceError("Room unit group not found.", 404);
+  }
+
+  if (group.organisationId !== encounter.organisationId) {
+    throw new CaseEncounterServiceError(
+      "Room unit group organisation mismatch.",
+      409,
+    );
+  }
+
+  assertRoomUnitGroupSpeciesCompatibility(group, companion);
+
+  return { unit, companion, group };
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1160,16 +1225,6 @@ export const CaseEncounterService = {
       const admissionDelegate = (
         tx as unknown as { admission: AdmissionMutationDelegate }
       ).admission;
-      const roomUnitDelegate = (tx as unknown as { roomUnit: RoomUnitDelegate })
-        .roomUnit;
-      const roomUnitGroupDelegate = (
-        tx as unknown as { roomUnitGroup: RoomUnitGroupDelegate }
-      ).roomUnitGroup;
-      const companionDelegate = (
-        tx as unknown as {
-          companion: CompanionDelegate;
-        }
-      ).companion;
       const assignmentDelegate = (
         tx as unknown as { roomUnitAssignment: RoomUnitAssignmentDelegate }
       ).roomUnitAssignment;
@@ -1192,53 +1247,11 @@ export const CaseEncounterService = {
         );
       }
 
-      const unit = await roomUnitDelegate.findUnique({
-        where: { id: unitId },
+      await resolveAssignableUnitContext({
+        tx,
+        encounter,
+        unitId,
       });
-
-      if (!unit) {
-        throw new CaseEncounterServiceError("Room unit not found.", 404);
-      }
-
-      if (unit.organisationId !== encounter.organisationId) {
-        throw new CaseEncounterServiceError("Unit organisation mismatch.", 409);
-      }
-
-      if (!unit.isActive) {
-        throw new CaseEncounterServiceError("Selected unit is inactive.", 409);
-      }
-
-      const companion = await companionDelegate.findUnique({
-        where: { id: encounter.patientId },
-      });
-
-      if (!companion) {
-        throw new CaseEncounterServiceError("Companion not found.", 404);
-      }
-
-      assertRoomUnitSpeciesCompatibility(unit, companion);
-
-      if (unit.unitGroupId) {
-        const group = await roomUnitGroupDelegate.findUnique({
-          where: { id: unit.unitGroupId },
-        });
-
-        if (!group) {
-          throw new CaseEncounterServiceError(
-            "Room unit group not found.",
-            404,
-          );
-        }
-
-        if (group.organisationId !== encounter.organisationId) {
-          throw new CaseEncounterServiceError(
-            "Room unit group organisation mismatch.",
-            409,
-          );
-        }
-
-        assertRoomUnitGroupSpeciesCompatibility(group, companion);
-      }
 
       const conflictingAssignment = await assignmentDelegate.findFirst({
         where: {

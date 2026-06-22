@@ -191,6 +191,9 @@ const sanitizePositiveNumber = (value: unknown): number | undefined => {
   return value > 0 ? value : undefined;
 };
 
+const isNonEmptyString = (value: unknown) =>
+  asNonEmptyString(value) !== undefined;
+
 const escapeRegex = (value: string) =>
   value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
@@ -883,7 +886,7 @@ const validateCreateInventoryItemInput = async (
   if (input.name.trim().length > 255) {
     throw new InventoryServiceError("name is too long", 400);
   }
-  if (input.sku !== undefined && !input.sku.trim()) {
+  if (typeof input.sku === "string" && input.sku.trim().length === 0) {
     throw new InventoryServiceError("sku is required", 400);
   }
 
@@ -902,7 +905,9 @@ const validateCreateInventoryItemInput = async (
     category,
     subCategory,
   );
-  if (categoryCheck.categoryExists && !categoryCheck.subcategoryValid) {
+  const isInvalidSubcategory =
+    categoryCheck.categoryExists && categoryCheck.subcategoryValid === false;
+  if (isInvalidSubcategory) {
     throw new InventoryServiceError("subcategory must belong to category", 400);
   }
 
@@ -915,7 +920,7 @@ const validateCreateInventoryItemInput = async (
       ["dosageForm", input.dosageForm],
       ["routeOfAdministration", input.routeOfAdministration],
     ] as const) {
-      if (!asNonEmptyString(value)) {
+      if (!isNonEmptyString(value)) {
         throw new InventoryServiceError(
           `${field} is required for medical items`,
           400,
@@ -940,7 +945,7 @@ const validateCreateInventoryItemInput = async (
     }
   }
 
-  if (input.expiryTrackingRequired && !input.batches?.length) {
+  if (input.expiryTrackingRequired && (input.batches?.length ?? 0) === 0) {
     throw new InventoryServiceError(
       "expiry date is required when expiry tracking is enabled",
       400,
@@ -949,7 +954,8 @@ const validateCreateInventoryItemInput = async (
 
   if (input.expiryTrackingRequired && input.batches?.length) {
     const missingExpiry = input.batches.some(
-      (batch) => !batch.expiryDate || Number.isNaN(batch.expiryDate.getTime()),
+      (batch) =>
+        batch.expiryDate == null || Number.isNaN(batch.expiryDate.getTime()),
     );
     if (missingExpiry) {
       throw new InventoryServiceError(
@@ -1217,7 +1223,9 @@ const prepareLegacyInventoryItemUpdate = async (params: {
       nextCategory,
       nextSubCategory,
     );
-    if (categoryCheck.categoryExists && !categoryCheck.subcategoryValid) {
+    const isInvalidSubcategory =
+      categoryCheck.categoryExists && categoryCheck.subcategoryValid === false;
+    if (isInvalidSubcategory) {
       throw new InventoryServiceError(
         "subcategory must belong to category",
         400,
@@ -1239,7 +1247,7 @@ const prepareLegacyInventoryItemUpdate = async (params: {
         input.routeOfAdministration ?? item.routeOfAdministration,
       ],
     ] as const) {
-      if (!asNonEmptyString(value)) {
+      if (!isNonEmptyString(value)) {
         throw new InventoryServiceError(
           `${field} is required for medical items`,
           400,
@@ -1384,7 +1392,7 @@ export const InventoryService = {
       const existing = await prisma.inventoryItem.findFirst({
         where: { id: itemId, organisationId: safeOrganisationId },
       });
-      if (!existing) {
+      if (existing == null) {
         throw new InventoryServiceError("Inventory item not found", 404);
       }
 
@@ -1398,7 +1406,10 @@ export const InventoryService = {
           nextCategory,
           nextSubCategory,
         );
-        if (categoryCheck.categoryExists && !categoryCheck.subcategoryValid) {
+        const isInvalidSubcategory =
+          categoryCheck.categoryExists &&
+          categoryCheck.subcategoryValid === false;
+        if (isInvalidSubcategory) {
           throw new InventoryServiceError(
             "subcategory must belong to category",
             400,

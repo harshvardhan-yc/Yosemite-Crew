@@ -59,6 +59,10 @@ type CalendarPrefillMatch = {
   };
 };
 
+type AvailabilityWindow = AvailabilitySlotMongo & {
+  vetIds?: string[];
+};
+
 type ServiceSchedulingContext = {
   serviceId: string;
   organisationId: string;
@@ -314,6 +318,26 @@ const collectCalendarPrefillMatches = async (params: {
   const { input, timezone, serviceContexts, slotCache } = params;
   const utcDateShifts = [-1, 0, 1] as const;
   const matches: CalendarPrefillMatch[] = [];
+  const safeLeadId =
+    input.leadId == null
+      ? undefined
+      : requireSafeString(input.leadId, "leadId");
+
+  const addMatch = (
+    context: ServiceSchedulingContext,
+    slot: AvailabilityWindow,
+    meta: { localStartMinute: number; localEndMinute: number },
+  ) => {
+    matches.push({
+      serviceId: context.serviceId,
+      slot: {
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        vetIds: slot.vetIds ?? [],
+      },
+      meta,
+    });
+  };
 
   for (const context of serviceContexts) {
     for (const utcDateShift of utcDateShifts) {
@@ -332,13 +356,8 @@ const collectCalendarPrefillMatches = async (params: {
           AvailabilityService.getBookableSlotsForDate(...args),
       });
 
-      for (const slot of result.windows) {
-        if (
-          input.leadId &&
-          !(slot.vetIds ?? []).includes(
-            requireSafeString(input.leadId, "leadId"),
-          )
-        ) {
+      for (const slot of result.windows as AvailabilityWindow[]) {
+        if (safeLeadId && !(slot.vetIds ?? []).includes(safeLeadId)) {
           continue;
         }
 
@@ -358,15 +377,7 @@ const collectCalendarPrefillMatches = async (params: {
           continue;
         }
 
-        matches.push({
-          serviceId: context.serviceId,
-          slot: {
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            vetIds: slot.vetIds ?? [],
-          },
-          meta,
-        });
+        addMatch(context, slot, meta);
       }
     }
   }
