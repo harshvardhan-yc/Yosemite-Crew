@@ -41,14 +41,9 @@ export const buildSecurityHeaders = (isProduction = isProductionRuntime()): Secu
 export const securityHeaders: SecurityHeader[] = buildSecurityHeaders();
 
 const getNonceSource = (nonce?: string) => (nonce ? `'nonce-${nonce}'` : undefined);
-const POSTHOG_DEFAULT_SCRIPT_HOSTS = [
-  'https://us-assets.i.posthog.com',
-  'https://eu-assets.i.posthog.com',
-];
+const POSTHOG_DEFAULT_SCRIPT_HOSTS = ['https://eu-assets.i.posthog.com'];
 const POSTHOG_DEFAULT_CONNECT_HOSTS = [
-  'https://us.i.posthog.com',
   'https://eu.i.posthog.com',
-  'https://us-assets.i.posthog.com',
   'https://eu-assets.i.posthog.com',
 ];
 const getPostHogHost = () => process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim();
