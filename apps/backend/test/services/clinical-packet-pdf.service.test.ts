@@ -110,4 +110,20 @@ describe("buildMergedClinicalPacketPdf", () => {
       ),
     ).rejects.toMatchObject({ statusCode: 502 });
   });
+
+  it("preserves the loader's status code when it exposes one", async () => {
+    class LoaderError extends Error {
+      statusCode = 409;
+    }
+    const loader = jest
+      .fn<Promise<Buffer>, [string, string]>()
+      .mockRejectedValue(new LoaderError("not yet rendered"));
+
+    await expect(
+      buildMergedClinicalPacketPdf(
+        { organisationId: "org-1", title: "Packet", documents: [docs[0]] },
+        loader,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
 });

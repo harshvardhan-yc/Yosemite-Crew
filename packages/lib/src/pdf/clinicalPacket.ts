@@ -191,11 +191,21 @@ export const buildMergedClinicalPacketPdf = async (
       const bytes = await loadDocumentPdf(doc.documentId, input.organisationId);
       source = await PDFDocument.load(bytes);
     } catch (error) {
+      // Preserve a meaningful status code from the loader (e.g. a 409 "not yet
+      // rendered") when one is present; otherwise treat it as an upstream
+      // failure (502) since the merge could not fetch/parse the bytes.
+      const loaderStatusCode =
+        typeof error === 'object' &&
+        error !== null &&
+        'statusCode' in error &&
+        typeof (error as { statusCode: unknown }).statusCode === 'number'
+          ? (error as { statusCode: number }).statusCode
+          : 502;
       throw new ClinicalPacketPdfError(
         `Unable to load PDF for document ${doc.documentId}: ${
           error instanceof Error ? error.message : 'unknown error'
         }`,
-        502
+        loaderStatusCode
       );
     }
 

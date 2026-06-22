@@ -6,6 +6,7 @@ import {
 } from "src/services/workspace.prisma.service";
 import { DocumensoService } from "src/services/documenso.service";
 import { buildMergedClinicalPacketPdf } from "src/services/clinical-packet-pdf.service";
+import { rerenderPersistedClinicalRenderedDocumentPdf } from "src/services/rendered-document.service";
 import logger from "src/utils/logger";
 import type {
   WorkspaceDocumentPacketRow,
@@ -128,6 +129,70 @@ const selectMergeableDocuments = (
     );
   }
   return mergeable;
+};
+
+/**
+ * Canonical clinical merge order decided by the product owner. Documents are
+ * merged in this fixed clinical sequence (any missing kind is simply absent);
+ * any kind not listed here sorts last while preserving the input order.
+ */
+const CANONICAL_MERGE_ORDER = [
+  "SOAP_NOTE",
+  "VITAL_RECORD",
+  "PRESCRIPTION",
+  "DISCHARGE_SUMMARY",
+];
+
+const MERGE_ORDER_RANK = new Map(
+  CANONICAL_MERGE_ORDER.map((kind, index) => [kind, index]),
+);
+
+const mergeOrderRank = (kind: string): number =>
+  MERGE_ORDER_RANK.get(kind) ?? CANONICAL_MERGE_ORDER.length;
+
+/**
+ * Order the mergeable documents into the canonical clinical sequence
+ * (SOAP_NOTE → VITAL_RECORD → PRESCRIPTION → DISCHARGE_SUMMARY) so the merged
+ * PDF is deterministic regardless of the DB query order. Stable for equal ranks.
+ */
+const orderDocumentsForMerge = (
+  documents: WorkspaceDocumentRow[],
+): WorkspaceDocumentRow[] =>
+  documents
+    .map((doc, index) => ({ doc, index }))
+    .sort((a, b) => {
+      const rankDiff = mergeOrderRank(a.doc.kind) - mergeOrderRank(b.doc.kind);
+      return rankDiff !== 0 ? rankDiff : a.index - b.index;
+    })
+    .map((entry) => entry.doc);
+
+/**
+ * Clinical artifacts are merged from their persisted rendered PDF. When an
+ * artifact has not been rendered yet (`pdfUrl` empty), render and persist it on
+ * demand so its bytes + signaturePlacement exist before the merge runs.
+ * Idempotent: only artifacts missing a `pdfUrl` are rendered, and skipping them
+ * would silently drop clinical content, so they are never skipped. Non-artifact
+ * mergeable kinds are left untouched (their loader renders on demand).
+ */
+const ensureClinicalArtifactsRendered = async (
+  organisationId: string,
+  documents: WorkspaceDocumentRow[],
+): Promise<void> => {
+  const pending = documents.filter(
+    (doc) => doc.sourceKind === "CLINICAL_ARTIFACT" && !doc.pdfUrl,
+  );
+  if (!pending.length) {
+    return;
+  }
+
+  await Promise.all(
+    pending.map((doc) =>
+      rerenderPersistedClinicalRenderedDocumentPdf(
+        doc.documentId,
+        organisationId,
+      ),
+    ),
+  );
 };
 
 const ensurePacket = async (
@@ -255,9 +320,8 @@ export const WorkspaceDocumentPacketService = {
 
     const title = `Clinical Packet ${packet.encounterId}`;
 
-    const mergeableDocuments = selectMergeableDocuments(
-      documents,
-      "signing the document packet",
+    const mergeableDocuments = orderDocumentsForMerge(
+      selectMergeableDocuments(documents, "signing the document packet"),
     );
     if (!mergeableDocuments.length) {
       throw new WorkspaceServiceError(
@@ -265,6 +329,11 @@ export const WorkspaceDocumentPacketService = {
         409,
       );
     }
+
+    await ensureClinicalArtifactsRendered(
+      packet.organisationId,
+      mergeableDocuments,
+    );
 
     const merged = await buildMergedClinicalPacketPdf({
       organisationId: packet.organisationId,
@@ -472,9 +541,11 @@ export const WorkspaceDocumentPacketService = {
       [],
     );
 
-    const documents = selectMergeableDocuments(
-      bootstrap.documents.filter((doc) => Boolean(doc.documentId)),
-      "building the encounter packet PDF",
+    const documents = orderDocumentsForMerge(
+      selectMergeableDocuments(
+        bootstrap.documents.filter((doc) => Boolean(doc.documentId)),
+        "building the encounter packet PDF",
+      ),
     );
     if (!documents.length) {
       throw new WorkspaceServiceError(
@@ -482,6 +553,8 @@ export const WorkspaceDocumentPacketService = {
         409,
       );
     }
+
+    await ensureClinicalArtifactsRendered(organisationId, documents);
 
     const merged = await buildMergedClinicalPacketPdf({
       organisationId,

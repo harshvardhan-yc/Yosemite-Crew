@@ -2,6 +2,7 @@ import { prisma } from "src/config/prisma";
 import { WorkspaceService } from "src/services/workspace.prisma.service";
 import { DocumensoService } from "../../src/services/documenso.service";
 import { buildMergedClinicalPacketPdf } from "../../src/services/clinical-packet-pdf.service";
+import { rerenderPersistedClinicalRenderedDocumentPdf } from "../../src/services/rendered-document.service";
 import { WorkspaceDocumentPacketService } from "../../src/services/workspace-document-packet.service";
 
 jest.mock("src/config/prisma", () => ({
@@ -45,6 +46,10 @@ jest.mock("../../src/services/clinical-packet-pdf.service", () => ({
   buildMergedClinicalPacketPdf: jest.fn(),
 }));
 
+jest.mock("../../src/services/rendered-document.service", () => ({
+  rerenderPersistedClinicalRenderedDocumentPdf: jest.fn(),
+}));
+
 jest.mock("src/utils/logger", () => ({
   __esModule: true,
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -72,6 +77,8 @@ const mockedDocumenso = DocumensoService as unknown as {
 };
 const mockedBuildPacketPdf =
   buildMergedClinicalPacketPdf as unknown as jest.Mock;
+const mockedRerenderClinicalArtifact =
+  rerenderPersistedClinicalRenderedDocumentPdf as unknown as jest.Mock;
 
 const docRow = (id: string, kind = "SOAP_NOTE") => ({
   documentId: id,
@@ -169,6 +176,11 @@ describe("WorkspaceDocumentPacketService.sign", () => {
     );
     mockedPrisma.user.findFirst.mockResolvedValue({ email: "vet@example.com" });
     mockedDocumenso.resolveOrganisationApiKey.mockResolvedValue("api-key");
+    mockedRerenderClinicalArtifact.mockResolvedValue({
+      pdf: Buffer.from("rendered-pdf"),
+      filename: "soap-note-d1.pdf",
+      contentType: "application/pdf",
+    });
     mockedBuildPacketPdf.mockResolvedValue({
       pdf: Buffer.from("merged-pdf"),
       pageCount: 3,
@@ -251,6 +263,101 @@ describe("WorkspaceDocumentPacketService.sign", () => {
     expect(mockedDocumenso.createDocument).toHaveBeenCalledWith(
       expect.objectContaining({ signerEmail: "override@example.com" }),
     );
+  });
+
+  it("renders unrendered clinical artifacts on demand before merging (no 502)", async () => {
+    arrange();
+    // Both packet documents are CLINICAL_ARTIFACTs with pdfUrl: null.
+    mockedPrisma.workspaceDocumentPacket.findFirst.mockResolvedValue(
+      basePacket({
+        documents: [docRow("d1", "SOAP_NOTE"), docRow("d2", "PRESCRIPTION")],
+      }),
+    );
+
+    const result = await WorkspaceDocumentPacketService.sign({
+      organisationId: "org-1",
+      packetId: "pkt-1",
+      signerId: "user-1",
+      signerName: "Dr Jane",
+    });
+
+    // The on-demand render is invoked once per unrendered artifact and the
+    // packet still signs successfully (the merge never sees a missing PDF).
+    expect(mockedRerenderClinicalArtifact).toHaveBeenCalledTimes(2);
+    expect(mockedRerenderClinicalArtifact).toHaveBeenCalledWith("d1", "org-1");
+    expect(mockedRerenderClinicalArtifact).toHaveBeenCalledWith("d2", "org-1");
+    expect(result.signing?.status).toBe("IN_PROGRESS");
+  });
+
+  it("does not re-render clinical artifacts that already have a pdfUrl", async () => {
+    arrange();
+    mockedPrisma.workspaceDocumentPacket.findFirst.mockResolvedValue(
+      basePacket({
+        documents: [
+          { ...docRow("d1", "SOAP_NOTE"), pdfUrl: "https://cdn/d1.pdf" },
+        ],
+      }),
+    );
+
+    await WorkspaceDocumentPacketService.sign({
+      organisationId: "org-1",
+      packetId: "pkt-1",
+      signerId: "user-1",
+    });
+
+    expect(mockedRerenderClinicalArtifact).not.toHaveBeenCalled();
+  });
+
+  it("merges documents in the canonical clinical order (SOAP → Vital → Prescription → Discharge)", async () => {
+    arrange();
+    mockedPrisma.workspaceDocumentPacket.findFirst.mockResolvedValue(
+      basePacket({
+        documents: [
+          docRow("dsc", "DISCHARGE_SUMMARY"),
+          docRow("rx", "PRESCRIPTION"),
+          docRow("soap", "SOAP_NOTE"),
+          docRow("vit", "VITAL_RECORD"),
+        ],
+      }),
+    );
+
+    await WorkspaceDocumentPacketService.sign({
+      organisationId: "org-1",
+      packetId: "pkt-1",
+      signerId: "user-1",
+    });
+
+    const buildArg = mockedBuildPacketPdf.mock.calls[0][0];
+    expect(buildArg.documents.map((d: { kind: string }) => d.kind)).toEqual([
+      "SOAP_NOTE",
+      "VITAL_RECORD",
+      "PRESCRIPTION",
+      "DISCHARGE_SUMMARY",
+    ]);
+  });
+
+  it("sorts unknown kinds last while preserving their relative order", async () => {
+    arrange();
+    mockedPrisma.workspaceDocumentPacket.findFirst.mockResolvedValue(
+      basePacket({
+        documents: [
+          { ...docRow("misc-a", "LAB_RESULT"), pdfUrl: "https://cdn/a.pdf" },
+          docRow("soap", "SOAP_NOTE"),
+          { ...docRow("misc-b", "FORM"), pdfUrl: "https://cdn/b.pdf" },
+        ],
+      }),
+    );
+
+    await WorkspaceDocumentPacketService.sign({
+      organisationId: "org-1",
+      packetId: "pkt-1",
+      signerId: "user-1",
+    });
+
+    const buildArg = mockedBuildPacketPdf.mock.calls[0][0];
+    expect(
+      buildArg.documents.map((d: { documentId: string }) => d.documentId),
+    ).toEqual(["soap", "misc-a", "misc-b"]);
   });
 
   it("rejects when the packet is already FINAL", async () => {
@@ -438,12 +545,11 @@ describe("WorkspaceDocumentPacketService.resetSigning", () => {
 });
 
 describe("WorkspaceDocumentPacketService.buildEncounterPacketPdf", () => {
-  it("merges the encounter documents into a single PDF for print", async () => {
-    mockedWorkspaceService.getEncounterBootstrap.mockResolvedValue({
-      appointment: null,
-      encounter: { id: "enc-1" },
-      companion: null,
-      documents: [docRow("d1"), docRow("d2")],
+  const arrangePrintBuild = () => {
+    mockedRerenderClinicalArtifact.mockResolvedValue({
+      pdf: Buffer.from("rendered-pdf"),
+      filename: "soap-note-d1.pdf",
+      contentType: "application/pdf",
     });
     mockedBuildPacketPdf.mockResolvedValue({
       pdf: Buffer.from("merged-print"),
@@ -456,6 +562,19 @@ describe("WorkspaceDocumentPacketService.buildEncounterPacketPdf", () => {
         height: 96,
       },
     });
+  };
+
+  it("merges the encounter documents into a single PDF for print", async () => {
+    mockedWorkspaceService.getEncounterBootstrap.mockResolvedValue({
+      appointment: null,
+      encounter: { id: "enc-1" },
+      companion: null,
+      documents: [
+        { ...docRow("d1"), pdfUrl: "https://cdn/d1.pdf" },
+        { ...docRow("d2"), pdfUrl: "https://cdn/d2.pdf" },
+      ],
+    });
+    arrangePrintBuild();
 
     const pdf = await WorkspaceDocumentPacketService.buildEncounterPacketPdf(
       "org-1",
@@ -463,6 +582,7 @@ describe("WorkspaceDocumentPacketService.buildEncounterPacketPdf", () => {
     );
 
     expect(pdf).toBeInstanceOf(Buffer);
+    expect(mockedRerenderClinicalArtifact).not.toHaveBeenCalled();
     expect(mockedBuildPacketPdf).toHaveBeenCalledWith(
       expect.objectContaining({
         organisationId: "org-1",
@@ -472,6 +592,54 @@ describe("WorkspaceDocumentPacketService.buildEncounterPacketPdf", () => {
         ],
       }),
     );
+  });
+
+  it("renders unrendered clinical artifacts before merging for print", async () => {
+    mockedWorkspaceService.getEncounterBootstrap.mockResolvedValue({
+      appointment: null,
+      encounter: { id: "enc-1" },
+      companion: null,
+      documents: [docRow("d1", "SOAP_NOTE"), docRow("d2", "PRESCRIPTION")],
+    });
+    arrangePrintBuild();
+
+    const pdf = await WorkspaceDocumentPacketService.buildEncounterPacketPdf(
+      "org-1",
+      "enc-1",
+    );
+
+    expect(pdf).toBeInstanceOf(Buffer);
+    expect(mockedRerenderClinicalArtifact).toHaveBeenCalledTimes(2);
+    expect(mockedRerenderClinicalArtifact).toHaveBeenCalledWith("d1", "org-1");
+    expect(mockedRerenderClinicalArtifact).toHaveBeenCalledWith("d2", "org-1");
+  });
+
+  it("merges print documents in the canonical clinical order", async () => {
+    mockedWorkspaceService.getEncounterBootstrap.mockResolvedValue({
+      appointment: null,
+      encounter: { id: "enc-1" },
+      companion: null,
+      documents: [
+        docRow("dsc", "DISCHARGE_SUMMARY"),
+        docRow("rx", "PRESCRIPTION"),
+        docRow("soap", "SOAP_NOTE"),
+        docRow("vit", "VITAL_RECORD"),
+      ],
+    });
+    arrangePrintBuild();
+
+    await WorkspaceDocumentPacketService.buildEncounterPacketPdf(
+      "org-1",
+      "enc-1",
+    );
+
+    const buildArg = mockedBuildPacketPdf.mock.calls[0][0];
+    expect(buildArg.documents.map((d: { kind: string }) => d.kind)).toEqual([
+      "SOAP_NOTE",
+      "VITAL_RECORD",
+      "PRESCRIPTION",
+      "DISCHARGE_SUMMARY",
+    ]);
   });
 
   it("rejects when the encounter has no documents", async () => {
