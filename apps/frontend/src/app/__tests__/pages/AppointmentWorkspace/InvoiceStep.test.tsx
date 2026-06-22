@@ -182,6 +182,17 @@ describe('InvoiceStep', () => {
     expect(screen.getByText(/Estimated Total/)).toBeInTheDocument();
   });
 
+  it('shows exclusive-of-tax copy reflecting the backend tax rate', () => {
+    renderInvoice(seedAndGet());
+    expect(screen.getByText('Exclusive of 7% tax')).toBeInTheDocument();
+  });
+
+  it('shows no-tax copy when no tax rate applies', () => {
+    const enc = { ...seedAndGet(), taxPercent: 0 } as AppointmentEncounter;
+    renderInvoice(enc);
+    expect(screen.getByText('No tax applied')).toBeInTheDocument();
+  });
+
   it('adds and removes invoice line items via search', () => {
     const enc = seedAndGet();
     renderInvoice(enc);

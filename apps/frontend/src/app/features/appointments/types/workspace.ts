@@ -136,6 +136,14 @@ export type DiagnosticTestCard = {
 
 export type LineItemKind = 'SERVICE' | 'PACKAGE';
 
+/** Origin of a searchable bill item, surfaced as a pill in the search dropdown. */
+export type BillableKind =
+  | 'EXISTING_TREATMENT'
+  | 'IN_HOUSE_PRESCRIPTION'
+  | 'PACKAGE_COMPONENT'
+  | 'BILLING_ONLY'
+  | 'INVENTORY';
+
 /** A component line shown when a package line item is expanded. */
 export type LineItemBreakdown = {
   id: string;

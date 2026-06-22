@@ -19,6 +19,7 @@ import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import type {
   AppointmentEncounter,
+  BillableKind,
   InvoiceLineItem,
   InvoiceStatus,
   PastInvoice,
@@ -72,14 +73,6 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   CASH: 'Paid via Cash',
   DEPOSIT: 'Paid from Deposit',
 };
-
-/** Origin of a searchable bill item, surfaced as a pill in the search dropdown. */
-type BillableKind =
-  | 'EXISTING_TREATMENT'
-  | 'IN_HOUSE_PRESCRIPTION'
-  | 'PACKAGE_COMPONENT'
-  | 'BILLING_ONLY'
-  | 'INVENTORY';
 
 export type BillableCandidate = Omit<InvoiceLineItem, 'id'> & {
   kind: BillableKind;
@@ -989,6 +982,7 @@ const InvoiceStep = ({
             depositCents={encounter.depositCents}
             withdrawDeposit={encounter.withdrawDeposit}
             overallDiscountPercent={encounter.overallDiscountPercent}
+            taxPercent={encounter.taxPercent}
             onToggleWithdrawDeposit={(value) => setWithdrawDeposit(appointmentId, value)}
             onChangeOverallDiscount={(percent) => setOverallDiscountPercent(appointmentId, percent)}
             onAddItem={handleAddItem}

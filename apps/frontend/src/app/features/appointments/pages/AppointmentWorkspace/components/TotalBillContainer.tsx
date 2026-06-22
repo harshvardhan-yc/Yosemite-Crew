@@ -4,16 +4,8 @@ import SearchResultsDropdown from '@/app/features/appointments/pages/Appointment
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
-import type { InvoiceLineItem } from '@/app/features/appointments/types/workspace';
+import type { BillableKind, InvoiceLineItem } from '@/app/features/appointments/types/workspace';
 import { formatMoney } from '@/app/lib/money';
-
-/** Origin of a searchable bill item; rendered as a pill in the search dropdown. */
-export type BillableKind =
-  | 'EXISTING_TREATMENT'
-  | 'IN_HOUSE_PRESCRIPTION'
-  | 'PACKAGE_COMPONENT'
-  | 'BILLING_ONLY'
-  | 'INVENTORY';
 
 export type BillableSearchItem = Omit<InvoiceLineItem, 'id'> & { kind?: BillableKind };
 
@@ -52,6 +44,8 @@ type TotalBillContainerProps = {
   depositCents: number;
   withdrawDeposit: boolean;
   overallDiscountPercent: number;
+  /** Backend tax rate for this bill; drives the exclusive-of-tax footer copy. */
+  taxPercent?: number;
   onToggleWithdrawDeposit: (value: boolean) => void;
   onChangeOverallDiscount: (percent: number) => void;
   onAddItem: (item: Omit<InvoiceLineItem, 'id'>) => void;
@@ -67,8 +61,10 @@ const formatCents = (cents: number, currency = 'USD'): string => formatMoney(cen
 
 const useCurrency = () => React.useContext(CurrencyContext);
 
-// Totals are shown exclusive of taxes — taxes are finalised by the finance/tax provider at
-// invoice finalisation, not estimated in the workspace.
+// Totals are estimated exclusive of tax — the backend operates in exclusive-tax
+// mode, finalising tax via the finance/tax provider at invoice finalisation. The
+// footer copy reflects the backend tax rate (taxPercent) rather than asserting a
+// flat "exclusive of taxes" when no rate applies.
 const buildTotals = (
   items: InvoiceLineItem[],
   discountPercent: number,
@@ -342,6 +338,7 @@ const TotalsFooter = ({
   depositCents,
   overallDiscountPercent,
   withdrawDeposit,
+  taxPercent,
   onToggleWithdrawDeposit,
   onChangeOverallDiscount,
 }: {
@@ -349,6 +346,7 @@ const TotalsFooter = ({
   depositCents: number;
   overallDiscountPercent: number;
   withdrawDeposit: boolean;
+  taxPercent: number;
   onToggleWithdrawDeposit: (value: boolean) => void;
   onChangeOverallDiscount: (percent: number) => void;
 }) => {
@@ -415,7 +413,7 @@ const TotalsFooter = ({
         />
         <FooterBreakdownRow label="Estimated Total:" value={money(totals.estimatedTotalCents)} />
         <p className="text-right" style={FOOTER_HELPER_TEXT_STYLE}>
-          Exclusive of taxes
+          {taxPercent > 0 ? `Exclusive of ${taxPercent}% tax` : 'No tax applied'}
         </p>
       </div>
     </div>
@@ -430,6 +428,7 @@ const TotalBillContainer = ({
   depositCents,
   withdrawDeposit,
   overallDiscountPercent,
+  taxPercent = 0,
   onToggleWithdrawDeposit,
   onChangeOverallDiscount,
   onAddItem,
@@ -538,6 +537,7 @@ const TotalBillContainer = ({
             depositCents={depositCents}
             overallDiscountPercent={overallDiscountPercent}
             withdrawDeposit={withdrawDeposit}
+            taxPercent={taxPercent}
             onToggleWithdrawDeposit={onToggleWithdrawDeposit}
             onChangeOverallDiscount={onChangeOverallDiscount}
           />
