@@ -4,6 +4,8 @@ import {
   CaseEncounterServiceError,
 } from "../../src/services/case-encounter.service";
 import { CatalogService } from "../../src/services/catalog.service";
+import { WorkspaceService } from "../../src/services/workspace.prisma.service";
+import { AuditTrailService } from "../../src/services/audit-trail.service";
 import { prisma } from "../../src/config/prisma";
 
 jest.mock("../../src/services/catalog.service", () => ({
@@ -19,6 +21,18 @@ jest.mock("../../src/services/catalog.service", () => ({
   },
   CatalogService: {
     resolveSelection: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/workspace.prisma.service", () => ({
+  WorkspaceService: {
+    getEncounterFinalizationGate: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/audit-trail.service", () => ({
+  AuditTrailService: {
+    recordSafely: jest.fn(),
   },
 }));
 
@@ -84,6 +98,8 @@ const mockedPrisma = prisma as any;
 const mockedCatalogService = CatalogService as unknown as {
   resolveSelection: jest.Mock;
 };
+const mockedWorkspaceService = WorkspaceService as any;
+const mockedAuditTrailService = AuditTrailService as any;
 
 const baseCaseRow = {
   id: "case_1",
@@ -128,6 +144,18 @@ describe("CaseEncounterService", () => {
     } as never);
     mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue(null);
     mockedPrisma.admission.findMany.mockResolvedValue([] as never);
+    mockedWorkspaceService.getEncounterFinalizationGate.mockResolvedValue({
+      enabled: true,
+      disabledReason: null,
+      requiredSoapOrDischargeComplete: true,
+      requiredFormsSigned: true,
+      pendingLabsResolved: true,
+      billingReady: true,
+      pendingDispenseRequestsResolved: true,
+      inpatientRoomAdmissionReady: true,
+      requiredTasksComplete: true,
+    });
+    mockedAuditTrailService.recordSafely.mockResolvedValue(undefined);
     mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([]);
     mockedPrisma.workspaceTreatmentItem.create.mockResolvedValue({
       id: "ti_1",
@@ -726,6 +754,118 @@ describe("CaseEncounterService", () => {
     expect(result.admission?.dischargedAt?.toISOString()).toBe(
       "2026-06-11T12:00:00.000Z",
     );
+  });
+
+  it("blocks discharge when the finalization gate is disabled and no override reason is provided", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "onleave",
+    } as never);
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      patientId: "comp_1",
+      unitId: null,
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+    mockedWorkspaceService.getEncounterFinalizationGate.mockResolvedValueOnce({
+      enabled: false,
+      disabledReason: "Required forms are still pending.",
+      requiredSoapOrDischargeComplete: true,
+      requiredFormsSigned: false,
+      pendingLabsResolved: true,
+      billingReady: true,
+      pendingDispenseRequestsResolved: true,
+      inpatientRoomAdmissionReady: true,
+      requiredTasksComplete: true,
+    });
+
+    await expect(
+      CaseEncounterService.dischargeEncounter("enc_1", {
+        dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      message: "Required forms are still pending.",
+      statusCode: 409,
+    } satisfies Partial<CaseEncounterServiceError>);
+  });
+
+  it("allows discharge with an override reason and records the audit trail", async () => {
+    mockedPrisma.encounter.findUnique.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "onleave",
+    } as never);
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      patientId: "comp_1",
+      unitId: null,
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+    mockedWorkspaceService.getEncounterFinalizationGate.mockResolvedValueOnce({
+      enabled: false,
+      disabledReason: "Pending labs still block finalization.",
+      requiredSoapOrDischargeComplete: true,
+      requiredFormsSigned: false,
+      pendingLabsResolved: false,
+      billingReady: true,
+      pendingDispenseRequestsResolved: true,
+      inpatientRoomAdmissionReady: true,
+      requiredTasksComplete: true,
+    });
+    mockedPrisma.roomUnitAssignment.findFirst.mockResolvedValue(null);
+    mockedPrisma.admission.update.mockResolvedValue({
+      encounterId: "enc_1",
+    } as never);
+    mockedPrisma.encounter.update.mockResolvedValue({
+      ...baseEncounterRow,
+      status: "finished",
+      periodEnd: new Date("2026-06-11T12:00:00.000Z"),
+    } as never);
+    mockedAuditTrailService.recordSafely.mockResolvedValue(undefined);
+
+    const result = await CaseEncounterService.dischargeEncounter("enc_1", {
+      dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
+      overrideReason: "Clinical lead approved override.",
+      actorUserId: "user_1",
+    });
+
+    expect(
+      mockedWorkspaceService.getEncounterFinalizationGate,
+    ).toHaveBeenCalledWith({
+      organisationId: "org_1",
+      encounterId: "enc_1",
+    });
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "ENCOUNTER_DISCHARGE_OVERRIDDEN",
+        actorType: "PMS_USER",
+        actorId: "user_1",
+        entityType: "ENCOUNTER",
+        entityId: "enc_1",
+        metadata: expect.objectContaining({
+          overrideReason: "Clinical lead approved override.",
+        }),
+      }),
+    );
+    expect(mockedAuditTrailService.recordSafely).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "ENCOUNTER_DISCHARGED",
+        actorType: "PMS_USER",
+        actorId: "user_1",
+        entityType: "ENCOUNTER",
+        entityId: "enc_1",
+      }),
+    );
+    expect(result.status).toBe("finished");
   });
 
   it("rejects closing a finished encounter when marking ready for discharge", async () => {

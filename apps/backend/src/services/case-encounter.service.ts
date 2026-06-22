@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
+import { AuditTrailService } from "./audit-trail.service";
+import { WorkspaceService } from "./workspace.prisma.service";
 import type {
   Admission as AdmissionDomain,
   AppointmentKind,
@@ -9,6 +11,7 @@ import type {
   Encounter as EncounterDomain,
   EncounterClass,
   EncounterStatus,
+  WorkspaceFinalizationGate,
 } from "@yosemite-crew/types";
 
 type CaseRow = {
@@ -1370,11 +1373,17 @@ export const CaseEncounterService = {
 
   async dischargeEncounter(
     encounterId: string,
-    input?: { dischargedAt?: Date; periodEnd?: Date },
+    input?: {
+      dischargedAt?: Date;
+      periodEnd?: Date;
+      overrideReason?: string;
+      actorUserId?: string | null;
+    },
   ): Promise<EncounterDomain> {
     const id = requireString(encounterId, "encounterId");
     assertPeriod(undefined, input?.dischargedAt);
     assertPeriod(undefined, input?.periodEnd);
+    let finalizationGate: WorkspaceFinalizationGate | null = null;
 
     const updatedEncounter = await prisma.$transaction(async (tx) => {
       const encounter = (await tx.encounter.findUnique({
@@ -1402,6 +1411,19 @@ export const CaseEncounterService = {
       if (admission.dischargedAt) {
         throw new CaseEncounterServiceError(
           "Admission is already discharged.",
+          409,
+        );
+      }
+
+      finalizationGate = await WorkspaceService.getEncounterFinalizationGate({
+        organisationId: encounter.organisationId,
+        encounterId: id,
+      });
+      const overrideReason = input?.overrideReason?.trim();
+      if (!finalizationGate.enabled && !overrideReason) {
+        throw new CaseEncounterServiceError(
+          finalizationGate.disabledReason ??
+            "Encounter finalization gate is blocking discharge.",
           409,
         );
       }
@@ -1446,6 +1468,45 @@ export const CaseEncounterService = {
           periodEnd: nextPeriodEnd,
         },
       })) as EncounterRow;
+    });
+
+    const overrideReason = input?.overrideReason?.trim();
+    const resolvedFinalizationGate = finalizationGate;
+
+    if (overrideReason) {
+      await AuditTrailService.recordSafely({
+        organisationId: updatedEncounter.organisationId,
+        patientId: updatedEncounter.patientId,
+        eventType: "ENCOUNTER_DISCHARGE_OVERRIDDEN",
+        actorType: input?.actorUserId ? "PMS_USER" : "SYSTEM",
+        actorId: input?.actorUserId ?? null,
+        entityType: "ENCOUNTER",
+        entityId: updatedEncounter.id,
+        metadata: {
+          encounterId: updatedEncounter.id,
+          overrideReason,
+          finalizationGate: resolvedFinalizationGate,
+        },
+        occurredAt: input?.dischargedAt ?? new Date(),
+      });
+    }
+
+    await AuditTrailService.recordSafely({
+      organisationId: updatedEncounter.organisationId,
+      patientId: updatedEncounter.patientId,
+      eventType: "ENCOUNTER_DISCHARGED",
+      actorType: input?.actorUserId ? "PMS_USER" : "SYSTEM",
+      actorId: input?.actorUserId ?? null,
+      entityType: "ENCOUNTER",
+      entityId: updatedEncounter.id,
+      metadata: {
+        encounterId: updatedEncounter.id,
+        dischargedAt: input?.dischargedAt?.toISOString?.() ?? undefined,
+        periodEnd: input?.periodEnd?.toISOString?.() ?? undefined,
+        overrideReason,
+        finalizationGate: resolvedFinalizationGate,
+      },
+      occurredAt: input?.dischargedAt ?? new Date(),
     });
 
     return (
