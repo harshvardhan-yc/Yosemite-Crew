@@ -380,8 +380,8 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
     if (!organisationId || dischargeSaved) return;
     if (!isRichTextEmpty(encounter.dischargeSummary) || dischargeTemplate) return;
     let cancelled = false;
-    const serviceLine = encounter.services.find((item) => item.kind === 'SERVICE');
-    const packageLine = encounter.services.find((item) => item.kind === 'PACKAGE');
+    const serviceLine = encounter.services?.find((item) => item.kind === 'SERVICE');
+    const packageLine = encounter.services?.find((item) => item.kind === 'PACKAGE');
     resolveDischargeTemplate({
       organisationId,
       appointmentId,
