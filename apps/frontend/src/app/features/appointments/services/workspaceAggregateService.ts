@@ -1,5 +1,5 @@
 import api, { deleteData, getData, patchData, postData } from '@/app/services/axios';
-import type { WorkspaceDocumentRow } from '@yosemite-crew/types';
+import type { WorkspaceDocumentRow, WorkspaceDocumentPacketSigning } from '@yosemite-crew/types';
 import type {
   AppointmentEncounter,
   DiagnosticOrder,
@@ -15,16 +15,13 @@ export type WorkspaceBootstrapDTO = Record<string, unknown>;
 export type WorkspaceDocumentDTO = Record<string, unknown>;
 export type TreatmentItemDTO = Record<string, unknown>;
 
-export interface WorkspaceDocumentPacketSigningDTO {
-  status?: string;
-  signingUrl?: string | null;
-  pdf?: { url?: string | null };
-}
-
 export interface WorkspaceDocumentPacketDTO {
   packetId?: string;
   status?: string;
-  signing?: WorkspaceDocumentPacketSigningDTO | null;
+  // Use the shared signing contract type — it has no Date fields so it imports
+  // cleanly over the wire. (The full WorkspaceDocumentPacketRow has string-vs-Date
+  // drift, so we keep this thin DTO rather than importing the whole row.)
+  signing?: WorkspaceDocumentPacketSigning | null;
   [key: string]: unknown;
 }
 
