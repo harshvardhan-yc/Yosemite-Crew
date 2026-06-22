@@ -5,7 +5,10 @@ const withOrgPermissions = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
 
 const PrescriptionController = {
+  listDispenseRequests: jest.fn(),
+  getDispenseRequest: jest.fn(),
   reserve: jest.fn(),
+  notDispensed: jest.fn(),
   dispense: jest.fn(),
   returnPrescription: jest.fn(),
   voidDispense: jest.fn(),
@@ -47,7 +50,31 @@ describe("prescription.router", () => {
   it("exposes prescription action routes", () => {
     expect(
       findRoute(
+        "/organisations/:organisationId/prescription-dispense-requests",
+        "get",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        "/organisations/:organisationId/prescription-dispense-requests/:dispenseRequestId",
+        "get",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
         String.raw`/organisations/:organisationId/:prescriptionId/\$reserve`,
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        String.raw`/organisations/:organisationId/:prescriptionId/\$approve`,
+        "post",
+      ),
+    ).toBeDefined();
+    expect(
+      findRoute(
+        String.raw`/organisations/:organisationId/:prescriptionId/\$not-dispensed`,
         "post",
       ),
     ).toBeDefined();
