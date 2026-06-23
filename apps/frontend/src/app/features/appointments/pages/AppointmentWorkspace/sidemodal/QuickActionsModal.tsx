@@ -167,6 +167,8 @@ const QuickActionsModal = ({
               organisationId={organisationId}
               encounterId={encounterId}
               authorId={authorId}
+              authorName={appointment.lead?.name}
+              companionId={companion.id}
             />
           )}
           {activeAction === 'TASKS' && (
@@ -180,7 +182,12 @@ const QuickActionsModal = ({
             />
           )}
           {activeAction === 'DOCUMENTS' && (
-            <DocumentsPanel appointmentId={appointmentId} companionId={companion.id} />
+            <DocumentsPanel
+              appointmentId={appointmentId}
+              companionId={companion.id}
+              organisationId={organisationId}
+              encounterId={encounterId}
+            />
           )}
           {activeAction === 'CHAT' && <ChatPanel appointment={appointment} />}
           {activeAction === 'ACTIVITY' && <ActivityPanel appointment={appointment} />}

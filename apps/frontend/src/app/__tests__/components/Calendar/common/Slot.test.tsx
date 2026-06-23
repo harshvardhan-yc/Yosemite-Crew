@@ -14,7 +14,11 @@ jest.useFakeTimers();
 
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ alt }: any) => <span data-testid="mock-next-image">{alt || ''}</span>,
+  default: ({ alt, width }: any) => (
+    <span data-testid="mock-next-image" data-width={width}>
+      {alt || ''}
+    </span>
+  ),
 }));
 
 jest.mock('@/app/ui/tables/Appointments', () => ({
@@ -216,6 +220,31 @@ describe('Slot (Appointments)', () => {
       screen.queryByText('Very long concern that should not be rendered in compact markers')
     ).not.toBeInTheDocument();
     expect(screen.queryByText('Checkup')).not.toBeInTheDocument();
+  });
+
+  it('shows a compact companion avatar for short single-lane markers', () => {
+    const shortEvent = {
+      ...event,
+      startTime: new Date('2025-01-06T09:00:00Z'),
+      endTime: new Date('2025-01-06T09:05:00Z'),
+    };
+
+    render(
+      <Slot
+        slotEvents={[shortEvent]}
+        height={120}
+        handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
+        handleRescheduleAppointment={handleRescheduleAppointment}
+        dayIndex={0}
+        length={1}
+        canEditAppointments
+      />
+    );
+
+    const image = screen.getByTestId('mock-next-image');
+    expect(image).toBeInTheDocument();
+    expect(image).toHaveAttribute('data-width', '24');
   });
 
   it('creates appointment when empty slot is clicked', () => {

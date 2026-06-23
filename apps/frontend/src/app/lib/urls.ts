@@ -44,6 +44,29 @@ export const getSafeIdexxIframeUrl = (
   }
 };
 
+const LOCAL_PREVIEW_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+export const getSafePdfPreviewUrl = (
+  src: string | null | undefined,
+  options?: { allowBlob?: boolean }
+): string => {
+  const value = String(src ?? '').trim();
+  if (!value) return '';
+  if (options?.allowBlob && value.startsWith('blob:')) return value;
+  if (value.startsWith('/') && !value.startsWith('//') && !value.includes('\\')) return value;
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === 'https:') return parsed.toString();
+    if (parsed.protocol === 'http:' && LOCAL_PREVIEW_HOSTS.has(parsed.hostname)) {
+      return parsed.toString();
+    }
+    return '';
+  } catch {
+    return '';
+  }
+};
+
 const getAllowedDocumensoOrigin = (): string => {
   const configuredOrigin = process.env.NEXT_PUBLIC_DOCUMENSO_HOST ?? DEFAULT_DOCUMENSO_ORIGIN;
 

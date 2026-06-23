@@ -12,11 +12,23 @@ import {
   applyInpatientScheduleTemplate,
   createWorkspaceTemplateInstance,
   listInpatientScheduleTemplates,
+  pauseInpatientScheduleTemplate,
+  cancelInpatientScheduleTemplate,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
+import {
+  getAppointmentWorkspaceBootstrap,
+  persistTreatmentItems,
+} from '@/app/features/appointments/services/workspaceAggregateService';
 
 jest.mock('@/app/features/inventory/services/inventoryService', () => ({
   fetchInventoryItems: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('@/app/features/appointments/services/workspaceAggregateService', () => ({
+  persistTreatmentItems: jest.fn().mockResolvedValue(undefined),
+  getAppointmentWorkspaceBootstrap: jest.fn().mockResolvedValue({}),
+  normalizeWorkspaceBootstrapForEncounter: jest.fn().mockReturnValue({}),
 }));
 
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
@@ -30,10 +42,16 @@ jest.mock('@/app/features/appointments/services/workspaceTemplateService', () =>
   getInpatientScheduleForEncounter: jest
     .fn()
     .mockResolvedValue({ resourceType: 'Bundle', entry: [] }),
+  pauseInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
+  resumeInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
+  cancelInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
+  regenerateInpatientScheduleTemplate: jest.fn().mockResolvedValue({ resourceType: 'Task' }),
 }));
 
 jest.mock('@/app/features/tasks/services/taskService', () => ({
   loadTasksForPrimaryOrg: jest.fn().mockResolvedValue(undefined),
+  changeTaskStatus: jest.fn().mockResolvedValue(undefined),
+  updateTask: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/app/hooks/useTeam', () => ({
@@ -283,6 +301,10 @@ describe('TreatmentStep', () => {
     (createWorkspaceTemplateInstance as jest.Mock).mockClear();
     (listInpatientScheduleTemplates as jest.Mock).mockClear();
     (loadTasksForPrimaryOrg as jest.Mock).mockClear();
+    (persistTreatmentItems as jest.Mock).mockClear();
+    (persistTreatmentItems as jest.Mock).mockResolvedValue(undefined);
+    (getAppointmentWorkspaceBootstrap as jest.Mock).mockClear();
+    (getAppointmentWorkspaceBootstrap as jest.Mock).mockResolvedValue({});
     (applyInpatientScheduleTemplate as jest.Mock).mockResolvedValue({ resourceType: 'Task' });
     (createWorkspaceTemplateInstance as jest.Mock).mockResolvedValue({ id: 'instance-1' });
     (listInpatientScheduleTemplates as jest.Mock).mockResolvedValue([]);
@@ -533,6 +555,54 @@ describe('TreatmentStep', () => {
     printSpy.mockRestore();
   });
 
+  it('persists staged treatment items, rehydrates, then opens the invoice', async () => {
+    const onOpenInvoice = jest.fn();
+    const enc = seedAndGet();
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        encounter={enc}
+        onOpenInvoice={onOpenInvoice}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /save treatment/i }));
+
+    await waitFor(() => expect(onOpenInvoice).toHaveBeenCalled());
+    expect(persistTreatmentItems).toHaveBeenCalledWith(ORG, 'enc-1', enc.services);
+    expect(getAppointmentWorkspaceBootstrap).toHaveBeenCalledWith(ORG, APPT);
+    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.stepStatus.TREATMENT).toBe(
+      'COMPLETED'
+    );
+  });
+
+  it('blocks the invoice and shows an error when treatment persistence fails', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (persistTreatmentItems as jest.Mock).mockRejectedValueOnce(new Error('save failed'));
+    const onOpenInvoice = jest.fn();
+    const enc = seedAndGet();
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        encounter={enc}
+        onOpenInvoice={onOpenInvoice}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /save treatment/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to save treatment items');
+    expect(onOpenInvoice).not.toHaveBeenCalled();
+    expect(
+      useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.stepStatus.TREATMENT
+    ).not.toBe('COMPLETED');
+    errorSpy.mockRestore();
+  });
+
   it('renders inpatient schedule and adds a manual task', () => {
     const enc = seedAndGet('INPATIENT');
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
@@ -543,6 +613,49 @@ describe('TreatmentStep', () => {
     expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.schedule).toHaveLength(
       before + 1
     );
+  });
+
+  it('navigates schedule days and filters tasks by the selected day', () => {
+    const todayString = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const enc = seedAndGet('INPATIENT');
+    // A task scoped to today should appear on the default day and disappear when
+    // navigating away — exercising the real day-window filter.
+    const datedEncounter = {
+      ...enc,
+      schedule: [
+        {
+          id: 'sch-today',
+          time: '09:00 AM',
+          description: 'Day-scoped observation',
+          category: 'Record' as const,
+          assignedToName: 'Sarah Mitchell',
+          status: 'UPCOMING' as const,
+          autoGenerated: false,
+          startDate: todayString,
+          endDate: todayString,
+        },
+      ],
+    };
+    render(
+      <TreatmentStep appointmentId={APPT} encounter={datedEncounter} onOpenInvoice={jest.fn()} />
+    );
+
+    // Header shows today's date, not a hardcoded value.
+    expect(screen.getByText(`Today ${todayString}`)).toBeInTheDocument();
+    expect(screen.getByText('Day-scoped observation')).toBeInTheDocument();
+
+    // Moving to the next day hides the day-scoped task...
+    fireEvent.click(screen.getByRole('button', { name: /next day/i }));
+    expect(screen.queryByText('Day-scoped observation')).not.toBeInTheDocument();
+    expect(screen.getByText('No schedule tasks for this day.')).toBeInTheDocument();
+
+    // ...and returning to today shows it again.
+    fireEvent.click(screen.getByRole('button', { name: /previous day/i }));
+    expect(screen.getByText('Day-scoped observation')).toBeInTheDocument();
   });
 
   it('applies an inpatient schedule template and refreshes tasks', async () => {
@@ -585,6 +698,81 @@ describe('TreatmentStep', () => {
     expect(loadTasksForPrimaryOrg).toHaveBeenCalledWith({ force: true, silent: true });
   });
 
+  it('exposes schedule lifecycle controls after applying a template and pauses via backend', async () => {
+    (listInpatientScheduleTemplates as jest.Mock).mockResolvedValue([
+      {
+        id: 'tpl-care',
+        name: 'Post-op care pathway',
+        kind: 'INPATIENT_SCHEDULE',
+        status: 'PUBLISHED',
+      },
+    ]);
+    const enc = seedAndGet('INPATIENT');
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        authorId="user-1"
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
+
+    // No lifecycle controls until a schedule instance is applied.
+    expect(screen.queryByRole('button', { name: /^pause$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: /load schedule template/i }));
+    fireEvent.click(screen.getByRole('button', { name: /post-op care pathway/i }));
+    await waitFor(() => expect(applyInpatientScheduleTemplate).toHaveBeenCalled());
+
+    // Controls now appear; pausing calls the backend and refreshes tasks.
+    const pauseBtn = await screen.findByRole('button', { name: /^pause$/i });
+    fireEvent.click(pauseBtn);
+    await waitFor(() =>
+      expect(pauseInpatientScheduleTemplate).toHaveBeenCalledWith(ORG, 'instance-1', {
+        notify: false,
+      })
+    );
+    // After pausing, the control flips to Resume.
+    expect(await screen.findByRole('button', { name: /resume/i })).toBeInTheDocument();
+  });
+
+  it('cancels an applied schedule and hides the lifecycle controls', async () => {
+    (listInpatientScheduleTemplates as jest.Mock).mockResolvedValue([
+      {
+        id: 'tpl-care',
+        name: 'Post-op care pathway',
+        kind: 'INPATIENT_SCHEDULE',
+        status: 'PUBLISHED',
+      },
+    ]);
+    const enc = seedAndGet('INPATIENT');
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounterId="enc-1"
+        authorId="user-1"
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /load schedule template/i }));
+    fireEvent.click(screen.getByRole('button', { name: /post-op care pathway/i }));
+    await waitFor(() => expect(applyInpatientScheduleTemplate).toHaveBeenCalled());
+
+    fireEvent.click(await screen.findByRole('button', { name: /cancel schedule/i }));
+    await waitFor(() =>
+      expect(cancelInpatientScheduleTemplate).toHaveBeenCalledWith(ORG, 'instance-1', {
+        notify: false,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /cancel schedule/i })).not.toBeInTheDocument()
+    );
+  });
+
   it('reschedule expands the row so the real time picker is used', () => {
     const enc = seedAndGet('INPATIENT');
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
@@ -608,8 +796,7 @@ describe('TreatmentStep', () => {
     const enc = seedAndGet('INPATIENT');
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
 
-    // Header day navigation + filter are present and clickable.
-    fireEvent.click(screen.getByRole('button', { name: /filter schedule/i }));
+    // Header day navigation is present and clickable.
     fireEvent.click(screen.getByRole('button', { name: /previous day/i }));
     fireEvent.click(screen.getByRole('button', { name: /next day/i }));
     // The first row is expanded by default, exposing the breakdown Record button.

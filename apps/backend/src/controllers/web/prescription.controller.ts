@@ -9,8 +9,10 @@ import {
   InventoryConsumptionService,
   InventoryConsumptionServiceError,
 } from "src/services/inventory-consumption.service";
+import { renderPrescriptionLabelPdf } from "src/services/rendered-document-renderer.service";
 import { createFhirErrorHandler } from "src/controllers/web/fhir-controller.shared";
 import { resolveUserIdFromRequest } from "src/utils/request";
+import logger from "src/utils/logger";
 
 const actionBodySchema = z.object({
   metadata: z.record(z.unknown()).optional(),
@@ -20,6 +22,11 @@ const actionBodySchema = z.object({
 const dispenseRequestListQuerySchema = z.object({
   status: z.enum(["PENDING", "NOT_DISPENSED", "DISPENSED"]).optional(),
   prescriptionId: z.string().trim().min(1).optional(),
+});
+
+const labelParamsSchema = z.object({
+  organisationId: z.string().trim().min(1),
+  prescriptionId: z.string().trim().min(1),
 });
 
 const handleError = createFhirErrorHandler({
@@ -64,6 +71,49 @@ const respondWithAction = (
   });
 
 export const PrescriptionController = {
+  async generateLabelPdf(req: Request, res: Response) {
+    try {
+      const params = labelParamsSchema.parse({
+        organisationId: req.params.organisationId,
+        prescriptionId: req.params.prescriptionId,
+      });
+
+      const pdf = await renderPrescriptionLabelPdf({
+        organisationId: params.organisationId,
+        prescriptionId: params.prescriptionId,
+      });
+
+      res.setHeader("Content-Type", "application/pdf");
+      // The label embeds patient/client/prescriber and controlled-substance details, so the
+      // response must never be cached by browsers or shared proxies (sensitive health data).
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="prescription-label-${params.prescriptionId}.pdf"`,
+      );
+      return res.status(200).send(pdf);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res
+          .status(400)
+          .json({ message: "Invalid prescription label request." });
+      }
+
+      if (
+        error instanceof Error &&
+        (error.message === "Prescription not found" ||
+          error.message === "Organisation not found")
+      ) {
+        return res.status(404).json({ message: error.message });
+      }
+
+      logger.error("Failed to generate prescription label PDF", { error });
+      return res
+        .status(500)
+        .json({ message: "Failed to generate prescription label PDF." });
+    }
+  },
+
   async listDispenseRequests(req: Request, res: Response) {
     try {
       const query = dispenseRequestListQuerySchema.parse(req.query ?? {});
@@ -87,6 +137,24 @@ export const PrescriptionController = {
           dispenseRequestId: req.params.dispenseRequestId,
         });
       return res.status(200).json(record);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async finalize(req: Request, res: Response) {
+    try {
+      const prescription = await ClinicalArtifactService.finalizePrescription(
+        req.params.prescriptionId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(
+          clinicalArtifactFhirMapper.prescriptionToMedicationRequest(
+            prescription,
+          ),
+        );
     } catch (error) {
       return handleError(error, res);
     }

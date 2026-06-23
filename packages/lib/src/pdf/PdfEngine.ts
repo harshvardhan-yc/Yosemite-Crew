@@ -16,6 +16,7 @@ import type {
 } from './types.js';
 import { renderDischargeSummaryTemplate } from './templates/DischargeSummaryTemplate.js';
 import { renderInvoiceTemplate } from './templates/InvoiceTemplate.js';
+import { renderPrescriptionLabelTemplate } from './templates/PrescriptionLabelTemplate.js';
 import { renderPrescriptionTemplate } from './templates/PrescriptionTemplate.js';
 import { renderSoapNoteTemplate } from './templates/SoapNoteTemplate.js';
 import { renderVitalRecordTemplate } from './templates/VitalRecordTemplate.js';
@@ -129,6 +130,8 @@ const renderDocumentByType = <TData extends BaseClinicalDocumentData>(
       return renderSoapNoteTemplate(ctx, data as never);
     case 'PRESCRIPTION':
       return renderPrescriptionTemplate(ctx, data as never);
+    case 'PRESCRIPTION_LABEL':
+      return renderPrescriptionLabelTemplate(ctx, data as never);
     case 'VITAL_RECORD':
       return renderVitalRecordTemplate(ctx, data as never);
     case 'INVOICE':

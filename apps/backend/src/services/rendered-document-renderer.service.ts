@@ -1,14 +1,18 @@
 import { TemplateKind } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import {
+  generateClinicalPdf,
   generateClinicalPdfWithMetadata,
   generateResolvedTemplatePdfWithMetadata,
   type ClinicalDocumentType,
   type DischargeSummaryDocumentData,
   type OrganizationBranding,
   type PrescriptionDocumentData,
+  type PrescriptionItem,
+  type PrescriptionLabelDocumentData,
   type ResolvedTemplatePdfInput,
   type SoapNoteDocumentData,
+  type VitalRecordDocumentData,
 } from "@yosemite-crew/lib";
 import { prisma } from "src/config/prisma";
 import {
@@ -606,6 +610,92 @@ const normalizePrescriptionItems = (
   });
 };
 
+const normalizeVitalMeasurements = (
+  value: unknown,
+): VitalRecordDocumentData["measurements"] => {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => {
+      if (isRecord(item)) {
+        const label =
+          readFirstString(item, ["label", "name", "title", "key"]) ??
+          `Measurement ${index + 1}`;
+        const measurementValue = readFirstString(item, ["value", "reading"]);
+        const unit = readFirstString(item, ["unit", "units"]);
+        const referenceRange = readFirstString(item, [
+          "referenceRange",
+          "reference",
+          "range",
+        ]);
+
+        if (
+          measurementValue !== undefined ||
+          unit !== undefined ||
+          referenceRange !== undefined
+        ) {
+          return [
+            {
+              label,
+              value: measurementValue ?? stringifyValue(item),
+              unit,
+              referenceRange,
+            },
+          ];
+        }
+      }
+
+      return [
+        {
+          label: `Measurement ${index + 1}`,
+          value: readString(item) ?? stringifyValue(item),
+        },
+      ];
+    });
+  }
+
+  if (isRecord(value)) {
+    if (
+      readFirstString(value, ["label", "name", "title", "key"]) !== undefined ||
+      readFirstString(value, ["value", "reading"]) !== undefined ||
+      readFirstString(value, ["unit", "units"]) !== undefined ||
+      readFirstString(value, ["referenceRange", "reference", "range"]) !==
+        undefined
+    ) {
+      return [
+        {
+          label:
+            readFirstString(value, ["label", "name", "title", "key"]) ??
+            "Measurement",
+          value:
+            readFirstString(value, ["value", "reading"]) ??
+            stringifyValue(value),
+          unit: readFirstString(value, ["unit", "units"]),
+          referenceRange: readFirstString(value, [
+            "referenceRange",
+            "reference",
+            "range",
+          ]),
+        },
+      ];
+    }
+
+    return Object.entries(value).map(([key, item]) => ({
+      label: humanizeLabel(key),
+      value: readString(item) ?? stringifyValue(item),
+    }));
+  }
+
+  return [
+    {
+      label: "Measurement 1",
+      value: readString(value) ?? stringifyValue(value),
+    },
+  ];
+};
+
 type AppointmentClinicalHeader = {
   leadName?: string;
   patientName?: string;
@@ -681,6 +771,65 @@ const loadAppointmentClinicalHeader = async (
   });
 };
 
+const readAppointmentIdField = (
+  record: ClinicalArtifactDocumentSource,
+  metadata: Record<string, unknown>,
+): string =>
+  record.artifact.appointmentId ??
+  readFirstString(metadata, ["appointmentId"]) ??
+  "—";
+
+const readPatientClientFields = (
+  header: AppointmentClinicalHeader,
+  metadata: Record<string, unknown>,
+): {
+  patientName: string;
+  speciesBreed: string;
+  ageSex: string;
+  clientName: string;
+  clientId: string;
+} => ({
+  patientName:
+    header.patientName ??
+    readFirstString(metadata, ["patientName", "patient"]) ??
+    "—",
+  speciesBreed:
+    header.speciesBreed ??
+    readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
+    "—",
+  ageSex:
+    header.ageSex ?? readFirstString(metadata, ["ageSex", "age", "sex"]) ?? "—",
+  clientName:
+    header.clientName ??
+    readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
+    "—",
+  clientId:
+    header.clientId ??
+    readFirstString(metadata, ["clientId", "ownerId"]) ??
+    "—",
+});
+
+const readPrintedByField = (
+  record: ClinicalArtifactDocumentSource,
+  metadata: Record<string, unknown>,
+): string | undefined =>
+  readFirstString(metadata, ["printedBy", "printedByName", "authorName"]) ??
+  readString(record.artifact.authorId);
+
+const buildPendingSignature = (): { status: "PENDING"; label: string } => ({
+  status: "PENDING",
+  label: "Signature",
+});
+
+const readRecordNotes = (
+  record: ClinicalArtifactDocumentSource,
+  metadata: Record<string, unknown>,
+): string =>
+  readString(record.data.notes) ??
+  readString(metadata.recordNotes) ??
+  readString(metadata.notes) ??
+  "";
+
 const buildTemplateFreeSoapNotePdfInput = async (
   input: RenderedDocumentPdfSource,
   record: ClinicalArtifactDocumentSource,
@@ -701,35 +850,13 @@ const buildTemplateFreeSoapNotePdfInput = async (
     data: {
       title: input.title,
       date: record.artifact.updatedAt,
-      appointmentId:
-        record.artifact.appointmentId ??
-        readFirstString(metadata, ["appointmentId"]) ??
-        "—",
+      appointmentId: readAppointmentIdField(record, metadata),
       doctorName:
         header.leadName ??
         readFirstString(metadata, ["doctorName", "providerName", "doctor"]) ??
         readString(record.artifact.authorId) ??
         "—",
-      patientName:
-        header.patientName ??
-        readFirstString(metadata, ["patientName", "patient"]) ??
-        "—",
-      speciesBreed:
-        header.speciesBreed ??
-        readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
-        "—",
-      ageSex:
-        header.ageSex ??
-        readFirstString(metadata, ["ageSex", "age", "sex"]) ??
-        "—",
-      clientName:
-        header.clientName ??
-        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
-        "—",
-      clientId:
-        header.clientId ??
-        readFirstString(metadata, ["clientId", "ownerId"]) ??
-        "—",
+      ...readPatientClientFields(header, metadata),
       subjective: (record.data.subjective ??
         metadata.subjective ??
         "") as unknown as string,
@@ -740,16 +867,8 @@ const buildTemplateFreeSoapNotePdfInput = async (
         metadata.assessment ??
         "") as unknown as string,
       plan: (record.data.plan ?? metadata.plan ?? "") as unknown as string,
-      printedBy:
-        readFirstString(metadata, [
-          "printedBy",
-          "printedByName",
-          "authorName",
-        ]) ?? readString(record.artifact.authorId),
-      signature: {
-        status: "PENDING",
-        label: "Signature",
-      },
+      printedBy: readPrintedByField(record, metadata),
+      signature: buildPendingSignature(),
     },
   };
 };
@@ -767,6 +886,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
   const header = await loadAppointmentClinicalHeader(
     record.artifact.appointmentId,
   );
+  const notes = readRecordNotes(record, metadata);
 
   return {
     documentType: "PRESCRIPTION",
@@ -774,10 +894,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
     data: {
       title: input.title,
       date: record.artifact.updatedAt,
-      appointmentId:
-        record.artifact.appointmentId ??
-        readFirstString(metadata, ["appointmentId"]) ??
-        "—",
+      appointmentId: readAppointmentIdField(record, metadata),
       prescriptionId: record.artifact.id,
       leadName:
         header.leadName ??
@@ -789,26 +906,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
         ]) ??
         readString(record.artifact.authorId) ??
         "—",
-      patientName:
-        header.patientName ??
-        readFirstString(metadata, ["patientName", "patient"]) ??
-        "—",
-      speciesBreed:
-        header.speciesBreed ??
-        readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
-        "—",
-      ageSex:
-        header.ageSex ??
-        readFirstString(metadata, ["ageSex", "age", "sex"]) ??
-        "—",
-      clientName:
-        header.clientName ??
-        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
-        "—",
-      clientId:
-        header.clientId ??
-        readFirstString(metadata, ["clientId", "ownerId"]) ??
-        "—",
+      ...readPatientClientFields(header, metadata),
       clientContact:
         header.clientContact ??
         readFirstString(metadata, [
@@ -821,17 +919,9 @@ const buildTemplateFreePrescriptionPdfInput = async (
       items: normalizePrescriptionItems(
         record.data.items ?? record.data.medications,
       ),
-      notes: (record.data.notes ?? metadata.notes ?? "") as unknown as string,
-      printedBy:
-        readFirstString(metadata, [
-          "printedBy",
-          "printedByName",
-          "authorName",
-        ]) ?? readString(record.artifact.authorId),
-      signature: {
-        status: "PENDING",
-        label: "Signature",
-      },
+      notes,
+      printedBy: readPrintedByField(record, metadata),
+      signature: buildPendingSignature(),
     },
   };
 };
@@ -865,35 +955,13 @@ const buildTemplateFreeDischargeSummaryPdfInput = async (
     data: {
       title: input.title,
       date: record.artifact.updatedAt,
-      appointmentId:
-        record.artifact.appointmentId ??
-        readFirstString(metadata, ["appointmentId"]) ??
-        "—",
+      appointmentId: readAppointmentIdField(record, metadata),
       doctorName:
         header.leadName ??
         readFirstString(metadata, ["doctorName", "providerName", "doctor"]) ??
         readString(record.artifact.authorId) ??
         "—",
-      patientName:
-        header.patientName ??
-        readFirstString(metadata, ["patientName", "patient"]) ??
-        "—",
-      speciesBreed:
-        header.speciesBreed ??
-        readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
-        "—",
-      ageSex:
-        header.ageSex ??
-        readFirstString(metadata, ["ageSex", "age", "sex"]) ??
-        "—",
-      clientName:
-        header.clientName ??
-        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
-        "—",
-      clientId:
-        header.clientId ??
-        readFirstString(metadata, ["clientId", "ownerId"]) ??
-        "—",
+      ...readPatientClientFields(header, metadata),
       contact:
         header.clientContact ??
         readFirstString(metadata, ["contact", "phone", "phoneNo"]) ??
@@ -923,16 +991,59 @@ const buildTemplateFreeDischargeSummaryPdfInput = async (
         metadata.contact ??
         readFirstString(metadata, ["contact", "phone"]) ??
         "—") as unknown as string,
-      printedBy:
+      printedBy: readPrintedByField(record, metadata),
+      signature: buildPendingSignature(),
+    },
+  };
+};
+
+const buildTemplateFreeVitalRecordPdfInput = async (
+  input: RenderedDocumentPdfSource,
+  record: ClinicalArtifactDocumentSource,
+  organization: OrganizationBranding,
+): Promise<{
+  documentType: ClinicalDocumentType;
+  organization: OrganizationBranding;
+  data: VitalRecordDocumentData;
+}> => {
+  const metadata = readMetadata(record.data.metadata);
+  const header = await loadAppointmentClinicalHeader(
+    record.artifact.appointmentId,
+  );
+  const notes = readRecordNotes(record, metadata);
+
+  return {
+    documentType: "VITAL_RECORD",
+    organization,
+    data: {
+      title: input.title,
+      date: record.artifact.updatedAt,
+      appointmentId: readAppointmentIdField(record, metadata),
+      recordedBy:
+        header.leadName ??
         readFirstString(metadata, [
-          "printedBy",
-          "printedByName",
+          "recordedBy",
+          "recordedByName",
+          "doctorName",
+          "providerName",
+          "doctor",
           "authorName",
-        ]) ?? readString(record.artifact.authorId),
-      signature: {
-        status: "PENDING",
-        label: "Signature",
-      },
+        ]) ??
+        readString(record.artifact.authorId) ??
+        "—",
+      ...readPatientClientFields(header, metadata),
+      contact:
+        header.clientContact ??
+        readFirstString(metadata, ["contact", "phone", "phoneNo", "email"]) ??
+        "—",
+      measurements: normalizeVitalMeasurements(
+        record.data.vitals ?? metadata.vitals ?? metadata.vitalRows,
+      ),
+      notes,
+      metadata:
+        record.data.metadata !== undefined ? record.data.metadata : metadata,
+      printedBy: readPrintedByField(record, metadata),
+      signature: buildPendingSignature(),
     },
   };
 };
@@ -963,6 +1074,10 @@ const renderTemplateFreeClinicalArtifactPdf = async (
           organization,
         ),
       );
+    case "VITAL_RECORD":
+      return generateClinicalPdfWithMetadata(
+        await buildTemplateFreeVitalRecordPdfInput(input, record, organization),
+      );
     default:
       return undefined;
   }
@@ -976,13 +1091,25 @@ const buildClinicalArtifactResolvedTemplate = async (
     return undefined;
   }
 
-  const templateVersion =
-    record.artifact.templateVersion === null
-      ? await loadLatestTemplateVersionOrThrow(record.artifact.templateId)
-      : await loadTemplateVersionOrThrow(
-          record.artifact.templateId,
-          record.artifact.templateVersion,
-        );
+  let templateVersion;
+  try {
+    templateVersion =
+      record.artifact.templateVersion === null
+        ? await loadLatestTemplateVersionOrThrow(record.artifact.templateId)
+        : await loadTemplateVersionOrThrow(
+            record.artifact.templateId,
+            record.artifact.templateVersion,
+          );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "Template version not found"
+    ) {
+      return undefined;
+    }
+
+    throw error;
+  }
 
   return {
     templateId: record.artifact.templateId,
@@ -1252,7 +1379,12 @@ export const renderRenderedDocumentPdfWithMetadata = async (
         input.source.organisationId,
       );
 
-      if (record.artifact.templateId === null) {
+      const template = await buildClinicalArtifactResolvedTemplate(
+        input,
+        record,
+      );
+
+      if (!template) {
         const templateFreeRender = await renderTemplateFreeClinicalArtifactPdf(
           input,
           record,
@@ -1262,19 +1394,13 @@ export const renderRenderedDocumentPdfWithMetadata = async (
         if (templateFreeRender) {
           return templateFreeRender;
         }
+
+        throw new Error("Clinical artifact template version not found");
       }
 
-      const template = await buildClinicalArtifactResolvedTemplate(
-        input,
-        record,
-      );
       const appointmentHeader = await loadAppointmentClinicalHeader(
         record.artifact.appointmentId,
       );
-
-      if (!template) {
-        throw new Error("Clinical artifact template version not found");
-      }
 
       return generateResolvedTemplatePdfWithMetadata(
         buildResolvedTemplatePdfInput(input, organization, template, {
@@ -1291,3 +1417,184 @@ export const renderRenderedDocumentPdfWithMetadata = async (
 export const renderRenderedDocumentPdf = async (
   input: RenderedDocumentPdfSource,
 ) => (await renderRenderedDocumentPdfWithMetadata(input)).pdf;
+
+type PrescriptionItemRow = {
+  medication: string;
+  strength: string | null;
+  dosage: string | null;
+  route: string | null;
+  frequency: string | null;
+  duration: string | null;
+  quantity: string | null;
+  instructions: string | null;
+  sortOrder: number;
+};
+
+type PrescriptionLabelRecord = {
+  id: string;
+  organisationId: string;
+  appointmentId: string | null;
+  authorId: string | null;
+  updatedAt: Date;
+  items: PrescriptionItemRow[];
+  medications: Prisma.JsonValue | null;
+  metadata: Prisma.JsonValue | null;
+};
+
+export type PrescriptionLabelPdfInput = {
+  organisationId: string;
+  prescriptionId: string;
+  title?: string;
+};
+
+const PRESCRIPTION_LABEL_DEFAULT_TITLE = "Prescription Label";
+
+const readInventoryItemId = (line: unknown): string | undefined =>
+  isRecord(line) ? readString(line.inventoryItemId) : undefined;
+
+const collectMedicationInventoryIds = (medications: unknown): string[] => {
+  if (!Array.isArray(medications)) {
+    return [];
+  }
+
+  return medications.map((line) => readInventoryItemId(line) ?? "");
+};
+
+const loadControlledItemFlags = async (
+  organisationId: string,
+  inventoryItemIds: string[],
+): Promise<Map<string, boolean>> => {
+  const uniqueIds = Array.from(
+    new Set(inventoryItemIds.filter((id) => id.length > 0)),
+  );
+
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const records = await prisma.inventoryItem.findMany({
+    where: { organisationId, id: { in: uniqueIds } },
+    select: { id: true, controlledItem: true },
+  });
+
+  return new Map(records.map((record) => [record.id, record.controlledItem]));
+};
+
+const buildPrescriptionLabelItems = (
+  rows: PrescriptionItemRow[],
+  inventoryIdsByIndex: string[],
+  controlledFlags: Map<string, boolean>,
+): PrescriptionItem[] =>
+  rows
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((row, index) => {
+      const inventoryItemId = inventoryIdsByIndex[index] ?? "";
+      const controlled =
+        inventoryItemId.length > 0
+          ? (controlledFlags.get(inventoryItemId) ?? false)
+          : false;
+
+      return {
+        medication: row.medication,
+        strength: row.strength ?? undefined,
+        dosage: row.dosage ?? undefined,
+        route: row.route ?? undefined,
+        frequency: row.frequency ?? undefined,
+        duration: row.duration ?? undefined,
+        quantity: row.quantity ?? undefined,
+        instructions: row.instructions ?? undefined,
+        controlled,
+      };
+    });
+
+const loadPrescriptionLabelRecord = async (
+  organisationId: string,
+  prescriptionId: string,
+): Promise<PrescriptionLabelRecord> => {
+  const record = await prisma.prescription.findFirst({
+    where: {
+      OR: [{ id: prescriptionId }, { artifactId: prescriptionId }],
+      artifact: { organisationId, kind: "PRESCRIPTION" },
+    },
+    include: { artifact: true, items: true },
+  });
+
+  if (!record) {
+    throw new Error("Prescription not found");
+  }
+
+  return {
+    id: record.id,
+    organisationId: record.artifact.organisationId,
+    appointmentId: record.artifact.appointmentId,
+    authorId: record.artifact.authorId,
+    updatedAt: record.artifact.updatedAt,
+    items: record.items,
+    medications: record.medications,
+    metadata: record.metadata,
+  };
+};
+
+export const buildPrescriptionLabelPdfInput = async (
+  input: PrescriptionLabelPdfInput,
+): Promise<{
+  documentType: ClinicalDocumentType;
+  organization: OrganizationBranding;
+  data: PrescriptionLabelDocumentData;
+}> => {
+  const record = await loadPrescriptionLabelRecord(
+    input.organisationId,
+    input.prescriptionId,
+  );
+  const organizationBrand = await loadOrganizationBrand(input.organisationId);
+  const organization = buildSharedOrganizationBranding(organizationBrand);
+  const metadata = readMetadata(record.metadata);
+  const header = await loadAppointmentClinicalHeader(record.appointmentId);
+
+  const inventoryIdsByIndex = collectMedicationInventoryIds(record.medications);
+  const controlledFlags = await loadControlledItemFlags(
+    input.organisationId,
+    inventoryIdsByIndex,
+  );
+
+  return {
+    documentType: "PRESCRIPTION_LABEL",
+    organization,
+    data: {
+      title: input.title ?? PRESCRIPTION_LABEL_DEFAULT_TITLE,
+      date: record.updatedAt,
+      prescriptionId: record.id,
+      patientName:
+        header.patientName ??
+        readFirstString(metadata, ["patientName", "patient"]) ??
+        "—",
+      clientName:
+        header.clientName ??
+        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
+        "—",
+      prescriberName:
+        header.leadName ??
+        readFirstString(metadata, [
+          "leadName",
+          "prescriberName",
+          "doctorName",
+          "providerName",
+          "doctor",
+        ]) ??
+        readString(record.authorId) ??
+        "—",
+      organisationName: organization.name,
+      items: buildPrescriptionLabelItems(
+        record.items,
+        inventoryIdsByIndex,
+        controlledFlags,
+      ),
+    },
+  };
+};
+
+export const renderPrescriptionLabelPdf = async (
+  input: PrescriptionLabelPdfInput,
+): Promise<Buffer> =>
+  generateClinicalPdf(await buildPrescriptionLabelPdfInput(input));

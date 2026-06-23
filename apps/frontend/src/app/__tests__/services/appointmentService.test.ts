@@ -82,6 +82,7 @@ const mockedGetDateKeyInPreferredTimeZone = getDateKeyInPreferredTimeZone as jes
 
 // 4. Mock External DTO mappers
 jest.mock('@yosemite-crew/types', () => ({
+  ...jest.requireActual('@yosemite-crew/types'),
   fromAppointmentRequestDTO: jest.fn(),
   toAppointmentResponseDTO: jest.fn(),
 }));
@@ -659,6 +660,36 @@ describe('Appointment Service', () => {
           ],
         })
       );
+    });
+
+    it('includes the override reason and period end when overriding the gate', async () => {
+      mockedPostData.mockResolvedValue({});
+
+      await dischargeEncounter('enc-1', '2026-05-01T10:00:00Z', {
+        periodEnd: '2026-05-01T10:00:00Z',
+        overrideReason: '  Owner requested early discharge  ',
+      });
+
+      const body = mockedPostData.mock.calls[0][1] as {
+        parameter: { name: string; valueString?: string; valueDateTime?: string }[];
+      };
+      expect(body.parameter).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'periodEnd', valueDateTime: '2026-05-01T10:00:00Z' }),
+          // The reason is trimmed before it is sent.
+          expect.objectContaining({
+            name: 'overrideReason',
+            valueString: 'Owner requested early discharge',
+          }),
+        ])
+      );
+    });
+
+    it('omits the override reason when it is blank', async () => {
+      mockedPostData.mockResolvedValue({});
+      await dischargeEncounter('enc-1', '2026-05-01T10:00:00Z', { overrideReason: '   ' });
+      const body = mockedPostData.mock.calls[0][1] as { parameter: { name: string }[] };
+      expect(body.parameter.some((p) => p.name === 'overrideReason')).toBe(false);
     });
 
     it('skips encounter lifecycle calls without an encounter id', async () => {

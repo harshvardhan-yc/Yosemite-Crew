@@ -322,6 +322,11 @@ export {
   type TemplateSection,
   type TemplateUpsertInput,
   type TemplateInstanceUpsertInput,
+  CANONICAL_SOAP_STRUCTURE,
+  CANONICAL_DISCHARGE_STRUCTURE,
+  CANONICAL_VITALS_STRUCTURE,
+  CANONICAL_SOAP_FIELD_KEYS,
+  templateSchemaToFormFields,
 } from './template';
 export {
   taskFhirMapper,
@@ -345,10 +350,13 @@ export type {
   WorkspaceBootstrapResponse,
   WorkspaceBootstrapAggregate,
   WorkspaceBootstrapInput,
+  WorkspaceFinalizationGate,
   WorkspaceDiagnosticQueueItem,
   WorkspaceDocumentRow,
   WorkspaceDocumentPacketRow,
   WorkspaceDocumentPacketStatus,
+  WorkspaceDocumentPacketSigning,
+  WorkspaceDocumentPacketSigningStatus,
   WorkspaceLabSummary,
   WorkspaceLockState,
   WorkspacePermissionSnapshot,
@@ -429,8 +437,12 @@ export {
 export type {
   FormAssignmentLike,
   FormAssignmentStatus,
+  FormAssignmentLifecycleStatus,
   FormSignerIdentity,
+  FormAssignmentListItem,
   FormAssignmentCreateInput,
+  FormAssignmentSignedDocumentLike,
+  FormAssignmentListFilters,
 } from './form-assignment';
 export type {
   AdverseEventReporterType,

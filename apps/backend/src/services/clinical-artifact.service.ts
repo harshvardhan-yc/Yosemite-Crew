@@ -76,8 +76,20 @@ type VitalRecordWithArtifact = Prisma.VitalRecordGetPayload<{
 type VitalRecordModel =
   Prisma.VitalRecordGetPayload<Prisma.VitalRecordDefaultArgs>;
 
+type VitalRecordPresentation = VitalRecordModel & {
+  recordedByDisplay?: string | null;
+};
+
 type ClinicalPrisma = typeof prisma & {
+  appointment: {
+    updateMany(
+      args: Prisma.AppointmentUpdateManyArgs,
+    ): Promise<Prisma.BatchPayload>;
+  };
   prescription: {
+    findFirst(
+      args: Prisma.PrescriptionFindFirstArgs,
+    ): Promise<PrescriptionWithArtifact | null>;
     findUnique(
       args: Prisma.PrescriptionFindUniqueArgs,
     ): Promise<PrescriptionWithArtifact | null>;
@@ -430,6 +442,7 @@ export type DischargeSummaryRecord = {
 export type VitalRecordInput = ClinicalArtifactBaseInput & {
   measuredAt: Date | string;
   recordedBy?: string | null;
+  recordedByDisplay?: string | null;
   vitals: unknown;
   notes?: unknown;
   metadata?: unknown;
@@ -442,6 +455,7 @@ export type VitalRecordUpdateInput = Partial<
     | "summary"
     | "measuredAt"
     | "recordedBy"
+    | "recordedByDisplay"
     | "vitals"
     | "notes"
     | "metadata"
@@ -457,6 +471,7 @@ export type VitalRecordRecord = {
     artifactId: string;
     measuredAt: Date;
     recordedBy: string | null;
+    recordedByDisplay?: string | null;
     vitals: Prisma.JsonValue;
     notes: Prisma.JsonValue | null;
     metadata: Prisma.JsonValue | null;
@@ -488,6 +503,120 @@ const toJsonInput = (
 const toNullableString = (value: string | null | undefined) => {
   if (value === undefined) return undefined;
   return value === null ? null : value.trim();
+};
+
+const toOptionalDisplay = (value: string | null | undefined) => {
+  const normalized = toNullableString(value);
+  if (normalized === undefined) return undefined;
+  return normalized && normalized.length > 0 ? normalized : null;
+};
+
+const normalizePractitionerReference = (value: string | null | undefined) => {
+  if (!value) return undefined;
+  return value.replace(/^Practitioner\//, "").trim() || undefined;
+};
+
+const readRecordedByDisplay = (metadata: Prisma.JsonValue | null) => {
+  if (!isRecord(metadata)) {
+    return null;
+  }
+
+  const display = metadata.recordedByDisplay;
+  if (typeof display !== "string") {
+    return null;
+  }
+
+  const trimmed = display.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const mergeVitalRecordMetadata = (
+  currentMetadata: Prisma.JsonValue | null,
+  nextMetadata: unknown,
+  nextRecordedByDisplay: string | null | undefined,
+) => {
+  const baseMetadata =
+    nextMetadata === undefined ? currentMetadata : nextMetadata;
+  const currentDisplay = readRecordedByDisplay(currentMetadata);
+  const display =
+    nextRecordedByDisplay === undefined
+      ? currentDisplay
+      : nextRecordedByDisplay;
+
+  if (display === undefined) {
+    return baseMetadata;
+  }
+
+  if (baseMetadata === null || baseMetadata === undefined) {
+    return display === null ? null : { recordedByDisplay: display };
+  }
+
+  if (isRecord(baseMetadata)) {
+    return {
+      ...baseMetadata,
+      recordedByDisplay: display,
+    };
+  }
+
+  return baseMetadata;
+};
+
+const resolveVitalRecordRecordedByDisplay = async (
+  record: Pick<VitalRecordModel, "recordedBy" | "metadata">,
+): Promise<string | null> => {
+  const metadataDisplay = readRecordedByDisplay(record.metadata);
+  if (metadataDisplay) {
+    return metadataDisplay;
+  }
+
+  const normalizedRecordedBy = normalizePractitionerReference(
+    record.recordedBy,
+  );
+  if (!normalizedRecordedBy) {
+    return null;
+  }
+
+  const user = await prisma.user.findFirst({
+    where: {
+      userId: normalizedRecordedBy,
+    },
+    select: {
+      firstName: true,
+      lastName: true,
+    },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  const display = [user.firstName, user.lastName]
+    .filter(
+      (part): part is string => typeof part === "string" && part.length > 0,
+    )
+    .join(" ")
+    .trim();
+
+  return display.length > 0 ? display : null;
+};
+
+const hydrateVitalRecord = async (
+  record: VitalRecordWithArtifact,
+): Promise<VitalRecordRecord> => {
+  const recordedByDisplay = await resolveVitalRecordRecordedByDisplay(record);
+
+  return buildVitalRecordRecord(record.artifact, {
+    id: record.id,
+    artifactId: record.artifactId,
+    measuredAt: record.measuredAt,
+    recordedBy: record.recordedBy,
+    recordedByDisplay,
+    vitals: record.vitals,
+    notes: record.notes,
+    metadata: record.metadata,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  });
 };
 
 const DOCUMENT_BACKED_CLINICAL_KINDS = new Set<ClinicalArtifactKind>([
@@ -669,26 +798,15 @@ const toDischargeSummaryRecord = (
 
 const buildVitalRecordRecord = (
   artifact: SoapNoteRecord["artifact"],
-  vitalRecord: VitalRecordModel,
+  vitalRecord: VitalRecordPresentation,
 ): VitalRecordRecord => ({
   artifact: toClinicalArtifactKind(artifact, "VITAL_RECORD"),
   vitalRecord,
 });
 
-const toVitalRecordRecord = (
+const toVitalRecordRecord = async (
   record: VitalRecordWithArtifact,
-): VitalRecordRecord =>
-  buildVitalRecordRecord(record.artifact, {
-    id: record.id,
-    artifactId: record.artifactId,
-    measuredAt: record.measuredAt,
-    recordedBy: record.recordedBy,
-    vitals: record.vitals,
-    notes: record.notes,
-    metadata: record.metadata,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-  });
+): Promise<VitalRecordRecord> => hydrateVitalRecord(record);
 
 const loadSoapNoteOrThrow = async (soapNoteId: string) => {
   const note = await prisma.soapNote.findUnique({
@@ -706,8 +824,11 @@ const loadSoapNoteOrThrow = async (soapNoteId: string) => {
 };
 
 const loadPrescriptionOrThrow = async (prescriptionId: string) => {
-  const prescription = await clinicalPrisma.prescription.findUnique({
-    where: { id: ensureId(prescriptionId, "prescriptionId") },
+  const identifier = ensureId(prescriptionId, "prescriptionId");
+  const prescription = await clinicalPrisma.prescription.findFirst({
+    where: {
+      OR: [{ id: identifier }, { artifactId: identifier }],
+    },
     include: { artifact: true, items: true },
   });
 
@@ -828,6 +949,7 @@ const vitalRecordInputFromRecord = (
   summary: record.artifact.summary,
   measuredAt: record.vitalRecord.measuredAt,
   recordedBy: record.vitalRecord.recordedBy,
+  recordedByDisplay: record.vitalRecord.recordedByDisplay ?? undefined,
   vitals: record.vitalRecord.vitals,
   notes: record.vitalRecord.notes,
   metadata: record.vitalRecord.metadata,
@@ -849,6 +971,26 @@ const FINAL_CLINICAL_ARTIFACT_STATUSES = new Set<ClinicalArtifactStatus>([
 
 const isFinalClinicalArtifactStatus = (status: ClinicalArtifactStatus) =>
   FINAL_CLINICAL_ARTIFACT_STATUSES.has(status);
+
+const advanceCheckedInAppointment = async (
+  txPrisma: ClinicalPrisma,
+  input: { organisationId: string; appointmentId?: string },
+) => {
+  if (!input.appointmentId) {
+    return;
+  }
+
+  await txPrisma.appointment.updateMany({
+    where: {
+      id: input.appointmentId,
+      organisationId: input.organisationId,
+      status: "CHECKED_IN",
+    },
+    data: {
+      status: "IN_PROGRESS",
+    },
+  });
+};
 
 export const ClinicalArtifactService = {
   async createSoapNote(input: SoapNoteInput): Promise<SoapNoteRecord> {
@@ -881,6 +1023,11 @@ export const ClinicalArtifactService = {
           diagnoses: toNullableJsonInput(input.diagnoses),
           metadata: toNullableJsonInput(input.metadata),
         },
+      });
+
+      await advanceCheckedInAppointment(txPrisma, {
+        organisationId,
+        appointmentId: input.appointmentId,
       });
 
       if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
@@ -1078,6 +1225,11 @@ export const ClinicalArtifactService = {
           metadata: toNullableJsonInput(input.metadata),
         },
         include: { items: true },
+      });
+
+      await advanceCheckedInAppointment(txPrisma, {
+        organisationId,
+        appointmentId: input.appointmentId,
       });
 
       if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
@@ -1318,6 +1470,11 @@ export const ClinicalArtifactService = {
         },
       });
 
+      await advanceCheckedInAppointment(txPrisma, {
+        organisationId,
+        appointmentId: input.appointmentId,
+      });
+
       if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
         await createRenderedDocumentRecord(
           buildClinicalArtifactRenderedDocumentInput({
@@ -1478,6 +1635,9 @@ export const ClinicalArtifactService = {
   async createVitalRecord(input: VitalRecordInput): Promise<VitalRecordRecord> {
     const organisationId = ensureId(input.organisationId, "organisationId");
     const measuredAt = toDate(input.measuredAt, "measuredAt");
+    const requestedRecordedByDisplay = toOptionalDisplay(
+      input.recordedByDisplay,
+    );
     if (!measuredAt) {
       throw new ClinicalArtifactServiceError("Invalid measuredAt", 400);
     }
@@ -1507,8 +1667,19 @@ export const ClinicalArtifactService = {
           recordedBy: toNullableString(input.recordedBy),
           vitals: toJsonInput(input.vitals),
           notes: toNullableJsonInput(input.notes),
-          metadata: toNullableJsonInput(input.metadata),
+          metadata: toNullableJsonInput(
+            mergeVitalRecordMetadata(
+              null,
+              input.metadata,
+              requestedRecordedByDisplay,
+            ),
+          ),
         },
+      });
+
+      await advanceCheckedInAppointment(txPrisma, {
+        organisationId,
+        appointmentId: input.appointmentId,
       });
 
       if (DOCUMENT_BACKED_CLINICAL_KINDS.has(createdArtifact.kind)) {
@@ -1525,7 +1696,15 @@ export const ClinicalArtifactService = {
         );
       }
 
-      return buildVitalRecordRecord(createdArtifact, createdVitalRecord);
+      const resolvedRecordedByDisplay =
+        requestedRecordedByDisplay === undefined
+          ? await resolveVitalRecordRecordedByDisplay(createdVitalRecord)
+          : requestedRecordedByDisplay;
+
+      return buildVitalRecordRecord(createdArtifact, {
+        ...createdVitalRecord,
+        recordedByDisplay: resolvedRecordedByDisplay ?? null,
+      });
     });
 
     if (DOCUMENT_BACKED_CLINICAL_KINDS.has(artifact.artifact.kind)) {
@@ -1546,6 +1725,9 @@ export const ClinicalArtifactService = {
       "VITAL_RECORD",
       "vital record",
       organisationId,
+    );
+    const requestedRecordedByDisplay = toOptionalDisplay(
+      input.recordedByDisplay,
     );
 
     if (
@@ -1591,14 +1773,25 @@ export const ClinicalArtifactService = {
             input.notes === undefined
               ? toNullableJsonInput(record.notes)
               : toNullableJsonInput(input.notes),
-          metadata:
-            input.metadata === undefined
-              ? toNullableJsonInput(record.metadata)
-              : toNullableJsonInput(input.metadata),
+          metadata: toNullableJsonInput(
+            mergeVitalRecordMetadata(
+              record.metadata,
+              input.metadata,
+              requestedRecordedByDisplay,
+            ),
+          ),
         },
       });
 
-      return buildVitalRecordRecord(artifact, vitalRecord);
+      const resolvedRecordedByDisplay =
+        requestedRecordedByDisplay === undefined
+          ? await resolveVitalRecordRecordedByDisplay(vitalRecord)
+          : requestedRecordedByDisplay;
+
+      return buildVitalRecordRecord(artifact, {
+        ...vitalRecord,
+        recordedByDisplay: resolvedRecordedByDisplay ?? null,
+      });
     });
 
     if (DOCUMENT_BACKED_CLINICAL_KINDS.has(updated.artifact.kind)) {
@@ -1620,7 +1813,7 @@ export const ClinicalArtifactService = {
       organisationId,
     );
 
-    return toVitalRecordRecord(record);
+    return await toVitalRecordRecord(record);
   },
 
   async listVitalRecordsForEncounter(
@@ -1639,7 +1832,7 @@ export const ClinicalArtifactService = {
       orderBy: { measuredAt: "desc" },
     });
 
-    return records.map(toVitalRecordRecord);
+    return Promise.all(records.map(toVitalRecordRecord));
   },
 
   async listVitalRecordsForAppointment(
@@ -1658,7 +1851,7 @@ export const ClinicalArtifactService = {
       orderBy: { measuredAt: "desc" },
     });
 
-    return records.map(toVitalRecordRecord);
+    return Promise.all(records.map(toVitalRecordRecord));
   },
 
   async finalizeSoapNote(

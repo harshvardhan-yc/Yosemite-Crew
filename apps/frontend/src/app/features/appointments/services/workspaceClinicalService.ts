@@ -196,6 +196,10 @@ const SOAP_EXT = {
   objective: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-objective',
   assessment: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-assessment',
   plan: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-plan',
+  // The shared clinical-artifact mapper round-trips this extension into the SoapNote.metadata
+  // JSON column, so a custom-template structure override (schema + answers) persists and
+  // rehydrates without any backend change.
+  metadata: 'https://yosemitecrew.com/fhir/StructureDefinition/soap-note-metadata',
 };
 
 const DISCHARGE_EXT = {
@@ -225,7 +229,10 @@ const buildComposition = (
       : { reference: `Encounter/${context.encounterId}` };
   return {
     resourceType: 'Composition',
-    status: 'final',
+    // Saving creates a draft record; only `$finalize` flips it to COMPLETED (see the
+    // soapNoteFromComposition note below). Sending 'final' here would finalize the
+    // artifact on every save.
+    status: 'preliminary',
     title,
     type: { text: kind },
     date: new Date().toISOString(),
@@ -255,6 +262,15 @@ const soapNoteFromComposition = (
 ): SoapNoteEntry => {
   const input = clinicalArtifactFhirMapper.compositionToSoapNoteInput(resource, context);
   const signedByName = getClinicalAuthorName(resource, context);
+  // Rehydrate a custom-template structure override from the metadata channel so a saved custom
+  // SOAP note re-renders via FormRenderer (not the four native editors) after refresh.
+  const metadata =
+    input.metadata && typeof input.metadata === 'object'
+      ? (input.metadata as Record<string, unknown>)
+      : undefined;
+  const customTemplate = metadata?.customTemplate as
+    | { schema?: NonNullable<SoapNoteEntry['customSchema']>; answers?: Record<string, unknown> }
+    | undefined;
   return {
     id: resource.id ?? `soap-${resource.date ?? Date.now()}`,
     chiefComplaint: '',
@@ -263,6 +279,9 @@ const soapNoteFromComposition = (
     assessment: toText(input.assessment),
     plan: toText(input.plan),
     templateId: input.templateId,
+    templateVersionId: (input as { templateVersionId?: string }).templateVersionId,
+    customSchema: customTemplate?.schema,
+    customAnswers: customTemplate?.answers,
     // A SOAP note that came back from the backend is a saved record and belongs in the
     // "All SOAP notes" history, not the active draft. The backend stores saved notes as
     // `preliminary` (only `$finalize` flips it to `final`), so persisted id — not status —
@@ -399,6 +418,11 @@ export const amendSoapNote = (
 ) => clinicalArtifactAction<Composition>(organisationId, 'soap-note', soapNoteId, '$amend', body);
 
 export const saveSoapNote = async (context: ClinicalContext, note: SoapNoteEntry) => {
+  // Custom-template override (structure swap): persist the schema + answers in the metadata
+  // channel so the workspace re-renders the custom form after refresh.
+  const customMetadata = note.customSchema?.length
+    ? { customTemplate: { schema: note.customSchema, answers: note.customAnswers ?? {} } }
+    : undefined;
   const body = buildComposition(
     context,
     'SOAP_NOTE',
@@ -408,6 +432,7 @@ export const saveSoapNote = async (context: ClinicalContext, note: SoapNoteEntry
       jsonExtension(SOAP_EXT.objective, note.objective),
       jsonExtension(SOAP_EXT.assessment, note.assessment),
       jsonExtension(SOAP_EXT.plan, note.plan),
+      jsonExtension(SOAP_EXT.metadata, customMetadata),
     ])
   );
   const endpoint = `/fhir/v1/clinical-artifact/organisation/${context.organisationId}/soap-note`;
@@ -588,7 +613,9 @@ export const saveVitalRecord = async (
 ) => {
   const body: Observation & Record<string, unknown> = {
     resourceType: 'Observation',
-    status: 'final',
+    // Saving creates a draft vital record; $finalize completes it. 'final' would
+    // finalize on every save.
+    status: 'preliminary',
     code: { text: 'VITAL_RECORD' },
     effectiveDateTime: vital.recordedAt,
     extension: compactExtensions([
@@ -612,6 +639,21 @@ export const saveVitalRecord = async (
   return res.data;
 };
 
+/** Map a backend observation-tool submission to the workspace ObservationRecord. */
+const submissionToObservationRecord = (
+  submission: ObservationToolSubmission,
+  index: number
+): ObservationRecord => ({
+  id: submission.id ?? stringifyObjectId(submission._id) ?? `ot-${index + 1}`,
+  code: `OT-${String(index + 1).padStart(3, '0')}`,
+  toolKey: submission.toolId ?? submission.toolCategory ?? 'OBSERVATION_TOOL',
+  toolName: submission.toolName ?? submission.toolCategory ?? 'Observation tool',
+  scores: answerPreviewToScores(submission.answers),
+  total: typeof submission.score === 'number' ? submission.score : undefined,
+  recordedByName: submission.filledByName ?? submission.filledBy ?? 'Parent',
+  recordedAt: asIso(submission.createdAt ?? submission.updatedAt),
+});
+
 export const listObservationSubmissionsForAppointment = async (
   appointmentId: string
 ): Promise<ObservationRecord[]> => {
@@ -619,21 +661,45 @@ export const listObservationSubmissionsForAppointment = async (
     `/v1/observation-tools/pms/appointments/${appointmentId}/submissions`,
     {}
   );
-  return res.data.map((submission, index) => {
-    const id = submission.id ?? stringifyObjectId(submission._id) ?? `ot-${index + 1}`;
-    const toolKey = submission.toolId ?? submission.toolCategory ?? 'OBSERVATION_TOOL';
-    const toolName = submission.toolName ?? submission.toolCategory ?? 'Observation tool';
-    return {
-      id,
-      code: `OT-${String(index + 1).padStart(3, '0')}`,
-      toolKey,
-      toolName,
-      scores: answerPreviewToScores(submission.answers),
-      total: typeof submission.score === 'number' ? submission.score : undefined,
-      recordedByName: submission.filledByName ?? submission.filledBy ?? 'Parent',
-      recordedAt: asIso(submission.createdAt ?? submission.updatedAt),
-    };
-  });
+  return res.data.map((submission, index) => submissionToObservationRecord(submission, index));
+};
+
+export type PmsObservationSubmissionInput = {
+  organisationId: string;
+  appointmentId: string;
+  encounterId?: string;
+  companionId: string;
+  toolId: string;
+  taskId?: string;
+  filledBy: string;
+  answers: Record<string, unknown>;
+  summary?: string;
+};
+
+/**
+ * Create a clinician-recorded observation-tool submission via the existing PMS
+ * route. The BACKEND computes the score from the tool definition — the returned
+ * submission's `score` is authoritative (we never derive clinical math here).
+ * Returns the mapped ObservationRecord so the workspace can show the real result.
+ */
+export const createPmsObservationSubmission = async (
+  input: PmsObservationSubmissionInput
+): Promise<ObservationRecord> => {
+  const res = await postData<ObservationToolSubmission>(
+    `/v1/observation-tools/pms/appointments/${input.appointmentId}/submissions/create`,
+    {
+      organisationId: input.organisationId,
+      appointmentId: input.appointmentId,
+      encounterId: input.encounterId,
+      companionId: input.companionId,
+      toolId: input.toolId,
+      taskId: input.taskId,
+      filledBy: input.filledBy,
+      answers: input.answers,
+      summary: input.summary,
+    }
+  );
+  return submissionToObservationRecord(res.data, 0);
 };
 
 export const listPmsObservationSubmissions = async (
@@ -692,7 +758,9 @@ export const savePrescriptionArtifact = async (
 ) => {
   const body: MedicationRequest & Record<string, unknown> = {
     resourceType: 'MedicationRequest',
-    status: 'active',
+    // Saving creates a draft prescription; only $finalize completes it (and triggers
+    // the inventory dispense). 'active' here would dispense on every plain save.
+    status: 'draft',
     intent: 'order',
     medicationCodeableConcept: { text: prescription.medicineName },
     medicationReference: { display: prescription.medicineName },

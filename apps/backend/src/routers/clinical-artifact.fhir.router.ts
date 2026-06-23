@@ -60,7 +60,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/soap-note/:soapNoteId/$finalize",
+  String.raw`/organisation/:organisationId/soap-note/:soapNoteId/\$finalize`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -69,7 +69,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/soap-note/:soapNoteId/$reopen",
+  String.raw`/organisation/:organisationId/soap-note/:soapNoteId/\$reopen`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -78,7 +78,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/soap-note/:soapNoteId/$amend",
+  String.raw`/organisation/:organisationId/soap-note/:soapNoteId/\$amend`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -134,7 +134,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/prescription/:prescriptionId/$finalize",
+  String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$finalize`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -143,7 +143,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/prescription/:prescriptionId/$reopen",
+  String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$reopen`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -152,7 +152,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/prescription/:prescriptionId/$amend",
+  String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$amend`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -211,7 +211,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/discharge-summary/:dischargeSummaryId/$finalize",
+  String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId/\$finalize`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -221,7 +221,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/discharge-summary/:dischargeSummaryId/$reopen",
+  String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId/\$reopen`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -230,7 +230,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/discharge-summary/:dischargeSummaryId/$amend",
+  String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId/\$amend`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -286,7 +286,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/vital-record/:vitalRecordId/$finalize",
+  String.raw`/organisation/:organisationId/vital-record/:vitalRecordId/\$finalize`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -295,7 +295,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/vital-record/:vitalRecordId/$reopen",
+  String.raw`/organisation/:organisationId/vital-record/:vitalRecordId/\$reopen`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),
@@ -304,7 +304,7 @@ router.post(
 );
 
 router.post(
-  "/organisation/:organisationId/vital-record/:vitalRecordId/$amend",
+  String.raw`/organisation/:organisationId/vital-record/:vitalRecordId/\$amend`,
   authorizeCognito,
   dischargeSummaryLimiter,
   withOrgPermissions(),

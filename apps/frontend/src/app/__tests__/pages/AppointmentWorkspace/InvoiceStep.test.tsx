@@ -1,12 +1,16 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import InvoiceStep from '@/app/features/appointments/pages/AppointmentWorkspace/steps/InvoiceStep';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
+import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import {
+  addLineItemsToAppointments,
+  createFinanceInvoice,
+  findOpenAppointmentInvoice,
   loadAppointmentBilling,
   seedAppointmentInvoice,
 } from '@/app/features/billing/services/invoiceService';
@@ -16,6 +20,7 @@ jest.mock('@/app/features/billing/services/invoiceService', () => ({
   __esModule: true,
   loadAppointmentBilling: jest.fn(),
   seedAppointmentInvoice: jest.fn(),
+  findOpenAppointmentInvoice: jest.fn(),
   addLineItemsToAppointments: jest.fn(),
   finalizeFinanceInvoice: jest.fn(),
   getPaymentLink: jest.fn(),
@@ -31,6 +36,7 @@ jest.mock('@/app/features/inventory/services/inventoryService', () => ({
 jest.mock('@/app/features/inventory/pages/Inventory/utils', () => ({
   __esModule: true,
   mapApiItemToInventoryItem: (item: unknown) => item,
+  getAvailableStock: () => 10,
 }));
 
 const mockLoadAppointmentBilling = loadAppointmentBilling as jest.Mock;
@@ -50,6 +56,10 @@ const reset = () => {
   });
   mockFetchInventoryItems.mockResolvedValue([]);
   mockSeedAppointmentInvoice.mockResolvedValue({ id: 'inv-seed' });
+  // No open invoice in the store by default → persistCurrentInvoice creates one
+  // via the web POST /invoices route (not the mobile /seed route).
+  (findOpenAppointmentInvoice as jest.Mock).mockReturnValue(undefined);
+  (createFinanceInvoice as jest.Mock).mockResolvedValue({ id: 'inv-created' });
   useAppointmentWorkspaceStore.setState({
     encountersById: {},
     activeStep: 'INVOICE',
@@ -63,6 +73,10 @@ const reset = () => {
     error: undefined,
     loadedSpecialityIds: [],
   });
+  // Reset inventory so each test starts with an empty store; otherwise the
+  // bill builder's "load inventory once" guard sees a prior test's items and
+  // skips the fetchInventoryItems call this suite asserts on.
+  useInventoryStore.setState({ itemsById: {}, itemIdsByOrgId: {} });
 };
 
 const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
@@ -181,6 +195,17 @@ describe('InvoiceStep', () => {
     expect(screen.getByText(/Estimated Total/)).toBeInTheDocument();
   });
 
+  it('shows exclusive-of-tax copy reflecting the backend tax rate', () => {
+    renderInvoice(seedAndGet());
+    expect(screen.getByText('Exclusive of 7% tax')).toBeInTheDocument();
+  });
+
+  it('shows no-tax copy when no tax rate applies', () => {
+    const enc = { ...seedAndGet(), taxPercent: 0 } as AppointmentEncounter;
+    renderInvoice(enc);
+    expect(screen.getByText('No tax applied')).toBeInTheDocument();
+  });
+
   it('adds and removes invoice line items via search', () => {
     const enc = seedAndGet();
     renderInvoice(enc);
@@ -275,13 +300,108 @@ describe('InvoiceStep', () => {
       target: { value: 'carprofen' },
     });
     const medRow = screen.getByRole('button', { name: /carprofen/i });
-    expect(within(medRow).getByText('Medication')).toBeInTheDocument();
+    expect(within(medRow).getByText('In-house prescription')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/search invoice items/i), {
       target: { value: 'amoxicillin' },
     });
     const invRow = await screen.findByRole('button', { name: /amoxicillin/i });
-    expect(within(invRow).getByText('Inventory')).toBeInTheDocument();
+    expect(within(invRow).getByText('Stock item')).toBeInTheDocument();
+  });
+
+  it('backfills a linked prescription when a billed drug has none', async () => {
+    mockFetchInventoryItems.mockResolvedValue([
+      {
+        id: 'inv-amoxi',
+        status: 'ACTIVE',
+        basicInfo: { name: 'Amoxicillin 250mg', itemType: 'Drug' },
+        classification: {},
+        pricing: { selling: '12' },
+        stock: { reorderLevel: 5 },
+        batch: {},
+      },
+    ]);
+    const enc = {
+      ...seedAndGet(),
+      services: [],
+      invoiceLineItems: [],
+      prescription: [],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    await waitFor(() => expect(mockFetchInventoryItems).toHaveBeenCalledWith('org-1'));
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'amoxicillin' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /amoxicillin/i }));
+
+    // The billed drug is interlinked into the Treatment step as an in-house
+    // prescription row so its clinical details can be required before finalize.
+    await waitFor(() =>
+      expect(
+        getEnc().prescription.some(
+          (rx) => rx.medicineName === 'Amoxicillin 250mg' && rx.fulfillment === 'IN_HOUSE'
+        )
+      ).toBe(true)
+    );
+  });
+
+  it('backfills a prescription for a drug identified by schedule without an explicit item type', async () => {
+    mockFetchInventoryItems.mockResolvedValue([
+      {
+        id: 'inv-trama',
+        status: 'ACTIVE',
+        basicInfo: { name: 'Tramadol 50mg', drugSchedule: 'Schedule IV' },
+        classification: {},
+        pricing: { selling: '8' },
+        stock: { reorderLevel: 5 },
+        batch: {},
+      },
+    ]);
+    const enc = {
+      ...seedAndGet(),
+      services: [],
+      invoiceLineItems: [],
+      prescription: [],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    await waitFor(() => expect(mockFetchInventoryItems).toHaveBeenCalledWith('org-1'));
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'tramadol' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /tramadol/i }));
+
+    await waitFor(() =>
+      expect(getEnc().prescription.some((rx) => rx.medicineName === 'Tramadol 50mg')).toBe(true)
+    );
+  });
+
+  it('does not create a prescription when billing a non-drug stock item', async () => {
+    mockFetchInventoryItems.mockResolvedValue([
+      {
+        id: 'inv-gauze',
+        status: 'ACTIVE',
+        basicInfo: { name: 'Gauze pad' },
+        pricing: { selling: '3' },
+      },
+    ]);
+    const enc = {
+      ...seedAndGet(),
+      services: [],
+      invoiceLineItems: [],
+      prescription: [],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    await waitFor(() => expect(mockFetchInventoryItems).toHaveBeenCalledWith('org-1'));
+
+    fireEvent.change(screen.getByLabelText(/search invoice items/i), {
+      target: { value: 'gauze' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /gauze/i }));
+
+    await waitFor(() => expect(getEnc().invoiceLineItems.length).toBeGreaterThan(0));
+    expect(getEnc().prescription).toHaveLength(0);
   });
 
   it('hydrates existing invoices and deposit from finance on mount', async () => {
@@ -307,6 +427,78 @@ describe('InvoiceStep', () => {
       expect(getEnc().pastInvoices.some((invoice) => invoice.id === 'finance-inv-99')).toBe(true)
     );
     expect(getEnc().depositCents).toBe(20000);
+  });
+
+  it('falls back to the organisation catalog currency when the encounter has none', async () => {
+    useRevampCatalogStore.setState({
+      services: [
+        {
+          id: 'svc-gbp',
+          code: 'PR-0002',
+          name: 'Consult GBP',
+          description: '',
+          type: 'PROCEDURE',
+          specialityId: 'spec-1',
+          organisationId: 'org-1',
+          grossAmount: 50,
+          currency: 'GBP',
+          defaultDiscount: 0,
+          maxDiscount: 0,
+          durationMinutes: 15,
+          isBookable: true,
+          isInpatientPreferred: false,
+          status: 'ACTIVE',
+          createdAt: '2026-06-18T10:00:00.000Z',
+        },
+      ],
+    });
+    const enc = {
+      ...seedAndGet(),
+      currency: '',
+      services: [],
+      invoiceLineItems: [],
+      prescription: [],
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    // With no encounter currency yet, totals render in the org's catalog currency
+    // (GBP) rather than a hardcoded USD default.
+    await waitFor(() => expect(screen.getAllByText(/£/).length).toBeGreaterThan(0));
+  });
+
+  it("ignores another organisation's catalog currency on a fresh invoice", async () => {
+    // Multi-org session: a different org's GBP service loaded first. The fresh
+    // invoice for org-1 must not adopt GBP; it falls back to the USD default.
+    useRevampCatalogStore.setState({
+      services: [
+        {
+          id: 'svc-gbp-other',
+          code: 'PR-0003',
+          name: 'Consult GBP other org',
+          description: '',
+          type: 'PROCEDURE',
+          specialityId: 'spec-2',
+          organisationId: 'org-2',
+          grossAmount: 50,
+          currency: 'GBP',
+          defaultDiscount: 0,
+          maxDiscount: 0,
+          durationMinutes: 15,
+          isBookable: true,
+          isInpatientPreferred: false,
+          status: 'ACTIVE',
+          createdAt: '2026-06-18T10:00:00.000Z',
+        },
+      ],
+    });
+    const enc = {
+      ...seedAndGet(),
+      currency: '',
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    await waitFor(() => expect(screen.getAllByText(/\$/).length).toBeGreaterThan(0));
+    expect(screen.queryByText(/£/)).not.toBeInTheDocument();
   });
 
   it('does nothing when the dark add button has no current match', () => {
@@ -388,6 +580,76 @@ describe('InvoiceStep', () => {
     expect(newest.paymentMethod).toBe('CASH');
     expect(newest.status).toBe('PAID_FULL');
     expect(newest.paidByName).toBe('Front desk');
+    // Flush the trailing post-payment state update (processing flag/refetch) so
+    // it doesn't surface as an act() warning in the next test.
+    await act(async () => {});
+  });
+
+  it('reuses a server-loaded open invoice instead of creating a duplicate', async () => {
+    // The global invoice store has no open invoice (default mock returns
+    // undefined), but loadAppointmentBilling hydrated an open invoice into the
+    // encounter. The bill must append to that invoice, never create a second one.
+    const base = seedAndGet();
+    const enc: AppointmentEncounter = {
+      ...base,
+      pastInvoices: [
+        {
+          id: 'server-open-inv',
+          createdAt: '2026-04-20T12:00:00Z',
+          totalCents: 9000,
+          outstandingCents: 9000,
+          status: 'UNPAID',
+          items: [],
+        },
+      ],
+    };
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
+
+    await waitFor(() => expect(addLineItemsToAppointments).toHaveBeenCalled());
+    expect(createFinanceInvoice).not.toHaveBeenCalled();
+    await act(async () => {});
+  });
+
+  it('creates a new invoice when no open invoice exists in the store or server data', async () => {
+    // Both the store lookup (default undefined) and the server-loaded
+    // pastInvoices (all PAID_FULL with no outstanding balance) lack an open
+    // invoice, so the create branch must run.
+    const enc = seedAndGet();
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
+
+    await waitFor(() => expect(createFinanceInvoice).toHaveBeenCalled());
+    expect(addLineItemsToAppointments).not.toHaveBeenCalled();
+    await act(async () => {});
+  });
+
+  it('ignores the appointment-id deposit-fallback sentinel when reusing an invoice', async () => {
+    // hydrateInvoiceBilling uses appointmentId as the id for an invoice that
+    // lacks one; that sentinel must not be treated as a reusable open invoice.
+    const base = seedAndGet();
+    const enc: AppointmentEncounter = {
+      ...base,
+      pastInvoices: [
+        {
+          id: APPT,
+          createdAt: '2026-04-20T12:00:00Z',
+          totalCents: 9000,
+          outstandingCents: 9000,
+          status: 'UNPAID',
+          items: [],
+        },
+      ],
+    };
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
+
+    await waitFor(() => expect(createFinanceInvoice).toHaveBeenCalled());
+    expect(addLineItemsToAppointments).not.toHaveBeenCalled();
+    await act(async () => {});
   });
 
   it('prepares an online payment without marking it paid locally', async () => {
@@ -397,9 +659,23 @@ describe('InvoiceStep', () => {
     fireEvent.click(screen.getByRole('button', { name: /pay online/i }));
     expect(await screen.findByText(/invoice prepared for online payment/i)).toBeInTheDocument();
     expect(getEnc().pastInvoices[0].paymentMethod).not.toBe('ONLINE');
+    await act(async () => {});
   });
 
-  it('collects a deposit payment and reduces the remaining deposit', () => {
+  it('refetches finance after a cash payment so the bill reflects server truth', async () => {
+    const enc = seedAndGet();
+    // organisationId is required for the post-payment refetch to fire.
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    // Ignore the mount-time hydration call; assert the post-payment refetch.
+    mockLoadAppointmentBilling.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
+
+    await waitFor(() => expect(mockLoadAppointmentBilling).toHaveBeenCalledWith('org-1', APPT));
+    await act(async () => {});
+  });
+
+  it('collects a deposit payment and reduces the remaining deposit', async () => {
     const enc = seedAndGet();
     const startDeposit = enc.depositCents;
     renderInvoice(enc);
@@ -410,6 +686,8 @@ describe('InvoiceStep', () => {
     const after = getEnc();
     expect(after.pastInvoices[0].paymentMethod).toBe('CASH');
     expect(after.depositCents).toBeGreaterThan(startDeposit);
+    // Flush the deposit handler's trailing processing-flag update.
+    await act(async () => {});
   });
 
   it('does not record an invoice payment when there are no line items', () => {
@@ -421,7 +699,7 @@ describe('InvoiceStep', () => {
     expect(getEnc().pastInvoices.length).toBe(before);
   });
 
-  it('allows deposit collection when there are no invoice line items', () => {
+  it('allows deposit collection when there are no invoice line items', async () => {
     const enc = { ...seedAndGet(), invoiceLineItems: [] };
     const beforeDeposit = getEnc().depositCents;
     renderInvoice(enc);
@@ -432,6 +710,8 @@ describe('InvoiceStep', () => {
 
     expect(getEnc().depositCents).toBe(beforeDeposit + 2500);
     expect(getEnc().pastInvoices[0].paymentMethod).toBe('CASH');
+    // Flush the deposit handler's trailing processing-flag update.
+    await act(async () => {});
   });
 
   it('renders the inpatient send-to-client action', async () => {
@@ -440,6 +720,7 @@ describe('InvoiceStep', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /send to client/i }));
     expect(await screen.findByText(/invoice prepared for online payment/i)).toBeInTheDocument();
+    await act(async () => {});
   });
 
   it('omits send-to-client for outpatient encounters', () => {
@@ -471,13 +752,30 @@ describe('InvoiceStep', () => {
     expect(screen.getByText('Paid via Cash')).toBeInTheDocument();
   });
 
-  it('exposes download and share actions while editable', () => {
+  it('exposes download and share actions while editable', async () => {
     const enc = seedAndGet();
+    // Download opens a print window; Share copies to the clipboard. jsdom stubs
+    // neither, so provide them and assert the handlers fire.
+    const printSpy = jest.fn();
+    const openSpy = jest.spyOn(globalThis.window, 'open').mockReturnValue({
+      document: { head: {}, body: {}, write: jest.fn(), close: jest.fn() },
+      focus: jest.fn(),
+      print: printSpy,
+    } as unknown as Window);
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(globalThis.navigator, { clipboard: { writeText } });
+
     renderInvoice(enc);
 
     fireEvent.click(screen.getByRole('button', { name: /download invoice 20560dth/i }));
+    expect(openSpy).toHaveBeenCalled();
+    expect(printSpy).toHaveBeenCalled();
+
     fireEvent.click(screen.getByRole('button', { name: /share invoice 20560dth/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
     expect(screen.getByText('Invoices')).toBeInTheDocument();
+
+    openSpy.mockRestore();
   });
 
   it('shows an "Invoice Paid" badge when the invoice was not from deposit', () => {
@@ -542,6 +840,78 @@ describe('InvoiceStep', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /summary/i }));
 
+    expect(onOpenSummary).toHaveBeenCalled();
+    expect(getEnc().stepStatus.INVOICE).toBe('COMPLETED');
+  });
+
+  it('blocks finalize and flags the row when a billed in-house medication is missing details', () => {
+    const enc = {
+      ...seedAndGet(),
+      invoiceLineItems: [
+        {
+          id: 'inv-rx',
+          name: 'Carprofen',
+          unitPriceCents: 1500,
+          qty: 1,
+          grossCents: 1500,
+          discountCents: 0,
+          amountCents: 1500,
+        },
+      ],
+      prescription: [
+        {
+          id: 'rx-1',
+          medicineName: 'Carprofen',
+          fulfillment: 'IN_HOUSE' as const,
+          priceCents: 1500,
+        },
+      ],
+    } as AppointmentEncounter;
+    const { onOpenSummary } = renderInvoice(enc);
+
+    // Row carries the "fill information" hint, and finalize is blocked.
+    expect(screen.getByLabelText('Fill information in previous step')).toBeInTheDocument();
+    expect(
+      screen.getByText(/fill prescription details in the treatment step/i)
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /summary/i }));
+    expect(onOpenSummary).not.toHaveBeenCalled();
+    expect(getEnc().stepStatus.INVOICE).not.toBe('COMPLETED');
+  });
+
+  it('allows finalize once the billed medication has full prescription details', () => {
+    const enc = {
+      ...seedAndGet(),
+      invoiceLineItems: [
+        {
+          id: 'inv-rx',
+          name: 'Carprofen',
+          unitPriceCents: 1500,
+          qty: 1,
+          grossCents: 1500,
+          discountCents: 0,
+          amountCents: 1500,
+        },
+      ],
+      prescription: [
+        {
+          id: 'rx-1',
+          medicineName: 'Carprofen',
+          fulfillment: 'IN_HOUSE' as const,
+          priceCents: 1500,
+          dosage: '50mg',
+          route: 'Oral',
+          frequency: 'BID',
+          durationDays: '5',
+        },
+      ],
+    } as AppointmentEncounter;
+    const { onOpenSummary } = renderInvoice(enc);
+
+    expect(screen.queryByLabelText('Fill information in previous step')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /summary/i }));
     expect(onOpenSummary).toHaveBeenCalled();
     expect(getEnc().stepStatus.INVOICE).toBe('COMPLETED');
   });

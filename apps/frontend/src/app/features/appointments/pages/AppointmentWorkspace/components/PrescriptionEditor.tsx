@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { LuChevronDown, LuCopy, LuPlus, LuPrinter, LuTrash2 } from 'react-icons/lu';
+import { LuChevronDown, LuCopy, LuPrinter, LuTrash2 } from 'react-icons/lu';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
+import WorkspaceSearchResultRow from '@/app/features/appointments/pages/AppointmentWorkspace/components/WorkspaceSearchResultRow';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
@@ -271,22 +272,19 @@ const PrescriptionEditor = ({
           >
             <ul>
               {matches.map((item) => (
-                <li key={item.medicineName}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddItem(item);
-                      setSearch('');
-                    }}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                  >
-                    <LuPlus aria-hidden="true" />
-                    <span className="flex-1">{item.medicineName}</span>
+                <WorkspaceSearchResultRow
+                  key={item.medicineName}
+                  name={item.medicineName}
+                  badge={
                     <span className="rounded-2xl bg-primary-100 px-2 py-0.5 text-caption-2 font-medium text-text-brand">
                       Medication
                     </span>
-                  </button>
-                </li>
+                  }
+                  onSelect={() => {
+                    onAddItem(item);
+                    setSearch('');
+                  }}
+                />
               ))}
             </ul>
           </SearchResultsDropdown>

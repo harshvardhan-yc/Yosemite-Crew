@@ -8,6 +8,7 @@ import { NotificationService } from "../../src/services/notification.service";
 import { AuditTrailService } from "../../src/services/audit-trail.service";
 import { FinancePaymentService } from "../../src/services/finance/payment";
 import { sendEmailTemplate } from "../../src/utils/email";
+import { getOrgBillingCurrency } from "src/utils/billing";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -78,6 +79,11 @@ jest.mock("../../src/utils/email", () => ({
   sendEmailTemplate: jest.fn(),
 }));
 
+jest.mock("src/utils/billing", () => ({
+  __esModule: true,
+  getOrgBillingCurrency: jest.fn(),
+}));
+
 describe("InvoiceService", () => {
   const appointmentId = "appt_1";
   const organisationId = "org_1";
@@ -87,6 +93,7 @@ describe("InvoiceService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
     (CatalogService.resolveSelection as jest.Mock).mockResolvedValue(null);
+    (getOrgBillingCurrency as jest.Mock).mockResolvedValue("usd");
   });
 
   it("creates a draft invoice and persists invoice-level discounts", async () => {
@@ -161,7 +168,113 @@ describe("InvoiceService", () => {
         }),
       }),
     );
-    expect(prisma.organizationBilling.findUnique).not.toHaveBeenCalled();
+    expect(getOrgBillingCurrency).toHaveBeenCalledWith(organisationId);
+  });
+
+  it("uses the organisation currency (not a hardcoded usd) for a non-US org", async () => {
+    (getOrgBillingCurrency as jest.Mock).mockResolvedValue("gbp");
+    (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
+      id: appointmentId,
+      organisationId,
+      patient: { id: patientId, parent: { id: parentId } },
+      companion: { id: patientId, parent: { id: parentId } },
+    });
+    (prisma.invoice.create as jest.Mock).mockResolvedValue({
+      id: "inv_gbp",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "gbp",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [],
+      subtotal: 120,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      totalAmount: 120,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await InvoiceService.createDraftForAppointment({
+      appointmentId,
+      parentId,
+      organisationId,
+      patientId,
+      items: [{ description: "Consult", quantity: 1, unitPrice: 120 }],
+      paymentCollectionMethod: "PAYMENT_LINK",
+    });
+
+    expect(getOrgBillingCurrency).toHaveBeenCalledWith(organisationId);
+    expect(prisma.invoice.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ currency: "gbp" }),
+      }),
+    );
+    // Guard against a regression to a hardcoded USD default.
+    expect(prisma.invoice.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ currency: "usd" }),
+      }),
+    );
+  });
+
+  it("threads the organisation currency through extra invoices", async () => {
+    (getOrgBillingCurrency as jest.Mock).mockResolvedValue("gbp");
+    (prisma.appointment.findUnique as jest.Mock).mockResolvedValue({
+      id: appointmentId,
+      organisationId,
+      patient: { id: patientId, parent: { id: parentId } },
+      companion: { id: patientId, parent: { id: parentId } },
+    });
+    (prisma.invoice.create as jest.Mock).mockResolvedValue({
+      id: "inv_extra_gbp",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "gbp",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [],
+      subtotal: 40,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      totalAmount: 40,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await InvoiceService.createExtraInvoiceForAppointment({
+      appointmentId,
+      items: [
+        {
+          name: "Medication",
+          description: "Medication",
+          quantity: 2,
+          unitPrice: 20,
+          total: 40,
+        },
+      ],
+    });
+
+    expect(getOrgBillingCurrency).toHaveBeenCalledWith(organisationId);
+    expect(prisma.invoice.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ currency: "gbp" }),
+      }),
+    );
   });
 
   it("creates extra invoices with a frozen tax snapshot", async () => {
@@ -224,7 +337,7 @@ describe("InvoiceService", () => {
       }),
     );
     expect((result as { id: string }).id).toBe("inv_extra");
-    expect(prisma.organizationBilling.findUnique).not.toHaveBeenCalled();
+    expect(getOrgBillingCurrency).toHaveBeenCalledWith(organisationId);
   });
 
   it("marks visit-based invoices ready for billing and leaves prepay invoices alone", async () => {
@@ -394,6 +507,31 @@ describe("InvoiceService", () => {
       }),
     );
     expect(updated?.depositTargetAmount).toBe(20);
+  });
+
+  it("rejects negative deposit targets", async () => {
+    await expect(
+      InvoiceService.setInvoiceDepositTarget("inv_deposit", -1),
+    ).rejects.toMatchObject({
+      message: "Deposit target amount must be greater than or equal to zero",
+      statusCode: 400,
+    });
+
+    expect(prisma.invoice.findUnique).not.toHaveBeenCalled();
+    expect(prisma.invoice.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing invoices when setting deposit targets", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(
+      InvoiceService.setInvoiceDepositTarget("inv_missing", 20),
+    ).rejects.toMatchObject({
+      message: "Invoice not found",
+      statusCode: 404,
+    });
+
+    expect(prisma.invoice.update).not.toHaveBeenCalled();
   });
 
   it("issues a credit note and records a finance event", async () => {
