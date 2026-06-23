@@ -1480,7 +1480,25 @@ export const InvoiceService = {
       unitPrice: item.unitPrice,
       discountPercent: item.discountPercent ?? undefined,
     }));
-    const mergedItems = [...existingItems, ...newItems];
+    // Guard against re-adding the same line item: the finance step can re-send the
+    // existing items when regenerating the payment link for a finalized-but-unpaid
+    // invoice, which would otherwise append duplicate lines (e.g. a package twice).
+    const itemKey = (item: {
+      description?: string | null;
+      name?: string | null;
+      quantity?: number;
+      unitPrice?: number;
+    }) =>
+      [
+        (item.description ?? item.name ?? "").trim().toLowerCase(),
+        item.quantity ?? "",
+        item.unitPrice ?? "",
+      ].join("|");
+    const existingKeys = new Set(existingItems.map(itemKey));
+    const mergedItems = [
+      ...existingItems,
+      ...newItems.filter((item) => !existingKeys.has(itemKey(item))),
+    ];
     const taxContext = await resolveInvoiceTaxContext(
       invoice.organisationId ?? "",
       invoice.parentId ?? null,

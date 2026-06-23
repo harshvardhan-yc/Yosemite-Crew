@@ -735,6 +735,70 @@ describe("InvoiceService", () => {
     expect(result.totalAmount).toBe(135);
   });
 
+  it("does not duplicate a line item that already exists on the invoice", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_dedup",
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      organisationId,
+      patientId,
+      parentId,
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [
+        {
+          name: "Sample testing package",
+          description: "Sample testing package",
+          quantity: 1,
+          unitPrice: 272,
+          total: 272,
+        },
+      ],
+      subtotal: 272,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      taxSnapshot: { provider: "STRIPE", taxBehavior: "EXCLUSIVE" },
+      finalizedAt: null,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_dedup",
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      organisationId,
+      patientId,
+      parentId,
+      items: [],
+      subtotal: 272,
+      totalAmount: 272,
+      taxTotal: 0,
+      taxPercent: 0,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // The finance step re-sends the same package when regenerating the link.
+    await InvoiceService.addItemsToInvoice("inv_dedup", [
+      {
+        description: "Sample testing package",
+        name: "Sample testing package",
+        quantity: 1,
+        unitPrice: 272,
+        total: 272,
+      },
+    ]);
+
+    const updateCall = (prisma.invoice.update as jest.Mock).mock.calls[0][0];
+    const persistedItems = updateCall.data.items as Array<{ name?: string }>;
+    expect(persistedItems).toHaveLength(1);
+  });
+
   it("finalizes tax snapshots and re-opens a finalized-but-unpaid invoice when edited", async () => {
     (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
       id: "inv_final",
