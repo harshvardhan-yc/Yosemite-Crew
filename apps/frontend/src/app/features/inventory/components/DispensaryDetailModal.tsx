@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { FiX, FiArrowRight, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { FiX, FiChevronDown, FiChevronUp, FiPrinter } from 'react-icons/fi';
 import { FaCheckCircle } from 'react-icons/fa';
 import Modal from '@/app/ui/overlays/Modal';
 import { DispensaryRecord } from '@/app/features/inventory/pages/Inventory/types';
@@ -9,6 +9,7 @@ import {
   dispensePrescription,
   notDispensedPrescription,
 } from '@/app/features/appointments/services/prescriptionWorkflowService';
+import { fetchPrescriptionLabelPdf } from '@/app/features/inventory/services/dispensaryService';
 
 type Props = {
   record: DispensaryRecord;
@@ -57,6 +58,7 @@ const DispensaryDetailModal = ({
   const pendingCount = items.length;
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [actioning, setActioning] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   const togglePrescription = (idx: number) => setExpandedIdx((prev) => (prev === idx ? null : idx));
 
@@ -69,6 +71,20 @@ const DispensaryDetailModal = ({
       onActionComplete();
     } finally {
       setActioning(false);
+    }
+  };
+
+  const handlePrintLabel = async () => {
+    if (printing) return;
+    setPrinting(true);
+    try {
+      const blob = await fetchPrescriptionLabelPdf(organisationId, record.prescriptionId);
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, '_blank');
+      if (win) win.focus();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -273,10 +289,12 @@ const DispensaryDetailModal = ({
             <div className="flex justify-end">
               <button
                 type="button"
-                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-text-primary bg-white px-5 text-body-4-emphasis text-text-primary hover:bg-card-hover transition-colors"
+                onClick={handlePrintLabel}
+                disabled={printing}
+                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-text-primary bg-white px-5 text-body-4-emphasis text-text-primary hover:bg-card-hover transition-colors disabled:opacity-50"
               >
-                <span>Prescription</span>
-                <FiArrowRight size={16} />
+                <FiPrinter size={16} />
+                <span>{printing ? 'Loading…' : 'Label'}</span>
               </button>
             </div>
           ) : (

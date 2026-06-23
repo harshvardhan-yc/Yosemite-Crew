@@ -1,4 +1,4 @@
-import { getData } from '@/app/services/axios';
+import api, { getData } from '@/app/services/axios';
 
 export type DispenseRequestStatus = 'PENDING' | 'NOT_DISPENSED' | 'DISPENSED';
 
@@ -72,6 +72,17 @@ export const getDispenseRequest = async (
 ): Promise<DispenseRequestApi> => {
   const res = await getData<DispenseRequestApi>(
     `/v1/prescriptions/organisations/${organisationId}/prescription-dispense-requests/${dispenseRequestId}`
+  );
+  return res.data;
+};
+
+export const fetchPrescriptionLabelPdf = async (
+  organisationId: string,
+  prescriptionId: string
+): Promise<Blob> => {
+  const res = await api.get<Blob>(
+    `/v1/prescriptions/organisations/${organisationId}/${prescriptionId}/label.pdf`,
+    { responseType: 'blob' }
   );
   return res.data;
 };

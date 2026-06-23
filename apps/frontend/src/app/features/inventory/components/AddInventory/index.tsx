@@ -146,6 +146,7 @@ type AddInventoryProps = {
   businessType: BusinessType;
   onSubmit: (data: InventoryItem) => Promise<void>;
   stockLocationOptions?: string[];
+  organisationId?: string;
 };
 
 const AddInventory = ({
@@ -154,6 +155,7 @@ const AddInventory = ({
   businessType,
   onSubmit,
   stockLocationOptions,
+  organisationId,
 }: AddInventoryProps) => {
   const [activeLabel, setActiveLabel] = useState<InventorySectionKey>(labels[0].key);
   const [formData, setFormData] = useState<InventoryItem>(emptyInventoryItem);
@@ -492,7 +494,7 @@ const AddInventory = ({
                       backgroundColor:
                         formData.basicInfo.visibleInInventory === false
                           ? 'var(--color-neutral-300)'
-                          : 'var(--color-success-bright)',
+                          : 'var(--color-blue-sky)',
                     }}
                   >
                     <span
@@ -566,6 +568,7 @@ const AddInventory = ({
               })
             }
             stockLocationOptions={stockLocationOptions}
+            organisationId={organisationId}
           />
         </div>
       </div>
