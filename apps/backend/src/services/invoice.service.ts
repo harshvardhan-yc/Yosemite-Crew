@@ -1466,9 +1466,10 @@ export const InvoiceService = {
       throw new InvoiceServiceError("Cannot modify a paid invoice", 409);
     }
 
-    if (invoice.finalizedAt) {
-      throw new InvoiceServiceError("Cannot modify a finalized invoice", 409);
-    }
+    // A finalized but UNPAID invoice can still be edited (e.g. to add line items
+    // and re-issue the payment link); only PAID invoices are locked (checked above).
+    // We re-open it below so it can be re-priced and a fresh payment link generated.
+    const wasFinalized = Boolean(invoice.finalizedAt);
 
     const existingItems = Array.isArray(invoice.items)
       ? (invoice.items as unknown as DraftInvoiceItemInput[])
@@ -1513,6 +1514,7 @@ export const InvoiceService = {
         taxTotal: totals.taxTotal,
         taxPercent: totals.taxPercent,
         totalAmount: totals.totalAmount,
+        finalizedAt: wasFinalized ? null : undefined,
         taxSnapshot: {
           upsert: {
             create: totals.taxSnapshot!,
@@ -1521,6 +1523,15 @@ export const InvoiceService = {
         },
       },
     });
+
+    // Re-opening a finalized-but-unpaid invoice invalidates any in-flight Stripe
+    // payment attempt so a fresh checkout link is generated for the new total.
+    if (wasFinalized) {
+      await prisma.paymentAttempt.updateMany({
+        where: { invoiceId, status: { notIn: ["SUCCEEDED", "CANCELED"] } },
+        data: { status: "CANCELED" },
+      });
+    }
 
     const targets = await resolveAuditTargetsForInvoiceRow(updated);
     await recordInvoiceAuditEvent(targets, {

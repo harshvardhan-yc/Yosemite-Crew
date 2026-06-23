@@ -512,6 +512,7 @@ export const FinancePaymentService = {
         invoiceId,
         provider: "STRIPE",
         providerPaymentIntentId: { not: null },
+        status: { not: "CANCELED" },
       },
       select: { id: true },
     });
@@ -524,6 +525,7 @@ export const FinancePaymentService = {
         invoiceId,
         provider: "STRIPE",
         providerCheckoutSessionId: { not: null },
+        status: { not: "CANCELED" },
       },
       orderBy: { createdAt: "desc" },
       select: {
