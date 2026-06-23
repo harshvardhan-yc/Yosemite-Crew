@@ -457,8 +457,10 @@ const buildFinalizationGate = (input: {
     normalizeAppointmentKind(
       input.appointment?.appointmentKind ?? input.encounter?.appointmentKind,
     ) === "INPATIENT";
-  const inpatientRoomAdmissionReady =
-    !isInpatient || input.admission?.dischargedAt != null;
+  // Inpatient discharge is gated on the admission state that exists BEFORE
+  // discharge: a valid admission record must be present. It must NOT depend on
+  // dischargedAt, which is only written by the discharge itself.
+  const inpatientRoomAdmissionReady = !isInpatient || input.admission != null;
 
   const blockerReasons: string[] = [];
   if (!requiredSoapOrDischargeComplete) {
@@ -1626,6 +1628,25 @@ const buildBootstrapAggregate = async (
     ordersAndResults.orders,
     ordersAndResults.results,
   );
+  // Finalization must only be blocked by labs tied to THIS appointment/encounter.
+  // loadOrdersAndResults also returns the companion's labs from other visits for
+  // display, so a separate summary scoped to this appointment drives the gate.
+  const finalizationOrders = ordersAndResults.orders.filter(
+    (order) => appointmentId != null && order.appointmentId === appointmentId,
+  );
+  const finalizationOrderIds = new Set(
+    finalizationOrders
+      .map((order) => order.idexxOrderId)
+      .filter((orderId): orderId is string => Boolean(orderId)),
+  );
+  const finalizationResults = ordersAndResults.results.filter(
+    (result) =>
+      result.orderId != null && finalizationOrderIds.has(result.orderId),
+  );
+  const finalizationLabSummary = buildLabSummary(
+    finalizationOrders,
+    finalizationResults,
+  );
   const locked = resolveWorkspaceLock({
     appointment: context.appointment,
     encounter: context.encounter,
@@ -1646,7 +1667,7 @@ const buildBootstrapAggregate = async (
       artifact?: { status?: string; kind?: string };
       status?: string;
     }>,
-    labSummary,
+    labSummary: finalizationLabSummary,
     billingState,
     pendingDispenseRequests,
     admission,

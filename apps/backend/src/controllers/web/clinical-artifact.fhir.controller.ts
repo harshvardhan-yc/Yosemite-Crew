@@ -465,6 +465,20 @@ export const ClinicalArtifactFhirController = {
     }
   },
 
+  async finalizeSoapNote(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.finalizeSoapNote(
+        req.params.soapNoteId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.soapNoteToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async reopenSoapNote(req: Request, res: Response) {
     try {
       const record = await ClinicalArtifactService.reopenSoapNote(
@@ -488,6 +502,22 @@ export const ClinicalArtifactFhirController = {
       return res
         .status(201)
         .json(clinicalArtifactFhirMapper.soapNoteToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async finalizePrescription(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.finalizePrescription(
+        req.params.prescriptionId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(
+          clinicalArtifactFhirMapper.prescriptionToMedicationRequest(record),
+        );
     } catch (error) {
       return handleError(error, res);
     }
@@ -525,6 +555,20 @@ export const ClinicalArtifactFhirController = {
     }
   },
 
+  async finalizeDischargeSummary(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.finalizeDischargeSummary(
+        req.params.dischargeSummaryId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.dischargeSummaryToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async reopenDischargeSummary(req: Request, res: Response) {
     try {
       const record = await ClinicalArtifactService.reopenDischargeSummary(
@@ -548,6 +592,20 @@ export const ClinicalArtifactFhirController = {
       return res
         .status(201)
         .json(clinicalArtifactFhirMapper.dischargeSummaryToComposition(record));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async finalizeVitalRecord(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.finalizeVitalRecord(
+        req.params.vitalRecordId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(clinicalArtifactFhirMapper.vitalRecordToObservation(record));
     } catch (error) {
       return handleError(error, res);
     }

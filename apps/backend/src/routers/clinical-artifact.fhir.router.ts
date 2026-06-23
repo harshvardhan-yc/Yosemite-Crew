@@ -60,6 +60,15 @@ router.post(
 );
 
 router.post(
+  String.raw`/organisation/:organisationId/soap-note/:soapNoteId/\$finalize`,
+  authorizeCognito,
+  dischargeSummaryLimiter,
+  withOrgPermissions(),
+  requirePermission(["forms:edit:any"]),
+  (req, res) => ClinicalArtifactFhirController.finalizeSoapNote(req, res),
+);
+
+router.post(
   String.raw`/organisation/:organisationId/soap-note/:soapNoteId/\$reopen`,
   authorizeCognito,
   dischargeSummaryLimiter,
@@ -122,6 +131,15 @@ router.post(
   withOrgPermissions(),
   requirePermission(["prescription:view:any"]),
   (req, res) => ClinicalArtifactFhirController.getPrescription(req, res),
+);
+
+router.post(
+  String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$finalize`,
+  authorizeCognito,
+  dischargeSummaryLimiter,
+  withOrgPermissions(),
+  requirePermission(["prescription:edit:any"]),
+  (req, res) => ClinicalArtifactFhirController.finalizePrescription(req, res),
 );
 
 router.post(
@@ -193,6 +211,16 @@ router.post(
 );
 
 router.post(
+  String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId/\$finalize`,
+  authorizeCognito,
+  dischargeSummaryLimiter,
+  withOrgPermissions(),
+  requirePermission(["forms:edit:any"]),
+  (req, res) =>
+    ClinicalArtifactFhirController.finalizeDischargeSummary(req, res),
+);
+
+router.post(
   String.raw`/organisation/:organisationId/discharge-summary/:dischargeSummaryId/\$reopen`,
   authorizeCognito,
   dischargeSummaryLimiter,
@@ -255,6 +283,15 @@ router.post(
   withOrgPermissions(),
   requirePermission(["forms:view:any"]),
   (req, res) => ClinicalArtifactFhirController.getVitalRecord(req, res),
+);
+
+router.post(
+  String.raw`/organisation/:organisationId/vital-record/:vitalRecordId/\$finalize`,
+  authorizeCognito,
+  dischargeSummaryLimiter,
+  withOrgPermissions(),
+  requirePermission(["forms:edit:any"]),
+  (req, res) => ClinicalArtifactFhirController.finalizeVitalRecord(req, res),
 );
 
 router.post(

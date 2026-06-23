@@ -269,6 +269,10 @@ export const FinanceController = {
       }
 
       const filters = query.data;
+      // Tenant scope must come from the org authorized by withOrgPermissions
+      // (which may be supplied via header/param), not the raw query value.
+      const authorizedOrganisationId =
+        (req as OrgRequest).organisationId ?? filters.organisationId;
       const resolved = {
         organisationId: filters.organisationId,
         appointmentId: filters.appointmentId,
@@ -291,7 +295,7 @@ export const FinanceController = {
       if (resolved.appointmentId) {
         const invoices = await InvoiceService.getByAppointmentId(
           resolved.appointmentId,
-          resolved.organisationId,
+          authorizedOrganisationId,
         );
         return res.status(200).json(toFinanceSuccess(invoices));
       }

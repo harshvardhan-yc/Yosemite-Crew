@@ -268,6 +268,36 @@ describe("CaseEncounterService", () => {
     expect(result.appointmentId).toBe("appt_1");
   });
 
+  it("rejects creating an encounter for an appointment already linked to another encounter", async () => {
+    mockedPrisma.case.findUnique.mockResolvedValue(baseCaseRow as never);
+    mockedPrisma.appointment.findUnique.mockResolvedValue({
+      id: "appt_1",
+      caseId: null,
+      encounterId: "enc_existing",
+      organisationId: "org_1",
+      patient: { id: "comp_1" },
+    } as never);
+
+    await expect(
+      CaseEncounterService.createEncounter({
+        caseId: "case_1",
+        appointmentId: "appt_1",
+        organisationId: "org_1",
+        patientId: "comp_1",
+        parentId: "parent_1",
+        status: "planned",
+        encounterClass: "IMP",
+        appointmentKind: "INPATIENT",
+      } as never),
+    ).rejects.toMatchObject({
+      message: "Appointment is already linked to a different encounter.",
+      statusCode: 409,
+    } satisfies Partial<CaseEncounterServiceError>);
+
+    expect(mockedPrisma.encounter.create).not.toHaveBeenCalled();
+    expect(mockedPrisma.appointment.update).not.toHaveBeenCalled();
+  });
+
   it("expands a package appointment into workspace treatment rows once", async () => {
     mockedPrisma.case.findUnique.mockResolvedValue(baseCaseRow as never);
     mockedPrisma.appointment.findUnique.mockResolvedValue({

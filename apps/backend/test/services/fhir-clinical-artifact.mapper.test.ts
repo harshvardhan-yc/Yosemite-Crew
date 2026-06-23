@@ -194,6 +194,31 @@ describe("clinicalArtifactFhirMapper", () => {
     expect(input.notes).toBe("after food");
   });
 
+  it("round-trips an in-progress prescription without downgrading to DRAFT", () => {
+    const resource = clinicalArtifactFhirMapper.prescriptionToMedicationRequest(
+      {
+        ...prescriptionRecord,
+        artifact: {
+          ...prescriptionRecord.artifact,
+          status: "IN_PROGRESS" as const,
+        },
+      },
+    );
+    // An IN_PROGRESS prescription serialises to FHIR status 'accepted'...
+    expect(resource.status).toBe("accepted");
+
+    const input =
+      clinicalArtifactFhirMapper.medicationRequestToPrescriptionInput(
+        resource,
+        {
+          organisationId: "org-1",
+        },
+      );
+
+    // ...and must map back to IN_PROGRESS, not fall through to DRAFT.
+    expect(input.status).toBe("IN_PROGRESS");
+  });
+
   it("maps discharge summaries to and from Composition", () => {
     const resource =
       clinicalArtifactFhirMapper.dischargeSummaryToComposition(dischargeRecord);

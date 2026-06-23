@@ -16,6 +16,7 @@ import {
 import { FormAssignmentService } from "src/services/form-assignment.service";
 import { completePersistedRenderedDocumentSigning } from "src/services/rendered-document.service";
 import { OrganizationService } from "src/services/organization.service";
+import { WorkspaceDocumentPacketService } from "src/services/workspace-document-packet.service";
 import type { AuthenticatedRequest } from "src/middlewares/auth";
 import logger from "src/utils/logger";
 import { prisma } from "src/config/prisma";
@@ -128,6 +129,33 @@ async function handleSubmissionEvent(
   }
 
   return true;
+}
+
+async function findWebhookPacket(documentId: string) {
+  return prisma.workspaceDocumentPacket.findFirst({
+    where: {
+      signing: {
+        path: ["documentId"],
+        equals: documentId,
+      } as Prisma.JsonFilter,
+    },
+    select: { id: true },
+  });
+}
+
+async function handlePacketEvent(
+  eventType: string,
+  packet: { id: string } | null,
+) {
+  if (!packet) {
+    return;
+  }
+
+  if (eventType === "DOCUMENT_COMPLETED") {
+    await WorkspaceDocumentPacketService.completeSigning(packet.id);
+  } else if (eventType === "DOCUMENT_DELETED") {
+    await WorkspaceDocumentPacketService.resetSigning(packet.id);
+  }
 }
 
 async function handleRenderedDocumentEvent(
@@ -273,6 +301,11 @@ export const DocumensoWebhookController = {
       const submission = await findWebhookSubmission(event.documentId);
       const handled = await handleSubmissionEvent(event.eventType, submission);
       if (!handled) {
+        // Packet signing stores the Documenso document id on the workspace
+        // document packet (not a FormSubmission), so route packet completions
+        // to packet finalization when no submission matches.
+        const packet = await findWebhookPacket(event.documentId);
+        await handlePacketEvent(event.eventType, packet);
         return res.status(200).json({ received: true });
       }
 

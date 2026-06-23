@@ -134,7 +134,8 @@ describe("UserOrganizationController", () => {
         createMockReq({
           body: {
             resourceType: "PractitionerRole",
-            organizationReference: "Organization/org-1",
+            // Real FHIR PractitionerRole payload shape emitted by the frontend.
+            organization: { reference: "Organization/org-1" },
           },
         }),
         mockRes as Response,
@@ -142,6 +143,20 @@ describe("UserOrganizationController", () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(201);
       expect(mockRes.json).toHaveBeenCalledWith({ id: "mapping-1" });
+    });
+
+    it("rejects an upsert whose payload carries no organisation reference", async () => {
+      (resolveUserIdFromRequest as jest.Mock).mockReturnValue("user-1");
+
+      await UserOrganizationController.upsertMapping(
+        createMockReq({
+          body: { resourceType: "PractitionerRole" },
+        }),
+        mockRes as Response,
+      );
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(UserOrganizationService.upsert).not.toHaveBeenCalled();
     });
   });
 

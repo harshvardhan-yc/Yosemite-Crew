@@ -286,6 +286,7 @@ describe("WorkspaceService", () => {
       {
         id: "order-1",
         provider: "IDEXX",
+        appointmentId: "appt-1",
         status: "SUBMITTED",
         idexxOrderId: "idexx-1",
         tests: ["CBC"],
@@ -619,6 +620,160 @@ describe("WorkspaceService", () => {
     expect(result.permissions.canAssignTasks).toBe(false);
     expect(result.permissions.canResumeSchedules).toBe(false);
     expect(result.permissions.canCancelSchedules).toBe(false);
+  });
+
+  it("marks inpatient admission ready when an active (not yet discharged) admission exists", async () => {
+    mockedPrisma.encounter.findFirst.mockResolvedValue({
+      id: "enc-3",
+      organisationId: "org-3",
+      caseId: "case-3",
+      patientId: "patient-3",
+      parentId: null,
+      status: "in-progress",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      title: "Inpatient stay",
+      reason: "Admit",
+      periodStart: null,
+      periodEnd: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.case.findFirst.mockResolvedValue({
+      id: "case-3",
+      organisationId: "org-3",
+      patientId: "patient-3",
+      parentId: null,
+      status: "active",
+      appointmentKind: "INPATIENT",
+      title: "Episode",
+      description: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.patient.findFirst.mockResolvedValue({
+      id: "patient-3",
+      name: "Milo",
+      type: "PET",
+      status: "ACTIVE",
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    // Active admission: dischargedAt is null because discharge has not run yet.
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc-3",
+      organisationId: "org-3",
+      patientId: "patient-3",
+      unitId: "unit-1",
+      dischargedAt: null,
+    });
+
+    const result = await WorkspaceService.getEncounterBootstrap(
+      {
+        organisationId: "org-3",
+        encounterId: "enc-3",
+      },
+      [],
+    );
+
+    expect(result.finalizationGate).toEqual(
+      expect.objectContaining({
+        inpatientRoomAdmissionReady: true,
+      }),
+    );
+  });
+
+  it("does not let labs from another visit for the same companion block finalization", async () => {
+    mockedPrisma.appointment.findFirst.mockResolvedValue({
+      id: "appt-1",
+      organisationId: "org-1",
+      status: "UPCOMING",
+      appointmentKind: "OUTPATIENT",
+      concern: "Annual review",
+      encounterId: "enc-1",
+      caseId: "case-1",
+      patient: { id: "patient-1", parent: { id: "parent-1" } },
+      startTime: new Date("2026-06-15T10:00:00.000Z"),
+      endTime: new Date("2026-06-15T10:30:00.000Z"),
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.encounter.findFirst.mockResolvedValue({
+      id: "enc-1",
+      organisationId: "org-1",
+      caseId: "case-1",
+      patientId: "patient-1",
+      parentId: "parent-1",
+      status: "in-progress",
+      encounterClass: "AMB",
+      appointmentKind: "OUTPATIENT",
+      title: "Annual review",
+      reason: null,
+      periodStart: null,
+      periodEnd: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockedPrisma.case.findFirst.mockResolvedValue({
+      id: "case-1",
+      organisationId: "org-1",
+      patientId: "patient-1",
+      parentId: "parent-1",
+      status: "active",
+      appointmentKind: "OUTPATIENT",
+      title: "Episode",
+      description: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.patient.findFirst.mockResolvedValue({
+      id: "patient-1",
+      name: "Buddy",
+      type: "PET",
+      status: "ACTIVE",
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.parent.findFirst.mockResolvedValue({
+      id: "parent-1",
+      firstName: "Jane",
+      lastName: "Doe",
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    // A pending lab order from a DIFFERENT appointment, returned only because it
+    // matches the same companion (patientId). It must not block this encounter.
+    mockedPrisma.labOrder.findMany.mockResolvedValue([
+      {
+        id: "order-other",
+        provider: "IDEXX",
+        appointmentId: "appt-other",
+        status: "SUBMITTED",
+        idexxOrderId: "idexx-other",
+        tests: ["CBC"],
+        createdAt: new Date("2026-06-10T10:00:00.000Z"),
+        updatedAt: new Date("2026-06-10T10:00:00.000Z"),
+      },
+    ]);
+    mockedPrisma.labResult.findMany.mockResolvedValue([]);
+
+    const result = await WorkspaceService.getAppointmentBootstrap(
+      {
+        organisationId: "org-1",
+        appointmentId: "appt-1",
+      },
+      [],
+    );
+
+    // The display summary still surfaces the companion's other-visit labs ...
+    expect(result.labSummary.pendingCount).toBe(1);
+    expect(result.labSummary.blockingFinalization).toBe(true);
+    // ... but the finalization gate is not blocked by them.
+    expect(result.finalizationGate).toEqual(
+      expect.objectContaining({
+        pendingLabsResolved: true,
+      }),
+    );
   });
 
   it("resolves the linked appointment when bootstrapping from an encounter", async () => {

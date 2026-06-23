@@ -597,7 +597,6 @@ const assertAppointmentMatchesEncounterContext = (
   }
 
   if (
-    context.encounterId &&
     appointment.encounterId &&
     appointment.encounterId !== context.encounterId
   ) {

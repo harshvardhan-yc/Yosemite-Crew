@@ -185,6 +185,27 @@ describe("FinanceController", () => {
       expect(statusMock).toHaveBeenCalledWith(200);
     });
 
+    it("scopes appointment invoices to the authorized org, not the raw query value", async () => {
+      // The org authorized by withOrgPermissions is exposed on req.organisationId
+      // (it may have been supplied via header/param). When the query param is
+      // absent, scoping must still use the authorized org so an appointment id
+      // from another tenant cannot leak that tenant's invoices.
+      req.query = { appointmentId: "appt-other-org" };
+      (req as unknown as { organisationId: string }).organisationId =
+        "org-auth";
+      mockedInvoiceService.getByAppointmentId.mockResolvedValueOnce(
+        [] as never,
+      );
+
+      await FinanceController.listInvoices(req as Request, res as Response);
+
+      expect(mockedInvoiceService.getByAppointmentId).toHaveBeenCalledWith(
+        "appt-other-org",
+        "org-auth",
+      );
+      expect(statusMock).toHaveBeenCalledWith(200);
+    });
+
     it("lists organisation invoices when only organisationId is provided", async () => {
       req.query = { organisationId: "org-1" };
       mockedInvoiceService.listForOrganisation.mockResolvedValueOnce(

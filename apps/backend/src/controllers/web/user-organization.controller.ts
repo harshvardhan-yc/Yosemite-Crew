@@ -54,6 +54,27 @@ const getOrganisationReference = (resource: unknown): string | undefined => {
     : undefined;
 };
 
+const getPayloadOrganisationReference = (
+  payload: UserOrganizationFHIRPayload,
+): string | undefined => {
+  // FHIR PractitionerRole carries the organisation as organization.reference.
+  // Fall back to a flat organizationReference field if a caller still sends it.
+  const candidate = payload as {
+    organization?: { reference?: unknown };
+    organizationReference?: unknown;
+  };
+
+  const nested = candidate.organization?.reference;
+  if (typeof nested === "string" && nested.trim().length > 0) {
+    return nested;
+  }
+
+  return typeof candidate.organizationReference === "string" &&
+    candidate.organizationReference.trim().length > 0
+    ? candidate.organizationReference
+    : undefined;
+};
+
 const hasOrgAccess = async (userId: string, organisationReference: string) => {
   const normalizedTarget = normalizeOrganisationReference(
     organisationReference,
@@ -89,9 +110,8 @@ export const UserOrganizationController = {
         return;
       }
 
-      const payloadOrganisationReference = (
-        payload as { organizationReference?: string }
-      ).organizationReference;
+      const payloadOrganisationReference =
+        getPayloadOrganisationReference(payload);
 
       if (
         !payloadOrganisationReference ||
@@ -258,9 +278,8 @@ export const UserOrganizationController = {
         return;
       }
 
-      const payloadOrganisationReference = (
-        payload as { organizationReference?: string }
-      ).organizationReference;
+      const payloadOrganisationReference =
+        getPayloadOrganisationReference(payload);
 
       if (
         !payloadOrganisationReference ||
