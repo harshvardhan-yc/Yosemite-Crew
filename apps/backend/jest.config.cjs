@@ -32,6 +32,11 @@ module.exports = {
   ],
   coverageDirectory: "<rootDir>/coverage",
   coverageProvider: "v8",
+  // Recycle worker processes once their heap grows past this limit. The v8 coverage
+  // provider otherwise accumulates scope/context state across the 200+ suites on a
+  // long-lived worker, which trips an internal V8 assertion ("# Check failed:
+  // needs_context ...") and crashes the worker on memory-constrained CI runners.
+  workerIdleMemoryLimit: "512MB",
   setupFilesAfterEnv: ["<rootDir>/test/jest.setup.ts"],
   moduleNameMapper: {
     "^@yosemite-crew/database$": "<rootDir>/../../packages/database/src/client.ts",
