@@ -7,29 +7,8 @@ import { renderTable } from '../sections/Table.js';
 import type { ClinicalPdfSignaturePlacement, VitalRecordDocumentData } from '../types.js';
 import { buildClinicalHeaderKeyValue, buildKeyValue } from './shared.js';
 
-export const renderVitalRecordTemplate = (
-  ctx: PdfContext,
-  data: VitalRecordDocumentData
-): ClinicalPdfSignaturePlacement => {
-  renderDocumentTitle(ctx, data.title);
-  renderKeyValueGrid(
-    ctx,
-    buildClinicalHeaderKeyValue({
-      date: data.date,
-      appointmentId: data.appointmentId,
-      leadLabel: 'Recorded By',
-      leadName: data.recordedBy,
-      patientName: data.patientName,
-      clientName: data.clientName,
-      clientId: data.clientId,
-      clientContact: data.contact,
-      speciesBreed: data.speciesBreed,
-      ageSex: data.ageSex,
-    }),
-    { columns: 3 }
-  );
-  renderSpacer(ctx, ctx.theme.spacing.sectionGap);
-
+// Content sections only (no title, metadata or signature) for combined packets.
+export const renderVitalRecordContent = (ctx: PdfContext, data: VitalRecordDocumentData): void => {
   renderSectionTitle(ctx, 'Vital Measurements');
   renderTable(ctx, {
     columns: [
@@ -59,8 +38,37 @@ export const renderVitalRecordTemplate = (
     );
     renderKeyValueGrid(ctx, buildKeyValue(metadataEntries), { columns: 2 });
   }
+};
 
+// Title + metadata + content, without the signature end block.
+export const renderVitalRecordBody = (ctx: PdfContext, data: VitalRecordDocumentData): void => {
+  renderDocumentTitle(ctx, data.title);
+  renderKeyValueGrid(
+    ctx,
+    buildClinicalHeaderKeyValue({
+      date: data.date,
+      appointmentId: data.appointmentId,
+      leadLabel: 'Recorded By',
+      leadName: data.recordedBy,
+      patientName: data.patientName,
+      clientName: data.clientName,
+      clientId: data.clientId,
+      clientContact: data.contact,
+      speciesBreed: data.speciesBreed,
+      ageSex: data.ageSex,
+    }),
+    { columns: 3 }
+  );
   renderSpacer(ctx, ctx.theme.spacing.sectionGap);
+  renderVitalRecordContent(ctx, data);
+  renderSpacer(ctx, ctx.theme.spacing.sectionGap);
+};
+
+export const renderVitalRecordTemplate = (
+  ctx: PdfContext,
+  data: VitalRecordDocumentData
+): ClinicalPdfSignaturePlacement => {
+  renderVitalRecordBody(ctx, data);
   return renderDocumentEndBlock(ctx, {
     printedBy: data.printedBy,
     signature: data.signature,
