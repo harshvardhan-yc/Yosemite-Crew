@@ -1,16 +1,16 @@
-import { render, screen, within } from "@testing-library/react";
-import "@testing-library/jest-dom";
-import HomePage, { FillBtn } from "@/app/features/marketing/pages/HomePage/HomePage";
-import userEvent from "@testing-library/user-event";
-import { useAuthStore } from "@/app/stores/authStore";
+import { render, screen, within } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import HomePage, { FillBtn } from '@/app/features/marketing/pages/HomePage/HomePage';
+import userEvent from '@testing-library/user-event';
+import { useAuthStore } from '@/app/stores/authStore';
 
-jest.mock("@/app/ui/layout/Header/Header", () => {
+jest.mock('@/app/ui/layout/Header/Header', () => {
   return function DummyHeader() {
     return <header>Header Mock</header>;
   };
 });
 
-jest.mock("@/app/ui/widgets/Footer/Footer", () => {
+jest.mock('@/app/ui/widgets/Footer/Footer', () => {
   return function DummyFooter() {
     return <footer>Footer Mock</footer>;
   };
@@ -20,8 +20,8 @@ beforeEach(() => {
   useAuthStore.setState({ user: null, role: null });
 });
 
-describe("HomePage Component", () => {
-  test("renders the main hero headings", () => {
+describe('HomePage Component', () => {
+  test('renders the main hero headings', () => {
     render(<HomePage />);
 
     const heading1 = screen.getByText(/helping you help pets/i);
@@ -31,26 +31,33 @@ describe("HomePage Component", () => {
     expect(heading2).toBeInTheDocument();
   });
 
-  test("renders call-to-action buttons with correct links", () => {
+  test('renders call-to-action buttons with correct links', () => {
     render(<HomePage />);
 
     const mainHeading = screen.getByText(/helping you help pets/i);
 
-    const heroSection = mainHeading.closest("section");
+    const heroSection = mainHeading.closest('section');
 
     if (heroSection === null) {
-      fail("Expected hero section to be in the document");
+      fail('Expected hero section to be in the document');
     }
 
     expect(heroSection).toBeInTheDocument();
 
-    const primaryCta = within(heroSection).getByRole("link", {
+    const primaryCta = within(heroSection).getByRole('link', {
       name: /get started free/i,
     });
 
     expect(primaryCta).toBeInTheDocument();
 
-    expect(primaryCta).toHaveAttribute("href", "/signup");
+    expect(primaryCta).toHaveAttribute('href', '/signup');
+    const macDownload = screen.getByRole('link', { name: /download mac app/i });
+    expect(macDownload).toHaveAttribute('href', '#');
+
+    const windowsDownload = screen.getByRole('link', {
+      name: /download windows app/i,
+    });
+    expect(windowsDownload).toHaveAttribute('href', '#');
   });
 
   test('renders the "Run Your Practice" section heading', () => {
@@ -84,16 +91,14 @@ describe("HomePage Component", () => {
   });
 });
 
-describe("FillBtn Component", () => {
-  test("calls the onClick handler when clicked", async () => {
+describe('FillBtn Component', () => {
+  test('calls the onClick handler when clicked', async () => {
     const user = userEvent.setup();
     const mockOnClick = jest.fn();
 
-    render(
-      <FillBtn text="Click Me" href="#" icon={<svg />} onClick={mockOnClick} />
-    );
+    render(<FillBtn text="Click Me" href="#" icon={<svg />} onClick={mockOnClick} />);
 
-    const buttonElement = screen.getByRole("link", { name: /click me/i });
+    const buttonElement = screen.getByRole('link', { name: /click me/i });
     await user.click(buttonElement);
 
     expect(mockOnClick).toHaveBeenCalledTimes(1);

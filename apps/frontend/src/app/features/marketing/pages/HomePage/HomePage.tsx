@@ -1,9 +1,10 @@
 'use client';
 import React from 'react';
 import Image from 'next/image';
+import { FaApple, FaWindows } from 'react-icons/fa';
 
 import Footer from '@/app/ui/widgets/Footer/Footer';
-import { Primary } from '@/app/ui/primitives/Buttons';
+import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import FeatureBox from '@/app/features/marketing/pages/HomePage/FeatureBox/FeatureBox';
 import FocusCard from '@/app/features/marketing/pages/HomePage/FocusCard/FocusCard';
 import data from './data';
@@ -26,6 +27,18 @@ const HomePage = () => {
   };
 
   const ctaText = user ? 'Go to app' : 'Get started free';
+  const downloadButtons = [
+    {
+      text: 'Download Mac App',
+      icon: <FaApple aria-hidden="true" />,
+      href: '#',
+    },
+    {
+      text: 'Download Windows App',
+      icon: <FaWindows aria-hidden="true" />,
+      href: '#',
+    },
+  ];
 
   return (
     <>
@@ -57,6 +70,16 @@ const HomePage = () => {
               </div>
               <div className="HeroBtn">
                 <Primary size="large" text={ctaText} href={getCtaHref()} />
+                <div className="HeroDownloadButtons">
+                  {downloadButtons.map((button) => (
+                    <Secondary
+                      key={button.text}
+                      text={button.text}
+                      href={button.href}
+                      icon={button.icon}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
             <div className="RytHeroDiv">
