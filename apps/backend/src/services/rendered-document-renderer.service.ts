@@ -586,6 +586,27 @@ const readFirstString = (
   return undefined;
 };
 
+/**
+ * Format a date/time as "YYYY-MM-DD HH:mm" (UTC). Used for the human-readable
+ * admission/recorded timestamps surfaced in the combined header and vital record.
+ * Returns undefined for nullish or invalid inputs so callers keep their fallbacks.
+ */
+const formatDateTime = (value: Date | null | undefined): string | undefined => {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    return undefined;
+  }
+
+  const pad = (part: number) => String(part).padStart(2, "0");
+
+  const year = value.getUTCFullYear();
+  const month = pad(value.getUTCMonth() + 1);
+  const day = pad(value.getUTCDate());
+  const hours = pad(value.getUTCHours());
+  const minutes = pad(value.getUTCMinutes());
+
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
+};
+
 const normalizePrescriptionItems = (
   value: unknown,
 ): PrescriptionDocumentData["items"] => {
@@ -792,6 +813,104 @@ const loadAppointmentClinicalHeader = async (
     lead: appointment.lead as unknown as Record<string, unknown>,
     room: appointment.room as unknown as Record<string, unknown>,
   });
+};
+
+type EncounterLocationHeader = {
+  roomName?: string;
+  unitName?: string;
+  admittedAt?: string;
+  admittedBy?: string;
+};
+
+/**
+ * Resolve the encounter's physical location for the combined clinical header.
+ *
+ * Outpatient encounters (`appointmentKind === 'OUTPATIENT'` and no admission)
+ * surface only the appointment's room JSON name. Inpatient encounters (an
+ * `Admission` row exists, or `appointmentKind === 'INPATIENT'`) surface the
+ * admission timestamp, the admitting staff member, and the assigned room/unit
+ * resolved through the unit → room chain. Returns an empty object when nothing
+ * can be resolved so callers keep their existing fallbacks.
+ */
+const loadEncounterLocationHeader = async (
+  appointmentId: string | null | undefined,
+  encounterId: string | null | undefined,
+): Promise<EncounterLocationHeader> => {
+  let appointmentRoom: Record<string, unknown> = {};
+  let appointmentKind: string | undefined;
+  let resolvedEncounterId = encounterId ?? undefined;
+
+  if (appointmentId) {
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: { appointmentKind: true, room: true, encounterId: true },
+    });
+    if (appointment) {
+      appointmentRoom = isRecord(appointment.room)
+        ? (appointment.room as Record<string, unknown>)
+        : {};
+      appointmentKind = appointment.appointmentKind ?? undefined;
+      resolvedEncounterId ??= appointment.encounterId ?? undefined;
+    }
+  }
+
+  const appointmentRoomName = readFirstString(appointmentRoom, [
+    "name",
+    "code",
+    "number",
+    "label",
+  ]);
+
+  const admission = resolvedEncounterId
+    ? await prisma.admission.findUnique({
+        where: { encounterId: resolvedEncounterId },
+      })
+    : null;
+
+  const isInpatient = appointmentKind === "INPATIENT" || admission !== null;
+
+  if (!isInpatient) {
+    return {
+      roomName: appointmentRoomName,
+    };
+  }
+
+  const result: EncounterLocationHeader = {};
+
+  if (admission) {
+    result.admittedAt = formatDateTime(admission.admittedAt) ?? undefined;
+  }
+
+  const assignment = resolvedEncounterId
+    ? await prisma.roomUnitAssignment.findFirst({
+        where: { encounterId: resolvedEncounterId, releasedAt: null },
+        orderBy: { assignedAt: "desc" },
+      })
+    : null;
+
+  const unitId = admission?.unitId ?? assignment?.unitId ?? undefined;
+
+  if (unitId) {
+    const unit = await prisma.roomUnit.findUnique({ where: { id: unitId } });
+    if (unit) {
+      result.unitName =
+        readString(unit.displayName) ?? readString(unit.code) ?? undefined;
+
+      const room = await prisma.organisationRoom.findUnique({
+        where: { id: unit.roomId },
+      });
+      result.roomName =
+        (room ? readString(room.name) : undefined) ?? appointmentRoomName;
+    }
+  }
+
+  result.roomName ??= appointmentRoomName;
+
+  if (assignment?.assignedBy) {
+    result.admittedBy = (await resolveSigner(assignment.assignedBy)).name;
+  }
+
+  return result;
 };
 
 const readAppointmentIdField = (
@@ -1094,6 +1213,13 @@ const buildTemplateFreeVitalRecordPdfInput = async (
   const notes = readRecordNotes(record, metadata);
   const signature = await buildArtifactSignature(record);
 
+  // `record.data.recordedBy` is a User id; resolve it to a display name the same
+  // way signers are resolved. Fall back to the existing chain when it can't be
+  // resolved (no id, unknown user, or no name on the user).
+  const recordedByName = (
+    await resolveSigner(readString(record.data.recordedBy) ?? null)
+  ).name;
+
   return {
     documentType: "VITAL_RECORD",
     organization,
@@ -1102,6 +1228,7 @@ const buildTemplateFreeVitalRecordPdfInput = async (
       date: record.artifact.updatedAt,
       appointmentId: readAppointmentIdField(record, metadata),
       recordedBy:
+        recordedByName ??
         header.leadName ??
         readFirstString(metadata, [
           "recordedBy",
@@ -1113,6 +1240,12 @@ const buildTemplateFreeVitalRecordPdfInput = async (
         ]) ??
         readString(record.artifact.authorId) ??
         "—",
+      recordedAt:
+        formatDateTime(
+          record.data.measuredAt instanceof Date
+            ? record.data.measuredAt
+            : undefined,
+        ) ?? undefined,
       ...readPatientClientFields(header, metadata),
       contact:
         header.clientContact ??
@@ -1581,6 +1714,8 @@ type BuiltCombinedClinicalSection = {
   section: CombinedClinicalSection;
   /** Appointment id of the underlying artifact, used to load the shared header. */
   appointmentId: string | null;
+  /** Encounter id of the underlying artifact, used to resolve admission/location. */
+  encounterId: string | null;
 };
 
 const buildCombinedClinicalSection = async (
@@ -1601,6 +1736,7 @@ const buildCombinedClinicalSection = async (
   const input: RenderedDocumentPdfSource = { title: doc.title, source };
   const record = await loadClinicalArtifactDocument(source);
   const appointmentId = record.artifact.appointmentId;
+  const encounterId = record.artifact.encounterId;
 
   switch (doc.kind) {
     case "SOAP_NOTE": {
@@ -1612,6 +1748,7 @@ const buildCombinedClinicalSection = async (
       return {
         section: { documentType: "SOAP_NOTE", data: built.data },
         appointmentId,
+        encounterId,
       };
     }
     case "VITAL_RECORD": {
@@ -1623,6 +1760,7 @@ const buildCombinedClinicalSection = async (
       return {
         section: { documentType: "VITAL_RECORD", data: built.data },
         appointmentId,
+        encounterId,
       };
     }
     case "PRESCRIPTION": {
@@ -1634,6 +1772,7 @@ const buildCombinedClinicalSection = async (
       return {
         section: { documentType: "PRESCRIPTION", data: built.data },
         appointmentId,
+        encounterId,
       };
     }
     case "DISCHARGE_SUMMARY": {
@@ -1645,6 +1784,7 @@ const buildCombinedClinicalSection = async (
       return {
         section: { documentType: "DISCHARGE_SUMMARY", data: built.data },
         appointmentId,
+        encounterId,
       };
     }
     default:
@@ -1678,6 +1818,7 @@ export const renderCombinedClinicalPacketPdf = async (
 
   const sections: CombinedClinicalSection[] = [];
   let headerAppointmentId: string | null = null;
+  let headerEncounterId: string | null = null;
   for (const doc of input.documents) {
     const built = await buildCombinedClinicalSection(
       doc,
@@ -1687,6 +1828,7 @@ export const renderCombinedClinicalPacketPdf = async (
     if (built) {
       sections.push(built.section);
       headerAppointmentId ??= built.appointmentId;
+      headerEncounterId ??= built.encounterId;
     }
   }
 
@@ -1702,9 +1844,25 @@ export const renderCombinedClinicalPacketPdf = async (
   const appointmentHeader =
     await loadAppointmentClinicalHeader(headerAppointmentId);
 
+  // Resolve the encounter's physical location (inpatient room/unit + admission
+  // details, or the outpatient room). These authoritative values override the
+  // appointment-JSON-derived room/unit; existing fallbacks are kept otherwise.
+  const locationHeader = await loadEncounterLocationHeader(
+    headerAppointmentId,
+    headerEncounterId,
+  );
+
+  const header = buildCombinedClinicalHeader(sections[0], appointmentHeader);
+
   return generateCombinedClinicalPdfWithMetadata({
     organization,
-    header: buildCombinedClinicalHeader(sections[0], appointmentHeader),
+    header: {
+      ...header,
+      roomName: locationHeader.roomName ?? header.roomName,
+      unitName: locationHeader.unitName ?? header.unitName,
+      admittedAt: locationHeader.admittedAt,
+      admittedBy: locationHeader.admittedBy,
+    },
     sections,
     printedBy: undefined,
     signature: { status: "PENDING", label: "Signature" },

@@ -22,6 +22,18 @@ jest.mock("src/config/prisma", () => ({
     appointment: {
       findUnique: jest.fn(),
     },
+    admission: {
+      findUnique: jest.fn(),
+    },
+    roomUnit: {
+      findUnique: jest.fn(),
+    },
+    organisationRoom: {
+      findUnique: jest.fn(),
+    },
+    roomUnitAssignment: {
+      findFirst: jest.fn(),
+    },
     formSubmission: {
       findUnique: jest.fn(),
     },
@@ -78,6 +90,10 @@ describe("rendered-document-renderer service", () => {
   const mockedPrisma = prisma as unknown as {
     organization: { findUnique: jest.Mock };
     appointment: { findUnique: jest.Mock };
+    admission: { findUnique: jest.Mock };
+    roomUnit: { findUnique: jest.Mock };
+    organisationRoom: { findUnique: jest.Mock };
+    roomUnitAssignment: { findFirst: jest.Mock };
     formSubmission: { findUnique: jest.Mock };
     form: { findUnique: jest.Mock };
     formVersion: { findUnique: jest.Mock };
@@ -104,6 +120,10 @@ describe("rendered-document-renderer service", () => {
     mockedRenderPdf.mockResolvedValue(Buffer.from("pdf"));
     mockedGenerateClinicalPdf.mockResolvedValue(Buffer.from("label-pdf"));
     mockedPrisma.appointment.findUnique.mockResolvedValue(null);
+    mockedPrisma.admission.findUnique.mockResolvedValue(null);
+    mockedPrisma.roomUnit.findUnique.mockResolvedValue(null);
+    mockedPrisma.organisationRoom.findUnique.mockResolvedValue(null);
+    mockedPrisma.roomUnitAssignment.findFirst.mockResolvedValue(null);
     mockedPrisma.inventoryItem.findMany.mockResolvedValue([]);
     mockedPrisma.user.findFirst.mockResolvedValue(null);
     mockedGenerateClinicalPdfWithMetadata.mockResolvedValue({
@@ -1330,6 +1350,235 @@ describe("rendered-document-renderer service", () => {
           header: expect.objectContaining({
             roomName: "Ward A",
             unitName: undefined,
+          }),
+        }),
+      );
+    });
+
+    it("populates inpatient room/unit/admission details from admission, unit, room and assignment", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        baseOrganization,
+      );
+      // First call (per-section header) returns the patient/lead; the shared
+      // location lookup re-reads with the inpatient kind + encounter id.
+      mockedPrisma.appointment.findUnique.mockResolvedValue({
+        appointmentKind: "INPATIENT",
+        encounterId: "enc-inpatient",
+        patient: {
+          name: "Bella Hadid",
+          parent: { id: "CL-1001", name: "Yasmin Hadid" },
+        },
+        lead: { name: "Dr. Tim Apple" },
+        room: { id: "room-appt", name: "Reception" },
+      });
+      mockedPrisma.admission.findUnique.mockResolvedValueOnce({
+        encounterId: "enc-inpatient",
+        unitId: "unit-1",
+        admittedAt: new Date("2026-06-20T09:30:00.000Z"),
+        dischargedAt: null,
+      });
+      mockedPrisma.roomUnitAssignment.findFirst.mockResolvedValueOnce({
+        id: "assign-1",
+        encounterId: "enc-inpatient",
+        unitId: "unit-1",
+        assignedAt: new Date("2026-06-20T09:30:00.000Z"),
+        releasedAt: null,
+        assignedBy: "admitting-user-id",
+      });
+      mockedPrisma.roomUnit.findUnique.mockResolvedValueOnce({
+        id: "unit-1",
+        roomId: "room-ward",
+        code: "U-1",
+        displayName: "ICU Bed 4",
+      });
+      mockedPrisma.organisationRoom.findUnique.mockResolvedValueOnce({
+        id: "room-ward",
+        name: "Intensive Care Ward",
+        code: "ICU",
+      });
+      mockedPrisma.user.findFirst.mockResolvedValueOnce({
+        firstName: "Nina",
+        lastName: "Patel",
+        email: "nina.patel@example.com",
+      });
+      mockedPrisma.soapNote.findUnique.mockResolvedValueOnce({
+        id: "soap-inpatient",
+        subjective: {},
+        objective: {},
+        assessment: {},
+        plan: {},
+        diagnoses: [],
+        metadata: {},
+        artifact: unsignedArtifact({
+          id: "art-soap-inpatient",
+          kind: "SOAP_NOTE",
+          encounterId: "enc-inpatient",
+        }),
+      });
+
+      await renderCombinedClinicalPacketPdf({
+        organisationId: "org-1",
+        documents: [
+          {
+            documentId: "doc-soap-inpatient",
+            sourceId: "soap-inpatient",
+            kind: "SOAP_NOTE",
+            title: "SOAP Note",
+          },
+        ],
+      });
+
+      expect(mockedPrisma.admission.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { encounterId: "enc-inpatient" },
+        }),
+      );
+      expect(mockedPrisma.roomUnitAssignment.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { encounterId: "enc-inpatient", releasedAt: null },
+          orderBy: { assignedAt: "desc" },
+        }),
+      );
+      expect(mockedPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: "admitting-user-id" },
+        }),
+      );
+      expect(
+        mockedGenerateCombinedClinicalPdfWithMetadata,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          header: expect.objectContaining({
+            roomName: "Intensive Care Ward",
+            unitName: "ICU Bed 4",
+            admittedAt: "2026-06-20 09:30",
+            admittedBy: "Nina Patel",
+          }),
+        }),
+      );
+    });
+
+    it("uses the appointment room and leaves admission details undefined for outpatient encounters", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        baseOrganization,
+      );
+      mockedPrisma.appointment.findUnique.mockResolvedValue({
+        appointmentKind: "OUTPATIENT",
+        encounterId: null,
+        patient: { name: "Milo", parent: { id: "CL-2", name: "Owner" } },
+        lead: { name: "Dr. Vet" },
+        room: { id: "room-2", name: "Exam Room 7" },
+      });
+      mockedPrisma.soapNote.findUnique.mockResolvedValueOnce({
+        id: "soap-outpatient",
+        subjective: {},
+        objective: {},
+        assessment: {},
+        plan: {},
+        diagnoses: [],
+        metadata: {},
+        artifact: unsignedArtifact({
+          id: "art-soap-outpatient",
+          kind: "SOAP_NOTE",
+          encounterId: null,
+        }),
+      });
+
+      await renderCombinedClinicalPacketPdf({
+        organisationId: "org-1",
+        documents: [
+          {
+            documentId: "doc-soap-outpatient",
+            sourceId: "soap-outpatient",
+            kind: "SOAP_NOTE",
+            title: "SOAP Note",
+          },
+        ],
+      });
+
+      expect(mockedPrisma.admission.findUnique).not.toHaveBeenCalled();
+      expect(mockedPrisma.roomUnit.findUnique).not.toHaveBeenCalled();
+      expect(
+        mockedGenerateCombinedClinicalPdfWithMetadata,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          header: expect.objectContaining({
+            roomName: "Exam Room 7",
+            unitName: undefined,
+            admittedAt: undefined,
+            admittedBy: undefined,
+          }),
+        }),
+      );
+    });
+  });
+
+  describe("vital record recorder and timestamp", () => {
+    const baseOrganization = {
+      name: "MediCare Hospital",
+      imageUrl: null,
+      phoneNo: "+91 99999 00000",
+      website: "https://medicare.example",
+      address: null,
+    };
+
+    it("resolves the VitalRecord.recordedBy user and formats measuredAt", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        baseOrganization,
+      );
+      mockedPrisma.vitalRecord.findUnique.mockResolvedValueOnce({
+        id: "vital-recorder-1",
+        measuredAt: new Date("2026-06-21T14:05:00.000Z"),
+        recordedBy: "tech-user-id",
+        vitals: { heartRate: 92 },
+        notes: null,
+        metadata: { author: "vet-1" },
+        artifact: {
+          id: "artifact-vital-recorder",
+          organisationId: "org-1",
+          appointmentId: "appt-1",
+          caseId: null,
+          encounterId: null,
+          kind: "VITAL_RECORD",
+          status: "DRAFT",
+          templateId: null,
+          templateVersion: null,
+          templateVersionId: null,
+          authorId: "author-1",
+          signedBy: null,
+          signedAt: null,
+          summary: "Vital summary",
+          createdAt: new Date("2026-06-14T00:00:00.000Z"),
+          updatedAt: new Date("2026-06-14T00:00:00.000Z"),
+        },
+      });
+      mockedPrisma.user.findFirst.mockResolvedValueOnce({
+        firstName: "Ravi",
+        lastName: "Kumar",
+        email: "ravi.kumar@example.com",
+      });
+
+      await renderRenderedDocumentPdf({
+        title: "Vital Record",
+        source: {
+          sourceKind: "CLINICAL_ARTIFACT",
+          sourceId: "vital-recorder-1",
+          organisationId: "org-1",
+          templateKind: "VITAL_RECORD",
+        },
+      });
+
+      expect(mockedPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: "tech-user-id" },
+        }),
+      );
+      expect(mockedGenerateClinicalPdfWithMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          documentType: "VITAL_RECORD",
+          data: expect.objectContaining({
+            recordedBy: "Ravi Kumar",
+            recordedAt: "2026-06-21 14:05",
           }),
         }),
       );
