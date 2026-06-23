@@ -1,4 +1,5 @@
 import { TemplateKind } from "@prisma/client";
+import type { RenderedDocumentSource } from "@yosemite-crew/types";
 import { prisma } from "src/config/prisma";
 import {
   buildPrescriptionLabelPdfInput,
@@ -3348,6 +3349,125 @@ describe("rendered-document-renderer service", () => {
       expect(mockedGenerateClinicalPdfWithMetadata).toHaveBeenCalledWith(
         expect.objectContaining({ documentType: "SOAP_NOTE" }),
       );
+    });
+
+    it("re-throws non-'Template version not found' errors from the template version lookup", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        baseOrganization,
+      );
+      mockedPrisma.soapNote.findUnique.mockResolvedValueOnce({
+        id: "soap-db-down",
+        subjective: { history: "cough" },
+        objective: {},
+        assessment: {},
+        plan: {},
+        diagnoses: [],
+        metadata: {},
+        artifact: {
+          id: "art-soap-db-down",
+          organisationId: "org-1",
+          appointmentId: null,
+          caseId: null,
+          encounterId: null,
+          kind: "SOAP_NOTE",
+          status: "DRAFT",
+          templateId: "template-db-down",
+          templateVersion: 4,
+          templateVersionId: null,
+          authorId: "author-1",
+          signedBy: null,
+          signedAt: null,
+          summary: "summary",
+          createdAt: new Date("2026-06-14T00:00:00.000Z"),
+          updatedAt: new Date("2026-06-14T00:00:00.000Z"),
+        },
+      });
+      // The version lookup rejects with an unrelated error → not swallowed by
+      // the "Template version not found" guard, so it propagates out.
+      mockedPrisma.templateVersion.findUnique.mockRejectedValueOnce(
+        new Error("db down"),
+      );
+
+      await expect(
+        renderRenderedDocumentPdf({
+          title: "SOAP Note",
+          source: {
+            sourceKind: "CLINICAL_ARTIFACT",
+            sourceId: "soap-db-down",
+            organisationId: "org-1",
+            templateKind: "SOAP_NOTE",
+            templateVersion: 4,
+          },
+        }),
+      ).rejects.toThrow("db down");
+
+      expect(
+        mockedGenerateResolvedTemplatePdfWithMetadata,
+      ).not.toHaveBeenCalled();
+      expect(mockedGenerateClinicalPdfWithMetadata).not.toHaveBeenCalled();
+    });
+
+    it("re-throws non-'Template version not found' errors from the latest-version lookup", async () => {
+      mockedPrisma.organization.findUnique.mockResolvedValueOnce(
+        baseOrganization,
+      );
+      mockedPrisma.soapNote.findUnique.mockResolvedValueOnce({
+        id: "soap-latest-down",
+        subjective: { history: "cough" },
+        objective: {},
+        assessment: {},
+        plan: {},
+        diagnoses: [],
+        metadata: {},
+        artifact: {
+          id: "art-soap-latest-down",
+          organisationId: "org-1",
+          appointmentId: null,
+          caseId: null,
+          encounterId: null,
+          kind: "SOAP_NOTE",
+          status: "DRAFT",
+          templateId: "template-latest-down",
+          // templateVersion null → loadLatestTemplateVersionOrThrow path.
+          templateVersion: null,
+          templateVersionId: null,
+          authorId: "author-1",
+          signedBy: null,
+          signedAt: null,
+          summary: "summary",
+          createdAt: new Date("2026-06-14T00:00:00.000Z"),
+          updatedAt: new Date("2026-06-14T00:00:00.000Z"),
+        },
+      });
+      mockedPrisma.templateVersion.findFirst.mockRejectedValueOnce(
+        new Error("db down"),
+      );
+
+      await expect(
+        renderRenderedDocumentPdf({
+          title: "SOAP Note",
+          source: {
+            sourceKind: "CLINICAL_ARTIFACT",
+            sourceId: "soap-latest-down",
+            organisationId: "org-1",
+            templateKind: "SOAP_NOTE",
+          },
+        }),
+      ).rejects.toThrow("db down");
+    });
+
+    it("rejects unsupported rendered document source kinds", async () => {
+      await expect(
+        renderRenderedDocumentPdf({
+          title: "Unsupported",
+          source: {
+            sourceKind: "UNKNOWN_KIND",
+            sourceId: "whatever",
+            organisationId: "org-1",
+            templateKind: "SOAP_NOTE",
+          } as unknown as RenderedDocumentSource,
+        }),
+      ).rejects.toThrow("Unsupported rendered document source kind");
     });
 
     it("defaults missing snapshot sections/config to empty/null in the resolved template", async () => {
