@@ -133,7 +133,10 @@ const normalizeItemTypeForApi = (
   if (normalized === 'non-drug' || normalized === 'non_medical' || normalized === 'non medical') {
     return 'NON_MEDICAL';
   }
-  return 'MEDICAL';
+  if (normalized === 'drug' || normalized === 'medical') {
+    return 'MEDICAL';
+  }
+  return undefined;
 };
 
 const normalizeBooleanStringForApi = (value?: string): boolean | undefined => {

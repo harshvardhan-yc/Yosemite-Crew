@@ -576,7 +576,9 @@ const TreatmentStep = ({
       return;
     }
     if (organisationId) {
-      const persistedPrescriptions = encounter.prescription.filter((rx) => rx.id);
+      const persistedPrescriptions = encounter.prescription.filter(
+        (rx) => rx.id && rx.fulfillment !== 'PRESCRIPTION_ONLY'
+      );
       await Promise.allSettled(
         persistedPrescriptions.map((rx) => finalizePrescription(organisationId, rx.id))
       );

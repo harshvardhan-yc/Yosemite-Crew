@@ -54,6 +54,7 @@ const DispensaryDetailModal = ({
   onActionComplete,
 }: Props) => {
   const isDispensed = record.status === 'DISPENSED';
+  const isPending = record.status === 'PENDING';
   const items = record.items ?? [];
   const pendingCount = items.length;
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -99,6 +100,44 @@ const DispensaryDetailModal = ({
       setActioning(false);
     }
   };
+
+  let footerContent: React.ReactNode = null;
+  if (isDispensed) {
+    footerContent = (
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handlePrintLabel}
+          disabled={printing}
+          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-text-primary bg-white px-5 text-body-4-emphasis text-text-primary hover:bg-card-hover transition-colors disabled:opacity-50"
+        >
+          <FiPrinter size={16} />
+          <span>{printing ? 'Loading…' : 'Label'}</span>
+        </button>
+      </div>
+    );
+  } else if (isPending) {
+    footerContent = (
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={handleDispense}
+          disabled={actioning}
+          className="inline-flex h-11 items-center justify-center rounded-2xl bg-text-primary px-5 text-body-4-emphasis text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          Dispense all ({pendingCount})
+        </button>
+        <button
+          type="button"
+          onClick={handleNotDispensed}
+          disabled={actioning}
+          className="inline-flex h-11 items-center justify-center rounded-2xl border border-[var(--color-danger-600)] px-5 text-body-4-emphasis text-[var(--color-danger-600)] hover:bg-[var(--color-danger-100)] transition-colors disabled:opacity-50"
+        >
+          Not dispensed
+        </button>
+      </div>
+    );
+  }
 
   return (
     <Modal showModal={showModal} setShowModal={setShowModal}>
@@ -284,40 +323,7 @@ const DispensaryDetailModal = ({
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 pt-5 mt-5 border-t border-card-border">
-          {isDispensed ? (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handlePrintLabel}
-                disabled={printing}
-                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-text-primary bg-white px-5 text-body-4-emphasis text-text-primary hover:bg-card-hover transition-colors disabled:opacity-50"
-              >
-                <FiPrinter size={16} />
-                <span>{printing ? 'Loading…' : 'Label'}</span>
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={handleDispense}
-                disabled={actioning}
-                className="inline-flex h-11 items-center justify-center rounded-2xl bg-text-primary px-5 text-body-4-emphasis text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                Dispense all ({pendingCount})
-              </button>
-              <button
-                type="button"
-                onClick={handleNotDispensed}
-                disabled={actioning}
-                className="inline-flex h-11 items-center justify-center rounded-2xl border border-[var(--color-danger-600)] px-5 text-body-4-emphasis text-[var(--color-danger-600)] hover:bg-[var(--color-danger-100)] transition-colors disabled:opacity-50"
-              >
-                Not dispensed
-              </button>
-            </div>
-          )}
-        </div>
+        <div className="shrink-0 pt-5 mt-5 border-t border-card-border">{footerContent}</div>
       </div>
     </Modal>
   );
