@@ -226,10 +226,10 @@ const buildDocumentDetailsSection = (
   ],
 });
 
-const buildOrganizationBranding = (
+const buildOrganizationAddressLines = (
   organization: OrganizationBrand,
-): PdfBranding => {
-  const addressLines = [
+): string[] =>
+  [
     organization.address?.addressLine,
     [
       organization.address?.city,
@@ -240,6 +240,11 @@ const buildOrganizationBranding = (
       .join(", "),
     organization.address?.country,
   ].filter((line): line is string => Boolean(line && line.trim()));
+
+const buildOrganizationBranding = (
+  organization: OrganizationBrand,
+): PdfBranding => {
+  const addressLines = buildOrganizationAddressLines(organization);
 
   return {
     organizationName: organization.name,
@@ -253,17 +258,7 @@ const buildOrganizationBranding = (
 const buildSharedOrganizationBranding = (
   organization: OrganizationBrand,
 ): OrganizationBranding => {
-  const addressLines = [
-    organization.address?.addressLine,
-    [
-      organization.address?.city,
-      organization.address?.state,
-      organization.address?.postalCode,
-    ]
-      .filter((line): line is string => Boolean(line && line.trim()))
-      .join(", "),
-    organization.address?.country,
-  ].filter((line): line is string => Boolean(line && line.trim()));
+  const addressLines = buildOrganizationAddressLines(organization);
 
   return {
     name: organization.name,
@@ -1052,6 +1047,17 @@ const readRecordNotes = (
   readString(metadata.notes) ??
   "";
 
+const resolveLeadName = (
+  header: AppointmentClinicalHeader,
+  metadata: Record<string, unknown>,
+  record: ClinicalArtifactDocumentSource,
+  keys: string[] = ["doctorName", "providerName", "doctor"],
+): string =>
+  header.leadName ??
+  readFirstString(metadata, keys) ??
+  readString(record.artifact.authorId) ??
+  "—";
+
 const buildTemplateFreeSoapNotePdfInput = async (
   input: RenderedDocumentPdfSource,
   record: ClinicalArtifactDocumentSource,
@@ -1074,11 +1080,7 @@ const buildTemplateFreeSoapNotePdfInput = async (
       title: input.title,
       date: record.artifact.updatedAt,
       appointmentId: readAppointmentIdField(record, metadata),
-      doctorName:
-        header.leadName ??
-        readFirstString(metadata, ["doctorName", "providerName", "doctor"]) ??
-        readString(record.artifact.authorId) ??
-        "—",
+      doctorName: resolveLeadName(header, metadata, record),
       ...readPatientClientFields(header, metadata),
       subjective: (record.data.subjective ??
         metadata.subjective ??
@@ -1120,16 +1122,12 @@ const buildTemplateFreePrescriptionPdfInput = async (
       date: record.artifact.updatedAt,
       appointmentId: readAppointmentIdField(record, metadata),
       prescriptionId: record.artifact.id,
-      leadName:
-        header.leadName ??
-        readFirstString(metadata, [
-          "leadName",
-          "doctorName",
-          "providerName",
-          "doctor",
-        ]) ??
-        readString(record.artifact.authorId) ??
-        "—",
+      leadName: resolveLeadName(header, metadata, record, [
+        "leadName",
+        "doctorName",
+        "providerName",
+        "doctor",
+      ]),
       ...readPatientClientFields(header, metadata),
       clientContact:
         header.clientContact ??
@@ -1181,11 +1179,7 @@ const buildTemplateFreeDischargeSummaryPdfInput = async (
       title: input.title,
       date: record.artifact.updatedAt,
       appointmentId: readAppointmentIdField(record, metadata),
-      doctorName:
-        header.leadName ??
-        readFirstString(metadata, ["doctorName", "providerName", "doctor"]) ??
-        readString(record.artifact.authorId) ??
-        "—",
+      doctorName: resolveLeadName(header, metadata, record),
       ...readPatientClientFields(header, metadata),
       contact:
         header.clientContact ??
