@@ -906,8 +906,11 @@ const loadEncounterLocationHeader = async (
 
   result.roomName ??= appointmentRoomName;
 
-  if (assignment?.assignedBy) {
-    result.admittedBy = (await resolveSigner(assignment.assignedBy)).name;
+  // The admitting user (whoever clicked "Convert to Inpatient") is recorded on
+  // the admission; fall back to whoever assigned the unit if it's absent.
+  const admitterId = admission?.admittedBy ?? assignment?.assignedBy;
+  if (admitterId) {
+    result.admittedBy = (await resolveSigner(admitterId)).name;
   }
 
   return result;
