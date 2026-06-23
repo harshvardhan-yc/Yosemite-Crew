@@ -136,6 +136,8 @@ const DEFAULT_SIGNATURE_PLACEMENT = {
   height: 11.4,
 };
 
+const SIGNATURE_LABEL = "Signature";
+
 const humanizeLabel = (value: string) =>
   value
     .split(/[\s._/-]+/u)
@@ -495,7 +497,7 @@ const buildResolvedTemplatePdfInput = (
   title: input.title,
   signature: {
     status: "PENDING",
-    label: "Signature",
+    label: SIGNATURE_LABEL,
   },
 });
 
@@ -963,7 +965,7 @@ const readPrintedByField = (
 
 const buildPendingSignature = (): { status: "PENDING"; label: string } => ({
   status: "PENDING",
-  label: "Signature",
+  label: SIGNATURE_LABEL,
 });
 
 /**
@@ -1013,7 +1015,7 @@ const buildArtifactSignature = async (
 
   return {
     status: "SIGNED",
-    label: "Signature",
+    label: SIGNATURE_LABEL,
     signerName: signer.name,
     signerEmail: signer.email,
     authMethod: "Email",
@@ -1868,7 +1870,7 @@ export const renderCombinedClinicalPacketPdf = async (
     },
     sections,
     printedBy: undefined,
-    signature: { status: "PENDING", label: "Signature" },
+    signature: { status: "PENDING", label: SIGNATURE_LABEL },
   });
 };
 
