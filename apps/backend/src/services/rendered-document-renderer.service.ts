@@ -834,6 +834,29 @@ type EncounterLocationHeader = {
  * resolved through the unit → room chain. Returns an empty object when nothing
  * can be resolved so callers keep their existing fallbacks.
  */
+const resolveUnitRoomNames = async (
+  unitId: string | undefined,
+  fallbackRoomName: string | undefined,
+): Promise<{ unitName?: string; roomName?: string }> => {
+  if (!unitId) {
+    return { roomName: fallbackRoomName };
+  }
+
+  const unit = await prisma.roomUnit.findUnique({ where: { id: unitId } });
+  if (!unit) {
+    return { roomName: fallbackRoomName };
+  }
+
+  const room = await prisma.organisationRoom.findUnique({
+    where: { id: unit.roomId },
+  });
+  return {
+    unitName:
+      readString(unit.displayName) ?? readString(unit.code) ?? undefined,
+    roomName: (room ? readString(room.name) : undefined) ?? fallbackRoomName,
+  };
+};
+
 const loadEncounterLocationHeader = async (
   appointmentId: string | null | undefined,
   encounterId: string | null | undefined,
@@ -891,22 +914,9 @@ const loadEncounterLocationHeader = async (
     : null;
 
   const unitId = admission?.unitId ?? assignment?.unitId ?? undefined;
-
-  if (unitId) {
-    const unit = await prisma.roomUnit.findUnique({ where: { id: unitId } });
-    if (unit) {
-      result.unitName =
-        readString(unit.displayName) ?? readString(unit.code) ?? undefined;
-
-      const room = await prisma.organisationRoom.findUnique({
-        where: { id: unit.roomId },
-      });
-      result.roomName =
-        (room ? readString(room.name) : undefined) ?? appointmentRoomName;
-    }
-  }
-
-  result.roomName ??= appointmentRoomName;
+  const location = await resolveUnitRoomNames(unitId, appointmentRoomName);
+  result.unitName = location.unitName;
+  result.roomName = location.roomName;
 
   // The admitting user (whoever clicked "Convert to Inpatient") is recorded on
   // the admission; fall back to whoever assigned the unit if it's absent.
