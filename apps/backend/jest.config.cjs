@@ -50,11 +50,13 @@ module.exports = {
     "^src/(.*)$": "<rootDir>/src/$1",
   },
   transform: {
-    "^.+\\.tsx?$": ["ts-jest", { tsconfig: "<rootDir>/tsconfig.json" }],
-  },
-  globals: {
-    'ts-jest': {
-      diagnostics: false, 
-    },
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      {
+        tsconfig: "<rootDir>/tsconfig.json",
+        diagnostics: false,
+        isolatedModules: true,
+      },
+    ],
   },
 };
