@@ -8,6 +8,7 @@ import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
 import {
+  addLineItemsToAppointments,
   createFinanceInvoice,
   findOpenAppointmentInvoice,
   loadAppointmentBilling,
@@ -465,6 +466,41 @@ describe('InvoiceStep', () => {
     await waitFor(() => expect(screen.getAllByText(/£/).length).toBeGreaterThan(0));
   });
 
+  it("ignores another organisation's catalog currency on a fresh invoice", async () => {
+    // Multi-org session: a different org's GBP service loaded first. The fresh
+    // invoice for org-1 must not adopt GBP; it falls back to the USD default.
+    useRevampCatalogStore.setState({
+      services: [
+        {
+          id: 'svc-gbp-other',
+          code: 'PR-0003',
+          name: 'Consult GBP other org',
+          description: '',
+          type: 'PROCEDURE',
+          specialityId: 'spec-2',
+          organisationId: 'org-2',
+          grossAmount: 50,
+          currency: 'GBP',
+          defaultDiscount: 0,
+          maxDiscount: 0,
+          durationMinutes: 15,
+          isBookable: true,
+          isInpatientPreferred: false,
+          status: 'ACTIVE',
+          createdAt: '2026-06-18T10:00:00.000Z',
+        },
+      ],
+    });
+    const enc = {
+      ...seedAndGet(),
+      currency: '',
+    } as AppointmentEncounter;
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    await waitFor(() => expect(screen.getAllByText(/\$/).length).toBeGreaterThan(0));
+    expect(screen.queryByText(/£/)).not.toBeInTheDocument();
+  });
+
   it('does nothing when the dark add button has no current match', () => {
     const enc = seedAndGet();
     const before = getEnc().invoiceLineItems.length;
@@ -546,6 +582,73 @@ describe('InvoiceStep', () => {
     expect(newest.paidByName).toBe('Front desk');
     // Flush the trailing post-payment state update (processing flag/refetch) so
     // it doesn't surface as an act() warning in the next test.
+    await act(async () => {});
+  });
+
+  it('reuses a server-loaded open invoice instead of creating a duplicate', async () => {
+    // The global invoice store has no open invoice (default mock returns
+    // undefined), but loadAppointmentBilling hydrated an open invoice into the
+    // encounter. The bill must append to that invoice, never create a second one.
+    const base = seedAndGet();
+    const enc: AppointmentEncounter = {
+      ...base,
+      pastInvoices: [
+        {
+          id: 'server-open-inv',
+          createdAt: '2026-04-20T12:00:00Z',
+          totalCents: 9000,
+          outstandingCents: 9000,
+          status: 'UNPAID',
+          items: [],
+        },
+      ],
+    };
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
+
+    await waitFor(() => expect(addLineItemsToAppointments).toHaveBeenCalled());
+    expect(createFinanceInvoice).not.toHaveBeenCalled();
+    await act(async () => {});
+  });
+
+  it('creates a new invoice when no open invoice exists in the store or server data', async () => {
+    // Both the store lookup (default undefined) and the server-loaded
+    // pastInvoices (all PAID_FULL with no outstanding balance) lack an open
+    // invoice, so the create branch must run.
+    const enc = seedAndGet();
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
+
+    await waitFor(() => expect(createFinanceInvoice).toHaveBeenCalled());
+    expect(addLineItemsToAppointments).not.toHaveBeenCalled();
+    await act(async () => {});
+  });
+
+  it('ignores the appointment-id deposit-fallback sentinel when reusing an invoice', async () => {
+    // hydrateInvoiceBilling uses appointmentId as the id for an invoice that
+    // lacks one; that sentinel must not be treated as a reusable open invoice.
+    const base = seedAndGet();
+    const enc: AppointmentEncounter = {
+      ...base,
+      pastInvoices: [
+        {
+          id: APPT,
+          createdAt: '2026-04-20T12:00:00Z',
+          totalCents: 9000,
+          outstandingCents: 9000,
+          status: 'UNPAID',
+          items: [],
+        },
+      ],
+    };
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    fireEvent.click(screen.getByRole('button', { name: /collect cash/i }));
+
+    await waitFor(() => expect(createFinanceInvoice).toHaveBeenCalled());
+    expect(addLineItemsToAppointments).not.toHaveBeenCalled();
     await act(async () => {});
   });
 

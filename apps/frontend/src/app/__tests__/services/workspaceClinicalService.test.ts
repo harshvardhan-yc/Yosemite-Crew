@@ -641,7 +641,7 @@ describe('workspaceClinicalService', () => {
     });
 
     expect(postDataMock).toHaveBeenCalledWith(
-      '/v1/observation-tools/pms/appointments/appt-1/submissions',
+      '/v1/observation-tools/pms/appointments/appt-1/submissions/create',
       expect.objectContaining({
         organisationId: 'org-1',
         appointmentId: 'appt-1',

@@ -726,18 +726,66 @@ const lineItemToTreatmentDTO = (item: LineItem): TreatmentItemDTO => ({
 });
 
 /**
- * Persist any not-yet-saved service/package rows to the backend treatment-item
- * endpoint before the workspace moves on to Invoice. Already-persisted rows (real
- * backend ids) are skipped so Save is idempotent and never duplicates them.
- * Throws on the first failure so the caller can block the step and surface the error.
+ * Map a workspace service/package line item to the backend treatment-item update
+ * DTO. Only the clinician-editable fields are sent so a PATCH pushes local edits
+ * (quantity/price/display snapshot) onto an already-persisted row.
+ */
+const lineItemToTreatmentUpdateDTO = (item: LineItem): Partial<TreatmentItemDTO> => ({
+  productId: item.refId,
+  servicePackageKind: item.kind,
+  quantity: item.qty,
+  priceSnapshot: { unitPrice: item.unitPriceCents / 100 },
+  productSnapshot: {
+    name: item.name,
+    kind: item.kind,
+    instructions: item.instructions,
+    breakdown: item.breakdown,
+  },
+});
+
+/** A backend treatment row that is an editable, unbilled service/package line. */
+const isEditableServiceRow = (row: Record<string, unknown>): boolean =>
+  !isMedicationTreatmentItem(row) && asString(row.billingStatus) !== 'BILLED';
+
+/**
+ * Persist the current service/package row set to the backend so it matches the
+ * clinician's edits before the workspace moves on to Invoice:
+ *   • new (local-) rows are POSTed,
+ *   • persisted rows that remain are PATCHed so quantity/price/display edits stick,
+ *   • persisted service/package rows the clinician removed locally (present on the
+ *     backend but absent from `items`) are DELETEd so they don't reappear after the
+ *     bootstrap refresh and can't still be billed.
+ * Billed and medication-kind rows are left untouched. Throws on the first failure
+ * so the caller can block the step and surface the error.
  */
 export const persistTreatmentItems = async (
   organisationId: string,
   encounterId: string,
   items: LineItem[]
 ): Promise<void> => {
-  const unsaved = items.filter((item) => !isPersistedTreatmentId(item.id));
-  for (const item of unsaved) {
-    await createEncounterTreatmentItem(organisationId, encounterId, lineItemToTreatmentDTO(item));
+  const keptPersistedIds = new Set(
+    items.map((item) => item.id).filter((id) => isPersistedTreatmentId(id))
+  );
+
+  // Reconcile removals: any unbilled service/package row on the backend that the
+  // clinician dropped from the local list must be deleted.
+  const backendRows = await listEncounterTreatmentItems(organisationId, encounterId);
+  for (const row of backendRows) {
+    const rowId = asString(row.id);
+    if (!rowId || keptPersistedIds.has(rowId) || !isEditableServiceRow(row)) continue;
+    await deleteEncounterTreatmentItem(organisationId, rowId);
+  }
+
+  for (const item of items) {
+    if (isPersistedTreatmentId(item.id)) {
+      // Push edits to an existing row.
+      await updateEncounterTreatmentItem(
+        organisationId,
+        item.id,
+        lineItemToTreatmentUpdateDTO(item)
+      );
+    } else {
+      await createEncounterTreatmentItem(organisationId, encounterId, lineItemToTreatmentDTO(item));
+    }
   }
 };

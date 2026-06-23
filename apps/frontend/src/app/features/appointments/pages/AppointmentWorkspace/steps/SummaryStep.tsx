@@ -51,6 +51,21 @@ type SummaryStepProps = {
   appointmentId: string;
   appointment?: Appointment;
   encounter: AppointmentEncounter;
+  /**
+   * The encounter id resolved by the parent's lifecycle hydration
+   * (`lifecycleEncounterIdRef`). When the appointment prop predates bootstrap it
+   * still carries no `encounterId`, so the parent threads the hydrated id here.
+   */
+  resolvedEncounterId?: string;
+};
+
+/** Pull the backend encounter id out of a workspace bootstrap payload. */
+const getBootstrapEncounterId = (bootstrap: unknown): string | undefined => {
+  if (!bootstrap || typeof bootstrap !== 'object') return undefined;
+  const encounter = (bootstrap as { encounter?: unknown }).encounter;
+  if (!encounter || typeof encounter !== 'object') return undefined;
+  const id = (encounter as { id?: unknown }).id;
+  return typeof id === 'string' && id.trim() ? id : undefined;
 };
 
 const formatDateTime = (iso: string): string => {
@@ -267,7 +282,12 @@ const AllDocumentsTable = ({
   );
 };
 
-const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps) => {
+const SummaryStep = ({
+  appointmentId,
+  appointment,
+  encounter,
+  resolvedEncounterId,
+}: SummaryStepProps) => {
   const setDischargeSummary = useAppointmentWorkspaceStore((s) => s.setDischargeSummary);
   const saveDischargeSummary = useAppointmentWorkspaceStore((s) => s.saveDischargeSummary);
   const reopenDischargeSummary = useAppointmentWorkspaceStore((s) => s.reopenDischargeSummary);
@@ -306,6 +326,11 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   // as the Records panel) rather than being rebuilt client-side from artifacts.
   const [documents, setDocuments] = useState<WorkspaceDocumentRow[]>([]);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
+  // Backend encounter id discovered from the workspace bootstrap when neither the
+  // appointment prop nor the parent-threaded id carry one yet (newly
+  // hydrated/admitted visits). Acts as the last-resort fallback so the document,
+  // sign, and print logic still has encounter context.
+  const [hydratedEncounterId, setHydratedEncounterId] = useState<string | undefined>();
 
   const templateSearchRef = useRef<HTMLDivElement>(null);
   const templateMatches = useMemo(() => {
@@ -331,7 +356,29 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   // once per encounter, and only when the summary is still blank and unsaved so
   // it never clobbers a draft or a manually chosen template.
   const organisationId = appointment?.organisationId;
-  const encounterId = appointment?.encounterId;
+  // Resolve the encounter id from the hydrated sources first (parent lifecycle id,
+  // then a bootstrap fallback) before falling back to the appointment prop, which
+  // may predate bootstrap and carry no encounter id at all.
+  const encounterId = resolvedEncounterId ?? appointment?.encounterId ?? hydratedEncounterId;
+
+  // When no encounter id is available yet, hydrate it from the workspace bootstrap
+  // so newly admitted/hydrated visits can still manage their clinical packet.
+  useEffect(() => {
+    if (!organisationId || !appointmentId || encounterId) return;
+    let cancelled = false;
+    getAppointmentWorkspaceBootstrap(organisationId, appointmentId)
+      .then((bootstrap) => {
+        if (cancelled) return;
+        const bootstrapEncounterId = getBootstrapEncounterId(bootstrap);
+        if (bootstrapEncounterId) setHydratedEncounterId(bootstrapEncounterId);
+      })
+      .catch((error) => {
+        console.error('Unable to hydrate encounter id:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [organisationId, appointmentId, encounterId]);
 
   // Load (and expose a refetch of) the backend documents read-model for this
   // encounter. The refetch is reused after signing so the list, statuses, and
@@ -447,8 +494,6 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   // signed against the one signed packet PDF.
   const handleSign = async () => {
     if (isSigning) return;
-    const organisationId = appointment?.organisationId;
-    const encounterId = appointment?.encounterId;
     if (!organisationId || !encounterId) {
       setSignError('Missing organisation or encounter for signing.');
       return;
@@ -488,8 +533,6 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
   // (e.g. documents not yet rendered, or no org/encounter context).
   const handlePrint = async () => {
     if (isPrinting) return;
-    const organisationId = appointment?.organisationId;
-    const encounterId = appointment?.encounterId;
     if (!organisationId || !encounterId) {
       globalThis.window.print();
       return;
@@ -522,7 +565,7 @@ const SummaryStep = ({ appointmentId, appointment, encounter }: SummaryStepProps
           {
             organisationId: appointment.organisationId,
             appointmentId,
-            encounterId: appointment.encounterId,
+            encounterId,
             dischargeSummaryId: encounter.dischargeSummaryId,
             templateId: dischargeTemplate?.templateId,
             templateVersion: dischargeTemplate?.templateVersion,

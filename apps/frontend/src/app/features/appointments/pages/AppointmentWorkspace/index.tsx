@@ -1237,6 +1237,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
             appointmentId={appointmentId}
             appointment={appointment}
             encounter={effectiveEncounter}
+            resolvedEncounterId={lifecycleEncounterIdRef.current ?? appointment.encounterId}
           />
         )}
       </section>

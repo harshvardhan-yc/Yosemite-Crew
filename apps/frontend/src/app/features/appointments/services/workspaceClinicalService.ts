@@ -686,7 +686,7 @@ export const createPmsObservationSubmission = async (
   input: PmsObservationSubmissionInput
 ): Promise<ObservationRecord> => {
   const res = await postData<ObservationToolSubmission>(
-    `/v1/observation-tools/pms/appointments/${input.appointmentId}/submissions`,
+    `/v1/observation-tools/pms/appointments/${input.appointmentId}/submissions/create`,
     {
       organisationId: input.organisationId,
       appointmentId: input.appointmentId,

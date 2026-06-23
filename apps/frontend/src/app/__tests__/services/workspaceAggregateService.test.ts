@@ -110,16 +110,20 @@ describe('workspaceAggregateService', () => {
     );
   });
 
-  it('persists only not-yet-saved (local-) treatment line items', async () => {
+  it('POSTs new local rows and PATCHes edits to persisted rows', async () => {
+    // Backend already has the persisted row; no removals to reconcile.
+    (getData as jest.Mock).mockResolvedValueOnce({
+      data: [{ id: 'svc-persisted', servicePackageKind: 'SERVICE', billingStatus: 'UNBILLED' }],
+    });
     const items: LineItem[] = [
       {
         id: 'svc-persisted',
         refId: 'prod-1',
         kind: 'SERVICE',
-        name: 'Saved service',
-        qty: 1,
+        name: 'Saved service (qty edited)',
+        qty: 3,
         unitPriceCents: 5000,
-        amountCents: 5000,
+        amountCents: 15000,
       },
       {
         id: 'local-li-2',
@@ -135,10 +139,8 @@ describe('workspaceAggregateService', () => {
 
     await persistTreatmentItems('org-1', 'enc-1', items);
 
-    // Only the local- row is POSTed; the already-persisted row is skipped.
+    // The local- row is POSTed with the backend create contract.
     expect(postData).toHaveBeenCalledTimes(1);
-    // Payload matches the backend create contract: productId + productSnapshot +
-    // servicePackageKind + quantity + priceSnapshot (display fields live in the snapshot).
     expect(postData).toHaveBeenCalledWith(
       '/v1/workspace/organisations/org-1/encounters/enc-1/treatment-items',
       expect.objectContaining({
@@ -153,6 +155,70 @@ describe('workspaceAggregateService', () => {
         }),
       })
     );
+    // The persisted row's edit (qty 1 -> 3) is PATCHed so it survives rehydrate.
+    expect(patchData).toHaveBeenCalledTimes(1);
+    expect(patchData).toHaveBeenCalledWith(
+      '/v1/workspace/organisations/org-1/treatment-items/svc-persisted',
+      expect.objectContaining({
+        productId: 'prod-1',
+        servicePackageKind: 'SERVICE',
+        quantity: 3,
+        priceSnapshot: { unitPrice: 50 },
+        productSnapshot: expect.objectContaining({ name: 'Saved service (qty edited)' }),
+      })
+    );
+    // Nothing was removed, so no DELETE is issued.
+    expect(deleteData).not.toHaveBeenCalled();
+  });
+
+  it('DELETEs persisted service rows the clinician removed locally', async () => {
+    // Backend has two persisted rows; only one remains in the local list.
+    (getData as jest.Mock).mockResolvedValueOnce({
+      data: [
+        { id: 'svc-keep', servicePackageKind: 'SERVICE', billingStatus: 'UNBILLED' },
+        { id: 'svc-removed', servicePackageKind: 'PACKAGE', billingStatus: 'UNBILLED' },
+      ],
+    });
+    const items: LineItem[] = [
+      {
+        id: 'svc-keep',
+        refId: 'prod-1',
+        kind: 'SERVICE',
+        name: 'Kept service',
+        qty: 1,
+        unitPriceCents: 5000,
+        amountCents: 5000,
+      },
+    ];
+
+    await persistTreatmentItems('org-1', 'enc-1', items);
+
+    expect(deleteData).toHaveBeenCalledTimes(1);
+    expect(deleteData).toHaveBeenCalledWith(
+      '/v1/workspace/organisations/org-1/treatment-items/svc-removed'
+    );
+    // The kept row is still PATCHed.
+    expect(patchData).toHaveBeenCalledWith(
+      '/v1/workspace/organisations/org-1/treatment-items/svc-keep',
+      expect.any(Object)
+    );
+  });
+
+  it('never deletes billed or medication-kind backend rows', async () => {
+    (getData as jest.Mock).mockResolvedValueOnce({
+      data: [
+        { id: 'svc-billed', servicePackageKind: 'SERVICE', billingStatus: 'BILLED' },
+        { id: 'rx-row', servicePackageKind: 'MEDICATION', billingStatus: 'UNBILLED' },
+      ],
+    });
+
+    // Local list is empty: no service/package rows kept, but billed + medication
+    // rows must be preserved.
+    await persistTreatmentItems('org-1', 'enc-1', []);
+
+    expect(deleteData).not.toHaveBeenCalled();
+    expect(postData).not.toHaveBeenCalled();
+    expect(patchData).not.toHaveBeenCalled();
   });
 
   it('normalizes aggregate diagnostics, encounter mode, and saved discharge state', () => {

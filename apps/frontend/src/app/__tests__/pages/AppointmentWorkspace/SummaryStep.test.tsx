@@ -527,6 +527,68 @@ describe('SummaryStep', () => {
     expect(screen.queryByText('Discharge date & time')).not.toBeInTheDocument();
   });
 
+  it('uses the parent-threaded resolved encounter id when the appointment lacks one', async () => {
+    // Appointment predates bootstrap and carries no encounterId; the parent passes
+    // the hydrated id via resolvedEncounterId.
+    const appointmentWithoutEncounter = {
+      id: APPT,
+      organisationId: 'org-1',
+    } as any;
+    const enc = seedAndGet();
+    await act(async () => {
+      render(
+        <SummaryStep
+          appointmentId={APPT}
+          appointment={appointmentWithoutEncounter}
+          encounter={enc}
+          resolvedEncounterId="enc-hydrated"
+        />
+      );
+    });
+
+    // Document list and signing read the hydrated id, not undefined.
+    await waitFor(() =>
+      expect(listEncounterWorkspaceDocuments).toHaveBeenCalledWith('org-1', 'enc-hydrated')
+    );
+    // No bootstrap fallback is needed when the prop already supplies the id.
+    expect(getAppointmentWorkspaceBootstrap).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^sign$/i }));
+    await waitFor(() =>
+      expect(useSigningOverlayStore.getState().url).toBe('https://sign.test/abc')
+    );
+    expect(screen.queryByText('Missing organisation or encounter for signing.')).toBeNull();
+  });
+
+  it('hydrates the encounter id from the bootstrap when none is supplied', async () => {
+    const appointmentWithoutEncounter = {
+      id: APPT,
+      organisationId: 'org-1',
+    } as any;
+    (getAppointmentWorkspaceBootstrap as jest.Mock).mockResolvedValue({
+      encounter: { id: 'enc-bootstrap' },
+    });
+    const enc = seedAndGet();
+    await act(async () => {
+      render(
+        <SummaryStep
+          appointmentId={APPT}
+          appointment={appointmentWithoutEncounter}
+          encounter={enc}
+        />
+      );
+    });
+
+    // The bootstrap is consulted to recover the encounter id, then the document
+    // list loads against the hydrated id (instead of returning early).
+    await waitFor(() =>
+      expect(getAppointmentWorkspaceBootstrap).toHaveBeenCalledWith('org-1', APPT)
+    );
+    await waitFor(() =>
+      expect(listEncounterWorkspaceDocuments).toHaveBeenCalledWith('org-1', 'enc-bootstrap')
+    );
+  });
+
   it('keeps discharge date/time out of the summary body once discharged', () => {
     useAppointmentWorkspaceStore.getState().initEncounter(APPT, 'INPATIENT');
     const enc = {

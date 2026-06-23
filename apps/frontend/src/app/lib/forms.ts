@@ -293,6 +293,13 @@ const toTemplateField = (
   index: number
 ): TemplateSchemaSnapshot['sections'][number]['fields'][number] => {
   const options = 'options' in field ? field.options : undefined;
+  // Rich-text fields carry their prefill HTML on a top-level `defaultValue`
+  // (written by RichTextBuilder). Persist it as the template field's
+  // defaultValue so the editor + prefilled content round-trip on reload.
+  const richTextDefault =
+    field.type === 'richtext'
+      ? (field as FormField & { defaultValue?: unknown }).defaultValue
+      : undefined;
   return {
     key: field.id,
     label: field.label || field.id,
@@ -302,6 +309,7 @@ const toTemplateField = (
       field.type === 'group' || ('multiple' in field && Boolean(field.multiple)) || undefined,
     order: field.order ?? index + 1,
     options: options?.length ? options : undefined,
+    defaultValue: richTextDefault,
     rules: field.meta,
     source: 'USER',
   };

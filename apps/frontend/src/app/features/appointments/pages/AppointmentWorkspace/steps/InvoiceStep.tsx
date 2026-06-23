@@ -878,6 +878,14 @@ const InvoiceStep = ({
     }
   }, [appointmentId, hydrateInvoiceBilling, organisationId]);
 
+  // The id of an open (still-outstanding) invoice already loaded from the finance
+  // service into the workspace encounter. The deposit-id fallback in hydration uses
+  // appointmentId when an invoice has no id, so reject that sentinel here.
+  const findServerOpenInvoiceId = (): string | undefined =>
+    encounter.pastInvoices.find(
+      (invoice) => invoice.id && invoice.id !== appointmentId && invoice.outstandingCents > 0
+    )?.id;
+
   const persistCurrentInvoice = async () => {
     if (!organisationId) return undefined;
     const lineItems = toFinanceLineItems(encounter.invoiceLineItems);
@@ -885,8 +893,13 @@ const InvoiceStep = ({
     // it (web /lines). When none exists, create one via the web POST /invoices —
     // never the mobile /seed route, which requires a mobile Cognito token on web
     // and 401s (logging the user out).
-    const openInvoice = findOpenAppointmentInvoice(organisationId, appointmentId);
-    let invoice = openInvoice;
+    const storeInvoiceId = findOpenAppointmentInvoice(organisationId, appointmentId)?.id;
+    // Fall back to the server-loaded billing state: loadAppointmentBilling hydrates
+    // open invoices into the workspace encounter but not into useInvoiceStore (the
+    // only place findOpenAppointmentInvoice reads). Without this fallback an existing
+    // open invoice is missed and a duplicate is created with the same bill lines.
+    const openInvoiceId = storeInvoiceId ?? findServerOpenInvoiceId();
+    let invoice: { id?: string } | undefined = openInvoiceId ? { id: openInvoiceId } : undefined;
     if (invoice?.id) {
       await addLineItemsToAppointments(lineItems, appointmentId, currency);
     } else {
