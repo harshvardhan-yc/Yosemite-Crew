@@ -100,4 +100,9 @@ export const renderTable = (ctx: PdfContext, input: TableRenderInput): void => {
     ctx.document.restore();
     ctx.moveDown(rowHeight);
   }
+
+  // Trailing gap so following content (a section heading's own leading gap adds
+  // to this, or totals/text that have none) clears the table's bottom border
+  // instead of sitting flush against it.
+  ctx.moveDown(PDF_SPACING.sectionGap - PDF_SPACING.paragraphGap);
 };
