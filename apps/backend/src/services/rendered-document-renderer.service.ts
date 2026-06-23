@@ -3,8 +3,11 @@ import { Prisma } from "@prisma/client";
 import {
   generateClinicalPdf,
   generateClinicalPdfWithMetadata,
+  generateCombinedClinicalPdfWithMetadata,
   generateResolvedTemplatePdfWithMetadata,
   type ClinicalDocumentType,
+  type CombinedClinicalDocumentInput,
+  type CombinedClinicalSection,
   type DischargeSummaryDocumentData,
   type OrganizationBranding,
   type PrescriptionDocumentData,
@@ -1420,6 +1423,180 @@ export const renderRenderedDocumentPdfWithMetadata = async (
 export const renderRenderedDocumentPdf = async (
   input: RenderedDocumentPdfSource,
 ) => (await renderRenderedDocumentPdfWithMetadata(input)).pdf;
+
+const COMBINED_CLINICAL_KINDS = new Set([
+  "SOAP_NOTE",
+  "VITAL_RECORD",
+  "PRESCRIPTION",
+  "DISCHARGE_SUMMARY",
+]);
+
+type CombinedClinicalPacketDocument = {
+  documentId: string;
+  sourceId: string;
+  kind: string;
+  title: string;
+};
+
+type CombinedClinicalPacketInput = {
+  organisationId: string;
+  signerName?: string | null;
+  documents: CombinedClinicalPacketDocument[];
+};
+
+/**
+ * Build the shared encounter header from the first combinable section's data.
+ * All four template-free builders pull the same appointment header, so the lead
+ * section already carries the shared patient/encounter values. The lead provider
+ * field differs by document type (SOAP/Discharge: doctorName; Vital: recordedBy;
+ * Prescription: leadName), as does the client contact field (Prescription:
+ * clientContact; Vital/Discharge: contact).
+ */
+const buildCombinedClinicalHeader = (
+  section: CombinedClinicalSection,
+): CombinedClinicalDocumentInput["header"] => {
+  let doctorName: string | undefined;
+  let clientContact: string | undefined;
+  switch (section.documentType) {
+    case "SOAP_NOTE":
+      doctorName = section.data.doctorName;
+      break;
+    case "DISCHARGE_SUMMARY":
+      doctorName = section.data.doctorName;
+      clientContact = section.data.contact;
+      break;
+    case "VITAL_RECORD":
+      doctorName = section.data.recordedBy;
+      clientContact = section.data.contact;
+      break;
+    case "PRESCRIPTION":
+      doctorName = section.data.leadName;
+      clientContact = section.data.clientContact;
+      break;
+    default:
+      doctorName = undefined;
+  }
+
+  const { data } = section;
+  return {
+    date: data.date,
+    appointmentId: data.appointmentId,
+    patientName: data.patientName,
+    clientName: data.clientName,
+    clientId: data.clientId,
+    speciesBreed: data.speciesBreed,
+    ageSex: data.ageSex,
+    doctorName,
+    clientContact,
+  };
+};
+
+const buildCombinedClinicalSection = async (
+  doc: CombinedClinicalPacketDocument,
+  organisationId: string,
+  organization: OrganizationBranding,
+): Promise<CombinedClinicalSection | undefined> => {
+  if (!COMBINED_CLINICAL_KINDS.has(doc.kind)) {
+    return undefined;
+  }
+
+  const source: RenderedDocumentSource = {
+    sourceKind: "CLINICAL_ARTIFACT",
+    sourceId: doc.sourceId,
+    organisationId,
+    templateKind: doc.kind as RenderedDocumentSource["templateKind"],
+  };
+  const input: RenderedDocumentPdfSource = { title: doc.title, source };
+  const record = await loadClinicalArtifactDocument(source);
+
+  switch (doc.kind) {
+    case "SOAP_NOTE": {
+      const built = await buildTemplateFreeSoapNotePdfInput(
+        input,
+        record,
+        organization,
+      );
+      return { documentType: "SOAP_NOTE", data: built.data };
+    }
+    case "VITAL_RECORD": {
+      const built = await buildTemplateFreeVitalRecordPdfInput(
+        input,
+        record,
+        organization,
+      );
+      return { documentType: "VITAL_RECORD", data: built.data };
+    }
+    case "PRESCRIPTION": {
+      const built = await buildTemplateFreePrescriptionPdfInput(
+        input,
+        record,
+        organization,
+      );
+      return { documentType: "PRESCRIPTION", data: built.data };
+    }
+    case "DISCHARGE_SUMMARY": {
+      const built = await buildTemplateFreeDischargeSummaryPdfInput(
+        input,
+        record,
+        organization,
+      );
+      return { documentType: "DISCHARGE_SUMMARY", data: built.data };
+    }
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * Render an ordered set of clinical artifacts as ONE continuous PDF — SOAP,
+ * Vital, Prescription and Discharge become content-only sections under a single
+ * shared header, signed once at the end. Mirrors the CLINICAL_ARTIFACT
+ * template-free path: each document is loaded via `loadClinicalArtifactDocument`
+ * and shaped by the same `buildTemplateFree*PdfInput` builders, sharing one
+ * `buildSharedOrganizationBranding` organization. Non-clinical kinds are skipped.
+ */
+export const renderCombinedClinicalPacketPdf = async (
+  input: CombinedClinicalPacketInput,
+): Promise<{
+  pdf: Buffer;
+  pageCount: number;
+  signaturePlacement: {
+    pageNumber: number;
+    pageX: number;
+    pageY: number;
+    width: number;
+    height: number;
+  };
+}> => {
+  const brand = await loadOrganizationBrand(input.organisationId);
+  const organization = buildSharedOrganizationBranding(brand);
+
+  const sections: CombinedClinicalSection[] = [];
+  for (const doc of input.documents) {
+    const section = await buildCombinedClinicalSection(
+      doc,
+      input.organisationId,
+      organization,
+    );
+    if (section) {
+      sections.push(section);
+    }
+  }
+
+  if (!sections.length) {
+    throw new Error(
+      "Combined clinical packet has no combinable clinical sections",
+    );
+  }
+
+  return generateCombinedClinicalPdfWithMetadata({
+    organization,
+    header: buildCombinedClinicalHeader(sections[0]),
+    sections,
+    printedBy: undefined,
+    signature: { status: "PENDING", label: "Signature" },
+  });
+};
 
 type PrescriptionItemRow = {
   medication: string;
