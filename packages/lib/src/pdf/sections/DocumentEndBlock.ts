@@ -112,7 +112,9 @@ export const renderDocumentEndBlock = (
    * details text below the line.
    */
   const signatureFieldY = lineY;
-  const signatureFieldHeight = 40;
+  // 24 == the underline offset (drawn at lineY + 24 below) so the field bottom
+  // rests exactly on the signature line, above the signer-detail text.
+  const signatureFieldHeight = 24;
 
   ctx.document
     .moveTo(signatureX, lineY + 24)
