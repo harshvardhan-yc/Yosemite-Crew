@@ -101,14 +101,13 @@ const isSoapContentKey = (key: string): key is keyof NonNullable<SoapTemplate['c
  * editors single-sourced — selecting/resolving a template hydrates content with no
  * section dropped.
  */
-export const schemaSnapshotToSoapContent = (
-  snapshot: TemplateSchemaSnapshot | undefined
-): SoapTemplate['content'] => {
-  const sections = snapshot?.sections ?? [];
-  if (sections.length === 0) return undefined;
-  const content: NonNullable<SoapTemplate['content']> = {};
+type SoapContent = NonNullable<SoapTemplate['content']>;
 
-  // 1) Canonical field-key mapping (any section). Carries authored rich-text content as-is.
+// 1) Canonical field-key mapping (any section). Carries authored rich-text content as-is.
+const applyCanonicalFieldContent = (
+  content: SoapContent,
+  sections: NonNullable<TemplateSchemaSnapshot['sections']>
+): void => {
   for (const section of sections) {
     for (const definition of section.fields ?? []) {
       if (!isSoapContentKey(definition.key)) continue;
@@ -118,22 +117,40 @@ export const schemaSnapshotToSoapContent = (
       }
     }
   }
+};
 
-  // 2) Keyword-by-title fallback for legacy templates without canonical field keys.
+const fieldDefaultToBody = (definition: { defaultValue?: unknown; label?: string }): string => {
+  const value = definition.defaultValue;
+  if (typeof value === 'string' && value.trim()) return value;
+  return definition.label ? `<p>${definition.label}</p>` : '';
+};
+
+// 2) Keyword-by-title fallback for legacy templates without canonical field keys.
+const applyTitleKeywordContent = (
+  content: SoapContent,
+  sections: NonNullable<TemplateSchemaSnapshot['sections']>
+): void => {
   for (const section of sections) {
     const field = soapFieldForTitle(section.title);
     if (!field || content[field]) continue;
     const body = (section.fields ?? [])
       .filter((definition) => !isSoapContentKey(definition.key))
-      .map((definition) => {
-        const value = definition.defaultValue;
-        if (typeof value === 'string' && value.trim()) return value;
-        return definition.label ? `<p>${definition.label}</p>` : '';
-      })
+      .map(fieldDefaultToBody)
       .filter(Boolean)
       .join('');
     if (body) content[field] = (content[field] ?? '') + body;
   }
+};
+
+export const schemaSnapshotToSoapContent = (
+  snapshot: TemplateSchemaSnapshot | undefined
+): SoapTemplate['content'] => {
+  const sections = snapshot?.sections ?? [];
+  if (sections.length === 0) return undefined;
+  const content: SoapContent = {};
+
+  applyCanonicalFieldContent(content, sections);
+  applyTitleKeywordContent(content, sections);
 
   return Object.keys(content).length > 0 ? content : undefined;
 };

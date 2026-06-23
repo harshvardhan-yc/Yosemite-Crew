@@ -63,8 +63,7 @@ const resolveRetryDelayMs = (
   // Jitter is drawn from the crypto RNG so it does not trip security linters; the value
   // is non-security (it only spreads retry timing), but Math.random is flagged regardless.
   const backoff = TRANSIENT_RETRY_BASE_MS * 2 ** attempt;
-  const jitterRatio =
-    (globalThis.crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) / 0x1_0000_0000;
+  const jitterRatio = (globalThis.crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) / 2 ** 32;
   return Math.min(backoff + jitterRatio * TRANSIENT_RETRY_BASE_MS, 8_000);
 };
 

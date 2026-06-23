@@ -178,7 +178,7 @@ const SoapStep = ({
 
   const handleCustomAnswerChange = (fieldId: string, value: unknown) =>
     upsertSoap(appointmentId, {
-      customAnswers: { ...(note.customAnswers ?? {}), [fieldId]: value },
+      customAnswers: { ...note.customAnswers, [fieldId]: value },
     });
 
   const handleSaveAndNext = async () => {

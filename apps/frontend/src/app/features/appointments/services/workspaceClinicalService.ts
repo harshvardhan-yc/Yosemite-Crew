@@ -269,7 +269,7 @@ const soapNoteFromComposition = (
       ? (input.metadata as Record<string, unknown>)
       : undefined;
   const customTemplate = metadata?.customTemplate as
-    | { schema?: SoapNoteEntry['customSchema']; answers?: Record<string, unknown> }
+    | { schema?: NonNullable<SoapNoteEntry['customSchema']>; answers?: Record<string, unknown> }
     | undefined;
   return {
     id: resource.id ?? `soap-${resource.date ?? Date.now()}`,

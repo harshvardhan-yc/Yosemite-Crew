@@ -1051,8 +1051,8 @@ const AppoitmentInfo = ({
       setActiveSubLabel(labels[0].labels[0].key);
       return;
     }
-    const sub = current.labels.find((l: { key: string }) => l.key === activeSubLabel);
-    if (!sub) {
+    const hasSub = current.labels.some((l: { key: string }) => l.key === activeSubLabel);
+    if (!hasSub) {
       setActiveSubLabel(current.labels[0].key);
     }
   }, [labels, activeLabel, activeSubLabel]);

@@ -730,18 +730,8 @@ const lineItemToTreatmentDTO = (item: LineItem): TreatmentItemDTO => ({
  * DTO. Only the clinician-editable fields are sent so a PATCH pushes local edits
  * (quantity/price/display snapshot) onto an already-persisted row.
  */
-const lineItemToTreatmentUpdateDTO = (item: LineItem): Partial<TreatmentItemDTO> => ({
-  productId: item.refId,
-  servicePackageKind: item.kind,
-  quantity: item.qty,
-  priceSnapshot: { unitPrice: item.unitPriceCents / 100 },
-  productSnapshot: {
-    name: item.name,
-    kind: item.kind,
-    instructions: item.instructions,
-    breakdown: item.breakdown,
-  },
-});
+const lineItemToTreatmentUpdateDTO = (item: LineItem): Partial<TreatmentItemDTO> =>
+  lineItemToTreatmentDTO(item);
 
 /** A backend treatment row that is an editable, unbilled service/package line. */
 const isEditableServiceRow = (row: Record<string, unknown>): boolean =>

@@ -482,7 +482,7 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
               customSchema: template.customSchema,
               customAnswers: {
                 ...defaultAnswersFromSchema(template.customSchema ?? []),
-                ...(existing.customAnswers ?? {}),
+                ...existing.customAnswers,
               },
             }
           : {
