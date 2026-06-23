@@ -121,12 +121,15 @@ type OrganizationBrand = {
   } | null;
 };
 
+// Documenso field coordinates are percentages (0–100) of the page from the
+// top-left, not PDF points. Used as the FORM_SUBMISSION placement (the HTML/A4
+// form render has no anchored signature line) and as a last-resort fallback.
 const DEFAULT_SIGNATURE_PLACEMENT = {
   pageNumber: 1,
-  pageX: 330,
-  pageY: 700,
-  width: 220,
-  height: 96,
+  pageX: 55.44,
+  pageY: 83.15,
+  width: 36.96,
+  height: 11.4,
 };
 
 const humanizeLabel = (value: string) =>
