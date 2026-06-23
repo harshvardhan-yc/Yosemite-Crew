@@ -43,6 +43,7 @@ jest.mock("../../src/config/prisma", () => ({
     appointment: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
     },
@@ -481,6 +482,31 @@ describe("AppointmentPrismaService", () => {
     ).rejects.toMatchObject({
       message: "Appointment not found",
       statusCode: 404,
+    });
+  });
+
+  it("respects organisation and actor scoping when loading an appointment", async () => {
+    mockedPrisma.appointment.findFirst.mockResolvedValue(
+      makeRow({
+        organisationId: "org_2",
+        lead: { id: "lead_1", name: "Dr Vet" },
+        supportStaff: [{ id: "staff_1", name: "Assistant" }],
+      }),
+    );
+
+    await expect(
+      AppointmentPrismaService.getById("appt_1", "org_2", "actor_2"),
+    ).rejects.toMatchObject({
+      message: "Forbidden – insufficient permissions",
+      statusCode: 403,
+    });
+
+    await expect(
+      AppointmentPrismaService.getById("appt_1", "org_2", "lead_1"),
+    ).resolves.toMatchObject({ id: "appt_1" });
+
+    expect(mockedPrisma.appointment.findFirst).toHaveBeenCalledWith({
+      where: { id: "appt_1", organisationId: "org_2" },
     });
   });
 

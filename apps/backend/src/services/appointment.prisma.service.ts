@@ -1277,6 +1277,19 @@ const getLeadIdFromRow = (row: AppointmentRow): string | undefined => {
   return typeof lead?.id === "string" && lead.id.trim() ? lead.id : undefined;
 };
 
+const getSupportStaffIdsFromRow = (row: AppointmentRow): string[] => {
+  const supportStaff = row.supportStaff as Array<{ id?: string }> | null;
+  if (!Array.isArray(supportStaff)) return [];
+
+  return supportStaff
+    .map((member) => (typeof member?.id === "string" ? member.id.trim() : ""))
+    .filter((id): id is string => Boolean(id));
+};
+
+const canViewOwnAppointment = (row: AppointmentRow, actorId: string): boolean =>
+  getLeadIdFromRow(row) === actorId ||
+  getSupportStaffIdsFromRow(row).includes(actorId);
+
 const getParentIdFromRow = (row: AppointmentRow): string | undefined => {
   const patient = row.patient as { parent?: { id?: string } } | null;
   const parentId = patient?.parent?.id;
@@ -2105,7 +2118,11 @@ export const AppointmentPrismaService = {
     return toResponse(updated as AppointmentRow);
   },
 
-  async getById(appointmentId: string): Promise<AppointmentResponseDTO> {
+  async getById(
+    appointmentId: string,
+    organisationId?: string,
+    actorId?: string,
+  ): Promise<AppointmentResponseDTO> {
     if (!appointmentId) {
       throw new AppointmentPrismaServiceError(
         "Appointment ID is required",
@@ -2113,11 +2130,22 @@ export const AppointmentPrismaService = {
       );
     }
 
-    const row = await prisma.appointment.findUnique({
-      where: { id: appointmentId },
-    });
+    const row = organisationId
+      ? await prisma.appointment.findFirst({
+          where: { id: appointmentId, organisationId },
+        })
+      : await prisma.appointment.findUnique({
+          where: { id: appointmentId },
+        });
     if (!row) {
       throw new AppointmentPrismaServiceError("Appointment not found", 404);
+    }
+
+    if (actorId && !canViewOwnAppointment(row as AppointmentRow, actorId)) {
+      throw new AppointmentPrismaServiceError(
+        "Forbidden – insufficient permissions",
+        403,
+      );
     }
 
     return toResponse(row as AppointmentRow);
