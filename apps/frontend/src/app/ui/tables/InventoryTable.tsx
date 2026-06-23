@@ -16,6 +16,7 @@ import {
 } from '@/app/features/inventory/pages/Inventory/utils';
 import { getInventoryStatusStyle } from '@/app/ui/tables/tableUtils';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
+import { getSafeOrgImageUrl } from '@/app/lib/urls';
 
 import './DataTable.css';
 
@@ -50,6 +51,9 @@ const getImageFallback = (item: InventoryItem) => {
   return '💊';
 };
 
+const getInventoryImageSrc = (item: InventoryItem) =>
+  getSafeOrgImageUrl(item.basicInfo.imageUrl || item.imageUrl);
+
 const InventoryTable = ({
   filteredList,
   setActiveInventory,
@@ -75,7 +79,7 @@ const InventoryTable = ({
         <div className="flex items-center gap-3">
           <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-card-hover text-xl">
             {(() => {
-              const imageSrc = item.basicInfo.imageUrl || item.imageUrl;
+              const imageSrc = getInventoryImageSrc(item);
               if (!imageSrc) {
                 return <span aria-hidden="true">{getImageFallback(item)}</span>;
               }

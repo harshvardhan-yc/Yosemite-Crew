@@ -37,6 +37,7 @@ type EditableAccordionProps = {
   hideInlineActions?: boolean;
   compactInlineActions?: boolean;
   onEditingChange?: (isEditing: boolean) => void;
+  footer?: React.ReactNode;
   onRegisterActions?: (
     actions: {
       save: () => Promise<void>;
@@ -527,6 +528,7 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
   hideInlineActions = false,
   compactInlineActions = false,
   onEditingChange,
+  footer,
   onRegisterActions,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -656,6 +658,7 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
               </div>
             );
           })}
+          {footer && <div className="mt-3">{footer}</div>}
         </div>
       </Accordion>
 

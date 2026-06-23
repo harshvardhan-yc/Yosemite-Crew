@@ -515,6 +515,7 @@ type InventoryInfoProps = {
   canEdit?: boolean;
   stockLocationOptions?: string[];
   initialSection?: InventorySectionKey;
+  organisationId?: string;
 };
 
 const modalSections: { key: InventorySectionKey; name: string }[] = [
@@ -645,6 +646,7 @@ const InventoryInfo = ({
   canEdit = true,
   stockLocationOptions,
   initialSection,
+  organisationId,
 }: InventoryInfoProps) => {
   const [activeLabel, setActiveLabel] = useState<InventorySectionKey>(
     initialSection ?? modalSections[0].key
@@ -861,6 +863,7 @@ const InventoryInfo = ({
                     disableEditing={!canEdit || isUpdating || isHiding}
                     onEditingChange={setIsSectionEditing}
                     stockLocationOptions={stockLocationOptions}
+                    organisationId={organisationId}
                     onRegisterActions={(actions) => {
                       sectionActions.current = actions;
                     }}

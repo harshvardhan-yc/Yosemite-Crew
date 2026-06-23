@@ -1,5 +1,7 @@
+'use client';
 import React from 'react';
 import EditableAccordion from '@/app/ui/primitives/Accordion/EditableAccordion';
+import ImageUploadField from '@/app/features/inventory/components/AddInventory/ImageUploadField';
 
 import { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { BusinessType } from '@/app/features/organization/types/org';
@@ -27,6 +29,7 @@ type InfoSectionProps = {
     } | null
   ) => void;
   stockLocationOptions?: string[];
+  organisationId?: string;
 };
 
 type EditableField = {
@@ -47,6 +50,7 @@ const InfoSection: React.FC<InfoSectionProps> = ({
   onEditingChange,
   onRegisterActions,
   stockLocationOptions,
+  organisationId,
 }) => {
   const configForBusiness = InventoryFormConfig[businessType] || {};
   const sectionConfig = configForBusiness[sectionKey];
@@ -60,6 +64,22 @@ const InfoSection: React.FC<InfoSectionProps> = ({
   }
 
   const data = inventory[sectionKey] as any;
+
+  const flattenFields = (cfg: ConfigItem<any>[]): FieldDef<any>[] => {
+    const result: FieldDef<any>[] = [];
+    for (const item of cfg) {
+      if (item.kind === 'row') {
+        for (const f of item.fields) result.push(f);
+      } else {
+        result.push(item.field);
+      }
+    }
+    return result;
+  };
+
+  const allFields = flattenFields(sectionConfig);
+  const uploadFields = allFields.filter((f) => f.component === 'upload');
+  const nonUploadFields = allFields.filter((f) => f.component !== 'upload');
 
   const toEditableField = (field: FieldDef<any>): EditableField => {
     const label = field.label || field.placeholder || field.name;
@@ -95,38 +115,43 @@ const InfoSection: React.FC<InfoSectionProps> = ({
     };
   };
 
-  const flattenConfigToFields = (cfg: ConfigItem<any>[]): EditableField[] => {
-    const result: EditableField[] = [];
-    for (const item of cfg) {
-      if (item.kind === 'row') {
-        for (const f of item.fields) {
-          result.push(toEditableField(f));
-        }
-      } else {
-        result.push(toEditableField(item.field));
-      }
-    }
-    return result;
-  };
-
-  const fields = flattenConfigToFields(sectionConfig);
+  const accordionFields = nonUploadFields.map(toEditableField);
 
   return (
-    <div className="flex flex-col gap-6 w-full">
+    <div className="flex flex-col gap-4 w-full">
       <div className="font-satoshi text-black-text text-[23px] font-medium">{sectionTitle}</div>
 
-      <EditableAccordion
-        title={sectionTitle}
-        fields={fields}
-        data={data}
-        defaultOpen={true}
-        readOnly={disableEditing}
-        showEditIcon={!disableEditing}
-        onSave={(values) => onSaveSection?.(sectionKey, values)}
-        hideInlineActions
-        onEditingChange={onEditingChange}
-        onRegisterActions={onRegisterActions}
-      />
+      {accordionFields.length > 0 && (
+        <EditableAccordion
+          title={sectionTitle}
+          fields={accordionFields}
+          data={data}
+          defaultOpen={true}
+          readOnly={disableEditing}
+          showEditIcon={!disableEditing}
+          onSave={(values) => onSaveSection?.(sectionKey, values)}
+          hideInlineActions
+          onEditingChange={onEditingChange}
+          onRegisterActions={onRegisterActions}
+          footer={
+            uploadFields.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                {uploadFields.map((field) => (
+                  <ImageUploadField
+                    key={field.name}
+                    label={field.placeholder || field.label}
+                    value={data?.[field.name] ?? ''}
+                    organisationId={organisationId}
+                    onChange={(url) =>
+                      !disableEditing && onSaveSection?.(sectionKey, { [field.name]: url })
+                    }
+                  />
+                ))}
+              </div>
+            ) : undefined
+          }
+        />
+      )}
     </div>
   );
 };
