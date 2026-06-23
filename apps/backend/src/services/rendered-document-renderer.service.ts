@@ -857,34 +857,44 @@ const resolveUnitRoomNames = async (
   };
 };
 
+const loadAppointmentLocationContext = async (
+  appointmentId: string | null | undefined,
+): Promise<{
+  roomName?: string;
+  appointmentKind?: string;
+  encounterId?: string;
+}> => {
+  if (!appointmentId) {
+    return {};
+  }
+
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    select: { appointmentKind: true, room: true, encounterId: true },
+  });
+  if (!appointment) {
+    return {};
+  }
+
+  const room = isRecord(appointment.room)
+    ? (appointment.room as Record<string, unknown>)
+    : {};
+  return {
+    roomName: readFirstString(room, ["name", "code", "number", "label"]),
+    appointmentKind: appointment.appointmentKind ?? undefined,
+    encounterId: appointment.encounterId ?? undefined,
+  };
+};
+
 const loadEncounterLocationHeader = async (
   appointmentId: string | null | undefined,
   encounterId: string | null | undefined,
 ): Promise<EncounterLocationHeader> => {
-  let appointmentRoom: Record<string, unknown> = {};
-  let appointmentKind: string | undefined;
-  let resolvedEncounterId = encounterId ?? undefined;
-
-  if (appointmentId) {
-    const appointment = await prisma.appointment.findUnique({
-      where: { id: appointmentId },
-      select: { appointmentKind: true, room: true, encounterId: true },
-    });
-    if (appointment) {
-      appointmentRoom = isRecord(appointment.room)
-        ? (appointment.room as Record<string, unknown>)
-        : {};
-      appointmentKind = appointment.appointmentKind ?? undefined;
-      resolvedEncounterId ??= appointment.encounterId ?? undefined;
-    }
-  }
-
-  const appointmentRoomName = readFirstString(appointmentRoom, [
-    "name",
-    "code",
-    "number",
-    "label",
-  ]);
+  const appointmentContext =
+    await loadAppointmentLocationContext(appointmentId);
+  const appointmentRoomName = appointmentContext.roomName;
+  const appointmentKind = appointmentContext.appointmentKind;
+  const resolvedEncounterId = encounterId ?? appointmentContext.encounterId;
 
   const admission = resolvedEncounterId
     ? await prisma.admission.findUnique({
