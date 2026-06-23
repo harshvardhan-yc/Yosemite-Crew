@@ -204,10 +204,14 @@ describe('workspaceClinicalService', () => {
     );
 
     const body = postDataMock.mock.calls[0][1] as {
+      status?: string;
       templateVersion?: number;
       templateVersionId?: string;
       extension: Array<{ url: string; valueString?: string }>;
     };
+    // Saving must create a draft artifact ('preliminary'); only $finalize completes it.
+    // Sending 'final' here would finalize on every save.
+    expect(body.status).toBe('preliminary');
     expect(body.templateVersion).toBe(2);
     expect(body.templateVersionId).toBe('ver-2');
     const meta = body.extension.find((ext) => ext.url === SOAP_METADATA_URL);

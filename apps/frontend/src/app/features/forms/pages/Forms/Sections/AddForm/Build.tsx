@@ -833,7 +833,9 @@ const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange, cr
     const task = tasks.find((t) => t._id === taskId);
     if (!task) return;
     const taskField: FormField = {
-      id: `${field.id}_task_${(field.fields ?? []).length + 1}`,
+      // Key the id off the (unique, de-duplicated) taskId rather than a positional
+      // counter, which collides after a task is removed and another added.
+      id: `${field.id}_task_${taskId}`,
       type: 'input',
       label: 'Task',
       placeholder: task.name,

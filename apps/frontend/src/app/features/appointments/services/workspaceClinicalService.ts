@@ -229,7 +229,10 @@ const buildComposition = (
       : { reference: `Encounter/${context.encounterId}` };
   return {
     resourceType: 'Composition',
-    status: 'final',
+    // Saving creates a draft record; only `$finalize` flips it to COMPLETED (see the
+    // soapNoteFromComposition note below). Sending 'final' here would finalize the
+    // artifact on every save.
+    status: 'preliminary',
     title,
     type: { text: kind },
     date: new Date().toISOString(),
@@ -610,7 +613,9 @@ export const saveVitalRecord = async (
 ) => {
   const body: Observation & Record<string, unknown> = {
     resourceType: 'Observation',
-    status: 'final',
+    // Saving creates a draft vital record; $finalize completes it. 'final' would
+    // finalize on every save.
+    status: 'preliminary',
     code: { text: 'VITAL_RECORD' },
     effectiveDateTime: vital.recordedAt,
     extension: compactExtensions([
@@ -753,7 +758,9 @@ export const savePrescriptionArtifact = async (
 ) => {
   const body: MedicationRequest & Record<string, unknown> = {
     resourceType: 'MedicationRequest',
-    status: 'active',
+    // Saving creates a draft prescription; only $finalize completes it (and triggers
+    // the inventory dispense). 'active' here would dispense on every plain save.
+    status: 'draft',
     intent: 'order',
     medicationCodeableConcept: { text: prescription.medicineName },
     medicationReference: { display: prescription.medicineName },
