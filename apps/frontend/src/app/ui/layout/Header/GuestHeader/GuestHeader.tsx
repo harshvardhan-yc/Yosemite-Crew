@@ -150,7 +150,7 @@ const GuestHeader = () => {
               <Link
                 href={item.href ? item.href : '#'}
                 aria-current={item.href === pathname ? 'page' : undefined}
-                className={`yc-guest-nav-link ${
+                className={`yc-guest-nav-link text-body-4 ${
                   item.href === pathname ? 'yc-guest-nav-link-active' : ''
                 }`}
               >

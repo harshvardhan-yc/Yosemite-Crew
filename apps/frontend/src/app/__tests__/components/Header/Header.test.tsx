@@ -60,7 +60,7 @@ describe('Header', () => {
 
   it('floats through the first section, then docks into the full-width glass bar past it', async () => {
     const main = document.createElement('main');
-    main.id = 'main-content';
+    main.className = 'yc-public-page';
     const SECTION_ABSOLUTE_BOTTOM = 600;
     const firstSection = document.createElement('section');
     // getBoundingClientRect is viewport-relative: bottom shrinks as the page scrolls.

@@ -5,7 +5,11 @@ import UserHeader from '@/app/ui/layout/Header/UserHeader/UserHeader';
 import './Header.css';
 
 const getFirstSectionDockPoint = () => {
-  const firstPublicSection = document.querySelector('#main-content')?.firstElementChild;
+  // Keyed off .yc-public-page — the wrapper shared by BOTH public shells
+  // ((public)/layout.tsx and PublicShell), so the dock trigger is identical on
+  // every public page. Its first child is the page's first/hero section.
+  const publicPage = document.querySelector('.yc-public-page');
+  const firstPublicSection = publicPage?.firstElementChild;
   if (!firstPublicSection) return globalThis.window.innerHeight;
 
   return firstPublicSection.getBoundingClientRect().bottom + globalThis.window.scrollY;
