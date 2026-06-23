@@ -1,6 +1,11 @@
 import type { PdfContext } from '../PdfContext.js';
 import { renderKeyValueGrid } from '../sections/KeyValueGrid.js';
-import { renderDocumentTitle, renderSectionTitle, renderSpacer } from '../sections/Text.js';
+import {
+  renderDocumentTitle,
+  renderSectionTitle,
+  renderSpacer,
+  renderSubTitle,
+} from '../sections/Text.js';
 import { renderDocumentEndBlock } from '../sections/DocumentEndBlock.js';
 import { renderRichText } from '../sections/RichText.js';
 import { renderTable } from '../sections/Table.js';
@@ -9,6 +14,16 @@ import { buildClinicalHeaderKeyValue, buildKeyValue } from './shared.js';
 
 // Content sections only (no title, metadata or signature) for combined packets.
 export const renderVitalRecordContent = (ctx: PdfContext, data: VitalRecordDocumentData): void => {
+  const recordedLine = [
+    data.recordedBy ? `Recorded by ${data.recordedBy}` : undefined,
+    data.recordedAt ? `on ${data.recordedAt}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  if (recordedLine) {
+    renderSubTitle(ctx, recordedLine);
+  }
+
   renderSectionTitle(ctx, 'Vital Measurements');
   renderTable(ctx, {
     columns: [

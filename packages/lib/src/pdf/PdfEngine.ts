@@ -237,6 +237,8 @@ export type CombinedClinicalDocumentInput = {
     ageSex?: string;
     roomName?: string;
     unitName?: string;
+    admittedAt?: string;
+    admittedBy?: string;
   };
   sections: CombinedClinicalSection[];
   printedBy?: string;
@@ -346,6 +348,8 @@ export const generateCombinedClinicalPdfWithMetadata = async (
         ageSex: input.header.ageSex,
         roomName: input.header.roomName,
         unitName: input.header.unitName,
+        admittedAt: input.header.admittedAt,
+        admittedBy: input.header.admittedBy,
       }),
       { columns: 3 }
     );

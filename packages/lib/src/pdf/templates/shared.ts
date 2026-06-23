@@ -23,6 +23,8 @@ export const buildClinicalHeaderKeyValue = (input: {
   ageSex?: string;
   roomName?: string;
   unitName?: string;
+  admittedAt?: string;
+  admittedBy?: string;
 }): KeyValueItem[] =>
   buildKeyValue([
     ['Date', input.date.toISOString().slice(0, 10)],
@@ -36,6 +38,8 @@ export const buildClinicalHeaderKeyValue = (input: {
     ['Age / Sex', input.ageSex],
     ['Room', input.roomName],
     ['Unit', input.unitName],
+    ['Admitted', input.admittedAt],
+    ['Admitted By', input.admittedBy],
   ]);
 
 export const buildKeyValueGroups = (

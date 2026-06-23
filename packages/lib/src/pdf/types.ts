@@ -173,6 +173,7 @@ export type VitalRecordDocumentData = BaseClinicalDocumentData & {
   date: Date;
   appointmentId?: string;
   recordedBy?: string;
+  recordedAt?: string;
   patientName: string;
   speciesBreed?: string;
   ageSex?: string;
