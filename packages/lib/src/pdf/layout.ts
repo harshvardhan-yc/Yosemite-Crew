@@ -5,13 +5,15 @@ export const PDF_PAGE_SIZE = {
 
 export const PDF_LAYOUT = {
   marginX: 20,
+  // Logo left edge aligns with marginX so the letterhead lines up with the
+  // header rule, metadata, tables and footer (all at marginX).
   headerLogo: {
-    x: 12,
+    x: 20,
     y: 12,
-    width: 64,
-    height: 48,
+    width: 44,
+    height: 44,
   },
-  headerOrgX: 84,
+  headerOrgX: 78,
   headerOrgY: 16,
   headerContactX: 481,
   headerContactY: 16,
