@@ -82,6 +82,7 @@ const mockedGetDateKeyInPreferredTimeZone = getDateKeyInPreferredTimeZone as jes
 
 // 4. Mock External DTO mappers
 jest.mock('@yosemite-crew/types', () => ({
+  ...jest.requireActual('@yosemite-crew/types'),
   fromAppointmentRequestDTO: jest.fn(),
   toAppointmentResponseDTO: jest.fn(),
 }));
