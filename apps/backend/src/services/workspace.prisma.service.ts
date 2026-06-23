@@ -859,6 +859,32 @@ const mapTreatmentItemRow = (
   updatedAt: row.updatedAt,
 });
 
+// A treatment line can appear both as a virtual item derived from a prescription
+// artifact and as a persisted workspaceTreatmentItem row (e.g. once the invoice is
+// finalized). Prefer the persisted row and drop the virtual duplicate so the same
+// line item is not shown twice in the workspace/encounter.
+export const dedupeTreatmentItemsByPrescription = <
+  V extends { prescriptionId?: string | null },
+  P extends { prescriptionId?: string | null },
+>(
+  fromPrescriptions: V[],
+  fromTable: P[],
+): (V | P)[] => {
+  const persistedPrescriptionIds = new Set(
+    fromTable
+      .map((item) => item.prescriptionId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  return [
+    ...fromPrescriptions.filter(
+      (item) =>
+        !item.prescriptionId ||
+        !persistedPrescriptionIds.has(item.prescriptionId),
+    ),
+    ...fromTable,
+  ];
+};
+
 const buildTreatmentItemsFromPrescriptions = (
   prescriptions: Array<{
     artifact: { id: string; status: string; createdAt: Date; updatedAt: Date };
@@ -1716,8 +1742,8 @@ const buildBootstrapAggregate = async (
     clinicalArtifacts: clinical.clinicalArtifacts,
     vitals: clinical.vitalRecords,
     prescriptions: clinical.prescriptions,
-    treatmentItems: [
-      ...buildTreatmentItemsFromPrescriptions(
+    treatmentItems: dedupeTreatmentItemsByPrescription(
+      buildTreatmentItemsFromPrescriptions(
         clinical.prescriptions as never,
         locked,
       ).map((item) => ({
@@ -1726,8 +1752,8 @@ const buildBootstrapAggregate = async (
         appointmentId: appointmentId ?? null,
         encounterId: encounterId ?? appointmentId ?? "",
       })),
-      ...treatmentItems.map(mapTreatmentItemRow),
-    ],
+      treatmentItems.map(mapTreatmentItemRow),
+    ),
     diagnosticQueue: buildDiagnosticQueue(
       ordersAndResults.orders as never,
       ordersAndResults.results as never,
