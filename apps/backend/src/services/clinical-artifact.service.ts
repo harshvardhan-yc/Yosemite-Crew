@@ -1262,6 +1262,10 @@ export const ClinicalArtifactService = {
           | Prisma.InputJsonValue
           | undefined,
         requestedBy: artifact.artifact.authorId,
+        context: {
+          appointmentId: artifact.artifact.appointmentId,
+          encounterId: artifact.artifact.encounterId,
+        },
       });
     }
 
@@ -1367,6 +1371,10 @@ export const ClinicalArtifactService = {
           | Prisma.InputJsonValue
           | undefined,
         requestedBy: updated.artifact.authorId,
+        context: {
+          appointmentId: updated.artifact.appointmentId,
+          encounterId: updated.artifact.encounterId,
+        },
       });
     } else if (wasPendingDispenseRequest && !isPendingDispenseRequest) {
       await InventoryConsumptionService.markPrescriptionDispenseRequestNotDispensed(

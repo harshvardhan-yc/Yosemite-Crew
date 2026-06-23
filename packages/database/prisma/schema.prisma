@@ -2426,6 +2426,7 @@ model InventoryItem {
   subCategory               String?
   description               String?
   imageUrl                  String?
+  stockUnitType             String?
   attachments               Json?
   attributes                Json                 @default("{}")
   genericName               String?

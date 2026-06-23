@@ -382,6 +382,10 @@ describe("ClinicalArtifactService", () => {
       expect.objectContaining({
         organisationId,
         prescriptionId: "prescription-1",
+        context: {
+          appointmentId: "appt-1",
+          encounterId: "enc-1",
+        },
       }),
     );
   });
