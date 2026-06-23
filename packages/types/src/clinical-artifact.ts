@@ -271,6 +271,9 @@ const toClinicalArtifactStatus = (status?: string): ClinicalArtifactStatus => {
     case 'active':
       return 'COMPLETED';
     case 'preliminary':
+    // 'accepted'/'in-progress' are emitted by toTaskStatus for IN_PROGRESS prescriptions; keep round-trips in progress.
+    case 'accepted':
+    case 'in-progress':
       return 'IN_PROGRESS';
     case 'draft':
       return 'DRAFT';

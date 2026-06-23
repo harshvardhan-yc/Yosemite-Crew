@@ -530,7 +530,9 @@ const fieldToFormField = (field: TemplateFieldDefinition): FormField => {
   }
 
   if (field.type === 'richText') {
-    return { ...base, type: 'richtext' } as FormField;
+    // RichTextBuilder reads the prefill HTML from the top-level `defaultValue`
+    // (not meta), so surface it here or the editor loses its content on reload.
+    return { ...base, type: 'richtext', defaultValue: field.defaultValue } as FormField;
   }
 
   if (field.type === 'textarea') {
