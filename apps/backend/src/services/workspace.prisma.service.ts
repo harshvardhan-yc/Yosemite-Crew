@@ -148,6 +148,7 @@ type AdmissionRow = {
   organisationId: string;
   patientId: string;
   unitId: string | null;
+  admittedAt: Date;
   dischargedAt: Date | null;
 };
 
@@ -1713,7 +1714,23 @@ const buildBootstrapAggregate = async (
           updatedAt: context.appointment.updatedAt,
         })
       : null,
-    encounter: context.encounter,
+    encounter: context.encounter
+      ? {
+          ...context.encounter,
+          // Surface the in-patient admission (with unit) so it round-trips to the
+          // workspace + appointment views; OPD encounters have no admission.
+          admission: admission
+            ? {
+                encounterId: admission.encounterId,
+                organisationId: admission.organisationId,
+                patientId: admission.patientId,
+                unitId: admission.unitId ?? undefined,
+                admittedAt: admission.admittedAt,
+                dischargedAt: admission.dischargedAt ?? undefined,
+              }
+            : undefined,
+        }
+      : null,
     episodeOfCare: context.episodeOfCare,
     companion: context.companion
       ? buildWorkspaceSummaryItem({

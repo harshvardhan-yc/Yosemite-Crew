@@ -666,6 +666,7 @@ describe("WorkspaceService", () => {
       organisationId: "org-3",
       patientId: "patient-3",
       unitId: "unit-1",
+      admittedAt: new Date("2026-06-14T10:00:00.000Z"),
       dischargedAt: null,
     });
 
@@ -682,6 +683,9 @@ describe("WorkspaceService", () => {
         inpatientRoomAdmissionReady: true,
       }),
     );
+    // The assigned unit must round-trip on the bootstrap encounter so it is
+    // retained after a refresh (read by the workspace + appointment views).
+    expect(result.encounter?.admission?.unitId).toBe("unit-1");
   });
 
   it("does not let labs from another visit for the same companion block finalization", async () => {
