@@ -52,6 +52,15 @@ const toPrismaAuditEventType = (
   return value;
 };
 
+const resolveAlertAction = (
+  prevCount: number,
+  nextCount: number,
+): "CREATED" | "DELETED" | "UPDATED" => {
+  if (prevCount === 0) return "CREATED";
+  if (nextCount === 0) return "DELETED";
+  return "UPDATED";
+};
+
 const ensureSafeString = (value: unknown, fieldName: string): string => {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new AuditTrailServiceError(`${fieldName} is required`, 400);
@@ -260,8 +269,7 @@ export const AuditTrailService = {
       : [];
     const next = Array.isArray(params.nextAlerts) ? params.nextAlerts : [];
     if (JSON.stringify(prev) === JSON.stringify(next)) return;
-    const action =
-      prev.length === 0 ? "CREATED" : next.length === 0 ? "DELETED" : "UPDATED";
+    const action = resolveAlertAction(prev.length, next.length);
     await this.recordSafely({
       organisationId: params.organisationId,
       patientId: params.patientId,

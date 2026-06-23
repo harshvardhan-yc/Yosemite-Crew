@@ -162,7 +162,7 @@ const orderDocumentsForMerge = (
     .map((doc, index) => ({ doc, index }))
     .sort((a, b) => {
       const rankDiff = mergeOrderRank(a.doc.kind) - mergeOrderRank(b.doc.kind);
-      return rankDiff !== 0 ? rankDiff : a.index - b.index;
+      return rankDiff === 0 ? a.index - b.index : rankDiff;
     })
     .map((entry) => entry.doc);
 

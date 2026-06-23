@@ -169,6 +169,45 @@ const toPersistable = (payload: CompanionRequestDTO): CompanionPersistable => {
   } as CompanionPersistable;
 };
 
+const toPatientWriteData = (persistable: CompanionPersistable) => ({
+  name: persistable.name,
+  type: persistable.type as PrismaPatientType,
+  breed: persistable.breed ?? "",
+  speciesCode: persistable.speciesCode ?? undefined,
+  breedCode: persistable.breedCode ?? undefined,
+  dateOfBirth: persistable.dateOfBirth,
+  gender: persistable.gender as PrismaGender,
+  photoUrl: persistable.photoUrl ?? undefined,
+  currentWeight: persistable.currentWeight ?? undefined,
+  colour: persistable.colour ?? undefined,
+  allergy: persistable.allergy ?? undefined,
+  bloodGroup: persistable.bloodGroup ?? undefined,
+  isNeutered: persistable.isneutered ?? undefined,
+  ageWhenNeutered: persistable.ageWhenNeutered ?? undefined,
+  microchipNumber: persistable.microchipNumber ?? undefined,
+  passportNumber: persistable.passportNumber ?? undefined,
+  isInsured: persistable.isInsured ?? false,
+  insurance: persistable.insurance
+    ? (persistable.insurance as unknown as Prisma.InputJsonValue)
+    : undefined,
+  countryOfOrigin: persistable.countryOfOrigin ?? undefined,
+  source: persistable.source as PrismaSourceType,
+  status: persistable.status as PrismaRecordStatus,
+  physicalAttribute: persistable.physicalAttribute
+    ? (persistable.physicalAttribute as unknown as Prisma.InputJsonValue)
+    : undefined,
+  breedingInfo: persistable.breedingInfo
+    ? (persistable.breedingInfo as unknown as Prisma.InputJsonValue)
+    : undefined,
+  medicalRecords: persistable.medicalRecords
+    ? (persistable.medicalRecords as unknown as Prisma.InputJsonValue)
+    : undefined,
+  alerts: persistable.alerts
+    ? (persistable.alerts as unknown as Prisma.InputJsonValue)
+    : undefined,
+  isProfileComplete: persistable.isProfileComplete ?? false,
+});
+
 const REQUIRED_PROFILE_FIELDS = [
   "name",
   "type",
@@ -382,44 +421,7 @@ export const CompanionService = {
     persistable.isProfileComplete = computeIsProfileComplete(persistable);
 
     const created = await prisma.patient.create({
-      data: {
-        name: persistable.name,
-        type: persistable.type as PrismaPatientType,
-        breed: persistable.breed ?? "",
-        speciesCode: persistable.speciesCode ?? undefined,
-        breedCode: persistable.breedCode ?? undefined,
-        dateOfBirth: persistable.dateOfBirth,
-        gender: persistable.gender as PrismaGender,
-        photoUrl: persistable.photoUrl ?? undefined,
-        currentWeight: persistable.currentWeight ?? undefined,
-        colour: persistable.colour ?? undefined,
-        allergy: persistable.allergy ?? undefined,
-        bloodGroup: persistable.bloodGroup ?? undefined,
-        isNeutered: persistable.isneutered ?? undefined,
-        ageWhenNeutered: persistable.ageWhenNeutered ?? undefined,
-        microchipNumber: persistable.microchipNumber ?? undefined,
-        passportNumber: persistable.passportNumber ?? undefined,
-        isInsured: persistable.isInsured ?? false,
-        insurance: persistable.insurance
-          ? (persistable.insurance as unknown as Prisma.InputJsonValue)
-          : undefined,
-        countryOfOrigin: persistable.countryOfOrigin ?? undefined,
-        source: persistable.source as PrismaSourceType,
-        status: persistable.status as PrismaRecordStatus,
-        physicalAttribute: persistable.physicalAttribute
-          ? (persistable.physicalAttribute as unknown as Prisma.InputJsonValue)
-          : undefined,
-        breedingInfo: persistable.breedingInfo
-          ? (persistable.breedingInfo as unknown as Prisma.InputJsonValue)
-          : undefined,
-        medicalRecords: persistable.medicalRecords
-          ? (persistable.medicalRecords as unknown as Prisma.InputJsonValue)
-          : undefined,
-        alerts: persistable.alerts
-          ? (persistable.alerts as unknown as Prisma.InputJsonValue)
-          : undefined,
-        isProfileComplete: persistable.isProfileComplete ?? false,
-      },
+      data: toPatientWriteData(persistable),
     });
 
     try {
@@ -579,44 +581,7 @@ export const CompanionService = {
 
     const doc = await prisma.patient.update({
       where: { id },
-      data: {
-        name: persistable.name,
-        type: persistable.type as PrismaPatientType,
-        breed: persistable.breed ?? "",
-        speciesCode: persistable.speciesCode ?? undefined,
-        breedCode: persistable.breedCode ?? undefined,
-        dateOfBirth: persistable.dateOfBirth,
-        gender: persistable.gender as PrismaGender,
-        photoUrl: persistable.photoUrl ?? undefined,
-        currentWeight: persistable.currentWeight ?? undefined,
-        colour: persistable.colour ?? undefined,
-        allergy: persistable.allergy ?? undefined,
-        bloodGroup: persistable.bloodGroup ?? undefined,
-        isNeutered: persistable.isneutered ?? undefined,
-        ageWhenNeutered: persistable.ageWhenNeutered ?? undefined,
-        microchipNumber: persistable.microchipNumber ?? undefined,
-        passportNumber: persistable.passportNumber ?? undefined,
-        isInsured: persistable.isInsured ?? false,
-        insurance: persistable.insurance
-          ? (persistable.insurance as unknown as Prisma.InputJsonValue)
-          : undefined,
-        countryOfOrigin: persistable.countryOfOrigin ?? undefined,
-        source: persistable.source as PrismaSourceType,
-        status: persistable.status as PrismaRecordStatus,
-        physicalAttribute: persistable.physicalAttribute
-          ? (persistable.physicalAttribute as unknown as Prisma.InputJsonValue)
-          : undefined,
-        breedingInfo: persistable.breedingInfo
-          ? (persistable.breedingInfo as unknown as Prisma.InputJsonValue)
-          : undefined,
-        medicalRecords: persistable.medicalRecords
-          ? (persistable.medicalRecords as unknown as Prisma.InputJsonValue)
-          : undefined,
-        alerts: persistable.alerts
-          ? (persistable.alerts as unknown as Prisma.InputJsonValue)
-          : undefined,
-        isProfileComplete: persistable.isProfileComplete ?? false,
-      },
+      data: toPatientWriteData(persistable),
     });
 
     // Audit companion (patient) alert mutations. No-ops when alerts are unchanged or no org

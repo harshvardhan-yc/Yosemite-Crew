@@ -282,6 +282,16 @@ const computeProfileCompletion = (p: {
     p.address,
   );
 
+const buildAddressFields = (address: ParentAddressInput) => ({
+  addressLine: address.addressLine ?? undefined,
+  country: address.country ?? undefined,
+  city: address.city ?? undefined,
+  state: address.state ?? undefined,
+  postalCode: address.postalCode ?? undefined,
+  latitude: address.latitude ?? undefined,
+  longitude: address.longitude ?? undefined,
+});
+
 const upsertParentAddress = async (
   parentId: string,
   address: ParentAddressInput,
@@ -290,23 +300,9 @@ const upsertParentAddress = async (
     where: { parentId },
     create: {
       parentId,
-      addressLine: address.addressLine ?? undefined,
-      country: address.country ?? undefined,
-      city: address.city ?? undefined,
-      state: address.state ?? undefined,
-      postalCode: address.postalCode ?? undefined,
-      latitude: address.latitude ?? undefined,
-      longitude: address.longitude ?? undefined,
+      ...buildAddressFields(address),
     },
-    update: {
-      addressLine: address.addressLine ?? undefined,
-      country: address.country ?? undefined,
-      city: address.city ?? undefined,
-      state: address.state ?? undefined,
-      postalCode: address.postalCode ?? undefined,
-      latitude: address.latitude ?? undefined,
-      longitude: address.longitude ?? undefined,
-    },
+    update: buildAddressFields(address),
   });
 };
 

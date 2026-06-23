@@ -771,6 +771,65 @@ const loadAppointmentClinicalHeader = async (
   });
 };
 
+const readAppointmentIdField = (
+  record: ClinicalArtifactDocumentSource,
+  metadata: Record<string, unknown>,
+): string =>
+  record.artifact.appointmentId ??
+  readFirstString(metadata, ["appointmentId"]) ??
+  "—";
+
+const readPatientClientFields = (
+  header: AppointmentClinicalHeader,
+  metadata: Record<string, unknown>,
+): {
+  patientName: string;
+  speciesBreed: string;
+  ageSex: string;
+  clientName: string;
+  clientId: string;
+} => ({
+  patientName:
+    header.patientName ??
+    readFirstString(metadata, ["patientName", "patient"]) ??
+    "—",
+  speciesBreed:
+    header.speciesBreed ??
+    readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
+    "—",
+  ageSex:
+    header.ageSex ?? readFirstString(metadata, ["ageSex", "age", "sex"]) ?? "—",
+  clientName:
+    header.clientName ??
+    readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
+    "—",
+  clientId:
+    header.clientId ??
+    readFirstString(metadata, ["clientId", "ownerId"]) ??
+    "—",
+});
+
+const readPrintedByField = (
+  record: ClinicalArtifactDocumentSource,
+  metadata: Record<string, unknown>,
+): string | undefined =>
+  readFirstString(metadata, ["printedBy", "printedByName", "authorName"]) ??
+  readString(record.artifact.authorId);
+
+const buildPendingSignature = (): { status: "PENDING"; label: string } => ({
+  status: "PENDING",
+  label: "Signature",
+});
+
+const readRecordNotes = (
+  record: ClinicalArtifactDocumentSource,
+  metadata: Record<string, unknown>,
+): string =>
+  readString(record.data.notes) ??
+  readString(metadata.recordNotes) ??
+  readString(metadata.notes) ??
+  "";
+
 const buildTemplateFreeSoapNotePdfInput = async (
   input: RenderedDocumentPdfSource,
   record: ClinicalArtifactDocumentSource,
@@ -791,35 +850,13 @@ const buildTemplateFreeSoapNotePdfInput = async (
     data: {
       title: input.title,
       date: record.artifact.updatedAt,
-      appointmentId:
-        record.artifact.appointmentId ??
-        readFirstString(metadata, ["appointmentId"]) ??
-        "—",
+      appointmentId: readAppointmentIdField(record, metadata),
       doctorName:
         header.leadName ??
         readFirstString(metadata, ["doctorName", "providerName", "doctor"]) ??
         readString(record.artifact.authorId) ??
         "—",
-      patientName:
-        header.patientName ??
-        readFirstString(metadata, ["patientName", "patient"]) ??
-        "—",
-      speciesBreed:
-        header.speciesBreed ??
-        readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
-        "—",
-      ageSex:
-        header.ageSex ??
-        readFirstString(metadata, ["ageSex", "age", "sex"]) ??
-        "—",
-      clientName:
-        header.clientName ??
-        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
-        "—",
-      clientId:
-        header.clientId ??
-        readFirstString(metadata, ["clientId", "ownerId"]) ??
-        "—",
+      ...readPatientClientFields(header, metadata),
       subjective: (record.data.subjective ??
         metadata.subjective ??
         "") as unknown as string,
@@ -830,16 +867,8 @@ const buildTemplateFreeSoapNotePdfInput = async (
         metadata.assessment ??
         "") as unknown as string,
       plan: (record.data.plan ?? metadata.plan ?? "") as unknown as string,
-      printedBy:
-        readFirstString(metadata, [
-          "printedBy",
-          "printedByName",
-          "authorName",
-        ]) ?? readString(record.artifact.authorId),
-      signature: {
-        status: "PENDING",
-        label: "Signature",
-      },
+      printedBy: readPrintedByField(record, metadata),
+      signature: buildPendingSignature(),
     },
   };
 };
@@ -857,11 +886,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
   const header = await loadAppointmentClinicalHeader(
     record.artifact.appointmentId,
   );
-  const notes =
-    readString(record.data.notes) ??
-    readString(metadata.recordNotes) ??
-    readString(metadata.notes) ??
-    "";
+  const notes = readRecordNotes(record, metadata);
 
   return {
     documentType: "PRESCRIPTION",
@@ -869,10 +894,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
     data: {
       title: input.title,
       date: record.artifact.updatedAt,
-      appointmentId:
-        record.artifact.appointmentId ??
-        readFirstString(metadata, ["appointmentId"]) ??
-        "—",
+      appointmentId: readAppointmentIdField(record, metadata),
       prescriptionId: record.artifact.id,
       leadName:
         header.leadName ??
@@ -884,26 +906,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
         ]) ??
         readString(record.artifact.authorId) ??
         "—",
-      patientName:
-        header.patientName ??
-        readFirstString(metadata, ["patientName", "patient"]) ??
-        "—",
-      speciesBreed:
-        header.speciesBreed ??
-        readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
-        "—",
-      ageSex:
-        header.ageSex ??
-        readFirstString(metadata, ["ageSex", "age", "sex"]) ??
-        "—",
-      clientName:
-        header.clientName ??
-        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
-        "—",
-      clientId:
-        header.clientId ??
-        readFirstString(metadata, ["clientId", "ownerId"]) ??
-        "—",
+      ...readPatientClientFields(header, metadata),
       clientContact:
         header.clientContact ??
         readFirstString(metadata, [
@@ -917,16 +920,8 @@ const buildTemplateFreePrescriptionPdfInput = async (
         record.data.items ?? record.data.medications,
       ),
       notes,
-      printedBy:
-        readFirstString(metadata, [
-          "printedBy",
-          "printedByName",
-          "authorName",
-        ]) ?? readString(record.artifact.authorId),
-      signature: {
-        status: "PENDING",
-        label: "Signature",
-      },
+      printedBy: readPrintedByField(record, metadata),
+      signature: buildPendingSignature(),
     },
   };
 };
@@ -960,35 +955,13 @@ const buildTemplateFreeDischargeSummaryPdfInput = async (
     data: {
       title: input.title,
       date: record.artifact.updatedAt,
-      appointmentId:
-        record.artifact.appointmentId ??
-        readFirstString(metadata, ["appointmentId"]) ??
-        "—",
+      appointmentId: readAppointmentIdField(record, metadata),
       doctorName:
         header.leadName ??
         readFirstString(metadata, ["doctorName", "providerName", "doctor"]) ??
         readString(record.artifact.authorId) ??
         "—",
-      patientName:
-        header.patientName ??
-        readFirstString(metadata, ["patientName", "patient"]) ??
-        "—",
-      speciesBreed:
-        header.speciesBreed ??
-        readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
-        "—",
-      ageSex:
-        header.ageSex ??
-        readFirstString(metadata, ["ageSex", "age", "sex"]) ??
-        "—",
-      clientName:
-        header.clientName ??
-        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
-        "—",
-      clientId:
-        header.clientId ??
-        readFirstString(metadata, ["clientId", "ownerId"]) ??
-        "—",
+      ...readPatientClientFields(header, metadata),
       contact:
         header.clientContact ??
         readFirstString(metadata, ["contact", "phone", "phoneNo"]) ??
@@ -1018,16 +991,8 @@ const buildTemplateFreeDischargeSummaryPdfInput = async (
         metadata.contact ??
         readFirstString(metadata, ["contact", "phone"]) ??
         "—") as unknown as string,
-      printedBy:
-        readFirstString(metadata, [
-          "printedBy",
-          "printedByName",
-          "authorName",
-        ]) ?? readString(record.artifact.authorId),
-      signature: {
-        status: "PENDING",
-        label: "Signature",
-      },
+      printedBy: readPrintedByField(record, metadata),
+      signature: buildPendingSignature(),
     },
   };
 };
@@ -1045,11 +1010,7 @@ const buildTemplateFreeVitalRecordPdfInput = async (
   const header = await loadAppointmentClinicalHeader(
     record.artifact.appointmentId,
   );
-  const notes =
-    readString(record.data.notes) ??
-    readString(metadata.recordNotes) ??
-    readString(metadata.notes) ??
-    "";
+  const notes = readRecordNotes(record, metadata);
 
   return {
     documentType: "VITAL_RECORD",
@@ -1057,10 +1018,7 @@ const buildTemplateFreeVitalRecordPdfInput = async (
     data: {
       title: input.title,
       date: record.artifact.updatedAt,
-      appointmentId:
-        record.artifact.appointmentId ??
-        readFirstString(metadata, ["appointmentId"]) ??
-        "—",
+      appointmentId: readAppointmentIdField(record, metadata),
       recordedBy:
         header.leadName ??
         readFirstString(metadata, [
@@ -1073,26 +1031,7 @@ const buildTemplateFreeVitalRecordPdfInput = async (
         ]) ??
         readString(record.artifact.authorId) ??
         "—",
-      patientName:
-        header.patientName ??
-        readFirstString(metadata, ["patientName", "patient"]) ??
-        "—",
-      speciesBreed:
-        header.speciesBreed ??
-        readFirstString(metadata, ["speciesBreed", "species", "breed"]) ??
-        "—",
-      ageSex:
-        header.ageSex ??
-        readFirstString(metadata, ["ageSex", "age", "sex"]) ??
-        "—",
-      clientName:
-        header.clientName ??
-        readFirstString(metadata, ["clientName", "ownerName", "owner"]) ??
-        "—",
-      clientId:
-        header.clientId ??
-        readFirstString(metadata, ["clientId", "ownerId"]) ??
-        "—",
+      ...readPatientClientFields(header, metadata),
       contact:
         header.clientContact ??
         readFirstString(metadata, ["contact", "phone", "phoneNo", "email"]) ??
@@ -1103,16 +1042,8 @@ const buildTemplateFreeVitalRecordPdfInput = async (
       notes,
       metadata:
         record.data.metadata !== undefined ? record.data.metadata : metadata,
-      printedBy:
-        readFirstString(metadata, [
-          "printedBy",
-          "printedByName",
-          "authorName",
-        ]) ?? readString(record.artifact.authorId),
-      signature: {
-        status: "PENDING",
-        label: "Signature",
-      },
+      printedBy: readPrintedByField(record, metadata),
+      signature: buildPendingSignature(),
     },
   };
 };

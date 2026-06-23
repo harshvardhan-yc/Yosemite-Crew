@@ -5,7 +5,6 @@ import {
   CompanionServiceError,
 } from "../../services/companion.service";
 import type { CompanionRequestDTO } from "@yosemite-crew/types";
-import { generatePresignedUrl } from "src/middlewares/upload";
 import { CompanionOrganisationService } from "src/services/companion-organisation.service";
 import OrganizationModel from "src/models/organization";
 import { prisma } from "src/config/prisma";
@@ -14,6 +13,7 @@ import {
   resolveOrganisationIdFromRequest,
   resolveUserIdFromRequest,
 } from "src/utils/request";
+import { getProfileUploadUrl } from "./profile-upload.handler";
 
 type CompanionRequestBody =
   | CompanionRequestDTO
@@ -265,31 +265,7 @@ export const CompanionController = {
     }
   },
 
-  getProfileUploadUrl: async (req: Request, res: Response) => {
-    try {
-      const rawBody: unknown = req.body;
-      const mimeType =
-        typeof rawBody === "object" && rawBody !== null && "mimeType" in rawBody
-          ? (rawBody as { mimeType?: unknown }).mimeType
-          : undefined;
-
-      if (typeof mimeType !== "string" || !mimeType) {
-        res
-          .status(400)
-          .json({ message: "MIME type is required in the request body." });
-        return;
-      }
-
-      const { url, key } = await generatePresignedUrl(mimeType, "temp");
-
-      return res.status(200).json({ url, key });
-    } catch (error) {
-      logger.error("Failed to generate pre-signed URL", error);
-      return res
-        .status(500)
-        .json({ message: "Failed to generate upload URL." });
-    }
-  },
+  getProfileUploadUrl,
 
   getCompanionsByParentId: async (req: Request, res: Response) => {
     try {
