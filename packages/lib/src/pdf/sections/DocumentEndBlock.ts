@@ -11,7 +11,9 @@ const estimateSignatureHeight = (signature?: DocumentEndBlockInput['signature'])
   const detailsLines = [
     signature.signerName,
     [signature.signerRole, signature.signerDegree].filter(Boolean).join(' '),
+    signature.signerEmail,
     signature.signedAt ? signature.signedAt.toISOString() : undefined,
+    signature.authMethod,
   ].filter(Boolean).length;
 
   return 104 + detailsLines * 10;
@@ -136,10 +138,18 @@ export const renderDocumentEndBlock = (
       details.push(role);
     }
 
+    if (signature.signerEmail) {
+      details.push(signature.signerEmail);
+    }
+
     const signedAt = formatSignedAt(signature.signedAt);
 
     if (signedAt) {
       details.push(`Signed ${signedAt}`);
+    }
+
+    if (signature.authMethod) {
+      details.push(`Authenticated via ${signature.authMethod}`);
     }
   } else {
     details.push('Pending signature');

@@ -25,6 +25,8 @@ export type DocumentSignature = {
   signerName?: string;
   signerRole?: string;
   signerDegree?: string;
+  signerEmail?: string;
+  authMethod?: string;
   signedAt?: Date;
   label?: string;
 };

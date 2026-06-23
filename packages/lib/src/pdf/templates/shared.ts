@@ -21,6 +21,8 @@ export const buildClinicalHeaderKeyValue = (input: {
   clientContact?: string;
   speciesBreed?: string;
   ageSex?: string;
+  roomName?: string;
+  unitName?: string;
 }): KeyValueItem[] =>
   buildKeyValue([
     ['Date', input.date.toISOString().slice(0, 10)],
@@ -32,6 +34,8 @@ export const buildClinicalHeaderKeyValue = (input: {
     ['Client Contact', input.clientContact],
     ['Species / Breed', input.speciesBreed],
     ['Age / Sex', input.ageSex],
+    ['Room', input.roomName],
+    ['Unit', input.unitName],
   ]);
 
 export const buildKeyValueGroups = (
