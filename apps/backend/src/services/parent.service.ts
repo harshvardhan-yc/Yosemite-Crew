@@ -519,13 +519,18 @@ export const ParentService = {
         profileImageUrl: parent.profileImageUrl ?? undefined,
         isProfileComplete: false,
         createdFrom: parent.createdFrom as ParentCreatedFrom | undefined,
-        // This update carries the full alert set from the DTO, so an absent
-        // alerts value means "cleared". Use JsonNull (not undefined, which Prisma
-        // treats as "leave unchanged") so removing the last alert persists.
-        alerts:
-          ((parent as Parent & { alerts?: Parent["alerts"] }).alerts as
-            | Prisma.InputJsonValue
-            | undefined) ?? Prisma.JsonNull,
+        // Only the PMS path manages client alerts: it sends the full alert set, so an
+        // absent/empty set there means "cleared" (JsonNull, since Prisma treats undefined
+        // as "leave unchanged"). Mobile self-service updates never carry alerts, so the
+        // column is left untouched for them to avoid wiping vet/PMS-set client alerts.
+        ...(ctx?.source === "pms"
+          ? {
+              alerts:
+                ((parent as Parent & { alerts?: Parent["alerts"] }).alerts as
+                  | Prisma.InputJsonValue
+                  | undefined) ?? Prisma.JsonNull,
+            }
+          : {}),
       },
     });
 
