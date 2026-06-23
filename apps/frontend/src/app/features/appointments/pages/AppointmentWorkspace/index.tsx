@@ -14,15 +14,19 @@ import {
 } from '@/app/lib/appointmentWorkspace';
 import {
   WORKSPACE_STEPS,
+  type AppointmentEncounter,
   type CompanionAlert,
+  type SoapNoteEntry,
   type WorkspaceStep,
 } from '@/app/features/appointments/types/workspace';
+import { isRichTextEmpty } from '@/app/lib/richText';
 import { resolveLockHours } from '@/app/lib/appointmentLockWindow';
 import { getAppointmentCompanion, normalizeAppointmentStatus } from '@/app/lib/appointments';
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
 import { useLoadCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
 import { useCompanionStore } from '@/app/stores/companionStore';
+import { useParentStore } from '@/app/stores/parentStore';
 import { updateCompanion } from '@/app/features/companions/services/companionService';
 import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
@@ -59,7 +63,10 @@ import {
   updateAppointment,
 } from '@/app/features/appointments/services/appointmentService';
 import { loadWorkspaceClinicalArtifacts } from '@/app/features/appointments/services/workspaceClinicalService';
-import { listSoapTemplatesForWorkspace } from '@/app/features/appointments/services/workspaceTemplateService';
+import {
+  listSoapTemplatesForWorkspace,
+  resolveSoapTemplate,
+} from '@/app/features/appointments/services/workspaceTemplateService';
 import {
   getAppointmentWorkspaceBootstrap,
   normalizeWorkspaceBootstrapForEncounter,
@@ -163,7 +170,22 @@ type DischargeDateTimeModalProps = {
   setDischargeTime: (next: string) => void;
   onConfirm: () => void;
   isSaving: boolean;
+  /** Backend-owned discharge readiness; when disabled, an override reason is required. */
+  gate?: NonNullable<AppointmentEncounter['finalizationGate']>;
+  overrideReason: string;
+  setOverrideReason: (next: string) => void;
 };
+
+// A SOAP note carries real content if it is completed or any of its rich-text
+// sections is non-empty. Hoisted to module scope to keep the hydration effect flat.
+const hasMeaningfulSoapContent = (notes: SoapNoteEntry[]): boolean =>
+  notes.some(
+    (note) =>
+      note.status === 'COMPLETED' ||
+      ![note.chiefComplaint, note.subjective, note.objective, note.assessment, note.plan].every(
+        (value) => isRichTextEmpty(value)
+      )
+  );
 
 const DischargeDateTimeModal = ({
   showModal,
@@ -174,16 +196,45 @@ const DischargeDateTimeModal = ({
   setDischargeTime,
   onConfirm,
   isSaving,
+  gate,
+  overrideReason,
+  setOverrideReason,
 }: DischargeDateTimeModalProps) => {
   const handleCancel = () => {
     if (isSaving) return;
     setShowModal(false);
   };
 
+  // When the backend gate blocks discharge, the clinician must give an override
+  // reason before confirming — this is the audited, exceptional discharge path.
+  const gateBlocked = gate ? gate.enabled === false : false;
+  const overrideMissing = gateBlocked && !overrideReason.trim();
+  const confirmLabel = (() => {
+    if (isSaving) return 'Discharging...';
+    return gateBlocked ? 'Override & discharge' : 'Confirm discharge';
+  })();
+
   return (
     <CenterModal showModal={showModal} setShowModal={setShowModal} onClose={handleCancel}>
       <div className="flex w-full flex-col gap-4">
         <ModalHeader title="Discharge date & time" onClose={handleCancel} />
+        {gateBlocked && (
+          <div className="flex flex-col gap-2 rounded-2xl bg-danger-100 p-3">
+            <p className="text-body-4 text-danger-700">
+              {gate?.disabledReason ?? 'This encounter is not ready for discharge.'}
+            </p>
+            <label className="flex flex-col gap-1 text-caption-2 text-text-secondary">
+              {'Override reason (required)'}
+              <textarea
+                value={overrideReason}
+                onChange={(event) => setOverrideReason(event.target.value)}
+                rows={2}
+                className="rounded-xl border border-input-border-default px-3 py-2 text-body-4 text-text-primary"
+                placeholder="Explain why discharge proceeds despite the open requirements"
+              />
+            </label>
+          </div>
+        )}
         <div className={`${isSaving ? 'pointer-events-none opacity-60' : ''} flex flex-col gap-3`}>
           <Datepicker
             type="input"
@@ -203,9 +254,9 @@ const DischargeDateTimeModal = ({
           />
           <Primary
             href="#"
-            text={isSaving ? 'Discharging...' : 'Confirm discharge'}
+            text={confirmLabel}
             onClick={onConfirm}
-            isDisabled={isSaving}
+            isDisabled={isSaving || overrideMissing}
             className="w-auto min-w-36"
           />
         </div>
@@ -249,6 +300,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const initEncounter = useAppointmentWorkspaceStore((s) => s.initEncounter);
   const encounter = useAppointmentWorkspaceStore((s) => s.encountersById[appointmentId]);
   const mergeEncounterData = useAppointmentWorkspaceStore((s) => s.mergeEncounterData);
+  const applySoapTemplate = useAppointmentWorkspaceStore((s) => s.applySoapTemplate);
+  const getEncounter = useAppointmentWorkspaceStore((s) => s.getEncounter);
   const activeStep = useAppointmentWorkspaceStore((s) => s.activeStep);
   const setActiveStep = useAppointmentWorkspaceStore((s) => s.setActiveStep);
   const activeSideAction = useAppointmentWorkspaceStore((s) => s.activeSideAction);
@@ -268,6 +321,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const [summaryDischargeTime, setSummaryDischargeTime] = useState<string>(() =>
     toTimeString(new Date())
   );
+  const [dischargeOverrideReason, setDischargeOverrideReason] = useState('');
   const lifecycleEncounterIdRef = useRef<string | undefined>(appointment.encounterId);
   const supportStaffMember = useMemo(() => {
     const leadName = (appointment.lead?.name ?? '').trim();
@@ -333,8 +387,19 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         authorName: actor.name,
       }),
       listSoapTemplatesForWorkspace(organisationId),
+      // Resolve the service/package/species-linked SOAP template so the active
+      // draft prefills before YC defaults. 404 → null (no default) so it no-ops.
+      resolveSoapTemplate({
+        organisationId,
+        appointmentId,
+        encounterId: appointment.encounterId,
+        companionId: companion.id,
+        species: companion.species,
+        serviceId: appointment.appointmentType?.id,
+        mode: encounter.mode === 'INPATIENT' ? 'INPATIENT' : 'OUTPATIENT',
+      }),
     ])
-      .then(([aggregateResult, clinicalResult, templatesResult]) => {
+      .then(([aggregateResult, clinicalResult, templatesResult, resolvedSoapResult]) => {
         if (aggregateResult.status === 'fulfilled') {
           lifecycleEncounterIdRef.current =
             getWorkspaceBootstrapEncounterId(aggregateResult.value) ??
@@ -347,6 +412,15 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           ...(clinicalResult.status === 'fulfilled' ? clinicalResult.value : {}),
           soapTemplates: templatesResult.status === 'fulfilled' ? templatesResult.value : [],
         });
+        // Prefill the active SOAP draft from the resolved template only when there
+        // is no saved/typed SOAP content yet, so we never overwrite a real record.
+        const resolvedSoap =
+          resolvedSoapResult.status === 'fulfilled' ? resolvedSoapResult.value : null;
+        const liveEncounter = getEncounter(appointmentId);
+        const hasSoapContent = hasMeaningfulSoapContent(liveEncounter?.soap ?? []);
+        if (resolvedSoap && !hasSoapContent) {
+          applySoapTemplate(appointmentId, resolvedSoap);
+        }
       })
       .catch((error) => {
         console.error('Unable to hydrate workspace data:', error);
@@ -354,11 +428,16 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   }, [
     appointment.encounterId,
     appointment.organisationId,
+    appointment.appointmentType?.id,
     appointmentId,
     actor.id,
     actor.name,
+    companion.id,
+    companion.species,
     encounter,
     mergeEncounterData,
+    applySoapTemplate,
+    getEncounter,
   ]);
 
   const encounterMode = encounter?.mode ?? initialMode;
@@ -421,6 +500,13 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const displayedPatientAlerts = persistedPatientAlerts.length
     ? persistedPatientAlerts
     : (effectiveEncounter?.alerts ?? []);
+  // Client (parent) alerts: surfaced read-only alongside the patient alerts so
+  // the same alert state is visible in the workspace, not only the companion modal.
+  const parentRecord = useParentStore((s) => s.parentsById[companion.parent.id]);
+  const displayedClientAlerts = useMemo(
+    () => storedAlertsToCompanionAlerts(parentRecord?.alerts, 'client-alert'),
+    [parentRecord?.alerts]
+  );
   // Operational encounter — billing (Invoice, Services & Packages) and lab
   // orders (Diagnostics) are NOT frozen by the clinical time window. Industry
   // standard gates these on their own state (invoice finalized/paid,
@@ -807,7 +893,18 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
 
   const handleReadyForBillingToggle = useCallback(async () => {
     const nextReady = !(encounter?.readyForBilling.value ?? false);
-    if (nextReady) {
+    // Marking ready persists by setting the invoice's visitBillingStage to
+    // READY_FOR_BILLING on the finance service; the workspace bootstrap reads that
+    // back on refresh. There is no server endpoint to revert the stage, so undoing
+    // can only ever be local — surface that instead of silently diverging on reload.
+    if (!nextReady) {
+      notify('warning', {
+        title: 'Can’t unmark on the server',
+        text: 'Ready for billing can’t be reverted once set. It will stay marked after refresh.',
+      });
+      return;
+    }
+    try {
       await markAppointmentReadyForBilling(appointmentId, {
         organisationId: appointment.organisationId,
         patientId: companion.id,
@@ -815,8 +912,27 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         visitId: lifecycleEncounterIdRef.current ?? appointment.encounterId,
         notes: 'Ready for billing from appointment workspace',
       });
+    } catch (error) {
+      // Do NOT flip local state if the write failed — otherwise the UI shows
+      // "ready" but a refresh reverts it, which reads as "not persisting".
+      console.error('Failed to mark appointment ready for billing:', error);
+      notify('error', {
+        title: 'Couldn’t mark ready for billing',
+        text: 'The change wasn’t saved. Please try again.',
+      });
+      return;
     }
-    toggleReadyForBilling(appointmentId, actor);
+    // Re-hydrate from the workspace bootstrap so the checkbox reflects confirmed
+    // server state (invoice visitBillingStage). This is what persists across a
+    // page refresh, so binding the UI to it — rather than only flipping local
+    // state — guarantees the checkbox stays checked after reload.
+    try {
+      await refreshWorkspaceEncounterId();
+    } catch (error) {
+      console.error('Failed to refresh billing state after marking ready:', error);
+      // Fall back to an optimistic flip so the user still sees their action.
+      toggleReadyForBilling(appointmentId, actor);
+    }
   }, [
     actor,
     appointment.encounterId,
@@ -825,6 +941,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     companion.id,
     companion.parent.id,
     encounter?.readyForBilling.value,
+    notify,
+    refreshWorkspaceEncounterId,
     toggleReadyForBilling,
   ]);
 
@@ -921,13 +1039,14 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   }, [appointment, isCompletedAppointment]);
 
   const handleDischarge = useCallback(
-    async (dischargedAt: string) => {
+    async (dischargedAt: string, overrideReason?: string) => {
       if (isFinalizing) return;
       setIsFinalizing(true);
       try {
         await dischargeEncounter(
           lifecycleEncounterIdRef.current ?? appointment.encounterId,
-          dischargedAt
+          dischargedAt,
+          { overrideReason }
         );
         await completeAppointmentStatus();
         markDischarged(appointmentId, dischargedAt);
@@ -986,12 +1105,14 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   }, [effectiveEncounter, handleComplete, isFinalizing]);
 
   const handleConfirmSummaryDischarge = useCallback(() => {
-    void handleDischarge(buildAdmissionDateTime(summaryDischargeDate, summaryDischargeTime)).then(
-      () => {
-        setIsSummaryDischargeModalOpen(false);
-      }
-    );
-  }, [handleDischarge, summaryDischargeDate, summaryDischargeTime]);
+    void handleDischarge(
+      buildAdmissionDateTime(summaryDischargeDate, summaryDischargeTime),
+      dischargeOverrideReason.trim() || undefined
+    ).then(() => {
+      setIsSummaryDischargeModalOpen(false);
+      setDischargeOverrideReason('');
+    });
+  }, [dischargeOverrideReason, handleDischarge, summaryDischargeDate, summaryDischargeTime]);
 
   const summaryPrimaryCta = useMemo(() => {
     if (activeStep !== 'SUMMARY' || !effectiveEncounter) return undefined;
@@ -1020,6 +1141,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           appointment={appointment}
           companionName={companion.name}
           alerts={displayedPatientAlerts}
+          clientAlerts={displayedClientAlerts}
           onBack={() => router.push('/appointments')}
           onQuickActions={() => setActiveSideAction('RECORD')}
           onHospitalize={() => setIsHospitalizeOpen(true)}
@@ -1115,6 +1237,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
             appointmentId={appointmentId}
             appointment={appointment}
             encounter={effectiveEncounter}
+            resolvedEncounterId={lifecycleEncounterIdRef.current ?? appointment.encounterId}
           />
         )}
       </section>
@@ -1128,6 +1251,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         setDischargeTime={setSummaryDischargeTime}
         onConfirm={handleConfirmSummaryDischarge}
         isSaving={isFinalizing}
+        gate={effectiveEncounter?.finalizationGate}
+        overrideReason={dischargeOverrideReason}
+        setOverrideReason={setDischargeOverrideReason}
       />
 
       <QuickActionsModal

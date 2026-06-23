@@ -6,7 +6,6 @@ import {
   LuChevronRight,
   LuEye,
   LuEyeOff,
-  LuFilter,
   LuPlus,
   LuRefreshCw,
 } from 'react-icons/lu';
@@ -15,7 +14,7 @@ import Search from '@/app/ui/inputs/Search';
 import Datepicker from '@/app/ui/inputs/Datepicker';
 import Timepicker from '@/app/ui/inputs/Timepicker';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
-import { Primary } from '@/app/ui/primitives/Buttons';
+import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import type { ScheduleTask, ScheduleTaskStatus } from '@/app/features/appointments/types/workspace';
@@ -31,7 +30,23 @@ type InpatientScheduleProps = {
   assigneeOptions: AssigneeOption[];
   onAddTask: (task: Omit<ScheduleTask, 'id'>) => void;
   onUpdateTask: (id: string, patch: Partial<ScheduleTask>) => void;
+  /** Commit a task's edited breakdown (start/end/time) to the backend. */
+  onRecordTask?: (id: string) => void;
   onApplyTemplate?: (templateId: string) => void;
+  /**
+   * Lifecycle state of the applied schedule, when one exists. When `active` is a
+   * non-null instance id the pause/resume/cancel/regenerate controls are shown and
+   * call the matching backend action. `paused` toggles pause⇄resume.
+   */
+  scheduleLifecycle?: {
+    instanceId: string | null;
+    paused: boolean;
+    busy: boolean;
+    onPause: () => void;
+    onResume: () => void;
+    onCancel: () => void;
+    onRegenerate: () => void;
+  };
 };
 
 const STATUS_OPTIONS: { label: string; value: ScheduleTaskStatus }[] = [
@@ -135,6 +150,14 @@ const StatusPillSelect = ({
 /** "MMM d, yyyy" string ⇄ the Datepicker's `Date | null` value. */
 const parseTaskDate = (value?: string): Date | null => {
   if (!value) return null;
+  // ISO date-only strings ("2026-06-23") parse as UTC midnight, which shifts a
+  // calendar day in negative-offset timezones. Parse those as a local date so
+  // day comparisons line up with the locally-rendered "MMM d, yyyy" dates.
+  const isoDateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (isoDateOnly) {
+    const [, year, month, day] = isoDateOnly;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
@@ -188,10 +211,12 @@ const TaskBreakdown = ({
   task,
   readOnly,
   onUpdateTask,
+  onRecordTask,
 }: {
   task: ScheduleTask;
   readOnly: boolean;
   onUpdateTask: (id: string, patch: Partial<ScheduleTask>) => void;
+  onRecordTask?: (id: string) => void;
 }) => (
   <div className="mt-4">
     <SectionContainer title="Task breakdown" nested className="bg-neutral-0">
@@ -231,7 +256,7 @@ const TaskBreakdown = ({
           text="Record"
           icon={<LuArrowRight aria-hidden="true" />}
           iconPosition="right"
-          onClick={() => undefined}
+          onClick={() => onRecordTask?.(task.id)}
           isDisabled={readOnly}
         />
       </div>
@@ -246,22 +271,74 @@ const InpatientSchedule = ({
   assigneeOptions,
   onAddTask,
   onUpdateTask,
+  onRecordTask,
   onApplyTemplate,
+  scheduleLifecycle,
 }: InpatientScheduleProps) => {
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(tasks[0]?.id ?? null);
+  // Day the schedule is focused on. Defaults to today; prev/next shift by a day.
+  // Time is zeroed so day comparisons are stable regardless of clock time.
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return now;
+  });
+
+  const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+
+  const shiftSelectedDate = (deltaDays: number) => {
+    setSelectedDate((current) => {
+      const next = new Date(current);
+      next.setDate(next.getDate() + deltaDays);
+      return next;
+    });
+  };
+
+  const todayAtMidnight = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return now;
+  }, []);
+
+  const dateLabel = useMemo(() => {
+    const formatted = selectedDate.toLocaleDateString('en-US', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+    return isSameDay(selectedDate, todayAtMidnight) ? `Today ${formatted}` : formatted;
+  }, [selectedDate, todayAtMidnight]);
+
+  // A task belongs to the selected day when its date window covers it. Tasks
+  // with no dates are always shown so manually-added items aren't hidden.
+  const tasksForSelectedDay = useMemo(() => {
+    return tasks.filter((task) => {
+      const start = parseTaskDate(task.startDate);
+      const end = parseTaskDate(task.endDate) ?? start;
+      if (!start) return true;
+      const startDay = new Date(start);
+      startDay.setHours(0, 0, 0, 0);
+      const endDay = new Date(end ?? start);
+      endDay.setHours(0, 0, 0, 0);
+      return selectedDate >= startDay && selectedDate <= endDay;
+    });
+  }, [tasks, selectedDate]);
 
   const filteredTasks = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return tasks;
-    return tasks.filter((task) =>
+    if (!query) return tasksForSelectedDay;
+    return tasksForSelectedDay.filter((task) =>
       [task.description, task.category, task.assignedToName, task.status].some((value) =>
         String(value ?? '')
           .toLowerCase()
           .includes(query)
       )
     );
-  }, [search, tasks]);
+  }, [search, tasksForSelectedDay]);
 
   const handleAddTask = () => {
     onAddTask({
@@ -269,8 +346,8 @@ const InpatientSchedule = ({
       category: 'Care',
       status: 'UPCOMING',
       autoGenerated: false,
-      startDate: 'Apr 25, 2026',
-      endDate: 'Apr 30, 2026',
+      startDate: formatTaskDate(selectedDate),
+      endDate: formatTaskDate(selectedDate),
     });
   };
 
@@ -289,13 +366,13 @@ const InpatientSchedule = ({
           <CircleIconButton
             icon={<LuChevronLeft aria-hidden="true" />}
             label="Previous day"
-            onClick={() => undefined}
+            onClick={() => shiftSelectedDate(-1)}
           />
-          <span className="text-text-brand">Today 24 Apr, 2026</span>
+          <span className="text-text-brand">{dateLabel}</span>
           <CircleIconButton
             icon={<LuChevronRight aria-hidden="true" />}
             label="Next day"
-            onClick={() => undefined}
+            onClick={() => shiftSelectedDate(1)}
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -312,17 +389,40 @@ const InpatientSchedule = ({
               />
             </div>
           )}
+          {scheduleLifecycle?.instanceId && !readOnly && (
+            <div className="flex flex-wrap items-center gap-2">
+              {scheduleLifecycle.paused ? (
+                <Secondary
+                  text="Resume"
+                  onClick={scheduleLifecycle.onResume}
+                  isDisabled={scheduleLifecycle.busy}
+                />
+              ) : (
+                <Secondary
+                  text="Pause"
+                  onClick={scheduleLifecycle.onPause}
+                  isDisabled={scheduleLifecycle.busy}
+                />
+              )}
+              <Secondary
+                text="Regenerate"
+                onClick={scheduleLifecycle.onRegenerate}
+                isDisabled={scheduleLifecycle.busy}
+                icon={<LuRefreshCw aria-hidden="true" />}
+              />
+              <Secondary
+                text="Cancel schedule"
+                onClick={scheduleLifecycle.onCancel}
+                isDisabled={scheduleLifecycle.busy}
+              />
+            </div>
+          )}
           <CircleIconButton
             icon={<LuPlus aria-hidden="true" />}
             label="Add schedule task"
             variant="dark"
             disabled={readOnly}
             onClick={handleAddTask}
-          />
-          <CircleIconButton
-            icon={<LuFilter aria-hidden="true" />}
-            label="Filter schedule"
-            onClick={() => undefined}
           />
           <Search
             value={search}
@@ -389,7 +489,12 @@ const InpatientSchedule = ({
                   </div>
                 </div>
                 {expanded && (
-                  <TaskBreakdown task={task} readOnly={readOnly} onUpdateTask={onUpdateTask} />
+                  <TaskBreakdown
+                    task={task}
+                    readOnly={readOnly}
+                    onUpdateTask={onUpdateTask}
+                    onRecordTask={onRecordTask}
+                  />
                 )}
               </div>
             </li>
@@ -399,7 +504,9 @@ const InpatientSchedule = ({
 
       {filteredTasks.length === 0 && (
         <p className="rounded-2xl bg-neutral-100 p-4 text-body-4 text-text-secondary">
-          No schedule tasks match this search.
+          {search.trim()
+            ? 'No schedule tasks match this search.'
+            : 'No schedule tasks for this day.'}
         </p>
       )}
     </SectionContainer>

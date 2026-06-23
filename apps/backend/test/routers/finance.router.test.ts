@@ -139,6 +139,18 @@ describe("finance.router", () => {
     expect(sessionRoute?.stack.map((layer) => layer.handle)).toContain(
       FinanceController.createInvoicePaymentSession,
     );
+    expect(sessionRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(sessionRoute?.stack.map((layer) => layer.handle)).toContain(
+      financeAppointmentLimiter,
+    );
+    expect(sessionRoute?.stack.map((layer) => layer.handle)).toContain(
+      withInvoiceOrgPermissionsMiddleware,
+    );
+    expect(sessionRoute?.stack.map((layer) => layer.handle)).toContain(
+      requirePermissionMiddleware,
+    );
     expect(
       findRoute("/invoices/payment-intent/:paymentIntentId", "get")?.stack.map(
         (layer) => layer.handle,
@@ -180,6 +192,15 @@ describe("finance.router", () => {
     expect(
       mobilePaymentSessionRoute?.stack.map((layer) => layer.handle),
     ).toContain(FinanceController.createMobileInvoicePaymentSession);
+    expect(
+      findRoute("/:invoiceId", "get")?.stack.map((layer) => layer.handle),
+    ).toEqual([
+      authorizeCognito,
+      financeAppointmentLimiter,
+      withInvoiceOrgPermissionsMiddleware,
+      requirePermissionMiddleware,
+      FinanceController.getInvoiceById,
+    ]);
     expect(
       findRoute("/mobile/payment-intent/:paymentIntentId", "get")?.stack.map(
         (layer) => layer.handle,

@@ -14,6 +14,9 @@ type WorkspaceHeaderProps = {
   appointment: Appointment;
   companionName: string;
   alerts: CompanionAlert[];
+  /** Read-only client (parent) alerts, surfaced alongside the patient alerts.
+   *  Managed from the companion/client modal, not editable here. */
+  clientAlerts?: CompanionAlert[];
   onBack: () => void;
   onQuickActions: () => void;
   onHospitalize?: () => void;
@@ -55,6 +58,7 @@ const WorkspaceHeader = ({
   appointment,
   companionName,
   alerts,
+  clientAlerts = [],
   onBack,
   onQuickActions,
   onHospitalize,
@@ -88,6 +92,14 @@ const WorkspaceHeader = ({
             label={alert.label}
             severity={alert.severity}
             onRemove={onRemoveAlert}
+          />
+        ))}
+        {clientAlerts.map((alert) => (
+          <AlertPill
+            key={alert.id}
+            id={alert.id}
+            label={`Client: ${alert.label}`}
+            severity={alert.severity}
           />
         ))}
         {onAddAlert && (

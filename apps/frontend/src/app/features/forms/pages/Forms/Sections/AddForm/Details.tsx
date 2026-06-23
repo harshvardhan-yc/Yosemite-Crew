@@ -30,6 +30,14 @@ type DetailsProps = {
   registerValidator?: (fn: () => boolean) => void;
 };
 
+const YC_DEFAULT_CATEGORIES = new Set<FormsCategory>([
+  'SOAP',
+  'Prescription',
+  'Task Template',
+  'Discharge Form',
+  'Consent form',
+]);
+
 const Details = ({
   formData,
   setFormData,
@@ -52,7 +60,15 @@ const Details = ({
     | Organisation['type']
     | undefined;
   const effectiveOrgType = orgTypeOverride || orgType;
+  // Ownership: a "YC default" template is structure-locked (content-only, see
+  // Build.tsx `structureLocked`); a "Custom" template is fully editable and may
+  // be scoped to the whole org or a single user. The selector lives above
+  // Category because it gates what the rest of the builder can do.
+  const isYcDefault = formData.templateSource === 'YC_LIBRARY';
   const categoryOptions = useMemo(() => {
+    if (isYcDefault) {
+      return FormsCategoryOptions.filter((c) => YC_DEFAULT_CATEGORIES.has(c));
+    }
     const base = new Set([
       'Consent form',
       'Prescription',
@@ -77,7 +93,29 @@ const Details = ({
       return FormsCategoryOptions.filter((c) => base.has(c) || c.startsWith('Groomer'));
     }
     return FormsCategoryOptions;
-  }, [effectiveOrgType]);
+  }, [effectiveOrgType, isYcDefault]);
+
+  const handleOwnershipChange = (value: string) => {
+    if (value === 'YC_LIBRARY') {
+      setFormData((prev) => ({
+        ...prev,
+        templateSource: 'YC_LIBRARY',
+        isTemplateBacked: true,
+        category: YC_DEFAULT_CATEGORIES.has(prev.category) ? prev.category : ('' as FormsCategory),
+      }));
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      // Fall back to org-shared when leaving YC default so a custom template
+      // always has a concrete scope; keep an existing custom scope otherwise.
+      templateSource:
+        prev.templateSource && prev.templateSource !== 'YC_LIBRARY'
+          ? prev.templateSource
+          : 'ORG_TEMPLATE',
+      isTemplateBacked: false,
+    }));
+  };
 
   const handleCategoryChange = (category: FormsCategory) => {
     const shouldApplyTemplate = !formData._id || (formData.schema?.length ?? 0) === 0;
@@ -183,6 +221,21 @@ const Details = ({
               className="min-h-12!"
             />
             <LabelDropdown
+              placeholder="Template type"
+              defaultOption={isYcDefault ? 'YC_LIBRARY' : 'CUSTOM'}
+              onSelect={(option) => handleOwnershipChange(option.value)}
+              options={[
+                { label: 'YC default (locked structure)', value: 'YC_LIBRARY' },
+                { label: 'Custom', value: 'CUSTOM' },
+              ]}
+            />
+            {isYcDefault && (
+              <p className="text-caption-2 text-text-secondary">
+                YC default templates have a fixed structure. You can edit field content, but adding,
+                removing, or reordering fields is locked.
+              </p>
+            )}
+            <LabelDropdown
               placeholder="Category"
               defaultOption={formData.category || ''}
               onSelect={(option) => handleCategoryChange(option.value as FormsCategory)}
@@ -236,6 +289,22 @@ const Details = ({
               onSelect={(option) => setFormData({ ...formData, usage: option.value as FormsUsage })}
               options={FormsUsageOptions.map((opt) => ({ label: opt, value: opt }))}
             />
+            {!isYcDefault && (
+              <LabelDropdown
+                placeholder="Template scope"
+                defaultOption={formData.templateSource ?? 'ORG_TEMPLATE'}
+                onSelect={(option) =>
+                  setFormData({
+                    ...formData,
+                    templateSource: option.value as FormsProps['templateSource'],
+                  })
+                }
+                options={[
+                  { label: 'Organisation (shared with your team)', value: 'ORG_TEMPLATE' },
+                  { label: 'Personal (only you)', value: 'USER_TEMPLATE' },
+                ]}
+              />
+            )}
             <MultiSelectDropdown
               placeholder={formData.category === 'Custom' ? 'Service (Optional)' : 'Service'}
               value={formData.services || []}

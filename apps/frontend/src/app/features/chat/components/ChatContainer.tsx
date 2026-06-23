@@ -102,7 +102,7 @@ interface ChatLayoutProps {
   previewComponent: ComponentType<ChannelPreviewUIComponentProps>;
   onBack: () => void;
   currentUserId?: string | null;
-  channelFilter?: ChannelListProps['channelRenderFilterFn'];
+  channelFilter?: NonNullable<ChannelListProps['channelRenderFilterFn']>;
   showEmpty?: boolean;
   channelListHeader?: ReactNode;
 }

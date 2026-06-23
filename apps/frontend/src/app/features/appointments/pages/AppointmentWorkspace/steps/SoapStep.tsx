@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import SearchResultsDropdown from '@/app/features/appointments/pages/AppointmentWorkspace/components/SearchResultsDropdown';
+import WorkspaceSearchResultRow from '@/app/features/appointments/pages/AppointmentWorkspace/components/WorkspaceSearchResultRow';
 import { IoArrowForward } from 'react-icons/io5';
-import { LuClipboardList, LuPrinter } from 'react-icons/lu';
+import { LuClipboardList } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
 import Search from '@/app/ui/inputs/Search';
 import RichTextEditor from '@/app/ui/primitives/RichTextEditor/RichTextEditor';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
-import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
 import SoapNotesList, {
   type SoapNoteListItem,
 } from '@/app/features/appointments/pages/AppointmentWorkspace/components/SoapNotesList';
@@ -15,12 +15,15 @@ import type {
   AppointmentEncounter,
   SoapNoteEntry,
 } from '@/app/features/appointments/types/workspace';
-import { formatStampDate, formatStampTime } from '@/app/lib/appointmentWorkspace';
-import { isRichTextEmpty } from '@/app/lib/richText';
 import {
-  getRenderedDocument,
-  saveSoapNote,
-} from '@/app/features/appointments/services/workspaceClinicalService';
+  formatStampDate,
+  formatStampTime,
+  resolveSectionLock,
+} from '@/app/lib/appointmentWorkspace';
+import { isRichTextEmpty } from '@/app/lib/richText';
+import { saveSoapNote } from '@/app/features/appointments/services/workspaceClinicalService';
+import FormRenderer from '@/app/features/forms/pages/Forms/Sections/AddForm/components/FormRenderer';
+import { collectMissingRequiredFields } from '@/app/features/forms/pages/Forms/Sections/AddForm/validationUtils';
 
 type SoapStepProps = {
   appointmentId: string;
@@ -50,28 +53,21 @@ const EMPTY_SOAP: SoapNoteEntry = {
 const isPersistedSoapId = (value?: string) =>
   Boolean(value && value !== 'draft' && !value.startsWith('local-'));
 
-const hasSoapContent = (note: SoapNoteEntry) =>
+const hasNativeSoapContent = (note: SoapNoteEntry) =>
   [note.chiefComplaint, note.subjective, note.objective, note.assessment, note.plan].some(
     (value) => !isRichTextEmpty(value)
   );
 
+const isCustomSoap = (note: SoapNoteEntry) => Boolean(note.customSchema?.length);
+
 const SoapSignActions = ({
   disabled,
-  onPrintToSign,
   onSaveAndNext,
 }: {
   disabled: boolean;
-  onPrintToSign: () => void;
   onSaveAndNext: () => void;
 }) => (
   <div className="flex flex-wrap items-center justify-end gap-3">
-    <Secondary
-      text="Print to Sign"
-      onClick={onPrintToSign}
-      isDisabled={disabled}
-      icon={<LuPrinter aria-hidden="true" />}
-      iconPosition="right"
-    />
     <Primary
       text="Save & Next"
       onClick={onSaveAndNext}
@@ -130,16 +126,17 @@ const SoapStep = ({
   const signSoap = useAppointmentWorkspaceStore((s) => s.signSoap);
   const [templateQuery, setTemplateQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [isPreparingPdf, setIsPreparingPdf] = useState(false);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
-  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('SOAP note');
-  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [persistedDraftId, setPersistedDraftId] = useState<string | undefined>(undefined);
 
   // Work on the active draft (first not-yet-signed note); once a note is signed
   // it moves to "All SOAP notes" history and the form clears for a new entry.
   const note = encounter.soap.find((entry) => entry.status !== 'COMPLETED') ?? EMPTY_SOAP;
-  const readOnly = encounter.viewOnly;
+  // Prefer the backend-owned SOAP section lock when the workspace bootstrap supplies
+  // it; otherwise fall back to the clinical `viewOnly` flag (lock-window/discharge).
+  const soapLock = resolveSectionLock(encounter, 'soap', encounter.viewOnly);
+  const readOnly = soapLock.locked;
+  const lockReason = soapLock.reason;
 
   useEffect(() => {
     setPersistedDraftId(isPersistedSoapId(note.id) ? note.id : undefined);
@@ -177,9 +174,33 @@ const SoapStep = ({
     [appointmentReason, encounter.leadName, encounter.soap]
   );
 
+  const customMode = isCustomSoap(note);
+
+  const handleCustomAnswerChange = (fieldId: string, value: unknown) =>
+    upsertSoap(appointmentId, {
+      customAnswers: { ...note.customAnswers, [fieldId]: value },
+    });
+
   const handleSaveAndNext = async () => {
     if (isSaving) return;
+    // Native SOAP with nothing typed simply advances; a custom template always persists its
+    // structured answers (validation below gates required fields).
+    if (!customMode && !hasNativeSoapContent(note)) {
+      onSaveAndNext();
+      return;
+    }
+    if (customMode) {
+      const missing = collectMissingRequiredFields(
+        note.customSchema ?? [],
+        note.customAnswers ?? {}
+      );
+      if (missing.length > 0) {
+        setSaveError(`Please complete required field(s): ${missing.join(', ')}`);
+        return;
+      }
+    }
     setIsSaving(true);
+    setSaveError(null);
     let persistedId: string | undefined;
     try {
       if (organisationId) {
@@ -195,87 +216,29 @@ const SoapStep = ({
             authorId,
             authorName,
             templateId: note.templateId,
+            // Forward full template provenance so the saved artifact records the exact
+            // template version that prefilled/structured it (parity with discharge).
+            templateVersion: note.templateVersion,
+            templateVersionId: note.templateVersionId,
           },
           noteForSave
         );
         persistedId = (saved as { id?: string } | undefined)?.id;
       }
     } catch (error) {
+      // Do NOT advance or mark COMPLETED on a failed save — that would show an
+      // unsaved clinical note as signed. Surface the backend error and stop.
       console.error('Unable to persist SOAP note:', error);
-    } finally {
-      signSoap(appointmentId, encounter.leadName ?? 'Clinician', false, persistedId);
-      setIsSaving(false);
-      onSaveAndNext();
-    }
-  };
-
-  const resolveSoapPdfUrl = async (soapNoteId: string) => {
-    if (!organisationId) throw new Error('Organisation missing for SOAP document lookup.');
-    const rendered = await getRenderedDocument(organisationId, soapNoteId);
-    const pdfUrl = rendered.pdfUrl?.trim();
-    if (pdfUrl) return pdfUrl;
-    throw new Error('SOAP note PDF is not available yet.');
-  };
-
-  const openSoapPdfPreview = async (soapNoteId: string, title: string) => {
-    setPdfError(null);
-    setIsPreparingPdf(true);
-    try {
-      const pdfUrl = await resolveSoapPdfUrl(soapNoteId);
-      setPdfPreviewTitle(title);
-      setPdfPreviewUrl(pdfUrl);
-    } catch (error) {
-      console.error('Unable to open SOAP PDF:', error);
-      setPdfError(
-        error instanceof Error
-          ? `${error.message} Using browser print.`
-          : 'Unable to open SOAP PDF.'
+      setSaveError(
+        error instanceof Error ? error.message : 'Unable to save the SOAP note. Please try again.'
       );
-      globalThis.window.print();
-    } finally {
-      setIsPreparingPdf(false);
-    }
-  };
-
-  const handlePrintToSign = async () => {
-    if (isSaving || isPreparingPdf) return;
-    let soapNoteId = isPersistedSoapId(note.id) ? note.id : undefined;
-    if (!soapNoteId && persistedDraftId) {
-      soapNoteId = persistedDraftId;
-    }
-    if (!soapNoteId && organisationId && hasSoapContent(note)) {
-      setIsPreparingPdf(true);
-      try {
-        const saved = await saveSoapNote(
-          {
-            organisationId,
-            appointmentId,
-            encounterId,
-            authorId,
-            authorName,
-            templateId: note.templateId,
-          },
-          note
-        );
-        soapNoteId = (saved as { id?: string } | undefined)?.id;
-        if (soapNoteId) {
-          setPersistedDraftId(soapNoteId);
-          upsertSoap(appointmentId, { id: soapNoteId });
-        }
-      } catch (error) {
-        console.error('Unable to persist SOAP note before printing:', error);
-      } finally {
-        setIsPreparingPdf(false);
-      }
-    }
-
-    if (soapNoteId) {
-      await openSoapPdfPreview(soapNoteId, 'SOAP note - print to sign');
+      setIsSaving(false);
       return;
     }
-
-    setPdfError('SOAP note PDF is not available yet. Using browser print.');
-    globalThis.window.print();
+    // Only reached when the save succeeded (or there was nothing to persist).
+    signSoap(appointmentId, encounter.leadName ?? 'Clinician', false, persistedId);
+    setIsSaving(false);
+    onSaveAndNext();
   };
 
   return (
@@ -312,109 +275,126 @@ const SoapStep = ({
               >
                 <ul>
                   {templateMatches.map((tpl) => (
-                    <li key={tpl.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          applySoapTemplate(appointmentId, tpl);
-                          setTemplateQuery('');
-                        }}
-                        className="flex w-full items-center px-4 py-2 text-left text-body-4 text-text-primary hover:bg-neutral-100"
-                      >
-                        {tpl.name}
-                      </button>
-                    </li>
+                    <WorkspaceSearchResultRow
+                      key={tpl.id}
+                      name={tpl.name}
+                      leadingIcon={null}
+                      onSelect={() => {
+                        applySoapTemplate(appointmentId, tpl);
+                        setTemplateQuery('');
+                      }}
+                    />
                   ))}
                 </ul>
               </SearchResultsDropdown>
             </div>
           </div>
 
-          <SectionContainer
-            titleClassName="text-yc-20-b-primary"
-            title="Subjective (History)"
-            compactTop
-          >
-            <RichTextEditor
-              ariaLabel="Subjective history"
-              value={note.subjective}
-              readOnly={false}
-              toolbarPlacement="inset"
-              onChange={(html) => upsertSoap(appointmentId, { subjective: html })}
-              placeholder="Patient history and owner-reported information"
-            />
-          </SectionContainer>
-
-          <SectionContainer
-            titleClassName="text-yc-20-b-primary"
-            title="Objective (Examination)"
-            compactTop
-          >
-            <RichTextEditor
-              ariaLabel="Objective examination"
-              value={note.objective}
-              readOnly={false}
-              toolbarPlacement="inset"
-              onChange={(html) => upsertSoap(appointmentId, { objective: html })}
-              placeholder="Examination findings and recorded vitals"
-            />
-            <div className="mt-3 flex justify-end">
-              <Secondary
-                text="Record Vitals"
-                onClick={onRecordVitals}
-                icon={<LuClipboardList aria-hidden="true" />}
+          {customMode ? (
+            // A custom template overrides the native structure: render its typed fields via the
+            // shared FormRenderer and capture answers keyed by field id.
+            <SectionContainer
+              titleClassName="text-yc-20-b-primary"
+              title="Clinical note"
+              compactTop
+            >
+              <FormRenderer
+                fields={note.customSchema ?? []}
+                values={note.customAnswers ?? {}}
+                onChange={handleCustomAnswerChange}
               />
-            </div>
-          </SectionContainer>
+              <div className="mt-3 flex justify-end">
+                <Secondary
+                  text="Record Vitals"
+                  onClick={onRecordVitals}
+                  icon={<LuClipboardList aria-hidden="true" />}
+                />
+              </div>
+            </SectionContainer>
+          ) : (
+            <>
+              <SectionContainer
+                titleClassName="text-yc-20-b-primary"
+                title="Subjective (History)"
+                compactTop
+              >
+                <RichTextEditor
+                  ariaLabel="Subjective history"
+                  value={note.subjective}
+                  readOnly={false}
+                  toolbarPlacement="inset"
+                  onChange={(html) => upsertSoap(appointmentId, { subjective: html })}
+                  placeholder="Patient history and owner-reported information"
+                />
+              </SectionContainer>
 
-          <SectionContainer
-            titleClassName="text-yc-20-b-primary"
-            title="Assessment (Differential)"
-            compactTop
-          >
-            <RichTextEditor
-              ariaLabel="Assessment differential"
-              value={note.assessment}
-              readOnly={false}
-              toolbarPlacement="inset"
-              onChange={(html) => upsertSoap(appointmentId, { assessment: html })}
-              placeholder="Diagnosis and differentials"
-            />
-          </SectionContainer>
+              <SectionContainer
+                titleClassName="text-yc-20-b-primary"
+                title="Objective (Examination)"
+                compactTop
+              >
+                <RichTextEditor
+                  ariaLabel="Objective examination"
+                  value={note.objective}
+                  readOnly={false}
+                  toolbarPlacement="inset"
+                  onChange={(html) => upsertSoap(appointmentId, { objective: html })}
+                  placeholder="Examination findings and recorded vitals"
+                />
+                <div className="mt-3 flex justify-end">
+                  <Secondary
+                    text="Record Vitals"
+                    onClick={onRecordVitals}
+                    icon={<LuClipboardList aria-hidden="true" />}
+                  />
+                </div>
+              </SectionContainer>
 
-          <SectionContainer titleClassName="text-yc-20-b-primary" title="Plan" compactTop>
-            <RichTextEditor
-              ariaLabel="Plan"
-              value={note.plan}
-              readOnly={false}
-              toolbarPlacement="inset"
-              onChange={(html) => upsertSoap(appointmentId, { plan: html })}
-              placeholder="Treatment plan and next steps"
-            />
-          </SectionContainer>
+              <SectionContainer
+                titleClassName="text-yc-20-b-primary"
+                title="Assessment (Differential)"
+                compactTop
+              >
+                <RichTextEditor
+                  ariaLabel="Assessment differential"
+                  value={note.assessment}
+                  readOnly={false}
+                  toolbarPlacement="inset"
+                  onChange={(html) => upsertSoap(appointmentId, { assessment: html })}
+                  placeholder="Diagnosis and differentials"
+                />
+              </SectionContainer>
 
+              <SectionContainer titleClassName="text-yc-20-b-primary" title="Plan" compactTop>
+                <RichTextEditor
+                  ariaLabel="Plan"
+                  value={note.plan}
+                  readOnly={false}
+                  toolbarPlacement="inset"
+                  onChange={(html) => upsertSoap(appointmentId, { plan: html })}
+                  placeholder="Treatment plan and next steps"
+                />
+              </SectionContainer>
+            </>
+          )}
+
+          {saveError && (
+            <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">
+              {saveError}
+            </p>
+          )}
           <div className="flex justify-end">
-            <SoapSignActions
-              disabled={isSaving || isPreparingPdf}
-              onPrintToSign={() => void handlePrintToSign()}
-              onSaveAndNext={handleSaveAndNext}
-            />
+            <SoapSignActions disabled={isSaving} onSaveAndNext={handleSaveAndNext} />
           </div>
         </>
       )}
-
-      <SoapNotesList items={pastNotes} />
-      {pdfError && (
-        <p role="alert" className="rounded-2xl bg-danger-100 p-3 text-body-4 text-danger-700">
-          {pdfError}
+      {readOnly && lockReason && (
+        <p className="rounded-2xl bg-neutral-100 p-3 text-body-4 text-text-secondary">
+          {lockReason}
         </p>
       )}
-      <PdfPreviewOverlay
-        open={Boolean(pdfPreviewUrl)}
-        title={pdfPreviewTitle}
-        pdfUrl={pdfPreviewUrl}
-        onClose={() => setPdfPreviewUrl(null)}
-      />
+
+      <SoapNotesList items={pastNotes} />
     </div>
   );
 };

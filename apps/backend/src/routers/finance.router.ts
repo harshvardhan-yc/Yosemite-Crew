@@ -225,10 +225,20 @@ router.post(
 router.post(
   "/invoices/:invoiceId/payments/sessions",
   authorizeCognito,
+  financeAppointmentLimiter,
+  withInvoiceOrgPermissions(),
+  requirePermission("billing:edit:any"),
   FinanceController.createInvoicePaymentSession,
 );
 
-router.get("/:invoiceId", authorizeCognito, FinanceController.getInvoiceById);
+router.get(
+  "/:invoiceId",
+  authorizeCognito,
+  financeAppointmentLimiter,
+  withInvoiceOrgPermissions(),
+  requirePermission("billing:view:any"),
+  FinanceController.getInvoiceById,
+);
 
 router.get(
   "/mobile/parents/:parentId/invoices",

@@ -203,6 +203,10 @@ describe("CaseEncounterController", () => {
           name: "dischargedAt",
           valueDateTime: "2026-06-11T12:00:00.000Z",
         },
+        {
+          name: "overrideReason",
+          valueString: "Approved clinical override",
+        },
       ],
     };
     mockedService.dischargeEncounter.mockResolvedValue({
@@ -220,6 +224,8 @@ describe("CaseEncounterController", () => {
     expect(mockedService.dischargeEncounter).toHaveBeenCalledWith("enc_1", {
       dischargedAt: new Date("2026-06-11T12:00:00.000Z"),
       periodEnd: undefined,
+      overrideReason: "Approved clinical override",
+      actorUserId: undefined,
     });
     expect(res.status).toHaveBeenCalledWith(200);
   });

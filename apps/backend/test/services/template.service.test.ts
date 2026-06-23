@@ -105,6 +105,23 @@ describe("TemplateService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedPrisma.template.create.mockReset();
+    mockedPrisma.template.findUnique.mockReset();
+    mockedPrisma.template.findMany.mockReset();
+    mockedPrisma.template.update.mockReset();
+    mockedPrisma.templateVersion.create.mockReset();
+    mockedPrisma.templateVersion.findUnique.mockReset();
+    mockedPrisma.templateVersion.update.mockReset();
+    mockedPrisma.productItem.findMany.mockReset();
+    mockedPrisma.templateCatalogLink.deleteMany.mockReset();
+    mockedPrisma.templateCatalogLink.createMany.mockReset();
+    mockedPrisma.templateCatalogLink.findMany.mockReset();
+    mockedPrisma.templateInstance.create.mockReset();
+    mockedPrisma.templateInstance.findUnique.mockReset();
+    mockedPrisma.templateInstance.update.mockReset();
+    mockedPrisma.renderedDocument.create.mockReset();
+    mockedPrisma.renderedDocument.findUnique.mockReset();
+    mockedPrisma.renderedDocument.update.mockReset();
     mockedPrisma.$transaction.mockImplementation(async (cb: unknown) => {
       if (typeof cb === "function") {
         return cb(prisma);
@@ -517,6 +534,71 @@ describe("TemplateService", () => {
     );
   });
 
+  it("resolves a template linked by packageId (not only serviceId)", async () => {
+    const versionId = "ver-pkg-1";
+    mockedPrisma.template.findMany.mockResolvedValueOnce([
+      {
+        id: "org-template-pkg",
+        ownership: "ORG_TEMPLATE",
+        organisationId,
+        ownerUserId: null,
+        kind: "SOAP_NOTE",
+        name: "Package SOAP",
+        description: null,
+        status: "PUBLISHED",
+        scope: "SERVICE",
+        rules: {
+          appliesTo: {
+            packageIds: ["pkg-1"],
+          },
+        },
+        latestVersion: 1,
+        publishedVersion: 1,
+        createdBy: "user-1",
+        updatedBy: "user-1",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        versions: [
+          {
+            id: versionId,
+            version: 1,
+            schemaSnapshot: { sections: [] },
+            renderConfigSnapshot: {},
+            validationSnapshot: {},
+            publishedAt: new Date(),
+            createdBy: "user-1",
+          },
+        ],
+        catalogLinks: [],
+      },
+    ]);
+    mockedPrisma.templateVersion.findUnique.mockResolvedValueOnce({
+      id: versionId,
+      templateId: "org-template-pkg",
+      version: 1,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
+      publishedAt: new Date(),
+      createdBy: "user-1",
+    });
+
+    const result = await TemplateService.resolve({
+      organisationId,
+      kind: "SOAP_NOTE",
+      packageId: "pkg-1",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        templateId: "org-template-pkg",
+        templateVersion: 1,
+        templateVersionId: versionId,
+        kind: "SOAP_NOTE",
+      }),
+    );
+  });
+
   it("falls back to the organisation default template and reports not found when no match exists", async () => {
     mockedPrisma.template.findMany
       .mockResolvedValueOnce([])
@@ -620,6 +702,72 @@ describe("TemplateService", () => {
         templateId: "org-default-1",
         source: "ORGANISATION",
         reason: "Matched organisation default template for kind (default).",
+      }),
+    );
+  });
+
+  it("falls back to the library default template when no org template matches", async () => {
+    mockedPrisma.template.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "library-default-1",
+          ownership: "YC_LIBRARY",
+          organisationId: null,
+          ownerUserId: null,
+          kind: "SOAP_NOTE",
+          name: "Default SOAP note",
+          description: null,
+          status: "PUBLISHED",
+          scope: "ORGANISATION",
+          rules: {
+            appliesTo: {
+              defaultForKind: true,
+            },
+          },
+          latestVersion: 1,
+          publishedVersion: 1,
+          createdBy: "system",
+          updatedBy: "system",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          versions: [
+            {
+              id: "library-default-version-1",
+              version: 1,
+              schemaSnapshot: {
+                sections: [],
+              },
+              renderConfigSnapshot: {},
+              validationSnapshot: {},
+              publishedAt: new Date(),
+              createdBy: "system",
+            },
+          ],
+          catalogLinks: [],
+        },
+      ]);
+    mockedPrisma.templateVersion.findUnique.mockResolvedValueOnce({
+      id: "library-default-version-1",
+      templateId: "library-default-1",
+      version: 1,
+      schemaSnapshot: { sections: [] },
+      renderConfigSnapshot: {},
+      validationSnapshot: {},
+      publishedAt: new Date(),
+      createdBy: "system",
+    });
+
+    await expect(
+      TemplateService.resolve({
+        organisationId,
+        kind: "SOAP_NOTE",
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        templateId: "library-default-1",
+        source: "YC_LIBRARY",
+        reason: "Matched YC library default template for kind (default).",
       }),
     );
   });

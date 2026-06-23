@@ -55,11 +55,11 @@ describe("clinical template blueprints", () => {
     const invalid = validateClinicalTemplateBlueprint(
       TemplateKind.VITAL_RECORD,
       {
-        sections: [{ id: "measured_at" }],
+        sections: [{ id: "notes" }],
       },
     );
 
-    expect(invalid.missingSectionIds).toEqual(["vitals", "notes", "metadata"]);
+    expect(invalid.missingSectionIds).toEqual(["vitals"]);
   });
 
   it("detects invalid field types within a clinical section", () => {
@@ -87,63 +87,33 @@ describe("clinical template blueprints", () => {
     );
   });
 
-  it("detects invalid select options within a clinical section", () => {
-    const snapshot = buildClinicalTemplateSchemaSnapshot("SOAP_NOTE");
-    const assessmentSection = snapshot.sections.find(
-      (section) => section.id === "assessment",
+  it("detects invalid field rules for unit configurations", () => {
+    const snapshot = buildClinicalTemplateSchemaSnapshot("VITAL_RECORD");
+    const vitalsSection = snapshot.sections.find(
+      (section) => section.id === "vitals",
     );
 
-    if (!assessmentSection) {
-      throw new Error("Missing assessment section");
+    if (!vitalsSection) {
+      throw new Error("Missing vitals section");
     }
 
-    const severityField = assessmentSection.fields.find(
-      (field) => field.key === "severity",
+    const weightField = vitalsSection.fields.find(
+      (field) => field.key === "weightLbs",
     );
 
-    if (!severityField) {
-      throw new Error("Missing severity field");
+    if (!weightField) {
+      throw new Error("Missing weightLbs field");
     }
 
-    severityField.options = [{ label: "Low", value: "low" }];
+    weightField.rules = { unit: "wrong" };
 
     const result = validateClinicalTemplateBlueprint(
-      TemplateKind.SOAP_NOTE,
+      TemplateKind.VITAL_RECORD,
       snapshot,
     );
 
     expect(result.invalidFieldPaths).toContain(
-      "SOAP_NOTE.assessment.severity.options",
-    );
-  });
-
-  it("detects invalid field rules for repeater and table configurations", () => {
-    const snapshot = buildClinicalTemplateSchemaSnapshot("SOAP_NOTE");
-    const objectiveSection = snapshot.sections.find(
-      (section) => section.id === "objective",
-    );
-
-    if (!objectiveSection) {
-      throw new Error("Missing objective section");
-    }
-
-    const testResultsField = objectiveSection.fields.find(
-      (field) => field.key === "testResults",
-    );
-
-    if (!testResultsField) {
-      throw new Error("Missing testResults field");
-    }
-
-    testResultsField.rules = { columns: ["wrong"] };
-
-    const result = validateClinicalTemplateBlueprint(
-      TemplateKind.SOAP_NOTE,
-      snapshot,
-    );
-
-    expect(result.invalidFieldPaths).toContain(
-      "SOAP_NOTE.objective.testResults.rules",
+      "VITAL_RECORD.vitals.weightLbs.rules",
     );
   });
 

@@ -149,16 +149,17 @@ const Forms = () => {
   }, [list.length]);
 
   useEffect(() => {
+    const { setActiveForm } = useFormsStore.getState();
     if (!filteredList.length) {
-      formsStore.setActiveForm(null);
+      setActiveForm(null);
       return;
     }
     const isActiveInFilter = activeFormId && filteredList.some((item) => item._id === activeFormId);
     if (!isActiveInFilter) {
       const first = filteredList[0];
-      if (first?._id) formsStore.setActiveForm(first._id);
+      if (first?._id) setActiveForm(first._id);
     }
-  }, [activeFormId, filteredList, formsStore]);
+  }, [activeFormId, filteredList]);
 
   useEffect(() => {
     const formId = String(searchParams.get('formId') ?? '').trim();
@@ -168,10 +169,10 @@ const Forms = () => {
     const target = list.find((form) => form?._id === formId);
     if (!target?._id) return;
 
-    formsStore.setActiveForm(target._id);
+    useFormsStore.getState().setActiveForm(target._id);
     setViewPopup(true);
     handledDeepLinkRef.current = formId;
-  }, [list, searchParams, formsStore]);
+  }, [list, searchParams]);
 
   const openAddForm = () => {
     setEditingForm(null);

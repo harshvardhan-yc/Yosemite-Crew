@@ -10,8 +10,13 @@ import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorks
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useTaskStore } from '@/app/stores/taskStore';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
-import { createTask, loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
-import type { RecurrenceType, Task } from '@/app/features/tasks/types/task';
+import {
+  changeTaskStatus,
+  createTask,
+  loadTasksForPrimaryOrg,
+  updateTask,
+} from '@/app/features/tasks/services/taskService';
+import type { RecurrenceType, Task, TaskStatus } from '@/app/features/tasks/types/task';
 import type {
   EmployeeTaskCategory,
   ScheduleTask,
@@ -81,6 +86,14 @@ const taskStatusToScheduleStatus = (status: Task['status']): ScheduleTaskStatus 
   return 'PENDING';
 };
 
+/** Map the workspace schedule status back to the backend Task status enum. */
+const scheduleStatusToTaskStatus = (status: ScheduleTaskStatus): TaskStatus => {
+  if (status === 'COMPLETED') return 'COMPLETED';
+  if (status === 'CANCELLED') return 'CANCELLED';
+  if (status === 'UPCOMING') return 'IN_PROGRESS';
+  return 'PENDING';
+};
+
 const repeatToRecurrenceType = (repeat: string): RecurrenceType => {
   if (repeat === 'Daily') return 'DAILY';
   if (repeat === 'Weekly') return 'WEEKLY';
@@ -133,6 +146,8 @@ const TaskRow = ({
   onStatus,
   onEdit,
   onReschedule,
+  actionsDisabled = false,
+  disabledReason,
 }: {
   task: ScheduleTask;
   assigneeOptions: { label: string; value: string }[];
@@ -140,12 +155,14 @@ const TaskRow = ({
   onStatus: (status: ScheduleTaskStatus) => void;
   onEdit: () => void;
   onReschedule: () => void;
+  actionsDisabled?: boolean;
+  disabledReason?: string;
 }) => (
   <li className="flex flex-col gap-2 border-b border-card-border py-3 last:border-0">
     <div className="flex items-start justify-between gap-3">
       <div className="flex flex-col gap-1 leading-[130%]">
         <span className="text-[12px] font-medium text-pill-success-text">
-          {task.startDate ? formatStampDate(task.startDate) : '24 Apr, 2026'}
+          {task.startDate ? formatStampDate(task.startDate) : 'No date'}
         </span>
         <span className="text-[12px] text-text-secondary">{task.category}</span>
         <span className="text-body-4 text-text-primary">{task.description}</span>
@@ -161,31 +178,45 @@ const TaskRow = ({
           icon={<LuCalendarClock size={16} aria-hidden="true" />}
           label={`Reschedule ${task.description}`}
           onClick={onReschedule}
+          disabled={actionsDisabled}
         />
       </div>
     </div>
     <div className="flex items-center justify-between gap-3">
       <div className="w-44">
-        <LabelDropdown
-          placeholder="Assigned to"
-          options={assigneeOptions}
-          defaultOption={task.assignedToId ?? task.assignedToName}
-          searchable={false}
-          onSelect={(option) => onAssign({ label: option.label, value: option.value })}
-        />
+        {actionsDisabled ? (
+          <p className="rounded-2xl border border-card-border px-3 py-2 text-body-4 text-text-secondary">
+            {task.assignedToName ?? task.assignedToId ?? 'Unassigned'}
+          </p>
+        ) : (
+          <LabelDropdown
+            placeholder="Assigned to"
+            options={assigneeOptions}
+            defaultOption={task.assignedToId ?? task.assignedToName}
+            searchable={false}
+            onSelect={(option) => onAssign({ label: option.label, value: option.value })}
+          />
+        )}
       </div>
-      <button
-        type="button"
-        aria-label={`Change status for ${task.description}`}
-        onClick={() => {
-          const order: ScheduleTaskStatus[] = ['UPCOMING', 'COMPLETED', 'CANCELLED', 'PENDING'];
-          const next = order[(order.indexOf(task.status) + 1) % order.length];
-          onStatus(next);
-        }}
-      >
+      {actionsDisabled ? (
         <StatusPill status={task.status} />
-      </button>
+      ) : (
+        <button
+          type="button"
+          aria-label={`Change status for ${task.description}`}
+          onClick={() => {
+            const order: ScheduleTaskStatus[] = ['UPCOMING', 'COMPLETED', 'CANCELLED', 'PENDING'];
+            const next = order[(order.indexOf(task.status) + 1) % order.length];
+            onStatus(next);
+          }}
+        >
+          <StatusPill status={task.status} />
+        </button>
+      )}
     </div>
+    {actionsDisabled && disabledReason && (
+      <p className="text-[12px] text-text-secondary">{disabledReason}</p>
+    )}
   </li>
 );
 
@@ -349,7 +380,6 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
   );
 
   const encounter = useAppointmentWorkspaceStore((s) => s.encountersById[appointmentId]);
-  const addScheduleTask = useAppointmentWorkspaceStore((s) => s.addScheduleTask);
   const updateScheduleTask = useAppointmentWorkspaceStore((s) => s.updateScheduleTask);
   const setScheduleTaskStatus = useAppointmentWorkspaceStore((s) => s.setScheduleTaskStatus);
   const tasksById = useTaskStore((s) => s.tasksById);
@@ -357,7 +387,10 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
   const allTasks = useMemo(() => Object.values(tasksById), [tasksById]);
 
   useEffect(() => {
-    loadTasksForPrimaryOrg({ silent: true }).catch((error) => {
+    // Force a fresh pull when the panel opens so newly-created/updated tasks for
+    // this appointment always show (the non-forced load short-circuits once the
+    // store is "loaded", which would hide tasks added elsewhere this session).
+    loadTasksForPrimaryOrg({ force: true, silent: true }).catch((error) => {
       console.error('Failed to load workspace tasks:', error);
     });
   }, []);
@@ -450,8 +483,10 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
     } else {
       setSaveError(null);
       try {
+        // createTask persists to the backend and (for EMPLOYEE_TASK) upserts into
+        // the task store, which the employee list already renders. Do NOT also add
+        // it to encounter.schedule — that would render the same task twice.
         await createTask(taskPayload);
-        if (!isParent) addScheduleTask(appointmentId, base);
       } catch (error) {
         console.error('Failed to create workspace task:', error);
         setSaveError('Unable to save task. Please try again.');
@@ -459,6 +494,45 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
       }
     }
     closeForm();
+  };
+
+  // Persist an employee task change to the backend when the row is a real,
+  // backend-issued task (its id is a key in tasksById). Locally-generated
+  // schedule rows (e.g. inpatient template tasks not yet persisted) only update
+  // the optimistic store. Backend failures roll the optimistic update back.
+  const syncTaskToBackend = async (
+    taskId: string,
+    apply: (task: Task) => Task,
+    runApi: (task: Task) => Promise<void>
+  ) => {
+    const existing = tasksById[taskId];
+    if (!existing) return;
+    setSaveError(null);
+    try {
+      await runApi(apply(existing));
+    } catch (error) {
+      console.error('Failed to sync task change:', error);
+      setSaveError('Unable to update task. Please try again.');
+      // Re-pull authoritative state so the optimistic row does not drift.
+      loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+    }
+  };
+
+  const handleEmployeeStatus = (taskId: string, status: ScheduleTaskStatus) => {
+    setScheduleTaskStatus(appointmentId, taskId, status);
+    void syncTaskToBackend(
+      taskId,
+      (task) => ({ ...task, status: scheduleStatusToTaskStatus(status) }),
+      changeTaskStatus
+    );
+  };
+
+  const handleEmployeeAssign = (taskId: string, option: AssigneeOption) => {
+    updateScheduleTask(appointmentId, taskId, {
+      assignedToId: option.value,
+      assignedToName: option.label,
+    });
+    void syncTaskToBackend(taskId, (task) => ({ ...task, assignedTo: option.value }), updateTask);
   };
 
   if (formOpen) {
@@ -494,23 +568,19 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
               key={task.id}
               task={task}
               assigneeOptions={assigneeOptions}
-              onAssign={(option) =>
-                isParent
-                  ? undefined
-                  : updateScheduleTask(appointmentId, task.id, {
-                      assignedToId: option.value,
-                      assignedToName: option.label,
-                    })
+              // Parent tasks are owned by the mobile parent app — assign/status/
+              // reschedule are disabled here (with a reason) until that contract
+              // is wired, rather than silently doing nothing.
+              actionsDisabled={isParent}
+              disabledReason={
+                isParent ? 'Parent tasks are managed from the pet parent app.' : undefined
               }
-              onStatus={(status) =>
-                isParent ? undefined : setScheduleTaskStatus(appointmentId, task.id, status)
-              }
+              onAssign={(option) => handleEmployeeAssign(task.id, option)}
+              onStatus={(status) => handleEmployeeStatus(task.id, status)}
               onEdit={() => openEdit(task)}
-              onReschedule={() =>
-                isParent
-                  ? undefined
-                  : updateScheduleTask(appointmentId, task.id, { startDate: '2026-04-25' })
-              }
+              // Reschedule opens the edit form (real date/time pickers); saving
+              // persists via the task API — no more hardcoded placeholder date.
+              onReschedule={() => openEdit(task)}
             />
           ))}
         </ul>

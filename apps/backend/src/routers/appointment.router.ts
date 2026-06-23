@@ -141,6 +141,14 @@ router.patch(
   AppointmentController.markReadyForBillingForPMS,
 );
 
+router.post(
+  "/pms/:organisationId/:appointmentId/forms",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  AppointmentController.attachFormsToAppointment,
+);
+
 // Update appointment
 router.patch(
   "/pms/:organisationId/:appointmentId",
@@ -151,13 +159,6 @@ router.patch(
 );
 
 // Attach forms to appointment
-router.post(
-  "/pms/:organisationId/:appointmentId/forms",
-  authorizeCognito,
-  withOrgPermissions(),
-  requirePermission("appointments:edit:any"),
-  AppointmentController.attachFormsToAppointment,
-);
 
 // Get appointment detail
 router.get(

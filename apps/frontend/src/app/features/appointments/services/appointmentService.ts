@@ -529,7 +529,7 @@ export const assignEncounterUnit = async ({
   if (reason) parameters.push({ name: 'reason', valueString: reason });
 
   try {
-    await postData(`/fhir/v1/encounter/${encounterId}/assign-unit`, {
+    await postData(`/fhir/v1/encounter/${encounterId}/$assign-unit`, {
       resourceType: 'Parameters',
       parameter: parameters,
     });
@@ -574,14 +574,25 @@ export const undoEncounterReadyForDischarge = (encounterId?: string) =>
     logLabel: 'undo encounter ready for discharge',
   });
 
-export const dischargeEncounter = async (encounterId?: string, dischargedAt?: string) => {
+export const dischargeEncounter = async (
+  encounterId?: string,
+  dischargedAt?: string,
+  options: { periodEnd?: string; overrideReason?: string } = {}
+) => {
   if (!encounterId) return;
   try {
+    const parameter: { name: string; valueDateTime?: string; valueString?: string }[] = [
+      { name: 'dischargedAt', valueDateTime: dischargedAt ?? new Date().toISOString() },
+    ];
+    if (options.periodEnd) parameter.push({ name: 'periodEnd', valueDateTime: options.periodEnd });
+    // Only sent when the clinician explicitly overrides a disabled finalization
+    // gate — the backend treats this as an audited, exceptional discharge.
+    if (options.overrideReason?.trim()) {
+      parameter.push({ name: 'overrideReason', valueString: options.overrideReason.trim() });
+    }
     await postData(`/fhir/v1/encounter/${encounterId}/$discharge`, {
       resourceType: 'Parameters',
-      parameter: [
-        { name: 'dischargedAt', valueDateTime: dischargedAt ?? new Date().toISOString() },
-      ],
+      parameter,
     });
   } catch (err) {
     console.error('Failed to discharge encounter:', err);

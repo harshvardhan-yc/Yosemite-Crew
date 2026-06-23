@@ -149,7 +149,9 @@ describe('AppointmentMerckSearch', () => {
         language: 'en',
       })
     );
-    expect(screen.getByText('Canine Fever')).toBeInTheDocument();
+    // Wait for the async results render — a bare getByText here races the search
+    // promise resolving and can catch the component still in its "Searching…" state.
+    expect(await screen.findByText('Canine Fever')).toBeInTheDocument();
     expect(screen.queryByText('Blocked result')).not.toBeInTheDocument();
     expect(screen.getByText('copyright notice')).toBeInTheDocument();
   });

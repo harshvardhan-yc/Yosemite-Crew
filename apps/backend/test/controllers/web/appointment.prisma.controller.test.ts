@@ -332,12 +332,8 @@ describe("AppointmentPrismaController", () => {
     expect(mockedService.cancelAppointmentFromParent).toHaveBeenCalledWith(
       "appt_1",
       "parent_1",
-      undefined,
     );
-    expect(mockedService.cancelAppointment).toHaveBeenCalledWith(
-      "appt_1",
-      undefined,
-    );
+    expect(mockedService.cancelAppointment).toHaveBeenCalledWith("appt_1");
     expect(mockedService.getById).toHaveBeenCalledWith("appt_1");
     expect(mockedService.getAppointmentsForCompanion).toHaveBeenCalledWith(
       "comp_1",

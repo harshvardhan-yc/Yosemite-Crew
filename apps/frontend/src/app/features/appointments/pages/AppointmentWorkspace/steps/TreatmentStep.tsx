@@ -5,25 +5,41 @@ import ServicesPackagesEditor from '@/app/features/appointments/pages/Appointmen
 import PrescriptionEditor from '@/app/features/appointments/pages/AppointmentWorkspace/components/PrescriptionEditor';
 import InpatientSchedule from '@/app/features/appointments/pages/AppointmentWorkspace/components/InpatientSchedule';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
-import type { AppointmentEncounter } from '@/app/features/appointments/types/workspace';
+import type {
+  AppointmentEncounter,
+  ScheduleTask,
+  ScheduleTaskStatus,
+} from '@/app/features/appointments/types/workspace';
 import { savePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
-import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import {
-  getAvailableStock,
-  mapApiItemToInventoryItem,
-} from '@/app/features/inventory/pages/Inventory/utils';
+  getAppointmentWorkspaceBootstrap,
+  normalizeWorkspaceBootstrapForEncounter,
+  persistTreatmentItems,
+} from '@/app/features/appointments/services/workspaceAggregateService';
+import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
+import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
+import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
 import { useInventoryStore } from '@/app/stores/inventoryStore';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { useTaskStore } from '@/app/stores/taskStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
-import { loadTasksForPrimaryOrg } from '@/app/features/tasks/services/taskService';
+import {
+  changeTaskStatus,
+  createTask,
+  loadTasksForPrimaryOrg,
+  updateTask,
+} from '@/app/features/tasks/services/taskService';
 import type { Task } from '@/app/features/tasks/types/task';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
   applyInpatientScheduleTemplate,
+  cancelInpatientScheduleTemplate,
   createWorkspaceTemplateInstance,
   getInpatientScheduleForEncounter,
   listInpatientScheduleTemplates,
+  pauseInpatientScheduleTemplate,
+  regenerateInpatientScheduleTemplate,
+  resumeInpatientScheduleTemplate,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import type { TemplateLike } from '@yosemite-crew/types';
 import type {
@@ -56,45 +72,6 @@ const PRESCRIPTION_INVENTORY_CATEGORIES = new Set([
   'supplement',
   'iv/fluid therapy',
 ]);
-
-const toCents = (value: string | number | undefined): number | undefined => {
-  if (value === undefined || value === '') return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) : undefined;
-};
-
-const isLowStock = (item: InventoryItem) => {
-  const available = getAvailableStock(item);
-  const reorderLevel = Number(item.stock.reorderLevel);
-  if (available === undefined || !Number.isFinite(reorderLevel)) return false;
-  return available <= reorderLevel;
-};
-
-const joinNonEmpty = (...parts: Array<string | undefined>): string | undefined => {
-  const joined = parts
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join(' ');
-  return joined || undefined;
-};
-
-const inventoryToPrescriptionItem = (item: InventoryItem) => {
-  const classification = item.classification ?? {};
-  return {
-    medicineName: item.basicInfo.name,
-    // Pre-fill the prescribing fields from the inventory item so the clinician sees the
-    // medicine's strength/form, route, and default frequency instead of empty inputs.
-    dosage: joinNonEmpty(classification.strength, classification.dosageForm ?? classification.form),
-    route: classification.administration,
-    frequency: classification.frequency,
-    fulfillment: 'IN_HOUSE' as const,
-    inventoryItemId: item.id,
-    inventoryBatchId: item.batch?._id,
-    priceCents: toCents(item.pricing.selling),
-    stockQty: getAvailableStock(item),
-    lowStock: isLowStock(item),
-  };
-};
 
 const moneyToCents = (amount: number): number => Math.max(0, Math.round(amount * 100));
 
@@ -145,7 +122,30 @@ const taskStatusToScheduleStatus = (status: Task['status']) => {
   return 'PENDING' as const;
 };
 
-const taskToScheduleTask = (task: Task) => ({
+const scheduleStatusToTaskStatus = (status: ScheduleTaskStatus): Task['status'] => {
+  if (status === 'COMPLETED') return 'COMPLETED';
+  if (status === 'CANCELLED') return 'CANCELLED';
+  if (status === 'UPCOMING') return 'IN_PROGRESS';
+  return 'PENDING';
+};
+
+// Combine a schedule task's start date ("MMM d, yyyy" or ISO) and "h:mm AM/PM"
+// time into a single Date for the backend `dueAt`. Returns null when the date is
+// unparseable so the caller can keep the existing value.
+const combineScheduleDateTime = (startDate?: string, time?: string): Date | null => {
+  if (!startDate) return null;
+  const base = new Date(startDate);
+  if (Number.isNaN(base.getTime())) return null;
+  const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec((time ?? '').trim());
+  if (match) {
+    let hours = Number(match[1]) % 12;
+    if (match[3].toUpperCase() === 'PM') hours += 12;
+    base.setHours(hours, Number(match[2]), 0, 0);
+  }
+  return base;
+};
+
+const taskToScheduleTask = (task: Task): ScheduleTask => ({
   id: task._id,
   description: task.description || task.name,
   category: 'Care' as const,
@@ -178,11 +178,14 @@ const TreatmentStep = ({
   const removePrescription = useAppointmentWorkspaceStore((s) => s.removePrescription);
   const addScheduleTask = useAppointmentWorkspaceStore((s) => s.addScheduleTask);
   const updateScheduleTask = useAppointmentWorkspaceStore((s) => s.updateScheduleTask);
+  const removeScheduleTask = useAppointmentWorkspaceStore((s) => s.removeScheduleTask);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
+  const mergeEncounterData = useAppointmentWorkspaceStore((s) => s.mergeEncounterData);
   const itemIdsByOrgId = useInventoryStore((s) => s.itemIdsByOrgId);
   const inventoryById = useInventoryStore((s) => s.itemsById);
   const setInventoryForOrg = useInventoryStore((s) => s.setInventoryForOrg);
   const tasksById = useTaskStore((s) => s.tasksById);
+  const upsertTask = useTaskStore((s) => s.upsertTask);
   useLoadTeam();
   const teamMembers = useTeamForPrimaryOrg();
   const catalogSpecialities = useRevampCatalogStore((s) => s.specialities);
@@ -194,6 +197,13 @@ const TreatmentStep = ({
   const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
   const [scheduleTemplates, setScheduleTemplates] = useState<TemplateLike[]>([]);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [treatmentSaveError, setTreatmentSaveError] = useState<string | null>(null);
+  const [isSavingTreatment, setIsSavingTreatment] = useState(false);
+  // Applied schedule instance lifecycle (pause/resume/cancel/regenerate). The
+  // instance id is captured when a template is applied this session.
+  const [scheduleInstanceId, setScheduleInstanceId] = useState<string | null>(null);
+  const [schedulePaused, setSchedulePaused] = useState(false);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
   const readOnly = encounter.viewOnly;
   // Once the encounter is ready for billing, destructive removal of un-billed
   // items is locked. Already-billed items lock per-row inside each editor (read
@@ -336,12 +346,55 @@ const TreatmentStep = ({
         force: true,
         notify: false,
       });
+      // Track the applied instance so its lifecycle controls (pause/resume/
+      // cancel/regenerate) become available.
+      setScheduleInstanceId(instance.id);
+      setSchedulePaused(false);
       await loadTasksForPrimaryOrg({ force: true, silent: true });
     } catch (error) {
       console.error('Failed to apply inpatient schedule template:', error);
       setScheduleError('Unable to load schedule template. Please try again.');
     }
   };
+
+  // Run a schedule lifecycle action against the backend, then refresh tasks so the
+  // timeline reflects the new state. Errors surface and do not flip local state.
+  const runScheduleAction = async (
+    action: (org: string, instanceId: string) => Promise<unknown>,
+    onSuccess?: () => void
+  ) => {
+    if (!organisationId || !scheduleInstanceId || scheduleBusy) return;
+    setScheduleError(null);
+    setScheduleBusy(true);
+    try {
+      await action(organisationId, scheduleInstanceId);
+      onSuccess?.();
+      await loadTasksForPrimaryOrg({ force: true, silent: true });
+    } catch (error) {
+      console.error('Failed to update inpatient schedule:', error);
+      setScheduleError('Unable to update the schedule. Please try again.');
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const handlePauseSchedule = () =>
+    runScheduleAction(
+      (org, id) => pauseInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setSchedulePaused(true)
+    );
+  const handleResumeSchedule = () =>
+    runScheduleAction(
+      (org, id) => resumeInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setSchedulePaused(false)
+    );
+  const handleCancelSchedule = () =>
+    runScheduleAction(
+      (org, id) => cancelInpatientScheduleTemplate(org, id, { notify: false }),
+      () => setScheduleInstanceId(null)
+    );
+  const handleRegenerateSchedule = () =>
+    runScheduleAction((org, id) => regenerateInpatientScheduleTemplate(org, id, { notify: false }));
 
   const prescriptionCatalogItems = useMemo(
     () =>
@@ -384,8 +437,145 @@ const TreatmentStep = ({
     }
   };
 
-  const handleSaveTreatment = () => {
+  // Persist schedule-task edits. A schedule row comes from one of two sources and
+  // the optimistic local update MUST target the same one, or the UI won't reflect
+  // the change:
+  //   • store-backed employee task (in `tasksById`) → update the task store and
+  //     persist via the status/PATCH task endpoints;
+  //   • workspace-bootstrap schedule row (`encounter.schedule`) → update the
+  //     workspace store (no per-row task API exists for these).
+  const handleUpdateScheduleTask = (id: string, patch: Partial<ScheduleTask>) => {
+    const backingTask = tasksById[id];
+    if (!backingTask) {
+      // Bootstrap/template schedule row — local-only update.
+      updateScheduleTask(appointmentId, id, patch);
+      return;
+    }
+    setScheduleError(null);
+    // Optimistically reflect the change in the task store so the derived schedule
+    // row (appointmentEmployeeTasks) re-renders immediately.
+    const nextStatus =
+      patch.status === undefined
+        ? backingTask.status
+        : scheduleStatusToTaskStatus(patch.status as ScheduleTaskStatus);
+    const nextAssignedTo = patch.assignedToId ?? backingTask.assignedTo;
+    const nextDescription = patch.description ?? backingTask.description;
+    const optimisticTask = {
+      ...backingTask,
+      status: nextStatus,
+      assignedTo: nextAssignedTo,
+      description: nextDescription,
+    };
+    upsertTask(optimisticTask);
+    const persist = async () => {
+      try {
+        if (patch.status !== undefined) {
+          await changeTaskStatus({ ...backingTask, status: nextStatus });
+        }
+        if (patch.assignedToId !== undefined || patch.description !== undefined) {
+          await updateTask({
+            ...backingTask,
+            assignedTo: nextAssignedTo,
+            description: nextDescription,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to sync schedule task:', error);
+        setScheduleError('Unable to save the task change. Please try again.');
+        await loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+      }
+    };
+    void persist();
+  };
+
+  // "Record" commits a task's edited breakdown (start date + time) to the backend.
+  //  • A store-backed task PATCHes its dueAt.
+  //  • A locally-added schedule row (not yet on the backend) is CREATED as a real
+  //    employee task, then the local placeholder is removed and tasks re-pulled so
+  //    the row becomes a persistent, editable task.
+  const handleRecordScheduleTask = (id: string) => {
+    const scheduleTask = visibleScheduleTasks.find((task) => task.id === id);
+    if (!scheduleTask) {
+      setScheduleError('This task can’t be recorded yet. Please try again.');
+      return;
+    }
+    setScheduleError(null);
+    const dueAt = combineScheduleDateTime(scheduleTask.startDate, scheduleTask.time) ?? new Date();
+    const backingTask = tasksById[id];
+
+    if (backingTask) {
+      const updatedTask = { ...backingTask, dueAt };
+      upsertTask(updatedTask);
+      void (async () => {
+        try {
+          await updateTask(updatedTask);
+        } catch (error) {
+          console.error('Failed to record schedule task:', error);
+          setScheduleError('Unable to record the task. Please try again.');
+          await loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+        }
+      })();
+      return;
+    }
+
+    // Local placeholder → create a persistent employee task on the backend.
+    if (!organisationId) {
+      setScheduleError('Select an organisation before recording tasks.');
+      return;
+    }
+    const assignedTo = scheduleTask.assignedToId ?? encounter.leadId ?? '';
+    void (async () => {
+      try {
+        await createTask({
+          _id: '',
+          organisationId,
+          appointmentId,
+          assignedTo,
+          audience: 'EMPLOYEE_TASK',
+          source: 'CUSTOM',
+          category: scheduleTask.category ?? 'Care',
+          name: scheduleTask.description || 'Treatment task',
+          description: scheduleTask.description,
+          dueAt,
+          status: scheduleStatusToTaskStatus(scheduleTask.status),
+        } as Task);
+        // Replace the local placeholder with the freshly-created backend task.
+        removeScheduleTask(appointmentId, id);
+        await loadTasksForPrimaryOrg({ force: true, silent: true });
+      } catch (error) {
+        console.error('Failed to create schedule task:', error);
+        setScheduleError('Unable to record the task. Please try again.');
+      }
+    })();
+  };
+
+  const handleSaveTreatment = async () => {
+    if (isSavingTreatment) return;
+    setTreatmentSaveError(null);
+    // Without an org/encounter we cannot persist; keep the legacy local-only
+    // behaviour (prescriptions already persist per-add; services stay staged).
+    if (!organisationId || !encounterId) {
+      setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
+      onOpenInvoice();
+      return;
+    }
+    setIsSavingTreatment(true);
+    try {
+      // Persist any staged service/package rows, then rehydrate from the backend
+      // bootstrap so the rows carry real ids/billing status before Invoice opens.
+      await persistTreatmentItems(organisationId, encounterId, encounter.services);
+      const bootstrap = await getAppointmentWorkspaceBootstrap(organisationId, appointmentId);
+      mergeEncounterData(appointmentId, normalizeWorkspaceBootstrapForEncounter(bootstrap));
+    } catch (error) {
+      // Do NOT open Invoice when persistence fails — staged rows would otherwise
+      // appear billable without a backing record.
+      console.error('Failed to save treatment items:', error);
+      setTreatmentSaveError('Unable to save treatment items. Please try again.');
+      setIsSavingTreatment(false);
+      return;
+    }
     setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
+    setIsSavingTreatment(false);
     onOpenInvoice();
   };
 
@@ -398,8 +588,18 @@ const TreatmentStep = ({
           readOnly={readOnly}
           assigneeOptions={assigneeOptions}
           onAddTask={(task) => addScheduleTask(appointmentId, task)}
-          onUpdateTask={(id, patch) => updateScheduleTask(appointmentId, id, patch)}
+          onUpdateTask={handleUpdateScheduleTask}
+          onRecordTask={handleRecordScheduleTask}
           onApplyTemplate={handleApplyScheduleTemplate}
+          scheduleLifecycle={{
+            instanceId: scheduleInstanceId,
+            paused: schedulePaused,
+            busy: scheduleBusy,
+            onPause: handlePauseSchedule,
+            onResume: handleResumeSchedule,
+            onCancel: handleCancelSchedule,
+            onRegenerate: handleRegenerateSchedule,
+          }}
         />
       )}
       {scheduleError && <p className="text-caption-1 text-red-600">{scheduleError}</p>}
@@ -426,6 +626,12 @@ const TreatmentStep = ({
       />
       {prescriptionError && <p className="text-caption-1 text-red-600">{prescriptionError}</p>}
 
+      {treatmentSaveError && (
+        <p role="alert" className="text-caption-1 text-red-600">
+          {treatmentSaveError}
+        </p>
+      )}
+
       <div className="flex flex-wrap justify-between gap-3">
         <Secondary
           text="Prescription"
@@ -433,10 +639,10 @@ const TreatmentStep = ({
           onClick={handlePrint}
         />
         <Primary
-          text="Save treatment"
+          text={isSavingTreatment ? 'Saving…' : 'Save treatment'}
           icon={<LuSave aria-hidden="true" />}
-          onClick={handleSaveTreatment}
-          isDisabled={readOnly}
+          onClick={() => void handleSaveTreatment()}
+          isDisabled={readOnly || isSavingTreatment}
         />
       </div>
     </div>

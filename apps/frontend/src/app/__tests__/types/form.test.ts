@@ -150,8 +150,11 @@ describe('Forms Data and Utility Functions', () => {
       const flatten = (fields: any[]): any[] =>
         fields.flatMap((f) => (f.type === 'group' ? [f, ...flatten(f.fields ?? [])] : [f]));
       const flat = flatten(template as any[]);
-      expect(flat.find((f: any) => f.id === 'subjective_history')?.required).toBe(true);
-      const signatureFields = template.filter((f: any) => f.type === 'signature');
+      const subjective = flat.find((f: any) => f.id === 'subjective');
+      expect(subjective?.type).toBe('richtext');
+      expect(subjective?.required).toBe(true);
+      expect(flat.find((f: any) => f.id === 'objective')?.type).toBe('richtext');
+      const signatureFields = flatten(template as any[]).filter((f: any) => f.type === 'signature');
       expect(signatureFields).toHaveLength(0);
     });
 
@@ -166,15 +169,21 @@ describe('Forms Data and Utility Functions', () => {
       expect(flat.find((f: any) => f.id === 'painScore')?.meta?.unit).toBe('/ 10');
     });
 
-    it('should verify Discharge Form template has discharge section and single signature', () => {
+    it('should verify Discharge Form template has rich-text body sections and a single signature', () => {
       const template = CategoryTemplates['Discharge Form'];
-      expect(template.map((f: any) => f.label)).toEqual(['Discharge summary', 'Signature']);
+      expect(template.map((f: any) => f.label)).toEqual([
+        'Discharge summary',
+        'Home care instructions',
+        'Medications',
+        'Follow up',
+        'Signature',
+      ]);
       const flatten = (fields: any[]): any[] =>
         fields.flatMap((f) => (f.type === 'group' ? [f, ...flatten(f.fields ?? [])] : [f]));
       const flat = flatten(template as any[]);
-      expect(flat.find((f: any) => f.id === 'discharge_summary')?.type).toBe('textarea');
-      expect(flat.find((f: any) => f.id === 'follow_up')?.type).toBe('date');
-      const signatureFields = template.filter((f: any) => f.type === 'signature');
+      expect(flat.find((f: any) => f.id === 'summaryText')?.type).toBe('richtext');
+      expect(flat.find((f: any) => f.id === 'followUpDate')?.type).toBe('date');
+      const signatureFields = flat.filter((f: any) => f.type === 'signature');
       expect(signatureFields).toHaveLength(1);
     });
   });
