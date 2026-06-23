@@ -9,6 +9,7 @@ import {
   type CombinedClinicalDocumentInput,
   type CombinedClinicalSection,
   type DischargeSummaryDocumentData,
+  type DocumentSignature,
   type OrganizationBranding,
   type PrescriptionDocumentData,
   type PrescriptionItem,
@@ -710,6 +711,8 @@ type AppointmentClinicalHeader = {
   clientContact?: string;
   speciesBreed?: string;
   ageSex?: string;
+  roomName?: string;
+  unitName?: string;
 };
 
 const readAppointmentContact = (
@@ -730,6 +733,8 @@ const readAppointmentHeader = (
   const patient = isRecord(appointment.patient) ? appointment.patient : {};
   const lead = isRecord(appointment.lead) ? appointment.lead : {};
   const parent = isRecord(patient.parent) ? patient.parent : {};
+  const room = isRecord(appointment.room) ? appointment.room : {};
+  const unit = isRecord(room.unit) ? room.unit : {};
   const species = readFirstString(patient, ["species", "speciesName"]);
   const breed = readFirstString(patient, ["breed", "breedName"]);
 
@@ -752,6 +757,17 @@ const readAppointmentHeader = (
         : (species ?? breed ?? undefined),
     ageSex:
       readFirstString(patient, ["ageSex", "age", "sex", "gender"]) ?? undefined,
+    roomName:
+      readFirstString(room, ["name", "code", "number", "roomName", "label"]) ??
+      undefined,
+    unitName:
+      readFirstString(unit, [
+        "name",
+        "displayName",
+        "code",
+        "unitName",
+        "label",
+      ]) ?? undefined,
   };
 };
 
@@ -764,7 +780,7 @@ const loadAppointmentClinicalHeader = async (
 
   const appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId },
-    select: { patient: true, lead: true },
+    select: { patient: true, lead: true, room: true },
   });
 
   if (!appointment) {
@@ -774,6 +790,7 @@ const loadAppointmentClinicalHeader = async (
   return readAppointmentHeader({
     patient: appointment.patient as unknown as Record<string, unknown>,
     lead: appointment.lead as unknown as Record<string, unknown>,
+    room: appointment.room as unknown as Record<string, unknown>,
   });
 };
 
@@ -827,6 +844,61 @@ const buildPendingSignature = (): { status: "PENDING"; label: string } => ({
   label: "Signature",
 });
 
+/**
+ * Resolve a signer's display name and email from the user id stored on the
+ * artifact (`signedBy`). Artifact signer ids are `User.userId` (the external id
+ * used for signing), matching how the packet-signing path resolves the signer
+ * email. Returns `undefined` fields when the user cannot be found so the caller
+ * can still render a SIGNED signature with whatever is available.
+ */
+const resolveSigner = async (
+  signedBy: string | null,
+): Promise<{ name?: string; email?: string }> => {
+  if (!signedBy) {
+    return {};
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { userId: signedBy },
+    select: { firstName: true, lastName: true, email: true },
+  });
+  if (!user) {
+    return {};
+  }
+
+  const name =
+    [user.firstName, user.lastName]
+      .map((part) => part?.trim())
+      .filter((part): part is string => Boolean(part))
+      .join(" ") || undefined;
+
+  return { name, email: user.email?.trim() || undefined };
+};
+
+/**
+ * Build the per-document signature block. A signed artifact (`signedAt` present)
+ * yields a SIGNED signature enriched with the resolved signer name/email and the
+ * authentication method; an unsigned artifact stays PENDING.
+ */
+const buildArtifactSignature = async (
+  record: ClinicalArtifactDocumentSource,
+): Promise<DocumentSignature> => {
+  if (!record.artifact.signedAt) {
+    return buildPendingSignature();
+  }
+
+  const signer = await resolveSigner(record.artifact.signedBy);
+
+  return {
+    status: "SIGNED",
+    label: "Signature",
+    signerName: signer.name,
+    signerEmail: signer.email,
+    authMethod: "Email",
+    signedAt: record.artifact.signedAt,
+  };
+};
+
 const readRecordNotes = (
   record: ClinicalArtifactDocumentSource,
   metadata: Record<string, unknown>,
@@ -849,6 +921,7 @@ const buildTemplateFreeSoapNotePdfInput = async (
   const header = await loadAppointmentClinicalHeader(
     record.artifact.appointmentId,
   );
+  const signature = await buildArtifactSignature(record);
 
   return {
     documentType: "SOAP_NOTE",
@@ -874,7 +947,7 @@ const buildTemplateFreeSoapNotePdfInput = async (
         "") as unknown as string,
       plan: (record.data.plan ?? metadata.plan ?? "") as unknown as string,
       printedBy: readPrintedByField(record, metadata),
-      signature: buildPendingSignature(),
+      signature,
     },
   };
 };
@@ -893,6 +966,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
     record.artifact.appointmentId,
   );
   const notes = readRecordNotes(record, metadata);
+  const signature = await buildArtifactSignature(record);
 
   return {
     documentType: "PRESCRIPTION",
@@ -927,7 +1001,7 @@ const buildTemplateFreePrescriptionPdfInput = async (
       ),
       notes,
       printedBy: readPrintedByField(record, metadata),
-      signature: buildPendingSignature(),
+      signature,
     },
   };
 };
@@ -954,6 +1028,7 @@ const buildTemplateFreeDischargeSummaryPdfInput = async (
   const followUpText = (record.data.followUp ??
     metadata.followUp ??
     "") as unknown as string;
+  const signature = await buildArtifactSignature(record);
 
   return {
     documentType: "DISCHARGE_SUMMARY",
@@ -998,7 +1073,7 @@ const buildTemplateFreeDischargeSummaryPdfInput = async (
         readFirstString(metadata, ["contact", "phone"]) ??
         "—") as unknown as string,
       printedBy: readPrintedByField(record, metadata),
-      signature: buildPendingSignature(),
+      signature,
     },
   };
 };
@@ -1017,6 +1092,7 @@ const buildTemplateFreeVitalRecordPdfInput = async (
     record.artifact.appointmentId,
   );
   const notes = readRecordNotes(record, metadata);
+  const signature = await buildArtifactSignature(record);
 
   return {
     documentType: "VITAL_RECORD",
@@ -1049,7 +1125,7 @@ const buildTemplateFreeVitalRecordPdfInput = async (
       metadata:
         record.data.metadata !== undefined ? record.data.metadata : metadata,
       printedBy: readPrintedByField(record, metadata),
-      signature: buildPendingSignature(),
+      signature,
     },
   };
 };
@@ -1454,6 +1530,7 @@ type CombinedClinicalPacketInput = {
  */
 const buildCombinedClinicalHeader = (
   section: CombinedClinicalSection,
+  appointmentHeader: AppointmentClinicalHeader,
 ): CombinedClinicalDocumentInput["header"] => {
   let doctorName: string | undefined;
   let clientContact: string | undefined;
@@ -1477,25 +1554,40 @@ const buildCombinedClinicalHeader = (
       doctorName = undefined;
   }
 
+  // The appointment-derived values are authoritative for the whole packet, so
+  // they override the per-section-derived ones (which depend on the first
+  // section's document type — e.g. SOAP carries no contact). Section values
+  // remain the fallback when the appointment record omits a field.
+  const normalizedSectionContact =
+    clientContact && clientContact !== "—" ? clientContact : undefined;
+
   const { data } = section;
   return {
     date: data.date,
     appointmentId: data.appointmentId,
-    patientName: data.patientName,
-    clientName: data.clientName,
-    clientId: data.clientId,
-    speciesBreed: data.speciesBreed,
-    ageSex: data.ageSex,
-    doctorName,
-    clientContact,
+    patientName: appointmentHeader.patientName ?? data.patientName,
+    clientName: appointmentHeader.clientName ?? data.clientName,
+    clientId: appointmentHeader.clientId ?? data.clientId,
+    speciesBreed: appointmentHeader.speciesBreed ?? data.speciesBreed,
+    ageSex: appointmentHeader.ageSex ?? data.ageSex,
+    doctorName: appointmentHeader.leadName ?? doctorName,
+    clientContact: appointmentHeader.clientContact ?? normalizedSectionContact,
+    roomName: appointmentHeader.roomName,
+    unitName: appointmentHeader.unitName,
   };
+};
+
+type BuiltCombinedClinicalSection = {
+  section: CombinedClinicalSection;
+  /** Appointment id of the underlying artifact, used to load the shared header. */
+  appointmentId: string | null;
 };
 
 const buildCombinedClinicalSection = async (
   doc: CombinedClinicalPacketDocument,
   organisationId: string,
   organization: OrganizationBranding,
-): Promise<CombinedClinicalSection | undefined> => {
+): Promise<BuiltCombinedClinicalSection | undefined> => {
   if (!COMBINED_CLINICAL_KINDS.has(doc.kind)) {
     return undefined;
   }
@@ -1508,6 +1600,7 @@ const buildCombinedClinicalSection = async (
   };
   const input: RenderedDocumentPdfSource = { title: doc.title, source };
   const record = await loadClinicalArtifactDocument(source);
+  const appointmentId = record.artifact.appointmentId;
 
   switch (doc.kind) {
     case "SOAP_NOTE": {
@@ -1516,7 +1609,10 @@ const buildCombinedClinicalSection = async (
         record,
         organization,
       );
-      return { documentType: "SOAP_NOTE", data: built.data };
+      return {
+        section: { documentType: "SOAP_NOTE", data: built.data },
+        appointmentId,
+      };
     }
     case "VITAL_RECORD": {
       const built = await buildTemplateFreeVitalRecordPdfInput(
@@ -1524,7 +1620,10 @@ const buildCombinedClinicalSection = async (
         record,
         organization,
       );
-      return { documentType: "VITAL_RECORD", data: built.data };
+      return {
+        section: { documentType: "VITAL_RECORD", data: built.data },
+        appointmentId,
+      };
     }
     case "PRESCRIPTION": {
       const built = await buildTemplateFreePrescriptionPdfInput(
@@ -1532,7 +1631,10 @@ const buildCombinedClinicalSection = async (
         record,
         organization,
       );
-      return { documentType: "PRESCRIPTION", data: built.data };
+      return {
+        section: { documentType: "PRESCRIPTION", data: built.data },
+        appointmentId,
+      };
     }
     case "DISCHARGE_SUMMARY": {
       const built = await buildTemplateFreeDischargeSummaryPdfInput(
@@ -1540,7 +1642,10 @@ const buildCombinedClinicalSection = async (
         record,
         organization,
       );
-      return { documentType: "DISCHARGE_SUMMARY", data: built.data };
+      return {
+        section: { documentType: "DISCHARGE_SUMMARY", data: built.data },
+        appointmentId,
+      };
     }
     default:
       return undefined;
@@ -1572,14 +1677,16 @@ export const renderCombinedClinicalPacketPdf = async (
   const organization = buildSharedOrganizationBranding(brand);
 
   const sections: CombinedClinicalSection[] = [];
+  let headerAppointmentId: string | null = null;
   for (const doc of input.documents) {
-    const section = await buildCombinedClinicalSection(
+    const built = await buildCombinedClinicalSection(
       doc,
       input.organisationId,
       organization,
     );
-    if (section) {
-      sections.push(section);
+    if (built) {
+      sections.push(built.section);
+      headerAppointmentId ??= built.appointmentId;
     }
   }
 
@@ -1589,9 +1696,15 @@ export const renderCombinedClinicalPacketPdf = async (
     );
   }
 
+  // Resolve the shared patient/encounter values (incl. room/unit and a reliable
+  // client contact) from the appointment once, so they don't depend on the first
+  // section's document type (e.g. a leading SOAP note carries no client contact).
+  const appointmentHeader =
+    await loadAppointmentClinicalHeader(headerAppointmentId);
+
   return generateCombinedClinicalPdfWithMetadata({
     organization,
-    header: buildCombinedClinicalHeader(sections[0]),
+    header: buildCombinedClinicalHeader(sections[0], appointmentHeader),
     sections,
     printedBy: undefined,
     signature: { status: "PENDING", label: "Signature" },
