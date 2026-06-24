@@ -1,11 +1,14 @@
 import {
   clinicalArtifactFhirMapper,
   fromFHIRAppointment,
+  fromFHIREncounter,
+  toFHIREncounter,
   toFHIRAppointment,
   taskScheduleFhirMapper,
   templateMapper,
   taskFhirMapper,
   type Appointment,
+  type Encounter,
   type TemplateLike,
   type TemplateInstanceLike,
   type TaskLike,
@@ -176,6 +179,48 @@ describe("shared fhir contracts", () => {
     ).toHaveLength(1);
     expect(parsedAppointment.templateDefaults).toEqual(
       appointment.templateDefaults,
+    );
+  });
+
+  it("round-trips inpatient encounter admission unit metadata through the shared package", () => {
+    const encounter = {
+      id: "enc-1",
+      caseId: "case-1",
+      organisationId: "org-1",
+      patientId: "comp-1",
+      status: "in-progress",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      periodStart: new Date("2026-01-05T08:30:00.000Z"),
+      admission: {
+        encounterId: "enc-1",
+        organisationId: "org-1",
+        patientId: "comp-1",
+        unitId: "unit-1",
+        expectedStayDays: 4,
+        admittedAt: new Date("2026-01-05T08:30:00.000Z"),
+      },
+    } as Encounter;
+
+    const fhirEncounter = toFHIREncounter(encounter);
+    const parsedEncounter = fromFHIREncounter(fhirEncounter);
+
+    expect(
+      fhirEncounter.hospitalization?.extension?.find(
+        (extension) =>
+          extension.url ===
+          "https://yosemitecrew.com/fhir/StructureDefinition/admission-unit-id",
+      )?.valueString,
+    ).toBe("unit-1");
+    expect(parsedEncounter.admission).toEqual(
+      expect.objectContaining({
+        encounterId: "enc-1",
+        organisationId: "org-1",
+        patientId: "comp-1",
+        unitId: "unit-1",
+        expectedStayDays: 4,
+        admittedAt: new Date("2026-01-05T08:30:00.000Z"),
+      }),
     );
   });
 
