@@ -1375,6 +1375,7 @@ enum TemplateKind {
   DISCHARGE_SUMMARY
   TASK_TEMPLATE
   CARE_PATHWAY
+  INVOICE
 }
 
 enum RenderedDocumentStatus {
@@ -1387,6 +1388,7 @@ enum RenderedDocumentSourceKind {
   CLINICAL_ARTIFACT
   FORM_SUBMISSION
   TASK_SCHEDULE
+  INVOICE
 }
 
 enum DocumentSignatureSignerType {

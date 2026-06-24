@@ -21,6 +21,9 @@ jest.mock("src/config/prisma", () => ({
     organization: {
       findUnique: jest.fn(),
     },
+    invoice: {
+      findUnique: jest.fn(),
+    },
     appointment: {
       findUnique: jest.fn(),
     },
@@ -95,6 +98,7 @@ jest.mock("@yosemite-crew/lib", () => ({
 describe("rendered-document-renderer service", () => {
   const mockedPrisma = prisma as unknown as {
     organization: { findUnique: jest.Mock };
+    invoice: { findUnique: jest.Mock };
     appointment: { findUnique: jest.Mock };
     admission: { findUnique: jest.Mock };
     roomUnit: { findUnique: jest.Mock };
@@ -135,6 +139,7 @@ describe("rendered-document-renderer service", () => {
     mockedPrisma.roomUnitAssignment.findFirst.mockResolvedValue(null);
     mockedPrisma.inventoryItem.findMany.mockResolvedValue([]);
     mockedPrisma.user.findFirst.mockResolvedValue(null);
+    mockedPrisma.invoice.findUnique.mockResolvedValue(null);
     mockedPrisma.taskSchedule.findUnique.mockResolvedValue(null);
     mockedGenerateClinicalPdfWithMetadata.mockResolvedValue({
       pdf: Buffer.from("pdf"),
@@ -386,6 +391,146 @@ describe("rendered-document-renderer service", () => {
           expect.objectContaining({ title: "Materialized Seeds" }),
           expect.objectContaining({ title: "Generated Task IDs" }),
         ]),
+      }),
+    );
+  });
+
+  it("renders an invoice document pdf view model", async () => {
+    mockedPrisma.organization.findUnique.mockResolvedValueOnce({
+      name: "MediCare Hospital",
+      imageUrl: null,
+      phoneNo: "+91 99999 00000",
+      website: "https://medicare.example",
+      address: {
+        addressLine: "123 Clinic Road",
+        city: "Mumbai",
+        state: "MH",
+        postalCode: "400001",
+        country: "IN",
+      },
+    });
+    mockedPrisma.appointment.findUnique.mockResolvedValueOnce({
+      patient: {
+        name: "Bella Hadid",
+        species: "Canine",
+        breed: "Bulldog",
+        parent: {
+          id: "CL-1001",
+          name: "Yasmin Hadid",
+          phoneNumber: "(512) 555 0111",
+        },
+      },
+      lead: {
+        name: "Dr. Tim Apple",
+      },
+      room: null,
+    });
+    mockedPrisma.invoice.findUnique.mockResolvedValueOnce({
+      id: "invoice-1",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      patientId: "patient-1",
+      parentId: "parent-1",
+      items: [
+        {
+          name: "Consultation",
+          description: "Initial exam",
+          quantity: 1,
+          unitPrice: 150,
+          total: 150,
+        },
+        {
+          name: "Medication",
+          quantity: 2,
+          unitPrice: 25,
+          total: 50,
+        },
+      ],
+      subtotal: 200,
+      discountTotal: 10,
+      invoiceDiscountTotal: 0,
+      taxTotal: 15,
+      totalAmount: 205,
+      currency: "usd",
+      paymentCollectionMethod: "PAYMENT_INTENT",
+      billingCollectionMode: "PAY_AT_VISIT_END",
+      visitBillingStage: "SETTLED",
+      depositTargetAmount: 0,
+      depositCollectedAmount: 0,
+      status: "PAID",
+      metadata: {
+        invoiceNumber: "INV-9001",
+        paymentNotes: "Paid at front desk",
+      },
+      paidAt: new Date("2026-06-15T08:00:00.000Z"),
+      finalizedAt: new Date("2026-06-15T07:30:00.000Z"),
+      createdAt: new Date("2026-06-15T07:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T08:00:00.000Z"),
+      payments: [
+        {
+          id: "payment-1",
+          provider: "MANUAL",
+          settlementChannel: "CASH",
+          amount: 180,
+          currency: "usd",
+          receiptUrl: "https://cdn.example/receipt.pdf",
+          paidAt: new Date("2026-06-15T08:00:00.000Z"),
+          createdAt: new Date("2026-06-15T08:00:00.000Z"),
+          updatedAt: new Date("2026-06-15T08:00:00.000Z"),
+        },
+      ],
+    });
+
+    await renderRenderedDocumentPdf({
+      title: "Final Invoice",
+      source: {
+        sourceKind: "INVOICE",
+        sourceId: "invoice-1",
+        organisationId: "org-1",
+        templateKind: "INVOICE",
+      },
+    });
+
+    expect(mockedGeneratePdf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentType: "INVOICE",
+        title: "Final Invoice",
+        organization: expect.objectContaining({
+          name: "MediCare Hospital",
+          addressLine1: "123 Clinic Road",
+          logoUrl: null,
+        }),
+        data: expect.objectContaining({
+          invoiceNumber: "INV-9001",
+          clientName: "Yasmin Hadid",
+          patientName: "Bella Hadid",
+          doctorName: "Dr. Tim Apple",
+          subtotal: 200,
+          discount: 10,
+          tax: 15,
+          grandTotal: 205,
+          amountPaid: 180,
+          balanceDue: 25,
+          paymentNotes: expect.stringContaining(
+            "Receipt: https://cdn.example/receipt.pdf",
+          ),
+          items: [
+            {
+              name: "Consultation",
+              description: "Initial exam",
+              quantity: 1,
+              unitPrice: 150,
+              total: 150,
+            },
+            {
+              name: "Medication",
+              description: undefined,
+              quantity: 2,
+              unitPrice: 25,
+              total: 50,
+            },
+          ],
+        }),
       }),
     );
   });
