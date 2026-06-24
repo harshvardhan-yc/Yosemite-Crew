@@ -1539,6 +1539,55 @@ export const InvoiceService = {
     return toInvoiceRecord(updated);
   },
 
+  async reverseAppointmentReadyForBilling(
+    appointmentId: string,
+    actorUserId?: string,
+  ) {
+    const readyInvoice = await prisma.invoice.findFirst({
+      where: {
+        appointmentId,
+        status: { in: ["AWAITING_PAYMENT", "PENDING"] },
+        visitBillingStage: "READY_FOR_BILLING",
+      },
+      orderBy: { createdAt: "desc" },
+      include: { taxSnapshot: true },
+    });
+
+    if (!readyInvoice) {
+      return null;
+    }
+
+    const summary = await getInvoiceFinancialSummary(
+      readyInvoice.id,
+      readyInvoice.totalAmount,
+    );
+    if (summary.paid > 0 || summary.credited > 0) {
+      throw new InvoiceServiceError(
+        "Invoice already has payments applied and cannot be reverted",
+        409,
+      );
+    }
+
+    const updated = await prisma.invoice.update({
+      where: { id: readyInvoice.id },
+      data: {
+        visitBillingStage: "DRAFT",
+        readyForBillingAt: null,
+        readyForBillingActorId: null,
+      },
+    });
+
+    await FinanceEventService.recordReadinessEvent({
+      organisationId: updated.organisationId,
+      eventType: "INVOICE_READY_FOR_BILLING_REVERSED",
+      entityType: "INVOICE",
+      entityId: updated.id,
+      actorUserId,
+    });
+
+    return toInvoiceRecord(updated);
+  },
+
   async setInvoiceDepositTarget(
     invoiceId: string,
     depositTargetAmount: number,
@@ -1916,7 +1965,20 @@ export const InvoiceService = {
       organisationId,
     );
     if (!invoice) {
-      return this.createExtraInvoiceForAppointment({ appointmentId, items });
+      const bootstrappedInvoice =
+        await this.bootstrapForAppointment(appointmentId);
+
+      if (
+        !bootstrappedInvoice.id ||
+        !["AWAITING_PAYMENT", "PENDING"].includes(bootstrappedInvoice.status)
+      ) {
+        throw new InvoiceServiceError(
+          "Invoice is not open for appointment",
+          409,
+        );
+      }
+
+      return this.addItemsToInvoice(bootstrappedInvoice.id, items);
     }
 
     return this.addItemsToInvoice(invoice.id, items);

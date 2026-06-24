@@ -865,6 +865,55 @@ export const FinanceController = {
     }
   },
 
+  async reverseAppointmentReadyForBilling(
+    this: void,
+    req: Request,
+    res: Response,
+  ) {
+    try {
+      const appointmentId = req.params.appointmentId;
+      if (!appointmentId) {
+        return res.status(400).json({ message: "Appointment Id is required" });
+      }
+
+      const invoice =
+        await InvoiceService.reverseAppointmentReadyForBilling(appointmentId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      await FinanceEventService.recordEvent({
+        organisationId: (req as OrgRequest).organisationId ?? null,
+        eventType: "APPOINTMENT_READY_FOR_BILLING_REVERSED",
+        entityType: "APPOINTMENT",
+        entityId: appointmentId,
+        payload: {
+          invoiceId: invoice.id,
+          billingState: invoice.visitBillingStage,
+          collectionMode: invoice.billingCollectionMode ?? null,
+        },
+      });
+
+      return res.status(200).json(
+        toFinanceSuccess({
+          appointmentId,
+          billingState: invoice.visitBillingStage,
+          invoiceId: invoice.id,
+          collectionMode: invoice.billingCollectionMode ?? null,
+        }),
+      );
+    } catch (error) {
+      logger.error("Error reversing appointment ready for billing", error);
+      const statusCode =
+        error instanceof InvoiceServiceError ? error.statusCode : 500;
+      const message =
+        error instanceof InvoiceServiceError
+          ? error.message
+          : "Internal server error";
+      return res.status(statusCode).json({ message });
+    }
+  },
+
   async recordSubscriptionCheckoutCompleted(
     this: void,
     req: Request,
