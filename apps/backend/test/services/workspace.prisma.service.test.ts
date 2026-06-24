@@ -6,6 +6,7 @@ import {
   WorkspaceServiceError,
   dedupeTreatmentItemsByPrescription,
 } from "../../src/services/workspace.prisma.service";
+import { InvoiceService } from "src/services/invoice.service";
 
 jest.mock("src/config/prisma", () => ({
   prisma: {
@@ -40,6 +41,23 @@ jest.mock("src/config/prisma", () => ({
 jest.mock("src/services/form-assignment.service", () => ({
   FormAssignmentService: {
     listAppointmentFormSummaries: jest.fn(),
+  },
+}));
+
+jest.mock("src/services/invoice.service", () => ({
+  __esModule: true,
+  InvoiceService: {
+    findOpenInvoiceForAppointment: jest.fn(),
+    addItemsToInvoice: jest.fn(),
+  },
+  InvoiceServiceError: class InvoiceServiceError extends Error {
+    constructor(
+      message: string,
+      public readonly statusCode: number,
+    ) {
+      super(message);
+      this.name = "InvoiceServiceError";
+    }
   },
 }));
 
@@ -87,6 +105,10 @@ describe("WorkspaceService", () => {
   const mockedFormService = FormAssignmentService as unknown as {
     listAppointmentFormSummaries: jest.Mock;
   };
+  const mockedInvoiceService = InvoiceService as unknown as {
+    findOpenInvoiceForAppointment: jest.Mock;
+    addItemsToInvoice: jest.Mock;
+  };
   const mockedClinicalArtifactService = ClinicalArtifactService as unknown as {
     listSoapNotesForAppointment: jest.Mock;
     listSoapNotesForEncounter: jest.Mock;
@@ -122,6 +144,8 @@ describe("WorkspaceService", () => {
     mockedPrisma.encounter.findMany.mockResolvedValue([]);
     mockedPrisma.labOrder.findMany.mockResolvedValue([]);
     mockedPrisma.labResult.findMany.mockResolvedValue([]);
+    mockedInvoiceService.findOpenInvoiceForAppointment.mockResolvedValue(null);
+    mockedInvoiceService.addItemsToInvoice.mockResolvedValue(null);
 
     mockedFormService.listAppointmentFormSummaries.mockResolvedValue([
       {
@@ -550,6 +574,104 @@ describe("WorkspaceService", () => {
     expect(mockedPrisma.workspaceTreatmentItem.delete).toHaveBeenCalledWith({
       where: { id: "ti-2" },
     });
+  });
+
+  it("syncs a treatment item into the active invoice and marks it billed", async () => {
+    mockedInvoiceService.findOpenInvoiceForAppointment.mockResolvedValueOnce({
+      id: "invoice-1",
+    });
+    mockedPrisma.workspaceTreatmentItem.create.mockResolvedValueOnce({
+      id: "ti-sync",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      productId: "prod-sync",
+      productVersion: null,
+      productSnapshot: { name: "Procedure" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 2,
+      priceSnapshot: {
+        name: "Procedure",
+        grossAmount: 40,
+        finalAmount: 36,
+        discountPercent: 10,
+        unitPrice: 20,
+      },
+      billingStatus: "UNBILLED",
+      invoiceRowId: null,
+      lockState: null,
+      prescriptionId: null,
+      createdAt: new Date("2026-06-15T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T00:00:00.000Z"),
+    });
+    mockedPrisma.workspaceTreatmentItem.update.mockResolvedValueOnce({
+      id: "ti-sync",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      productId: "prod-sync",
+      productVersion: null,
+      productSnapshot: { name: "Procedure" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 2,
+      priceSnapshot: {
+        name: "Procedure",
+        grossAmount: 40,
+        finalAmount: 36,
+        discountPercent: 10,
+        unitPrice: 20,
+      },
+      billingStatus: "BILLED",
+      invoiceRowId: "ti-sync",
+      lockState: null,
+      prescriptionId: null,
+      createdAt: new Date("2026-06-15T00:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T01:00:00.000Z"),
+    });
+    mockedInvoiceService.addItemsToInvoice.mockResolvedValueOnce({
+      id: "invoice-1",
+    });
+
+    const created = await WorkspaceService.createEncounterTreatmentItem({
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      productId: "prod-sync",
+      productSnapshot: { name: "Procedure" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 2,
+      priceSnapshot: {
+        name: "Procedure",
+        grossAmount: 40,
+        finalAmount: 36,
+        discountPercent: 10,
+        unitPrice: 20,
+      },
+    });
+
+    expect(
+      mockedInvoiceService.findOpenInvoiceForAppointment,
+    ).toHaveBeenCalledWith("appt-1", "org-1");
+    expect(mockedInvoiceService.addItemsToInvoice).toHaveBeenCalledWith(
+      "invoice-1",
+      [
+        expect.objectContaining({
+          id: "ti-sync",
+          quantity: 2,
+          unitPrice: 20,
+          total: 36,
+        }),
+      ],
+    );
+    expect(mockedPrisma.workspaceTreatmentItem.update).toHaveBeenCalledWith({
+      where: { id: "ti-sync" },
+      data: {
+        billingStatus: "BILLED",
+        invoiceRowId: "ti-sync",
+      },
+    });
+    expect(created.billingStatus).toBe("BILLED");
+    expect(created.invoiceRowId).toBe("ti-sync");
   });
 
   it("builds the encounter bootstrap even when no linked appointment is resolved", async () => {

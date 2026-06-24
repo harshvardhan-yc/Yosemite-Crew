@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { ClinicalArtifactService } from "./clinical-artifact.service";
 import { FormAssignmentService } from "./form-assignment.service";
+import { InvoiceService, InvoiceServiceError } from "./invoice.service";
+import { roundMoney } from "./finance/pricing";
 import type {
   Case,
   Encounter,
@@ -902,6 +904,100 @@ const mapTreatmentItemRow = (
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
+
+const readNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const readText = (...values: unknown[]) =>
+  values.find((value) => typeof value === "string" && value.trim()) as
+    | string
+    | undefined;
+
+const buildInvoiceLineFromTreatmentItem = (row: TreatmentItemRow) => {
+  const priceSnapshot = isRecord(row.priceSnapshot) ? row.priceSnapshot : {};
+  const productSnapshot = isRecord(row.productSnapshot)
+    ? row.productSnapshot
+    : {};
+
+  const quantity = row.quantity > 0 ? row.quantity : 1;
+  const invoiceRowId =
+    typeof row.invoiceRowId === "string" && row.invoiceRowId.trim()
+      ? row.invoiceRowId.trim()
+      : row.id;
+  const grossAmount = readNumber(priceSnapshot.grossAmount);
+  const finalAmount = readNumber(priceSnapshot.finalAmount);
+  const snapshotUnitPrice = readNumber(priceSnapshot.unitPrice);
+  const unitPrice =
+    grossAmount != null
+      ? roundMoney(grossAmount / quantity)
+      : snapshotUnitPrice != null
+        ? snapshotUnitPrice
+        : finalAmount != null
+          ? roundMoney(finalAmount / quantity)
+          : 0;
+  const discountPercent = readNumber(priceSnapshot.discountPercent);
+  const total = finalAmount ?? roundMoney(unitPrice * quantity);
+  const name = readText(
+    priceSnapshot.name,
+    productSnapshot.name,
+    priceSnapshot.displayName,
+    productSnapshot.displayName,
+    row.productId,
+    row.servicePackageKind,
+  );
+
+  return {
+    id: invoiceRowId,
+    name: name ?? row.productId,
+    description: name ?? row.productId,
+    quantity,
+    unitPrice,
+    discountPercent: discountPercent ?? undefined,
+    total,
+  };
+};
+
+const syncTreatmentItemInvoice = async (row: TreatmentItemRow) => {
+  if (!row.appointmentId) {
+    return row;
+  }
+
+  const invoice = await InvoiceService.findOpenInvoiceForAppointment(
+    row.appointmentId,
+    row.organisationId,
+  );
+  if (!invoice) {
+    return row;
+  }
+
+  const invoiceLine = buildInvoiceLineFromTreatmentItem(row);
+
+  try {
+    await InvoiceService.addItemsToInvoice(invoice.id, [invoiceLine]);
+  } catch (error) {
+    if (
+      error instanceof InvoiceServiceError &&
+      (error.statusCode === 404 || error.statusCode === 409)
+    ) {
+      return row;
+    }
+    throw error;
+  }
+
+  if (row.billingStatus === "BILLED" && row.invoiceRowId === invoiceLine.id) {
+    return row;
+  }
+
+  const synced = (await prisma.workspaceTreatmentItem.update({
+    where: { id: row.id },
+    data: {
+      billingStatus: "BILLED",
+      invoiceRowId: invoiceLine.id,
+    },
+  })) as TreatmentItemRow;
+
+  return synced;
+};
 
 // A treatment line can appear both as a virtual item derived from a prescription
 // artifact and as a persisted workspaceTreatmentItem row (e.g. once the invoice is
@@ -1956,7 +2052,7 @@ export const WorkspaceService = {
       },
     })) as TreatmentItemRow;
 
-    return mapTreatmentItemRow(created);
+    return mapTreatmentItemRow(await syncTreatmentItemInvoice(created));
   },
 
   async updateTreatmentItem(
@@ -2000,7 +2096,7 @@ export const WorkspaceService = {
       },
     })) as TreatmentItemRow;
 
-    return mapTreatmentItemRow(updated);
+    return mapTreatmentItemRow(await syncTreatmentItemInvoice(updated));
   },
 
   async deleteTreatmentItem(

@@ -1,6 +1,7 @@
 import {
   Prisma,
   Invoice as PrismaInvoice,
+  Payment as PrismaPayment,
   BillingCollectionMode as PrismaBillingCollectionMode,
   InvoiceStatus as PrismaInvoiceStatus,
   PaymentCollectionMethod,
@@ -75,6 +76,24 @@ type InvoiceWithCreditNotes = PrismaInvoice & {
   creditNotes?: PrismaCreditNote[];
 };
 
+type PrismaPaymentRefund = {
+  id: string;
+  paymentId: string;
+  provider: string;
+  providerRefundId: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  reason: string | null;
+  rawProviderPayload: Prisma.JsonValue | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type PrismaPaymentWithRefunds = PrismaPayment & {
+  refunds?: PrismaPaymentRefund[];
+};
+
 const invoiceCreditNotesInclude = {
   creditNotes: {
     orderBy: { createdAt: "desc" as const },
@@ -82,10 +101,13 @@ const invoiceCreditNotesInclude = {
 };
 
 type DraftInvoiceItemInput = {
+  id?: string;
+  name?: string;
   description: string;
   quantity: number;
   unitPrice: number;
   discountPercent?: number;
+  total?: number;
 };
 
 type CreateInvoiceInput = {
@@ -200,6 +222,39 @@ const toCreditNoteRecord = (row: PrismaCreditNote): FinanceCreditNote => ({
   updatedAt: row.updatedAt,
 });
 
+const toPaymentRefundRecord = (row: PrismaPaymentRefund) => ({
+  id: row.id,
+  paymentId: row.paymentId,
+  provider: row.provider,
+  providerRefundId: row.providerRefundId ?? undefined,
+  amount: row.amount,
+  currency: row.currency,
+  status: row.status,
+  reason: row.reason ?? undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+const toPaymentRecord = (row: PrismaPaymentWithRefunds) => ({
+  id: row.id,
+  invoiceId: row.invoiceId,
+  paymentAttemptId: row.paymentAttemptId ?? undefined,
+  provider: row.provider,
+  settlementChannel: row.settlementChannel ?? undefined,
+  collectionMode: row.collectionMode ?? undefined,
+  providerPaymentId: row.providerPaymentId ?? undefined,
+  amount: row.amount,
+  currency: row.currency,
+  status: row.status,
+  paidAt: row.paidAt ?? undefined,
+  receiptUrl: row.receiptUrl ?? undefined,
+  refunds: Array.isArray(row.refunds)
+    ? row.refunds.map((refund) => toPaymentRefundRecord(refund))
+    : undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
 const toInvoiceRecord = (row: InvoiceWithCreditNotes): Invoice => {
   const items = Array.isArray(row.items)
     ? (row.items as InvoiceItem[]).map((item) => ({
@@ -239,15 +294,73 @@ const toInvoiceRecord = (row: InvoiceWithCreditNotes): Invoice => {
 };
 
 const buildInvoiceLineSnapshots = (items: DraftInvoiceItemInput[]) =>
-  items.map((item) => ({
-    ...item,
-    name: item.description,
-    total:
+  items.map((item) => {
+    const total =
+      item.total ??
       item.quantity * item.unitPrice -
-      (item.discountPercent
-        ? (item.discountPercent / 100) * item.unitPrice * item.quantity
-        : 0),
-  }));
+        (item.discountPercent
+          ? (item.discountPercent / 100) * item.unitPrice * item.quantity
+          : 0);
+
+    return {
+      ...(item.id ? { id: item.id } : {}),
+      name: item.name ?? item.description,
+      description: item.description ?? item.name ?? undefined,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discountPercent: item.discountPercent,
+      total,
+    };
+  });
+
+const normalizeInvoiceLineItem = (
+  item: InvoiceItem,
+): DraftInvoiceItemInput => ({
+  id: item.id,
+  name: item.name,
+  description: item.description ?? item.name,
+  quantity: item.quantity,
+  unitPrice: item.unitPrice,
+  discountPercent: item.discountPercent ?? undefined,
+  total: item.total,
+});
+
+const invoiceLineContentKey = (item: DraftInvoiceItemInput) =>
+  [
+    (item.description ?? item.name ?? "").trim().toLowerCase(),
+    item.quantity,
+    item.unitPrice,
+    item.discountPercent ?? "",
+  ].join("|");
+
+const mergeInvoiceLineItems = (
+  existingItems: DraftInvoiceItemInput[],
+  newItems: DraftInvoiceItemInput[],
+) => {
+  const merged = [...existingItems];
+
+  for (const item of newItems) {
+    const lineId = item.id?.trim();
+    let index = -1;
+    if (lineId) {
+      index = merged.findIndex((existing) => existing.id?.trim() === lineId);
+    }
+    if (index === -1) {
+      const contentKey = invoiceLineContentKey(item);
+      index = merged.findIndex(
+        (existing) => invoiceLineContentKey(existing) === contentKey,
+      );
+    }
+
+    if (index === -1) {
+      merged.push(item);
+    } else {
+      merged[index] = item;
+    }
+  }
+
+  return merged;
+};
 
 const toTaxLineItems = (items: DraftInvoiceItemInput[]) =>
   items.map((item) => ({
@@ -1426,6 +1539,32 @@ export const InvoiceService = {
         })
       : null;
 
+    const payments = (await prisma.payment.findMany({
+      where: { invoiceId: id },
+      orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+      include: {
+        refunds: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    })) as PrismaPaymentWithRefunds[];
+
+    const receipts = payments
+      .filter((payment) => Boolean(payment.receiptUrl))
+      .map((payment) => ({
+        id: payment.id,
+        paymentId: payment.id,
+        invoiceId: payment.invoiceId,
+        provider: payment.provider,
+        settlementChannel: payment.settlementChannel ?? undefined,
+        amount: payment.amount,
+        currency: payment.currency,
+        receiptUrl: payment.receiptUrl ?? undefined,
+        paidAt: payment.paidAt ?? undefined,
+        createdAt: payment.createdAt,
+        updatedAt: payment.updatedAt,
+      }));
+
     return {
       organistion: {
         name: org?.name ?? "",
@@ -1433,7 +1572,11 @@ export const InvoiceService = {
         address: org?.address ?? "",
         image: org?.imageUrl ?? "",
       },
-      invoice: toInvoiceRecord(doc),
+      invoice: {
+        ...toInvoiceRecord(doc),
+        payments: payments.map((payment) => toPaymentRecord(payment)),
+        receipts,
+      },
     };
   },
 
@@ -1485,31 +1628,8 @@ export const InvoiceService = {
     const existingItems = Array.isArray(invoice.items)
       ? (invoice.items as unknown as DraftInvoiceItemInput[])
       : [];
-    const newItems = items.map((item) => ({
-      description: item.description ?? item.name,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      discountPercent: item.discountPercent ?? undefined,
-    }));
-    // Guard against re-adding the same line item: the finance step can re-send the
-    // existing items when regenerating the payment link for a finalized-but-unpaid
-    // invoice, which would otherwise append duplicate lines (e.g. a package twice).
-    const itemKey = (item: {
-      description?: string | null;
-      name?: string | null;
-      quantity?: number;
-      unitPrice?: number;
-    }) =>
-      [
-        (item.description ?? item.name ?? "").trim().toLowerCase(),
-        item.quantity ?? "",
-        item.unitPrice ?? "",
-      ].join("|");
-    const existingKeys = new Set(existingItems.map(itemKey));
-    const mergedItems = [
-      ...existingItems,
-      ...newItems.filter((item) => !existingKeys.has(itemKey(item))),
-    ];
+    const newItems = items.map(normalizeInvoiceLineItem);
+    const mergedItems = mergeInvoiceLineItems(existingItems, newItems);
     const taxContext = await resolveInvoiceTaxContext(
       invoice.organisationId ?? "",
       invoice.parentId ?? null,
