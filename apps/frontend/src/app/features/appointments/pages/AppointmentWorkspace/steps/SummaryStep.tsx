@@ -600,6 +600,7 @@ const SummaryStep = ({
   };
 
   const followUpDate = toFollowUpDate(encounter.followUpAt);
+  const showDocumentActions = dischargeSaved;
 
   return (
     <div className="flex flex-col gap-5">
@@ -736,12 +737,14 @@ const SummaryStep = ({
           </p>
         )}
         <div className="flex flex-wrap items-center justify-end gap-3">
-          <Secondary
-            text={isPrinting ? 'Preparing…' : 'Print'}
-            icon={<LuPrinter aria-hidden="true" />}
-            onClick={handlePrint}
-            isDisabled={isPrinting}
-          />
+          {showDocumentActions && (
+            <Secondary
+              text={isPrinting ? 'Preparing…' : 'Print All'}
+              icon={<LuPrinter aria-hidden="true" />}
+              onClick={handlePrint}
+              isDisabled={isPrinting}
+            />
+          )}
           {!dischargeSaved && (
             <Secondary
               text="Save"
@@ -750,12 +753,14 @@ const SummaryStep = ({
               isDisabled={encounter.viewOnly || isSaving}
             />
           )}
-          <Secondary
-            text={isSigning ? 'Signing…' : 'Sign'}
-            icon={<LuFileSignature aria-hidden="true" />}
-            onClick={handleSign}
-            isDisabled={encounter.viewOnly || isSigning}
-          />
+          {showDocumentActions && (
+            <Secondary
+              text={isSigning ? 'Signing…' : 'Sign'}
+              icon={<LuFileSignature aria-hidden="true" />}
+              onClick={handleSign}
+              isDisabled={encounter.viewOnly || isSigning}
+            />
+          )}
         </div>
       </div>
 

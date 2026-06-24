@@ -355,9 +355,11 @@ const FINANCE_OPEN_STATUSES = new Set(['PENDING', 'AWAITING_PAYMENT', 'REQUIRES_
 /** Map a finance invoice status to the workspace's coarse paid/unpaid pill state. */
 const toWorkspaceInvoiceStatus = (
   status: string | undefined,
-  outstandingCents: number
+  outstandingCents: number,
+  totalCents: number
 ): WorkspaceInvoiceStatus => {
   if (status === 'PAID' || outstandingCents <= 0) return 'PAID_FULL';
+  if (outstandingCents < totalCents) return 'PARTIAL';
   if (status && FINANCE_OPEN_STATUSES.has(status)) return 'UNPAID';
   return outstandingCents > 0 ? 'PARTIAL' : 'PAID_FULL';
 };
@@ -457,14 +459,16 @@ export const loadAppointmentBilling = async (
         const method = String(payment.method ?? '').toUpperCase();
         return method === 'DEPOSIT' ? sum + payment.amountCents : sum;
       }, 0) ?? 0;
-    depositCents += explicitDepositCents > 0 ? explicitDepositCents : ledgerDepositCents;
-    const outstandingCents = isPaid ? 0 : totalCents;
+    const collectedCents = explicitDepositCents > 0 ? explicitDepositCents : ledgerDepositCents;
+    depositCents += collectedCents;
+    const paymentTotalCents = payments?.reduce((sum, payment) => sum + payment.amountCents, 0) ?? 0;
+    const outstandingCents = isPaid ? 0 : Math.max(0, totalCents - paymentTotalCents);
     return {
       id: String(invoice.id ?? appointmentId),
       createdAt: (invoice.createdAt ?? new Date()).toISOString(),
       totalCents,
       outstandingCents,
-      status: toWorkspaceInvoiceStatus(invoice.status, outstandingCents),
+      status: toWorkspaceInvoiceStatus(invoice.status, outstandingCents, totalCents),
       paidByName: undefined,
       paidAt: invoice.paidAt ? invoice.paidAt.toISOString() : undefined,
       items,

@@ -47,6 +47,7 @@ import { fetchInventoryItems } from '@/app/features/inventory/services/inventory
 import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
+import { useNotify } from '@/app/hooks/useNotify';
 
 type InvoiceStepProps = {
   appointmentId: string;
@@ -903,6 +904,7 @@ const InvoiceStep = ({
   const [paymentProgress, setPaymentProgress] = useState<PaymentProgressState | null>(null);
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [depositPaymentLink, setDepositPaymentLink] = useState<string | null>(null);
+  const { notify } = useNotify();
   const readOnly = encounter.viewOnly;
   const isInpatient = encounter.mode === 'INPATIENT';
   const hasItems = encounter.invoiceLineItems.length > 0;
@@ -1191,6 +1193,12 @@ const InvoiceStep = ({
       return;
     }
     if (!hasItems) return;
+    if (!encounter.readyForBilling.value && (method === 'CASH' || method === 'ONLINE')) {
+      notify('warning', {
+        title: 'Mark ready for billing first',
+        text: 'Set the visit to Ready for billing before collecting cash or sending the invoice online.',
+      });
+    }
     setErrorMessage(null);
     setIsProcessingPayment(true);
     try {
@@ -1251,14 +1259,14 @@ const InvoiceStep = ({
     setErrorMessage(null);
     setIsProcessingPayment(true);
     try {
-      const depositInvoice =
+      const invoiceToCollectAgainst =
         organisationId && hasItems ? await persistCurrentInvoice({ finalize: false }) : undefined;
-      if (depositInvoice?.id) {
+      if (invoiceToCollectAgainst?.id) {
         if (input.method === 'ONLINE') {
-          const checkoutUrl = await getPaymentLink(depositInvoice.id);
+          const checkoutUrl = await getPaymentLink(invoiceToCollectAgainst.id);
           setDepositPaymentLink(checkoutUrl ?? null);
           if (checkoutUrl) {
-            startPaymentProgress(depositInvoice.id, checkoutUrl);
+            startPaymentProgress(invoiceToCollectAgainst.id, checkoutUrl);
             openCheckoutUrl(checkoutUrl);
           }
           recordDepositCollection(appointmentId, {
@@ -1268,14 +1276,14 @@ const InvoiceStep = ({
           });
           setConfirmation(
             checkoutUrl
-              ? `Deposit payment link generated: ${checkoutUrl}`
-              : 'Deposit payment link generated'
+              ? `Payment link generated for the appointment invoice: ${checkoutUrl}`
+              : 'Payment link generated for the appointment invoice'
           );
           if (!checkoutUrl) await reloadBilling();
           return;
         }
 
-        await recordManualInvoicePayment(depositInvoice.id, {
+        await recordManualInvoicePayment(invoiceToCollectAgainst.id, {
           provider: 'MANUAL',
           settlementChannel: 'DEPOSIT',
           amount: input.amount,
@@ -1289,7 +1297,7 @@ const InvoiceStep = ({
           method: input.method,
           byName: encounter.leadName ?? 'Front desk',
         });
-        setConfirmation(`${PAYMENT_LABELS[input.method]} deposit recorded`);
+        setConfirmation(`${PAYMENT_LABELS[input.method]} recorded on the appointment invoice`);
         setIsDepositModalOpen(false);
         await reloadBilling();
         return;
@@ -1299,7 +1307,7 @@ const InvoiceStep = ({
         method: input.method,
         byName: encounter.leadName ?? 'Front desk',
       });
-      setConfirmation(`${PAYMENT_LABELS[input.method]} deposit recorded`);
+      setConfirmation(`${PAYMENT_LABELS[input.method]} recorded on the appointment invoice`);
       setIsDepositModalOpen(false);
       await reloadBilling();
     } catch (error) {

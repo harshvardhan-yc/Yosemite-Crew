@@ -689,7 +689,7 @@ describe('appointmentWorkspaceStore', () => {
     expect(capped.amountCents).toBe(8000);
   });
 
-  it('records an invoice payment, clearing the bill and prepending a paid invoice', () => {
+  it('records an invoice payment, clearing the bill without creating a synthetic invoice', () => {
     seed();
     getStore().addInvoiceLineItem(APPT, {
       name: 'Initial Consultation',
@@ -706,12 +706,7 @@ describe('appointmentWorkspaceStore', () => {
 
     const after = getStore().getEncounter(APPT)!;
     expect(after.invoiceLineItems).toHaveLength(0);
-    expect(after.pastInvoices).toHaveLength(pastCount + 1);
-    const newest = after.pastInvoices[0];
-    expect(newest.status).toBe('PAID_FULL');
-    expect(newest.paymentMethod).toBe('CASH');
-    expect(newest.paidByName).toBe('Front desk');
-    expect(newest.outstandingCents).toBe(0);
+    expect(after.pastInvoices).toHaveLength(pastCount);
   });
 
   it('reduces the deposit when payment is from the deposit', () => {
@@ -731,12 +726,13 @@ describe('appointmentWorkspaceStore', () => {
       },
     }));
     const start = getStore().getEncounter(APPT)!.depositCents;
+    const pastCount = getStore().getEncounter(APPT)!.pastInvoices.length;
 
     getStore().recordInvoicePayment(APPT, { method: 'DEPOSIT' });
 
     const after = getStore().getEncounter(APPT)!;
-    expect(after.pastInvoices[0].paidFromDeposit).toBe(true);
     expect(after.depositCents).toBeLessThan(start);
+    expect(after.pastInvoices).toHaveLength(pastCount);
   });
 
   it('records a deposit balance without creating a synthetic invoice', () => {

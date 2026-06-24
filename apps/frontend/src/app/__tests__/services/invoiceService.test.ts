@@ -153,7 +153,7 @@ describe('invoiceService', () => {
     expect(billing.pastInvoices).toHaveLength(1);
     expect(billing.pastInvoices[0]).toMatchObject({
       id: '672e7254-ae36-4658-b567-62e88ab4ecb7',
-      status: 'UNPAID',
+      status: 'PARTIAL',
       totalCents: 27232,
       pdfUrl: 'https://files.test/invoice.pdf',
       renderedDocumentId: 'rd-invoice-1',
@@ -213,6 +213,48 @@ describe('invoiceService', () => {
     const billing = await loadAppointmentBilling('org-1', 'appt-1');
 
     expect(billing.depositCents).toBe(10000);
+    expect(billing.pastInvoices[0]).toMatchObject({
+      outstandingCents: 0,
+      status: 'PAID_FULL',
+    });
+  });
+
+  it('marks an invoice as partially paid when the payment ledger covers only part of the total', async () => {
+    (getData as jest.Mock).mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 'inv-partial',
+            organisationId: 'org-1',
+            appointmentId: 'appt-1',
+            items: [{ name: 'Consult', total: 100, quantity: 1, unitPrice: 100 }],
+            totalAmount: 100,
+            currency: 'usd',
+            status: 'AWAITING_PAYMENT',
+            payments: [
+              {
+                id: 'pay-partial',
+                amount: 25,
+                settlementChannel: 'CARD_PRESENT',
+                provider: 'MANUAL',
+                status: 'SUCCEEDED',
+                paidAt: '2026-06-22T19:54:43.986Z',
+              },
+            ],
+            createdAt: '2026-06-22T19:51:52.106Z',
+          },
+        ],
+        meta: null,
+        error: null,
+      },
+    });
+
+    const billing = await loadAppointmentBilling('org-1', 'appt-1');
+
+    expect(billing.pastInvoices[0]).toMatchObject({
+      outstandingCents: 7500,
+      status: 'PARTIAL',
+    });
   });
 
   it('prefers explicit depositCollectedAmount over payment ledger fallback', async () => {
