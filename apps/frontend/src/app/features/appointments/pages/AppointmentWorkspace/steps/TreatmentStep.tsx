@@ -147,7 +147,7 @@ const combineScheduleDateTime = (startDate?: string, time?: string): Date | null
 const taskToScheduleTask = (task: Task): ScheduleTask => ({
   id: task._id,
   description: task.description || task.name,
-  category: 'Care' as const,
+  category: task.category as ScheduleTask['category'],
   assignedToId: task.assignedTo,
   status: taskStatusToScheduleStatus(task.status),
   startDate: task.dueAt ? new Date(task.dueAt).toISOString().slice(0, 10) : undefined,

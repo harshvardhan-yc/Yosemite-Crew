@@ -325,8 +325,33 @@ export const schemaSnapshotToPrescriptionItems = (
     if (typeof value === 'number') return String(value);
     return undefined;
   };
-  for (const section of snapshot.sections ?? []) {
-    for (const field of section.fields ?? []) {
+  const applyRowDefaults = (rowData: Record<string, unknown>) => {
+    const inventoryItemId = stringDefault(rowData.inventoryItemId ?? rowData.medicineId);
+    if (!inventoryItemId) return;
+    const baseRow =
+      byInventoryId.get(inventoryItemId) ?? getFallbackPrescriptionItem(inventoryItemId);
+    let row = baseRow;
+    row = getUpdatedPrescriptionItem(row, '_name', stringDefault(rowData.medicineName));
+    row = getUpdatedPrescriptionItem(row, '_dosage', stringDefault(rowData.dosage));
+    row = getUpdatedPrescriptionItem(row, '_route', stringDefault(rowData.route));
+    row = getUpdatedPrescriptionItem(row, '_frequency', stringDefault(rowData.frequency));
+    row = getUpdatedPrescriptionItem(row, '_duration', stringDefault(rowData.durationDays));
+    row = getUpdatedPrescriptionItem(row, '_qty', stringDefault(rowData.qty));
+    row = getUpdatedPrescriptionItem(row, '_remark', stringDefault(rowData.instructions));
+    byInventoryId.set(inventoryItemId, row);
+  };
+  const walkFields = (fields: any[]) => {
+    for (const field of fields ?? []) {
+      if (field.type === 'medicationLine' && Array.isArray(field.defaultValue)) {
+        for (const row of field.defaultValue as Array<Record<string, unknown>>) {
+          applyRowDefaults(row);
+        }
+        continue;
+      }
+      const nestedFields = field.fields;
+      if (Array.isArray(nestedFields)) {
+        walkFields(nestedFields as any[]);
+      }
       const inventoryItemId = (field.rules as { inventoryItemId?: string } | undefined)
         ?.inventoryItemId;
       if (!inventoryItemId) continue;
@@ -335,6 +360,9 @@ export const schemaSnapshotToPrescriptionItems = (
       const value = stringDefault(field.defaultValue);
       byInventoryId.set(inventoryItemId, getUpdatedPrescriptionItem(row, field.key, value));
     }
+  };
+  for (const section of snapshot.sections ?? []) {
+    walkFields(section.fields ?? []);
   }
   // Keep only rows that resolved a medicine name (a bare inventory id with no name is unusable).
   return [...byInventoryId.values()].filter((row) => row.medicineName);
