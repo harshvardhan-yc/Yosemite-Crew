@@ -7,6 +7,7 @@ import { AuthUserMobileService } from "src/services/authUserMobile.service";
 import logger from "src/utils/logger";
 import { generatePresignedUrl } from "src/middlewares/upload";
 import { resolveUserIdFromRequest } from "src/utils/request";
+import type { OrgRequest } from "src/middlewares/rbac";
 
 type RescheduleRequestBody = {
   startTime: string | Date;
@@ -278,6 +279,9 @@ export const AppointmentController = {
         req.params.appointmentId,
         {
           admittedAt: body.admittedAt ? new Date(body.admittedAt) : undefined,
+          // The admitting user is whoever is signed in and clicked
+          // "Convert to Inpatient" (the verified Cognito token), never the body.
+          admittedBy: (req as { userId?: string }).userId,
           expectedStayDays: body.expectedStayDays,
           lead: body.lead,
           supportStaff: body.supportStaff,
@@ -303,6 +307,7 @@ export const AppointmentController = {
     try {
       await InvoiceService.markAppointmentReadyForBilling(
         req.params.appointmentId,
+        resolveUserIdFromRequest(req),
       );
       return res
         .status(200)
@@ -396,8 +401,19 @@ export const AppointmentController = {
 
   getById: async (req: Request<{ appointmentId: string }>, res: Response) => {
     try {
+      const typedReq = req as OrgRequest;
+      const actorId = resolveUserIdFromRequest(req);
+      const canViewAny =
+        typedReq.userPermissions?.includes("appointments:view:any") ?? false;
+
+      if (!canViewAny && !actorId) {
+        return res.status(403).json({ message: "User not authenticated" });
+      }
+
       const data = await AppointmentPrismaService.getById(
         req.params.appointmentId,
+        typedReq.organisationId ?? req.params.organisationId,
+        canViewAny ? undefined : actorId,
       );
       return res.status(200).json({ data });
     } catch (err: unknown) {
