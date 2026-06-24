@@ -351,13 +351,30 @@ describe("TemplateService", () => {
       },
     ]);
 
-    const result = await TemplateService.listLibrary({ kind: "SOAP_NOTE" });
+    const result = await TemplateService.listLibrary({
+      kind: "SOAP_NOTE",
+      search: "soap",
+    });
 
     expect(mockedPrisma.template.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           ownership: "YC_LIBRARY",
           kind: "SOAP_NOTE",
+          OR: [
+            {
+              name: {
+                contains: "soap",
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: "soap",
+                mode: "insensitive",
+              },
+            },
+          ],
         }),
       }),
     );
@@ -389,6 +406,7 @@ describe("TemplateService", () => {
 
     const result = await TemplateService.listForOrganisation(organisationId, {
       status: "DRAFT",
+      search: "org",
     });
 
     expect(mockedPrisma.template.findMany).toHaveBeenCalledWith(
@@ -397,6 +415,20 @@ describe("TemplateService", () => {
           organisationId,
           ownership: "ORG_TEMPLATE",
           status: "DRAFT",
+          OR: [
+            {
+              name: {
+                contains: "org",
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: "org",
+                mode: "insensitive",
+              },
+            },
+          ],
         }),
       }),
     );
@@ -428,6 +460,7 @@ describe("TemplateService", () => {
 
     const result = await TemplateService.listForUser(organisationId, "user-1", {
       scope: "ORGANISATION",
+      search: "my",
     });
 
     expect(mockedPrisma.template.findMany).toHaveBeenCalledWith(
@@ -437,6 +470,20 @@ describe("TemplateService", () => {
           ownerUserId: "user-1",
           ownership: "USER_TEMPLATE",
           scope: "ORGANISATION",
+          OR: [
+            {
+              name: {
+                contains: "my",
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: "my",
+                mode: "insensitive",
+              },
+            },
+          ],
         }),
       }),
     );

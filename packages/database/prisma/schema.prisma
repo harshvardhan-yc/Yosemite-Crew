@@ -2339,6 +2339,7 @@ model TaskTemplate {
   description                 String?
   kind                        TaskKind
   defaultRole                 TaskTemplateRole
+  inpatientOnly               Boolean         @default(false)
   defaultMedication           Json?
   defaultObservationToolId    String?
   defaultRecurrence           Json?

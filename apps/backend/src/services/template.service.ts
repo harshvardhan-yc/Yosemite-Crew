@@ -1008,8 +1008,10 @@ export const TemplateService = {
       kind?: TemplateKind | TemplateContractKind;
       status?: TemplateStatus;
       scope?: TemplateScope;
+      search?: string;
     },
   ) {
+    const search = filters?.search?.trim();
     const items = await prisma.template.findMany({
       where: {
         organisationId: ensureId(organisationId, "organisationId"),
@@ -1017,6 +1019,24 @@ export const TemplateService = {
         kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
+        ...(search
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  description: {
+                    contains: search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            }
+          : {}),
       },
       orderBy: [{ updatedAt: "desc" }],
       include: templateInclude,
@@ -1029,13 +1049,33 @@ export const TemplateService = {
     kind?: TemplateKind | TemplateContractKind;
     status?: TemplateStatus;
     scope?: TemplateScope;
+    search?: string;
   }) {
+    const search = filters?.search?.trim();
     const items = await prisma.template.findMany({
       where: {
         ownership: "YC_LIBRARY",
         kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
+        ...(search
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  description: {
+                    contains: search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            }
+          : {}),
       },
       orderBy: [{ updatedAt: "desc" }],
       include: templateInclude,
@@ -1051,8 +1091,10 @@ export const TemplateService = {
       kind?: TemplateKind | TemplateContractKind;
       status?: TemplateStatus;
       scope?: TemplateScope;
+      search?: string;
     },
   ) {
+    const search = filters?.search?.trim();
     const items = await prisma.template.findMany({
       where: {
         organisationId: ensureId(organisationId, "organisationId"),
@@ -1061,6 +1103,24 @@ export const TemplateService = {
         kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
+        ...(search
+          ? {
+              OR: [
+                {
+                  name: {
+                    contains: search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  description: {
+                    contains: search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            }
+          : {}),
       },
       orderBy: [{ updatedAt: "desc" }],
       include: templateInclude,

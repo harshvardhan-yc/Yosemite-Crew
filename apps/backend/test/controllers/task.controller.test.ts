@@ -733,7 +733,7 @@ describe("Task Controllers", () => {
     describe("list", () => {
       it("should list with filters", async () => {
         req.params = { organisationId: "o1" };
-        req.query = { kind: "CUSTOM" };
+        req.query = { kind: "CUSTOM", inpatientOnly: "true", search: "care" };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (
           mockedTaskTemplateService.listForOrganisation as any
@@ -741,7 +741,10 @@ describe("Task Controllers", () => {
         await TaskTemplateController.list(req as any, res as Response);
         expect(
           mockedTaskTemplateService.listForOrganisation,
-        ).toHaveBeenCalledWith("o1", "CUSTOM");
+        ).toHaveBeenCalledWith("o1", "CUSTOM", {
+          inpatientOnly: true,
+          search: "care",
+        });
       });
 
       it("should handle error", async () => {
