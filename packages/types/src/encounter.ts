@@ -48,14 +48,6 @@ const EXT_ADMISSION_EXPECTED_STAY_DAYS =
 const getStringExtension = (extensions: Extension[] | undefined, url: string): string | undefined =>
   extensions?.find((extension) => extension.url === url)?.valueString ?? undefined;
 
-const getIntegerExtension = (
-  extensions: Extension[] | undefined,
-  url: string
-): number | undefined => {
-  const value = extensions?.find((extension) => extension.url === url)?.valueInteger;
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-};
-
 const toEncounterClassCoding = (value: EncounterClass): Coding => ({
   system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode',
   code: value,
@@ -154,25 +146,6 @@ export const fromFHIREncounter = (resource: FHIREncounter): Encounter => {
   const patientReference = resource.subject?.reference ?? '';
   const organisationReference = resource.serviceProvider?.reference ?? '';
   const appointmentReference = resource.appointment?.[0]?.reference ?? '';
-  const hospitalizationExtensions = resource.hospitalization?.extension;
-  const admissionUnitId =
-    getStringExtension(hospitalizationExtensions, EXT_ADMISSION_UNIT_ID) ??
-    getStringExtension(resource.extension, EXT_ADMISSION_UNIT_ID);
-  const admissionExpectedStayDays =
-    getIntegerExtension(hospitalizationExtensions, EXT_ADMISSION_EXPECTED_STAY_DAYS) ??
-    getIntegerExtension(resource.extension, EXT_ADMISSION_EXPECTED_STAY_DAYS);
-  const admittedAt = resource.period?.start ? new Date(resource.period.start) : undefined;
-  const admission =
-    admissionUnitId || admissionExpectedStayDays !== undefined || admittedAt
-      ? {
-          encounterId: resource.id ?? '',
-          organisationId: organisationReference.replace(/^Organization\//, ''),
-          patientId: patientReference.replace(/^Patient\//, ''),
-          unitId: admissionUnitId,
-          expectedStayDays: admissionExpectedStayDays,
-          admittedAt: admittedAt ?? new Date(),
-        }
-      : undefined;
 
   return {
     id: resource.id,
@@ -194,6 +167,5 @@ export const fromFHIREncounter = (resource: FHIREncounter): Encounter => {
     reason: resource.reasonCode?.[0]?.text ?? undefined,
     periodStart: resource.period?.start ? new Date(resource.period.start) : undefined,
     periodEnd: resource.period?.end ? new Date(resource.period.end) : undefined,
-    admission,
   };
 };

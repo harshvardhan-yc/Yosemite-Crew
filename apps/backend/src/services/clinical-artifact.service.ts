@@ -217,7 +217,7 @@ const normalizePrescriptionItemInputs = (
       return {
         medication: String(item ?? "").trim(),
         sortOrder: index,
-      };
+      } as PrescriptionItemInput;
     }
 
     return {
@@ -255,10 +255,7 @@ const normalizePrescriptionItemInputs = (
         "inventoryItemSku",
         "sku",
       ]),
-      batchId: readPrescriptionItemString(item, [
-        "inventoryBatchId",
-        "batchId",
-      ]),
+      batchId: readPrescriptionItemString(item, ["batchId"]),
       batchNumber: readPrescriptionItemString(item, ["batchNumber"]),
       lotNumber: readPrescriptionItemString(item, ["lotNumber"]),
       expiryDate:
@@ -267,7 +264,7 @@ const normalizePrescriptionItemInputs = (
           : undefined,
       metadata: isRecord(item.metadata) ? item.metadata : null,
       sortOrder: index,
-    };
+    } as PrescriptionItemInput;
   });
 };
 
@@ -1261,7 +1258,9 @@ export const ClinicalArtifactService = {
         organisationId,
         prescriptionId: artifact.prescription.id,
         medications: artifact.prescription.medications,
-        metadata: artifact.prescription.metadata!,
+        metadata: artifact.prescription.metadata as
+          | Prisma.InputJsonValue
+          | undefined,
         requestedBy: artifact.artifact.authorId,
         context: {
           appointmentId: artifact.artifact.appointmentId,
@@ -1368,7 +1367,9 @@ export const ClinicalArtifactService = {
         organisationId: updated.artifact.organisationId,
         prescriptionId: updated.prescription.id,
         medications: updated.prescription.medications,
-        metadata: updated.prescription.metadata!,
+        metadata: updated.prescription.metadata as
+          | Prisma.InputJsonValue
+          | undefined,
         requestedBy: updated.artifact.authorId,
         context: {
           appointmentId: updated.artifact.appointmentId,
@@ -1380,7 +1381,9 @@ export const ClinicalArtifactService = {
         {
           organisationId: updated.artifact.organisationId,
           prescriptionId: updated.prescription.id,
-          metadata: updated.prescription.metadata!,
+          metadata: updated.prescription.metadata as
+            | Prisma.InputJsonValue
+            | undefined,
         },
       );
     }
