@@ -1256,7 +1256,11 @@ export const InvoiceService = {
       return toInvoiceRecord(doc);
     }
 
-    const summary = await getInvoiceFinancialSummary(doc.id, doc.totalAmount);
+    const summary = await getInvoiceFinancialSummary(
+      doc.id,
+      doc.totalAmount,
+      doc.depositCollectedAmount ?? 0,
+    );
     if (summary.balance <= 0) {
       const settled = await recordInvoicePaidState(
         doc,
@@ -1560,6 +1564,7 @@ export const InvoiceService = {
     const summary = await getInvoiceFinancialSummary(
       readyInvoice.id,
       readyInvoice.totalAmount,
+      readyInvoice.depositCollectedAmount ?? 0,
     );
     if (summary.paid > 0 || summary.credited > 0) {
       throw new InvoiceServiceError(
@@ -1620,7 +1625,12 @@ export const InvoiceService = {
       orderBy: { createdAt: "desc" },
     });
 
-    return docs.map((d) => toInvoiceRecord(d));
+    return Promise.all(
+      docs.map(async (doc) => ({
+        ...toInvoiceRecord(doc),
+        ...(await loadInvoiceFinancialDetails(doc.id)),
+      })),
+    );
   },
 
   async bootstrapForAppointment(
@@ -2135,6 +2145,11 @@ export const InvoiceService = {
 
     let emailSent = false;
     if (checkout?.url && invoice.parentId) {
+      const summary = await getInvoiceFinancialSummary(
+        invoice.id,
+        invoice.totalAmount,
+        invoice.depositCollectedAmount ?? 0,
+      );
       const parent = await prisma.parent.findUnique({
         where: { id: invoice.parentId },
         select: { email: true, firstName: true, lastName: true },
@@ -2149,8 +2164,8 @@ export const InvoiceService = {
         ? [parent.firstName, parent.lastName].filter(Boolean).join(" ")
         : undefined;
       const amountText =
-        typeof invoice.totalAmount === "number" && invoice.currency
-          ? `${invoice.currency.toUpperCase()} ${invoice.totalAmount.toFixed(2)}`
+        typeof summary.balance === "number" && invoice.currency
+          ? `${invoice.currency.toUpperCase()} ${summary.balance.toFixed(2)}`
           : undefined;
 
       if (parent?.email) {

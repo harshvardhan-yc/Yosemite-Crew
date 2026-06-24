@@ -662,7 +662,11 @@ describe("InvoiceService", () => {
       "user-1",
     );
 
-    expect(getInvoiceFinancialSummary).toHaveBeenCalledWith("inv_visit", 118);
+    expect(getInvoiceFinancialSummary).toHaveBeenCalledWith(
+      "inv_visit",
+      118,
+      0,
+    );
     expect(prisma.invoice.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "inv_visit" },
@@ -2008,6 +2012,11 @@ describe("InvoiceService", () => {
       FinancePaymentService.createCheckoutSessionForInvoice as jest.Mock
     ).mockResolvedValue({
       url: "https://checkout",
+    });
+    (getInvoiceFinancialSummary as jest.Mock).mockResolvedValueOnce({
+      paid: 30,
+      credited: 0,
+      balance: 60,
     });
     (prisma.invoice.findUnique as jest.Mock).mockResolvedValue({
       id: "inv_8",
