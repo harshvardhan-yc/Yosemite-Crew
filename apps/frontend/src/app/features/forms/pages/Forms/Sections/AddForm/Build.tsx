@@ -4,9 +4,6 @@ import {
   FormField,
   FormFieldType,
   FormsProps,
-  TASK_AUDIENCE_FIELD_OPTIONS,
-  TASK_CATEGORY_FIELD_OPTIONS,
-  TASK_RECURRENCE_FIELD_OPTIONS,
   buildMedicationFields,
 } from '@/app/features/forms/types/forms';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
@@ -147,6 +144,25 @@ const defaultRadioOptions = [
   { label: 'Option B', value: 'option_b' },
 ];
 
+const MEDICINE_INVENTORY_CATEGORIES = new Set([
+  'medicine',
+  'vaccine',
+  'supplement',
+  'iv/fluid therapy',
+]);
+
+const isMedicineInventoryItem = (item: InventoryApiItem): boolean => {
+  const normalized = mapApiItemToInventoryItem(item);
+  const category = `${normalized.basicInfo.category ?? item.category ?? ''}`.trim().toLowerCase();
+  const itemType =
+    `${normalized.classification.itemType ?? normalized.basicInfo.itemType ?? item.itemType ?? ''}`
+      .trim()
+      .toLowerCase();
+  return (
+    MEDICINE_INVENTORY_CATEGORIES.has(category) || itemType === 'drug' || itemType === 'medical'
+  );
+};
+
 const buildMedicationTemplateGroup = (id: string): FormField => {
   const templateId = `${id}_template`;
   return {
@@ -156,26 +172,6 @@ const buildMedicationTemplateGroup = (id: string): FormField => {
     meta: { template: true, medicineName: 'Medication template' } as any,
     fields: buildMedicationFields(templateId, '-'),
   };
-};
-
-const isMedicalInventoryItem = (item: InventoryApiItem): boolean => {
-  const normalized = mapApiItemToInventoryItem(item);
-  const itemType =
-    normalized.classification.itemType || normalized.basicInfo.itemType || item.itemType || '';
-  const category = `${normalized.basicInfo.category ?? item.category ?? ''}`.trim().toLowerCase();
-  const subCategory = `${normalized.basicInfo.subCategory ?? item.subCategory ?? ''}`
-    .trim()
-    .toLowerCase();
-  const name = `${normalized.basicInfo.name ?? item.name ?? ''}`.trim().toLowerCase();
-  return (
-    itemType.toLowerCase() === 'drug' ||
-    itemType.toLowerCase() === 'medical' ||
-    itemType.toUpperCase() === 'MEDICAL' ||
-    category === 'medicine' ||
-    subCategory.includes('medicine') ||
-    name.includes('med') ||
-    name.includes('drug')
-  );
 };
 
 const defaultTaskBlockFields = (prefix: string, taskNumber: number): FormField[] => [
@@ -188,47 +184,9 @@ const defaultTaskBlockFields = (prefix: string, taskNumber: number): FormField[]
     meta: { taskBlockKey: 'name' },
   },
   {
-    id: `${prefix}_category`,
-    type: 'dropdown',
-    label: 'Category',
-    options: TASK_CATEGORY_FIELD_OPTIONS,
-    defaultValue: 'CARE',
-    meta: { taskBlockKey: 'category' },
-  },
-  {
-    id: `${prefix}_taskKind`,
-    type: 'dropdown',
-    label: 'Task kind',
-    options: [
-      { label: 'Medication', value: 'MEDICATION' },
-      { label: 'Observation tool', value: 'OBSERVATION_TOOL' },
-      { label: 'Hygiene', value: 'HYGIENE' },
-      { label: 'Diet', value: 'DIET' },
-      { label: 'Custom', value: 'CUSTOM' },
-    ],
-    defaultValue: 'CUSTOM',
-    meta: { taskBlockKey: 'taskKind' },
-  },
-  {
-    id: `${prefix}_audience`,
-    type: 'dropdown',
-    label: 'Audience',
-    options: TASK_AUDIENCE_FIELD_OPTIONS,
-    defaultValue: 'EMPLOYEE_TASK',
-    meta: { taskBlockKey: 'audience' },
-  },
-  {
-    id: `${prefix}_assignedRole`,
-    type: 'dropdown',
-    label: 'Assigned role',
-    options: TASK_AUDIENCE_FIELD_OPTIONS,
-    defaultValue: 'EMPLOYEE_TASK',
-    meta: { taskBlockKey: 'assignedRole' },
-  },
-  {
     id: `${prefix}_dayOffset`,
     type: 'number',
-    label: 'Day offset',
+    label: 'Day after start',
     placeholder: '0',
     defaultValue: String(taskNumber - 1),
     meta: { taskBlockKey: 'dayOffset' },
@@ -240,14 +198,6 @@ const defaultTaskBlockFields = (prefix: string, taskNumber: number): FormField[]
     placeholder: '09:00',
     defaultValue: '09:00',
     meta: { taskBlockKey: 'timeOfDay' },
-  },
-  {
-    id: `${prefix}_recurrence`,
-    type: 'dropdown',
-    label: 'Recurrence',
-    options: TASK_RECURRENCE_FIELD_OPTIONS,
-    defaultValue: 'ONCE',
-    meta: { taskBlockKey: 'recurrence.type' },
   },
   {
     id: `${prefix}_reminderOffsetMinutes`,
@@ -777,8 +727,8 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
   useEffect(() => {
     if (!primaryOrgId) return;
     setLoadingMedicines(true);
-    fetchInventoryItems(primaryOrgId, { category: 'Medicine' })
-      .then((items) => setMedicines(items.filter(isMedicalInventoryItem)))
+    fetchInventoryItems(primaryOrgId)
+      .then((items) => setMedicines(items.filter(isMedicineInventoryItem)))
       .catch((err) => console.error('Failed to load medicines:', err))
       .finally(() => setLoadingMedicines(false));
   }, [primaryOrgId]);

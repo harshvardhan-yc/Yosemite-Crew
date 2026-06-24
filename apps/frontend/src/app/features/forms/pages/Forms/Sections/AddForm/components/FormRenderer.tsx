@@ -94,6 +94,7 @@ type FormRendererProps = {
   onChange: (id: string, value: any) => void;
   readOnly?: boolean;
   depth?: number;
+  parentLabel?: string;
 };
 
 export const FormRenderer: React.FC<FormRendererProps> = ({
@@ -102,6 +103,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
   onChange,
   readOnly = false,
   depth = 0,
+  parentLabel,
 }) => {
   const preventReadOnlyFocus: React.PointerEventHandler<HTMLDivElement> = (e) => {
     if (!readOnly) return;
@@ -128,6 +130,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
         const fieldWithLabel: FormField = { ...field, label: labelForField(field) };
         if (field.type === 'group') {
           const medicationGroup = isMedicationLikeGroup(field);
+          const nextParentLabel = field.label?.trim() || parentLabel;
           return (
             <div
               key={field.id}
@@ -140,6 +143,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
                 onChange={onChange}
                 readOnly={readOnly}
                 depth={depth + 1}
+                parentLabel={nextParentLabel}
               />
             </div>
           );
@@ -149,10 +153,12 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
         const existingValue = values[field.id];
         const defaultValue = (field as any).defaultValue;
         const value = existingValue ?? defaultValue ?? getFallbackValue(field);
+        const fieldLabel =
+          parentLabel && fieldWithLabel.label?.trim() === parentLabel ? '' : fieldWithLabel.label;
         return (
           <Component
             key={field.id}
-            field={fieldWithLabel}
+            field={{ ...fieldWithLabel, label: fieldLabel }}
             value={value}
             onChange={(v: any) => onChange(field.id, v)}
             readOnly={readOnly}

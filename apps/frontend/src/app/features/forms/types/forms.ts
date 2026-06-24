@@ -215,9 +215,9 @@ const richTextField = (
  */
 const canonicalFieldToFormField = (field: TemplateFieldDefinition): FormField => {
   const unit = (field.rules as { unit?: string } | undefined)?.unit;
-  const extra: Partial<FormField> = { required: field.required };
+  const extra: Partial<FormField> = { required: field.required, meta: { templateDefault: true } };
   if (unit) {
-    (extra as { meta?: unknown }).meta = { unit };
+    (extra as { meta?: Record<string, unknown> }).meta = { templateDefault: true, unit };
   }
   switch (field.type) {
     case 'richText':

@@ -6,6 +6,7 @@ import {
   ensureSingleSignatureAtEnd,
   buildTemplateSchemaSnapshot,
   buildTemplatePayload,
+  mapTemplateToUI,
 } from '@/app/lib/forms';
 import type { FormField, FormsProps } from '@/app/features/forms/types/forms';
 
@@ -292,6 +293,50 @@ describe('buildTemplateSchemaSnapshot canonical blueprint merge', () => {
     expect(snapshot.sections[1].fields[0].defaultValue).toBe(7);
   });
 
+  it('does not duplicate canonical discharge fields into custom_fields', () => {
+    const snapshot = buildTemplateSchemaSnapshot(
+      {
+        name: 'Discharge',
+        category: 'Discharge Form',
+        usage: 'Internal',
+        updatedBy: 'user-1',
+        lastUpdated: '',
+        schema: [
+          {
+            id: 'summary_section',
+            type: 'group',
+            label: 'Discharge summary',
+            fields: [
+              {
+                id: 'summaryText',
+                type: 'richtext',
+                label: 'Discharge summary',
+                defaultValue: '<p>ok</p>',
+              },
+            ] as unknown as FormField[],
+          },
+          {
+            id: 'follow_up_section',
+            type: 'group',
+            label: 'Follow up',
+            fields: [
+              {
+                id: 'followUpInDays',
+                type: 'number',
+                label: 'Follow up in (days)',
+                defaultValue: 7,
+              },
+            ] as unknown as FormField[],
+          },
+        ] as unknown as FormField[],
+      },
+      'DISCHARGE_SUMMARY'
+    );
+
+    expect(snapshot.sections.map((section) => section.id)).toEqual(['summary', 'follow_up']);
+    expect(snapshot.sections.at(-1)?.fields.map((field) => field.key)).toEqual(['followUpInDays']);
+  });
+
   it('keeps task schedule defaults on the canonical taskBlocks field', () => {
     const snapshot = buildTemplateSchemaSnapshot(
       {
@@ -364,79 +409,150 @@ describe('buildTemplatePayload appliesTo linking', () => {
     const appliesTo = (payload.rules as { appliesTo?: Record<string, unknown> }).appliesTo;
     expect(appliesTo?.encounterModes).toEqual(['INPATIENT']);
     expect(payload.scope).toBe('INPATIENT');
-    expect(payload.kind).toBe('INPATIENT_SCHEDULE');
+    expect(payload.kind).toBe('TASK_ASSIGNMENT');
   });
 
-  it('writes task-template rows into inpatient schedule taskBlocks', () => {
+  it('serializes YC default templates as library-owned without an organisation binding', () => {
     const payload = buildTemplatePayload(
       form({
-        category: 'Task Template',
-        schema: [
-          {
-            id: 'task_blocks',
-            type: 'group',
-            label: 'Schedule tasks',
-            meta: { taskGroup: true },
-            fields: [
-              {
-                id: 'block-1',
-                type: 'group',
-                label: 'Vitals check',
-                meta: { taskBlock: true },
-                fields: [
-                  {
-                    id: 'block-1_name',
-                    type: 'input',
-                    label: 'Task name',
-                    defaultValue: 'Vitals check',
-                    meta: { taskBlockKey: 'name' },
-                  },
-                  {
-                    id: 'block-1_dayOffset',
-                    type: 'number',
-                    label: 'Day offset',
-                    defaultValue: '2',
-                    meta: { taskBlockKey: 'dayOffset' },
-                  },
-                  {
-                    id: 'block-1_timeOfDay',
-                    type: 'input',
-                    label: 'Time',
-                    defaultValue: '08:30',
-                    meta: { taskBlockKey: 'timeOfDay' },
-                  },
-                  {
-                    id: 'block-1_recurrence',
-                    type: 'dropdown',
-                    label: 'Recurrence',
-                    defaultValue: 'DAILY',
-                    meta: { taskBlockKey: 'recurrence.type' },
-                  },
-                ],
-              },
-            ],
-          },
-        ] as unknown as FormField[],
+        category: 'Prescription',
+        templateSource: 'YC_LIBRARY',
       }),
       'org-1'
     );
-    const scheduleSection = payload.schemaSnapshot.sections.find(
-      (section) => section.id === 'schedule'
-    );
-    const taskBlocks = scheduleSection?.fields.find((field) => field.key === 'taskBlocks')
-      ?.defaultValue as Array<Record<string, unknown>>;
 
-    expect(taskBlocks).toEqual([
-      expect.objectContaining({
-        id: 'block-1',
-        name: 'Vitals check',
-        dayOffset: 2,
-        timeOfDay: '08:30',
-        taskKind: 'CUSTOM',
-        category: 'CARE',
-        audience: 'EMPLOYEE_TASK',
-        recurrence: { type: 'DAILY' },
-      }),
-    ]);
+    expect(payload.ownership).toBe('YC_LIBRARY');
+    expect(payload.organisationId).toBeUndefined();
+    expect(payload.kind).toBe('PRESCRIPTION');
+  });
+
+  it('drops empty legacy prescription instructions and notes sections when mapping to UI', () => {
+    const mapped = mapTemplateToUI({
+      id: 'tpl-prescription',
+      organisationId: 'org-1',
+      ownerUserId: null,
+      ownership: 'YC_LIBRARY',
+      kind: 'PRESCRIPTION',
+      name: 'Prescription',
+      description: null,
+      status: 'DRAFT',
+      scope: 'ORGANISATION',
+      rules: {},
+      latestVersion: 1,
+      publishedVersion: null,
+      createdBy: 'u1',
+      updatedBy: 'u1',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      versions: [
+        {
+          id: 'ver-1',
+          version: 1,
+          templateId: 'tpl-prescription',
+          schemaSnapshot: {
+            sections: [
+              {
+                id: 'medications',
+                title: 'Medications',
+                fields: [
+                  {
+                    key: 'medicationLine',
+                    label: 'Medication lines',
+                    type: 'medicationLine',
+                    repeatable: true,
+                  },
+                ],
+              },
+              { id: 'instructions', title: 'Instructions', fields: [] },
+              { id: 'notes', title: 'Notes', fields: [] },
+            ],
+          },
+          renderConfigSnapshot: null,
+          validationSnapshot: null,
+          createdBy: 'u1',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+    } as any);
+
+    expect(mapped.schema).toHaveLength(1);
+    expect(mapped.schema[0].id).toBe('medications');
+  });
+});
+
+describe('mapTemplateToUI ownership fallback', () => {
+  it('derives YC default ownership from source when ownership is missing', () => {
+    const mapped = mapTemplateToUI({
+      id: 'tpl-1',
+      organisationId: 'org-1',
+      ownerUserId: null,
+      kind: 'SOAP_NOTE',
+      name: 'SOAP',
+      description: null,
+      status: 'DRAFT',
+      scope: 'ORGANISATION',
+      rules: {},
+      latestVersion: 1,
+      publishedVersion: null,
+      createdBy: 'u1',
+      updatedBy: 'u1',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      source: 'YC_LIBRARY',
+    } as any);
+
+    expect(mapped.templateSource).toBe('YC_LIBRARY');
+  });
+
+  it('maps organisation source to org template ownership when ownership is missing', () => {
+    const mapped = mapTemplateToUI({
+      id: 'tpl-2',
+      organisationId: 'org-1',
+      ownerUserId: null,
+      kind: 'SOAP_NOTE',
+      name: 'SOAP',
+      description: null,
+      status: 'DRAFT',
+      scope: 'ORGANISATION',
+      rules: {},
+      latestVersion: 1,
+      publishedVersion: null,
+      createdBy: 'u1',
+      updatedBy: 'u1',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      source: 'ORGANISATION',
+    } as any);
+
+    expect(mapped.templateSource).toBe('ORG_TEMPLATE');
+  });
+
+  it('falls back to appliesTo service and package ids when catalog links are missing', () => {
+    const mapped = mapTemplateToUI({
+      id: 'tpl-3',
+      organisationId: 'org-1',
+      ownerUserId: null,
+      ownership: 'ORG_TEMPLATE',
+      kind: 'SOAP_NOTE',
+      name: 'SOAP',
+      description: null,
+      status: 'DRAFT',
+      scope: 'ORGANISATION',
+      rules: {
+        appliesTo: {
+          serviceIds: ['svc-1'],
+          packageIds: ['pkg-1'],
+        },
+      },
+      latestVersion: 1,
+      publishedVersion: null,
+      createdBy: 'u1',
+      updatedBy: 'u1',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    } as any);
+
+    expect(mapped.services).toEqual(['svc-1', 'pkg-1']);
   });
 });

@@ -388,7 +388,7 @@ describe('Build form step', () => {
     renderBuild(baseFormData({ schema: [medicationGroup] }));
 
     await waitFor(() => {
-      expect(fetchInventoryItems).toHaveBeenCalledWith('org-1', { category: 'Medicine' });
+      expect(fetchInventoryItems).toHaveBeenCalledWith('org-1');
     });
 
     await waitFor(() => {
@@ -449,6 +449,7 @@ describe('Build form step', () => {
       expect(screen.getByText(/Prednisone/)).toBeInTheDocument();
     });
     expect(screen.queryByText(/Gauze/)).not.toBeInTheDocument();
+    expect(fetchInventoryItems).toHaveBeenCalledWith('org-1');
   });
 
   describe('YC-default structure lock', () => {
@@ -516,13 +517,8 @@ describe('Build form step', () => {
       expect(taskBlock.meta?.taskBlock).toBe(true);
       expect(taskBlock.fields?.map((field) => field.meta?.taskBlockKey)).toEqual([
         'name',
-        'category',
-        'taskKind',
-        'audience',
-        'assignedRole',
         'dayOffset',
         'timeOfDay',
-        'recurrence.type',
         'reminderOffsetMinutes',
         'additionalNotes',
       ]);

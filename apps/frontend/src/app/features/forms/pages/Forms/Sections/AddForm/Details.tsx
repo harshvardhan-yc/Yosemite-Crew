@@ -38,6 +38,9 @@ const YC_DEFAULT_CATEGORIES = new Set<FormsCategory>([
   'Consent form',
 ]);
 
+const getTemplateTypeOption = (templateSource?: FormsProps['templateSource']) =>
+  templateSource === 'YC_LIBRARY' ? 'YC_LIBRARY' : 'CUSTOM';
+
 const Details = ({
   formData,
   setFormData,
@@ -234,7 +237,7 @@ const Details = ({
             />
             <LabelDropdown
               placeholder="Template type"
-              defaultOption={isYcDefault ? 'YC_LIBRARY' : 'CUSTOM'}
+              defaultOption={getTemplateTypeOption(formData.templateSource)}
               onSelect={(option) => handleOwnershipChange(option.value)}
               options={[
                 { label: 'YC default (locked structure)', value: 'YC_LIBRARY' },

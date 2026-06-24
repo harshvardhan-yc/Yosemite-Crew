@@ -1,5 +1,6 @@
 import {
   CANONICAL_DISCHARGE_STRUCTURE,
+  CANONICAL_PRESCRIPTION_STRUCTURE,
   CANONICAL_SOAP_STRUCTURE,
   CANONICAL_VITALS_STRUCTURE,
   Form,
@@ -11,8 +12,11 @@ import {
   toFormResponseDTO,
   TemplateKind,
   TemplateLike,
+  TemplateFieldDefinition,
   TemplateSchemaSnapshot,
+  templateSchemaToFormFields,
   TemplateStatus,
+  TemplateOwnershipType,
   TemplateUpsertInput,
 } from '@yosemite-crew/types';
 import {
@@ -41,10 +45,18 @@ const templateKindToCategoryMap: Record<TemplateKind, FormsCategory> = {
   CONSENT: 'Consent form',
   SOAP_NOTE: 'SOAP',
   VITAL_RECORD: 'Vitals',
-  PRESCRIPTION: 'Prescription Template',
+  PRESCRIPTION: 'Prescription',
   DISCHARGE_SUMMARY: 'Discharge Form',
   TASK_ASSIGNMENT: 'Task Template',
   INPATIENT_SCHEDULE: 'Inpatient Schedule',
+};
+
+const templateSourceToOwnership = (
+  source?: FormsProps['templateSource']
+): TemplateOwnershipType => {
+  if (source === 'YC_LIBRARY') return 'YC_LIBRARY';
+  if (source === 'USER_TEMPLATE') return 'USER_TEMPLATE';
+  return 'ORG_TEMPLATE';
 };
 
 const labelToStatusMap: Record<FormsStatus, Form['status']> = {
@@ -57,6 +69,55 @@ const toList = (val?: string | string[]): string[] => {
   if (!val) return [];
   return Array.isArray(val) ? val : [val];
 };
+
+const templateServicesFromLinks = (template: TemplateLike): string[] => {
+  const catalogItemIds = template.catalogItemIds ?? [];
+  if (catalogItemIds.length > 0) return catalogItemIds;
+
+  const rules = template.rules as
+    | {
+        appliesTo?: {
+          serviceIds?: unknown;
+          packageIds?: unknown;
+        };
+      }
+    | null
+    | undefined;
+  return [
+    ...toStringList(rules?.appliesTo?.serviceIds),
+    ...toStringList(rules?.appliesTo?.packageIds),
+  ];
+};
+
+const asDate = (value: unknown): Date => {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date();
+};
+
+const toStringList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item): item is string => typeof item === 'string' && item.trim().length > 0
+    );
+  }
+  return typeof value === 'string' && value.trim().length > 0 ? [value] : [];
+};
+
+const SPECIES_LABELS = new Map<string, string>([
+  ['canine', 'Canine'],
+  ['feline', 'Feline'],
+  ['equine', 'Equine'],
+]);
+
+const normalizeSpeciesValue = (value: string): string =>
+  SPECIES_LABELS.get(value.trim().toLowerCase()) ?? value;
+
+const normalizeSpeciesList = (value: unknown): string[] =>
+  toStringList(value).map(normalizeSpeciesValue);
 
 const normalizeUsageLabel = (usage: string): FormsUsage => {
   const normalized = usage.toLowerCase().replace(/[\s-]/g, '');
@@ -104,12 +165,13 @@ export const categoryToTemplateKind = (category?: FormsCategory): TemplateKind |
       return 'SOAP_NOTE';
     case 'Vitals':
       return 'VITAL_RECORD';
+    case 'Prescription':
     case 'Prescription Template':
       return 'PRESCRIPTION';
     case 'Discharge Form':
       return 'DISCHARGE_SUMMARY';
     case 'Task Template':
-      return 'INPATIENT_SCHEDULE';
+      return 'TASK_ASSIGNMENT';
     case 'Inpatient Schedule':
       return 'INPATIENT_SCHEDULE';
     case 'Custom':
@@ -204,6 +266,27 @@ const resolveTemplateStatus = (
 };
 
 const templateToForm = (template: TemplateLike): Form => {
+  const sanitizePrescriptionSchema = (snapshot: TemplateSchemaSnapshot): TemplateSchemaSnapshot => {
+    const sections = snapshot.sections.filter((section) => {
+      if (section.fields.length > 0) return true;
+      const title = section.title.trim().toLowerCase();
+      return title !== 'instructions' && title !== 'notes';
+    });
+    return sections.length === snapshot.sections.length ? snapshot : { sections };
+  };
+
+  const latestSchemaFromTemplate = (): TemplateSchemaSnapshot => {
+    const version = template.versions?.find(
+      (item) =>
+        item.version === template.publishedVersion || item.version === template.latestVersion
+    );
+    if (version?.schemaSnapshot && typeof version.schemaSnapshot === 'object') {
+      const snapshot = version.schemaSnapshot as TemplateSchemaSnapshot;
+      return template.kind === 'PRESCRIPTION' ? sanitizePrescriptionSchema(snapshot) : snapshot;
+    }
+    return { sections: [] };
+  };
+
   if (templateMapper.isPlanDefinitionResourceKind(template.kind)) {
     const resource = templateMapper.templateToPlanDefinition(template);
     const input = templateMapper.planDefinitionToTemplateInput(resource, {
@@ -224,12 +307,12 @@ const templateToForm = (template: TemplateLike): Form => {
       description: input.description,
       visibilityType: 'Internal',
       status: template.status === 'ARCHIVED' ? 'archived' : 'draft',
-      schema: [],
-      serviceId: template.catalogItemIds,
+      schema: templateSchemaToFormFields(latestSchemaFromTemplate()),
+      serviceId: templateServicesFromLinks(template),
       createdBy: template.createdBy,
       updatedBy: template.updatedBy,
-      createdAt: template.createdAt,
-      updatedAt: template.updatedAt,
+      createdAt: asDate(template.createdAt),
+      updatedAt: asDate(template.updatedAt),
     };
   }
 
@@ -252,22 +335,39 @@ const templateToForm = (template: TemplateLike): Form => {
     description: input.description,
     visibilityType: 'Internal',
     status: resolveTemplateStatus(template.status, input.schemaSnapshot.sections.length),
-    schema: mapFormToUI(questionnaireToForm(resource)).schema,
-    serviceId: template.catalogItemIds,
+    schema: templateSchemaToFormFields(latestSchemaFromTemplate()),
+    serviceId: templateServicesFromLinks(template),
     createdBy: template.createdBy,
     updatedBy: template.updatedBy,
-    createdAt: template.createdAt,
-    updatedAt: template.updatedAt,
+    createdAt: asDate(template.createdAt),
+    updatedAt: asDate(template.updatedAt),
   };
 };
 
 export const mapTemplateToUI = (template: TemplateLike): FormsProps => ({
   ...mapFormToUI(templateToForm(template)),
+  species: normalizeSpeciesList(
+    (template.rules as { appliesTo?: { species?: unknown }; species?: unknown } | null)?.appliesTo
+      ?.species ?? (template.rules as { species?: unknown } | null)?.species
+  ),
   category: templateKindToCategory(template.kind),
   status: templateStatusToLabel(template.status),
   templateId: template.id,
   templateKind: template.kind,
-  templateSource: template.ownership,
+  templateSource:
+    template.ownership ??
+    (template.source === 'YC_LIBRARY'
+      ? 'YC_LIBRARY'
+      : template.source === 'USER'
+        ? 'USER_TEMPLATE'
+        : template.source === 'ORGANISATION'
+          ? 'ORG_TEMPLATE'
+          : template.kind === 'SOAP_NOTE' ||
+              template.kind === 'DISCHARGE_SUMMARY' ||
+              template.kind === 'PRESCRIPTION' ||
+              template.kind === 'VITAL_RECORD'
+            ? 'ORG_TEMPLATE'
+            : undefined),
   templateVersion: template.publishedVersion ?? template.latestVersion,
   isTemplateBacked: true,
 });
@@ -319,6 +419,13 @@ const toTemplateField = (
   };
 };
 
+const flattenTemplateFields = (fields: FormField[]): FormField[] =>
+  fields.flatMap((field) => {
+    if (field.type !== 'group') return [field];
+    const children = flattenTemplateFields(field.fields ?? []);
+    return children.length > 0 ? children : [];
+  });
+
 const fieldsToTemplateSection = (
   id: string,
   title: string,
@@ -328,14 +435,7 @@ const fieldsToTemplateSection = (
   id,
   title,
   order,
-  fields: fields.flatMap((field, index) => {
-    if (field.type === 'group') {
-      return (field.fields?.length ? field.fields : [field]).map((nested, nestedIndex) =>
-        toTemplateField(nested, index + nestedIndex)
-      );
-    }
-    return [toTemplateField(field, index)];
-  }),
+  fields: flattenTemplateFields(fields).map(toTemplateField),
 });
 
 const clinicalBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> = {
@@ -529,9 +629,15 @@ const mergeFieldDefaults = (
   fields: FormField[]
 ): TemplateSchemaSnapshot => {
   const authoredById = new Map<string, FormField>();
-  for (const field of fields) {
-    authoredById.set(field.id, field);
-  }
+  const collectAuthoredFields = (items: FormField[]): void => {
+    for (const field of items) {
+      authoredById.set(field.id, field);
+      if (field.type === 'group') {
+        collectAuthoredFields(field.fields ?? []);
+      }
+    }
+  };
+  collectAuthoredFields(fields);
 
   return {
     sections: blueprint.sections.map((section) => ({
@@ -541,6 +647,7 @@ const mergeFieldDefaults = (
         if (!authored) return { ...field };
 
         const authoredDefault = (authored as FormField & { defaultValue?: unknown }).defaultValue;
+        const authoredRules = authored.meta ?? {};
         return {
           ...field,
           label: authored.label || field.label,
@@ -551,7 +658,7 @@ const mergeFieldDefaults = (
               : authoredDefault,
           rules: {
             ...(field.rules ?? {}),
-            ...(authored.meta ?? {}),
+            ...authoredRules,
           },
         };
       }),
@@ -633,7 +740,9 @@ const taskBlocksFromForm = (form: FormsProps): TaskBlockValue[] =>
     )
     .filter(
       (field): field is FormField & { type: 'group'; fields?: FormField[] } =>
-        field.type === 'group' && Boolean(field.meta?.taskBlock)
+        field.type === 'group' &&
+        (Boolean(field.meta?.taskBlock) ||
+          field.fields?.some((nested) => Boolean(nested.meta?.taskBlockKey)))
     )
     .map(taskBlockFromGroup)
     .filter((block) => block.name.trim().length > 0);
@@ -659,12 +768,105 @@ const getBlueprintFieldKeys = (snapshot?: TemplateSchemaSnapshot): Set<string> =
 };
 
 const filterCustomFields = (fields: FormField[] = [], blueprintKeys: Set<string>): FormField[] =>
-  fields.filter((field) => !blueprintKeys.has(field.id));
+  fields.flatMap<FormField>((field) => {
+    if (field.type !== 'group') {
+      return blueprintKeys.has(field.id) ? [] : [field];
+    }
+
+    const filteredChildren = filterCustomFields(field.fields ?? [], blueprintKeys);
+    if (filteredChildren.length === 0) return [];
+    return [{ ...(field as FormField), fields: filteredChildren }];
+  });
+
+type MedicationRow = {
+  inventoryItemId?: string;
+  medicineId?: string;
+  medicineName?: string;
+  dosage?: string;
+  route?: string;
+  frequency?: string;
+  durationDays?: string;
+  instructions?: string;
+  qty?: string;
+  price?: string | number;
+};
+
+const medicationFieldValue = (field: FormField): string | number | undefined => {
+  const defaultValue = (field as FormField & { defaultValue?: unknown }).defaultValue;
+  if (typeof defaultValue === 'string' && defaultValue.trim().length > 0) return defaultValue;
+  if (typeof defaultValue === 'number') return defaultValue;
+  if (typeof field.placeholder === 'string' && field.placeholder.trim().length > 0) {
+    return field.placeholder;
+  }
+  return undefined;
+};
+
+const medicationRowFromGroup = (group: FormField & { fields?: FormField[] }): MedicationRow => {
+  const row: MedicationRow = {
+    inventoryItemId: (group.meta?.inventoryItemId as string | undefined) ?? group.meta?.medicineId,
+    medicineId: (group.meta?.medicineId as string | undefined) ?? group.meta?.inventoryItemId,
+    medicineName: (group.meta?.medicineName as string | undefined) ?? group.label,
+  };
+
+  for (const field of group.fields ?? []) {
+    const value = medicationFieldValue(field);
+    if (value === undefined) continue;
+    if (field.id.endsWith('_name')) row.medicineName = String(value);
+    else if (field.id.endsWith('_dosage')) row.dosage = String(value);
+    else if (field.id.endsWith('_route')) row.route = String(value);
+    else if (field.id.endsWith('_frequency')) row.frequency = String(value);
+    else if (field.id.endsWith('_duration')) row.durationDays = String(value);
+    else if (field.id.endsWith('_qty')) row.qty = String(value);
+    else if (field.id.endsWith('_price')) row.price = value;
+    else if (field.id.endsWith('_remark') || field.id.endsWith('_instructions')) {
+      row.instructions = String(value);
+    }
+  }
+
+  return row;
+};
+
+const collectMedicationRows = (fields: FormField[] = []): MedicationRow[] => {
+  const rows: MedicationRow[] = [];
+  const walk = (items: FormField[]): void => {
+    for (const item of items) {
+      if (item.type === 'group') {
+        if ((item.meta as { medicineId?: string } | undefined)?.medicineId) {
+          rows.push(medicationRowFromGroup(item));
+          continue;
+        }
+        walk(item.fields ?? []);
+      }
+    }
+  };
+  walk(fields);
+  return rows;
+};
+
+const buildPrescriptionTemplateSnapshot = (form: FormsProps): TemplateSchemaSnapshot => {
+  const rows = collectMedicationRows(form.schema ?? []);
+  const snapshot = {
+    sections: CANONICAL_PRESCRIPTION_STRUCTURE.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => ({ ...field })),
+    })),
+  } satisfies TemplateSchemaSnapshot;
+  const medicationsSection = snapshot.sections.find((section) => section.id === 'medications');
+  const medicationLine = medicationsSection?.fields.find((field) => field.key === 'medicationLine');
+  if (medicationLine) {
+    (medicationLine as TemplateFieldDefinition & { defaultValue?: MedicationRow[] }).defaultValue =
+      rows;
+  }
+  return snapshot;
+};
 
 export const buildTemplateSchemaSnapshot = (
   form: FormsProps,
   kind = categoryToTemplateKind(form.category)
 ): TemplateSchemaSnapshot => {
+  if (kind === 'PRESCRIPTION') {
+    return buildPrescriptionTemplateSnapshot(form);
+  }
   const blueprint = kind ? (clinicalBlueprints[kind] ?? workflowBlueprints[kind]) : undefined;
   if (blueprint) {
     const mergedBlueprint = mergeFieldDefaults(blueprint, form.schema ?? []);
@@ -693,6 +895,7 @@ export const buildTemplatePayload = (
   orgId: string
 ): Omit<TemplateUpsertInput, 'createdBy'> => {
   const kind = form.templateKind ?? categoryToTemplateKind(form.category) ?? 'FORM';
+  const ownership = templateSourceToOwnership(form.templateSource);
   const isInpatientScoped =
     kind === 'INPATIENT_SCHEDULE' ||
     kind === 'TASK_ASSIGNMENT' ||
@@ -704,8 +907,8 @@ export const buildTemplatePayload = (
   // the encounter mode so resolution never surfaces them in an out-patient workspace.
   const linkedCatalogIds = form.services ?? [];
   return {
-    organisationId: orgId,
-    ownership: form.templateSource === 'USER_TEMPLATE' ? 'USER_TEMPLATE' : 'ORG_TEMPLATE',
+    organisationId: ownership === 'YC_LIBRARY' ? undefined : orgId,
+    ownership,
     kind,
     name: form.name,
     description: form.description,

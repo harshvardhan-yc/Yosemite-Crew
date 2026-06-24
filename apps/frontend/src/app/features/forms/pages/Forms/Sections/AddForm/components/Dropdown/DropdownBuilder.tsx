@@ -11,14 +11,15 @@ const DropdownBuilder: React.FC<{
   const isTaskBlockField = Boolean((field as any).meta?.taskBlockKey);
 
   if (isReadOnly) {
-    // For readonly dropdowns, show both label and value as readonly (from inventory)
+    const label = isTaskBlockField ? 'Fixed setting' : 'Label (from inventory)';
+    const valueLabel = isTaskBlockField ? 'Fixed value' : 'Value (from inventory)';
     return (
       <div className="flex flex-col gap-3">
         <FormInput
           intype="text"
           inname="Label"
           value={field.label || ''}
-          inlabel="Label (from inventory)"
+          inlabel={label}
           readonly={true}
           className="min-h-12!"
         />
@@ -26,7 +27,7 @@ const DropdownBuilder: React.FC<{
           intype="text"
           inname="value"
           value={defaultValue || ''}
-          inlabel="Value (from inventory)"
+          inlabel={valueLabel}
           readonly={true}
           className="min-h-12!"
         />
