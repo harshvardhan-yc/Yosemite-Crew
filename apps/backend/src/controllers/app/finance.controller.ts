@@ -16,6 +16,8 @@ import { AuthUserMobileService } from "src/services/authUserMobile.service";
 import logger from "src/utils/logger";
 import { OrgRequest } from "src/middlewares/rbac";
 import { AuthenticatedRequest } from "src/middlewares/auth";
+import { resolveUserIdFromRequest } from "src/utils/request";
+import { resolveActorDisplayName } from "src/services/finance/events";
 
 const CreateInvoicePaymentSessionBodySchema = z.object({
   provider: z.string().trim().min(1).optional(),
@@ -837,6 +839,9 @@ export const FinanceController = {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
+      const actorUserId = resolveUserIdFromRequest(req);
+      const actorName = await resolveActorDisplayName(actorUserId);
+
       await FinanceEventService.recordEvent({
         organisationId: (req as OrgRequest).organisationId ?? null,
         eventType: "APPOINTMENT_READY_FOR_BILLING",
@@ -848,6 +853,8 @@ export const FinanceController = {
           invoiceId: invoice.id,
           billingState: invoice.visitBillingStage,
           collectionMode: invoice.billingCollectionMode ?? null,
+          actorUserId: actorUserId ?? null,
+          actorName,
         },
       });
 
