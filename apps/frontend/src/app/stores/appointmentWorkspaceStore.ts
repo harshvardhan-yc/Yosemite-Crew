@@ -802,31 +802,9 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
     patchEnc(set, appointmentId, (enc) => {
       const amountCents = Math.max(0, Math.round(deposit.amountCents));
       if (amountCents <= 0) return enc;
-      const lineItem: InvoiceLineItem = {
-        id: nextId('deposit-line'),
-        name: 'Visit deposit',
-        unitPriceCents: amountCents,
-        qty: 1,
-        grossCents: amountCents,
-        discountCents: 0,
-        amountCents,
-      };
-      const invoice: PastInvoice = {
-        id: nextId('deposit'),
-        createdAt: nowIso(),
-        totalCents: amountCents,
-        outstandingCents: 0,
-        status: 'PAID_FULL',
-        byName: deposit.byName,
-        paidByName: deposit.byName,
-        paidAt: nowIso(),
-        paymentMethod: deposit.method,
-        items: [lineItem],
-      };
       return {
         ...enc,
         depositCents: enc.depositCents + amountCents,
-        pastInvoices: [invoice, ...enc.pastInvoices],
       };
     }),
 

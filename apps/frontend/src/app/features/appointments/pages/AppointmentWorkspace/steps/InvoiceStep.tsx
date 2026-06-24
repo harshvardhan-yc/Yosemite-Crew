@@ -1241,43 +1241,6 @@ const InvoiceStep = ({
     }
   };
 
-  const createDepositInvoice = async (
-    input: { amount: number; method: PaymentMethod; reference: string; notes: string },
-    orgId: string
-  ): Promise<{ invoiceId: string; checkoutUrl?: string } | undefined> => {
-    const invoice = await createFinanceInvoice({
-      appointmentId,
-      parentId,
-      patientId,
-      organisationId: orgId,
-      paymentCollectionMethod: input.method === 'ONLINE' ? 'PAYMENT_LINK' : 'PAYMENT_AT_CLINIC',
-      items: [
-        {
-          name: 'Visit deposit',
-          description: 'Upfront visit deposit',
-          quantity: 1,
-          unitPrice: input.amount,
-          total: input.amount,
-        },
-      ],
-      notes: input.notes || 'Visit deposit',
-    });
-    if (!invoice.id) return undefined;
-    if (input.method === 'ONLINE') {
-      return { invoiceId: invoice.id, checkoutUrl: await getPaymentLink(invoice.id) };
-    }
-    await recordManualInvoicePayment(invoice.id, {
-      provider: 'MANUAL',
-      settlementChannel: 'CASH',
-      amount: input.amount,
-      currency: financeCurrency,
-      reference: input.reference || undefined,
-      receivedAt: new Date().toISOString(),
-      notes: input.notes || undefined,
-    });
-    return { invoiceId: invoice.id };
-  };
-
   const handleDepositSubmit = async (input: {
     amount: number;
     method: PaymentMethod;
@@ -1288,22 +1251,47 @@ const InvoiceStep = ({
     setErrorMessage(null);
     setIsProcessingPayment(true);
     try {
-      const depositInvoice = organisationId
-        ? await createDepositInvoice(input, organisationId)
-        : undefined;
-      const checkoutUrl = depositInvoice?.checkoutUrl;
-      if (input.method === 'ONLINE') {
-        setDepositPaymentLink(checkoutUrl ?? null);
-        if (depositInvoice?.invoiceId && checkoutUrl) {
-          startPaymentProgress(depositInvoice.invoiceId, checkoutUrl);
-          openCheckoutUrl(checkoutUrl);
+      const depositInvoice =
+        organisationId && hasItems ? await persistCurrentInvoice({ finalize: false }) : undefined;
+      if (depositInvoice?.id) {
+        if (input.method === 'ONLINE') {
+          const checkoutUrl = await getPaymentLink(depositInvoice.id);
+          setDepositPaymentLink(checkoutUrl ?? null);
+          if (checkoutUrl) {
+            startPaymentProgress(depositInvoice.id, checkoutUrl);
+            openCheckoutUrl(checkoutUrl);
+          }
+          recordDepositCollection(appointmentId, {
+            amountCents,
+            method: input.method,
+            byName: encounter.leadName ?? 'Front desk',
+          });
+          setConfirmation(
+            checkoutUrl
+              ? `Deposit payment link generated: ${checkoutUrl}`
+              : 'Deposit payment link generated'
+          );
+          if (!checkoutUrl) await reloadBilling();
+          return;
         }
-        setConfirmation(
-          checkoutUrl
-            ? `Deposit payment link generated: ${checkoutUrl}`
-            : 'Deposit payment link generated'
-        );
-        if (!checkoutUrl) await reloadBilling();
+
+        await recordManualInvoicePayment(depositInvoice.id, {
+          provider: 'MANUAL',
+          settlementChannel: 'DEPOSIT',
+          amount: input.amount,
+          currency: financeCurrency,
+          reference: input.reference || undefined,
+          receivedAt: new Date().toISOString(),
+          notes: input.notes || undefined,
+        });
+        recordDepositCollection(appointmentId, {
+          amountCents,
+          method: input.method,
+          byName: encounter.leadName ?? 'Front desk',
+        });
+        setConfirmation(`${PAYMENT_LABELS[input.method]} deposit recorded`);
+        setIsDepositModalOpen(false);
+        await reloadBilling();
         return;
       }
       recordDepositCollection(appointmentId, {

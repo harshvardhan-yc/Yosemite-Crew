@@ -13,6 +13,7 @@ import {
   findOpenAppointmentInvoice,
   getPaymentLink,
   loadAppointmentBilling,
+  recordManualInvoicePayment,
   seedAppointmentInvoice,
 } from '@/app/features/billing/services/invoiceService';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
@@ -44,6 +45,7 @@ const mockLoadAppointmentBilling = loadAppointmentBilling as jest.Mock;
 const mockSeedAppointmentInvoice = seedAppointmentInvoice as jest.Mock;
 const mockGetPaymentLink = getPaymentLink as jest.Mock;
 const mockFetchInventoryItems = fetchInventoryItems as jest.Mock;
+const mockRecordManualInvoicePayment = recordManualInvoicePayment as jest.Mock;
 
 expect.extend(toHaveNoViolations);
 
@@ -59,6 +61,7 @@ const reset = () => {
   mockFetchInventoryItems.mockResolvedValue([]);
   mockSeedAppointmentInvoice.mockResolvedValue({ id: 'inv-seed' });
   mockGetPaymentLink.mockResolvedValue(undefined);
+  mockRecordManualInvoicePayment.mockResolvedValue(undefined);
   Object.defineProperty(globalThis.window, 'open', {
     configurable: true,
     writable: true,
@@ -769,15 +772,44 @@ describe('InvoiceStep', () => {
   it('collects a deposit payment and reduces the remaining deposit', async () => {
     const enc = seedAndGet();
     const startDeposit = enc.depositCents;
-    renderInvoice(enc);
+    renderInvoice(enc, jest.fn(), false, 'org-1');
 
     fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i })[0]);
-    fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i }).at(-1)!);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Amount'), { target: { value: '25' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /collect deposit/i }));
 
-    const after = getEnc();
-    expect(after.pastInvoices[0].paymentMethod).toBe('CASH');
-    expect(after.depositCents).toBeGreaterThan(startDeposit);
+    await waitFor(() => expect(mockRecordManualInvoicePayment).toHaveBeenCalled());
+    await waitFor(() => expect(getEnc().depositCents).toBeGreaterThan(startDeposit));
+    expect(mockRecordManualInvoicePayment).toHaveBeenCalledWith(
+      'inv-created',
+      expect.objectContaining({
+        settlementChannel: 'DEPOSIT',
+      })
+    );
     // Flush the deposit handler's trailing processing-flag update.
+    await act(async () => {});
+  });
+
+  it('generates an online deposit link against the same invoice and updates the deposit balance', async () => {
+    const enc = seedAndGet();
+    const startDeposit = enc.depositCents;
+    mockGetPaymentLink.mockResolvedValueOnce('https://checkout.stripe.com/c/pay/deposit_123');
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+
+    fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i })[0]);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /online link/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /generate link/i }));
+
+    await waitFor(() => expect(mockGetPaymentLink).toHaveBeenCalledWith('inv-created'));
+    await waitFor(() => expect(getEnc().depositCents).toBeGreaterThan(startDeposit));
+    expect(globalThis.window.open).toHaveBeenCalledWith(
+      'https://checkout.stripe.com/c/pay/deposit_123',
+      '_blank',
+      'noopener,noreferrer'
+    );
+    expect(await screen.findByText(/deposit payment link generated/i)).toBeInTheDocument();
     await act(async () => {});
   });
 
@@ -796,11 +828,12 @@ describe('InvoiceStep', () => {
     renderInvoice(enc);
 
     fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i })[0]);
-    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '25' } });
-    fireEvent.click(screen.getAllByRole('button', { name: /collect deposit/i }).at(-1)!);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Amount'), { target: { value: '25' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /collect deposit/i }));
 
-    expect(getEnc().depositCents).toBe(beforeDeposit + 2500);
-    expect(getEnc().pastInvoices[0].paymentMethod).toBe('CASH');
+    await waitFor(() => expect(getEnc().depositCents).toBe(beforeDeposit + 2500));
+    expect(mockRecordManualInvoicePayment).not.toHaveBeenCalled();
     // Flush the deposit handler's trailing processing-flag update.
     await act(async () => {});
   });

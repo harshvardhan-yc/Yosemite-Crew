@@ -352,21 +352,6 @@ const financeAmountToCents = (amount: number | undefined): number =>
 
 const FINANCE_OPEN_STATUSES = new Set(['PENDING', 'AWAITING_PAYMENT', 'REQUIRES_ACTION']);
 
-// Deposit collection modes, and the deposit-line name the workspace creates. A
-// deposit invoice is recognised by either signal so its paid total feeds the
-// deposit balance even when the backend leaves depositCollectedAmount at 0.
-const DEPOSIT_COLLECTION_MODES = new Set(['PREPAY_AT_BOOKING', 'DEPOSIT_THEN_SETTLE']);
-const isDepositInvoice = (invoice: Invoice): boolean => {
-  const mode = String(invoice.billingCollectionMode ?? '').toUpperCase();
-  if (DEPOSIT_COLLECTION_MODES.has(mode)) return true;
-  const items = Array.isArray(invoice.items) ? invoice.items : [];
-  return items.some((item) =>
-    String(item?.name ?? '')
-      .toLowerCase()
-      .includes('deposit')
-  );
-};
-
 /** Map a finance invoice status to the workspace's coarse paid/unpaid pill state. */
 const toWorkspaceInvoiceStatus = (
   status: string | undefined,
@@ -448,17 +433,6 @@ export const loadAppointmentBilling = async (
       financeAmountToCents(invoice.totalAmount) ||
       items.reduce((sum, item) => sum + item.amountCents, 0);
     const isPaid = invoice.status === 'PAID' || Boolean(invoice.paidAt);
-    // Deposit balance precedence: the explicit depositCollectedAmount when set;
-    // otherwise a paid deposit-style invoice contributes its full paid total
-    // (the backend records the deposit as a separate PAID invoice, not as a
-    // depositCollectedAmount on the main bill).
-    const explicitDepositCents = financeAmountToCents(invoice.depositCollectedAmount);
-    if (explicitDepositCents > 0) {
-      depositCents += explicitDepositCents;
-    } else if (isPaid && isDepositInvoice(invoice)) {
-      depositCents += totalCents;
-    }
-    const outstandingCents = isPaid ? 0 : totalCents;
     // Map the payment ledger (deposits + settlements with provider metadata and receipt URLs)
     // when the backend includes it on the invoice (handoff §5). Absent until then.
     const rawPayments = (invoice as { payments?: unknown }).payments;
@@ -477,6 +451,14 @@ export const loadAppointmentBilling = async (
           };
         })
       : undefined;
+    const explicitDepositCents = financeAmountToCents(invoice.depositCollectedAmount);
+    const ledgerDepositCents =
+      payments?.reduce((sum, payment) => {
+        const method = String(payment.method ?? '').toUpperCase();
+        return method === 'DEPOSIT' ? sum + payment.amountCents : sum;
+      }, 0) ?? 0;
+    depositCents += explicitDepositCents > 0 ? explicitDepositCents : ledgerDepositCents;
+    const outstandingCents = isPaid ? 0 : totalCents;
     return {
       id: String(invoice.id ?? appointmentId),
       createdAt: (invoice.createdAt ?? new Date()).toISOString(),
