@@ -1599,8 +1599,6 @@ export const InvoiceService = {
       where: { id: invoiceId },
       data: {
         billingCollectionMode: "DEPOSIT_THEN_SETTLE",
-        visitBillingStage: "READY_FOR_BILLING",
-        ...buildReadyForBillingFields("SYSTEM"),
         depositTargetAmount: targetAmount,
         depositCollectedAmount: resolveInvoiceDepositCollectedAmount(
           invoice,

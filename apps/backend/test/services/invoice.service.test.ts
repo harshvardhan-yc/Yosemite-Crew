@@ -776,14 +776,15 @@ describe("InvoiceService", () => {
         where: { id: "inv_deposit" },
         data: expect.objectContaining({
           billingCollectionMode: "DEPOSIT_THEN_SETTLE",
-          visitBillingStage: "READY_FOR_BILLING",
           depositTargetAmount: 20,
           depositCollectedAmount: 12,
-          readyForBillingActorId: "SYSTEM",
-          readyForBillingAt: expect.any(Date),
         }),
       }),
     );
+    const updateArgs = (prisma.invoice.update as jest.Mock).mock.calls[0][0];
+    expect(updateArgs.data).not.toHaveProperty("visitBillingStage");
+    expect(updateArgs.data).not.toHaveProperty("readyForBillingAt");
+    expect(updateArgs.data).not.toHaveProperty("readyForBillingActorId");
     expect(updated?.depositTargetAmount).toBe(20);
   });
 

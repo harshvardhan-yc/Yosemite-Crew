@@ -358,16 +358,6 @@ const updateInvoiceAfterPayment = async (params: {
       data: {
         depositCollectedAmount: nextDepositCollectedAmount,
         billingCollectionMode: "DEPOSIT_THEN_SETTLE",
-        visitBillingStage:
-          invoice.visitBillingStage === "SETTLED"
-            ? "SETTLED"
-            : "READY_FOR_BILLING",
-        ...(invoice.readyForBillingAt
-          ? {}
-          : {
-              readyForBillingAt: receivedAt,
-              readyForBillingActorId: "SYSTEM",
-            }),
       },
     });
   }
