@@ -561,8 +561,7 @@ const enrichDispenseRequestMedications = async (
         typeof item.isControlled === "boolean"
           ? item.isControlled
           : (inventoryItem?.controlledItem ?? null),
-      stockUnitType:
-        inventoryItem?.stockUnitType ?? inventoryItem?.unitOfMeasure ?? null,
+      stockUnitType: inventoryItem?.stockUnitType ?? null,
       packageQuantity: stockUnitQty,
       unitQuantity: stockUnitQty,
       stockUnitQty,

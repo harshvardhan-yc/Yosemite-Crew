@@ -57,11 +57,6 @@ const syncInventoryBatchToPostgres = async (_doc: unknown) => undefined;
 const syncInventoryVendorToPostgres = async (_doc: unknown) => undefined;
 const syncInventoryMetaFieldToPostgres = async (_doc: unknown) => undefined;
 
-const resolveStockUnitType = (
-  stockUnitType?: string | null,
-  unitOfMeasure?: string | null,
-) => (stockUnitType !== undefined ? stockUnitType : unitOfMeasure);
-
 const resolveUnitQuantity = (
   unitQuantity?: number | null,
   packageQuantity?: number | null,
@@ -1031,10 +1026,8 @@ const createInventoryItemInPostgres = async (
     unitCost,
     attachments,
   } = validated;
-  const stockUnitType = resolveStockUnitType(
-    input.stockUnitType,
-    input.unitOfMeasure,
-  );
+  const stockUnitType = input.stockUnitType;
+  const unitOfMeasure = input.unitOfMeasure;
   const itemAllocated = input.allocated ?? input.initialAllocated ?? 0;
 
   const item = await prisma.inventoryItem.create({
@@ -1059,7 +1052,7 @@ const createInventoryItemInPostgres = async (
       controlledItem: input.controlledItem ?? false,
       storageInstructions: input.storageInstructions ?? undefined,
       expiryTrackingRequired: input.expiryTrackingRequired ?? false,
-      unitOfMeasure: stockUnitType ?? undefined,
+      unitOfMeasure: unitOfMeasure ?? undefined,
       stockUnitType: stockUnitType ?? undefined,
       packageQuantity:
         resolveUnitQuantity(input.unitQuantity, input.packageQuantity) ??
@@ -1134,10 +1127,8 @@ const createInventoryItemInLegacyStore = async (
     unitCost,
     attachments,
   } = validated;
-  const stockUnitType = resolveStockUnitType(
-    input.stockUnitType,
-    input.unitOfMeasure,
-  );
+  const stockUnitType = input.stockUnitType;
+  const unitOfMeasure = input.unitOfMeasure;
   const itemAllocated = input.allocated ?? input.initialAllocated ?? 0;
 
   const item = await InventoryItemModel.create({
@@ -1161,7 +1152,7 @@ const createInventoryItemInLegacyStore = async (
     controlledItem: input.controlledItem ?? false,
     storageInstructions: input.storageInstructions,
     expiryTrackingRequired: input.expiryTrackingRequired ?? false,
-    unitOfMeasure: stockUnitType,
+    unitOfMeasure,
     stockUnitType,
     packageQuantity: resolveUnitQuantity(
       input.unitQuantity,
@@ -1333,10 +1324,8 @@ const applyLegacyInventoryItemUpdates = async (params: {
   nextItemType: InventoryItemType;
 }) => {
   const { item, input, nextCategory, nextSubCategory, nextItemType } = params;
-  const stockUnitType = resolveStockUnitType(
-    input.stockUnitType,
-    input.unitOfMeasure,
-  );
+  const stockUnitType = input.stockUnitType;
+  const unitOfMeasure = input.unitOfMeasure;
 
   if (input.name !== undefined) item.name = input.name;
   if (input.sku !== undefined) item.sku = input.sku;
@@ -1378,7 +1367,9 @@ const applyLegacyInventoryItemUpdates = async (params: {
   }
   if (stockUnitType !== undefined) {
     item.stockUnitType = stockUnitType ?? null;
-    item.unitOfMeasure = stockUnitType ?? null;
+  }
+  if (unitOfMeasure !== undefined) {
+    item.unitOfMeasure = unitOfMeasure ?? null;
   }
   if (input.unitQuantity !== undefined || input.packageQuantity !== undefined) {
     item.packageQuantity =
@@ -1569,13 +1560,13 @@ export const InventoryService = {
       if (input.expiryTrackingRequired !== undefined) {
         data.expiryTrackingRequired = input.expiryTrackingRequired ?? false;
       }
-      const stockUnitType = resolveStockUnitType(
-        input.stockUnitType,
-        input.unitOfMeasure,
-      );
+      const stockUnitType = input.stockUnitType;
+      const unitOfMeasure = input.unitOfMeasure;
       if (stockUnitType !== undefined) {
         data.stockUnitType = stockUnitType ?? null;
-        data.unitOfMeasure = stockUnitType ?? null;
+      }
+      if (unitOfMeasure !== undefined) {
+        data.unitOfMeasure = unitOfMeasure ?? null;
       }
       if (
         input.unitQuantity !== undefined ||

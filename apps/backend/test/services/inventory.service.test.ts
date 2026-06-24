@@ -128,6 +128,7 @@ describe("Inventory service", () => {
       allocated: 6,
       initialAllocated: 2,
       stockUnitType: "bottle",
+      unitOfMeasure: "mg",
       unitQuantity: 3,
       batches: [{ quantity: 3 }],
     });
@@ -136,7 +137,7 @@ describe("Inventory service", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           stockUnitType: "bottle",
-          unitOfMeasure: "bottle",
+          unitOfMeasure: "mg",
           packageQuantity: 3,
         }),
       }),
@@ -190,6 +191,7 @@ describe("Inventory service", () => {
       {
         name: "Updated",
         stockUnitType: "bottle",
+        unitOfMeasure: "mg",
         allocated: 7,
         unitQuantity: 12,
       },
@@ -200,7 +202,7 @@ describe("Inventory service", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           stockUnitType: "bottle",
-          unitOfMeasure: "bottle",
+          unitOfMeasure: "mg",
           packageQuantity: 12,
         }),
       }),
