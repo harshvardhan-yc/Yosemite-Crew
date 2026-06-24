@@ -179,6 +179,69 @@ describe("shared fhir contracts", () => {
     );
   });
 
+  it("round-trips an inpatient room unit through the shared package", () => {
+    const appointment = {
+      companion: {
+        id: "comp-1",
+        name: "Buddy",
+        species: "Dog",
+        parent: { id: "parent-1", name: "Parent One" },
+      },
+      organisationId: "org-1",
+      appointmentDate: new Date("2026-01-05T09:00:00.000Z"),
+      startTime: new Date("2026-01-05T09:00:00.000Z"),
+      endTime: new Date("2026-01-05T09:30:00.000Z"),
+      timeSlot: "09:00",
+      durationMinutes: 30,
+      status: "UPCOMING",
+      room: {
+        id: "room-1",
+        name: "Recovery Room",
+        unitId: "unit-9",
+        unitName: "Ward A - Bed 3",
+        unit: {
+          id: "unit-9",
+          name: "Ward A - Bed 3",
+          displayName: "Ward A - Bed 3",
+          code: "WA-3",
+        },
+      },
+    } as Appointment;
+
+    const parsed = fromFHIRAppointment(toFHIRAppointment(appointment));
+
+    expect(parsed.room?.id).toBe("room-1");
+    expect(parsed.room?.name).toBe("Recovery Room");
+    expect(parsed.room?.unitId).toBe("unit-9");
+    expect(parsed.room?.unitName).toBe("Ward A - Bed 3");
+    expect(parsed.room?.unit?.displayName).toBe("Ward A - Bed 3");
+  });
+
+  it("omits the room unit when none is assigned", () => {
+    const appointment = {
+      companion: {
+        id: "comp-1",
+        name: "Buddy",
+        species: "Dog",
+        parent: { id: "parent-1", name: "Parent One" },
+      },
+      organisationId: "org-1",
+      appointmentDate: new Date("2026-01-05T09:00:00.000Z"),
+      startTime: new Date("2026-01-05T09:00:00.000Z"),
+      endTime: new Date("2026-01-05T09:30:00.000Z"),
+      timeSlot: "09:00",
+      durationMinutes: 30,
+      status: "UPCOMING",
+      room: { id: "room-2", name: "Consult 1" },
+    } as Appointment;
+
+    const parsed = fromFHIRAppointment(toFHIRAppointment(appointment));
+
+    expect(parsed.room?.id).toBe("room-2");
+    expect(parsed.room?.unitId).toBeUndefined();
+    expect(parsed.room?.unit).toBeUndefined();
+  });
+
   it("round-trips questionnaire responses through the shared package", () => {
     const template = {
       id: "template-2",
