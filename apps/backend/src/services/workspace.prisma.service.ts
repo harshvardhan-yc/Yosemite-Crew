@@ -140,6 +140,8 @@ type WorkspaceBootstrapBillingState = {
   invoice: {
     id: string;
     visitBillingStage: InvoiceVisitBillingStage;
+    readyForBillingAt: Date | null;
+    readyForBillingActorId: string | null;
   } | null;
   visitBillingStage: InvoiceVisitBillingStage | null;
   readyForBilling: boolean;
@@ -332,8 +334,10 @@ const resolveWorkspaceLock = (input: {
   return (input.now ?? new Date()).getTime() >= lockAt;
 };
 
-// Read the display name of whoever last triggered a readiness transition, stored
-// in the FinanceEvent payload at write time (FinanceEventService.recordReadinessEvent).
+// Read the display name of whoever last triggered a readiness transition.
+// Discharge still falls back to the FinanceEvent payload; invoice readiness now
+// prefers the invoice-native actor id and only falls back to the event log for
+// legacy rows.
 const latestReadinessActorName = async (
   eventType: string,
   entityType: string,
@@ -350,6 +354,31 @@ const latestReadinessActorName = async (
     return typeof name === "string" && name.trim() ? name : null;
   }
   return null;
+};
+
+const resolveActorDisplayName = async (
+  actorUserId?: string | null,
+): Promise<string | null> => {
+  const id = actorUserId?.trim();
+  if (!id) {
+    return null;
+  }
+  if (id === "SYSTEM") {
+    return "System";
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { userId: id },
+    select: { firstName: true, lastName: true, email: true },
+  });
+  if (!user) {
+    return null;
+  }
+  const name = [user.firstName, user.lastName]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(" ")
+    .trim();
+  return name || user.email || null;
 };
 
 const loadBootstrapBillingState = async (input: {
@@ -384,20 +413,29 @@ const loadBootstrapBillingState = async (input: {
       appointmentId: input.appointmentId,
     },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      visitBillingStage: true,
+      readyForBillingAt: true,
+      readyForBillingActorId: true,
+    },
   })) as {
     id: string;
     visitBillingStage: InvoiceVisitBillingStage;
+    readyForBillingAt: Date | null;
+    readyForBillingActorId: string | null;
   } | null;
 
   const visitBillingStage = invoice?.visitBillingStage ?? null;
   const readyForBilling = visitBillingStage === "READY_FOR_BILLING";
   const readyForBillingByName =
     readyForBilling && invoice
-      ? await latestReadinessActorName(
+      ? ((await resolveActorDisplayName(invoice.readyForBillingActorId)) ??
+        (await latestReadinessActorName(
           "INVOICE_READY_FOR_BILLING",
           "INVOICE",
           invoice.id,
-        )
+        )))
       : null;
 
   return {
@@ -406,6 +444,8 @@ const loadBootstrapBillingState = async (input: {
         ? {
             id: invoice.id,
             visitBillingStage: invoice.visitBillingStage,
+            readyForBillingAt: invoice.readyForBillingAt,
+            readyForBillingActorId: invoice.readyForBillingActorId,
           }
         : null,
     visitBillingStage,

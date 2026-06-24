@@ -39,6 +39,7 @@ jest.mock("src/config/prisma", () => ({
     labOrder: { findMany: jest.fn() },
     labResult: { findMany: jest.fn() },
     financeEvent: { findFirst: jest.fn() },
+    user: { findUnique: jest.fn() },
   },
 }));
 
@@ -110,6 +111,7 @@ describe("WorkspaceService", () => {
     labOrder: { findMany: jest.Mock };
     labResult: { findMany: jest.Mock };
     financeEvent: { findFirst: jest.Mock };
+    user: { findUnique: jest.Mock };
   };
   const mockedFormService = FormAssignmentService as unknown as {
     syncLinkedTemplateAssignmentsForAppointment: jest.Mock;
@@ -299,6 +301,13 @@ describe("WorkspaceService", () => {
     mockedPrisma.invoice.findFirst.mockResolvedValue({
       id: "invoice-1",
       visitBillingStage: "READY_FOR_BILLING",
+      readyForBillingAt: new Date("2026-06-15T12:00:00.000Z"),
+      readyForBillingActorId: "user-1",
+    });
+    mockedPrisma.user.findUnique.mockResolvedValue({
+      firstName: "Dr",
+      lastName: "Ready",
+      email: "ready@example.com",
     });
     mockedPrisma.organization.findUnique.mockResolvedValue({
       appointmentLockWindowOutpatientMinutes: 30,
@@ -477,7 +486,10 @@ describe("WorkspaceService", () => {
         invoice: expect.objectContaining({
           id: "invoice-1",
           visitBillingStage: "READY_FOR_BILLING",
+          readyForBillingAt: new Date("2026-06-15T12:00:00.000Z"),
+          readyForBillingActorId: "user-1",
         }),
+        readyForBillingByName: "Dr Ready",
       }),
     );
     expect(result.diagnosticQueue).toEqual(

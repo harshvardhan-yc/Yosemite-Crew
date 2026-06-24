@@ -2791,6 +2791,8 @@ model Invoice {
   paymentCollectionMethod  PaymentCollectionMethod  @default(PAYMENT_INTENT)
   billingCollectionMode    BillingCollectionMode    @default(PREPAY_AT_BOOKING)
   visitBillingStage        InvoiceVisitBillingStage  @default(DRAFT)
+  readyForBillingAt        DateTime?
+  readyForBillingActorId   String?
   depositTargetAmount      Float                    @default(0)
   depositCollectedAmount   Float                    @default(0)
   status                   InvoiceStatus            @default(PENDING)
@@ -2812,6 +2814,7 @@ model Invoice {
   @@index([paymentCollectionMethod])
   @@index([billingCollectionMode])
   @@index([visitBillingStage])
+  @@index([readyForBillingAt])
   @@index([taxProvider])
 }
 

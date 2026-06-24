@@ -462,6 +462,8 @@ describe("InvoiceService", () => {
         data: expect.objectContaining({
           billingCollectionMode: "PAY_AT_VISIT_END",
           visitBillingStage: "READY_FOR_BILLING",
+          readyForBillingActorId: "SYSTEM",
+          readyForBillingAt: expect.any(Date),
         }),
       }),
     );
@@ -509,6 +511,8 @@ describe("InvoiceService", () => {
           visitBillingStage: "READY_FOR_BILLING",
           depositTargetAmount: 20,
           depositCollectedAmount: 12,
+          readyForBillingActorId: "SYSTEM",
+          readyForBillingAt: expect.any(Date),
         }),
       }),
     );

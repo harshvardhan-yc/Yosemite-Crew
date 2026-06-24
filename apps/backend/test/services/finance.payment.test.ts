@@ -198,6 +198,8 @@ describe("FinancePaymentService", () => {
           billingCollectionMode: "DEPOSIT_THEN_SETTLE",
           visitBillingStage: "READY_FOR_BILLING",
           depositCollectedAmount: 25,
+          readyForBillingActorId: "SYSTEM",
+          readyForBillingAt: new Date("2026-06-18T10:00:00.000Z"),
         }),
       }),
     );

@@ -281,6 +281,8 @@ const toInvoiceRecord = (row: InvoiceWithCreditNotes): Invoice => {
     discountTotal: row.discountTotal,
     billingCollectionMode: row.billingCollectionMode ?? undefined,
     visitBillingStage: row.visitBillingStage as InvoiceVisitBillingStage,
+    readyForBillingAt: row.readyForBillingAt ?? undefined,
+    readyForBillingActorId: row.readyForBillingActorId ?? undefined,
     depositTargetAmount: row.depositTargetAmount,
     depositCollectedAmount: row.depositCollectedAmount,
     paymentCollectionMethod: row.paymentCollectionMethod,
@@ -579,6 +581,11 @@ const resolveAuditTargetsForInvoiceRow = async (row: {
     patientId: row.patientId ?? undefined,
   };
 };
+
+const buildReadyForBillingFields = (actorUserId?: string | null) => ({
+  readyForBillingAt: new Date(),
+  readyForBillingActorId: actorUserId?.trim() || "SYSTEM",
+});
 
 const recordInvoiceAuditEvent = async (
   targets: { organisationId?: string | null; patientId?: string | null },
@@ -1052,6 +1059,7 @@ export const InvoiceService = {
         paymentCollectionMethod: "PAYMENT_LINK",
         billingCollectionMode: "STAGED_DURING_VISIT",
         visitBillingStage: "READY_FOR_BILLING" as const,
+        ...buildReadyForBillingFields("SYSTEM"),
         depositTargetAmount: 0,
         depositCollectedAmount: 0,
         taxProvider: totals.taxSnapshot?.provider ?? null,
@@ -1430,6 +1438,7 @@ export const InvoiceService = {
         billingCollectionMode:
           invoice.billingCollectionMode ?? "PAY_AT_VISIT_END",
         visitBillingStage: "READY_FOR_BILLING",
+        ...buildReadyForBillingFields(actorUserId),
       },
     });
 
@@ -1456,6 +1465,7 @@ export const InvoiceService = {
       data: {
         billingCollectionMode: "DEPOSIT_THEN_SETTLE",
         visitBillingStage: "READY_FOR_BILLING",
+        ...buildReadyForBillingFields("SYSTEM"),
         depositTargetAmount: targetAmount,
         depositCollectedAmount: resolveInvoiceDepositCollectedAmount(
           invoice,
