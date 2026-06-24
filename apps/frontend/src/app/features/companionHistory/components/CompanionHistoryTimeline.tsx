@@ -161,6 +161,33 @@ const getTimelineBody = ({
   );
 };
 
+const getTimelineActionIcon = (loadingPdf: boolean, expanded: boolean): React.ReactNode => {
+  if (loadingPdf) return <LoadingIcon />;
+  if (expanded) return <LuEyeOff aria-hidden="true" />;
+  return <LuEye aria-hidden="true" />;
+};
+
+const getTimelineActionLabel = (
+  loadingPdf: boolean,
+  expanded: boolean,
+  entryTitle: string,
+  entry: HistoryEntry
+): string => {
+  if (loadingPdf) return `Loading ${entryTitle}`;
+  if (expanded) return `Hide ${entryTitle}`;
+  return getPrimaryActionLabel(entry);
+};
+
+const getPersistStatusAction = (
+  entryType: HistoryEntry['type'],
+  persistAppointmentStatus: (entry: HistoryEntry, nextStatus: string) => Promise<void>,
+  persistTaskStatus: (entry: HistoryEntry, nextStatus: string) => Promise<void>
+): ((entry: HistoryEntry, nextStatus: string) => Promise<void>) | null => {
+  if (entryType === 'APPOINTMENT') return persistAppointmentStatus;
+  if (entryType === 'TASK') return persistTaskStatus;
+  return null;
+};
+
 const DEFAULT_FILTER: HistoryFilterKey = 'APPOINTMENT';
 const COMPACT_MAX_ENTRIES = 8;
 const MEDICAL_RECORD_TYPES = new Set<HistoryEntryType>(['FORM_SUBMISSION', 'DOCUMENT']);
@@ -1048,22 +1075,8 @@ const MedicalRecordRows = ({
             </div>
             <div className="flex justify-end gap-2">
               <CircleIconButton
-                icon={
-                  loadingPdf ? (
-                    <LoadingIcon />
-                  ) : expanded ? (
-                    <LuEyeOff aria-hidden="true" />
-                  ) : (
-                    <LuEye aria-hidden="true" />
-                  )
-                }
-                label={
-                  loadingPdf
-                    ? `Loading ${entry.title}`
-                    : expanded
-                      ? `Hide ${entry.title}`
-                      : getPrimaryActionLabel(entry)
-                }
+                icon={getTimelineActionIcon(loadingPdf, expanded)}
+                label={getTimelineActionLabel(loadingPdf, expanded, entry.title, entry)}
                 variant="dark"
                 disabled={loadingPdf}
                 onClick={handlePrimaryAction}
@@ -1754,12 +1767,11 @@ const CompanionHistoryTimeline = ({
 
   const handleStatusChange = useCallback(
     (entry: HistoryEntry, status: string) => {
-      const persistStatus =
-        entry.type === 'APPOINTMENT'
-          ? persistAppointmentStatus
-          : entry.type === 'TASK'
-            ? persistTaskStatus
-            : null;
+      const persistStatus = getPersistStatusAction(
+        entry.type,
+        persistAppointmentStatus,
+        persistTaskStatus
+      );
       if (!persistStatus) return;
       persistStatus(entry, status).catch((statusError) => {
         console.error('Failed to update history row status:', statusError);

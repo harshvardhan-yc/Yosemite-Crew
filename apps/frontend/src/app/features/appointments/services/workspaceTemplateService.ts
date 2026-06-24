@@ -331,26 +331,36 @@ export const schemaSnapshotToPrescriptionItems = (
         ?.inventoryItemId;
       if (!inventoryItemId) continue;
       const row =
-        byInventoryId.get(inventoryItemId) ??
-        ({ medicineName: '', fulfillment: 'IN_HOUSE', inventoryItemId } as Omit<
-          PrescriptionItem,
-          'id'
-        >);
+        byInventoryId.get(inventoryItemId) ?? getFallbackPrescriptionItem(inventoryItemId);
       const value = stringDefault(field.defaultValue);
-      const key = field.key;
-      if (key.endsWith('_name')) row.medicineName = value ?? row.medicineName;
-      else if (key.endsWith('_dosage')) row.dosage = value ?? row.dosage;
-      else if (key.endsWith('_route')) row.route = value ?? row.route;
-      else if (key.endsWith('_frequency')) row.frequency = value ?? row.frequency;
-      else if (key.endsWith('_duration')) row.durationDays = value ?? row.durationDays;
-      else if (key.endsWith('_qty')) row.qty = value ?? row.qty;
-      else if (key.endsWith('_remark') || key.endsWith('_instructions'))
-        row.instructions = value ?? row.instructions;
-      byInventoryId.set(inventoryItemId, row);
+      byInventoryId.set(inventoryItemId, getUpdatedPrescriptionItem(row, field.key, value));
     }
   }
   // Keep only rows that resolved a medicine name (a bare inventory id with no name is unusable).
   return [...byInventoryId.values()].filter((row) => row.medicineName);
+};
+
+const getFallbackPrescriptionItem = (inventoryItemId: string): Omit<PrescriptionItem, 'id'> => ({
+  medicineName: '',
+  fulfillment: 'IN_HOUSE',
+  inventoryItemId,
+});
+
+const getUpdatedPrescriptionItem = (
+  row: Omit<PrescriptionItem, 'id'>,
+  key: string,
+  value: string | undefined
+): Omit<PrescriptionItem, 'id'> => {
+  if (key.endsWith('_name')) return { ...row, medicineName: value ?? row.medicineName };
+  if (key.endsWith('_dosage')) return { ...row, dosage: value ?? row.dosage };
+  if (key.endsWith('_route')) return { ...row, route: value ?? row.route };
+  if (key.endsWith('_frequency')) return { ...row, frequency: value ?? row.frequency };
+  if (key.endsWith('_duration')) return { ...row, durationDays: value ?? row.durationDays };
+  if (key.endsWith('_qty')) return { ...row, qty: value ?? row.qty };
+  if (key.endsWith('_remark') || key.endsWith('_instructions')) {
+    return { ...row, instructions: value ?? row.instructions };
+  }
+  return row;
 };
 
 /**
@@ -393,13 +403,17 @@ export const extractFollowUpInDays = (
   for (const section of snapshot.sections ?? []) {
     for (const field of section.fields ?? []) {
       if (field.key === 'followUpInDays') {
-        const raw = field.defaultValue;
-        const value = typeof raw === 'number' ? raw : Number(raw);
-        return Number.isFinite(value) && value > 0 ? value : undefined;
+        return getFollowUpDays(field.defaultValue);
       }
     }
   }
   return undefined;
+};
+
+const getFollowUpDays = (fieldDefaultValue: unknown): number | undefined => {
+  const value =
+    typeof fieldDefaultValue === 'number' ? fieldDefaultValue : Number(fieldDefaultValue);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
 };
 
 export const getWorkspaceTemplateById = async (organisationId: string, templateId: string) => {

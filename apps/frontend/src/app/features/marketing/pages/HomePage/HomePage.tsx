@@ -11,6 +11,7 @@ import data from './data';
 import { useAuthStore } from '@/app/stores/authStore';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { resolveDefaultOpenScreenRoute } from '@/app/lib/defaultOpenScreen';
+import { getEnv } from '@/app/lib/env';
 export { FillBtn, UnFillBtn } from './HomePageButtons';
 
 import './HomePage.css';
@@ -18,6 +19,8 @@ import './HomePage.css';
 const HomePage = () => {
   const { focusCards, practiceFeatures, heroList } = data;
   const { user, role } = useAuthStore();
+  const macDownloadHref = getEnv('NEXT_PUBLIC_MAC_APP_DOWNLOAD_URL') ?? '#';
+  const windowsDownloadHref = getEnv('NEXT_PUBLIC_WINDOWS_APP_DOWNLOAD_URL') ?? '#';
 
   const getCtaHref = () => {
     if (user) {
@@ -31,12 +34,12 @@ const HomePage = () => {
     {
       text: 'Download Mac App',
       icon: <FaApple aria-hidden="true" />,
-      href: '#',
+      href: macDownloadHref,
     },
     {
       text: 'Download Windows App',
       icon: <FaWindows aria-hidden="true" />,
-      href: '#',
+      href: windowsDownloadHref,
     },
   ];
 

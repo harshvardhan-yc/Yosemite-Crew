@@ -569,7 +569,9 @@ const assignTaskBlockValue = (
   } else if (key === 'reminderOffsetMinutes') {
     block.reminderOffsetMinutes = coerceNumberValue(value, 0);
   } else if (key === 'recurrence.type') {
-    block.recurrence = { type: String(value) };
+    if (typeof value === 'string' || typeof value === 'number') {
+      block.recurrence = { type: String(value) };
+    }
   } else if (key in block) {
     (block as Record<string, unknown>)[key] = value;
   }

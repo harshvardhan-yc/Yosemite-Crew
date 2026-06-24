@@ -121,6 +121,17 @@ const normalizeReferenceTail = (value: unknown): string | undefined => {
   return tail || undefined;
 };
 
+const toSafeText = (value: unknown): string => {
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  return '';
+};
+
+const normalizePaidAt = (value: unknown): string | undefined => {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  return undefined;
+};
+
 const unwrapFinanceData = <T>(value: T | FinanceEnvelope<T>): T => {
   if (
     value &&
@@ -148,10 +159,10 @@ const isInvoiceMissingForReadyForBilling = (error: unknown): boolean => {
   const response = error as { response?: { data?: unknown } };
   const data = response.response?.data;
   if (!data || typeof data !== 'object') return false;
-  const toText = (value: unknown): string =>
-    typeof value === 'string' || typeof value === 'number' ? String(value).toLowerCase() : '';
-  const message = toText((data as { message?: unknown }).message);
-  const errorMessage = toText((data as { error?: { message?: unknown } }).error?.message);
+  const message = toSafeText((data as { message?: unknown }).message).toLowerCase();
+  const errorMessage = toSafeText(
+    (data as { error?: { message?: unknown } }).error?.message
+  ).toLowerCase();
   return [message, errorMessage].some((text) => text.includes('invoice'));
 };
 
@@ -454,18 +465,14 @@ export const loadAppointmentBilling = async (
     const payments = Array.isArray(rawPayments)
       ? rawPayments.map((payment, index) => {
           const p = payment as Record<string, unknown>;
+          const paymentId = toSafeText(p.id);
           return {
-            id: String(p.id ?? `${invoice.id ?? appointmentId}-pay-${index}`),
+            id: paymentId || `${String(invoice.id ?? appointmentId)}-pay-${index}`,
             amountCents: financeAmountToCents(p.amount as number | undefined),
             method: typeof p.settlementChannel === 'string' ? p.settlementChannel : undefined,
             provider: typeof p.provider === 'string' ? p.provider : undefined,
             status: typeof p.status === 'string' ? p.status : undefined,
-            paidAt:
-              p.paidAt instanceof Date
-                ? p.paidAt.toISOString()
-                : typeof p.paidAt === 'string'
-                  ? p.paidAt
-                  : undefined,
+            paidAt: normalizePaidAt(p.paidAt),
             receiptUrl: typeof p.receiptUrl === 'string' ? p.receiptUrl : undefined,
           };
         })

@@ -18,6 +18,8 @@ jest.mock('@/app/ui/widgets/Footer/Footer', () => {
 
 beforeEach(() => {
   useAuthStore.setState({ user: null, role: null });
+  process.env.NEXT_PUBLIC_MAC_APP_DOWNLOAD_URL = 'https://downloads.example.com/mac';
+  process.env.NEXT_PUBLIC_WINDOWS_APP_DOWNLOAD_URL = 'https://downloads.example.com/windows';
 });
 
 describe('HomePage Component', () => {
@@ -52,12 +54,12 @@ describe('HomePage Component', () => {
 
     expect(primaryCta).toHaveAttribute('href', '/signup');
     const macDownload = screen.getByRole('link', { name: /download mac app/i });
-    expect(macDownload).toHaveAttribute('href', '#');
+    expect(macDownload).toHaveAttribute('href', 'https://downloads.example.com/mac');
 
     const windowsDownload = screen.getByRole('link', {
       name: /download windows app/i,
     });
-    expect(windowsDownload).toHaveAttribute('href', '#');
+    expect(windowsDownload).toHaveAttribute('href', 'https://downloads.example.com/windows');
   });
 
   test('renders the "Run Your Practice" section heading', () => {

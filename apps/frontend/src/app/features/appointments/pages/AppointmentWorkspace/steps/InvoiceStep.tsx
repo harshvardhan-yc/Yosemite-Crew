@@ -1110,15 +1110,14 @@ const InvoiceStep = ({
   );
 
   useEffect(() => {
-    if (!paymentProgress || paymentProgress.status !== 'checking') return undefined;
+    if (paymentProgress?.status !== 'checking') return undefined;
 
     const poll = () => {
       if (Date.now() - paymentProgress.startedAt > PAYMENT_POLL_TIMEOUT_MS) {
-        setPaymentProgress((current) =>
-          current?.invoiceId === paymentProgress.invoiceId
-            ? { ...current, status: 'delayed' }
-            : current
-        );
+        setPaymentProgress((current) => {
+          if (current?.invoiceId !== paymentProgress.invoiceId) return current;
+          return { ...current, status: 'delayed' };
+        });
         return;
       }
       void refreshPaymentProgress(paymentProgress.invoiceId);
