@@ -141,6 +141,8 @@ type WorkspaceBootstrapBillingState = {
   visitBillingStage: InvoiceVisitBillingStage | null;
   readyForBilling: boolean;
   readyForDischarge: boolean;
+  readyForBillingByName: string | null;
+  readyForDischargeByName: string | null;
 };
 
 type AdmissionRow = {
@@ -327,12 +329,40 @@ const resolveWorkspaceLock = (input: {
   return (input.now ?? new Date()).getTime() >= lockAt;
 };
 
+// Read the display name of whoever last triggered a readiness transition, stored
+// in the FinanceEvent payload at write time (FinanceEventService.recordReadinessEvent).
+const latestReadinessActorName = async (
+  eventType: string,
+  entityType: string,
+  entityId: string,
+): Promise<string | null> => {
+  const event = await prisma.financeEvent.findFirst({
+    where: { eventType, entityType, entityId },
+    orderBy: { occurredAt: "desc" },
+    select: { payload: true },
+  });
+  const payload = event?.payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const name = (payload as Record<string, unknown>).actorName;
+    return typeof name === "string" && name.trim() ? name : null;
+  }
+  return null;
+};
+
 const loadBootstrapBillingState = async (input: {
   organisationId: string;
   appointmentId?: string;
   encounter: Encounter | null;
 }): Promise<WorkspaceBootstrapBillingState> => {
   const readyForDischarge = input.encounter?.status === "onleave";
+  const readyForDischargeByName =
+    readyForDischarge && input.encounter?.id
+      ? await latestReadinessActorName(
+          "ENCOUNTER_READY_FOR_DISCHARGE",
+          "ENCOUNTER",
+          input.encounter.id,
+        )
+      : null;
 
   if (!input.appointmentId) {
     return {
@@ -340,6 +370,8 @@ const loadBootstrapBillingState = async (input: {
       visitBillingStage: null,
       readyForBilling: false,
       readyForDischarge,
+      readyForBillingByName: null,
+      readyForDischargeByName,
     };
   }
 
@@ -355,6 +387,15 @@ const loadBootstrapBillingState = async (input: {
   } | null;
 
   const visitBillingStage = invoice?.visitBillingStage ?? null;
+  const readyForBilling = visitBillingStage === "READY_FOR_BILLING";
+  const readyForBillingByName =
+    readyForBilling && invoice
+      ? await latestReadinessActorName(
+          "INVOICE_READY_FOR_BILLING",
+          "INVOICE",
+          invoice.id,
+        )
+      : null;
 
   return {
     invoice:
@@ -365,8 +406,10 @@ const loadBootstrapBillingState = async (input: {
           }
         : null,
     visitBillingStage,
-    readyForBilling: visitBillingStage === "READY_FOR_BILLING",
+    readyForBilling,
     readyForDischarge,
+    readyForBillingByName,
+    readyForDischargeByName,
   };
 };
 
@@ -1788,6 +1831,8 @@ const buildBootstrapAggregate = async (
     visitBillingStage: billingState.visitBillingStage,
     readyForBilling: billingState.readyForBilling,
     readyForDischarge: billingState.readyForDischarge,
+    readyForBillingByName: billingState.readyForBillingByName,
+    readyForDischargeByName: billingState.readyForDischargeByName,
     primaryAction: buildPrimaryAction({
       forms: forms.items,
       tasks,

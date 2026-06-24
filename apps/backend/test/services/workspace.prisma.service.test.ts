@@ -33,6 +33,7 @@ jest.mock("src/config/prisma", () => ({
     },
     labOrder: { findMany: jest.fn() },
     labResult: { findMany: jest.fn() },
+    financeEvent: { findFirst: jest.fn() },
   },
 }));
 
@@ -81,6 +82,7 @@ describe("WorkspaceService", () => {
     };
     labOrder: { findMany: jest.Mock };
     labResult: { findMany: jest.Mock };
+    financeEvent: { findFirst: jest.Mock };
   };
   const mockedFormService = FormAssignmentService as unknown as {
     listAppointmentFormSummaries: jest.Mock;
@@ -686,6 +688,56 @@ describe("WorkspaceService", () => {
     // The assigned unit must round-trip on the bootstrap encounter so it is
     // retained after a refresh (read by the workspace + appointment views).
     expect(result.encounter?.admission?.unitId).toBe("unit-1");
+  });
+
+  it("returns the actor display name for a ready-for-discharge encounter", async () => {
+    mockedPrisma.encounter.findFirst.mockResolvedValue({
+      id: "enc-4",
+      organisationId: "org-4",
+      caseId: "case-4",
+      patientId: "patient-4",
+      parentId: null,
+      status: "onleave",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      title: "Inpatient stay",
+      reason: "Admit",
+      periodStart: null,
+      periodEnd: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.case.findFirst.mockResolvedValue({
+      id: "case-4",
+      organisationId: "org-4",
+      patientId: "patient-4",
+      parentId: null,
+      status: "active",
+      appointmentKind: "INPATIENT",
+      title: "Episode",
+      description: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.patient.findFirst.mockResolvedValue({
+      id: "patient-4",
+      name: "Milo",
+      type: "PET",
+      status: "ACTIVE",
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.financeEvent.findFirst.mockResolvedValue({
+      payload: { actorUserId: "user-1", actorName: "Dr Harshit" },
+    });
+
+    const result = await WorkspaceService.getEncounterBootstrap(
+      { organisationId: "org-4", encounterId: "enc-4" },
+      [],
+    );
+
+    expect(result.readyForDischarge).toBe(true);
+    expect(result.readyForDischargeByName).toBe("Dr Harshit");
   });
 
   it("does not let labs from another visit for the same companion block finalization", async () => {

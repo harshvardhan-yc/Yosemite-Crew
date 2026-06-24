@@ -1246,7 +1246,10 @@ export const InvoiceService = {
     return invoice;
   },
 
-  async markAppointmentReadyForBilling(appointmentId: string) {
+  async markAppointmentReadyForBilling(
+    appointmentId: string,
+    actorUserId?: string,
+  ) {
     const invoice = await prisma.invoice.findFirst({
       where: {
         appointmentId,
@@ -1282,6 +1285,14 @@ export const InvoiceService = {
           invoice.billingCollectionMode ?? "PAY_AT_VISIT_END",
         visitBillingStage: "READY_FOR_BILLING",
       },
+    });
+
+    await FinanceEventService.recordReadinessEvent({
+      organisationId: updated.organisationId,
+      eventType: "INVOICE_READY_FOR_BILLING",
+      entityType: "INVOICE",
+      entityId: updated.id,
+      actorUserId,
     });
 
     return toInvoiceRecord(updated);
