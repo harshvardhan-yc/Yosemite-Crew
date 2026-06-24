@@ -126,6 +126,19 @@ describe('invoiceService', () => {
             currency: 'usd',
             visitBillingStage: 'DRAFT',
             status: 'AWAITING_PAYMENT',
+            payments: [
+              {
+                id: 'pay-1',
+                amount: 100,
+                settlementChannel: 'CARD_PRESENT',
+                provider: 'MANUAL',
+                status: 'PAID',
+                paidAt: '2026-06-22T18:12:30.000Z',
+                receiptUrl: 'https://files.test/receipt.pdf',
+              },
+            ],
+            pdfUrl: 'https://files.test/invoice.pdf',
+            renderedDocumentId: 'rd-invoice-1',
             createdAt: '2026-06-22T18:11:58.870Z',
             updatedAt: '2026-06-22T18:12:00.073Z',
           },
@@ -142,7 +155,20 @@ describe('invoiceService', () => {
       id: '672e7254-ae36-4658-b567-62e88ab4ecb7',
       status: 'UNPAID',
       totalCents: 27232,
+      pdfUrl: 'https://files.test/invoice.pdf',
+      renderedDocumentId: 'rd-invoice-1',
     });
+    expect(billing.pastInvoices[0].payments).toEqual([
+      {
+        id: 'pay-1',
+        amountCents: 10000,
+        method: 'CARD_PRESENT',
+        provider: 'MANUAL',
+        status: 'PAID',
+        paidAt: '2026-06-22T18:12:30.000Z',
+        receiptUrl: 'https://files.test/receipt.pdf',
+      },
+    ]);
     expect(billing.pastInvoices[0].items[0]).toMatchObject({
       name: 'Sample testing package',
     });

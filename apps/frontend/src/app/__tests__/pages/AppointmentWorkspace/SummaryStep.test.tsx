@@ -23,6 +23,7 @@ import {
 jest.mock('@/app/features/appointments/services/workspaceTemplateService', () => ({
   listDischargeSummaryTemplates: jest.fn(),
   resolveDischargeTemplate: jest.fn(),
+  extractFollowUpInDays: jest.fn(() => undefined),
 }));
 
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({

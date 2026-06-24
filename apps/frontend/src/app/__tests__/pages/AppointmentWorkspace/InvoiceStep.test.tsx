@@ -11,6 +11,7 @@ import {
   addLineItemsToAppointments,
   createFinanceInvoice,
   findOpenAppointmentInvoice,
+  getPaymentLink,
   loadAppointmentBilling,
   seedAppointmentInvoice,
 } from '@/app/features/billing/services/invoiceService';
@@ -41,6 +42,7 @@ jest.mock('@/app/features/inventory/pages/Inventory/utils', () => ({
 
 const mockLoadAppointmentBilling = loadAppointmentBilling as jest.Mock;
 const mockSeedAppointmentInvoice = seedAppointmentInvoice as jest.Mock;
+const mockGetPaymentLink = getPaymentLink as jest.Mock;
 const mockFetchInventoryItems = fetchInventoryItems as jest.Mock;
 
 expect.extend(toHaveNoViolations);
@@ -56,6 +58,12 @@ const reset = () => {
   });
   mockFetchInventoryItems.mockResolvedValue([]);
   mockSeedAppointmentInvoice.mockResolvedValue({ id: 'inv-seed' });
+  mockGetPaymentLink.mockResolvedValue(undefined);
+  Object.defineProperty(globalThis.window, 'open', {
+    configurable: true,
+    writable: true,
+    value: jest.fn(),
+  });
   // No open invoice in the store by default → persistCurrentInvoice creates one
   // via the web POST /invoices route (not the mobile /seed route).
   (findOpenAppointmentInvoice as jest.Mock).mockReturnValue(undefined);
@@ -143,6 +151,7 @@ const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
             paidAt: '2026-04-20T13:15:00Z',
             paymentMethod: 'CASH',
             paidFromDeposit: true,
+            pdfUrl: 'https://files.test/invoice-20560DTH.pdf',
             items: [
               {
                 id: 'pi-1',
@@ -662,6 +671,88 @@ describe('InvoiceStep', () => {
     await act(async () => {});
   });
 
+  it('shows a non-closeable payment progress overlay after opening Stripe checkout', async () => {
+    const enc = seedAndGet();
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    mockLoadAppointmentBilling.mockClear();
+    mockGetPaymentLink.mockResolvedValueOnce('https://checkout.stripe.com/c/pay/cs_test_123');
+    mockLoadAppointmentBilling.mockResolvedValue({
+      pastInvoices: [
+        {
+          id: 'inv-created',
+          createdAt: '2026-04-20T12:00:00Z',
+          totalCents: 9000,
+          outstandingCents: 9000,
+          status: 'UNPAID',
+          items: [],
+        },
+      ],
+      depositCents: 0,
+      invoicedItemNames: [],
+      currency: 'USD',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /pay online/i }));
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText('Payment in progress')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continue editing/i })).not.toBeInTheDocument();
+    expect(globalThis.window.open).toHaveBeenCalledWith(
+      'https://checkout.stripe.com/c/pay/cs_test_123',
+      '_blank',
+      'noopener,noreferrer'
+    );
+  });
+
+  it('confirms online payment status when the workspace window regains focus', async () => {
+    const enc = seedAndGet();
+    renderInvoice(enc, jest.fn(), false, 'org-1');
+    mockLoadAppointmentBilling.mockClear();
+    mockGetPaymentLink.mockResolvedValueOnce('https://checkout.stripe.com/c/pay/cs_test_123');
+    mockLoadAppointmentBilling
+      .mockResolvedValueOnce({
+        pastInvoices: [
+          {
+            id: 'inv-created',
+            createdAt: '2026-04-20T12:00:00Z',
+            totalCents: 9000,
+            outstandingCents: 9000,
+            status: 'UNPAID',
+            items: [],
+          },
+        ],
+        depositCents: 0,
+        invoicedItemNames: [],
+        currency: 'USD',
+      })
+      .mockResolvedValueOnce({
+        pastInvoices: [
+          {
+            id: 'inv-created',
+            createdAt: '2026-04-20T12:00:00Z',
+            totalCents: 9000,
+            outstandingCents: 0,
+            status: 'PAID_FULL',
+            items: [],
+          },
+        ],
+        depositCents: 0,
+        invoicedItemNames: [],
+        currency: 'USD',
+      });
+
+    fireEvent.click(screen.getByRole('button', { name: /pay online/i }));
+    expect(await screen.findByText('Payment in progress')).toBeInTheDocument();
+    await waitFor(() => expect(mockLoadAppointmentBilling).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      globalThis.window.dispatchEvent(new Event('focus'));
+    });
+
+    expect(await screen.findByText('Payment confirmed')).toBeInTheDocument();
+    expect(screen.getByText('Online payment confirmed')).toBeInTheDocument();
+  });
+
   it('refetches finance after a cash payment so the bill reflects server truth', async () => {
     const enc = seedAndGet();
     // organisationId is required for the post-payment refetch to fire.
@@ -752,24 +843,27 @@ describe('InvoiceStep', () => {
     expect(screen.getByText('Paid via Cash')).toBeInTheDocument();
   });
 
-  it('exposes download and share actions while editable', async () => {
+  it('opens the backend invoice PDF and exposes share actions while editable', async () => {
     const enc = seedAndGet();
-    // Download opens a print window; Share copies to the clipboard. jsdom stubs
-    // neither, so provide them and assert the handlers fire.
     const printSpy = jest.fn();
-    const openSpy = jest.spyOn(globalThis.window, 'open').mockReturnValue({
+    const printWindow = {
       document: { head: {}, body: {}, write: jest.fn(), close: jest.fn() },
       focus: jest.fn(),
       print: printSpy,
-    } as unknown as Window);
+    } as unknown as Window;
+    const openSpy = jest.spyOn(globalThis.window, 'open').mockReturnValue(printWindow);
     const writeText = jest.fn().mockResolvedValue(undefined);
     Object.assign(globalThis.navigator, { clipboard: { writeText } });
 
     renderInvoice(enc);
 
     fireEvent.click(screen.getByRole('button', { name: /download invoice 20560dth/i }));
-    expect(openSpy).toHaveBeenCalled();
-    expect(printSpy).toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://files.test/invoice-20560DTH.pdf',
+      '_blank',
+      'noopener,noreferrer'
+    );
+    expect(printSpy).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /share invoice 20560dth/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalled());

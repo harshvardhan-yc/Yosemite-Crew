@@ -5,6 +5,7 @@ import {
   removeSignatureFields,
   ensureSingleSignatureAtEnd,
   buildTemplateSchemaSnapshot,
+  buildTemplatePayload,
 } from '@/app/lib/forms';
 import type { FormField, FormsProps } from '@/app/features/forms/types/forms';
 
@@ -202,5 +203,109 @@ describe('buildTemplateSchemaSnapshot rich-text round-trip', () => {
 
     expect(field.type).toBe('text');
     expect(field.defaultValue).toBeUndefined();
+  });
+});
+
+describe('buildTemplatePayload appliesTo linking', () => {
+  const form = (overrides: Partial<FormsProps>): FormsProps => ({
+    name: 'Tpl',
+    category: 'SOAP',
+    usage: 'Internal',
+    updatedBy: 'u1',
+    lastUpdated: '',
+    schema: [],
+    species: ['Canine'],
+    services: ['svc-1', 'pkg-1'],
+    ...overrides,
+  });
+
+  it('writes the selected catalog ids and species into rules.appliesTo', () => {
+    const payload = buildTemplatePayload(form({ category: 'SOAP' }), 'org-1');
+    const appliesTo = (payload.rules as { appliesTo?: Record<string, unknown> }).appliesTo;
+    expect(appliesTo?.serviceIds).toEqual(['svc-1', 'pkg-1']);
+    expect(appliesTo?.packageIds).toEqual(['svc-1', 'pkg-1']);
+    expect(appliesTo?.species).toEqual(['Canine']);
+    expect(appliesTo?.encounterModes).toBeUndefined();
+  });
+
+  it('constrains task templates to the inpatient encounter mode and scope', () => {
+    const payload = buildTemplatePayload(form({ category: 'Task Template' }), 'org-1');
+    const appliesTo = (payload.rules as { appliesTo?: Record<string, unknown> }).appliesTo;
+    expect(appliesTo?.encounterModes).toEqual(['INPATIENT']);
+    expect(payload.scope).toBe('INPATIENT');
+    expect(payload.kind).toBe('INPATIENT_SCHEDULE');
+  });
+
+  it('writes task-template rows into inpatient schedule taskBlocks', () => {
+    const payload = buildTemplatePayload(
+      form({
+        category: 'Task Template',
+        schema: [
+          {
+            id: 'task_blocks',
+            type: 'group',
+            label: 'Schedule tasks',
+            meta: { taskGroup: true },
+            fields: [
+              {
+                id: 'block-1',
+                type: 'group',
+                label: 'Vitals check',
+                meta: { taskBlock: true },
+                fields: [
+                  {
+                    id: 'block-1_name',
+                    type: 'input',
+                    label: 'Task name',
+                    defaultValue: 'Vitals check',
+                    meta: { taskBlockKey: 'name' },
+                  },
+                  {
+                    id: 'block-1_dayOffset',
+                    type: 'number',
+                    label: 'Day offset',
+                    defaultValue: '2',
+                    meta: { taskBlockKey: 'dayOffset' },
+                  },
+                  {
+                    id: 'block-1_timeOfDay',
+                    type: 'input',
+                    label: 'Time',
+                    defaultValue: '08:30',
+                    meta: { taskBlockKey: 'timeOfDay' },
+                  },
+                  {
+                    id: 'block-1_recurrence',
+                    type: 'dropdown',
+                    label: 'Recurrence',
+                    defaultValue: 'DAILY',
+                    meta: { taskBlockKey: 'recurrence.type' },
+                  },
+                ],
+              },
+            ],
+          },
+        ] as unknown as FormField[],
+      }),
+      'org-1'
+    );
+    const scheduleSection = payload.schemaSnapshot.sections.find(
+      (section) => section.id === 'schedule'
+    );
+    const taskBlocks = scheduleSection?.fields.find((field) => field.key === 'taskBlocks')
+      ?.defaultValue as Array<Record<string, unknown>>;
+
+    expect(taskBlocks).toEqual([
+      expect.objectContaining({
+        id: 'block-1',
+        name: 'Vitals check',
+        dayOffset: 2,
+        timeOfDay: '08:30',
+        taskKind: 'CUSTOM',
+        category: 'CARE',
+        audience: 'EMPLOYEE_TASK',
+        recurrence: { type: 'DAILY' },
+      }),
+    ]);
   });
 });

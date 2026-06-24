@@ -84,7 +84,7 @@ const labelForField = (field: FormField): string => {
   const label = (field.label ?? '').trim();
   const id = field.id ?? '';
   if (label && label !== id) return label;
-  if (/_services$/i.test(id)) return 'Services';
+  if (/_services$/i.test(id)) return 'Services / Packages';
   return humanizeKey(id || 'Field');
 };
 

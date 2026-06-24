@@ -83,6 +83,18 @@ export const saveTemplateFormDraft = async (form: FormsProps, organisationId: st
       : await postData<TemplateLike, TemplateCreateBody>('/v1/templates/pms/templates', body);
     const normalized = mapTemplateToUI(res.data);
     upsertForm(normalized);
+    // Persist the service/package links so the template resolves into the workspace for the
+    // selected catalog items. Until this was wired, the Details step validated a required
+    // service but the link was never written (catalog-links endpoint was never called).
+    const catalogItemIds = form.services ?? [];
+    if (catalogItemIds.length > 0 && (normalized.templateId ?? normalized._id)) {
+      try {
+        return await updateTemplateFormCatalogLinks(normalized, organisationId, catalogItemIds);
+      } catch (linkError) {
+        // The template itself saved; surface the link failure but don't lose the draft.
+        console.error('Failed to sync template catalog links', linkError);
+      }
+    }
     return normalized;
   } catch (error) {
     setError(toTemplateErrorMessage(error, 'Unable to save template'));

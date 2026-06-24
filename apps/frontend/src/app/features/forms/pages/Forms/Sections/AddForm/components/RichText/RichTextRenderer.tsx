@@ -11,14 +11,19 @@ const RichTextRenderer: React.FC<{
   onChange: (v: string) => void;
   readOnly?: boolean;
 }> = ({ field, value, onChange, readOnly }) => (
-  <RichTextEditor
-    ariaLabel={field.label || 'Rich text'}
-    value={value ?? ''}
-    onChange={onChange}
-    placeholder={field.placeholder || ''}
-    readOnly={readOnly}
-    toolbarPlacement="inline"
-  />
+  <div className="flex flex-col gap-2">
+    {field.label && (
+      <span className="font-satoshi text-black-text text-[16px] font-medium">{field.label}</span>
+    )}
+    <RichTextEditor
+      ariaLabel={field.label || 'Rich text'}
+      value={value ?? ''}
+      onChange={onChange}
+      placeholder={field.placeholder || ''}
+      readOnly={readOnly}
+      toolbarPlacement="inline"
+    />
+  </div>
 );
 
 export default RichTextRenderer;

@@ -132,6 +132,9 @@ export const CANONICAL_SOAP_STRUCTURE: TemplateSchemaSnapshot = {
       title: 'Subjective',
       order: 1,
       fields: [
+        // Chief complaint is sourced from the appointment reason in the workspace and is
+        // intentionally NOT part of the SOAP template structure. A YC-default SOAP template is
+        // exactly the four S/O/A/P rich-text areas.
         { key: 'subjective', label: 'Subjective', type: 'richText', required: true, order: 1 },
       ],
     },
@@ -160,6 +163,12 @@ export const CANONICAL_SOAP_STRUCTURE: TemplateSchemaSnapshot = {
   ],
 };
 
+/**
+ * A YC-default discharge template is intentionally minimal: a single rich-text discharge summary
+ * that preloads into the workspace, plus "follow up in N days" used to prefill the workspace
+ * follow-up date. No home-care / medications / signature sections — those are not part of the
+ * discharge template contract.
+ */
 export const CANONICAL_DISCHARGE_STRUCTURE: TemplateSchemaSnapshot = {
   sections: [
     {
@@ -177,36 +186,21 @@ export const CANONICAL_DISCHARGE_STRUCTURE: TemplateSchemaSnapshot = {
       ],
     },
     {
-      id: 'home_care',
-      title: 'Home care instructions',
-      order: 2,
-      fields: [{ key: 'homeCare', label: 'Home care instructions', type: 'richText', order: 1 }],
-    },
-    {
-      id: 'medications',
-      title: 'Medications',
-      order: 3,
-      fields: [{ key: 'dischargeMedications', label: 'Medications', type: 'richText', order: 1 }],
-    },
-    {
       id: 'follow_up',
       title: 'Follow up',
-      order: 4,
+      order: 2,
+      // Discharge templates capture "follow up in N days" rather than an absolute date. The
+      // workspace computes the actual follow-up date as (encounter/discharge date + N days),
+      // prefilled but editable by the clinician.
       fields: [
         {
           key: 'followUpInDays',
-          label: 'Follow-up in days',
+          label: 'Follow up in (days)',
           type: 'number',
           order: 1,
           rules: { unit: 'days' },
         },
       ],
-    },
-    {
-      id: 'signature',
-      title: 'Signature',
-      order: 5,
-      fields: [{ key: 'signature', label: 'Signature', type: 'signature', order: 1 }],
     },
   ],
 };
@@ -226,6 +220,7 @@ export const CANONICAL_PRESCRIPTION_STRUCTURE: TemplateSchemaSnapshot = {
           required: true,
           order: 1,
           rules: {
+            inventoryItemKind: 'MEDICAL',
             columns: [
               'inventoryItemId',
               'dosage',
@@ -234,6 +229,15 @@ export const CANONICAL_PRESCRIPTION_STRUCTURE: TemplateSchemaSnapshot = {
               'instructions',
               'qty',
             ],
+            rowKeys: [
+              'inventoryItemId',
+              'dosage',
+              'frequency',
+              'durationDays',
+              'qty',
+              'instructions',
+            ],
+            editableInWorkspace: ['qty', 'frequency', 'durationDays', 'instructions'],
           },
         },
       ],
@@ -313,6 +317,16 @@ export const CANONICAL_VITALS_STRUCTURE: TemplateSchemaSnapshot = {
 
 /** Ordered workspace SOAP editor keys (the four S/O/A/P rich-text fields). */
 export const CANONICAL_SOAP_FIELD_KEYS = ['subjective', 'objective', 'assessment', 'plan'] as const;
+
+/** Ordered prescription medication row keys authored in the template. */
+export const CANONICAL_PRESCRIPTION_ROW_KEYS = [
+  'inventoryItemId',
+  'dosage',
+  'frequency',
+  'durationDays',
+  'qty',
+  'instructions',
+] as const;
 
 export interface TemplateVersionLike {
   id: string;

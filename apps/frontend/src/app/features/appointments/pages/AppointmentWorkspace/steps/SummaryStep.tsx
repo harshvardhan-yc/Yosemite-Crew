@@ -35,6 +35,7 @@ import {
   saveDischargeSummaryArtifact,
 } from '@/app/features/appointments/services/workspaceClinicalService';
 import {
+  extractFollowUpInDays,
   listDischargeSummaryTemplates,
   resolveDischargeTemplate,
 } from '@/app/features/appointments/services/workspaceTemplateService';
@@ -457,6 +458,14 @@ const SummaryStep = ({
           templateVersion: resolved.templateVersion,
           templateVersionId: resolved.templateVersionId,
         });
+        // The discharge template defines "follow up in N days"; prefill the follow-up date as
+        // (today + N days) when the clinician has not already set one. It stays editable below.
+        const followUpInDays = extractFollowUpInDays(resolved.schemaSnapshot);
+        if (followUpInDays && !encounter.followUpAt) {
+          const next = new Date();
+          next.setDate(next.getDate() + followUpInDays);
+          setFollowUp(appointmentId, next.toISOString());
+        }
       })
       .catch((error) => {
         console.error('Unable to resolve discharge template:', error);
@@ -477,6 +486,8 @@ const SummaryStep = ({
     encounterServices,
     organisationId,
     setDischargeSummary,
+    setFollowUp,
+    encounter.followUpAt,
   ]);
 
   const handleTemplateSelect = (template: TemplateLike) => {

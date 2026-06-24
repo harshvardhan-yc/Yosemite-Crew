@@ -180,7 +180,7 @@ describe('Forms Utils', () => {
       expect(categoryToTemplateKind('Vitals')).toBe('VITAL_RECORD');
       expect(categoryToTemplateKind('Prescription Template')).toBe('PRESCRIPTION');
       expect(categoryToTemplateKind('Discharge Form')).toBe('DISCHARGE_SUMMARY');
-      expect(categoryToTemplateKind('Task Template')).toBe('TASK_ASSIGNMENT');
+      expect(categoryToTemplateKind('Task Template')).toBe('INPATIENT_SCHEDULE');
       expect(categoryToTemplateKind('Inpatient Schedule')).toBe('INPATIENT_SCHEDULE');
       expect(categoryToTemplateKind('Consent form')).toBe('CONSENT');
       expect(categoryToTemplateKind('Custom')).toBe('FORM');

@@ -11,7 +11,7 @@ import {
 import type { Task as FhirTask } from '@yosemite-crew/fhir';
 import { getData, patchData, postData } from '@/app/services/axios';
 import type { FormField } from '@/app/features/forms/types/forms';
-import type { SoapTemplate } from '@/app/features/appointments/types/workspace';
+import type { PrescriptionItem, SoapTemplate } from '@/app/features/appointments/types/workspace';
 
 type TemplateListParams = {
   kind?: TemplateKind;
@@ -305,6 +305,101 @@ export const resolveDischargeTemplate = async (
     // failure fall back to a blank discharge editor rather than blocking the step.
     return null;
   }
+};
+
+/**
+ * Map a resolved PRESCRIPTION template snapshot to workspace prescription rows. Each medication is
+ * authored in the builder as a group of fields tagged with the same `rules.inventoryItemId`; the
+ * field role is identified by its key suffix (`_name`/`_dosage`/`_route`/`_frequency`/`_duration`).
+ * Inventory-sourced values and author-typed defaults both arrive on each field's `defaultValue`, so
+ * applying a template preloads the section with the medicine + its predefined dose/route/freq/
+ * duration. Rows without an inventory id are ignored (a prescription must be inventory-backed).
+ */
+export const schemaSnapshotToPrescriptionItems = (
+  snapshot: TemplateSchemaSnapshot | undefined
+): Array<Omit<PrescriptionItem, 'id'>> => {
+  if (!hasSchemaSnapshot(snapshot)) return [];
+  const byInventoryId = new Map<string, Omit<PrescriptionItem, 'id'>>();
+  const stringDefault = (value: unknown): string | undefined => {
+    if (typeof value === 'string') return value.trim() || undefined;
+    if (typeof value === 'number') return String(value);
+    return undefined;
+  };
+  for (const section of snapshot.sections ?? []) {
+    for (const field of section.fields ?? []) {
+      const inventoryItemId = (field.rules as { inventoryItemId?: string } | undefined)
+        ?.inventoryItemId;
+      if (!inventoryItemId) continue;
+      const row =
+        byInventoryId.get(inventoryItemId) ??
+        ({ medicineName: '', fulfillment: 'IN_HOUSE', inventoryItemId } as Omit<
+          PrescriptionItem,
+          'id'
+        >);
+      const value = stringDefault(field.defaultValue);
+      const key = field.key;
+      if (key.endsWith('_name')) row.medicineName = value ?? row.medicineName;
+      else if (key.endsWith('_dosage')) row.dosage = value ?? row.dosage;
+      else if (key.endsWith('_route')) row.route = value ?? row.route;
+      else if (key.endsWith('_frequency')) row.frequency = value ?? row.frequency;
+      else if (key.endsWith('_duration')) row.durationDays = value ?? row.durationDays;
+      else if (key.endsWith('_qty')) row.qty = value ?? row.qty;
+      else if (key.endsWith('_remark') || key.endsWith('_instructions'))
+        row.instructions = value ?? row.instructions;
+      byInventoryId.set(inventoryItemId, row);
+    }
+  }
+  // Keep only rows that resolved a medicine name (a bare inventory id with no name is unusable).
+  return [...byInventoryId.values()].filter((row) => row.medicineName);
+};
+
+/**
+ * Resolve the PRESCRIPTION template that best matches the encounter context via `GET /pms/resolve`
+ * and return its authored medication rows as workspace prescription items, or `[]` when none is
+ * configured. The clinician can still add/edit rows manually afterwards.
+ */
+export const resolvePrescriptionTemplate = async (
+  context: TemplateResolveContext
+): Promise<Array<Omit<PrescriptionItem, 'id'>>> => {
+  const params: Record<string, string> = {
+    organisationId: context.organisationId,
+    kind: 'PRESCRIPTION',
+  };
+  if (context.appointmentId) params.appointmentId = context.appointmentId;
+  if (context.encounterId) params.encounterId = context.encounterId;
+  if (context.companionId) params.companionId = context.companionId;
+  if (context.species) params.species = context.species;
+  if (context.serviceId) params.serviceId = context.serviceId;
+  if (context.packageId) params.packageId = context.packageId;
+  if (context.mode) params.mode = context.mode;
+
+  try {
+    const res = await getData<TemplateResolveResponse>('/v1/templates/pms/resolve', params);
+    return schemaSnapshotToPrescriptionItems(res.data?.schemaSnapshot as never);
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Discharge templates capture "follow up in N days" rather than an absolute date. Pull that
+ * value out of a resolved discharge snapshot so the workspace can prefill the follow-up date as
+ * (encounter/discharge date + N days). Returns `undefined` when the template does not define it.
+ */
+export const extractFollowUpInDays = (
+  snapshot: TemplateSchemaSnapshot | undefined
+): number | undefined => {
+  if (!hasSchemaSnapshot(snapshot)) return undefined;
+  for (const section of snapshot.sections ?? []) {
+    for (const field of section.fields ?? []) {
+      if (field.key === 'followUpInDays') {
+        const raw = field.defaultValue;
+        const value = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(value) && value > 0 ? value : undefined;
+      }
+    }
+  }
+  return undefined;
 };
 
 export const getWorkspaceTemplateById = async (organisationId: string, templateId: string) => {

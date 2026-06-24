@@ -109,7 +109,7 @@ export const categoryToTemplateKind = (category?: FormsCategory): TemplateKind |
     case 'Discharge Form':
       return 'DISCHARGE_SUMMARY';
     case 'Task Template':
-      return 'TASK_ASSIGNMENT';
+      return 'INPATIENT_SCHEDULE';
     case 'Inpatient Schedule':
       return 'INPATIENT_SCHEDULE';
     case 'Custom':
@@ -293,12 +293,16 @@ const toTemplateField = (
   index: number
 ): TemplateSchemaSnapshot['sections'][number]['fields'][number] => {
   const options = 'options' in field ? field.options : undefined;
-  // Rich-text fields carry their prefill HTML on a top-level `defaultValue`
-  // (written by RichTextBuilder). Persist it as the template field's
-  // defaultValue so the editor + prefilled content round-trip on reload.
-  const richTextDefault =
-    field.type === 'richtext'
-      ? (field as FormField & { defaultValue?: unknown }).defaultValue
+  // Persist authored defaults so prefilled content round-trips on reload:
+  //  • Rich-text fields carry prefill HTML on `defaultValue` (RichTextBuilder).
+  //  • Medication-row fields (identified by `meta.inventoryItemId`) carry the inventory-sourced or
+  //    author-typed default for name/strength/route/frequency/duration so the workspace
+  //    prescription section can preload them when the template is applied.
+  const fieldDefault = (field as FormField & { defaultValue?: unknown }).defaultValue;
+  const persistedDefault =
+    field.type === 'richtext' ||
+    (field.meta as { inventoryItemId?: string } | undefined)?.inventoryItemId
+      ? fieldDefault
       : undefined;
   return {
     key: field.id,
@@ -309,7 +313,7 @@ const toTemplateField = (
       field.type === 'group' || ('multiple' in field && Boolean(field.multiple)) || undefined,
     order: field.order ?? index + 1,
     options: options?.length ? options : undefined,
-    defaultValue: richTextDefault,
+    defaultValue: persistedDefault,
     rules: field.meta,
     source: 'USER',
   };
@@ -527,6 +531,98 @@ const cloneTemplateSchema = (schema: TemplateSchemaSnapshot): TemplateSchemaSnap
   })),
 });
 
+type TaskBlockValue = {
+  id?: string;
+  dayOffset: number;
+  timeOfDay: string;
+  taskKind: string;
+  category: string;
+  name: string;
+  audience: string;
+  assignedRole?: string;
+  reminderOffsetMinutes?: number;
+  additionalNotes?: string;
+  recurrence?: {
+    type: string;
+  };
+};
+
+const coerceNumberValue = (value: unknown, fallback: number): number => {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const fieldAuthoredValue = (field: FormField): unknown => {
+  const defaultValue = (field as FormField & { defaultValue?: unknown }).defaultValue;
+  if (defaultValue !== undefined && defaultValue !== '') return defaultValue;
+  return field.placeholder;
+};
+
+const assignTaskBlockValue = (
+  block: TaskBlockValue,
+  key: string | undefined,
+  value: unknown
+): void => {
+  if (!key || value === undefined || value === '') return;
+  if (key === 'dayOffset') {
+    block.dayOffset = coerceNumberValue(value, 0);
+  } else if (key === 'reminderOffsetMinutes') {
+    block.reminderOffsetMinutes = coerceNumberValue(value, 0);
+  } else if (key === 'recurrence.type') {
+    block.recurrence = { type: String(value) };
+  } else if (key in block) {
+    (block as Record<string, unknown>)[key] = value;
+  }
+};
+
+const taskBlockFromGroup = (group: FormField & { fields?: FormField[] }): TaskBlockValue => {
+  const block: TaskBlockValue = {
+    id: group.id,
+    dayOffset: 0,
+    timeOfDay: '09:00',
+    taskKind: 'CUSTOM',
+    category: 'CARE',
+    name: group.label || 'Task',
+    audience: 'EMPLOYEE_TASK',
+    assignedRole: 'EMPLOYEE_TASK',
+    recurrence: { type: 'ONCE' },
+  };
+
+  for (const field of group.fields ?? []) {
+    const key = (field.meta as { taskBlockKey?: string } | undefined)?.taskBlockKey;
+    assignTaskBlockValue(block, key, fieldAuthoredValue(field));
+  }
+
+  return block;
+};
+
+const taskBlocksFromForm = (form: FormsProps): TaskBlockValue[] =>
+  (form.schema ?? [])
+    .flatMap((field) =>
+      field.meta?.taskGroup && field.type === 'group' ? (field.fields ?? []) : []
+    )
+    .filter(
+      (field): field is FormField & { type: 'group'; fields?: FormField[] } =>
+        field.type === 'group' && Boolean(field.meta?.taskBlock)
+    )
+    .map(taskBlockFromGroup)
+    .filter((block) => block.name.trim().length > 0);
+
+const withTaskBlocks = (
+  snapshot: TemplateSchemaSnapshot,
+  taskBlocks: TaskBlockValue[]
+): TemplateSchemaSnapshot => ({
+  sections: snapshot.sections.map((section) => {
+    if (section.id !== 'schedule') return section;
+    return {
+      ...section,
+      fields: section.fields.map((field) =>
+        field.key === 'taskBlocks' ? { ...field, defaultValue: taskBlocks } : field
+      ),
+    };
+  }),
+});
+
 export const buildTemplateSchemaSnapshot = (
   form: FormsProps,
   kind = categoryToTemplateKind(form.category)
@@ -536,6 +632,12 @@ export const buildTemplateSchemaSnapshot = (
     : [];
   const blueprint = kind ? (clinicalBlueprints[kind] ?? workflowBlueprints[kind]) : undefined;
   if (blueprint) {
+    if (kind === 'INPATIENT_SCHEDULE') {
+      const taskBlocks = taskBlocksFromForm(form);
+      return {
+        sections: [...withTaskBlocks(cloneTemplateSchema(blueprint), taskBlocks).sections],
+      };
+    }
     return {
       sections: [...cloneTemplateSchema(blueprint).sections, ...customFields],
     };
@@ -548,18 +650,34 @@ export const buildTemplatePayload = (
   orgId: string
 ): Omit<TemplateUpsertInput, 'createdBy'> => {
   const kind = form.templateKind ?? categoryToTemplateKind(form.category) ?? 'FORM';
+  const isInpatientScoped =
+    kind === 'INPATIENT_SCHEDULE' ||
+    kind === 'TASK_ASSIGNMENT' ||
+    form.category === 'Task Template' ||
+    form.category === 'Inpatient Schedule';
+  // The selected catalog item ids are a mix of services and packages; the backend resolver/
+  // catalog-link sync (handoff §1) keys off both lists, so we send the same ids under each and
+  // let the backend disambiguate against the catalog. Inpatient-only categories also constrain
+  // the encounter mode so resolution never surfaces them in an out-patient workspace.
+  const linkedCatalogIds = form.services ?? [];
   return {
     organisationId: orgId,
     ownership: form.templateSource === 'USER_TEMPLATE' ? 'USER_TEMPLATE' : 'ORG_TEMPLATE',
     kind,
     name: form.name,
     description: form.description,
-    scope: kind === 'INPATIENT_SCHEDULE' ? 'INPATIENT' : 'ORGANISATION',
+    scope: isInpatientScoped ? 'INPATIENT' : 'ORGANISATION',
     rules: {
       species: form.species ?? [],
       requiredSigner: form.requiredSigner,
       visibility: form.usage,
       category: form.category,
+      appliesTo: {
+        serviceIds: linkedCatalogIds,
+        packageIds: linkedCatalogIds,
+        species: form.species ?? [],
+        encounterModes: isInpatientScoped ? ['INPATIENT'] : undefined,
+      },
     },
     schemaSnapshot: buildTemplateSchemaSnapshot(form, kind),
     renderConfigSnapshot: {

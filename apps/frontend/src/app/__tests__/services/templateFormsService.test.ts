@@ -137,6 +137,31 @@ describe('templateFormsService', () => {
     expect(result).toEqual(expect.objectContaining({ isTemplateBacked: true }));
   });
 
+  it('syncs catalog links after saving when services are selected', async () => {
+    (postData as jest.Mock).mockResolvedValue({ data: { id: 'tpl-new', name: 'SOAP' } });
+    (patchData as jest.Mock).mockResolvedValue({
+      data: { id: 'tpl-new', name: 'SOAP', catalogItemIds: ['svc-1'] },
+    });
+
+    await saveTemplateFormDraft(
+      {
+        name: 'SOAP',
+        category: 'SOAP',
+        usage: 'Internal',
+        updatedBy: '',
+        lastUpdated: '',
+        schema: [],
+        services: ['svc-1'],
+      },
+      'org-1'
+    );
+
+    expect(patchData).toHaveBeenCalledWith(
+      '/v1/templates/pms/templates/organisation/org-1/tpl-new/catalog-links',
+      { catalogItemIds: ['svc-1'] }
+    );
+  });
+
   it('updates an existing template-backed form draft', async () => {
     (patchData as jest.Mock).mockResolvedValue({ data: { id: 'tpl-1', name: 'Updated SOAP' } });
 

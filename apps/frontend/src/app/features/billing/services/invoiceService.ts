@@ -81,6 +81,18 @@ type PaymentSessionResponse = {
   providerCheckoutSessionId?: string;
 };
 
+type InvoiceBackendArtifacts = {
+  pdfUrl?: unknown;
+  invoicePdfUrl?: unknown;
+  renderedDocumentUrl?: unknown;
+  renderedPdfUrl?: unknown;
+  renderedDocumentId?: unknown;
+  invoiceDocumentId?: unknown;
+  payments?: unknown;
+};
+
+type NormalizedFinanceInvoice = Invoice & InvoiceBackendArtifacts;
+
 const FINANCE_BASE_PATH = '/v1/finance';
 
 const APPOINTMENT_ID_EXTENSION_URL =
@@ -155,7 +167,10 @@ const markAppointmentReadyForBillingViaAppointmentRoute = async (
   return unwrapFinanceData(res.data);
 };
 
-const normalizeFinanceInvoice = (invoice: any, fallbackOrganisationId?: string): Invoice => {
+const normalizeFinanceInvoice = (
+  invoice: any,
+  fallbackOrganisationId?: string
+): NormalizedFinanceInvoice => {
   if (invoice?.resourceType === 'Invoice') {
     return normalizeInvoiceForFrontend(invoice, fallbackOrganisationId);
   }
@@ -201,6 +216,13 @@ const normalizeFinanceInvoice = (invoice: any, fallbackOrganisationId?: string):
     visitBillingStage: invoice?.visitBillingStage,
     depositCollectedAmount: invoice?.depositCollectedAmount,
     depositTargetAmount: invoice?.depositTargetAmount,
+    pdfUrl: invoice?.pdfUrl,
+    invoicePdfUrl: invoice?.invoicePdfUrl,
+    renderedDocumentUrl: invoice?.renderedDocumentUrl,
+    renderedPdfUrl: invoice?.renderedPdfUrl,
+    renderedDocumentId: invoice?.renderedDocumentId,
+    invoiceDocumentId: invoice?.invoiceDocumentId,
+    payments: invoice?.payments,
     metadata: invoice?.metadata,
     paidAt: invoice?.paidAt ? new Date(invoice.paidAt) : undefined,
     createdAt,
@@ -360,6 +382,21 @@ const financeItemToWorkspaceLineItem = (item: InvoiceItem, index: number): Works
   };
 };
 
+const readInvoiceString = (invoice: Invoice, key: string): string | undefined => {
+  const value = (invoice as unknown as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
+const invoiceRenderedPdfUrl = (invoice: Invoice): string | undefined =>
+  readInvoiceString(invoice, 'pdfUrl') ??
+  readInvoiceString(invoice, 'invoicePdfUrl') ??
+  readInvoiceString(invoice, 'renderedDocumentUrl') ??
+  readInvoiceString(invoice, 'renderedPdfUrl');
+
+const invoiceRenderedDocumentId = (invoice: Invoice): string | undefined =>
+  readInvoiceString(invoice, 'renderedDocumentId') ??
+  readInvoiceString(invoice, 'invoiceDocumentId');
+
 /**
  * Hydrate the appointment workspace's billing view from the finance service:
  * existing/settled invoices (for the Invoices section), the deposit balance, and
@@ -411,6 +448,28 @@ export const loadAppointmentBilling = async (
       depositCents += totalCents;
     }
     const outstandingCents = isPaid ? 0 : totalCents;
+    // Map the payment ledger (deposits + settlements with provider metadata and receipt URLs)
+    // when the backend includes it on the invoice (handoff §5). Absent until then.
+    const rawPayments = (invoice as { payments?: unknown }).payments;
+    const payments = Array.isArray(rawPayments)
+      ? rawPayments.map((payment, index) => {
+          const p = payment as Record<string, unknown>;
+          return {
+            id: String(p.id ?? `${invoice.id ?? appointmentId}-pay-${index}`),
+            amountCents: financeAmountToCents(p.amount as number | undefined),
+            method: typeof p.settlementChannel === 'string' ? p.settlementChannel : undefined,
+            provider: typeof p.provider === 'string' ? p.provider : undefined,
+            status: typeof p.status === 'string' ? p.status : undefined,
+            paidAt:
+              p.paidAt instanceof Date
+                ? p.paidAt.toISOString()
+                : typeof p.paidAt === 'string'
+                  ? p.paidAt
+                  : undefined,
+            receiptUrl: typeof p.receiptUrl === 'string' ? p.receiptUrl : undefined,
+          };
+        })
+      : undefined;
     return {
       id: String(invoice.id ?? appointmentId),
       createdAt: (invoice.createdAt ?? new Date()).toISOString(),
@@ -420,6 +479,9 @@ export const loadAppointmentBilling = async (
       paidByName: undefined,
       paidAt: invoice.paidAt ? invoice.paidAt.toISOString() : undefined,
       items,
+      payments,
+      pdfUrl: invoiceRenderedPdfUrl(invoice),
+      renderedDocumentId: invoiceRenderedDocumentId(invoice),
     };
   });
 
