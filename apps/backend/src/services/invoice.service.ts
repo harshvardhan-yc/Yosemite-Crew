@@ -21,8 +21,12 @@ import {
   DEFAULT_TAX_BEHAVIOR,
   getInvoiceTaxProviderAdapter,
 } from "./finance/tax";
-import { FinancePaymentService } from "./finance/payment";
+import {
+  FinancePaymentService,
+  getInvoiceFinancialSummary,
+} from "./finance/payment";
 import { FinanceEventService } from "./finance/events";
+import { createRenderedDocumentRecord } from "./rendered-document.service";
 import { prisma } from "src/config/prisma";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
 import { NotificationTemplates } from "src/utils/notificationTemplates";
@@ -883,6 +887,70 @@ const applyInvoiceTerminalStatus = async (
   return doc;
 };
 
+const recordInvoicePaidState = async (invoice: PrismaInvoice, paidAt: Date) => {
+  const updated = await prisma.invoice.update({
+    where: { id: invoice.id },
+    data: {
+      status: "PAID",
+      paidAt,
+      visitBillingStage: "SETTLED",
+    },
+  });
+
+  await recordInvoiceAuditForRow(updated, "INVOICE_PAID", updated.id, {
+    status: updated.status,
+    totalAmount: updated.totalAmount,
+    currency: updated.currency,
+  });
+
+  await FinanceEventService.recordEvent({
+    organisationId: updated.organisationId ?? null,
+    eventType: "INVOICE_PAID",
+    entityType: "INVOICE",
+    entityId: updated.id,
+    payload: {
+      status: updated.status,
+      totalAmount: updated.totalAmount,
+      currency: updated.currency,
+      paidAt: updated.paidAt?.toISOString() ?? null,
+    },
+    occurredAt: updated.paidAt ?? paidAt,
+  });
+
+  return updated;
+};
+
+const ensureFinalizedInvoiceRenderedDocument = async (
+  invoice: PrismaInvoice,
+) => {
+  if (!invoice.organisationId) {
+    return;
+  }
+
+  const existing = await prisma.renderedDocument.findFirst({
+    where: {
+      organisationId: invoice.organisationId,
+      sourceKind: "INVOICE" as never,
+      sourceId: invoice.id,
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  return createRenderedDocumentRecord({
+    title: "Final Invoice",
+    source: {
+      sourceKind: "INVOICE",
+      sourceId: invoice.id,
+      organisationId: invoice.organisationId,
+      templateKind: "INVOICE",
+    },
+  });
+};
+
 const computeInvoiceTaxTotals = async (
   invoice: Prisma.InvoiceGetPayload<{ include: { taxSnapshot: true } }>,
   mode: "preview" | "finalize",
@@ -1133,41 +1201,12 @@ export const InvoiceService = {
       return null;
     }
 
-    const invoice = await prisma.invoice.update({
-      where: { id: params.invoiceId },
-      data: {
-        status: "PAID",
-        paidAt: new Date(),
-        visitBillingStage: "SETTLED",
-      },
-    });
-
-    await recordInvoiceAuditForRow(invoice, "INVOICE_PAID", invoice.id, {
-      status: invoice.status,
-      totalAmount: invoice.totalAmount,
-      currency: invoice.currency,
-    });
-
-    await FinanceEventService.recordEvent({
-      organisationId: invoice.organisationId ?? null,
-      eventType: "INVOICE_PAID",
-      entityType: "INVOICE",
-      entityId: invoice.id,
-      payload: {
-        status: invoice.status,
-        totalAmount: invoice.totalAmount,
-        currency: invoice.currency,
-        paidAt: invoice.paidAt?.toISOString() ?? null,
-      },
-      occurredAt: invoice.paidAt ?? new Date(),
-    });
-
-    return invoice;
+    return recordInvoicePaidState(existing, new Date());
   },
 
   async markInvoicePaidManually(invoiceId: string, organisationId: string) {
     const doc = await prisma.invoice.findUnique({ where: { id: invoiceId } });
-    if (doc?.organisationId !== organisationId) {
+    if (!doc || doc.organisationId !== organisationId) {
       throw new InvoiceServiceError("Invoice not found.", 404);
     }
 
@@ -1185,6 +1224,53 @@ export const InvoiceService = {
     const result = await FinancePaymentService.recordManualPayment(doc.id, {
       settlementChannel: "CASH",
     });
+    return toInvoiceRecord(result.invoice);
+  },
+
+  async settleInvoiceAtCloseout(
+    invoiceId: string,
+    organisationId: string,
+    input: {
+      settlementChannel?:
+        | "CASH"
+        | "BANK_TRANSFER"
+        | "CARD_PRESENT"
+        | "DEPOSIT"
+        | "OTHER";
+      reference?: string;
+      receivedAt?: Date;
+    } = {},
+  ) {
+    const doc = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+    if (!doc || doc.organisationId !== organisationId) {
+      throw new InvoiceServiceError("Invoice not found.", 404);
+    }
+
+    if (["CANCELLED", "REFUNDED"].includes(doc.status)) {
+      throw new InvoiceServiceError("Invoice cannot be settled.", 409);
+    }
+
+    if (doc.status === "PAID") {
+      return toInvoiceRecord(doc);
+    }
+
+    const summary = await getInvoiceFinancialSummary(doc.id, doc.totalAmount);
+    if (summary.balance <= 0) {
+      const settled = await recordInvoicePaidState(
+        doc,
+        input.receivedAt ?? new Date(),
+      );
+      return toInvoiceRecord(settled);
+    }
+
+    const result = await FinancePaymentService.recordManualPayment(doc.id, {
+      settlementChannel: input.settlementChannel ?? "CASH",
+      receivedAt: input.receivedAt,
+      reference: input.reference,
+    });
+
     return toInvoiceRecord(result.invoice);
   },
 
@@ -1728,6 +1814,7 @@ export const InvoiceService = {
     }
 
     if (invoice.finalizedAt) {
+      await ensureFinalizedInvoiceRenderedDocument(invoice);
       return toInvoiceRecord(invoice);
     }
 
@@ -1785,6 +1872,8 @@ export const InvoiceService = {
       },
       occurredAt: finalizedAt,
     });
+
+    await ensureFinalizedInvoiceRenderedDocument(updated);
 
     return toInvoiceRecord(updated);
   },
