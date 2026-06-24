@@ -34,7 +34,12 @@ describe('HomePage Component', () => {
   });
 
   test('renders call-to-action buttons with correct links', () => {
-    render(<HomePage />);
+    render(
+      <HomePage
+        macDownloadHref="https://downloads.example.com/mac"
+        windowsDownloadHref="https://downloads.example.com/windows"
+      />
+    );
 
     const mainHeading = screen.getByText(/helping you help pets/i);
 
@@ -90,6 +95,16 @@ describe('HomePage Component', () => {
 
     const caringHeading = screen.getByText(/caring for vets, who care for pets/i);
     expect(caringHeading).toBeInTheDocument();
+  });
+
+  test('renders disabled download buttons when download URLs are missing', () => {
+    render(<HomePage />);
+
+    const macDownload = screen.getByRole('button', { name: /download mac app/i });
+    const windowsDownload = screen.getByRole('button', { name: /download windows app/i });
+
+    expect(macDownload).toBeDisabled();
+    expect(windowsDownload).toBeDisabled();
   });
 });
 

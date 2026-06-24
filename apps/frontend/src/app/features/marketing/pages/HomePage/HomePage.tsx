@@ -11,16 +11,18 @@ import data from './data';
 import { useAuthStore } from '@/app/stores/authStore';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { resolveDefaultOpenScreenRoute } from '@/app/lib/defaultOpenScreen';
-import { getEnv } from '@/app/lib/env';
 export { FillBtn, UnFillBtn } from './HomePageButtons';
 
 import './HomePage.css';
 
-const HomePage = () => {
+type HomePageProps = {
+  macDownloadHref?: string;
+  windowsDownloadHref?: string;
+};
+
+const HomePage = ({ macDownloadHref, windowsDownloadHref }: Readonly<HomePageProps>) => {
   const { focusCards, practiceFeatures, heroList } = data;
   const { user, role } = useAuthStore();
-  const macDownloadHref = getEnv('NEXT_PUBLIC_MAC_APP_DOWNLOAD_URL') ?? '#';
-  const windowsDownloadHref = getEnv('NEXT_PUBLIC_WINDOWS_APP_DOWNLOAD_URL') ?? '#';
 
   const getCtaHref = () => {
     if (user) {
@@ -80,6 +82,7 @@ const HomePage = () => {
                       text={button.text}
                       href={button.href}
                       icon={button.icon}
+                      isDisabled={button.href === undefined}
                     />
                   ))}
                 </div>

@@ -206,6 +206,137 @@ describe('buildTemplateSchemaSnapshot rich-text round-trip', () => {
   });
 });
 
+describe('buildTemplateSchemaSnapshot canonical blueprint merge', () => {
+  it('does not duplicate canonical SOAP fields into custom_fields', () => {
+    const snapshot = buildTemplateSchemaSnapshot(
+      {
+        name: 'SOAP',
+        category: 'SOAP',
+        usage: 'Internal',
+        updatedBy: 'user-1',
+        lastUpdated: '',
+        schema: [
+          { id: 'subjective', type: 'richtext', label: 'Subjective', defaultValue: '<p>s</p>' },
+          { id: 'objective', type: 'richtext', label: 'Objective', defaultValue: '<p>o</p>' },
+          { id: 'assessment', type: 'richtext', label: 'Assessment', defaultValue: '<p>a</p>' },
+          { id: 'plan', type: 'richtext', label: 'Plan', defaultValue: '<p>p</p>' },
+        ] as unknown as FormField[],
+      },
+      'SOAP_NOTE'
+    );
+
+    expect(snapshot.sections.map((section) => section.id)).toEqual([
+      'subjective',
+      'objective',
+      'assessment',
+      'plan',
+    ]);
+    expect(snapshot.sections[0].fields[0].defaultValue).toBe('<p>s</p>');
+    expect(snapshot.sections[1].fields[0].defaultValue).toBe('<p>o</p>');
+  });
+
+  it('keeps extra SOAP fields in custom_fields', () => {
+    const snapshot = buildTemplateSchemaSnapshot(
+      {
+        name: 'SOAP',
+        category: 'SOAP',
+        usage: 'Internal',
+        updatedBy: 'user-1',
+        lastUpdated: '',
+        schema: [
+          { id: 'subjective', type: 'richtext', label: 'Subjective' },
+          {
+            id: 'clinical_note',
+            type: 'richtext',
+            label: 'Clinical note',
+            defaultValue: '<p>x</p>',
+          },
+        ] as unknown as FormField[],
+      },
+      'SOAP_NOTE'
+    );
+
+    expect(snapshot.sections.map((section) => section.id)).toEqual([
+      'subjective',
+      'objective',
+      'assessment',
+      'plan',
+      'custom_fields',
+    ]);
+    expect(snapshot.sections.at(-1)?.fields.map((field) => field.key)).toEqual(['clinical_note']);
+  });
+
+  it('merges authored discharge defaults into the canonical sections', () => {
+    const snapshot = buildTemplateSchemaSnapshot(
+      {
+        name: 'Discharge',
+        category: 'Discharge Form',
+        usage: 'Internal',
+        updatedBy: 'user-1',
+        lastUpdated: '',
+        schema: [
+          {
+            id: 'summaryText',
+            type: 'richtext',
+            label: 'Discharge summary',
+            defaultValue: '<p>ok</p>',
+          },
+          { id: 'followUpInDays', type: 'number', label: 'Follow up in (days)', defaultValue: 7 },
+        ] as unknown as FormField[],
+      },
+      'DISCHARGE_SUMMARY'
+    );
+
+    expect(snapshot.sections.map((section) => section.id)).toEqual(['summary', 'follow_up']);
+    expect(snapshot.sections[0].fields[0].defaultValue).toBe('<p>ok</p>');
+    expect(snapshot.sections[1].fields[0].defaultValue).toBe(7);
+  });
+
+  it('keeps task schedule defaults on the canonical taskBlocks field', () => {
+    const snapshot = buildTemplateSchemaSnapshot(
+      {
+        name: 'Task',
+        category: 'Task Template',
+        usage: 'Internal',
+        updatedBy: 'user-1',
+        lastUpdated: '',
+        schema: [
+          {
+            id: 'task_blocks',
+            type: 'group',
+            label: 'Schedule tasks',
+            meta: { taskGroup: true },
+            fields: [
+              {
+                id: 'task-1',
+                type: 'group',
+                label: 'Vitals',
+                meta: { taskBlock: true },
+                fields: [
+                  { id: 'task-1_name', type: 'input', label: 'Task name', defaultValue: 'Vitals' },
+                  {
+                    id: 'task-1_category',
+                    type: 'dropdown',
+                    label: 'Category',
+                    defaultValue: 'CARE',
+                  },
+                ] as unknown as FormField[],
+              },
+            ] as unknown as FormField[],
+          },
+        ] as unknown as FormField[],
+      },
+      'INPATIENT_SCHEDULE'
+    );
+
+    const scheduleSection = snapshot.sections.find((section) => section.id === 'schedule');
+    const taskBlocks = scheduleSection?.fields.find((field) => field.key === 'taskBlocks');
+    expect(taskBlocks?.defaultValue).toEqual([
+      expect.objectContaining({ name: 'Vitals', category: 'CARE' }),
+    ]);
+  });
+});
+
 describe('buildTemplatePayload appliesTo linking', () => {
   const form = (overrides: Partial<FormsProps>): FormsProps => ({
     name: 'Tpl',

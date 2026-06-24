@@ -26,6 +26,7 @@ import DateBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/compo
 import { useOrgStore } from '@/app/stores/orgStore';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import { InventoryApiItem } from '@/app/features/inventory/pages/Inventory/types';
+import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
 import { ensureSingleSignatureAtEnd, hasSignatureField } from '@/app/lib/forms';
 
 // Builds a nested-field updater for a group field. Shared by the service/medication/task
@@ -155,6 +156,26 @@ const buildMedicationTemplateGroup = (id: string): FormField => {
     meta: { template: true, medicineName: 'Medication template' } as any,
     fields: buildMedicationFields(templateId, '-'),
   };
+};
+
+const isMedicalInventoryItem = (item: InventoryApiItem): boolean => {
+  const normalized = mapApiItemToInventoryItem(item);
+  const itemType =
+    normalized.classification.itemType || normalized.basicInfo.itemType || item.itemType || '';
+  const category = `${normalized.basicInfo.category ?? item.category ?? ''}`.trim().toLowerCase();
+  const subCategory = `${normalized.basicInfo.subCategory ?? item.subCategory ?? ''}`
+    .trim()
+    .toLowerCase();
+  const name = `${normalized.basicInfo.name ?? item.name ?? ''}`.trim().toLowerCase();
+  return (
+    itemType.toLowerCase() === 'drug' ||
+    itemType.toLowerCase() === 'medical' ||
+    itemType.toUpperCase() === 'MEDICAL' ||
+    category === 'medicine' ||
+    subCategory.includes('medicine') ||
+    name.includes('med') ||
+    name.includes('drug')
+  );
 };
 
 const defaultTaskBlockFields = (prefix: string, taskNumber: number): FormField[] => [
@@ -757,21 +778,31 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
     if (!primaryOrgId) return;
     setLoadingMedicines(true);
     fetchInventoryItems(primaryOrgId, { category: 'Medicine' })
-      .then((items) => setMedicines(items))
+      .then((items) => setMedicines(items.filter(isMedicalInventoryItem)))
       .catch((err) => console.error('Failed to load medicines:', err))
       .finally(() => setLoadingMedicines(false));
   }, [primaryOrgId]);
 
-  const medicineOptions = medicines.map((med) => ({
-    label: med.name,
-    value: med._id,
-  }));
+  const medicineOptions = medicines.map((med) => {
+    const normalized = mapApiItemToInventoryItem(med);
+    const label =
+      normalized.basicInfo.name || normalized.classification.genericName || med.name || 'Medicine';
+    const strength = normalized.classification.strength || normalized.classification.dosageForm;
+    const route = normalized.classification.administration;
+    const parts = [strength, route].filter(Boolean).join(' • ');
+    return {
+      label: parts ? `${label} (${parts})` : label,
+      value: med._id,
+      badge: normalized.basicInfo.itemType || 'Drug',
+    };
+  });
 
   const handleMedicineSelect = (medicineId: string) => {
     if (!medicineId || selectedMedicines.includes(medicineId)) return;
 
     const medicine = medicines.find((m) => m._id === medicineId);
     if (!medicine) return;
+    const normalizedMedicine = mapApiItemToInventoryItem(medicine);
     const inventoryItemId = medicine._id;
 
     // Create individual medication fields directly (not a nested group)
@@ -781,23 +812,24 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
     // Read inventory-sourced values from the canonical API fields (top-level), falling back to the
     // legacy `attributes` bag. These prefill the read-only name/strength/route/price; the author
     // fills frequency/duration/qty/remark defaults which preload the workspace prescription section.
-    const strength = medicine.strength ?? medicine.attributes?.strength ?? '';
-    const route =
-      medicine.routeOfAdministration ??
-      medicine.dosageForm ??
-      medicine.attributes?.administration ??
+    const strength =
+      normalizedMedicine.classification.strength ||
+      normalizedMedicine.classification.dosageForm ||
       '';
-    const price =
-      medicine.sellingPrice === null || medicine.sellingPrice === undefined
-        ? ''
-        : String(medicine.sellingPrice);
+    const route = normalizedMedicine.classification.administration || '';
+    const price = normalizedMedicine.pricing.selling || '';
+    const displayName =
+      normalizedMedicine.basicInfo.name ||
+      normalizedMedicine.classification.genericName ||
+      medicine.name ||
+      'Medicine';
     const medicationFields: FormField[] = [
       {
         id: `${fieldPrefix}_name`,
         type: 'input',
         label: 'Name',
-        placeholder: medicine.name,
-        defaultValue: medicine.name,
+        placeholder: displayName,
+        defaultValue: displayName,
         meta: { readonly: true, inventoryItemId },
       },
       {
@@ -858,12 +890,12 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
     const newMedicineGroup: FormField = {
       id: `${fieldPrefix}_group`,
       type: 'group',
-      label: medicine.name,
+      label: displayName,
       fields: medicationFields,
       meta: {
         medicineId,
         inventoryItemId,
-        medicineName: medicine.name,
+        medicineName: displayName,
       },
     };
 

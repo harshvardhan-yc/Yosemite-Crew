@@ -524,12 +524,40 @@ const workflowBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> 
   },
 };
 
-const cloneTemplateSchema = (schema: TemplateSchemaSnapshot): TemplateSchemaSnapshot => ({
-  sections: schema.sections.map((section) => ({
-    ...section,
-    fields: section.fields.map((field) => ({ ...field })),
-  })),
-});
+const mergeFieldDefaults = (
+  blueprint: TemplateSchemaSnapshot,
+  fields: FormField[]
+): TemplateSchemaSnapshot => {
+  const authoredById = new Map<string, FormField>();
+  for (const field of fields) {
+    authoredById.set(field.id, field);
+  }
+
+  return {
+    sections: blueprint.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => {
+        const authored = authoredById.get(field.key);
+        if (!authored) return { ...field };
+
+        const authoredDefault = (authored as FormField & { defaultValue?: unknown }).defaultValue;
+        return {
+          ...field,
+          label: authored.label || field.label,
+          required: authored.required ?? field.required,
+          defaultValue:
+            authoredDefault === undefined || authoredDefault === ''
+              ? field.defaultValue
+              : authoredDefault,
+          rules: {
+            ...(field.rules ?? {}),
+            ...(authored.meta ?? {}),
+          },
+        };
+      }),
+    })),
+  };
+};
 
 type TaskBlockValue = {
   id?: string;
@@ -625,25 +653,38 @@ const withTaskBlocks = (
   }),
 });
 
+const getBlueprintFieldKeys = (snapshot?: TemplateSchemaSnapshot): Set<string> => {
+  if (!snapshot) return new Set();
+  return new Set(snapshot.sections.flatMap((section) => section.fields.map((field) => field.key)));
+};
+
+const filterCustomFields = (fields: FormField[] = [], blueprintKeys: Set<string>): FormField[] =>
+  fields.filter((field) => !blueprintKeys.has(field.id));
+
 export const buildTemplateSchemaSnapshot = (
   form: FormsProps,
   kind = categoryToTemplateKind(form.category)
 ): TemplateSchemaSnapshot => {
-  const customFields = form.schema?.length
-    ? [fieldsToTemplateSection('custom_fields', 'Custom Fields', form.schema, 999)]
-    : [];
   const blueprint = kind ? (clinicalBlueprints[kind] ?? workflowBlueprints[kind]) : undefined;
   if (blueprint) {
+    const mergedBlueprint = mergeFieldDefaults(blueprint, form.schema ?? []);
+    const customFields = filterCustomFields(form.schema ?? [], getBlueprintFieldKeys(blueprint));
     if (kind === 'INPATIENT_SCHEDULE') {
       const taskBlocks = taskBlocksFromForm(form);
       return {
-        sections: [...withTaskBlocks(cloneTemplateSchema(blueprint), taskBlocks).sections],
+        sections: [...withTaskBlocks(mergedBlueprint, taskBlocks).sections],
       };
     }
+    const customSections = customFields.length
+      ? [fieldsToTemplateSection('custom_fields', 'Custom Fields', customFields, 999)]
+      : [];
     return {
-      sections: [...cloneTemplateSchema(blueprint).sections, ...customFields],
+      sections: [...mergedBlueprint.sections, ...customSections],
     };
   }
+  const customFields = form.schema?.length
+    ? [fieldsToTemplateSection('custom_fields', 'Custom Fields', form.schema, 999)]
+    : [];
   return { sections: customFields };
 };
 

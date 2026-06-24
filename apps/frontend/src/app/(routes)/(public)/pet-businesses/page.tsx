@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
+import { getEnv } from '@/app/lib/env';
 import HomePage from '@/app/features/marketing/pages/HomePage/HomePage';
 
 export const metadata: Metadata = {
@@ -9,7 +10,12 @@ export const metadata: Metadata = {
 };
 
 function page() {
-  return <HomePage />;
+  return (
+    <HomePage
+      macDownloadHref={getEnv('NEXT_PUBLIC_MAC_APP_DOWNLOAD_URL')}
+      windowsDownloadHref={getEnv('NEXT_PUBLIC_WINDOWS_APP_DOWNLOAD_URL')}
+    />
+  );
 }
 
 export default page;

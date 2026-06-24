@@ -369,8 +369,11 @@ describe('Build form step', () => {
       {
         _id: 'med-1',
         name: 'Amoxicillin',
+        itemType: 'DRUG',
+        strength: '250 mg',
+        dosageForm: 'Tablet',
+        routeOfAdministration: 'Oral',
         sellingPrice: 25,
-        attributes: { strength: '250mg', administration: 'Oral' },
       },
     ]);
 
@@ -389,7 +392,9 @@ describe('Build form step', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'Amoxicillin' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('option', { name: 'Amoxicillin (250 mg • Oral)' })
+      ).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByTestId('medicine-dropdown'), { target: { value: 'med-1' } });
@@ -401,7 +406,49 @@ describe('Build form step', () => {
       expect(updated.fields[0].label).toBe('Amoxicillin');
       // name, dosage, route, frequency, duration, qty, price, remark
       expect(updated.fields[0].fields).toHaveLength(8);
+      expect(updated.fields[0].fields[0].defaultValue).toBe('Amoxicillin');
+      expect(updated.fields[0].fields[1].defaultValue).toBe('250 mg');
+      expect(updated.fields[0].fields[2].defaultValue).toBe('Oral');
     });
+  });
+
+  it('keeps Drug inventory items available in the medicine picker', async () => {
+    (useOrgStore as unknown as jest.Mock).mockImplementation((selector: any) =>
+      selector({ primaryOrgId: 'org-1' })
+    );
+    (fetchInventoryItems as jest.Mock).mockResolvedValue([
+      {
+        _id: 'drug-1',
+        name: 'Prednisone',
+        itemType: 'Drug',
+        strength: '10 mg',
+        dosageForm: 'Tablet',
+        routeOfAdministration: 'Oral',
+        sellingPrice: 12,
+      },
+      {
+        _id: 'supply-1',
+        name: 'Gauze',
+        itemType: 'NON_MEDICAL',
+        category: 'Consumable',
+        sellingPrice: 2,
+      },
+    ]);
+
+    const medicationGroup: FormField = {
+      id: 'mg-1',
+      type: 'group',
+      label: 'Medication',
+      meta: { medicationGroup: true } as any,
+      fields: [],
+    } as FormField;
+
+    renderBuild(baseFormData({ schema: [medicationGroup] }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Prednisone/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Gauze/)).not.toBeInTheDocument();
   });
 
   describe('YC-default structure lock', () => {

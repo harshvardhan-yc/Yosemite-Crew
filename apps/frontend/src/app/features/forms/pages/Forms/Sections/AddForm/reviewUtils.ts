@@ -14,6 +14,8 @@ export const buildInitialValues = (fields: FormField[]): Record<string, any> => 
         acc[field.id] = defaultValue ?? [];
       } else if (field.type === 'boolean') {
         acc[field.id] = defaultValue ?? false;
+      } else if (defaultValue !== undefined) {
+        acc[field.id] = defaultValue;
       } else {
         acc[field.id] = defaultValue ?? '';
       }
