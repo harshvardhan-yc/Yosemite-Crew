@@ -1386,6 +1386,7 @@ enum RenderedDocumentSourceKind {
   TEMPLATE_INSTANCE
   CLINICAL_ARTIFACT
   FORM_SUBMISSION
+  TASK_SCHEDULE
 }
 
 enum DocumentSignatureSignerType {

@@ -3,6 +3,7 @@ import { prisma } from "src/config/prisma";
 import { ClinicalArtifactService } from "./clinical-artifact.service";
 import { FormAssignmentService } from "./form-assignment.service";
 import { InvoiceService, InvoiceServiceError } from "./invoice.service";
+import { createRenderedDocumentRecord } from "./rendered-document.service";
 import { roundMoney } from "./finance/pricing";
 import type {
   Case,
@@ -1178,34 +1179,47 @@ const mapDocumentRow = (input: {
 
 const mapRenderedDocumentRow = (
   document: RenderedDocumentRow,
-): WorkspaceDocumentRow => ({
-  documentId: document.id,
-  sourceKind: document.sourceKind,
-  sourceId: document.sourceId,
-  appointmentId:
-    document.templateInstance?.appointmentId ??
-    document.clinicalArtifact?.appointmentId ??
-    null,
-  encounterId:
-    document.templateInstance?.encounterId ??
-    document.clinicalArtifact?.encounterId ??
-    null,
-  companionId: null,
-  templateId: document.templateId,
-  templateVersion: document.templateVersion,
-  title: document.title,
-  kind: document.kind,
-  status: document.status,
-  signingStatus:
-    isRecord(document.signing) && typeof document.signing.status === "string"
-      ? String(document.signing.status)
-      : document.status === "SIGNED"
-        ? "SIGNED"
-        : "NOT_STARTED",
-  pdfUrl: document.pdfUrl,
-  createdAt: document.createdAt,
-  updatedAt: document.updatedAt,
-});
+  scheduleContext?: Map<
+    string,
+    { appointmentId: string | null; encounterId: string | null }
+  >,
+): WorkspaceDocumentRow => {
+  const scheduleSourceContext =
+    document.sourceKind === "TASK_SCHEDULE"
+      ? scheduleContext?.get(document.sourceId)
+      : undefined;
+
+  return {
+    documentId: document.id,
+    sourceKind: document.sourceKind,
+    sourceId: document.sourceId,
+    appointmentId:
+      document.templateInstance?.appointmentId ??
+      document.clinicalArtifact?.appointmentId ??
+      scheduleSourceContext?.appointmentId ??
+      null,
+    encounterId:
+      document.templateInstance?.encounterId ??
+      document.clinicalArtifact?.encounterId ??
+      scheduleSourceContext?.encounterId ??
+      null,
+    companionId: null,
+    templateId: document.templateId,
+    templateVersion: document.templateVersion,
+    title: document.title,
+    kind: document.kind,
+    status: document.status,
+    signingStatus:
+      isRecord(document.signing) && typeof document.signing.status === "string"
+        ? String(document.signing.status)
+        : document.status === "SIGNED"
+          ? "SIGNED"
+          : "NOT_STARTED",
+    pdfUrl: document.pdfUrl,
+    createdAt: document.createdAt,
+    updatedAt: document.updatedAt,
+  };
+};
 
 const dedupeDocumentRows = (
   rows: WorkspaceDocumentRow[],
@@ -1338,6 +1352,11 @@ const loadForms = async (
       items: [] as WorkspaceFormRow[],
     };
   }
+
+  await FormAssignmentService.syncLinkedTemplateAssignmentsForAppointment({
+    organisationId,
+    appointmentId,
+  });
 
   const items = await FormAssignmentService.listAppointmentFormSummaries(
     organisationId,
@@ -1533,6 +1552,43 @@ const loadSchedules = async (params: {
     orderBy: { updatedAt: "desc" },
   });
 
+const ensureRenderedTaskSchedules = async (
+  organisationId: string,
+  schedules: Array<{
+    id: string;
+    templateId: string;
+    templateVersion: number;
+    templateKind: string;
+  }>,
+) => {
+  for (const schedule of schedules) {
+    const existing = await prisma.renderedDocument.findFirst({
+      where: {
+        organisationId,
+        sourceKind: "TASK_SCHEDULE" as never,
+        sourceId: schedule.id,
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      continue;
+    }
+
+    await createRenderedDocumentRecord({
+      title: "Inpatient Schedule",
+      source: {
+        sourceKind: "TASK_SCHEDULE",
+        sourceId: schedule.id,
+        organisationId,
+        templateKind: "INPATIENT_SCHEDULE",
+        templateId: schedule.templateId,
+        templateVersion: schedule.templateVersion,
+      },
+    });
+  }
+};
+
 const loadTemplateInstances = async (params: {
   organisationId: string;
   appointmentId?: string;
@@ -1610,6 +1666,11 @@ const loadDocuments = async (params: {
   appointmentId?: string;
   encounterId?: string;
   companionId?: string;
+  scheduleIds?: string[];
+  scheduleContext?: Map<
+    string,
+    { appointmentId: string | null; encounterId: string | null }
+  >;
 }) => {
   const renderedDocumentConditions = [
     ...(params.appointmentId
@@ -1637,6 +1698,14 @@ const loadDocuments = async (params: {
             clinicalArtifact: {
               is: { encounterId: params.encounterId },
             },
+          },
+        ]
+      : []),
+    ...(params.scheduleIds?.length
+      ? [
+          {
+            sourceKind: "TASK_SCHEDULE" as never,
+            sourceId: { in: params.scheduleIds },
           },
         ]
       : []),
@@ -1697,7 +1766,9 @@ const loadDocuments = async (params: {
         updatedAt: document.updatedAt,
       }),
     ),
-    ...renderedDocuments.map(mapRenderedDocumentRow),
+    ...renderedDocuments.map((document) =>
+      mapRenderedDocumentRow(document, params.scheduleContext),
+    ),
   ];
 
   return rows;
@@ -1733,7 +1804,6 @@ const buildBootstrapAggregate = async (
     tasks,
     schedules,
     templateInstances,
-    documents,
     ordersAndResults,
     admission,
     pendingDispenseRequests,
@@ -1766,12 +1836,6 @@ const buildBootstrapAggregate = async (
       encounterId,
       caseId,
     }),
-    loadDocuments({
-      organisationId: input.organisationId,
-      appointmentId,
-      encounterId,
-      companionId,
-    }),
     loadOrdersAndResults({
       organisationId: input.organisationId,
       appointmentId,
@@ -1784,6 +1848,27 @@ const buildBootstrapAggregate = async (
       encounterId,
     }),
   ]);
+
+  await ensureRenderedTaskSchedules(input.organisationId, schedules);
+
+  const scheduleContext = new Map(
+    schedules.map((schedule) => [
+      schedule.id,
+      {
+        appointmentId: schedule.appointmentId ?? null,
+        encounterId: schedule.encounterId ?? null,
+      },
+    ]),
+  );
+
+  const documents = await loadDocuments({
+    organisationId: input.organisationId,
+    appointmentId,
+    encounterId,
+    companionId,
+    scheduleIds: schedules.map((schedule) => schedule.id),
+    scheduleContext,
+  });
 
   const diagnosticPreloads = await loadDiagnosticPreloads({
     organisationId: input.organisationId,

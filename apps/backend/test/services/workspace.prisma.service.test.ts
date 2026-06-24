@@ -23,7 +23,11 @@ jest.mock("src/config/prisma", () => ({
     taskSchedule: { findMany: jest.fn() },
     templateInstance: { findMany: jest.fn() },
     document: { findMany: jest.fn() },
-    renderedDocument: { findMany: jest.fn() },
+    renderedDocument: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+    },
     prescriptionDispenseRequest: { findMany: jest.fn() },
     workspaceTreatmentItem: {
       findMany: jest.fn(),
@@ -40,6 +44,7 @@ jest.mock("src/config/prisma", () => ({
 
 jest.mock("src/services/form-assignment.service", () => ({
   FormAssignmentService: {
+    syncLinkedTemplateAssignmentsForAppointment: jest.fn(),
     listAppointmentFormSummaries: jest.fn(),
   },
 }));
@@ -89,7 +94,11 @@ describe("WorkspaceService", () => {
     taskSchedule: { findMany: jest.Mock };
     templateInstance: { findMany: jest.Mock };
     document: { findMany: jest.Mock };
-    renderedDocument: { findMany: jest.Mock };
+    renderedDocument: {
+      findMany: jest.Mock;
+      findFirst: jest.Mock;
+      create: jest.Mock;
+    };
     prescriptionDispenseRequest: { findMany: jest.Mock };
     workspaceTreatmentItem: {
       findMany: jest.Mock;
@@ -103,6 +112,7 @@ describe("WorkspaceService", () => {
     financeEvent: { findFirst: jest.Mock };
   };
   const mockedFormService = FormAssignmentService as unknown as {
+    syncLinkedTemplateAssignmentsForAppointment: jest.Mock;
     listAppointmentFormSummaries: jest.Mock;
   };
   const mockedInvoiceService = InvoiceService as unknown as {
@@ -137,6 +147,10 @@ describe("WorkspaceService", () => {
     mockedPrisma.templateInstance.findMany.mockResolvedValue([]);
     mockedPrisma.document.findMany.mockResolvedValue([]);
     mockedPrisma.renderedDocument.findMany.mockResolvedValue([]);
+    mockedPrisma.renderedDocument.findFirst.mockResolvedValue(null);
+    mockedPrisma.renderedDocument.create.mockResolvedValue({
+      id: "rendered-schedule-1",
+    });
     mockedPrisma.prescriptionDispenseRequest.findMany.mockResolvedValue([]);
     mockedPrisma.productItem.findMany.mockResolvedValue([]);
     mockedPrisma.workspaceTreatmentItem.findMany.mockResolvedValue([]);
@@ -178,6 +192,9 @@ describe("WorkspaceService", () => {
         updatedAt: new Date("2026-06-14T10:00:00.000Z"),
       },
     ]);
+    mockedFormService.syncLinkedTemplateAssignmentsForAppointment.mockResolvedValue(
+      undefined,
+    );
 
     mockedClinicalArtifactService.listSoapNotesForAppointment.mockResolvedValue(
       [],
@@ -478,6 +495,12 @@ describe("WorkspaceService", () => {
       "org-1",
       "appt-1",
     );
+    expect(
+      mockedFormService.syncLinkedTemplateAssignmentsForAppointment,
+    ).toHaveBeenCalledWith({
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+    });
   });
 
   it("manages persisted treatment items", async () => {
@@ -1020,6 +1043,12 @@ describe("WorkspaceService", () => {
       "org-2",
       "appt-enc-1",
     );
+    expect(
+      mockedFormService.syncLinkedTemplateAssignmentsForAppointment,
+    ).toHaveBeenCalledWith({
+      organisationId: "org-2",
+      appointmentId: "appt-enc-1",
+    });
   });
 
   it("throws a not found error when the appointment is missing", async () => {

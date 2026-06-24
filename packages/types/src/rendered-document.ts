@@ -14,7 +14,8 @@ export type RenderedDocumentKind =
 export type RenderedDocumentSourceKind =
   | 'TEMPLATE_INSTANCE'
   | 'CLINICAL_ARTIFACT'
-  | 'FORM_SUBMISSION';
+  | 'FORM_SUBMISSION'
+  | 'TASK_SCHEDULE';
 
 export type RenderedDocumentStatus = 'DRAFT' | 'SIGNED';
 export type DocumentSignatureSignerType = 'PMS_USER' | 'PARENT' | 'SYSTEM';

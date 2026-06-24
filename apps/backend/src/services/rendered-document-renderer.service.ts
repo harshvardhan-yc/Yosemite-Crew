@@ -4,6 +4,7 @@ import {
   generateClinicalPdf,
   generateClinicalPdfWithMetadata,
   generateCombinedClinicalPdfWithMetadata,
+  generatePdf,
   generateResolvedTemplatePdfWithMetadata,
   type ClinicalDocumentType,
   type CombinedClinicalDocumentInput,
@@ -255,6 +256,24 @@ const buildOrganizationBranding = (
   };
 };
 
+type TaskScheduleDocumentSource = {
+  id: string;
+  organisationId: string;
+  templateId: string;
+  templateVersion: number;
+  templateKind: string;
+  status: string;
+  createdBy: string;
+  activatedBy: string | null;
+  activatedAt: Date | null;
+  completedAt: Date | null;
+  lastMaterializedAt: Date | null;
+  scheduleInput: Prisma.JsonValue;
+  materializedSeeds: Prisma.JsonValue;
+  generatedTaskIds: Prisma.JsonValue;
+  metadata: Prisma.JsonValue | null;
+};
+
 const buildSharedOrganizationBranding = (
   organization: OrganizationBrand,
 ): OrganizationBranding => {
@@ -450,6 +469,40 @@ const loadFormSubmissionDocument = async (
   };
 };
 
+const loadTaskScheduleDocument = async (
+  source: RenderedDocumentSource,
+): Promise<TaskScheduleDocumentSource> => {
+  const record = await prisma.taskSchedule.findUnique({
+    where: { id: source.sourceId },
+  });
+
+  if (!record) {
+    throw new Error("Task schedule not found");
+  }
+
+  if (record.organisationId !== source.organisationId) {
+    throw new Error("Task schedule does not belong to organisation");
+  }
+
+  return {
+    id: record.id,
+    organisationId: record.organisationId,
+    templateId: record.templateId,
+    templateVersion: record.templateVersion,
+    templateKind: record.templateKind,
+    status: record.status,
+    createdBy: record.createdBy,
+    activatedBy: record.activatedBy ?? null,
+    activatedAt: record.activatedAt ?? null,
+    completedAt: record.completedAt ?? null,
+    lastMaterializedAt: record.lastMaterializedAt ?? null,
+    scheduleInput: record.scheduleInput,
+    materializedSeeds: record.materializedSeeds,
+    generatedTaskIds: record.generatedTaskIds,
+    metadata: record.metadata ?? null,
+  };
+};
+
 const loadOrganizationBrand = async (
   organisationId: string,
 ): Promise<OrganizationBrand> => {
@@ -479,6 +532,142 @@ const loadOrganizationBrand = async (
 
   return organization;
 };
+
+const stringifyScheduleValue = (value: unknown): string => {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return String(value);
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "[unserializable]";
+  }
+};
+
+const buildScheduleSeedRows = (value: unknown): string[][] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((seed, index) => {
+    const record = isRecord(seed) ? seed : {};
+    return [
+      stringifyScheduleValue(record.name) || `Task ${index + 1}`,
+      stringifyScheduleValue(record.category) || "—",
+      stringifyScheduleValue(record.assignedTo) || "—",
+      stringifyScheduleValue(record.audience) || "—",
+      stringifyScheduleValue(record.dueAt) || "—",
+      stringifyScheduleValue(record.source) || "—",
+    ];
+  });
+};
+
+const buildScheduleMetadataGroups = (record: TaskScheduleDocumentSource) => [
+  [
+    { label: "Schedule ID", value: record.id },
+    { label: "Template ID", value: record.templateId },
+    { label: "Template Version", value: String(record.templateVersion) },
+    { label: "Template Kind", value: record.templateKind },
+    { label: "Status", value: record.status },
+  ],
+  [
+    { label: "Created By", value: record.createdBy },
+    { label: "Activated By", value: record.activatedBy ?? "—" },
+    { label: "Activated At", value: record.activatedAt?.toISOString() ?? "—" },
+    { label: "Completed At", value: record.completedAt?.toISOString() ?? "—" },
+    {
+      label: "Last Materialized At",
+      value: record.lastMaterializedAt?.toISOString() ?? "—",
+    },
+  ],
+];
+
+const buildTaskSchedulePdf = async (
+  input: RenderedDocumentPdfSource,
+  record: TaskScheduleDocumentSource,
+  organization: OrganizationBrand,
+) =>
+  generatePdf({
+    documentType: "inpatient-schedule",
+    title: input.title,
+    organization: buildSharedOrganizationBranding(organization),
+    metadataGroups: buildScheduleMetadataGroups(record),
+    sections: [
+      {
+        title: "Schedule Summary",
+        content: [
+          {
+            type: "paragraph",
+            text: "This inpatient schedule is rendered from the schedule template and materialized task seeds.",
+          },
+        ],
+      },
+      {
+        title: "Materialized Seeds",
+        content: buildScheduleSeedRows(record.materializedSeeds).length
+          ? [
+              {
+                type: "table",
+                columns: [
+                  { header: "Task", width: 0.24 },
+                  { header: "Category", width: 0.18 },
+                  { header: "Assigned To", width: 0.2 },
+                  { header: "Audience", width: 0.16 },
+                  { header: "Due At", width: 0.14 },
+                  { header: "Source", width: 0.08 },
+                ],
+                rows: buildScheduleSeedRows(record.materializedSeeds),
+              },
+            ]
+          : [
+              {
+                type: "paragraph",
+                text: "No materialized seeds are recorded for this schedule.",
+              },
+            ],
+      },
+      {
+        title: "Generated Task IDs",
+        content:
+          Array.isArray(record.generatedTaskIds) &&
+          record.generatedTaskIds.length > 0
+            ? [
+                {
+                  type: "table",
+                  columns: [{ header: "Task ID", width: 1 }],
+                  rows: record.generatedTaskIds
+                    .filter(
+                      (value): value is string => typeof value === "string",
+                    )
+                    .map((taskId) => [taskId]),
+                },
+              ]
+            : [
+                {
+                  type: "paragraph",
+                  text: "No generated task ids are recorded yet.",
+                },
+              ],
+      },
+    ],
+  });
 
 const buildResolvedTemplatePdfInput = (
   input: RenderedDocumentPdfSource,
@@ -1603,6 +1792,18 @@ export const renderRenderedDocumentPdfWithMetadata = async (
           templateKind: "FORM",
           branding: buildOrganizationBranding(organization),
         }),
+        pageCount: 1,
+        signaturePlacement: DEFAULT_SIGNATURE_PLACEMENT,
+      };
+    }
+    case "TASK_SCHEDULE": {
+      const record = await loadTaskScheduleDocument(input.source);
+      const organization = await loadOrganizationBrand(
+        input.source.organisationId,
+      );
+
+      return {
+        pdf: await buildTaskSchedulePdf(input, record, organization),
         pageCount: 1,
         signaturePlacement: DEFAULT_SIGNATURE_PLACEMENT,
       };
