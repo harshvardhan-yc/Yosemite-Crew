@@ -535,7 +535,8 @@ export const buildInventoryPayload = (
   const unitOfMeasure = Array.isArray(unitOfMeasureValue)
     ? unitOfMeasureValue[0]
     : unitOfMeasureValue?.trim() || undefined;
-  const packageQuantity = toNumberSafe(formData.classification.packSize);
+  const packageQuantity =
+    toNumberSafe(formData.classification.packSize) ?? toNumberSafe(formData.stock.unitQnt);
   const storageLocation = formData.stock.stockLocation?.trim() || undefined;
   const minimumStock = toNumberSafe(formData.stock.minStockAlert);
   const statusForApi = normalizeStatusForApi(formData.status ?? formData.basicInfo.status);

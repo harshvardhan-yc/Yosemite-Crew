@@ -439,6 +439,7 @@ type DispensaryFilterBarProps = {
   dispensaryStatusFilter: DispensaryStatus | 'ALL';
   setDispensaryStatusFilter: React.Dispatch<React.SetStateAction<DispensaryStatus | 'ALL'>>;
   setDispensarySearch: React.Dispatch<React.SetStateAction<string>>;
+  setDispensaryFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 const DispensaryFilterBar = ({
@@ -446,14 +447,25 @@ const DispensaryFilterBar = ({
   dispensaryStatusFilter,
   setDispensaryStatusFilter,
   setDispensarySearch,
+  setDispensaryFilterOpen,
 }: DispensaryFilterBarProps) => (
   <div className="flex flex-wrap items-center justify-between gap-3">
-    <Filters
-      statusOptions={DISPENSARY_STATUS_FILTERS}
-      activeStatus={dispensaryStatusFilter}
-      setActiveStatus={(v) => setDispensaryStatusFilter(v as DispensaryStatus | 'ALL')}
-      className="!w-auto shrink-0"
-    />
+    <div className="flex items-center gap-2 shrink-0">
+      <Filters
+        statusOptions={DISPENSARY_STATUS_FILTERS}
+        activeStatus={dispensaryStatusFilter}
+        setActiveStatus={(v) => setDispensaryStatusFilter(v as DispensaryStatus | 'ALL')}
+        className="!w-auto shrink-0"
+      />
+      <button
+        type="button"
+        onClick={() => setDispensaryFilterOpen(true)}
+        className="inline-flex h-9 items-center gap-2 rounded-2xl border border-card-border bg-white px-3 text-body-4 text-text-secondary hover:bg-card-hover transition-colors"
+      >
+        <FiFilter size={14} />
+        <span>Filter</span>
+      </button>
+    </div>
     <div className="relative w-full sm:w-auto sm:min-w-72">
       <FiSearch
         size={18}
@@ -483,6 +495,7 @@ type ActiveFilterBarProps = {
   dispensaryStatusFilter: DispensaryStatus | 'ALL';
   setDispensaryStatusFilter: React.Dispatch<React.SetStateAction<DispensaryStatus | 'ALL'>>;
   setDispensarySearch: React.Dispatch<React.SetStateAction<string>>;
+  setDispensaryFilterOpen: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 const ActiveFilterBar = (props: ActiveFilterBarProps) => {
@@ -506,6 +519,7 @@ const ActiveFilterBar = (props: ActiveFilterBarProps) => {
         dispensaryStatusFilter={props.dispensaryStatusFilter}
         setDispensaryStatusFilter={props.setDispensaryStatusFilter}
         setDispensarySearch={props.setDispensarySearch}
+        setDispensaryFilterOpen={props.setDispensaryFilterOpen}
       />
     );
   }
@@ -1653,6 +1667,7 @@ const Inventory = () => {
               dispensaryStatusFilter={dispensaryStatusFilter}
               setDispensaryStatusFilter={setDispensaryStatusFilter}
               setDispensarySearch={setDispensarySearch}
+              setDispensaryFilterOpen={setDispensaryFilterOpen}
             />
           </div>
 
