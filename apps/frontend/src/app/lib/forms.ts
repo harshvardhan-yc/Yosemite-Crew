@@ -354,20 +354,7 @@ export const mapTemplateToUI = (template: TemplateLike): FormsProps => ({
   status: templateStatusToLabel(template.status),
   templateId: template.id,
   templateKind: template.kind,
-  templateSource:
-    template.ownership ??
-    (template.source === 'YC_LIBRARY'
-      ? 'YC_LIBRARY'
-      : template.source === 'USER'
-        ? 'USER_TEMPLATE'
-        : template.source === 'ORGANISATION'
-          ? 'ORG_TEMPLATE'
-          : template.kind === 'SOAP_NOTE' ||
-              template.kind === 'DISCHARGE_SUMMARY' ||
-              template.kind === 'PRESCRIPTION' ||
-              template.kind === 'VITAL_RECORD'
-            ? 'ORG_TEMPLATE'
-            : undefined),
+  templateSource: template.ownership ?? resolveTemplateSource(template),
   templateVersion: template.publishedVersion ?? template.latestVersion,
   isTemplateBacked: true,
 });
@@ -419,6 +406,21 @@ const toTemplateField = (
   };
 };
 
+const resolveTemplateSource = (template: TemplateLike): FormsProps['templateSource'] => {
+  if (template.source === 'YC_LIBRARY') return 'YC_LIBRARY';
+  if (template.source === 'USER') return 'USER_TEMPLATE';
+  if (template.source === 'ORGANISATION') return 'ORG_TEMPLATE';
+  if (
+    template.kind === 'SOAP_NOTE' ||
+    template.kind === 'DISCHARGE_SUMMARY' ||
+    template.kind === 'PRESCRIPTION' ||
+    template.kind === 'VITAL_RECORD'
+  ) {
+    return 'ORG_TEMPLATE';
+  }
+  return undefined;
+};
+
 const flattenTemplateFields = (fields: FormField[]): FormField[] =>
   fields.flatMap((field) => {
     if (field.type !== 'group') return [field];
@@ -435,7 +437,7 @@ const fieldsToTemplateSection = (
   id,
   title,
   order,
-  fields: flattenTemplateFields(fields).map(toTemplateField),
+  fields: flattenTemplateFields(fields).map((field, index) => toTemplateField(field, index)),
 });
 
 const clinicalBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> = {
@@ -657,7 +659,7 @@ const mergeFieldDefaults = (
               ? field.defaultValue
               : authoredDefault,
           rules: {
-            ...(field.rules ?? {}),
+            ...field.rules,
             ...authoredRules,
           },
         };
@@ -767,13 +769,13 @@ const getBlueprintFieldKeys = (snapshot?: TemplateSchemaSnapshot): Set<string> =
   return new Set(snapshot.sections.flatMap((section) => section.fields.map((field) => field.key)));
 };
 
-const filterCustomFields = (fields: FormField[] = [], blueprintKeys: Set<string>): FormField[] =>
+const filterCustomFields = (blueprintKeys: Set<string>, fields: FormField[] = []): FormField[] =>
   fields.flatMap<FormField>((field) => {
     if (field.type !== 'group') {
       return blueprintKeys.has(field.id) ? [] : [field];
     }
 
-    const filteredChildren = filterCustomFields(field.fields ?? [], blueprintKeys);
+    const filteredChildren = filterCustomFields(blueprintKeys, field.fields ?? []);
     if (filteredChildren.length === 0) return [];
     return [{ ...(field as FormField), fields: filteredChildren }];
   });
@@ -870,7 +872,7 @@ export const buildTemplateSchemaSnapshot = (
   const blueprint = kind ? (clinicalBlueprints[kind] ?? workflowBlueprints[kind]) : undefined;
   if (blueprint) {
     const mergedBlueprint = mergeFieldDefaults(blueprint, form.schema ?? []);
-    const customFields = filterCustomFields(form.schema ?? [], getBlueprintFieldKeys(blueprint));
+    const customFields = filterCustomFields(getBlueprintFieldKeys(blueprint), form.schema ?? []);
     if (kind === 'INPATIENT_SCHEDULE') {
       const taskBlocks = taskBlocksFromForm(form);
       return {

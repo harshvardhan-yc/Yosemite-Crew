@@ -382,6 +382,31 @@ describe('buildTemplateSchemaSnapshot canonical blueprint merge', () => {
   });
 });
 
+describe('mapTemplateToUI', () => {
+  it('maps library and canonical template sources to user-friendly values', () => {
+    const template = {
+      id: 'template-1',
+      kind: 'SOAP_NOTE',
+      source: 'USER',
+      ownership: undefined,
+      status: 'draft',
+      publishedVersion: 1,
+      latestVersion: 2,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: 'user-1',
+      updatedBy: 'user-2',
+      organisationId: 'org-1',
+      rules: {},
+    } as any;
+
+    const ui = mapTemplateToUI(template);
+
+    expect(ui.templateSource).toBe('USER_TEMPLATE');
+    expect(ui.templateKind).toBe('SOAP_NOTE');
+  });
+});
+
 describe('buildTemplatePayload appliesTo linking', () => {
   const form = (overrides: Partial<FormsProps>): FormsProps => ({
     name: 'Tpl',

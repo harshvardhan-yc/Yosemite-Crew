@@ -96,6 +96,163 @@ type PaymentProgressState = {
   status: 'checking' | 'confirmed' | 'delayed';
 };
 
+type PersistInvoiceFn = (options?: { finalize?: boolean }) => Promise<{ id?: string } | undefined>;
+
+type RecordInvoicePaymentFn = (
+  appointmentId: string,
+  payload: {
+    method: PaymentMethod;
+    byName: string;
+  }
+) => void;
+
+type RecordDepositCollectionFn = (
+  appointmentId: string,
+  payload: {
+    amountCents: number;
+    method: PaymentMethod;
+    byName: string;
+  }
+) => void;
+
+type HandleCollectContext = {
+  appointmentId: string;
+  encounter: AppointmentEncounter;
+  currency: string;
+  financeCurrency: string;
+  hasItems: boolean;
+  persistCurrentInvoice: PersistInvoiceFn;
+  reloadBilling: () => Promise<unknown>;
+  recordInvoicePayment: RecordInvoicePaymentFn;
+  startPaymentProgress: (invoiceId: string, checkoutUrl: string) => void;
+  setConfirmation: (message: string) => void;
+  setConfirmationLink: (link: string | null) => void;
+  setDepositPaymentLink: (link: string | null) => void;
+  setErrorMessage: (message: string | null) => void;
+  setIsDepositModalOpen: (open: boolean) => void;
+  setIsProcessingPayment: (processing: boolean) => void;
+};
+
+type HandleDepositContext = HandleCollectContext & {
+  organisationId?: string;
+  parentId?: string;
+  patientId?: string;
+  recordDepositCollection: RecordDepositCollectionFn;
+};
+
+const runOnlineCollection = async ({
+  persistCurrentInvoice,
+  reloadBilling,
+  startPaymentProgress,
+  setConfirmation,
+  setConfirmationLink,
+}: Pick<
+  HandleCollectContext,
+  | 'persistCurrentInvoice'
+  | 'reloadBilling'
+  | 'startPaymentProgress'
+  | 'setConfirmation'
+  | 'setConfirmationLink'
+>): Promise<void> => {
+  setConfirmationLink(null);
+  const invoice = await persistCurrentInvoice({ finalize: false });
+  if (invoice?.id) {
+    const url = await getPaymentLink(invoice.id);
+    if (url) {
+      startPaymentProgress(invoice.id, url);
+      openCheckoutUrl(url);
+      setConfirmation('Payment link generated:');
+      setConfirmationLink(url);
+    } else {
+      setConfirmation('Payment link generated');
+      await reloadBilling();
+    }
+    return;
+  }
+
+  setConfirmation('Invoice prepared for online payment');
+  await reloadBilling();
+};
+
+const runManualCollection = async ({
+  appointmentId,
+  encounter,
+  financeCurrency,
+  method,
+  persistCurrentInvoice,
+  reloadBilling,
+  recordInvoicePayment,
+}: Pick<
+  HandleCollectContext,
+  | 'appointmentId'
+  | 'encounter'
+  | 'financeCurrency'
+  | 'persistCurrentInvoice'
+  | 'reloadBilling'
+  | 'recordInvoicePayment'
+> & {
+  method: PaymentMethod;
+}): Promise<void> => {
+  const invoice = await persistCurrentInvoice({ finalize: true });
+  if (invoice?.id) {
+    await recordManualInvoicePayment(invoice.id, {
+      provider: 'MANUAL',
+      settlementChannel: 'CASH',
+      amount: centsToMajor(computeInvoiceTotalCents(encounter)),
+      currency: financeCurrency,
+      receivedAt: new Date().toISOString(),
+    });
+  }
+  recordInvoicePayment(appointmentId, {
+    method,
+    byName: encounter.leadName ?? 'Front desk',
+  });
+  await reloadBilling();
+};
+
+const handleDepositOnlineCollection = async ({
+  appointmentId,
+  amountCents,
+  encounter,
+  persistCurrentInvoice,
+  startPaymentProgress,
+  reloadBilling,
+  setConfirmation,
+  setDepositPaymentLink,
+  recordDepositCollection,
+}: Pick<
+  HandleDepositContext,
+  | 'appointmentId'
+  | 'encounter'
+  | 'persistCurrentInvoice'
+  | 'startPaymentProgress'
+  | 'reloadBilling'
+  | 'setConfirmation'
+  | 'setDepositPaymentLink'
+  | 'recordDepositCollection'
+> & { amountCents: number }): Promise<void> => {
+  const invoiceToCollectAgainst = await persistCurrentInvoice({ finalize: false });
+  if (!invoiceToCollectAgainst?.id) return;
+
+  const checkoutUrl = await getPaymentLink(invoiceToCollectAgainst.id);
+  setDepositPaymentLink(checkoutUrl ?? null);
+  if (checkoutUrl) {
+    startPaymentProgress(invoiceToCollectAgainst.id, checkoutUrl);
+    openCheckoutUrl(checkoutUrl);
+  }
+  recordDepositCollection(appointmentId, {
+    amountCents,
+    method: 'ONLINE',
+    byName: encounter.leadName ?? 'Front desk',
+  });
+  setConfirmation(
+    checkoutUrl
+      ? `Payment link generated for the appointment invoice: ${checkoutUrl}`
+      : 'Payment link generated for the appointment invoice'
+  );
+  if (!checkoutUrl) await reloadBilling();
+};
+
 // Open a Stripe checkout URL in a new tab. `noopener` prevents the opened page
 // from accessing this window; guarded for SSR / non-browser contexts.
 const openCheckoutUrl = (url: string): void => {
@@ -1202,46 +1359,26 @@ const InvoiceStep = ({
     setErrorMessage(null);
     setIsProcessingPayment(true);
     try {
-      // ONLINE: persist lines and generate a payment link but keep the invoice OPEN so the bill
-      // can still change before the client pays. Manual (CASH/at-clinic) collection settles the
-      // visit now, so it finalizes the invoice.
-      const invoice = await persistCurrentInvoice({ finalize: method !== 'ONLINE' });
       if (method === 'ONLINE') {
-        setConfirmationLink(null);
-        if (invoice?.id) {
-          const url = await getPaymentLink(invoice.id);
-          if (url) {
-            // Open the Stripe checkout so the client can pay immediately; also
-            // keep the link visible (as a wrapping anchor) for copy/share.
-            startPaymentProgress(invoice.id, url);
-            openCheckoutUrl(url);
-            setConfirmation('Payment link generated:');
-            setConfirmationLink(url);
-          } else {
-            setConfirmation('Payment link generated');
-            await reloadBilling();
-          }
-        } else {
-          setConfirmation('Invoice prepared for online payment');
-          await reloadBilling();
-        }
-        return;
-      }
-      if (invoice?.id) {
-        await recordManualInvoicePayment(invoice.id, {
-          provider: 'MANUAL',
-          settlementChannel: 'CASH',
-          amount: centsToMajor(computeInvoiceTotalCents(encounter)),
-          currency: financeCurrency,
-          receivedAt: new Date().toISOString(),
+        await runOnlineCollection({
+          persistCurrentInvoice,
+          reloadBilling,
+          startPaymentProgress,
+          setConfirmation,
+          setConfirmationLink,
+        });
+      } else {
+        await runManualCollection({
+          appointmentId,
+          encounter,
+          financeCurrency,
+          method,
+          persistCurrentInvoice,
+          reloadBilling,
+          recordInvoicePayment,
         });
       }
-      recordInvoicePayment(appointmentId, {
-        method,
-        byName: encounter.leadName ?? 'Front desk',
-      });
       setConfirmation(`${PAYMENT_LABELS[method]} recorded`);
-      await reloadBilling();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to process payment.');
     } finally {
@@ -1263,23 +1400,17 @@ const InvoiceStep = ({
         organisationId && hasItems ? await persistCurrentInvoice({ finalize: false }) : undefined;
       if (invoiceToCollectAgainst?.id) {
         if (input.method === 'ONLINE') {
-          const checkoutUrl = await getPaymentLink(invoiceToCollectAgainst.id);
-          setDepositPaymentLink(checkoutUrl ?? null);
-          if (checkoutUrl) {
-            startPaymentProgress(invoiceToCollectAgainst.id, checkoutUrl);
-            openCheckoutUrl(checkoutUrl);
-          }
-          recordDepositCollection(appointmentId, {
+          await handleDepositOnlineCollection({
+            appointmentId,
             amountCents,
-            method: input.method,
-            byName: encounter.leadName ?? 'Front desk',
+            encounter,
+            persistCurrentInvoice,
+            startPaymentProgress,
+            reloadBilling,
+            setConfirmation,
+            setDepositPaymentLink,
+            recordDepositCollection,
           });
-          setConfirmation(
-            checkoutUrl
-              ? `Payment link generated for the appointment invoice: ${checkoutUrl}`
-              : 'Payment link generated for the appointment invoice'
-          );
-          if (!checkoutUrl) await reloadBilling();
           return;
         }
 
