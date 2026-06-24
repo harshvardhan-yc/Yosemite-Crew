@@ -46,9 +46,9 @@ describe("shared fhir contracts", () => {
                 title: "Subjective",
                 fields: [
                   {
-                    key: "chiefComplaint",
-                    label: "Chief complaint",
-                    type: "text",
+                    key: "subjective",
+                    label: "Subjective",
+                    type: "richText",
                   },
                 ],
               },
@@ -69,7 +69,7 @@ describe("shared fhir contracts", () => {
     });
 
     expect(questionnaire.item?.[0]?.linkId).toBe("subjective");
-    expect(questionnaire.item?.[0]?.item?.[0]?.linkId).toBe("chiefComplaint");
+    expect(questionnaire.item?.[0]?.item?.[0]?.linkId).toBe("subjective");
     expect(input.kind).toBe("SOAP_NOTE");
     expect(input.schemaSnapshot.sections[0].id).toBe("subjective");
   });

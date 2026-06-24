@@ -2,6 +2,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { ClinicalArtifactService } from "./clinical-artifact.service";
 import { FormAssignmentService } from "./form-assignment.service";
+import { InvoiceService, InvoiceServiceError } from "./invoice.service";
+import { createRenderedDocumentRecord } from "./rendered-document.service";
+import { roundMoney } from "./finance/pricing";
 import type {
   Case,
   Encounter,
@@ -137,6 +140,8 @@ type WorkspaceBootstrapBillingState = {
   invoice: {
     id: string;
     visitBillingStage: InvoiceVisitBillingStage;
+    readyForBillingAt: Date | null;
+    readyForBillingActorId: string | null;
   } | null;
   visitBillingStage: InvoiceVisitBillingStage | null;
   readyForBilling: boolean;
@@ -329,8 +334,10 @@ const resolveWorkspaceLock = (input: {
   return (input.now ?? new Date()).getTime() >= lockAt;
 };
 
-// Read the display name of whoever last triggered a readiness transition, stored
-// in the FinanceEvent payload at write time (FinanceEventService.recordReadinessEvent).
+// Read the display name of whoever last triggered a readiness transition.
+// Discharge still falls back to the FinanceEvent payload; invoice readiness now
+// prefers the invoice-native actor id and only falls back to the event log for
+// legacy rows.
 const latestReadinessActorName = async (
   eventType: string,
   entityType: string,
@@ -347,6 +354,31 @@ const latestReadinessActorName = async (
     return typeof name === "string" && name.trim() ? name : null;
   }
   return null;
+};
+
+const resolveActorDisplayName = async (
+  actorUserId?: string | null,
+): Promise<string | null> => {
+  const id = actorUserId?.trim();
+  if (!id) {
+    return null;
+  }
+  if (id === "SYSTEM") {
+    return "System";
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { userId: id },
+    select: { firstName: true, lastName: true, email: true },
+  });
+  if (!user) {
+    return null;
+  }
+  const name = [user.firstName, user.lastName]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(" ")
+    .trim();
+  return name || user.email || null;
 };
 
 const loadBootstrapBillingState = async (input: {
@@ -381,20 +413,29 @@ const loadBootstrapBillingState = async (input: {
       appointmentId: input.appointmentId,
     },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      visitBillingStage: true,
+      readyForBillingAt: true,
+      readyForBillingActorId: true,
+    },
   })) as {
     id: string;
     visitBillingStage: InvoiceVisitBillingStage;
+    readyForBillingAt: Date | null;
+    readyForBillingActorId: string | null;
   } | null;
 
   const visitBillingStage = invoice?.visitBillingStage ?? null;
   const readyForBilling = visitBillingStage === "READY_FOR_BILLING";
   const readyForBillingByName =
     readyForBilling && invoice
-      ? await latestReadinessActorName(
+      ? ((await resolveActorDisplayName(invoice.readyForBillingActorId)) ??
+        (await latestReadinessActorName(
           "INVOICE_READY_FOR_BILLING",
           "INVOICE",
           invoice.id,
-        )
+        )))
       : null;
 
   return {
@@ -403,6 +444,8 @@ const loadBootstrapBillingState = async (input: {
         ? {
             id: invoice.id,
             visitBillingStage: invoice.visitBillingStage,
+            readyForBillingAt: invoice.readyForBillingAt,
+            readyForBillingActorId: invoice.readyForBillingActorId,
           }
         : null,
     visitBillingStage,
@@ -903,6 +946,100 @@ const mapTreatmentItemRow = (
   updatedAt: row.updatedAt,
 });
 
+const readNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const readText = (...values: unknown[]) =>
+  values.find((value) => typeof value === "string" && value.trim()) as
+    | string
+    | undefined;
+
+const buildInvoiceLineFromTreatmentItem = (row: TreatmentItemRow) => {
+  const priceSnapshot = isRecord(row.priceSnapshot) ? row.priceSnapshot : {};
+  const productSnapshot = isRecord(row.productSnapshot)
+    ? row.productSnapshot
+    : {};
+
+  const quantity = row.quantity > 0 ? row.quantity : 1;
+  const invoiceRowId =
+    typeof row.invoiceRowId === "string" && row.invoiceRowId.trim()
+      ? row.invoiceRowId.trim()
+      : row.id;
+  const grossAmount = readNumber(priceSnapshot.grossAmount);
+  const finalAmount = readNumber(priceSnapshot.finalAmount);
+  const snapshotUnitPrice = readNumber(priceSnapshot.unitPrice);
+  const unitPrice =
+    grossAmount != null
+      ? roundMoney(grossAmount / quantity)
+      : snapshotUnitPrice != null
+        ? snapshotUnitPrice
+        : finalAmount != null
+          ? roundMoney(finalAmount / quantity)
+          : 0;
+  const discountPercent = readNumber(priceSnapshot.discountPercent);
+  const total = finalAmount ?? roundMoney(unitPrice * quantity);
+  const name = readText(
+    priceSnapshot.name,
+    productSnapshot.name,
+    priceSnapshot.displayName,
+    productSnapshot.displayName,
+    row.productId,
+    row.servicePackageKind,
+  );
+
+  return {
+    id: invoiceRowId,
+    name: name ?? row.productId,
+    description: name ?? row.productId,
+    quantity,
+    unitPrice,
+    discountPercent: discountPercent ?? undefined,
+    total,
+  };
+};
+
+const syncTreatmentItemInvoice = async (row: TreatmentItemRow) => {
+  if (!row.appointmentId) {
+    return row;
+  }
+
+  const invoice = await InvoiceService.findOpenInvoiceForAppointment(
+    row.appointmentId,
+    row.organisationId,
+  );
+  if (!invoice) {
+    return row;
+  }
+
+  const invoiceLine = buildInvoiceLineFromTreatmentItem(row);
+
+  try {
+    await InvoiceService.addItemsToInvoice(invoice.id, [invoiceLine]);
+  } catch (error) {
+    if (
+      error instanceof InvoiceServiceError &&
+      (error.statusCode === 404 || error.statusCode === 409)
+    ) {
+      return row;
+    }
+    throw error;
+  }
+
+  if (row.billingStatus === "BILLED" && row.invoiceRowId === invoiceLine.id) {
+    return row;
+  }
+
+  const synced = (await prisma.workspaceTreatmentItem.update({
+    where: { id: row.id },
+    data: {
+      billingStatus: "BILLED",
+      invoiceRowId: invoiceLine.id,
+    },
+  })) as TreatmentItemRow;
+
+  return synced;
+};
+
 // A treatment line can appear both as a virtual item derived from a prescription
 // artifact and as a persisted workspaceTreatmentItem row (e.g. once the invoice is
 // finalized). Prefer the persisted row and drop the virtual duplicate so the same
@@ -1082,34 +1219,47 @@ const mapDocumentRow = (input: {
 
 const mapRenderedDocumentRow = (
   document: RenderedDocumentRow,
-): WorkspaceDocumentRow => ({
-  documentId: document.id,
-  sourceKind: document.sourceKind,
-  sourceId: document.sourceId,
-  appointmentId:
-    document.templateInstance?.appointmentId ??
-    document.clinicalArtifact?.appointmentId ??
-    null,
-  encounterId:
-    document.templateInstance?.encounterId ??
-    document.clinicalArtifact?.encounterId ??
-    null,
-  companionId: null,
-  templateId: document.templateId,
-  templateVersion: document.templateVersion,
-  title: document.title,
-  kind: document.kind,
-  status: document.status,
-  signingStatus:
-    isRecord(document.signing) && typeof document.signing.status === "string"
-      ? String(document.signing.status)
-      : document.status === "SIGNED"
-        ? "SIGNED"
-        : "NOT_STARTED",
-  pdfUrl: document.pdfUrl,
-  createdAt: document.createdAt,
-  updatedAt: document.updatedAt,
-});
+  scheduleContext?: Map<
+    string,
+    { appointmentId: string | null; encounterId: string | null }
+  >,
+): WorkspaceDocumentRow => {
+  const scheduleSourceContext =
+    document.sourceKind === "TASK_SCHEDULE"
+      ? scheduleContext?.get(document.sourceId)
+      : undefined;
+
+  return {
+    documentId: document.id,
+    sourceKind: document.sourceKind,
+    sourceId: document.sourceId,
+    appointmentId:
+      document.templateInstance?.appointmentId ??
+      document.clinicalArtifact?.appointmentId ??
+      scheduleSourceContext?.appointmentId ??
+      null,
+    encounterId:
+      document.templateInstance?.encounterId ??
+      document.clinicalArtifact?.encounterId ??
+      scheduleSourceContext?.encounterId ??
+      null,
+    companionId: null,
+    templateId: document.templateId,
+    templateVersion: document.templateVersion,
+    title: document.title,
+    kind: document.kind,
+    status: document.status,
+    signingStatus:
+      isRecord(document.signing) && typeof document.signing.status === "string"
+        ? String(document.signing.status)
+        : document.status === "SIGNED"
+          ? "SIGNED"
+          : "NOT_STARTED",
+    pdfUrl: document.pdfUrl,
+    createdAt: document.createdAt,
+    updatedAt: document.updatedAt,
+  };
+};
 
 const dedupeDocumentRows = (
   rows: WorkspaceDocumentRow[],
@@ -1242,6 +1392,11 @@ const loadForms = async (
       items: [] as WorkspaceFormRow[],
     };
   }
+
+  await FormAssignmentService.syncLinkedTemplateAssignmentsForAppointment({
+    organisationId,
+    appointmentId,
+  });
 
   const items = await FormAssignmentService.listAppointmentFormSummaries(
     organisationId,
@@ -1437,6 +1592,43 @@ const loadSchedules = async (params: {
     orderBy: { updatedAt: "desc" },
   });
 
+const ensureRenderedTaskSchedules = async (
+  organisationId: string,
+  schedules: Array<{
+    id: string;
+    templateId: string;
+    templateVersion: number;
+    templateKind: string;
+  }>,
+) => {
+  for (const schedule of schedules) {
+    const existing = await prisma.renderedDocument.findFirst({
+      where: {
+        organisationId,
+        sourceKind: "TASK_SCHEDULE" as never,
+        sourceId: schedule.id,
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      continue;
+    }
+
+    await createRenderedDocumentRecord({
+      title: "Inpatient Schedule",
+      source: {
+        sourceKind: "TASK_SCHEDULE",
+        sourceId: schedule.id,
+        organisationId,
+        templateKind: "INPATIENT_SCHEDULE",
+        templateId: schedule.templateId,
+        templateVersion: schedule.templateVersion,
+      },
+    });
+  }
+};
+
 const loadTemplateInstances = async (params: {
   organisationId: string;
   appointmentId?: string;
@@ -1514,6 +1706,11 @@ const loadDocuments = async (params: {
   appointmentId?: string;
   encounterId?: string;
   companionId?: string;
+  scheduleIds?: string[];
+  scheduleContext?: Map<
+    string,
+    { appointmentId: string | null; encounterId: string | null }
+  >;
 }) => {
   const renderedDocumentConditions = [
     ...(params.appointmentId
@@ -1541,6 +1738,14 @@ const loadDocuments = async (params: {
             clinicalArtifact: {
               is: { encounterId: params.encounterId },
             },
+          },
+        ]
+      : []),
+    ...(params.scheduleIds?.length
+      ? [
+          {
+            sourceKind: "TASK_SCHEDULE" as never,
+            sourceId: { in: params.scheduleIds },
           },
         ]
       : []),
@@ -1601,7 +1806,9 @@ const loadDocuments = async (params: {
         updatedAt: document.updatedAt,
       }),
     ),
-    ...renderedDocuments.map(mapRenderedDocumentRow),
+    ...renderedDocuments.map((document) =>
+      mapRenderedDocumentRow(document, params.scheduleContext),
+    ),
   ];
 
   return rows;
@@ -1637,7 +1844,6 @@ const buildBootstrapAggregate = async (
     tasks,
     schedules,
     templateInstances,
-    documents,
     ordersAndResults,
     admission,
     pendingDispenseRequests,
@@ -1670,12 +1876,6 @@ const buildBootstrapAggregate = async (
       encounterId,
       caseId,
     }),
-    loadDocuments({
-      organisationId: input.organisationId,
-      appointmentId,
-      encounterId,
-      companionId,
-    }),
     loadOrdersAndResults({
       organisationId: input.organisationId,
       appointmentId,
@@ -1688,6 +1888,27 @@ const buildBootstrapAggregate = async (
       encounterId,
     }),
   ]);
+
+  await ensureRenderedTaskSchedules(input.organisationId, schedules);
+
+  const scheduleContext = new Map(
+    schedules.map((schedule) => [
+      schedule.id,
+      {
+        appointmentId: schedule.appointmentId ?? null,
+        encounterId: schedule.encounterId ?? null,
+      },
+    ]),
+  );
+
+  const documents = await loadDocuments({
+    organisationId: input.organisationId,
+    appointmentId,
+    encounterId,
+    companionId,
+    scheduleIds: schedules.map((schedule) => schedule.id),
+    scheduleContext,
+  });
 
   const diagnosticPreloads = await loadDiagnosticPreloads({
     organisationId: input.organisationId,
@@ -1956,7 +2177,7 @@ export const WorkspaceService = {
       },
     })) as TreatmentItemRow;
 
-    return mapTreatmentItemRow(created);
+    return mapTreatmentItemRow(await syncTreatmentItemInvoice(created));
   },
 
   async updateTreatmentItem(
@@ -2000,7 +2221,7 @@ export const WorkspaceService = {
       },
     })) as TreatmentItemRow;
 
-    return mapTreatmentItemRow(updated);
+    return mapTreatmentItemRow(await syncTreatmentItemInvoice(updated));
   },
 
   async deleteTreatmentItem(

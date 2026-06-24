@@ -362,6 +362,12 @@ const updateInvoiceAfterPayment = async (params: {
           invoice.visitBillingStage === "SETTLED"
             ? "SETTLED"
             : "READY_FOR_BILLING",
+        ...(invoice.readyForBillingAt
+          ? {}
+          : {
+              readyForBillingAt: receivedAt,
+              readyForBillingActorId: "SYSTEM",
+            }),
       },
     });
   }

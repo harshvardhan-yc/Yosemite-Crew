@@ -6,7 +6,10 @@ import { prisma } from "src/config/prisma";
 import { CatalogService } from "../../src/services/catalog.service";
 import { NotificationService } from "../../src/services/notification.service";
 import { AuditTrailService } from "../../src/services/audit-trail.service";
-import { FinancePaymentService } from "../../src/services/finance/payment";
+import {
+  FinancePaymentService,
+  getInvoiceFinancialSummary,
+} from "../../src/services/finance/payment";
 import { sendEmailTemplate } from "../../src/utils/email";
 import { getOrgBillingCurrency } from "src/utils/billing";
 
@@ -20,19 +23,28 @@ jest.mock("src/config/prisma", () => ({
       findMany: jest.fn(),
       update: jest.fn(),
     },
+    payment: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+    },
     financeEvent: {
       create: jest.fn(),
     },
     creditNote: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
+    },
+    renderedDocument: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
     },
     service: { findUnique: jest.fn() },
     organizationBilling: { findUnique: jest.fn() },
     organization: { findUnique: jest.fn() },
     parent: { findUnique: jest.fn() },
-    paymentAttempt: { updateMany: jest.fn() },
+    paymentAttempt: { updateMany: jest.fn(), findFirst: jest.fn() },
   },
 }));
 
@@ -73,6 +85,7 @@ jest.mock("../../src/services/finance/payment", () => ({
     createCheckoutSessionForInvoice: jest.fn(),
     refundInvoicePayment: jest.fn(),
   },
+  getInvoiceFinancialSummary: jest.fn(),
 }));
 
 jest.mock("../../src/utils/email", () => ({
@@ -95,6 +108,7 @@ describe("InvoiceService", () => {
     jest.resetAllMocks();
     (CatalogService.resolveSelection as jest.Mock).mockResolvedValue(null);
     (getOrgBillingCurrency as jest.Mock).mockResolvedValue("usd");
+    (prisma.payment.findMany as jest.Mock).mockResolvedValue([]);
   });
 
   it("creates a draft invoice and persists invoice-level discounts", async () => {
@@ -457,6 +471,8 @@ describe("InvoiceService", () => {
         data: expect.objectContaining({
           billingCollectionMode: "PAY_AT_VISIT_END",
           visitBillingStage: "READY_FOR_BILLING",
+          readyForBillingActorId: "SYSTEM",
+          readyForBillingAt: expect.any(Date),
         }),
       }),
     );
@@ -504,6 +520,8 @@ describe("InvoiceService", () => {
           visitBillingStage: "READY_FOR_BILLING",
           depositTargetAmount: 20,
           depositCollectedAmount: 12,
+          readyForBillingActorId: "SYSTEM",
+          readyForBillingAt: expect.any(Date),
         }),
       }),
     );
@@ -857,6 +875,12 @@ describe("InvoiceService", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    (prisma.renderedDocument.findFirst as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prisma.renderedDocument.create as jest.Mock).mockResolvedValueOnce({
+      id: "rendered-invoice-1",
+    });
 
     const finalized = await InvoiceService.finalizeTaxForInvoice("inv_final");
 
@@ -891,6 +915,35 @@ describe("InvoiceService", () => {
           eventType: "INVOICE_FINALIZED",
           entityType: "INVOICE",
           entityId: "inv_final",
+        }),
+      }),
+    );
+    expect(prisma.renderedDocument.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organisationId,
+          sourceKind: "INVOICE",
+          sourceId: "inv_final",
+        }),
+      }),
+    );
+    expect(prisma.renderedDocument.create).toHaveBeenCalledWith(
+      expect.any(Object),
+    );
+    const renderedDocumentCreateArgs = (
+      prisma.renderedDocument.create as jest.Mock
+    ).mock.calls[0][0];
+    expect(renderedDocumentCreateArgs.data.title).toBe("Final Invoice");
+    expect(renderedDocumentCreateArgs.data.sourceKind).toBe("INVOICE");
+    expect(renderedDocumentCreateArgs.data.sourceId).toBe("inv_final");
+    expect(renderedDocumentCreateArgs.data.organisationId).toBe(organisationId);
+    expect(renderedDocumentCreateArgs.data.pdf).toEqual(
+      expect.objectContaining({
+        source: expect.objectContaining({
+          sourceKind: "INVOICE",
+          sourceId: "inv_final",
+          organisationId,
+          templateKind: "INVOICE",
         }),
       }),
     );
@@ -969,6 +1022,108 @@ describe("InvoiceService", () => {
         where: expect.objectContaining({ invoiceId: "inv_final" }),
         data: { status: "CANCELED" },
       }),
+    );
+  });
+
+  it("upserts invoice lines by stable id so treatment sync can update the same row", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_sync",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [
+        {
+          id: "ti_1",
+          name: "Medication",
+          description: "Medication",
+          quantity: 1,
+          unitPrice: 25,
+          total: 25,
+        },
+      ],
+      subtotal: 25,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      totalAmount: 25,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      taxSnapshot: { taxBehavior: "EXCLUSIVE" },
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_sync",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [
+        {
+          id: "ti_1",
+          name: "Medication",
+          description: "Medication",
+          quantity: 2,
+          unitPrice: 25,
+          total: 50,
+        },
+      ],
+      subtotal: 50,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      totalAmount: 50,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      taxSnapshot: { taxBehavior: "EXCLUSIVE" },
+    });
+
+    const result = await InvoiceService.addItemsToInvoice("inv_sync", [
+      {
+        id: "ti_1",
+        name: "Medication",
+        description: "Medication",
+        quantity: 2,
+        unitPrice: 25,
+        total: 50,
+      },
+    ]);
+
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inv_sync" },
+        data: expect.objectContaining({
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              id: "ti_1",
+              quantity: 2,
+              total: 50,
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(result.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ti_1",
+          quantity: 2,
+          total: 50,
+        }),
+      ]),
     );
   });
 
@@ -1104,6 +1259,106 @@ describe("InvoiceService", () => {
       expect.objectContaining({ settlementChannel: "CASH" }),
     );
     expect(result.id).toBe("inv_4");
+  });
+
+  it("settles only the remaining balance at visit closeout", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_closeout",
+      status: "AWAITING_PAYMENT",
+      organisationId,
+      patientId,
+      parentId,
+      totalAmount: 100,
+      currency: "usd",
+    });
+    (getInvoiceFinancialSummary as jest.Mock).mockResolvedValueOnce({
+      paid: 30,
+      credited: 0,
+      balance: 70,
+    });
+    (
+      FinancePaymentService.recordManualPayment as jest.Mock
+    ).mockResolvedValueOnce({
+      invoice: {
+        id: "inv_closeout",
+        status: "PAID",
+      },
+    });
+
+    const result = await InvoiceService.settleInvoiceAtCloseout(
+      "inv_closeout",
+      organisationId,
+      {
+        settlementChannel: "CARD_PRESENT",
+        reference: "front-desk",
+        receivedAt: new Date("2026-06-24T10:15:00.000Z"),
+      },
+    );
+
+    expect(FinancePaymentService.recordManualPayment).toHaveBeenCalledWith(
+      "inv_closeout",
+      expect.objectContaining({
+        settlementChannel: "CARD_PRESENT",
+        reference: "front-desk",
+        receivedAt: new Date("2026-06-24T10:15:00.000Z"),
+      }),
+    );
+    expect(result.id).toBe("inv_closeout");
+  });
+
+  it("marks a fully covered invoice paid at closeout without charging again", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_closeout_zero",
+      status: "AWAITING_PAYMENT",
+      organisationId,
+      patientId,
+      parentId,
+      totalAmount: 100,
+      currency: "usd",
+    });
+    (getInvoiceFinancialSummary as jest.Mock).mockResolvedValueOnce({
+      paid: 100,
+      credited: 0,
+      balance: 0,
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_closeout_zero",
+      status: "PAID",
+      organisationId,
+      patientId,
+      parentId,
+      totalAmount: 100,
+      currency: "usd",
+      paymentCollectionMethod: "PAYMENT_AT_CLINIC",
+      metadata: {},
+      items: [],
+      subtotal: 100,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      paidAt: new Date(),
+    });
+
+    const result = await InvoiceService.settleInvoiceAtCloseout(
+      "inv_closeout_zero",
+      organisationId,
+    );
+
+    expect(FinancePaymentService.recordManualPayment).not.toHaveBeenCalled();
+    expect(prisma.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "PAID",
+          visitBillingStage: "SETTLED",
+        }),
+      }),
+    );
+    expect(result.id).toBe("inv_closeout_zero");
   });
 
   it("cancels or refunds invoices using Postgres only", async () => {
@@ -1359,10 +1614,133 @@ describe("InvoiceService", () => {
       address: { city: "Mumbai" },
       imageUrl: "img",
     });
+    (prisma.payment.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "pay_1",
+        invoiceId: "inv_7",
+        paymentAttemptId: "pa_1",
+        provider: "STRIPE",
+        settlementChannel: "STRIPE",
+        collectionMode: null,
+        providerPaymentId: "pi_1",
+        amount: 50,
+        currency: "usd",
+        status: "SUCCEEDED",
+        paidAt: new Date("2026-06-18T10:00:00.000Z"),
+        receiptUrl: "https://receipt",
+        refunds: [
+          {
+            id: "refund_1",
+            paymentId: "pay_1",
+            provider: "STRIPE",
+            providerRefundId: "re_1",
+            amount: 10,
+            currency: "usd",
+            status: "SUCCEEDED",
+            reason: "Adjustment",
+            rawProviderPayload: null,
+            createdAt: new Date("2026-06-18T11:00:00.000Z"),
+            updatedAt: new Date("2026-06-18T11:00:00.000Z"),
+          },
+        ],
+        createdAt: new Date("2026-06-18T09:00:00.000Z"),
+        updatedAt: new Date("2026-06-18T10:00:00.000Z"),
+      },
+    ]);
 
     const result = await InvoiceService.getById("inv_7");
     expect(result.invoice.id).toBe("inv_7");
     expect(result.organistion.name).toBe("Org");
+    expect(result.invoice.payments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "pay_1",
+          receiptUrl: "https://receipt",
+          refunds: expect.arrayContaining([
+            expect.objectContaining({
+              id: "refund_1",
+              providerRefundId: "re_1",
+            }),
+          ]),
+        }),
+      ]),
+    );
+    expect(result.invoice.receipts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          paymentId: "pay_1",
+          receiptUrl: "https://receipt",
+        }),
+      ]),
+    );
+  });
+
+  it("returns richer invoice details when looked up by payment intent", async () => {
+    (prisma.paymentAttempt.findFirst as jest.Mock).mockResolvedValueOnce({
+      invoiceId: "inv_lookup",
+    });
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_lookup",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [],
+      subtotal: 0,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      totalAmount: 0,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      creditNotes: [],
+    });
+    (prisma.payment.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "pay_lookup",
+        invoiceId: "inv_lookup",
+        paymentAttemptId: null,
+        provider: "STRIPE",
+        settlementChannel: "STRIPE",
+        collectionMode: null,
+        providerPaymentId: "pi_lookup",
+        amount: 12,
+        currency: "usd",
+        status: "SUCCEEDED",
+        paidAt: new Date("2026-06-18T12:00:00.000Z"),
+        receiptUrl: "https://receipt-lookup",
+        refunds: [],
+        createdAt: new Date("2026-06-18T11:00:00.000Z"),
+        updatedAt: new Date("2026-06-18T12:00:00.000Z"),
+      },
+    ]);
+
+    const result = await InvoiceService.getByPaymentIntentId("pi_lookup");
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: "inv_lookup",
+        payments: expect.arrayContaining([
+          expect.objectContaining({
+            id: "pay_lookup",
+            receiptUrl: "https://receipt-lookup",
+          }),
+        ]),
+        receipts: expect.arrayContaining([
+          expect.objectContaining({
+            paymentId: "pay_lookup",
+            receiptUrl: "https://receipt-lookup",
+          }),
+        ]),
+      }),
+    );
   });
 
   it("creates checkout sessions and emails the parent", async () => {
