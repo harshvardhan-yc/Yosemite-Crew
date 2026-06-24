@@ -805,17 +805,6 @@ describe("ClinicalArtifactService", () => {
     expect(mockedPrisma.prescription.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          medications: [
-            expect.objectContaining({
-              sourceLineKey: "line-1",
-              medication: "Drug A",
-              dosage: "250mg",
-              route: "oral",
-              frequency: "BID",
-              quantity: 1,
-              inventoryItemId: "item-1",
-            }),
-          ],
           items: {
             create: [
               expect.objectContaining({
@@ -824,13 +813,188 @@ describe("ClinicalArtifactService", () => {
                 route: "oral",
                 frequency: "BID",
                 quantity: "1",
+                sourceLineKey: "line-1",
+                inventoryItemId: "item-1",
               }),
             ],
           },
         }),
       }),
     );
+    expect(
+      (
+        mockedPrisma.prescription.create.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        }
+      ).data,
+    ).not.toHaveProperty("medications");
     expect(result.artifact.kind).toBe("PRESCRIPTION");
+  });
+
+  it("stores frontend prescription fields on line items instead of the json column", async () => {
+    mockedPrisma.clinicalArtifact.create.mockResolvedValueOnce({
+      id: artifactId,
+      organisationId,
+      kind: "PRESCRIPTION",
+      status: "DRAFT",
+      appointmentId: "appt-1",
+      caseId: null,
+      encounterId: "enc-1",
+      templateId: "tmpl-2",
+      templateVersion: 4,
+      templateVersionId: "tmpl-ver-2",
+      authorId: "author-1",
+      signedBy: null,
+      signedAt: null,
+      summary: "Rx summary",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    mockedPrisma.prescription.create.mockResolvedValueOnce({
+      id: "prescription-frontend-1",
+      artifactId,
+      medications: null,
+      items: [
+        {
+          id: "line-frontend-1",
+          prescriptionId: "prescription-frontend-1",
+          sourceLineKey: "line-frontend",
+          medication: "Drug B",
+          strength: "250mg",
+          dosage: "1 tablet",
+          route: "oral",
+          frequency: "BID",
+          duration: "5 days",
+          quantity: "14",
+          instructions: "With food",
+          refill: "2",
+          inventoryItemId: "item-2",
+          inventoryItemSku: "sku-2",
+          batchId: "batch-2",
+          batchNumber: "BN-2",
+          lotNumber: "LOT-2",
+          expiryDate: new Date("2026-12-31T00:00:00.000Z"),
+          metadata: { note: "frontend-shape" },
+          sortOrder: 0,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+      instructions: null,
+      notes: null,
+      metadata: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    mockedPrisma.renderedDocument.findUnique.mockResolvedValueOnce({
+      id: "doc-3",
+      organisationId,
+      sourceKind: "CLINICAL_ARTIFACT",
+      sourceId: artifactId,
+      templateInstanceId: null,
+      clinicalArtifactId: artifactId,
+      templateId: "tmpl-2",
+      templateVersion: 4,
+      templateVersionId: "tmpl-ver-2",
+      kind: "PRESCRIPTION",
+      version: 1,
+      title: "Prescription",
+      mimeType: "application/pdf",
+      status: "DRAFT",
+      signable: true,
+      pdfUrl: null,
+      pdf: null,
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      signature: null,
+    });
+    mockedPrisma.renderedDocument.update.mockResolvedValueOnce({
+      id: "doc-3",
+      organisationId,
+      sourceKind: "CLINICAL_ARTIFACT",
+      sourceId: artifactId,
+      templateInstanceId: null,
+      clinicalArtifactId: artifactId,
+      templateId: "tmpl-2",
+      templateVersion: 4,
+      templateVersionId: "tmpl-ver-2",
+      kind: "PRESCRIPTION",
+      version: 1,
+      title: "Prescription",
+      mimeType: "application/pdf",
+      status: "DRAFT",
+      signable: true,
+      pdfUrl: "https://cdn.example/rendered.pdf",
+      pdf: null,
+      signedBy: null,
+      signedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      signature: null,
+    });
+
+    await ClinicalArtifactService.createPrescription({
+      organisationId,
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      templateId: "tmpl-2",
+      templateVersion: 4,
+      templateVersionId: "tmpl-ver-2",
+      authorId: "author-1",
+      summary: "Rx summary",
+      medications: [
+        {
+          sourceLineKey: "line-frontend",
+          medicineName: "Drug B",
+          dosage: "1 tablet",
+          route: "oral",
+          frequency: "BID",
+          durationDays: "5 days",
+          refill: "2",
+          inventoryItemId: "item-2",
+          inventoryBatchId: "batch-2",
+          quantity: 14,
+          instructions: "With food",
+          metadata: { note: "frontend-shape" },
+        },
+      ],
+      instructions: null,
+      notes: null,
+      metadata: null,
+    });
+
+    expect(mockedPrisma.prescription.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: {
+            create: [
+              expect.objectContaining({
+                sourceLineKey: "line-frontend",
+                medication: "Drug B",
+                dosage: "1 tablet",
+                route: "oral",
+                frequency: "BID",
+                duration: "5 days",
+                quantity: "14",
+                instructions: "With food",
+                refill: "2",
+                inventoryItemId: "item-2",
+                batchId: "batch-2",
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+    expect(
+      (
+        mockedPrisma.prescription.create.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        }
+      ).data,
+    ).not.toHaveProperty("medications");
   });
 
   it("marks the dispense request not dispensed when a signed prescription is voided", async () => {
@@ -1007,6 +1171,31 @@ describe("ClinicalArtifactService", () => {
     expect(
       InventoryConsumptionService.releasePrescription,
     ).not.toHaveBeenCalled();
+    expect(
+      (
+        mockedPrisma.prescription.update.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        }
+      ).data,
+    ).toMatchObject({
+      items: {
+        deleteMany: {},
+        create: [
+          expect.objectContaining({
+            inventoryItemId: "item-1",
+            sourceLineKey: "line-1",
+            quantity: "3",
+          }),
+        ],
+      },
+    });
+    expect(
+      (
+        mockedPrisma.prescription.update.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        }
+      ).data,
+    ).not.toHaveProperty("medications");
   });
 
   it("creates a discharge summary artifact and document draft", async () => {

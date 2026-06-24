@@ -1889,6 +1889,7 @@ export const renderCombinedClinicalPacketPdf = async (
 };
 
 type PrescriptionItemRow = {
+  sourceLineKey: string | null;
   medication: string;
   strength: string | null;
   dosage: string | null;
@@ -1897,6 +1898,14 @@ type PrescriptionItemRow = {
   duration: string | null;
   quantity: string | null;
   instructions: string | null;
+  refill: string | null;
+  inventoryItemId: string | null;
+  inventoryItemSku: string | null;
+  batchId: string | null;
+  batchNumber: string | null;
+  lotNumber: string | null;
+  expiryDate: Date | null;
+  metadata: Prisma.JsonValue | null;
   sortOrder: number;
 };
 
@@ -1922,7 +1931,15 @@ const PRESCRIPTION_LABEL_DEFAULT_TITLE = "Prescription Label";
 const readInventoryItemId = (line: unknown): string | undefined =>
   isRecord(line) ? readString(line.inventoryItemId) : undefined;
 
-const collectMedicationInventoryIds = (medications: unknown): string[] => {
+const collectMedicationInventoryIds = (
+  rows: PrescriptionItemRow[],
+  medications: unknown,
+): string[] => {
+  const rowIds = rows.map((row) => row.inventoryItemId ?? "");
+  if (rowIds.some((id) => id.length > 0)) {
+    return rowIds;
+  }
+
   if (!Array.isArray(medications)) {
     return [];
   }
@@ -1959,7 +1976,8 @@ const buildPrescriptionLabelItems = (
     .slice()
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((row, index) => {
-      const inventoryItemId = inventoryIdsByIndex[index] ?? "";
+      const inventoryItemId =
+        row.inventoryItemId ?? inventoryIdsByIndex[index] ?? "";
       const controlled =
         inventoryItemId.length > 0
           ? (controlledFlags.get(inventoryItemId) ?? false)
@@ -2022,7 +2040,10 @@ export const buildPrescriptionLabelPdfInput = async (
   const metadata = readMetadata(record.metadata);
   const header = await loadAppointmentClinicalHeader(record.appointmentId);
 
-  const inventoryIdsByIndex = collectMedicationInventoryIds(record.medications);
+  const inventoryIdsByIndex = collectMedicationInventoryIds(
+    record.items,
+    record.medications,
+  );
   const controlledFlags = await loadControlledItemFlags(
     input.organisationId,
     inventoryIdsByIndex,

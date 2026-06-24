@@ -2059,6 +2059,7 @@ model Prescription {
 model PrescriptionItem {
   id             String       @id @default(uuid())
   prescriptionId String
+  sourceLineKey  String?
   medication     String
   strength       String?
   dosage         String?
@@ -2067,6 +2068,14 @@ model PrescriptionItem {
   duration       String?
   quantity       String?
   instructions   String?
+  refill         String?
+  inventoryItemId String?
+  inventoryItemSku String?
+  batchId        String?
+  batchNumber    String?
+  lotNumber      String?
+  expiryDate     DateTime?
+  metadata       Json?
   sortOrder      Int          @default(0)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
