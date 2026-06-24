@@ -259,6 +259,7 @@ describe("AppointmentPrismaController", () => {
 
   it("marks appointments ready for billing from PMS", async () => {
     req.params = { appointmentId: "appt_1" };
+    (req as any).userId = "user-1";
     mockedInvoiceService.markAppointmentReadyForBilling.mockResolvedValue(
       null as any,
     );
@@ -270,7 +271,7 @@ describe("AppointmentPrismaController", () => {
 
     expect(
       mockedInvoiceService.markAppointmentReadyForBilling,
-    ).toHaveBeenCalledWith("appt_1");
+    ).toHaveBeenCalledWith("appt_1", "user-1");
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       message: "Appointment marked ready for billing",

@@ -141,6 +141,8 @@ type WorkspaceBootstrapBillingState = {
   visitBillingStage: InvoiceVisitBillingStage | null;
   readyForBilling: boolean;
   readyForDischarge: boolean;
+  readyForBillingByName: string | null;
+  readyForDischargeByName: string | null;
 };
 
 type AdmissionRow = {
@@ -148,6 +150,7 @@ type AdmissionRow = {
   organisationId: string;
   patientId: string;
   unitId: string | null;
+  admittedAt: Date;
   dischargedAt: Date | null;
 };
 
@@ -326,12 +329,40 @@ const resolveWorkspaceLock = (input: {
   return (input.now ?? new Date()).getTime() >= lockAt;
 };
 
+// Read the display name of whoever last triggered a readiness transition, stored
+// in the FinanceEvent payload at write time (FinanceEventService.recordReadinessEvent).
+const latestReadinessActorName = async (
+  eventType: string,
+  entityType: string,
+  entityId: string,
+): Promise<string | null> => {
+  const event = await prisma.financeEvent.findFirst({
+    where: { eventType, entityType, entityId },
+    orderBy: { occurredAt: "desc" },
+    select: { payload: true },
+  });
+  const payload = event?.payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const name = (payload as Record<string, unknown>).actorName;
+    return typeof name === "string" && name.trim() ? name : null;
+  }
+  return null;
+};
+
 const loadBootstrapBillingState = async (input: {
   organisationId: string;
   appointmentId?: string;
   encounter: Encounter | null;
 }): Promise<WorkspaceBootstrapBillingState> => {
   const readyForDischarge = input.encounter?.status === "onleave";
+  const readyForDischargeByName =
+    readyForDischarge && input.encounter?.id
+      ? await latestReadinessActorName(
+          "ENCOUNTER_READY_FOR_DISCHARGE",
+          "ENCOUNTER",
+          input.encounter.id,
+        )
+      : null;
 
   if (!input.appointmentId) {
     return {
@@ -339,6 +370,8 @@ const loadBootstrapBillingState = async (input: {
       visitBillingStage: null,
       readyForBilling: false,
       readyForDischarge,
+      readyForBillingByName: null,
+      readyForDischargeByName,
     };
   }
 
@@ -354,6 +387,15 @@ const loadBootstrapBillingState = async (input: {
   } | null;
 
   const visitBillingStage = invoice?.visitBillingStage ?? null;
+  const readyForBilling = visitBillingStage === "READY_FOR_BILLING";
+  const readyForBillingByName =
+    readyForBilling && invoice
+      ? await latestReadinessActorName(
+          "INVOICE_READY_FOR_BILLING",
+          "INVOICE",
+          invoice.id,
+        )
+      : null;
 
   return {
     invoice:
@@ -364,8 +406,10 @@ const loadBootstrapBillingState = async (input: {
           }
         : null,
     visitBillingStage,
-    readyForBilling: visitBillingStage === "READY_FOR_BILLING",
+    readyForBilling,
     readyForDischarge,
+    readyForBillingByName,
+    readyForDischargeByName,
   };
 };
 
@@ -858,6 +902,32 @@ const mapTreatmentItemRow = (
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
+
+// A treatment line can appear both as a virtual item derived from a prescription
+// artifact and as a persisted workspaceTreatmentItem row (e.g. once the invoice is
+// finalized). Prefer the persisted row and drop the virtual duplicate so the same
+// line item is not shown twice in the workspace/encounter.
+export const dedupeTreatmentItemsByPrescription = <
+  V extends { prescriptionId?: string | null },
+  P extends { prescriptionId?: string | null },
+>(
+  fromPrescriptions: V[],
+  fromTable: P[],
+): (V | P)[] => {
+  const persistedPrescriptionIds = new Set(
+    fromTable
+      .map((item) => item.prescriptionId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  return [
+    ...fromPrescriptions.filter(
+      (item) =>
+        !item.prescriptionId ||
+        !persistedPrescriptionIds.has(item.prescriptionId),
+    ),
+    ...fromTable,
+  ];
+};
 
 const buildTreatmentItemsFromPrescriptions = (
   prescriptions: Array<{
@@ -1687,7 +1757,23 @@ const buildBootstrapAggregate = async (
           updatedAt: context.appointment.updatedAt,
         })
       : null,
-    encounter: context.encounter,
+    encounter: context.encounter
+      ? {
+          ...context.encounter,
+          // Surface the in-patient admission (with unit) so it round-trips to the
+          // workspace + appointment views; OPD encounters have no admission.
+          admission: admission
+            ? {
+                encounterId: admission.encounterId,
+                organisationId: admission.organisationId,
+                patientId: admission.patientId,
+                unitId: admission.unitId ?? undefined,
+                admittedAt: admission.admittedAt,
+                dischargedAt: admission.dischargedAt ?? undefined,
+              }
+            : undefined,
+        }
+      : null,
     episodeOfCare: context.episodeOfCare,
     companion: context.companion
       ? buildWorkspaceSummaryItem({
@@ -1716,8 +1802,8 @@ const buildBootstrapAggregate = async (
     clinicalArtifacts: clinical.clinicalArtifacts,
     vitals: clinical.vitalRecords,
     prescriptions: clinical.prescriptions,
-    treatmentItems: [
-      ...buildTreatmentItemsFromPrescriptions(
+    treatmentItems: dedupeTreatmentItemsByPrescription(
+      buildTreatmentItemsFromPrescriptions(
         clinical.prescriptions as never,
         locked,
       ).map((item) => ({
@@ -1726,8 +1812,8 @@ const buildBootstrapAggregate = async (
         appointmentId: appointmentId ?? null,
         encounterId: encounterId ?? appointmentId ?? "",
       })),
-      ...treatmentItems.map(mapTreatmentItemRow),
-    ],
+      treatmentItems.map(mapTreatmentItemRow),
+    ),
     diagnosticQueue: buildDiagnosticQueue(
       ordersAndResults.orders as never,
       ordersAndResults.results as never,
@@ -1745,6 +1831,8 @@ const buildBootstrapAggregate = async (
     visitBillingStage: billingState.visitBillingStage,
     readyForBilling: billingState.readyForBilling,
     readyForDischarge: billingState.readyForDischarge,
+    readyForBillingByName: billingState.readyForBillingByName,
+    readyForDischargeByName: billingState.readyForDischargeByName,
     primaryAction: buildPrimaryAction({
       forms: forms.items,
       tasks,

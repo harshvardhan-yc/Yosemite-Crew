@@ -4,6 +4,7 @@ import { ClinicalArtifactService } from "src/services/clinical-artifact.service"
 import {
   WorkspaceService,
   WorkspaceServiceError,
+  dedupeTreatmentItemsByPrescription,
 } from "../../src/services/workspace.prisma.service";
 
 jest.mock("src/config/prisma", () => ({
@@ -32,6 +33,7 @@ jest.mock("src/config/prisma", () => ({
     },
     labOrder: { findMany: jest.fn() },
     labResult: { findMany: jest.fn() },
+    financeEvent: { findFirst: jest.fn() },
   },
 }));
 
@@ -80,6 +82,7 @@ describe("WorkspaceService", () => {
     };
     labOrder: { findMany: jest.Mock };
     labResult: { findMany: jest.Mock };
+    financeEvent: { findFirst: jest.Mock };
   };
   const mockedFormService = FormAssignmentService as unknown as {
     listAppointmentFormSummaries: jest.Mock;
@@ -665,6 +668,7 @@ describe("WorkspaceService", () => {
       organisationId: "org-3",
       patientId: "patient-3",
       unitId: "unit-1",
+      admittedAt: new Date("2026-06-14T10:00:00.000Z"),
       dischargedAt: null,
     });
 
@@ -681,6 +685,59 @@ describe("WorkspaceService", () => {
         inpatientRoomAdmissionReady: true,
       }),
     );
+    // The assigned unit must round-trip on the bootstrap encounter so it is
+    // retained after a refresh (read by the workspace + appointment views).
+    expect(result.encounter?.admission?.unitId).toBe("unit-1");
+  });
+
+  it("returns the actor display name for a ready-for-discharge encounter", async () => {
+    mockedPrisma.encounter.findFirst.mockResolvedValue({
+      id: "enc-4",
+      organisationId: "org-4",
+      caseId: "case-4",
+      patientId: "patient-4",
+      parentId: null,
+      status: "onleave",
+      encounterClass: "IMP",
+      appointmentKind: "INPATIENT",
+      title: "Inpatient stay",
+      reason: "Admit",
+      periodStart: null,
+      periodEnd: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.case.findFirst.mockResolvedValue({
+      id: "case-4",
+      organisationId: "org-4",
+      patientId: "patient-4",
+      parentId: null,
+      status: "active",
+      appointmentKind: "INPATIENT",
+      title: "Episode",
+      description: null,
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.patient.findFirst.mockResolvedValue({
+      id: "patient-4",
+      name: "Milo",
+      type: "PET",
+      status: "ACTIVE",
+      createdAt: new Date("2026-06-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-14T10:00:00.000Z"),
+    });
+    mockedPrisma.financeEvent.findFirst.mockResolvedValue({
+      payload: { actorUserId: "user-1", actorName: "Dr Harshit" },
+    });
+
+    const result = await WorkspaceService.getEncounterBootstrap(
+      { organisationId: "org-4", encounterId: "enc-4" },
+      [],
+    );
+
+    expect(result.readyForDischarge).toBe(true);
+    expect(result.readyForDischargeByName).toBe("Dr Harshit");
   });
 
   it("does not let labs from another visit for the same companion block finalization", async () => {
@@ -1065,5 +1122,38 @@ describe("WorkspaceService", () => {
         kind: "SOAP_NOTE",
       }),
     ]);
+  });
+});
+
+describe("dedupeTreatmentItemsByPrescription", () => {
+  it("drops the virtual item when a persisted row has the same prescriptionId", () => {
+    const fromPrescriptions = [
+      { id: "rx-1", prescriptionId: "rx-1", label: "virtual" },
+      { id: "rx-2", prescriptionId: "rx-2", label: "virtual-only" },
+    ];
+    const fromTable = [
+      { id: "ti-1", prescriptionId: "rx-1", label: "persisted" },
+    ];
+
+    const result = dedupeTreatmentItemsByPrescription(
+      fromPrescriptions,
+      fromTable,
+    );
+
+    // rx-1 collapses to the persisted row; rx-2 (no persisted row) stays.
+    expect(result).toHaveLength(2);
+    expect(result.filter((i) => i.prescriptionId === "rx-1")).toEqual([
+      { id: "ti-1", prescriptionId: "rx-1", label: "persisted" },
+    ]);
+    expect(result.some((i) => i.prescriptionId === "rx-2")).toBe(true);
+  });
+
+  it("keeps virtual items that have no prescriptionId", () => {
+    const result = dedupeTreatmentItemsByPrescription(
+      [{ id: "v-1", prescriptionId: null }],
+      [{ id: "t-1", prescriptionId: "rx-9" }],
+    );
+
+    expect(result).toHaveLength(2);
   });
 });

@@ -772,6 +772,100 @@ const toPrescriptionRecord = (
     updatedAt: record.updatedAt,
   });
 
+type InventoryMedicationFields = {
+  id: string;
+  name: string;
+  genericName: string | null;
+  strength: string | null;
+  dosageForm: string | null;
+  controlledItem: boolean;
+};
+
+const firstNonEmptyString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() ? value : undefined;
+
+// Prescription medications keep an `inventoryItemId` reference; their display
+// fields (medication name, strength, generic name, form, controlled flag) can be
+// missing when the item was added by id without the full snapshot. Fill the gaps
+// from the InventoryItem so the encounter/workspace shows complete prescriptions.
+export const hydrateMedications = (
+  medications: Prisma.JsonValue | null,
+  inventoryById: Map<string, InventoryMedicationFields>,
+): Prisma.JsonValue | null => {
+  if (!Array.isArray(medications)) {
+    return medications;
+  }
+  return medications.map((med) => {
+    if (!isRecord(med)) {
+      return med;
+    }
+    const inventoryItemId = firstNonEmptyString(med.inventoryItemId);
+    const inv = inventoryItemId
+      ? inventoryById.get(inventoryItemId)
+      : undefined;
+    if (!inv) {
+      return med;
+    }
+    return {
+      ...med,
+      medication: firstNonEmptyString(med.medication) ?? inv.name,
+      strength: firstNonEmptyString(med.strength) ?? inv.strength ?? undefined,
+      genericName:
+        firstNonEmptyString(med.genericName) ?? inv.genericName ?? undefined,
+      dosageForm:
+        firstNonEmptyString(med.dosageForm) ?? inv.dosageForm ?? undefined,
+      controlledItem:
+        typeof med.controlledItem === "boolean"
+          ? med.controlledItem
+          : inv.controlledItem,
+    };
+  }) as Prisma.JsonValue;
+};
+
+const hydratePrescriptionRecords = async (
+  records: PrescriptionWithArtifact[],
+): Promise<PrescriptionRecord[]> => {
+  const inventoryItemIds = new Set<string>();
+  for (const record of records) {
+    if (!Array.isArray(record.medications)) {
+      continue;
+    }
+    for (const med of record.medications) {
+      const id = isRecord(med)
+        ? firstNonEmptyString(med.inventoryItemId)
+        : undefined;
+      if (id) {
+        inventoryItemIds.add(id);
+      }
+    }
+  }
+
+  const inventoryById = new Map<string, InventoryMedicationFields>();
+  if (inventoryItemIds.size > 0) {
+    const items = await prisma.inventoryItem.findMany({
+      where: { id: { in: [...inventoryItemIds] } },
+      select: {
+        id: true,
+        name: true,
+        genericName: true,
+        strength: true,
+        dosageForm: true,
+        controlledItem: true,
+      },
+    });
+    for (const item of items) {
+      inventoryById.set(item.id, item);
+    }
+  }
+
+  return records.map((record) =>
+    toPrescriptionRecord({
+      ...record,
+      medications: hydrateMedications(record.medications, inventoryById),
+    }),
+  );
+};
+
 const buildDischargeSummaryRecord = (
   artifact: SoapNoteRecord["artifact"],
   dischargeSummary: DischargeSummaryModel,
@@ -1422,7 +1516,7 @@ export const ClinicalArtifactService = {
       orderBy: { createdAt: "desc" },
     });
 
-    return records.map(toPrescriptionRecord);
+    return hydratePrescriptionRecords(records);
   },
 
   async listPrescriptionsForAppointment(
@@ -1441,7 +1535,7 @@ export const ClinicalArtifactService = {
       orderBy: { createdAt: "desc" },
     });
 
-    return records.map(toPrescriptionRecord);
+    return hydratePrescriptionRecords(records);
   },
 
   async createDischargeSummary(

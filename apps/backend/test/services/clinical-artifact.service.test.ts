@@ -2,6 +2,7 @@ import { prisma } from "src/config/prisma";
 import {
   ClinicalArtifactService,
   ClinicalArtifactServiceError,
+  hydrateMedications,
 } from "../../src/services/clinical-artifact.service";
 import { renderRenderedDocumentPdfWithMetadata } from "../../src/services/rendered-document-renderer.service";
 import { uploadBufferAsFile } from "../../src/middlewares/upload";
@@ -67,6 +68,9 @@ jest.mock("src/config/prisma", () => ({
       findUnique: jest.fn(),
       findMany: jest.fn(),
     },
+    inventoryItem: {
+      findMany: jest.fn(),
+    },
   },
 }));
 
@@ -116,6 +120,9 @@ describe("ClinicalArtifactService", () => {
       create: jest.Mock;
       update: jest.Mock;
       findUnique: jest.Mock;
+      findMany: jest.Mock;
+    };
+    inventoryItem: {
       findMany: jest.Mock;
     };
   };
@@ -1683,5 +1690,122 @@ describe("ClinicalArtifactService", () => {
         organisationId,
       ),
     ).rejects.toBeInstanceOf(ClinicalArtifactServiceError);
+  });
+});
+
+describe("hydrateMedications", () => {
+  const inventory = new Map([
+    [
+      "item-1",
+      {
+        id: "item-1",
+        name: "Amoxicillin 500mg",
+        genericName: "Amoxicillin",
+        strength: "500mg",
+        dosageForm: "Capsule",
+        controlledItem: true,
+      },
+    ],
+  ]);
+
+  it("fills missing medication fields from the inventory item", () => {
+    const result = hydrateMedications(
+      [
+        {
+          inventoryItemId: "item-1",
+          quantity: 2,
+          medication: "",
+          strength: null,
+        },
+      ],
+      inventory,
+    ) as Array<Record<string, unknown>>;
+
+    expect(result[0].medication).toBe("Amoxicillin 500mg");
+    expect(result[0].strength).toBe("500mg");
+    expect(result[0].genericName).toBe("Amoxicillin");
+    expect(result[0].dosageForm).toBe("Capsule");
+    expect(result[0].controlledItem).toBe(true);
+    expect(result[0].quantity).toBe(2);
+  });
+
+  it("keeps existing fields and ignores unmatched / non-record items", () => {
+    const result = hydrateMedications(
+      [
+        { inventoryItemId: "item-1", medication: "Custom name" },
+        { inventoryItemId: "missing", medication: "Kept" },
+        "not-a-record",
+      ],
+      inventory,
+    ) as unknown[];
+
+    expect((result[0] as Record<string, unknown>).medication).toBe(
+      "Custom name",
+    );
+    expect((result[1] as Record<string, unknown>).medication).toBe("Kept");
+    expect(result[2]).toBe("not-a-record");
+  });
+
+  it("returns non-array medications unchanged", () => {
+    expect(hydrateMedications(null, inventory)).toBeNull();
+    expect(hydrateMedications({ a: 1 } as never, inventory)).toEqual({ a: 1 });
+  });
+});
+
+describe("ClinicalArtifactService.listPrescriptionsForEncounter hydration", () => {
+  const mocked = prisma as unknown as {
+    prescription: { findMany: jest.Mock };
+    inventoryItem: { findMany: jest.Mock };
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("hydrates prescription medications from inventory on read", async () => {
+    mocked.prescription.findMany.mockResolvedValue([
+      {
+        id: "prescription-1",
+        artifactId: "artifact-1",
+        items: [],
+        medications: [{ inventoryItemId: "item-1", quantity: 2 }],
+        instructions: null,
+        notes: null,
+        metadata: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        artifact: {
+          id: "artifact-1",
+          organisationId: "org-1",
+          encounterId: "enc-1",
+          kind: "PRESCRIPTION",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      },
+    ]);
+    mocked.inventoryItem.findMany.mockResolvedValue([
+      {
+        id: "item-1",
+        name: "Amoxicillin 500mg",
+        genericName: "Amoxicillin",
+        strength: "500mg",
+        dosageForm: "Capsule",
+        controlledItem: false,
+      },
+    ]);
+
+    const records = await ClinicalArtifactService.listPrescriptionsForEncounter(
+      "org-1",
+      "enc-1",
+    );
+
+    const meds = records[0].prescription.medications as Array<
+      Record<string, unknown>
+    >;
+    expect(meds[0].medication).toBe("Amoxicillin 500mg");
+    expect(mocked.inventoryItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ["item-1"] } } }),
+    );
   });
 });

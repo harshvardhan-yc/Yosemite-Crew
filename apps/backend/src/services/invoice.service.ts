@@ -1246,7 +1246,10 @@ export const InvoiceService = {
     return invoice;
   },
 
-  async markAppointmentReadyForBilling(appointmentId: string) {
+  async markAppointmentReadyForBilling(
+    appointmentId: string,
+    actorUserId?: string,
+  ) {
     const invoice = await prisma.invoice.findFirst({
       where: {
         appointmentId,
@@ -1282,6 +1285,14 @@ export const InvoiceService = {
           invoice.billingCollectionMode ?? "PAY_AT_VISIT_END",
         visitBillingStage: "READY_FOR_BILLING",
       },
+    });
+
+    await FinanceEventService.recordReadinessEvent({
+      organisationId: updated.organisationId,
+      eventType: "INVOICE_READY_FOR_BILLING",
+      entityType: "INVOICE",
+      entityId: updated.id,
+      actorUserId,
     });
 
     return toInvoiceRecord(updated);
@@ -1466,9 +1477,10 @@ export const InvoiceService = {
       throw new InvoiceServiceError("Cannot modify a paid invoice", 409);
     }
 
-    if (invoice.finalizedAt) {
-      throw new InvoiceServiceError("Cannot modify a finalized invoice", 409);
-    }
+    // A finalized but UNPAID invoice can still be edited (e.g. to add line items
+    // and re-issue the payment link); only PAID invoices are locked (checked above).
+    // We re-open it below so it can be re-priced and a fresh payment link generated.
+    const wasFinalized = Boolean(invoice.finalizedAt);
 
     const existingItems = Array.isArray(invoice.items)
       ? (invoice.items as unknown as DraftInvoiceItemInput[])
@@ -1479,7 +1491,25 @@ export const InvoiceService = {
       unitPrice: item.unitPrice,
       discountPercent: item.discountPercent ?? undefined,
     }));
-    const mergedItems = [...existingItems, ...newItems];
+    // Guard against re-adding the same line item: the finance step can re-send the
+    // existing items when regenerating the payment link for a finalized-but-unpaid
+    // invoice, which would otherwise append duplicate lines (e.g. a package twice).
+    const itemKey = (item: {
+      description?: string | null;
+      name?: string | null;
+      quantity?: number;
+      unitPrice?: number;
+    }) =>
+      [
+        (item.description ?? item.name ?? "").trim().toLowerCase(),
+        item.quantity ?? "",
+        item.unitPrice ?? "",
+      ].join("|");
+    const existingKeys = new Set(existingItems.map(itemKey));
+    const mergedItems = [
+      ...existingItems,
+      ...newItems.filter((item) => !existingKeys.has(itemKey(item))),
+    ];
     const taxContext = await resolveInvoiceTaxContext(
       invoice.organisationId ?? "",
       invoice.parentId ?? null,
@@ -1513,6 +1543,7 @@ export const InvoiceService = {
         taxTotal: totals.taxTotal,
         taxPercent: totals.taxPercent,
         totalAmount: totals.totalAmount,
+        finalizedAt: wasFinalized ? null : undefined,
         taxSnapshot: {
           upsert: {
             create: totals.taxSnapshot!,
@@ -1521,6 +1552,15 @@ export const InvoiceService = {
         },
       },
     });
+
+    // Re-opening a finalized-but-unpaid invoice invalidates any in-flight Stripe
+    // payment attempt so a fresh checkout link is generated for the new total.
+    if (wasFinalized) {
+      await prisma.paymentAttempt.updateMany({
+        where: { invoiceId, status: { notIn: ["SUCCEEDED", "CANCELED"] } },
+        data: { status: "CANCELED" },
+      });
+    }
 
     const targets = await resolveAuditTargetsForInvoiceRow(updated);
     await recordInvoiceAuditEvent(targets, {
