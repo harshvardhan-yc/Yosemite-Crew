@@ -491,16 +491,16 @@ describe("rendered-document-renderer service", () => {
       },
     });
 
-    expect(mockedGeneratePdf).toHaveBeenCalledWith(
+    expect(mockedGenerateClinicalPdfWithMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         documentType: "INVOICE",
-        title: "Final Invoice",
         organization: expect.objectContaining({
           name: "MediCare Hospital",
           addressLine1: "123 Clinic Road",
           logoUrl: null,
         }),
         data: expect.objectContaining({
+          title: "Final Invoice",
           invoiceNumber: "INV-9001",
           clientName: "Yasmin Hadid",
           patientName: "Bella Hadid",

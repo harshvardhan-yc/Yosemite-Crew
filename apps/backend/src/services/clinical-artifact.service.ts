@@ -875,7 +875,8 @@ const hydratePrescriptionRecords = async (
 ): Promise<PrescriptionRecord[]> => {
   const inventoryItemIds = new Set<string>();
   for (const record of records) {
-    for (const item of record.items) {
+    const items = Array.isArray(record.items) ? record.items : [];
+    for (const item of items) {
       const id = firstNonEmptyString(item.inventoryItemId);
       if (id) {
         inventoryItemIds.add(id);
