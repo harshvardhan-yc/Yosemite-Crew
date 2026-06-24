@@ -646,6 +646,123 @@ describe("TemplateService", () => {
     );
   });
 
+  it("prefers the most specific linked template when multiple candidates match", async () => {
+    const specificVersionId = "ver-specific-1";
+    const broadVersionId = "ver-broad-1";
+    mockedPrisma.template.findMany.mockResolvedValueOnce([
+      {
+        id: "org-template-broad",
+        ownership: "ORG_TEMPLATE",
+        organisationId,
+        ownerUserId: null,
+        kind: "SOAP_NOTE",
+        name: "Broad SOAP",
+        description: null,
+        status: "PUBLISHED",
+        scope: "SERVICE",
+        rules: {
+          appliesTo: {
+            serviceIds: ["svc-1"],
+          },
+        },
+        latestVersion: 1,
+        publishedVersion: 1,
+        createdBy: "user-1",
+        updatedBy: "user-1",
+        createdAt: new Date(),
+        updatedAt: new Date("2026-01-03T00:00:00.000Z"),
+        versions: [
+          {
+            id: broadVersionId,
+            version: 1,
+            schemaSnapshot: { sections: [] },
+            renderConfigSnapshot: {},
+            validationSnapshot: {},
+            publishedAt: new Date(),
+            createdBy: "user-1",
+          },
+        ],
+        catalogLinks: [],
+      },
+      {
+        id: "org-template-specific",
+        ownership: "ORG_TEMPLATE",
+        organisationId,
+        ownerUserId: null,
+        kind: "SOAP_NOTE",
+        name: "Specific SOAP",
+        description: null,
+        status: "PUBLISHED",
+        scope: "SERVICE",
+        rules: {
+          appliesTo: {
+            serviceIds: ["svc-1"],
+            species: ["canine"],
+          },
+        },
+        latestVersion: 1,
+        publishedVersion: 1,
+        createdBy: "user-1",
+        updatedBy: "user-1",
+        createdAt: new Date(),
+        updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+        versions: [
+          {
+            id: specificVersionId,
+            version: 1,
+            schemaSnapshot: { sections: [] },
+            renderConfigSnapshot: {},
+            validationSnapshot: {},
+            publishedAt: new Date(),
+            createdBy: "user-1",
+          },
+        ],
+        catalogLinks: [],
+      },
+    ]);
+    mockedPrisma.templateVersion.findUnique
+      .mockResolvedValueOnce({
+        id: specificVersionId,
+        templateId: "org-template-specific",
+        version: 1,
+        schemaSnapshot: { sections: [] },
+        renderConfigSnapshot: {},
+        validationSnapshot: {},
+        publishedAt: new Date(),
+        createdBy: "user-1",
+      })
+      .mockResolvedValueOnce({
+        id: broadVersionId,
+        templateId: "org-template-broad",
+        version: 1,
+        schemaSnapshot: { sections: [] },
+        renderConfigSnapshot: {},
+        validationSnapshot: {},
+        publishedAt: new Date(),
+        createdBy: "user-1",
+      });
+
+    const result = await TemplateService.resolve({
+      organisationId,
+      kind: "SOAP_NOTE",
+      serviceId: "svc-1",
+      species: "canine",
+    });
+
+    expect(result.templateId).toBe("org-template-specific");
+    expect(result.reason).toContain("Matched organisation template linked");
+    expect(mockedPrisma.templateVersion.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          templateId_version: {
+            templateId: "org-template-specific",
+            version: 1,
+          },
+        },
+      }),
+    );
+  });
+
   it("falls back to the organisation default template and reports not found when no match exists", async () => {
     mockedPrisma.template.findMany
       .mockResolvedValueOnce([])

@@ -528,11 +528,18 @@ const templateMatchesResolverInput = (
   const linked =
     serviceMatches || packageMatches || speciesMatches || modeMatches;
   const defaultForKind = Boolean(appliesTo?.defaultForKind);
+  const matchScore = [
+    serviceMatches,
+    packageMatches,
+    speciesMatches,
+    modeMatches,
+  ].filter(Boolean).length;
 
   return {
     linked,
     defaultForKind,
     appliesTo,
+    matchScore,
   };
 };
 
@@ -701,6 +708,25 @@ const resolveCandidateReason = (
     default:
       return `Matched YC library default template for kind (${linkReason}).`;
   }
+};
+
+const compareResolverMatches = (
+  left: ReturnType<typeof templateMatchesResolverInput> & { score: number },
+  right: ReturnType<typeof templateMatchesResolverInput> & { score: number },
+) => {
+  if (right.score !== left.score) {
+    return right.score - left.score;
+  }
+
+  if (right.matchScore !== left.matchScore) {
+    return right.matchScore - left.matchScore;
+  }
+
+  if (right.linked !== left.linked) {
+    return Number(right.linked) - Number(left.linked);
+  }
+
+  return Number(right.defaultForKind) - Number(left.defaultForKind);
 };
 
 export const TemplateService = {
@@ -1163,22 +1189,46 @@ export const TemplateService = {
         | "YC_DEFAULT",
       requireLinked: boolean,
     ) => {
+      const matches: Array<{
+        template: (typeof templates)[number];
+        matched: ReturnType<typeof templateMatchesResolverInput> & {
+          score: number;
+        };
+      }> = [];
+
       for (const template of templates) {
         const matched = templateMatchesResolverInput(template, parsed);
         if (requireLinked ? matched.linked : matched.defaultForKind) {
-          const version = await resolveTemplateVersion(template);
-          return toResolveResponse(
-            template as NonNullable<
-              Awaited<ReturnType<typeof prisma.template.findFirst>>
-            >,
-            version,
-            parsed,
-            resolveCandidateReason(bucket, matched),
-          );
+          matches.push({
+            template,
+            matched: {
+              ...matched,
+              score:
+                (requireLinked ? 100 : 0) +
+                (matched.defaultForKind ? 10 : 0) +
+                matched.matchScore,
+            },
+          });
         }
       }
 
-      return null;
+      const bestMatch = matches.sort((left, right) =>
+        compareResolverMatches(left.matched, right.matched),
+      )[0];
+
+      if (!bestMatch) {
+        return null;
+      }
+
+      const version = await resolveTemplateVersion(bestMatch.template);
+      return toResolveResponse(
+        bestMatch.template as NonNullable<
+          Awaited<ReturnType<typeof prisma.template.findFirst>>
+        >,
+        version,
+        parsed,
+        resolveCandidateReason(bucket, bestMatch.matched),
+      );
     };
 
     if (parsed.ownerUserId) {
