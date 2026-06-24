@@ -222,6 +222,17 @@ describe("WorkspaceService", () => {
       createdAt: new Date("2026-06-14T10:00:00.000Z"),
       updatedAt: new Date("2026-06-15T10:00:00.000Z"),
     });
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc-1",
+      organisationId: "org-1",
+      patientId: "patient-1",
+      unitId: "unit-1",
+      expectedStayDays: 5,
+      admittedAt: new Date("2026-06-15T10:00:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
     mockedClinicalArtifactService.listPrescriptionsForEncounter.mockResolvedValue(
       [
         {
@@ -450,6 +461,13 @@ describe("WorkspaceService", () => {
     expect(mockedFormService.listAppointmentFormSummaries).toHaveBeenCalledWith(
       "org-1",
       "appt-1",
+    );
+    expect(result.encounter?.admission).toEqual(
+      expect.objectContaining({
+        encounterId: "enc-1",
+        unitId: "unit-1",
+        expectedStayDays: 5,
+      }),
     );
   });
 

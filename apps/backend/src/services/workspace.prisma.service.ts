@@ -64,6 +64,18 @@ type EncounterRow = {
   updatedAt: Date;
 };
 
+type AdmissionRow = {
+  encounterId: string;
+  organisationId: string;
+  patientId: string;
+  unitId: string | null;
+  expectedStayDays: number | null;
+  admittedAt: Date;
+  dischargedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 type CaseRow = {
   id: string;
   organisationId: string;
@@ -143,14 +155,6 @@ type WorkspaceBootstrapBillingState = {
   readyForDischarge: boolean;
 };
 
-type AdmissionRow = {
-  encounterId: string;
-  organisationId: string;
-  patientId: string;
-  unitId: string | null;
-  dischargedAt: Date | null;
-};
-
 type PrescriptionDispenseRequestRow = {
   id: string;
   status: string;
@@ -189,12 +193,27 @@ const buildWorkspaceSummaryItem = (input: {
   updatedAt: Date;
 }): WorkspaceSummaryItem => input;
 
+const mapAdmissionRow = (row: AdmissionRow): Encounter["admission"] => ({
+  encounterId: row.encounterId,
+  organisationId: row.organisationId,
+  patientId: row.patientId,
+  unitId: row.unitId ?? undefined,
+  expectedStayDays: row.expectedStayDays ?? undefined,
+  admittedAt: row.admittedAt,
+  dischargedAt: row.dischargedAt ?? undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
 const normalizeAppointmentKind = (
   value: string | undefined,
 ): "OUTPATIENT" | "INPATIENT" =>
   value === "INPATIENT" ? "INPATIENT" : "OUTPATIENT";
 
-const mapEncounterRow = (row: EncounterRow): Encounter => ({
+const mapEncounterRow = (
+  row: EncounterRow,
+  admission?: AdmissionRow | null,
+): Encounter => ({
   id: row.id,
   caseId: row.caseId,
   organisationId: row.organisationId,
@@ -207,6 +226,7 @@ const mapEncounterRow = (row: EncounterRow): Encounter => ({
   reason: row.reason ?? undefined,
   periodStart: row.periodStart ?? undefined,
   periodEnd: row.periodEnd ?? undefined,
+  admission: admission ? mapAdmissionRow(admission) : undefined,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -1102,7 +1122,15 @@ const buildContext = async (
           })) as EncounterRow | null)
         : null;
 
-  const encounter = encounterRow != null ? mapEncounterRow(encounterRow) : null;
+  const admissionRow =
+    encounterRow != null
+      ? await loadAdmission(encounterRow.id)
+      : await loadAdmission(
+          appointment?.encounterId ?? input.encounterId ?? undefined,
+        );
+
+  const encounter =
+    encounterRow != null ? mapEncounterRow(encounterRow, admissionRow) : null;
 
   const caseId = encounter?.caseId ?? resolvedAppointment?.caseId ?? undefined;
   const caseRow = caseId
