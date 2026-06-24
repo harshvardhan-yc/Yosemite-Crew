@@ -362,6 +362,39 @@ const mergeInvoiceLineItems = (
   return merged;
 };
 
+const loadInvoiceFinancialDetails = async (invoiceId: string) => {
+  const payments = (await prisma.payment.findMany({
+    where: { invoiceId },
+    orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
+    include: {
+      refunds: {
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  })) as PrismaPaymentWithRefunds[];
+
+  const receipts = payments
+    .filter((payment) => Boolean(payment.receiptUrl))
+    .map((payment) => ({
+      id: payment.id,
+      paymentId: payment.id,
+      invoiceId: payment.invoiceId,
+      provider: payment.provider,
+      settlementChannel: payment.settlementChannel ?? undefined,
+      amount: payment.amount,
+      currency: payment.currency,
+      receiptUrl: payment.receiptUrl ?? undefined,
+      paidAt: payment.paidAt ?? undefined,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+    }));
+
+  return {
+    payments: payments.map((payment) => toPaymentRecord(payment)),
+    receipts,
+  };
+};
+
 const toTaxLineItems = (items: DraftInvoiceItemInput[]) =>
   items.map((item) => ({
     description: item.description,
@@ -1538,32 +1571,7 @@ export const InvoiceService = {
           include: { address: true },
         })
       : null;
-
-    const payments = (await prisma.payment.findMany({
-      where: { invoiceId: id },
-      orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }],
-      include: {
-        refunds: {
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    })) as PrismaPaymentWithRefunds[];
-
-    const receipts = payments
-      .filter((payment) => Boolean(payment.receiptUrl))
-      .map((payment) => ({
-        id: payment.id,
-        paymentId: payment.id,
-        invoiceId: payment.invoiceId,
-        provider: payment.provider,
-        settlementChannel: payment.settlementChannel ?? undefined,
-        amount: payment.amount,
-        currency: payment.currency,
-        receiptUrl: payment.receiptUrl ?? undefined,
-        paidAt: payment.paidAt ?? undefined,
-        createdAt: payment.createdAt,
-        updatedAt: payment.updatedAt,
-      }));
+    const financialDetails = await loadInvoiceFinancialDetails(id);
 
     return {
       organistion: {
@@ -1574,8 +1582,7 @@ export const InvoiceService = {
       },
       invoice: {
         ...toInvoiceRecord(doc),
-        payments: payments.map((payment) => toPaymentRecord(payment)),
-        receipts,
+        ...financialDetails,
       },
     };
   },
@@ -1949,7 +1956,12 @@ export const InvoiceService = {
     if (organisationId && doc.organisationId !== organisationId) {
       return null;
     }
-    return toInvoiceRecord(doc);
+
+    const financialDetails = await loadInvoiceFinancialDetails(doc.id);
+    return {
+      ...toInvoiceRecord(doc),
+      ...financialDetails,
+    };
   },
 
   async createCheckoutSessionAndEmailParent(invoiceId: string) {

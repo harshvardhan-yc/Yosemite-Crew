@@ -36,7 +36,7 @@ jest.mock("src/config/prisma", () => ({
     organizationBilling: { findUnique: jest.fn() },
     organization: { findUnique: jest.fn() },
     parent: { findUnique: jest.fn() },
-    paymentAttempt: { updateMany: jest.fn() },
+    paymentAttempt: { updateMany: jest.fn(), findFirst: jest.fn() },
   },
 }));
 
@@ -1524,6 +1524,74 @@ describe("InvoiceService", () => {
           receiptUrl: "https://receipt",
         }),
       ]),
+    );
+  });
+
+  it("returns richer invoice details when looked up by payment intent", async () => {
+    (prisma.paymentAttempt.findFirst as jest.Mock).mockResolvedValueOnce({
+      invoiceId: "inv_lookup",
+    });
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_lookup",
+      appointmentId,
+      organisationId,
+      patientId,
+      parentId,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      items: [],
+      subtotal: 0,
+      discountTotal: 0,
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      invoiceDiscountTotal: 0,
+      taxTotal: 0,
+      taxPercent: 0,
+      totalAmount: 0,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      creditNotes: [],
+    });
+    (prisma.payment.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "pay_lookup",
+        invoiceId: "inv_lookup",
+        paymentAttemptId: null,
+        provider: "STRIPE",
+        settlementChannel: "STRIPE",
+        collectionMode: null,
+        providerPaymentId: "pi_lookup",
+        amount: 12,
+        currency: "usd",
+        status: "SUCCEEDED",
+        paidAt: new Date("2026-06-18T12:00:00.000Z"),
+        receiptUrl: "https://receipt-lookup",
+        refunds: [],
+        createdAt: new Date("2026-06-18T11:00:00.000Z"),
+        updatedAt: new Date("2026-06-18T12:00:00.000Z"),
+      },
+    ]);
+
+    const result = await InvoiceService.getByPaymentIntentId("pi_lookup");
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: "inv_lookup",
+        payments: expect.arrayContaining([
+          expect.objectContaining({
+            id: "pay_lookup",
+            receiptUrl: "https://receipt-lookup",
+          }),
+        ]),
+        receipts: expect.arrayContaining([
+          expect.objectContaining({
+            paymentId: "pay_lookup",
+            receiptUrl: "https://receipt-lookup",
+          }),
+        ]),
+      }),
     );
   });
 
