@@ -439,7 +439,7 @@ type MerckSearchControllerArgs = {
   initialEntries: MerckEntry[];
   initialLanguage: MerckLanguage;
   initialHasSearched: boolean;
-  onOpenFullSearch?: MerckSearchWidgetProps['onOpenFullSearch'];
+  onOpenFullSearch: MerckSearchWidgetProps['onOpenFullSearch'];
 };
 
 const useMerckSearchController = ({
@@ -630,7 +630,7 @@ type MerckSearchWidgetViewProps = {
   description: string;
   compact: boolean;
   testID: string;
-  onOpenFullSearch?: MerckSearchWidgetProps['onOpenFullSearch'];
+  onOpenFullSearch: MerckSearchWidgetProps['onOpenFullSearch'];
   theme: any;
   styles: MerckStyles;
   controller: ReturnType<typeof useMerckSearchController>;
