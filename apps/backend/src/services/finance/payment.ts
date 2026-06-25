@@ -545,18 +545,11 @@ export const FinancePaymentService = {
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
+        amountRequested: true,
         providerCheckoutSessionId: true,
         rawProviderPayload: true,
       },
     });
-
-    if (existingCheckoutAttempt?.providerCheckoutSessionId) {
-      return {
-        sessionId: existingCheckoutAttempt.providerCheckoutSessionId,
-        url: getCheckoutSessionUrl(existingCheckoutAttempt),
-        paymentAttemptId: existingCheckoutAttempt.id,
-      };
-    }
 
     if (!invoice.organisationId) {
       throw new FinancePaymentError("Invoice missing organisation", 500);
@@ -569,6 +562,26 @@ export const FinancePaymentService = {
     );
     if (summary.balance <= 0) {
       throw new FinancePaymentError("Invoice has no outstanding balance", 409);
+    }
+
+    if (existingCheckoutAttempt?.providerCheckoutSessionId) {
+      const requestedAmount = roundMoney(
+        existingCheckoutAttempt.amountRequested ?? 0,
+      );
+      if (requestedAmount === summary.balance) {
+        return {
+          sessionId: existingCheckoutAttempt.providerCheckoutSessionId,
+          url: getCheckoutSessionUrl(existingCheckoutAttempt),
+          paymentAttemptId: existingCheckoutAttempt.id,
+        };
+      }
+
+      await prisma.paymentAttempt.update({
+        where: { id: existingCheckoutAttempt.id },
+        data: {
+          status: "CANCELED",
+        },
+      });
     }
 
     const organisation = await prisma.organization.findUnique({

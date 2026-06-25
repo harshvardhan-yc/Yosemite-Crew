@@ -616,6 +616,7 @@ describe("FinancePaymentService", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         id: "pa_existing",
+        amountRequested: 100,
         providerCheckoutSessionId: "cs_existing",
         rawProviderPayload: { url: "https://existing" },
       });
@@ -1237,6 +1238,7 @@ describe("FinancePaymentService", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         id: "pa_existing",
+        amountRequested: 100,
         providerCheckoutSessionId: "cs_existing",
         rawProviderPayload: { url: "" },
       });
@@ -1249,6 +1251,94 @@ describe("FinancePaymentService", () => {
       sessionId: "cs_existing",
       url: null,
       paymentAttemptId: "pa_existing",
+    });
+  });
+
+  it("cancels a stale checkout session and creates a fresh one for the reduced balance", async () => {
+    (prisma.invoice.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: "inv_repriced",
+      totalAmount: 114,
+      currency: "usd",
+      status: "AWAITING_PAYMENT",
+      paymentCollectionMethod: "PAYMENT_LINK",
+      organisationId: "org_1",
+      appointmentId: "appt_1",
+      parentId: "parent_1",
+      depositCollectedAmount: 10,
+      items: [
+        {
+          name: "Consult",
+          description: "Consult",
+          unitPrice: 114,
+          quantity: 1,
+        },
+      ],
+    });
+    (prisma.paymentAttempt.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "pa_stale",
+        amountRequested: 114,
+        providerCheckoutSessionId: "cs_stale",
+        rawProviderPayload: { url: "https://checkout-old" },
+      });
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValueOnce({
+      stripeAccountId: "acct_1",
+    });
+    const stripeClient = {
+      checkout: { sessions: { create: jest.fn() } },
+      paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
+      refunds: { create: jest.fn() },
+    };
+    __setFinanceStripeClientForTests(stripeClient);
+    (stripeClient.checkout.sessions.create as jest.Mock).mockResolvedValueOnce({
+      id: "cs_fresh",
+      url: "https://checkout-fresh",
+    });
+    (prisma.paymentAttempt.update as jest.Mock).mockResolvedValueOnce({
+      id: "pa_stale",
+      status: "CANCELED",
+    });
+    (prisma.paymentAttempt.create as jest.Mock).mockResolvedValueOnce({
+      id: "pa_fresh",
+    });
+    (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
+      id: "inv_repriced",
+    });
+
+    const result =
+      await FinancePaymentService.createCheckoutSessionForInvoice(
+        "inv_repriced",
+      );
+
+    expect(prisma.paymentAttempt.update).toHaveBeenCalledWith({
+      where: { id: "pa_stale" },
+      data: { status: "CANCELED" },
+    });
+    expect(stripeClient.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        automatic_tax: { enabled: false },
+        line_items: [
+          expect.objectContaining({
+            quantity: 1,
+            price_data: expect.objectContaining({
+              unit_amount: 10400,
+            }),
+          }),
+        ],
+      }),
+    );
+    expect(prisma.paymentAttempt.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amountRequested: 104,
+        }),
+      }),
+    );
+    expect(result).toEqual({
+      sessionId: "cs_fresh",
+      url: "https://checkout-fresh",
+      paymentAttemptId: "pa_fresh",
     });
   });
 
