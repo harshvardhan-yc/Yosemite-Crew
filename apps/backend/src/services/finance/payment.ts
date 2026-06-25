@@ -119,6 +119,16 @@ export type RefundInvoiceResult = {
   };
 };
 
+export type RefundInvoicePaymentsResult = {
+  invoice: NonNullable<
+    Prisma.PaymentGetPayload<{
+      include: { invoice: true };
+    }>["invoice"]
+  >;
+  refunds: RefundInvoiceResult["refund"][];
+  totalRefunded: number;
+};
+
 export type RefundPaymentResult = {
   payment: Prisma.PaymentGetPayload<{
     include: { invoice: true };
@@ -1036,6 +1046,48 @@ export const FinancePaymentService = {
         amountRefunded,
         paymentId: updatedPayment.id,
       },
+    };
+  },
+
+  async refundInvoicePayments(
+    invoiceId: string,
+    reason?: string,
+  ): Promise<RefundInvoicePaymentsResult> {
+    const payments = await prisma.payment.findMany({
+      where: {
+        invoiceId,
+        status: "SUCCEEDED",
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, amount: true },
+    });
+
+    if (!payments.length) {
+      throw new FinancePaymentError("Invoice has no refundable payment", 409);
+    }
+
+    const refunds: RefundInvoiceResult["refund"][] = [];
+    let invoice: RefundInvoicePaymentsResult["invoice"] | null = null;
+
+    for (const payment of payments) {
+      const result = await this.refundPaymentById(payment.id, {
+        reason,
+        amount: payment.amount,
+      });
+      refunds.push(result.refund);
+      invoice = result.payment.invoice;
+    }
+
+    if (!invoice) {
+      throw new FinancePaymentError("Invoice has no refundable payment", 409);
+    }
+
+    return {
+      invoice,
+      refunds,
+      totalRefunded: roundMoney(
+        refunds.reduce((sum, refund) => sum + refund.amountRefunded, 0),
+      ),
     };
   },
 

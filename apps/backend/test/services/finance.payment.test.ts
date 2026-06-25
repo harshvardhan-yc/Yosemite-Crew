@@ -1583,6 +1583,71 @@ describe("FinancePaymentService", () => {
     expect(result.refund.status).toBe("CANCELED");
   });
 
+  it("refunds all invoice payments when cancelling an invoice with collected money", async () => {
+    (prisma.payment.findMany as jest.Mock).mockResolvedValueOnce([
+      { id: "pay_1", amount: 30 },
+      { id: "pay_2", amount: 20 },
+    ]);
+    (prisma.payment.findUnique as jest.Mock)
+      .mockResolvedValueOnce({
+        id: "pay_1",
+        invoiceId: "inv_multi_refund",
+        provider: "MANUAL",
+        providerPaymentId: null,
+        amount: 30,
+        currency: "usd",
+        invoice: {
+          organisationId: "org_1",
+        },
+      })
+      .mockResolvedValueOnce({
+        id: "pay_2",
+        invoiceId: "inv_multi_refund",
+        provider: "MANUAL",
+        providerPaymentId: null,
+        amount: 20,
+        currency: "usd",
+        invoice: {
+          organisationId: "org_1",
+        },
+      });
+    (prisma.refund.create as jest.Mock)
+      .mockResolvedValueOnce({ id: "refund_1", status: "SUCCEEDED" })
+      .mockResolvedValueOnce({ id: "refund_2", status: "SUCCEEDED" });
+    (prisma.payment.update as jest.Mock)
+      .mockResolvedValueOnce({ id: "pay_1", status: "REFUNDED" })
+      .mockResolvedValueOnce({ id: "pay_2", status: "REFUNDED" });
+    (prisma.invoice.update as jest.Mock)
+      .mockResolvedValueOnce({
+        id: "inv_multi_refund",
+        status: "REFUNDED",
+        currency: "usd",
+        payments: [],
+      })
+      .mockResolvedValueOnce({
+        id: "inv_multi_refund",
+        status: "REFUNDED",
+        currency: "usd",
+        payments: [],
+      });
+
+    const result = await FinancePaymentService.refundInvoicePayments(
+      "inv_multi_refund",
+      "owner request",
+    );
+
+    expect(prisma.payment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          invoiceId: "inv_multi_refund",
+          status: "SUCCEEDED",
+        },
+      }),
+    );
+    expect(result.totalRefunded).toBe(50);
+    expect(result.refunds).toHaveLength(2);
+  });
+
   it("refunds payment-intent and checkout webhook events when invoice lookups succeed", async () => {
     (prisma.paymentAttempt.findFirst as jest.Mock)
       .mockResolvedValueOnce(null)
