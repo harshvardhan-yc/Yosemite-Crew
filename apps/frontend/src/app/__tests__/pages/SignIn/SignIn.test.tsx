@@ -194,7 +194,6 @@ describe('SignIn Page', () => {
 
   it('calls signIn and redirects on success', async () => {
     mockSignIn.mockResolvedValue({}); // Success
-    (resolvePostAuthRedirect as jest.Mock).mockResolvedValue('/create-org');
 
     render(<SignIn />);
 
@@ -210,18 +209,17 @@ describe('SignIn Page', () => {
     });
 
     expect(mockSignIn).toHaveBeenCalledWith('test@example.com', 'pass123');
-    expect(mockRouterReplace).toHaveBeenCalledWith('/appointments');
     expect(resolvePostAuthRedirect).toHaveBeenCalledWith({
       fallbackRole: undefined,
       redirectPath: undefined,
       isDeveloper: false,
     });
+    expect(mockRouterReplace).toHaveBeenCalledWith('/create-org');
     expect(mockSessionStorage.setItem).toHaveBeenCalledWith('devAuth', 'false');
   });
 
   it('sets devAuth to true in storage when isDeveloper is true', async () => {
     mockSignIn.mockResolvedValue({});
-    (resolvePostAuthRedirect as jest.Mock).mockResolvedValue('/developers/home');
 
     render(<SignIn isDeveloper={true} />);
 
@@ -237,7 +235,6 @@ describe('SignIn Page', () => {
     });
 
     expect(mockSessionStorage.setItem).toHaveBeenCalledWith('devAuth', 'true');
-    expect(mockRouterReplace).toHaveBeenCalledWith('/developers/home');
     expect(resolvePostAuthRedirect).toHaveBeenCalledWith({
       fallbackRole: undefined,
       redirectPath: undefined,

@@ -13,6 +13,12 @@ on:
 permissions:
   contents: read
 
+env:
+  NEXT_PUBLIC_BASE_URL: https://devapi.yosemitecrew.com/
+  NEXT_PUBLIC_COGNITO_USERPOOLID: eu-central-1_hxzTCq5oY
+  NEXT_PUBLIC_COGNITO_CLIENTID: 2aaosvrhi2ukh6unle6gcn46en
+  NEXT_PUBLIC_DISABLE_AUTH_GUARD: 'false'
+
 concurrency:
   group: frontend-e2e-${{ github.ref }}
   cancel-in-progress: true
@@ -189,7 +195,7 @@ jobs:
       - name: Run authenticated Playwright flow
         env:
           E2E_WEB_SERVER_COMMAND: pnpm exec next start -p 3001 -H 127.0.0.1
-        run: pnpm --filter frontend exec playwright test e2e/auth-flow.spec.ts --max-failures=1
+        run: pnpm --filter frontend exec playwright test e2e/auth-flow.spec.ts
 
       - name: Upload Playwright HTML report
         if: always()
