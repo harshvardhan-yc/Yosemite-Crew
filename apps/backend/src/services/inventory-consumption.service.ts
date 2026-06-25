@@ -154,7 +154,7 @@ const resolvePetWeightUnit = (
   );
   if (unit) return unit;
   if (patient.currentWeight !== undefined && patient.currentWeight !== null) {
-    return "lbs";
+    return "kg";
   }
   return undefined;
 };
