@@ -199,11 +199,11 @@ function mobileConfigReducer(
   }
 }
 
-// const noop = () => {};
-// console.log = noop;
-// console.info = noop;
-// console.debug = noop;
-// console.trace = noop;
+const noop = () => {};
+console.log = noop;
+console.info = noop;
+console.debug = noop;
+console.trace = noop;
 
 const PERSIST_GATE_LOADING = <CustomSplashScreen onAnimationEnd={() => {}} />;
 
