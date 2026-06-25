@@ -189,7 +189,7 @@ jobs:
       - name: Run authenticated Playwright flow
         env:
           E2E_WEB_SERVER_COMMAND: pnpm exec next start -p 3001 -H 127.0.0.1
-        run: pnpm --filter frontend exec playwright test e2e/auth-flow.spec.ts
+        run: pnpm --filter frontend exec playwright test e2e/auth-flow.spec.ts --max-failures=1
 
       - name: Upload Playwright HTML report
         if: always()
