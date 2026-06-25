@@ -55,6 +55,14 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
+      - name: Cache Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/frontend/.next/cache
+          key: next-build-${{ runner.os }}-${{ hashFiles('apps/frontend/package.json', 'apps/frontend/next.config.*', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            next-build-${{ runner.os }}-
+
       - name: Build packages
         run: pnpm run build --filter "@yosemite-crew/types" --filter "@yosemite-crew/fhirtypes"
 
@@ -92,6 +100,14 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/setup
+
+      - name: Cache Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/frontend/.next/cache
+          key: next-build-${{ runner.os }}-${{ hashFiles('apps/frontend/package.json', 'apps/frontend/next.config.*', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            next-build-${{ runner.os }}-
 
       - name: Download frontend build output
         uses: actions/download-artifact@v4
