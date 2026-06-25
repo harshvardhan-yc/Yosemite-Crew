@@ -13,11 +13,25 @@ import {createAllCommonStyles} from '@/shared/utils/screenStyles';
 import DocumentAttachmentViewer from '@/features/documents/components/DocumentAttachmentViewer';
 import {fetchDocumentView} from '@/features/documents/documentSlice';
 import {LiquidGlassHeaderScreen} from '@/shared/components/common/LiquidGlassHeader/LiquidGlassHeaderScreen';
-import {
-  resolveCategoryLabel,
-  resolveSubcategoryLabel,
-  resolveVisitTypeLabel,
-} from '@/features/expenses/utils/expenseLabels';
+import {DOCUMENT_CATEGORIES, VISIT_TYPES} from '@/features/documents/constants';
+
+const resolveCategoryLabel = (categoryId?: string | null): string =>
+  DOCUMENT_CATEGORIES.find(c => c.id === categoryId)?.label ?? categoryId ?? '';
+
+const resolveSubcategoryLabel = (
+  categoryId?: string | null,
+  subcategoryId?: string | null,
+): string => {
+  const cat = DOCUMENT_CATEGORIES.find(c => c.id === categoryId);
+  return (
+    cat?.subcategories.find(s => s.id === subcategoryId)?.label ??
+    subcategoryId ??
+    ''
+  );
+};
+
+const resolveVisitTypeLabel = (visitTypeId?: string | null): string =>
+  VISIT_TYPES.find(v => v.id === visitTypeId)?.label ?? visitTypeId ?? '';
 import {
   DetailsCard,
   type DetailItem,
