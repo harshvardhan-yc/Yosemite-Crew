@@ -573,6 +573,11 @@ const mapAppointmentResource = (incoming: any): Appointment => {
     id: resource?.id ?? resource?._id ?? '',
     companionId: converted?.companion?.id ?? patient.id ?? '',
     businessId: organisation.id ?? '',
+    encounterId:
+      converted?.encounterId ??
+      resource?.encounterId ??
+      incoming?.encounterId ??
+      null,
     serviceId: converted?.appointmentType?.id ?? serviceCoding?.code ?? null,
     serviceName:
       converted?.appointmentType?.name ??
@@ -1079,6 +1084,9 @@ const mapBusinessFromApi = (
             specialty: specName ?? '',
             specialityId: specId ?? undefined,
             items,
+            appointmentKinds: Array.isArray(svc?.appointmentKinds)
+              ? svc.appointmentKinds
+              : undefined,
           });
         } else {
           services.push({
