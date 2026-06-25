@@ -840,7 +840,8 @@ export const StripeService = {
           parentId: parentId ?? "",
           companionId: companionId ?? "",
         },
-        transfer_data: { destination: organisation.stripeAccountId },
+      },{
+        stripeAccount: organisation.stripeAccountId,
       });
 
       return {
@@ -885,7 +886,8 @@ export const StripeService = {
         parentId: appointment.companion.parent.id,
         companionId: appointment.companion.id,
       },
-      transfer_data: { destination: organisation.stripeAccountId },
+    },{
+      stripeAccount: organisation.stripeAccountId,
     });
 
     await AppointmentModel.updateOne(
@@ -967,7 +969,8 @@ export const StripeService = {
           companionId: invoice.companionId ?? "",
         },
         description: `Payment for Invoice ${invoiceId}`,
-        transfer_data: { destination: organisation.stripeAccountId },
+      },{
+        stripeAccount: organisation.stripeAccountId,
       });
 
       await InvoiceService.attachStripeDetails(invoiceId, {
@@ -1061,7 +1064,8 @@ export const StripeService = {
         companionId: invoice.companionId ?? "",
       },
       description: `Payment for Invoice ${invoiceId}`,
-      transfer_data: { destination: organisation.stripeAccountId },
+    },{
+      stripeAccount: organisation.stripeAccountId,
     });
 
     await InvoiceService.attachStripeDetails(invoiceId, {
@@ -1155,11 +1159,12 @@ export const StripeService = {
             organisationId: invoice.organisationId ?? "",
             parentId: invoice.parentId ?? "",
           },
-          transfer_data: { destination: organisation.stripeAccountId },
         },
         success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
         cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
         expires_at: expiresAt,
+      },{
+        stripeAccount: organisation.stripeAccountId,
       });
 
       await prisma.invoice.updateMany({
@@ -1234,11 +1239,12 @@ export const StripeService = {
           organisationId: invoice.organisationId ?? "",
           parentId: invoice.parentId ?? "",
         },
-        transfer_data: { destination: organisation.stripeAccountId },
       },
       success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
       cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
       expires_at: expiresAt,
+    },{
+      stripeAccount: organisation.stripeAccountId,
     });
 
     await InvoiceModel.updateOne(
