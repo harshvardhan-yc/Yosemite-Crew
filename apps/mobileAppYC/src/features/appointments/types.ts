@@ -93,6 +93,7 @@ export interface Appointment {
   id: string;
   companionId: string;
   businessId: string;
+  encounterId?: string | null;
   serviceId?: string | null;
   serviceName?: string | null;
   serviceCode?: string | null;
@@ -241,6 +242,7 @@ export interface VetPackage {
   specialty?: string;
   specialityId?: string;
   items: PackageBreakdownItem[];
+  appointmentKinds?: string[];
 }
 
 export interface AppointmentsState {
