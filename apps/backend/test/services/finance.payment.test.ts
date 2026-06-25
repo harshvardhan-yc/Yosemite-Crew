@@ -358,16 +358,19 @@ describe("FinancePaymentService", () => {
             }),
           }),
         ],
-        stripeAccount: "acct_1",
         payment_intent_data: expect.objectContaining({
           metadata: expect.objectContaining({
             invoiceId: "inv_6",
           }),
         }),
       }),
+      {
+        stripeAccount: "acct_1",
+      },
     );
     const checkoutArgs = (stripeClient.checkout.sessions.create as jest.Mock)
       .mock.calls[0][0];
+    expect(checkoutArgs).not.toHaveProperty("stripeAccount");
     expect(checkoutArgs.payment_intent_data).not.toHaveProperty(
       "transfer_data",
     );
@@ -451,6 +454,9 @@ describe("FinancePaymentService", () => {
           }),
         ],
       }),
+      {
+        stripeAccount: "acct_1",
+      },
     );
     expect(prisma.paymentAttempt.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -529,6 +535,9 @@ describe("FinancePaymentService", () => {
           }),
         ],
       }),
+      {
+        stripeAccount: "acct_1",
+      },
     );
   });
 
@@ -584,7 +593,14 @@ describe("FinancePaymentService", () => {
         amount: 10000,
         currency: "usd",
       }),
+      {
+        stripeAccount: "acct_10",
+      },
     );
+    const paymentIntentArgs = (stripeClient.paymentIntents.create as jest.Mock)
+      .mock.calls[0][0];
+    expect(paymentIntentArgs).not.toHaveProperty("stripeAccount");
+    expect(paymentIntentArgs).not.toHaveProperty("transfer_data");
     expect(prisma.paymentAttempt.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -1335,6 +1351,9 @@ describe("FinancePaymentService", () => {
           }),
         ],
       }),
+      {
+        stripeAccount: "acct_1",
+      },
     );
     expect(prisma.paymentAttempt.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1404,6 +1423,9 @@ describe("FinancePaymentService", () => {
           }),
         ],
       }),
+      {
+        stripeAccount: "acct_discounted",
+      },
     );
   });
 
@@ -1591,6 +1613,9 @@ describe("FinancePaymentService", () => {
           }),
         ],
       }),
+      {
+        stripeAccount: "acct_items",
+      },
     );
   });
 

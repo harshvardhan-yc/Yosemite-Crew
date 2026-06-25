@@ -28,14 +28,20 @@ type InvoiceFinancialSummary = {
 type StripeCheckoutSessionClient = {
   checkout: {
     sessions: {
-      create: (input: Record<string, unknown>) => Promise<{
+      create: (
+        input: Record<string, unknown>,
+        options?: Record<string, unknown>,
+      ) => Promise<{
         id: string;
         url?: string | null;
       }>;
     };
   };
   paymentIntents: {
-    create: (input: Record<string, unknown>) => Promise<{
+    create: (
+      input: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ) => Promise<{
       id: string;
       client_secret?: string | null;
     }>;
@@ -686,20 +692,13 @@ export const FinancePaymentService = {
     const stripe = getStripeClient();
     const expiresAt = Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000);
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      automatic_tax: {
-        enabled: !useBalanceLine,
-      },
-      line_items: lineItems,
-      metadata: {
-        type: "INVOICE_PAYMENT",
-        invoiceId: invoice.id,
-        appointmentId: invoice.appointmentId ?? "",
-        organisationId: invoice.organisationId ?? "",
-        parentId: invoice.parentId ?? "",
-      },
-      payment_intent_data: {
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        automatic_tax: {
+          enabled: !useBalanceLine,
+        },
+        line_items: lineItems,
         metadata: {
           type: "INVOICE_PAYMENT",
           invoiceId: invoice.id,
@@ -707,12 +706,23 @@ export const FinancePaymentService = {
           organisationId: invoice.organisationId ?? "",
           parentId: invoice.parentId ?? "",
         },
+        payment_intent_data: {
+          metadata: {
+            type: "INVOICE_PAYMENT",
+            invoiceId: invoice.id,
+            appointmentId: invoice.appointmentId ?? "",
+            organisationId: invoice.organisationId ?? "",
+            parentId: invoice.parentId ?? "",
+          },
+        },
+        success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
+        cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
+        expires_at: expiresAt,
       },
-      success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-      cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-      expires_at: expiresAt,
-      stripeAccount: organisation.stripeAccountId,
-    });
+      {
+        stripeAccount: organisation.stripeAccountId,
+      },
+    );
 
     const paymentAttempt = await prisma.paymentAttempt.create({
       data: {
@@ -731,7 +741,7 @@ export const FinancePaymentService = {
         rawProviderPayload: {
           sessionId: session.id,
           url: session.url ?? null,
-          destinationAccountId: organisation.stripeAccountId,
+          connectedAccountId: organisation.stripeAccountId,
         } as Prisma.InputJsonValue,
       },
     });
@@ -835,20 +845,24 @@ export const FinancePaymentService = {
     }
 
     const stripe = getStripeClient();
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(summary.balance * 100),
-      currency: invoice.currency || "usd",
-      metadata: {
-        type: "INVOICE_PAYMENT",
-        invoiceId,
-        appointmentId: invoice.appointmentId || "",
-        organisationId: invoice.organisationId ?? "",
-        parentId: invoice.parentId ?? "",
-        patientId: invoice.patientId ?? "",
+    const paymentIntent = await stripe.paymentIntents.create(
+      {
+        amount: Math.round(summary.balance * 100),
+        currency: invoice.currency || "usd",
+        metadata: {
+          type: "INVOICE_PAYMENT",
+          invoiceId,
+          appointmentId: invoice.appointmentId || "",
+          organisationId: invoice.organisationId ?? "",
+          parentId: invoice.parentId ?? "",
+          patientId: invoice.patientId ?? "",
+        },
+        description: `Payment for Invoice ${invoiceId}`,
       },
-      description: `Payment for Invoice ${invoiceId}`,
-      stripeAccount: organisation.stripeAccountId,
-    });
+      {
+        stripeAccount: organisation.stripeAccountId,
+      },
+    );
 
     await createPaymentAttempt(invoiceId, {
       provider: "STRIPE",
@@ -865,7 +879,7 @@ export const FinancePaymentService = {
       rawProviderPayload: {
         paymentIntentId: paymentIntent.id,
         clientSecret: paymentIntent.client_secret ?? null,
-        destinationAccountId: organisation.stripeAccountId,
+        connectedAccountId: organisation.stripeAccountId,
       } as Prisma.InputJsonValue,
     });
 
