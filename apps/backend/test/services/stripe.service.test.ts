@@ -463,6 +463,9 @@ describe("StripeService", () => {
             companionId: "",
           }),
         }),
+        expect.objectContaining({
+          stripeAccount: "acct_1",
+        }),
       );
     });
 
@@ -497,6 +500,9 @@ describe("StripeService", () => {
             parentId: "",
             companionId: "",
           }),
+        }),
+        expect.objectContaining({
+          stripeAccount: "acct_1",
         }),
       );
     });
