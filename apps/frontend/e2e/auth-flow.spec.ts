@@ -23,6 +23,9 @@ test('sign in redirects into an app route and survives a reload', async ({ page 
   await page.locator('input[name="password"]').fill(password);
   await page.getByRole('button', { name: /^sign in$/i }).click();
 
+  await expect(page.getByRole('button', { name: /^open universal search$/i })).toBeVisible({
+    timeout: 60_000,
+  });
   await expect
     .poll(() => new URL(page.url()).pathname.startsWith(LOGIN_PATH), { timeout: 60_000 })
     .toBe(false);
