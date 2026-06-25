@@ -707,11 +707,11 @@ export const FinancePaymentService = {
           organisationId: invoice.organisationId ?? "",
           parentId: invoice.parentId ?? "",
         },
-        transfer_data: { destination: organisation.stripeAccountId },
       },
       success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
       cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
       expires_at: expiresAt,
+      stripeAccount: organisation.stripeAccountId,
     });
 
     const paymentAttempt = await prisma.paymentAttempt.create({
@@ -847,7 +847,7 @@ export const FinancePaymentService = {
         patientId: invoice.patientId ?? "",
       },
       description: `Payment for Invoice ${invoiceId}`,
-      transfer_data: { destination: organisation.stripeAccountId },
+      stripeAccount: organisation.stripeAccountId,
     });
 
     await createPaymentAttempt(invoiceId, {

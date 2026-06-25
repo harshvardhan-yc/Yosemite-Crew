@@ -358,10 +358,18 @@ describe("FinancePaymentService", () => {
             }),
           }),
         ],
+        stripeAccount: "acct_1",
         payment_intent_data: expect.objectContaining({
-          transfer_data: { destination: "acct_1" },
+          metadata: expect.objectContaining({
+            invoiceId: "inv_6",
+          }),
         }),
       }),
+    );
+    const checkoutArgs = (stripeClient.checkout.sessions.create as jest.Mock)
+      .mock.calls[0][0];
+    expect(checkoutArgs.payment_intent_data).not.toHaveProperty(
+      "transfer_data",
     );
     expect(prisma.paymentAttempt.create).toHaveBeenCalledWith(
       expect.objectContaining({
