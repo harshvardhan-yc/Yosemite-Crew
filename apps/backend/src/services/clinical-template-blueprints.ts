@@ -285,7 +285,7 @@ const clinicalBlueprints: Record<
 const kindToRequiredSectionIds: Record<ClinicalTemplateKind, string[]> = {
   SOAP_NOTE: ["subjective", "objective", "assessment", "plan"],
   PRESCRIPTION: ["medications", "instructions", "notes"],
-  DISCHARGE_SUMMARY: ["summary", "home_care", "medications", "follow_up"],
+  DISCHARGE_SUMMARY: ["summary", "follow_up"],
   VITAL_RECORD: ["vitals"],
 };
 
