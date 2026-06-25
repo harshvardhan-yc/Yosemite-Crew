@@ -88,6 +88,16 @@ const getSessionError = (): string =>
 const MERCK_COPYRIGHT_NOTICE =
   'Copyright © 2021 Merck & Co., Inc., known as MSD outside of the US, Kenilworth, New Jersey, USA. All rights reserved.';
 const EMPTY_INITIAL_ENTRIES: MerckEntry[] = [];
+const MERCK_READER_ORIGIN_WHITELIST = [
+  'https://merckvetmanual.com',
+  'https://*.merckvetmanual.com',
+  'https://msdvetmanual.com',
+  'https://*.msdvetmanual.com',
+  'https://merckmanuals.com',
+  'https://*.merckmanuals.com',
+  'https://msdmanuals.com',
+  'https://*.msdmanuals.com',
+] as const;
 
 const stripHtmlTags = (value: string): string => {
   let output = '';
@@ -392,14 +402,15 @@ const MerckReaderModal: React.FC<MerckReaderModalProps> = ({
               <WebView
                 testID="merck-reader-webview"
                 source={{uri: readerUrl}}
-                originWhitelist={['https://*']}
+                originWhitelist={[...MERCK_READER_ORIGIN_WHITELIST]}
                 startInLoadingState={false}
-                javaScriptEnabled
+                javaScriptEnabled={false}
                 javaScriptCanOpenWindowsAutomatically={false}
-                domStorageEnabled
+                domStorageEnabled={false}
                 thirdPartyCookiesEnabled={false}
                 sharedCookiesEnabled={false}
                 setSupportMultipleWindows={false}
+                webviewDebuggingEnabled={false}
                 geolocationEnabled={false}
                 allowFileAccess={false}
                 allowFileAccessFromFileURLs={false}

@@ -31,7 +31,11 @@ jest.mock('@/features/merck/services/merckService', () => ({
   },
   isAllowedMerckUrl: jest.fn((url: string) => {
     try {
-      const host = new URL(url).hostname.toLowerCase();
+      const parsed = new URL(url);
+      const host = parsed.hostname.toLowerCase();
+      if (parsed.protocol !== 'https:') {
+        return false;
+      }
       return host === 'msdvetmanual.com' || host.endsWith('.msdvetmanual.com');
     } catch {
       return false;
@@ -129,6 +133,17 @@ describe('MerckSearchWidget', () => {
 
     const reader = await waitFor(() => getByTestId('merck-reader-webview'));
     expect(reader).toBeTruthy();
+    expect(reader.props.javaScriptEnabled).toBe(false);
+    expect(reader.props.domStorageEnabled).toBe(false);
+    expect(reader.props.webviewDebuggingEnabled).toBe(false);
+    expect(reader.props.allowFileAccess).toBe(false);
+    expect(reader.props.mixedContentMode).toBe('never');
+    expect(reader.props.originWhitelist).toEqual(
+      expect.arrayContaining([
+        'https://*.msdvetmanual.com',
+        'https://*.merckvetmanual.com',
+      ]),
+    );
 
     await act(async () => {
       const allow = reader.props.onShouldStartLoadWithRequest({
@@ -140,6 +155,13 @@ describe('MerckSearchWidget', () => {
     await act(async () => {
       const allow = reader.props.onShouldStartLoadWithRequest({
         url: 'https://example.com/phishing',
+      });
+      expect(allow).toBe(false);
+    });
+
+    await act(async () => {
+      const allow = reader.props.onShouldStartLoadWithRequest({
+        url: 'http://www.msdvetmanual.com/topic',
       });
       expect(allow).toBe(false);
     });
