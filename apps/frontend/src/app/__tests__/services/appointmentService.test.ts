@@ -756,7 +756,9 @@ describe('Appointment Service', () => {
       (useTeamStore.getState as jest.Mock).mockReturnValue({
         getTeamsByOrgId: jest
           .fn()
-          .mockReturnValue([{ _id: 'team-1', practionerId: 'user-1', name: 'Dr Pat' }]),
+          .mockReturnValue([
+            { _id: 'team-1', practionerId: 'Practitioner/user-1', name: 'Dr Pat' },
+          ]),
       });
 
       mockedToAppointmentDTO.mockReturnValue({ fhir: 'accept-auto' });

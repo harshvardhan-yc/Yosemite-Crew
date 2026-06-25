@@ -332,7 +332,7 @@ const SoapStep = ({
               <Search
                 value={templateQuery}
                 setSearch={setTemplateQuery}
-                placeholder="Search for SOAP Template"
+                placeholder="Search for SOAP template"
                 label="Search for SOAP template"
                 className="w-full!"
               />

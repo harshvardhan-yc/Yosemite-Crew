@@ -71,7 +71,12 @@ type CalendarPrefillResolutionResponse = {
 };
 
 const normalizeLeadId = (value?: string | null) => {
-  const trimmed = String(value ?? '').trim();
+  const trimmed =
+    String(value ?? '')
+      .trim()
+      .split('/')
+      .pop()
+      ?.trim() ?? '';
   if (!trimmed) return '';
   const lowered = trimmed.toLowerCase();
   return lowered === 'undefined' || lowered === 'null' ? '' : trimmed;
