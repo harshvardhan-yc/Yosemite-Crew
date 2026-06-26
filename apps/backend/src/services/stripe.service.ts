@@ -364,16 +364,35 @@ export const StripeService = {
   },
 
   // ----------------------------
-  // WEBHOOK VERIFICATION (existing)
+  // WEBHOOK VERIFICATION
   // ----------------------------
   verifyWebhook(body: Buffer, signature: string | string[] | undefined) {
+    return this.verifyWebhookWithSecret(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET,
+    );
+  },
+
+  verifyConnectWebhook(body: Buffer, signature: string | string[] | undefined) {
+    return this.verifyWebhookWithSecret(
+      body,
+      signature,
+      process.env.STRIPE_CONNECT_WEBHOOK_SECRET,
+    );
+  },
+
+  verifyWebhookWithSecret(
+    body: Buffer,
+    signature: string | string[] | undefined,
+    secret: string | undefined,
+  ) {
     const stripe = getStripeClient();
     if (!signature) throw new Error("Missing Stripe signature header");
     if (Array.isArray(signature))
       throw new Error("Invalid Stripe signature header format");
 
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!secret) throw new Error("STRIPE_WEBHOOK_SECRET is not configured");
+    if (!secret) throw new Error("Stripe webhook secret is not configured");
 
     return stripe.webhooks.constructEvent(body, signature, secret);
   },

@@ -157,6 +157,7 @@ describe("StripeService", () => {
       STRIPE_PRICE_BUSINESS_MONTH: "price_month_mock",
       STRIPE_PRICE_BUSINESS_YEAR: "price_year_mock",
       STRIPE_WEBHOOK_SECRET: "whsec_mock",
+      STRIPE_CONNECT_WEBHOOK_SECRET: "whsec_connect_mock",
     };
   });
 
@@ -173,6 +174,28 @@ describe("StripeService", () => {
         StripeService.createOrGetConnectedAccount("org_1"),
       ).rejects.toThrow("STRIPE_SECRET_KEY is not configured");
       process.env.STRIPE_SECRET_KEY = apiKey;
+    });
+  });
+
+  describe("Webhook verification", () => {
+    it("uses the platform webhook secret for platform events", () => {
+      StripeService.verifyWebhook(Buffer.from("payload"), "sig_1");
+
+      expect(mStripe.webhooks.constructEvent).toHaveBeenCalledWith(
+        Buffer.from("payload"),
+        "sig_1",
+        "whsec_mock",
+      );
+    });
+
+    it("uses the connect webhook secret for direct-charge events", () => {
+      StripeService.verifyConnectWebhook(Buffer.from("payload"), "sig_2");
+
+      expect(mStripe.webhooks.constructEvent).toHaveBeenCalledWith(
+        Buffer.from("payload"),
+        "sig_2",
+        "whsec_connect_mock",
+      );
     });
   });
 
