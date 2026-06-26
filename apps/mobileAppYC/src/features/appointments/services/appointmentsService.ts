@@ -547,6 +547,18 @@ const mapAppointmentResource = (incoming: any): Appointment => {
     paymentStatusValue === null || paymentStatusValue === undefined
       ? null
       : String(paymentStatusValue).toUpperCase();
+  const bookingPaymentStatusExt = extractExtensionValue(
+    resource?.extension,
+    (ext: any) =>
+      ext?.url ===
+      'https://yosemitecrew.com/fhir/StructureDefinition/appointment-booking-payment-status',
+  );
+  const bookingPaymentStatusValue = bookingPaymentStatusExt?.valueString;
+  const normalizedBookingPaymentStatus =
+    bookingPaymentStatusValue === null ||
+    bookingPaymentStatusValue === undefined
+      ? null
+      : String(bookingPaymentStatusValue).toUpperCase();
   const {organisationAddress, addressObj} = resolveOrganisationAddress(
     org,
     resource?.location?.address,
@@ -623,6 +635,7 @@ const mapAppointmentResource = (incoming: any): Appointment => {
           })),
     status: toStatus(resource?.status),
     paymentStatus: normalizedPaymentStatus,
+    bookingPaymentStatus: normalizedBookingPaymentStatus,
     invoiceId: resource?.invoiceId ?? null,
     organisationName: organisation.display ?? org?.name ?? null,
     organisationAddress,
@@ -766,6 +779,10 @@ const mapInvoiceFromApi = (
         raw.paymentIntent.paymentLinkUrl ??
         raw.paymentIntent.checkoutUrl ??
         null,
+      connectedAccountId:
+        raw.paymentIntent.connectedAccountId ??
+        raw.paymentIntent.stripeAccountId ??
+        null,
     };
   } else if (paymentIntentIdFromExt) {
     paymentIntent = {
@@ -778,6 +795,10 @@ const mapInvoiceFromApi = (
       amount: raw.paymentIntent?.amount ?? total,
       currency: raw.paymentIntent?.currency ?? raw.currency ?? 'USD',
       paymentLinkUrl: raw.paymentIntent?.paymentLinkUrl ?? null,
+      connectedAccountId:
+        raw.paymentIntent?.connectedAccountId ??
+        raw.paymentIntent?.stripeAccountId ??
+        null,
     };
   }
 
@@ -1350,6 +1371,10 @@ export const appointmentApi = {
             amount: resp.paymentIntent.amount,
             currency: resp.paymentIntent.currency ?? invoice?.currency ?? 'USD',
             paymentLinkUrl: resp.paymentIntent.paymentLinkUrl ?? null,
+            connectedAccountId:
+              resp.paymentIntent.connectedAccountId ??
+              resp.paymentIntent.stripeAccountId ??
+              null,
           }
         : null);
 
@@ -1526,6 +1551,8 @@ export const appointmentApi = {
       amount: payload.amount ?? null,
       currency: payload.currency ?? 'USD',
       paymentLinkUrl: payload.checkoutUrl ?? payload.paymentLinkUrl ?? null,
+      connectedAccountId:
+        payload.connectedAccountId ?? payload.stripeAccountId ?? null,
     };
   },
 

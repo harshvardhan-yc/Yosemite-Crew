@@ -119,6 +119,7 @@ export interface Appointment {
   }[];
   status: AppointmentStatus;
   paymentStatus?: string | null;
+  bookingPaymentStatus?: string | null;
   invoiceId?: string;
   paymentIntent?: PaymentIntentInfo | null;
   species?: string | null;
@@ -148,6 +149,7 @@ export interface PaymentIntentInfo {
   amount: number;
   currency: string;
   paymentLinkUrl?: string | null;
+  connectedAccountId?: string | null;
 }
 
 export type PaymentCollectionMethod =
