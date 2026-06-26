@@ -12,6 +12,7 @@ import BottomSheet, {
   type BottomSheetFlatListMethods,
 } from '@gorhom/bottom-sheet';
 import type {SharedValue} from 'react-native-reanimated';
+import {NativeViewGestureHandler} from 'react-native-gesture-handler';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {AppointmentStackParamList} from '@/navigation/types';
 import type {VetBusiness} from '../../types';
@@ -177,7 +178,11 @@ const ClinicBottomSheet = forwardRef<
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             filterHeader ? (
-              <View style={styles.filterRow}>{filterHeader}</View>
+              <NativeViewGestureHandler
+                disallowInterruption
+                testID="filter-header-gesture">
+                <View style={styles.filterRow}>{filterHeader}</View>
+              </NativeViewGestureHandler>
             ) : null
           }
           ListEmptyComponent={emptyComponent}
