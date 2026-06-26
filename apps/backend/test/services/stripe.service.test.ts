@@ -1068,6 +1068,69 @@ describe("StripeService", () => {
       expect(NotificationService.sendToUser).toHaveBeenCalled();
     });
 
+    it("uses the connected account when settling direct-charge payment intents", async () => {
+      (prisma.appointment.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: "appt_1",
+        appointmentType: { id: "svc_1" },
+        organisationId: "org_1",
+        patient: { id: "comp_1", parent: { id: "par_1" } },
+      });
+      (prisma.invoice.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: "inv_open",
+        status: "AWAITING_PAYMENT",
+      });
+      (prisma.paymentAttempt.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: "pa_open",
+        settlementChannel: "STRIPE",
+        collectionMode: null,
+      });
+      mStripe.charges.retrieve.mockResolvedValueOnce({
+        id: "ch_connect",
+        receipt_url: "receipt-connect",
+      });
+      (
+        FinancePaymentService.handleInvoicePaymentIntentSucceeded as jest.Mock
+      ).mockResolvedValueOnce({
+        action: "PAID",
+        invoice: { id: "inv_open" },
+        paymentAttempt: { id: "pa_open" },
+        payment: { id: "pay_open" },
+        balanceAfterPayment: 0,
+        paidToDate: 10,
+        appliedAmount: 10,
+      });
+
+      await StripeService.handleWebhookEvent({
+        id: "evt_1",
+        type: "payment_intent.succeeded",
+        account: "acct_connect_1",
+        data: {
+          object: {
+            id: "pi_connect_1",
+            currency: "usd",
+            latest_charge: "ch_connect",
+            metadata: {
+              type: "APPOINTMENT_BOOKING",
+              appointmentId: "appt_1",
+            },
+          },
+        },
+      } as any);
+
+      expect(mStripe.charges.retrieve).toHaveBeenCalledWith("ch_connect", {
+        stripeAccount: "acct_connect_1",
+      });
+      expect(
+        FinancePaymentService.handleInvoicePaymentIntentSucceeded,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoiceId: "inv_open",
+          paymentIntentId: "pi_connect_1",
+          chargeId: "ch_connect",
+        }),
+      );
+    });
+
     it("ignores checkout-session invoice payment_intent events in postgres mode", async () => {
       const originalReadFromPostgres = process.env.READ_FROM_POSTGRES;
       process.env.READ_FROM_POSTGRES = "true";
