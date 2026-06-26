@@ -460,20 +460,30 @@ const useStatusDisplay = (theme: any) => {
   const getStatusDisplay = (
     statusValue: string,
     paymentStatus?: string | null,
+    bookingPaymentStatus?: string | null,
   ) => {
     const palette = getAppointmentStatusBadgePalette(
       theme,
       statusValue,
       paymentStatus,
+      bookingPaymentStatus,
     );
     return palette;
   };
   return getStatusDisplay;
 };
 
-const useStatusFlags = (status: string, paymentStatus?: string | null) => {
+const useStatusFlags = (
+  status: string,
+  paymentStatus?: string | null,
+  bookingPaymentStatus?: string | null,
+) => {
   return useMemo(() => {
-    const isPaymentPending = isAppointmentPaymentPending(status, paymentStatus);
+    const isPaymentPending = isAppointmentPaymentPending(
+      status,
+      paymentStatus,
+      bookingPaymentStatus,
+    );
     const isPaymentFailed = isAppointmentPaymentFailed(status, paymentStatus);
     const requiresPayment = isPaymentPending || isPaymentFailed;
     const isRequested = status === 'REQUESTED';
@@ -492,7 +502,7 @@ const useStatusFlags = (status: string, paymentStatus?: string | null) => {
       showInvoice: !requiresPayment,
       showCancel: !isTerminal && !requiresPayment,
     };
-  }, [paymentStatus, status]);
+  }, [paymentStatus, bookingPaymentStatus, status]);
 };
 
 const useAppointmentDisplayData = (params: {
@@ -1104,7 +1114,11 @@ export const ViewAppointmentScreen: React.FC = () => {
 
   const status = apt?.status ?? 'REQUESTED';
   const getStatusDisplay = useStatusDisplay(theme);
-  const statusFlags = useStatusFlags(status, apt?.paymentStatus);
+  const statusFlags = useStatusFlags(
+    status,
+    apt?.paymentStatus,
+    apt?.bookingPaymentStatus,
+  );
   const {
     isRequested,
     isCheckedIn,
@@ -1114,7 +1128,11 @@ export const ViewAppointmentScreen: React.FC = () => {
     showInvoice,
     showCancel,
   } = statusFlags;
-  const statusInfo = getStatusDisplay(status, apt?.paymentStatus);
+  const statusInfo = getStatusDisplay(
+    status,
+    apt?.paymentStatus,
+    apt?.bookingPaymentStatus,
+  );
   const displayData = useAppointmentDisplayData({
     apt,
     business,

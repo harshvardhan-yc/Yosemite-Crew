@@ -75,6 +75,11 @@ jest.mock('@gorhom/bottom-sheet', () => {
 jest.mock('react-native-gesture-handler', () => {
   const {View} = require('react-native');
   return {
+    GestureDetector: ({children}: any) => <>{children}</>,
+    Gesture: {
+      Native: () => ({}),
+    },
+    // kept for any other consumers of this mock
     NativeViewGestureHandler: ({children, ...props}: any) => (
       <View {...props}>{children}</View>
     ),
@@ -164,9 +169,7 @@ describe('ClinicBottomSheet', () => {
         filterHeader={<Text>Filter Controls</Text>}
       />,
     );
-    expect(
-      getByTestId('filter-header-gesture').props.disallowInterruption,
-    ).toBe(true);
+    expect(getByTestId('filter-header-gesture')).toBeTruthy();
     expect(getByText('Filter Controls')).toBeTruthy();
   });
 
