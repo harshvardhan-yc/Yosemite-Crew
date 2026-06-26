@@ -210,7 +210,7 @@ const VITALS_BLUEPRINT: ClinicalTemplateSchemaSnapshot = {
           label: "Weight",
           type: "number",
           order: 1,
-          rules: { unit: "lbs" },
+          rules: { unit: "kg" },
         },
         {
           key: "tempF",

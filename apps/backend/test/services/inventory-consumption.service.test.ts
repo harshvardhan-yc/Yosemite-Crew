@@ -430,7 +430,7 @@ describe("InventoryConsumptionService", () => {
             petReproductiveStatus: "Neutered",
             patientImageUrl: "https://cdn.example/patient.png",
             petWeight: 12.5,
-            petWeightUnit: "lbs",
+            petWeightUnit: "kg",
           }),
         }),
       }),
