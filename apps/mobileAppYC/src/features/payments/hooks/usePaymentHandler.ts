@@ -124,7 +124,12 @@ export const usePaymentHandler = ({
       return;
     }
 
-    await dispatch(recordPayment({appointmentId}));
+    const recordResult = await dispatch(recordPayment({appointmentId}));
+    if (recordPayment.rejected.match(recordResult)) {
+      console.warn(
+        '[Payment] Failed to refresh appointment status after payment',
+      );
+    }
 
     navigation.replace('PaymentSuccess', {
       appointmentId,

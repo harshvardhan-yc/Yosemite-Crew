@@ -28,19 +28,21 @@ This directory contains the React Native mobile application for the **Yosemite C
 
 Current production releases:
 
-| Platform | Store Version |
-| -------- | ------------- |
-| Android  | v1.0.6        |
-| iOS      | v1.0.3        |
+| Platform | Store Version | Build |
+| -------- | ------------- | ----- |
+| Android  | v1.0.10       | 12    |
+| iOS      | v1.2          |       |
 
 Release history:
 
-| Platform | Version | Notes                                                                                                       |
-| -------- | ------- | ----------------------------------------------------------------------------------------------------------- |
-| Android  | v1.0.6  | Tasks module GA (calendar sync, observational tools); liquid glass UI polish; appointment consent e-signing |
-| iOS      | v1.0.3  | Tasks module GA (calendar sync, observational tools); liquid glass UI polish; appointment consent e-signing |
-| Android  | v1.0.5  | Initial production release                                                                                  |
-| iOS      | v1.0.2  | Initial production release                                                                                  |
+| Platform | Version | Notes                                                                                                                                                                                                    |
+| -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android  | v1.0.10 | Map-based vet business discovery with full-screen interactive map; appointment packages during booking; unified clinical packet (SOAP, prescriptions, discharge); bug fixes and performance improvements |
+| iOS      | v1.2    | Map-based vet business discovery with full-screen interactive map; appointment packages during booking; unified clinical packet (SOAP, prescriptions, discharge); bug fixes and performance improvements |
+| Android  | v1.0.6  | Tasks module GA (calendar sync, observational tools); liquid glass UI polish; appointment consent e-signing                                                                                              |
+| iOS      | v1.0.3  | Tasks module GA (calendar sync, observational tools); liquid glass UI polish; appointment consent e-signing                                                                                              |
+| Android  | v1.0.5  | Initial production release                                                                                                                                                                               |
+| iOS      | v1.0.2  | Initial production release                                                                                                                                                                               |
 
 ## 🛠️ Getting Started
 
