@@ -141,7 +141,7 @@ describe("UserController", () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
       expect(mockRes.json).toHaveBeenCalledWith({
-        message: "You can only access your own user record.",
+        message: "You can only view your own user.",
       });
       expect(UserService.getById).not.toHaveBeenCalled();
     });
