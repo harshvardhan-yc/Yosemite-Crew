@@ -20,7 +20,7 @@ type CopyTarget = {
 };
 
 const Dublicate: React.FC<DublicateProps> = ({ setAvailability, day }) => {
-  const [copyTargets, setCopyTargets] = useState<CopyTarget[]>(
+  const [copyTargets, setCopyTargets] = useState<CopyTarget[]>(() =>
     daysOfWeek.map((acc) => ({
       name: acc,
       active: false,
@@ -36,7 +36,10 @@ const Dublicate: React.FC<DublicateProps> = ({ setAvailability, day }) => {
   };
 
   const handleApply = () => {
-    const selectedTargets = copyTargets.filter((t) => t.active && !t.disable).map((t) => t.name);
+    const selectedTargets = copyTargets.reduce<string[]>((targets, target) => {
+      if (target.active && !target.disable) targets.push(target.name);
+      return targets;
+    }, []);
 
     if (selectedTargets.length === 0) {
       setOpen(false);
@@ -72,15 +75,17 @@ const Dublicate: React.FC<DublicateProps> = ({ setAvailability, day }) => {
         aria-label="dublicate-button"
       />
       {open && (
-        <div className="max-h-[200px] z-10 w-[120px] overflow-y-scroll scrollbar-hidden flex flex-col bg-white rounded-2xl border border-card-border absolute left-0 top-[120%] py-1 px-1">
-          {copyTargets.map((d, i) => (
+        <div className="max-h-[200px] z-10 w-[120px] overflow-y-scroll scrollbar-hidden flex flex-col bg-white rounded-2xl border border-card-border absolute left-0 top-[120%] p-1">
+          {copyTargets.map((d) => (
             <button
+              type="button"
               key={d.name}
-              className="border-none outline-none bg-white text-left px-2 py-2 flex items-center gap-1"
+              className="border-none outline-none bg-white text-left p-2 flex items-center gap-1"
             >
               <input
                 id={`availability-duplicate-${d.name}-check`}
                 type="checkbox"
+                aria-label={`Copy availability to ${d.name}`}
                 checked={d.active}
                 disabled={d.disable}
                 className="h-4! w-4!"
@@ -90,6 +95,7 @@ const Dublicate: React.FC<DublicateProps> = ({ setAvailability, day }) => {
             </button>
           ))}
           <button
+            type="button"
             className="border-none outline-none bg-white text-center border-t! border-t-card-border! py-2 hover:bg-card-hover! rounded-2xl! transition-all duration-300"
             onClick={handleApply}
           >

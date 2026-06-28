@@ -21,7 +21,11 @@ const renderSegments = (
   if (!Array.isArray(segments)) return null;
 
   return (
-    <Text style={[styles.paragraphText, isCenter ? styles.paragraphTextCenter : undefined]}>
+    <Text
+      style={[
+        styles.paragraphText,
+        isCenter ? styles.paragraphTextCenter : undefined,
+      ]}>
       {segments.map((segment, index) => (
         <Text
           key={`${segment.text}-${index}`}
@@ -46,15 +50,15 @@ const renderOrderedListItems = (
   return (
     <View style={styles.listContainer}>
       {items.map(item => (
-        <View key={`${item.marker}-${(item.segments || []).map(s => s.text).join('-')}`} style={styles.listRow}>
-          <Text
-            style={[
-              styles.listMarker,
-              item.markerBold && styles.boldText,
-            ]}>
+        <View
+          key={`${item.marker}-${(item.segments || []).map(s => s.text).join('-')}`}
+          style={styles.listRow}>
+          <Text style={[styles.listMarker, item.markerBold && styles.boldText]}>
             {item.marker}
           </Text>
-          <View style={styles.listContent}>{renderSegments(item.segments, styles, isCenter)}</View>
+          <View style={styles.listContent}>
+            {renderSegments(item.segments, styles, isCenter)}
+          </View>
         </View>
       ))}
     </View>
@@ -67,7 +71,9 @@ const renderBlock = (
   isCenter = false,
 ) => {
   if (block.type === 'paragraph') {
-    const key = Array.isArray(block.segments) ? block.segments.map(segment => segment.text).join('-') : 'paragraph';
+    const key = Array.isArray(block.segments)
+      ? block.segments.map(segment => segment.text).join('-')
+      : 'paragraph';
     return (
       <View key={key} style={styles.paragraph}>
         {renderSegments(block.segments, styles, isCenter)}
@@ -76,7 +82,9 @@ const renderBlock = (
   }
 
   if (block.type === 'ordered-list') {
-    const key = Array.isArray(block.items) ? block.items.map(item => item.marker).join('-') : 'ordered-list';
+    const key = Array.isArray(block.items)
+      ? block.items.map(item => item.marker).join('-')
+      : 'ordered-list';
     return (
       <View key={key} style={styles.paragraph}>
         {renderOrderedListItems(block.items, styles, isCenter)}
@@ -95,40 +103,74 @@ export const LegalContentRenderer: React.FC<LegalContentRendererProps> = ({
   const safeSections = Array.isArray(sections) ? sections : [];
   if (__DEV__) {
     try {
-      console.log('LegalContentRenderer: sections length=', safeSections.length, 'firstTitle=', safeSections[0]?.title);
+      console.log(
+        'LegalContentRenderer: sections length=',
+        safeSections.length,
+        'firstTitle=',
+        safeSections[0]?.title,
+      );
     } catch {
       /* ignore */
     }
   }
   return (
     <View style={styles.container}>
-      {safeSections.length > 0 && safeSections
-        // filter out empty sections (no title and no non-empty blocks)
-        .filter(section => {
-          const hasTitle = typeof section.title === 'string' && section.title.trim().length > 0;
-          const hasBlocks = Array.isArray(section.blocks) && section.blocks.some(b => {
-            if (b.type === 'paragraph') return Array.isArray(b.segments) && b.segments.some(s => typeof s.text === 'string' && s.text.trim().length > 0);
-            if (b.type === 'ordered-list') return Array.isArray(b.items) && b.items.length > 0;
-            return false;
-          });
-          return hasTitle || hasBlocks;
-        })
-        .map(section => {
-          const isCenter = section.align === 'center';
-          return (
-            <LiquidGlassCard
-              key={section.id}
-              glassEffect="regular"
-              interactive
-              style={[styles.sectionCard, isCenter && styles.sectionCardCenter]}
-              fallbackStyle={styles.cardFallback}>
-              {section.title ? <Text style={[styles.sectionTitle, isCenter && styles.sectionTitleCenter]}>{section.title}</Text> : null}
-              <View style={styles.sectionContent}>
-                {Array.isArray(section.blocks) ? section.blocks.map(block => renderBlock(block, styles, isCenter)).filter(Boolean) : null}
-              </View>
-            </LiquidGlassCard>
-          );
-        })}
+      {safeSections.length > 0 &&
+        safeSections
+          // filter out empty sections (no title and no non-empty blocks)
+          .filter(section => {
+            const hasTitle =
+              typeof section.title === 'string' &&
+              section.title.trim().length > 0;
+            const hasBlocks =
+              Array.isArray(section.blocks) &&
+              section.blocks.some(b => {
+                if (b.type === 'paragraph')
+                  return (
+                    Array.isArray(b.segments) &&
+                    b.segments.some(
+                      s =>
+                        typeof s.text === 'string' && s.text.trim().length > 0,
+                    )
+                  );
+                if (b.type === 'ordered-list')
+                  return Array.isArray(b.items) && b.items.length > 0;
+                return false;
+              });
+            return hasTitle || hasBlocks;
+          })
+          .map(section => {
+            const isCenter = section.align === 'center';
+            return (
+              <LiquidGlassCard
+                key={section.id}
+                glassEffect="regular"
+                interactive
+                style={[
+                  styles.sectionCard,
+                  isCenter && styles.sectionCardCenter,
+                ]}
+                fallbackStyle={styles.cardFallback}>
+                {section.title ? (
+                  <Text
+                    style={[
+                      styles.sectionTitle,
+                      isCenter && styles.sectionTitleCenter,
+                    ]}>
+                    {section.title}
+                  </Text>
+                ) : null}
+                <View style={styles.sectionContent}>
+                  {Array.isArray(section.blocks)
+                    ? section.blocks.flatMap(block => {
+                        const r = renderBlock(block, styles, isCenter);
+                        return r ? [r] : [];
+                      })
+                    : null}
+                </View>
+              </LiquidGlassCard>
+            );
+          })}
     </View>
   );
 };
@@ -145,12 +187,13 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     sectionTitle: {
       // Subtitle Bold 14
-      fontFamily: theme.typography.subtitleBold14?.fontFamily || theme.typography.SATOSHI_BOLD,
+      fontFamily:
+        theme.typography.subtitleBold14?.fontFamily ||
+        theme.typography.SATOSHI_BOLD,
       fontSize: theme.typography.subtitleBold14?.fontSize || 14,
       lineHeight: theme.typography.subtitleBold14?.lineHeight || 14 * 1.2,
       fontWeight: theme.typography.subtitleBold14?.fontWeight || '700',
@@ -167,7 +210,9 @@ const createStyles = (theme: any) =>
     },
     paragraphText: {
       // Subtitle Regular 14
-      fontFamily: theme.typography.subtitleRegular14?.fontFamily || theme.typography.SATOSHI_REGULAR,
+      fontFamily:
+        theme.typography.subtitleRegular14?.fontFamily ||
+        theme.typography.SATOSHI_REGULAR,
       fontSize: theme.typography.subtitleRegular14?.fontSize || 14,
       lineHeight: theme.typography.subtitleRegular14?.lineHeight || 14 * 1.2,
       fontWeight: theme.typography.subtitleRegular14?.fontWeight || '400',

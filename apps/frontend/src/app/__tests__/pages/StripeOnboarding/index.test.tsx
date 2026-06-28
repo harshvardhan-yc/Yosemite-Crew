@@ -1,10 +1,11 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 import ProtectedStripeOnboarding from '@/app/features/onboarding/pages/StripeOnboarding';
 
 const pushMock = jest.fn();
+const backMock = jest.fn();
 const useStripeOnboardingMock = jest.fn();
 const useSubscriptionCounterUpdateMock = jest.fn();
 const useSubscriptionMock = jest.fn();
@@ -13,7 +14,7 @@ const onboardAccountMock = jest.fn();
 const loadConnectMock = jest.fn();
 
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, back: backMock }),
   useSearchParams: () => ({ get: () => 'org-1' }),
 }));
 
@@ -100,7 +101,42 @@ describe('Stripe onboarding page', () => {
       expect(loadConnectMock).toHaveBeenCalled();
     });
 
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Stripe Onboarding' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Tax Business Details' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Tax Registrations' })
+    ).toBeInTheDocument();
     expect(screen.getByTestId('connect-provider')).toBeInTheDocument();
     expect(screen.getByTestId('connect-onboarding')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(backMock).toHaveBeenCalled();
+  });
+
+  it('shows a retryable alert when account creation fails', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    useStripeOnboardingMock.mockReturnValue({ onboard: true });
+    useSubscriptionMock.mockReturnValue({
+      connectChargesEnabled: false,
+      connectAccountId: '',
+    });
+    createAccountMock.mockRejectedValue(new Error('failed'));
+
+    render(<ProtectedStripeOnboarding />);
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(
+      screen.getByText('We could not prepare Stripe onboarding. Please try again.')
+    ).toBeInTheDocument();
+
+    createAccountMock.mockResolvedValue('acct_retry');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    await waitFor(() => expect(createAccountMock.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() => expect(screen.getByTestId('connect-provider')).toBeInTheDocument());
   });
 });

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBoardDragScroll } from '@/app/hooks/useBoardDragScroll';
 import { useScrollBoundaryWheel } from '@/app/hooks/useScrollBoundaryWheel';
+import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import { buildDragPreview } from '@/app/lib/buildDragPreview';
 import BoardScopeToggle from '@/app/ui/primitives/BoardScopeToggle/BoardScopeToggle';
 import Image from 'next/image';
@@ -70,6 +71,19 @@ const getInitialsStatic = (name: string) =>
     .map((part) => part.charAt(0).toUpperCase())
     .join('') || '--';
 
+const getColumnBadgeStyle = (status: BoardStatus) => {
+  switch (status) {
+    case 'COMPLETED':
+      return { backgroundColor: 'rgba(16, 185, 129, 0.18)', color: 'rgb(6, 95, 70)' };
+    case 'CANCELLED':
+      return { backgroundColor: 'rgba(239, 68, 68, 0.16)', color: 'rgb(153, 27, 27)' };
+    case 'IN_PROGRESS':
+      return { backgroundColor: 'rgba(59, 130, 246, 0.18)', color: 'rgb(30, 64, 175)' };
+    default:
+      return { backgroundColor: 'rgba(245, 158, 11, 0.18)', color: 'rgb(146, 64, 14)' };
+  }
+};
+
 const TaskCard = ({
   task,
   columnLabel,
@@ -107,8 +121,11 @@ const TaskCard = ({
         {task.name || '-'}
       </div>
       <div
-        className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
-        style={{ backgroundColor: columnStyle.backgroundColor, color: columnStyle.color }}
+        className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+        style={{
+          ...getColumnBadgeStyle(task.status),
+          borderColor: columnStyle.color,
+        }}
       >
         {columnLabel}
       </div>
@@ -137,10 +154,10 @@ const TaskCard = ({
               alt={item.value.name}
               width={18}
               height={18}
-              className="h-[18px] w-[18px] rounded-full border border-card-border object-cover"
+              className="size-[18px] rounded-full border border-card-border object-cover"
             />
           ) : (
-            <div className="h-[18px] w-[18px] rounded-full border border-card-border bg-white text-[8px] font-semibold text-text-secondary flex items-center justify-center">
+            <div className="size-[18px] rounded-full border border-card-border bg-white text-[8px] font-semibold text-text-secondary flex items-center justify-center">
               {getInitialsStatic(item.value.name)}
             </div>
           )}
@@ -173,7 +190,7 @@ const TaskCard = ({
       <GlassTooltip content="View task" side="bottom">
         <button
           type="button"
-          className="h-7 w-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+          className="size-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -187,7 +204,7 @@ const TaskCard = ({
         <GlassTooltip content="Change status" side="bottom">
           <button
             type="button"
-            className="h-7 w-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+            className="size-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -202,7 +219,7 @@ const TaskCard = ({
         <GlassTooltip content="Reschedule" side="bottom">
           <button
             type="button"
-            className="h-7 w-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+            className="size-7 rounded-full! border border-black-text! bg-white flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -234,6 +251,13 @@ type TaskBoardProps = {
   onAddTask?: () => void;
 };
 
+const normalizeId = (value?: string | null) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
+
 const TaskBoard = ({
   tasks,
   currentDate,
@@ -258,13 +282,6 @@ const TaskBoard = ({
   const boardRootRef = useRef<HTMLDivElement | null>(null);
   const columnDropRefs = useRef<Partial<Record<BoardStatus, HTMLDivElement | null>>>({});
   const columnScrollRefs = useRef<Partial<Record<BoardStatus, HTMLDivElement | null>>>({});
-
-  const normalizeId = (value?: string | null) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
 
   const currentUserAssigneeId = useMemo(() => {
     const normalizedCurrentUser = normalizeId(authUserId);
@@ -346,9 +363,10 @@ const TaskBoard = ({
   const todayTasks = useMemo(
     () =>
       tasks
-        .filter((task) => isOnPreferredTimeZoneCalendarDay(new Date(task.dueAt), currentDate))
-        .filter((task) =>
-          showMineOnly ? normalizeId(task.assignedTo) === currentUserAssigneeId : true
+        .filter(
+          (task) =>
+            isOnPreferredTimeZoneCalendarDay(new Date(task.dueAt), currentDate) &&
+            (!showMineOnly || normalizeId(task.assignedTo) === currentUserAssigneeId)
         )
         .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()),
     [tasks, currentDate, showMineOnly, currentUserAssigneeId]
@@ -386,6 +404,7 @@ const TaskBoard = ({
 
   const { autoScrollBoardOnDrag } = useBoardDragScroll();
   const onWheelBoundary = useScrollBoundaryWheel();
+  const onWheelHorizontal = useWheelToHorizontalScroll();
 
   const moveToStatus = useCallback(
     async (taskId: string, nextStatus: BoardStatus) => {
@@ -413,6 +432,9 @@ const TaskBoard = ({
     },
     [canEditTasks, notify, todayTasks]
   );
+
+  const moveToStatusRef = useRef(moveToStatus);
+  moveToStatusRef.current = moveToStatus;
 
   const handleTaskCardDragStart = useCallback((event: React.DragEvent<HTMLElement>, task: Task) => {
     setDraggedTaskId(task._id ?? null);
@@ -453,7 +475,7 @@ const TaskBoard = ({
       const handleColumnDrop = (event: DragEvent) => {
         if (!draggedTaskId || !canEditTasks) return;
         event.preventDefault();
-        void moveToStatus(draggedTaskId, column.key);
+        void moveToStatusRef.current(draggedTaskId, column.key);
         setDraggedTaskId(null);
       };
 
@@ -475,7 +497,7 @@ const TaskBoard = ({
     });
 
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [autoScrollBoardOnDrag, canEditTasks, draggedTaskId, moveToStatus]);
+  }, [autoScrollBoardOnDrag, canEditTasks, draggedTaskId]);
 
   return (
     <div className="h-full min-h-0 rounded-2xl border border-grey-light bg-white overflow-hidden flex flex-col">
@@ -540,9 +562,10 @@ const TaskBoard = ({
 
       <div
         ref={boardRootRef}
-        className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-3"
+        className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-3 scrollbar-x-float"
         data-calendar-scroll="true"
         data-board-scroll-root="true"
+        onWheel={onWheelHorizontal}
       >
         <div className="h-full min-w-max flex items-stretch gap-3">
           {BOARD_COLUMNS.map((column) => {

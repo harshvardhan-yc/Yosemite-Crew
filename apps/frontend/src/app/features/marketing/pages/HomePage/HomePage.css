@@ -3,6 +3,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-top: 96px;
 }
 .Container {
   padding: 32px 80px;
@@ -36,33 +37,34 @@
   width: 100%;
   height: auto;
 }
-.herotext > div {
-  overflow: hidden;
-  white-space: nowrap;
-  padding: 5px 0px;
-  animation:
-    type 1.5s steps(90) 1.5s 1 normal both,
-    cursor 1s step-end infinite;
-  position: relative;
-  margin: 0;
+.hero-heading {
+  display: flex;
+  flex-direction: column;
 }
-.first {
-  animation:
-    type 1.5s steps(90) 0s 1 normal both,
-    cursor 1s step-end infinite !important;
-}
-.second {
-  animation:
-    type 1.5s steps(90) 1.5s 1 normal both,
-    cursor 1s step-end infinite; /* Delay for the second h1 */
-}
-@keyframes type {
-  from {
-    width: 0;
-  }
 
+.hero-line {
+  display: block;
+  overflow: hidden;
+  clip-path: inset(0 100% 0 0);
+  animation: hero-reveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hero-line-1 {
+  animation-delay: 0s;
+}
+
+.hero-line-2 {
+  animation-delay: 0.55s;
+}
+
+@keyframes hero-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+    opacity: 0.6;
+  }
   to {
-    width: 100%;
+    clip-path: inset(0 0% 0 0);
+    opacity: 1;
   }
 }
 
@@ -79,25 +81,30 @@
 }
 .HeroBtn {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.HeroDownloadButtons {
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
 }
 a.Fillbtn {
   background: var(--black-bg);
   border: 1px solid var(--black-bg);
   border-radius: 28px;
-  padding: 16px 32px;
+  padding: 11px 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   color: var(--white-text);
   transition: all 0.3s ease;
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: 500;
-  line-height: 120%;
+  line-height: 1.5rem;
   font-family: var(--satoshi-font);
-  min-height: 60px;
   &:hover {
     background: var(--black-hover);
   }
@@ -107,15 +114,15 @@ a.UnFillbtn {
   color: var(--black-text);
   border: 1px solid var(--black-bg);
   border-radius: 28px;
-  padding: 16px 32px;
+  padding: 11px 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   transition: all 0.3s ease;
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: 500;
-  line-height: 120%;
+  line-height: 1.5rem;
   font-family: var(--satoshi-font);
   &:hover {
     box-shadow: 0px 2px 70px 6px #00000029;
@@ -129,11 +136,12 @@ a.UnFillbtn {
   .HomeHeroData {
     gap: 20px;
   }
-  .herotext > div {
-    font-size: 2.0625rem;
-  }
 }
 @media screen and (max-width: 1024px) {
+  .HomeHeroSection {
+    padding-top: 88px;
+  }
+
   .HomeHeroData {
     gap: 32px;
     flex-direction: column;
@@ -152,6 +160,10 @@ a.UnFillbtn {
   }
 }
 @media screen and (max-width: 768px) {
+  .HomeHeroSection {
+    padding-top: 80px;
+  }
+
   .Container {
     padding: 32px 16px;
   }
@@ -160,16 +172,13 @@ a.UnFillbtn {
     align-items: center;
     text-align: center;
   }
-  .herotext > div {
-    padding: 2px 0px;
-  }
 }
 @media screen and (max-width: 640px) {
   a.Fillbtn {
-    padding: 14px 24px;
+    padding: 11px 16px;
   }
   a.UnFillbtn {
-    padding: 16px 28px;
+    padding: 11px 16px;
   }
 }
 

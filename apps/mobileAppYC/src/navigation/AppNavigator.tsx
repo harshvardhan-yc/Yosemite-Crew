@@ -1,4 +1,11 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   createNativeStackNavigator,
   NativeStackNavigationProp,
@@ -53,10 +60,65 @@ import {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const ONBOARDING_COMPLETED_KEY = '@onboarding_completed';
 
+let _onboardingLoaded = false;
+let _showOnboarding = false;
+let _onboardingFetching = false;
+const _onboardingListeners = new Set<() => void>();
+
+function _notifyOnboarding() {
+  _onboardingListeners.forEach(l => l());
+}
+
+function _startOnboardingFetch() {
+  if (_onboardingFetching) return;
+  _onboardingFetching = true;
+  AsyncStorage.getItem(ONBOARDING_COMPLETED_KEY)
+    .then(value => {
+      _showOnboarding = value === null;
+    })
+    .catch(() => {
+      _showOnboarding = true;
+    })
+    .finally(() => {
+      _onboardingLoaded = true;
+      _notifyOnboarding();
+    });
+}
+
+function _subscribeOnboarding(l: () => void) {
+  _onboardingListeners.add(l);
+  _startOnboardingFetch();
+  return () => {
+    _onboardingListeners.delete(l);
+  };
+}
+
+function _getShowOnboarding() {
+  return _showOnboarding;
+}
+function _getOnboardingLoading() {
+  return !_onboardingLoaded;
+}
+
+export function _resetOnboardingStoreForTesting() {
+  _onboardingLoaded = false;
+  _showOnboarding = false;
+  _onboardingFetching = false;
+  _onboardingListeners.clear();
+}
+
 export const AppNavigator: React.FC = () => {
   const {isLoggedIn, isLoading: authLoading, user} = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const isLoading = useSyncExternalStore(
+    _subscribeOnboarding,
+    _getOnboardingLoading,
+    _getOnboardingLoading,
+  );
+  const showOnboarding = useSyncExternalStore(
+    _subscribeOnboarding,
+    _getShowOnboarding,
+    _getShowOnboarding,
+  );
   const {showLoader, hideLoader} = useGlobalLoader();
   const [pendingProfile, setPendingProfile] = useState<
     AuthStackParamList['CreateAccount'] | null
@@ -84,10 +146,6 @@ export const AppNavigator: React.FC = () => {
     return false;
   }, [user]);
 
-  useEffect(() => {
-    checkOnboardingStatus();
-  }, []);
-
   const loadPendingProfile = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(PENDING_PROFILE_STORAGE_KEY);
@@ -108,14 +166,17 @@ export const AppNavigator: React.FC = () => {
     }
   }, []);
 
+  const loadPendingProfileRef = useRef(loadPendingProfile);
+  loadPendingProfileRef.current = loadPendingProfile;
+
   useEffect(() => {
-    loadPendingProfile();
+    loadPendingProfileRef.current();
     const subscription = DeviceEventEmitter.addListener(
       PENDING_PROFILE_UPDATED_EVENT,
-      loadPendingProfile,
+      () => loadPendingProfileRef.current(),
     );
     return () => subscription.remove();
-  }, [loadPendingProfile]);
+  }, []);
 
   useEffect(() => {
     if (pendingProfile || !isLoggedIn || isProfileComplete || !user) {
@@ -188,27 +249,14 @@ export const AppNavigator: React.FC = () => {
     };
   }, [pendingProfile, isLoggedIn, isProfileComplete, user]);
 
-  const checkOnboardingStatus = async () => {
-    try {
-      const onboardingCompleted = await AsyncStorage.getItem(
-        ONBOARDING_COMPLETED_KEY,
-      );
-      setShowOnboarding(onboardingCompleted === null);
-    } catch (error) {
-      console.error('Error checking onboarding status:', error);
-      setShowOnboarding(true);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleOnboardingComplete = async () => {
     try {
       await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
-      setShowOnboarding(false);
     } catch (error) {
       console.error('Error saving onboarding status:', error);
-      setShowOnboarding(false);
+    } finally {
+      _showOnboarding = false;
+      _notifyOnboarding();
     }
   };
 
@@ -301,11 +349,15 @@ const AppNavigatorEmergencySheet: React.FC = () => {
     if (!linkedHospitals?.length) {
       return null;
     }
-    return [...linkedHospitals].sort((a, b) => {
-      const aTime = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
-      const bTime = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
-      return bTime - aTime;
-    })[0];
+    return linkedHospitals.reduce((latest, hospital) => {
+      const latestTime = new Date(
+        latest.updatedAt ?? latest.createdAt ?? 0,
+      ).getTime();
+      const hospitalTime = new Date(
+        hospital.updatedAt ?? hospital.createdAt ?? 0,
+      ).getTime();
+      return hospitalTime > latestTime ? hospital : latest;
+    }, linkedHospitals[0]);
   }, [linkedHospitals]);
 
   React.useEffect(() => {
@@ -427,8 +479,21 @@ const AppNavigatorEmergencySheet: React.FC = () => {
 const AppNavigatorCoParentInviteSheet: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const {user, isLoggedIn, isLoading} = useAuth();
-  const pendingInvites = useSelector(
+  const allPendingInvites = useSelector(
     (state: RootState) => (state as any)?.coParent?.pendingInvites ?? [],
+  );
+  // Only show invites where the current user is the recipient, not the sender.
+  // The API may return invites from both perspectives; filter out any where
+  // invitedBy.id matches the current user's parentId (they sent it, not received it).
+  const pendingInvites = React.useMemo(
+    () =>
+      allPendingInvites.filter(
+        (invite: any) =>
+          !invite.invitedBy?.id ||
+          (invite.invitedBy.id !== user?.parentId &&
+            invite.invitedBy.id !== user?.id),
+      ),
+    [allPendingInvites, user?.id, user?.parentId],
   );
   const [currentInviteIndex, setCurrentInviteIndex] = React.useState(0);
   const sheetRef = React.useRef<CoParentInviteBottomSheetRef>(null);

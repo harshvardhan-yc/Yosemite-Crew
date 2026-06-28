@@ -18,8 +18,10 @@ import {Images} from '@/assets/images';
 
 type SearchBarMode = 'readonly' | 'input';
 
-export interface SearchBarProps
-  extends Pick<TextInputProps, 'value' | 'onChangeText' | 'onSubmitEditing' | 'autoFocus'> {
+export interface SearchBarProps extends Pick<
+  TextInputProps,
+  'value' | 'onChangeText' | 'onSubmitEditing' | 'autoFocus'
+> {
   placeholder?: string;
   mode?: SearchBarMode;
   containerStyle?: StyleProp<ViewStyle>;
@@ -51,16 +53,18 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       style={styles.touchable}
       onPress={onPress}>
       <View style={styles.content}>
-        <Text
-          style={styles.placeholder}
-          numberOfLines={1}
-          ellipsizeMode="tail">
+        <Text style={styles.placeholder} numberOfLines={1} ellipsizeMode="tail">
           {placeholder}
         </Text>
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={onIconPress ?? onPress}
-          hitSlop={{top: theme.spacing['2'], bottom: theme.spacing['2'], left: theme.spacing['2'], right: theme.spacing['2']}}>
+          hitSlop={{
+            top: theme.spacing['2'],
+            bottom: theme.spacing['2'],
+            left: theme.spacing['2'],
+            right: theme.spacing['2'],
+          }}>
           <Image source={Images.searchIcon} style={styles.icon} />
         </TouchableOpacity>
       </View>
@@ -80,6 +84,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         onSubmitEditing={onSubmitEditing}
         returnKeyType="done"
         keyboardAppearance={keyboardAppearance}
+        multiline={false}
+        numberOfLines={1}
       />
       <TouchableOpacity
         activeOpacity={0.85}
@@ -90,7 +96,12 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             onSubmitEditing({nativeEvent: {text: value ?? ''}} as any);
           }
         }}
-        hitSlop={{top: theme.spacing['2'], bottom: theme.spacing['2'], left: theme.spacing['2'], right: theme.spacing['2']}}>
+        hitSlop={{
+          top: theme.spacing['2'],
+          bottom: theme.spacing['2'],
+          left: theme.spacing['2'],
+          right: theme.spacing['2'],
+        }}>
         <Image source={Images.searchIcon} style={styles.icon} />
       </TouchableOpacity>
       {rightElement}
@@ -119,8 +130,7 @@ const createStyles = (theme: any) =>
       borderColor: Platform.OS === 'ios' ? 'transparent' : theme.colors.text,
       backgroundColor: theme.colors.cardBackground,
       overflow: 'hidden',
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     fallback: {
       backgroundColor: theme.colors.cardBackground,
@@ -128,8 +138,7 @@ const createStyles = (theme: any) =>
       borderWidth: Platform.OS === 'ios' ? 0 : 0.5,
       borderRadius: 16,
       overflow: 'hidden',
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     touchable: {
       flexDirection: 'row',

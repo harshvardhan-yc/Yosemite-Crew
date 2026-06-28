@@ -125,16 +125,16 @@ const SessionInitializer = ({ children }: { children: React.ReactNode }) => {
       loadOrgs({ silent: true }),
       loadProfiles({ silent: true }),
       loadAvailability({ silent: true }),
-      loadTeam({ silent: true, force: true }),
-      loadSpecialitiesForOrg({ silent: true, force: true, orgId: primaryOrgId }),
-      loadRoomsForOrgPrimaryOrg({ silent: true, force: true }),
-      loadAppointmentsForPrimaryOrg({ silent: true, force: true }),
-      loadCompanionsForPrimaryOrg({ silent: true, force: true }),
-      loadInvoicesForOrgPrimaryOrg({ silent: true, force: true }),
-      loadTasksForPrimaryOrg({ silent: true, force: true }),
-      loadDocumentsForOrgPrimaryOrg({ silent: true, force: true }),
+      loadTeam({ silent: true }),
+      loadSpecialitiesForOrg({ silent: true, orgId: primaryOrgId }),
+      loadRoomsForOrgPrimaryOrg({ silent: true }),
+      loadAppointmentsForPrimaryOrg({ silent: true }),
+      loadCompanionsForPrimaryOrg({ silent: true }),
+      loadInvoicesForOrgPrimaryOrg({ silent: true }),
+      loadTasksForPrimaryOrg({ silent: true }),
+      loadDocumentsForOrgPrimaryOrg({ silent: true }),
       loadForms(true),
-      loadIntegrationsForPrimaryOrg({ silent: true, force: true }),
+      loadIntegrationsForPrimaryOrg({ silent: true }),
     ]).catch((error) => {
       console.error('Failed to refresh organization-scoped stores:', error);
     });
@@ -191,9 +191,13 @@ const SessionInitializer = ({ children }: { children: React.ReactNode }) => {
         <Header user />
         <UniversalSearchPalette />
 
-        <div className="pt-[72px] flex-1 lg:pt-0 lg:overflow-y-scroll lg:[scrollbar-gutter:stable] min-w-0">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 lg:overflow-y-scroll lg:[scrollbar-gutter:stable] min-w-0"
+        >
           {isChecking ? null : children}
-        </div>
+        </main>
       </div>
     </div>
   );

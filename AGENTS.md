@@ -4,13 +4,14 @@ Auto-loaded by OpenAI Codex, Claude Code, and compatible AI agents. This is the 
 
 ## Files Hierarchy
 
-| File                         | Scope                                   |
-| ---------------------------- | --------------------------------------- |
-| `AGENTS.md` (this file)      | Monorepo-wide rules                     |
-| `apps/frontend/AGENTS.md`    | Frontend: design system, Sonar, testing |
-| `apps/backend/AGENTS.md`     | Backend: Express, validation, services  |
-| `apps/mobileAppYC/AGENTS.md` | Mobile: React Native, Redux, navigation |
-| `packages/AGENTS.md`         | Shared packages: types, fhirtypes       |
+| File                         | Scope                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| `AGENTS.md` (this file)      | Monorepo-wide rules                                                          |
+| `apps/frontend/AGENTS.md`    | Frontend: design system, Sonar, testing                                      |
+| `apps/backend/AGENTS.md`     | Backend: Express, validation, services                                       |
+| `apps/desktop/AGENTS.md`     | Desktop: Electron shell, CSP, Sonar                                          |
+| `apps/mobileAppYC/AGENTS.md` | Mobile: React Native, Redux, navigation                                      |
+| `packages/AGENTS.md`         | Shared packages (auth, database, design-tokens, fhir, fhirtypes, lib, types) |
 
 Claude Code users: same rules also structured as skills in `.claude/skills/`.
 
@@ -19,7 +20,7 @@ Claude Code users: same rules also structured as skills in `.claude/skills/`.
 ## Repository
 
 - Tooling: `pnpm` workspaces + `turbo`. Package manager: `pnpm@8.15.6` — never use `npm` or `yarn`.
-- Workspaces: `apps/frontend`, `apps/backend`, `apps/mobileAppYC`, `apps/dev-docs`, `packages/types`, `packages/fhirtypes`, `packages/fhir`.
+- Workspaces: `apps/frontend`, `apps/backend`, `apps/desktop`, `apps/mobileAppYC`, `apps/dev-docs`, `packages/auth`, `packages/database`, `packages/design-tokens`, `packages/fhir`, `packages/fhirtypes`, `packages/lib`, `packages/types`. (`apps/anthropic` is untracked/WIP — not a documented workspace.)
 - Architecture baseline (scale, domain model, platform directions): `.claude/skills/monorepo-ops/project-baseline.md`.
 
 ---
@@ -32,7 +33,7 @@ Claude Code users: same rules also structured as skills in `.claude/skills/`.
 4. Before every checkpoint, run and report lint + typecheck + targeted tests for each touched workspace.
 5. When resuming interrupted work, inspect `git status` first — preserve all uncommitted changes unless the user explicitly says otherwise.
 6. **NEVER run `git commit` yourself.** After every logical batch, tell the user: "**COMMIT CHECKPOINT** — suggested message: `<conventional commit message>`"
-7. Never run the full test suite without `--testPathPattern` — takes 100+ seconds, forbidden.
+7. Prefer targeted Jest runs with `--testPathPattern` during development. Full Jest runs are allowed when the user explicitly asks, when validating repo-wide failures, or when changing shared test infrastructure. Playwright, E2E, and accessibility runs are allowed whenever relevant.
 8. Never commit secrets, tokens, private keys, or `.env` values.
 9. Never add co-author lines or signatures to commit messages.
 10. Let all pre-commit hooks pass naturally — `--no-verify` is forbidden.
@@ -48,7 +49,7 @@ Conventional commits enforced by `commitlint`:
 ```
 <type>(<scope>): <subject>
 Types: feat | fix | chore | refactor | test | docs | style | perf | ci
-Scopes: backend | frontend | mobile | dev-docs | types | fhirtypes | repo | ci | docs
+Scopes: backend | frontend | mobile | desktop | dev-docs | types | fhir | repo | ci | docs | lib | auth | database
 ```
 
 For cross-workspace changes use `repo`. PR title must match the same pattern.

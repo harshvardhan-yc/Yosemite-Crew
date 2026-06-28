@@ -6,14 +6,14 @@ import Close from '@/app/ui/primitives/Icons/Close';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import VideoPlayerModal from '@/app/ui/overlays/Modal/VideoPlayerModal';
 import { guidesData } from '@/app/features/guides/data/guidesData';
+import { getStorageItem, setStorageItem } from '@/app/lib/browserStorage';
 
 const previewVideos = guidesData.slice(0, 3);
 const STORAGE_KEY = 'yc_dashboard_videos_hidden';
 
 const VideosCard = () => {
   const [open, setOpen] = useState(() => {
-    if (globalThis.window === undefined) return true;
-    return globalThis.localStorage.getItem(STORAGE_KEY) !== 'true';
+    return getStorageItem('local', STORAGE_KEY) !== 'true';
   });
   const [showModal, setShowModal] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
@@ -27,9 +27,7 @@ const VideosCard = () => {
 
   const handleClose = () => {
     setOpen(false);
-    if (globalThis.window !== undefined) {
-      globalThis.localStorage.setItem(STORAGE_KEY, 'true');
-    }
+    setStorageItem('local', STORAGE_KEY, 'true');
   };
 
   if (!open) return null;
@@ -39,7 +37,7 @@ const VideosCard = () => {
       <div className="flex flex-col gap-0">
         <div className="flex items-center justify-between w-full gap-3">
           <div className="text-body-1 text-text-primary">
-            Make the most of your wait — Start exploring instead.
+            {'Make the most of your wait — Start exploring instead.'}
           </div>
           <div className="flex items-center gap-2">
             <Primary text="View More" href="/guides" className="px-5! py-2! text-body-4" />

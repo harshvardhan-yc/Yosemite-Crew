@@ -37,9 +37,13 @@ const extractChatToken = (data: any): string | null => {
 export const fetchChatToken = async (): Promise<string> => {
   try {
     const headers = await buildHeaders();
-    const response = await apiClient.post(`${CHAT_BASE_PATH}/token`, undefined, {
-      headers,
-    });
+    const response = await apiClient.post(
+      `${CHAT_BASE_PATH}/token`,
+      undefined,
+      {
+        headers,
+      },
+    );
 
     const token = extractChatToken(response.data);
 
@@ -49,16 +53,8 @@ export const fetchChatToken = async (): Promise<string> => {
 
     return token;
   } catch (error: any) {
-    const message =
-      error?.response?.data?.message ??
-      error?.response?.data?.error ??
-      error?.message ??
-      'Failed to fetch chat token';
-
-    console.error('[ChatBackend] Token request failed', {
-      message,
-      error,
-    });
+    const message = extractErrorMessage(error, 'Failed to fetch chat token');
+    console.error('[ChatBackend] Token request failed', {message, error});
     throw new Error(message);
   }
 };
@@ -159,24 +155,92 @@ const extractChannelType = (data: any): string => {
 };
 
 const extractMembers = (data: any): string[] | undefined => {
-  const members = data?.members ?? data?.channel?.members ?? data?.session?.members;
+  const members =
+    data?.members ?? data?.channel?.members ?? data?.session?.members;
   if (!Array.isArray(members)) {
     return undefined;
   }
 
-  const normalized = members
-    .map((member: any) => {
-      if (typeof member === 'string') {
-        return member;
-      }
-      if (member?.user?.id) {
-        return member.user.id;
-      }
-      return member?.user_id ?? member?.id ?? null;
-    })
-    .filter(Boolean);
+  const normalized = members.flatMap((member: any) => {
+    if (typeof member === 'string') {
+      return [member];
+    }
+    if (member?.user?.id) {
+      return [member.user.id];
+    }
+    const id = member?.user_id ?? member?.id;
+    return id ? [id] : [];
+  });
 
   return normalized.length ? normalized : undefined;
+};
+
+const extractErrorMessage = (error: any, fallback: string): string =>
+  error?.response?.data?.message ??
+  error?.response?.data?.error ??
+  error?.message ??
+  fallback;
+
+const mapDataToSessionDetails = (data: any): ChatSessionDetails => ({
+  channelId: extractChannelId(data) ?? '',
+  channelType: extractChannelType(data),
+  members: extractMembers(data),
+  status: data?.status,
+  allowedFrom: data?.allowedFrom ?? null,
+  allowedUntil: data?.allowedUntil ?? null,
+  companionId: data?.companionId,
+  parentId: data?.parentId,
+  vetId: data?.vetId,
+  appointmentId: data?.appointmentId,
+  organisationId: data?.organisationId,
+  raw: data,
+});
+
+export const listChatSessions = async (): Promise<ChatSessionDetails[]> => {
+  try {
+    const headers = await buildHeaders();
+    const response = await apiClient.get(`${CHAT_BASE_PATH}/sessions`, {
+      headers,
+    });
+    const data = response.data;
+    const items = Array.isArray(data)
+      ? data
+      : (data?.sessions ?? data?.data ?? []);
+    return items.map(mapDataToSessionDetails);
+  } catch (error: any) {
+    const message = extractErrorMessage(error, 'Failed to list chat sessions');
+    console.error('[ChatBackend] List sessions request failed', {
+      message,
+      error,
+    });
+    throw new Error(message);
+  }
+};
+
+export const openChatSession = async (
+  sessionId: string,
+): Promise<ChatSessionDetails> => {
+  try {
+    const headers = await buildHeaders();
+    const response = await apiClient.post(
+      `${CHAT_BASE_PATH}/sessions/${sessionId}/open`,
+      undefined,
+      {headers},
+    );
+    const data = response.data ?? {};
+    if (!extractChannelId(data)) {
+      throw new Error('Channel ID missing from open session response');
+    }
+    return mapDataToSessionDetails(data);
+  } catch (error: any) {
+    const message = extractErrorMessage(error, 'Failed to open chat session');
+    console.error('[ChatBackend] Open session request failed', {
+      sessionId,
+      message,
+      error,
+    });
+    throw new Error(message);
+  }
 };
 
 export const createOrFetchChatSession = async (
@@ -198,33 +262,14 @@ export const createOrFetchChatSession = async (
     );
 
     const data = response.data ?? {};
-    const channelId = extractChannelId(data);
 
-    if (!channelId) {
+    if (!extractChannelId(data)) {
       throw new Error('Channel ID missing from chat session response');
     }
 
-    return {
-      channelId,
-      channelType: extractChannelType(data),
-      members: extractMembers(data),
-      status: data?.status,
-      allowedFrom: data?.allowedFrom ?? null,
-      allowedUntil: data?.allowedUntil ?? null,
-      companionId: data?.companionId,
-      parentId: data?.parentId,
-      vetId: data?.vetId,
-      appointmentId: data?.appointmentId,
-      organisationId: data?.organisationId,
-      raw: data,
-    };
+    return mapDataToSessionDetails(data);
   } catch (error: any) {
-    const message =
-      error?.response?.data?.message ??
-      error?.response?.data?.error ??
-      error?.message ??
-      'Failed to create chat session';
-
+    const message = extractErrorMessage(error, 'Failed to create chat session');
     console.error('[ChatBackend] Session request failed', {
       sessionId,
       message,

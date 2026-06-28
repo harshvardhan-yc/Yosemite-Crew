@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import SelectLabel from '@/app/ui/inputs/SelectLabel';
@@ -242,7 +242,7 @@ const buildCompanionPayload = (
   ...companion.companion,
   ...formData,
   dateOfBirth: currentDate ?? companion.companion.dateOfBirth,
-  currentWeight: toNonNegativeNumber(formData.currentWeight as string | number | undefined),
+  currentWeight: toNonNegativeNumber(formData.currentWeight),
   type: formData.type,
   speciesCode:
     resolution.speciesCode ||
@@ -304,7 +304,7 @@ const CompanionReadOnlySection = ({
         value={String(companion.companion.ageWhenNeutered || '-')}
       />
     ) : null}
-    <CompanionRow label="Current weight (lbs)" value={companion.companion.currentWeight || '-'} />
+    <CompanionRow label="Current weight (kg)" value={companion.companion.currentWeight || '-'} />
     <CompanionRow label="Color" value={companion.companion.colour || '-'} />
     <CompanionRow label="Blood group" value={companion.companion.bloodGroup || '-'} />
     <CompanionRow label="Country of origin" value={companion.companion.countryOfOrigin || '-'} />
@@ -458,7 +458,7 @@ const CompanionEditSection = ({
       intype="number"
       inname="weight"
       value={formData.currentWeight + ''}
-      inlabel="Current weight (optional) (lbs)"
+      inlabel="Current weight (optional) (kg)"
       onChange={(e) =>
         setFormData((prev) => ({
           ...prev,
@@ -600,7 +600,7 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     [formData.isInsured, formData.insurance?.companyName, formData.insurance?.policyNumber]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setIsEditing(false);
     setIsStatusEditing(false);
     setStatusValue(companion.companion.status ?? 'active');
@@ -632,7 +632,7 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     };
   }, [isEditing]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isEditing) return;
     const speciesQuery = SPECIES_QUERY_BY_TYPE[formData.type];
     if (!speciesQuery) {
@@ -643,12 +643,19 @@ const Companion = ({ companion, canEditCompanionStatus = false }: CompanionTypeP
     fetchBreedCodeEntries(speciesQuery)
       .then((entries) => {
         if (!mounted) return;
-        const nextOptions: BreedOption[] = entries.map((entry) => ({
-          value: entry.display,
-          label: entry.display,
-          breedCode: entry.code,
-          speciesCode: entry.meta?.speciesCode ?? '',
-        }));
+        const seen = new Set<string>();
+        const nextOptions: BreedOption[] = entries.reduce<BreedOption[]>((acc, entry) => {
+          if (!seen.has(entry.display)) {
+            seen.add(entry.display);
+            acc.push({
+              value: entry.display,
+              label: entry.display,
+              breedCode: entry.code,
+              speciesCode: entry.meta?.speciesCode ?? '',
+            });
+          }
+          return acc;
+        }, []);
         setBreedOptions(nextOptions);
       })
       .catch(() => {

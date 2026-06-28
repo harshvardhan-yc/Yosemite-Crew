@@ -1,16 +1,36 @@
 'use client';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { Suspense, startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
-import AppointmentsTable from '@/app/ui/tables/Appointments';
-import AddAppointment from '@/app/features/appointments/pages/Appointments/Sections/AddAppointment';
-import AppoitmentInfo from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
+import { isAppointmentRevampEnabled } from '@/app/lib/featureFlags';
+import {
+  buildWorkspaceHref,
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+} from '@/app/lib/appointmentWorkspace';
+import { startRouteLoader } from '@/app/lib/routeLoader';
+const AddAppointment = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/AddAppointment')
+);
+const AddAppointmentCentralModal = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/AddAppointmentCentralModal')
+);
+const AppoitmentInfo = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo')
+);
+const ViewAppointmentOverviewModal = React.lazy(
+  () =>
+    import('@/app/features/appointments/pages/Appointments/Sections/ViewAppointmentOverviewModal')
+);
 import TitleCalendar from '@/app/ui/widgets/TitleCalendar';
-import AppointmentCalendar from '@/app/features/appointments/components/Calendar/AppointmentCalendar';
-import AppointmentBoard from '@/app/features/appointments/components/AppointmentBoard';
 import { startOfDay } from '@/app/features/appointments/components/Calendar/weekHelpers';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
-import { useAppointmentsForPrimaryOrg } from '@/app/hooks/useAppointments';
+import {
+  useAppointmentsForPrimaryOrg,
+  useLoadAppointmentsForPrimaryOrg,
+} from '@/app/hooks/useAppointments';
 import {
   useCompanionsParentsForPrimaryOrg,
   useLoadCompanionsForPrimaryOrg,
@@ -18,9 +38,15 @@ import {
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import { useAuthStore } from '@/app/stores/authStore';
 import { Appointment } from '@yosemite-crew/types';
-import Reschedule from '@/app/features/appointments/pages/Appointments/Sections/Reschedule';
-import ChangeStatus from '@/app/features/appointments/pages/Appointments/Sections/ChangeStatus';
-import ChangeRoom from '@/app/features/appointments/pages/Appointments/Sections/ChangeRoom';
+const Reschedule = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/Reschedule')
+);
+const ChangeStatus = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/ChangeStatus')
+);
+const ChangeRoom = React.lazy(
+  () => import('@/app/features/appointments/pages/Appointments/Sections/ChangeRoom')
+);
 import { useSearchStore } from '@/app/stores/searchStore';
 import Filters from '@/app/ui/filters/Filters';
 import {
@@ -37,7 +63,7 @@ import { PERMISSIONS } from '@/app/lib/permissions';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import Fallback from '@/app/ui/overlays/Fallback';
 import { resolveDefaultAppointmentsView } from '@/app/lib/defaultAppointmentsView';
-import { normalizeAppointmentStatus, type LegacyAppointmentStatus } from '@/app/lib/appointments';
+import { normalizeAppointmentStatus } from '@/app/lib/appointments';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
 import { usePrimaryOrgProfile } from '@/app/hooks/useProfiles';
@@ -46,8 +72,103 @@ import {
   appointmentViewToLocal,
   normalizePmsPreferences,
 } from '@/app/features/settings/utils/pmsPreferences';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
+
+const AppointmentsSkeleton = () => <PageSkeleton variant="planner" />;
+const APPOINTMENTS_SKELETON = <AppointmentsSkeleton />;
+
+const PlannerViewSkeleton = () => (
+  <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
+);
+
+const AppointmentsTable = dynamic(() => import('@/app/ui/tables/Appointments'), {
+  loading: () => <PlannerViewSkeleton />,
+});
+const AppointmentCalendar = dynamic(
+  () => import('@/app/features/appointments/components/Calendar/AppointmentCalendar'),
+  { loading: () => <PlannerViewSkeleton /> }
+);
+const AppointmentBoard = dynamic(
+  () => import('@/app/features/appointments/components/AppointmentBoard'),
+  { loading: () => <PlannerViewSkeleton /> }
+);
+
+// Preload all three view chunks immediately so switching views is instant.
+const preloadDynamic = (c: unknown) => (c as { preload?: () => void }).preload?.();
+preloadDynamic(AppointmentsTable);
+preloadDynamic(AppointmentCalendar);
+preloadDynamic(AppointmentBoard);
+
+const revampEnabled = isAppointmentRevampEnabled();
+
+const normalizeLeadId = (value?: string | null) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
+
+const getNextSelectedAppointment = (
+  current: Appointment | null,
+  appointments: Appointment[]
+): Appointment | null => {
+  if (appointments.length === 0) return null;
+  if (current?.id) {
+    const updated = appointments.find((appointment) => appointment.id === current.id);
+    if (updated) return updated;
+  }
+  return appointments[0];
+};
+
+const LABEL_BY_SUB_LABEL: Record<string, AppointmentViewIntent['label']> = {
+  appointment: 'info',
+  companion: 'info',
+  history: 'info',
+  summary: 'finance',
+  'payment-details': 'finance',
+  'idexx-labs': 'labs',
+  'parent-chat': 'tasks',
+  task: 'tasks',
+  'parent-task': 'tasks',
+  forms: 'prescription',
+  documents: 'prescription',
+  'audit-trail': 'prescription',
+  subjective: 'prescription',
+  objective: 'prescription',
+  assessment: 'prescription',
+  plan: 'prescription',
+  'discharge-summary': 'prescription',
+  'merck-manuals': 'prescription',
+};
+
+const PRIMARY_OPEN_LABELS = new Set(['info', 'details', 'tasks', 'prescription', 'care']);
+
+const resolveInitialIntent = (
+  open: string,
+  normalizedSubLabel: string
+): AppointmentViewIntent | null => {
+  if (open === 'labs') {
+    return { label: 'labs', subLabel: normalizedSubLabel || 'idexx-labs' };
+  }
+  if (open === 'finance') {
+    return { label: 'finance', subLabel: normalizedSubLabel || 'summary' };
+  }
+  if (PRIMARY_OPEN_LABELS.has(open)) {
+    const fallbackSubLabel = open === 'info' || open === 'details' ? 'appointment' : '';
+    return {
+      label: (open === 'details' ? 'info' : open) as AppointmentViewIntent['label'],
+      subLabel: normalizedSubLabel || fallbackSubLabel || undefined,
+    };
+  }
+  if (normalizedSubLabel && LABEL_BY_SUB_LABEL[normalizedSubLabel]) {
+    return { label: LABEL_BY_SUB_LABEL[normalizedSubLabel], subLabel: normalizedSubLabel };
+  }
+  return null;
+};
 
 const Appointments = () => {
+  const router = useRouter();
+  useLoadAppointmentsForPrimaryOrg();
   const rawAppointments = useAppointmentsForPrimaryOrg();
   useLoadCompanionsForPrimaryOrg();
   const companions = useCompanionsParentsForPrimaryOrg();
@@ -65,6 +186,9 @@ const Appointments = () => {
           parentLastName,
           parentFullName,
           parentId: item.parent.id,
+          gender: item.companion.gender,
+          dateOfBirth: item.companion.dateOfBirth,
+          isneutered: item.companion.isneutered,
         },
       ] as const;
     });
@@ -96,6 +220,9 @@ const Appointments = () => {
           companion: {
             ...appointment.companion,
             photoUrl: companionMeta.photoUrl,
+            gender: companionMeta.gender,
+            dateOfBirth: companionMeta.dateOfBirth,
+            isneutered: companionMeta.isneutered,
             parent: {
               ...existingParent,
               id: companionMeta.parentId || existingParent.id || '',
@@ -108,21 +235,15 @@ const Appointments = () => {
       }),
     [rawAppointments, companionMetaById]
   );
-  const { can } = usePermissions();
-  const canEditAny = can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
-  const canEditOwn = can(PERMISSIONS.APPOINTMENTS_EDIT_OWN);
+  const permissions = usePermissions();
+  const canEditAny = permissions.can(PERMISSIONS.APPOINTMENTS_EDIT_ANY);
+  const canEditOwn = permissions.can(PERMISSIONS.APPOINTMENTS_EDIT_OWN);
   const canEditAppointments = canEditAny || canEditOwn;
 
   const team = useTeamForPrimaryOrg();
   const authUserId = useAuthStore(
     (s) => s.attributes?.sub || s.attributes?.email || s.attributes?.['cognito:username'] || ''
   );
-  const normalizeLeadId = (value?: string | null) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
   const currentUserLeadId = useMemo(() => {
     const normalizedCurrentUser = normalizeLeadId(authUserId);
     if (!normalizedCurrentUser) return '';
@@ -144,6 +265,7 @@ const Appointments = () => {
     useState<AppointmentDraftPrefill | null>(null);
   const [viewPopup, setViewPopup] = useState(false);
   const [viewIntent, setViewIntent] = useState<AppointmentViewIntent | null>(null);
+  const [detailPopup, setDetailPopup] = useState(false);
   const [reschedulePopup, setReschedulePopup] = useState(false);
   const [changeStatusPopup, setChangeStatusPopup] = useState(false);
   const [changeStatusPreferredStatus, setChangeStatusPreferredStatus] =
@@ -165,9 +287,22 @@ const Appointments = () => {
   );
 
   const [activeCalendar, setActiveCalendar] = useState('team');
+  const handleActiveCalendarChange: React.Dispatch<React.SetStateAction<string>> = (
+    nextCalendar
+  ) => {
+    startTransition(() => {
+      setActiveCalendar(nextCalendar);
+    });
+  };
+
   const [activeView, setActiveView] = useState<string>(resolveDefaultAppointmentsView);
+  const handleActiveViewChange: React.Dispatch<React.SetStateAction<string>> = (next) => {
+    startTransition(() => {
+      setActiveView(next);
+    });
+  };
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [weekStart, setWeekStart] = useState(startOfDay(currentDate));
+  const [weekStart, setWeekStart] = useState(() => startOfDay(currentDate));
   const { plannerSectionRef } = usePlannerAutoLock({
     activeView,
     topOffset: activeView === 'list' ? 72 : 16,
@@ -183,17 +318,19 @@ const Appointments = () => {
   }, [profile, primaryOrgType]);
 
   useEffect(() => {
-    if (activeCalendar === 'week') {
-      setWeekStart(startOfDay(currentDate));
-    }
+    if (activeCalendar !== 'week') return;
+    const nextWeekStart = startOfDay(currentDate);
+    setWeekStart((previous) =>
+      previous.getTime() === nextWeekStart.getTime() ? previous : nextWeekStart
+    );
   }, [currentDate, activeCalendar]);
 
   useEffect(() => {
-    if (!viewPopup) {
+    if (!viewPopup && !detailPopup) {
       setViewIntent(null);
       handledDeepLinkRef.current = null;
     }
-  }, [viewPopup]);
+  }, [viewPopup, detailPopup]);
 
   useEffect(() => {
     if (!changeStatusPopup) {
@@ -202,14 +339,7 @@ const Appointments = () => {
   }, [changeStatusPopup]);
 
   useEffect(() => {
-    setActiveAppointment((prev) => {
-      if (appointments.length === 0) return null;
-      if (prev?.id) {
-        const updated = appointments.find((s) => s.id === prev.id);
-        if (updated) return updated;
-      }
-      return appointments[0];
-    });
+    setActiveAppointment((prev) => getNextSelectedAppointment(prev, appointments));
   }, [appointments]);
 
   useEffect(() => {
@@ -223,47 +353,7 @@ const Appointments = () => {
     if (!appointmentId) return;
 
     const normalizedSubLabel = subLabelRaw === 'overview' ? 'history' : subLabelRaw;
-    const labelBySubLabel: Record<string, AppointmentViewIntent['label']> = {
-      appointment: 'info',
-      companion: 'info',
-      history: 'info',
-      summary: 'finance',
-      'payment-details': 'finance',
-      'idexx-labs': 'labs',
-      'parent-chat': 'tasks',
-      task: 'tasks',
-      'parent-task': 'tasks',
-      forms: 'prescription',
-      documents: 'prescription',
-      'audit-trail': 'prescription',
-      subjective: 'prescription',
-      objective: 'prescription',
-      assessment: 'prescription',
-      plan: 'prescription',
-      'discharge-summary': 'prescription',
-      'merck-manuals': 'prescription',
-    };
-
-    let initialIntent: AppointmentViewIntent | null = null;
-    if (open === 'labs') {
-      initialIntent = { label: 'labs', subLabel: normalizedSubLabel || 'idexx-labs' };
-    } else if (open === 'finance') {
-      initialIntent = { label: 'finance', subLabel: normalizedSubLabel || 'summary' };
-    } else if (
-      open === 'info' ||
-      open === 'details' ||
-      open === 'tasks' ||
-      open === 'prescription' ||
-      open === 'care'
-    ) {
-      const fallbackSubLabel = open === 'info' || open === 'details' ? 'appointment' : '';
-      initialIntent = {
-        label: (open === 'details' ? 'info' : open) as AppointmentViewIntent['label'],
-        subLabel: normalizedSubLabel || fallbackSubLabel || undefined,
-      };
-    } else if (normalizedSubLabel && labelBySubLabel[normalizedSubLabel]) {
-      initialIntent = { label: labelBySubLabel[normalizedSubLabel], subLabel: normalizedSubLabel };
-    }
+    const initialIntent = resolveInitialIntent(open, normalizedSubLabel);
 
     const resolvedSubLabel = initialIntent?.subLabel ?? normalizedSubLabel;
 
@@ -275,9 +365,18 @@ const Appointments = () => {
 
     setActiveAppointment(target);
     setViewIntent(initialIntent);
-    setViewPopup(true);
+    if (revampEnabled) {
+      if (canEnterAppointmentWorkspace(target.status)) {
+        startRouteLoader();
+        router.push(buildWorkspaceHrefForIntent(appointmentId, initialIntent));
+      } else {
+        setViewPopup(true);
+      }
+    } else {
+      setViewPopup(true);
+    }
     handledDeepLinkRef.current = deepLinkKey;
-  }, [appointments, searchParams]);
+  }, [appointments, searchParams, router]);
 
   const hasEmergency = useMemo(() => {
     const now = new Date();
@@ -297,17 +396,16 @@ const Appointments = () => {
     const statusWanted = activeStatus.toLowerCase();
 
     return appointments.filter((item) => {
-      const status = normalizeAppointmentStatus(
-        item.status as LegacyAppointmentStatus
-      )?.toLowerCase();
+      const status = normalizeAppointmentStatus(item.status)?.toLowerCase();
       const filter = item.isEmergency && 'emergencies';
+      const companion = item.companion ?? item.patient;
 
       const matchesStatus =
         activeView === 'board' || statusWanted === 'all' || status === statusWanted;
       const matchesFilter = filterWanted === 'all' || filter === filterWanted;
       const companionDisplayName = formatCompanionNameWithOwnerLastName(
-        item.companion.name,
-        item.companion.parent,
+        companion.name,
+        companion.parent,
         ''
       ).toLowerCase();
       const matchesQuery = !q || companionDisplayName.includes(q);
@@ -328,6 +426,18 @@ const Appointments = () => {
     setAddPopup(true);
   };
 
+  const openWorkspace = (appointment: Appointment, intent?: AppointmentViewIntent) => {
+    if (!appointment.id) return;
+    if (!canEnterAppointmentWorkspace(appointment.status)) {
+      setActiveAppointment(appointment);
+      setViewIntent(intent ?? null);
+      setViewPopup(true);
+      return;
+    }
+    startRouteLoader();
+    router.push(buildWorkspaceHrefForIntent(appointment.id, intent));
+  };
+
   let plannerContent: React.ReactNode;
   if (activeView === 'calendar') {
     plannerContent = (
@@ -336,12 +446,14 @@ const Appointments = () => {
         allAppointments={appointments}
         setActiveAppointment={setActiveAppointment}
         setViewPopup={setViewPopup}
+        setDetailPopup={setDetailPopup}
         setViewIntent={setViewIntent}
         setChangeStatusPopup={setChangeStatusPopup}
         setChangeStatusPreferredStatus={setChangeStatusPreferredStatus}
         setChangeRoomPopup={setChangeRoomPopup}
+        onOpenWorkspace={openWorkspace}
         activeCalendar={activeCalendar}
-        setActiveCalendar={setActiveCalendar}
+        setActiveCalendar={handleActiveCalendarChange}
         currentDate={currentDate}
         setCurrentDate={setCurrentDate}
         weekStart={weekStart}
@@ -371,6 +483,7 @@ const Appointments = () => {
         canEditAppointments={canEditAppointments}
         setActiveAppointment={setActiveAppointment}
         setViewPopup={setViewPopup}
+        setDetailPopup={setDetailPopup}
         setViewIntent={setViewIntent}
         setChangeStatusPopup={setChangeStatusPopup}
         setChangeStatusPreferredStatus={setChangeStatusPreferredStatus}
@@ -389,6 +502,7 @@ const Appointments = () => {
           filteredList={filteredList}
           setActiveAppointment={setActiveAppointment}
           setViewPopup={setViewPopup}
+          setDetailPopup={setDetailPopup}
           setViewIntent={setViewIntent}
           setReschedulePopup={setReschedulePopup}
           setChangeStatusPopup={setChangeStatusPopup}
@@ -409,9 +523,10 @@ const Appointments = () => {
           setAddPopup={setAddPopup}
           count={appointments.length}
           activeView={activeView}
-          setActiveView={setActiveView}
+          setActiveView={handleActiveViewChange}
           showAdd={false}
         />
+        <MobileSearchBar placeholder="Search appointments" />
 
         <PermissionGate allOf={[PERMISSIONS.APPOINTMENTS_VIEW_ANY]} fallback={<Fallback />}>
           <div className={wrapperClassName}>
@@ -433,50 +548,81 @@ const Appointments = () => {
             </div>
           </div>
 
-          <AddAppointment
-            showModal={addPopup}
-            setShowModal={setAddPopup}
-            setActiveFilter={setActiveFilter}
-            setActiveStatus={setActiveStatus}
-            prefill={addAppointmentPrefill}
-            onPrefillConsumed={() => setAddAppointmentPrefill(null)}
-          />
-          {activeAppointment && (
-            <AppoitmentInfo
-              showModal={viewPopup}
-              setShowModal={setViewPopup}
-              activeAppointment={activeAppointment}
-              initialViewIntent={viewIntent}
-              canEditAppointments={canEditActiveAppointment}
-              onReschedule={(appointment) => {
-                setActiveAppointment(appointment);
-                setViewPopup(false);
-                setReschedulePopup(true);
-              }}
-            />
-          )}
-          {canEditAppointments && activeAppointment && (
-            <Reschedule
-              showModal={reschedulePopup}
-              setShowModal={setReschedulePopup}
-              activeAppointment={activeAppointment}
-            />
-          )}
-          {canEditAppointments && activeAppointment && (
-            <ChangeStatus
-              showModal={changeStatusPopup}
-              setShowModal={setChangeStatusPopup}
-              activeAppointment={activeAppointment}
-              preferredStatus={changeStatusPreferredStatus}
-            />
-          )}
-          {canEditAppointments && activeAppointment && (
-            <ChangeRoom
-              showModal={changeRoomPopup}
-              setShowModal={setChangeRoomPopup}
-              activeAppointment={activeAppointment}
-            />
-          )}
+          <React.Suspense fallback={null}>
+            {revampEnabled ? (
+              <AddAppointmentCentralModal
+                showModal={addPopup}
+                setShowModal={setAddPopup}
+                setActiveFilter={setActiveFilter}
+                setActiveStatus={setActiveStatus}
+                prefill={addAppointmentPrefill}
+                onPrefillConsumed={() => setAddAppointmentPrefill(null)}
+              />
+            ) : (
+              <AddAppointment
+                showModal={addPopup}
+                setShowModal={setAddPopup}
+                setActiveFilter={setActiveFilter}
+                setActiveStatus={setActiveStatus}
+                prefill={addAppointmentPrefill}
+                onPrefillConsumed={() => setAddAppointmentPrefill(null)}
+              />
+            )}
+            {activeAppointment && revampEnabled && (
+              <ViewAppointmentOverviewModal
+                showModal={viewPopup}
+                setShowModal={setViewPopup}
+                activeAppointment={activeAppointment}
+                canEditAppointments={canEditActiveAppointment}
+                onOpenDetails={(appointment, intent) => {
+                  setActiveAppointment(appointment);
+                  setViewIntent(intent ?? null);
+                  setViewPopup(false);
+                  if (appointment.id) {
+                    startRouteLoader();
+                    router.push(buildWorkspaceHref(appointment.id));
+                  }
+                }}
+              />
+            )}
+            {activeAppointment && (
+              <AppoitmentInfo
+                showModal={revampEnabled ? detailPopup : viewPopup}
+                setShowModal={revampEnabled ? setDetailPopup : setViewPopup}
+                activeAppointment={activeAppointment}
+                initialViewIntent={viewIntent}
+                canEditAppointments={canEditActiveAppointment}
+                onReschedule={(appointment) => {
+                  setActiveAppointment(appointment);
+                  if (revampEnabled) setDetailPopup(false);
+                  else setViewPopup(false);
+                  setReschedulePopup(true);
+                }}
+              />
+            )}
+            {canEditAppointments && activeAppointment && (
+              <Reschedule
+                showModal={reschedulePopup}
+                setShowModal={setReschedulePopup}
+                activeAppointment={activeAppointment}
+              />
+            )}
+            {canEditAppointments && activeAppointment && (
+              <ChangeStatus
+                showModal={changeStatusPopup}
+                setShowModal={setChangeStatusPopup}
+                activeAppointment={activeAppointment}
+                preferredStatus={changeStatusPreferredStatus}
+              />
+            )}
+            {canEditAppointments && activeAppointment && (
+              <ChangeRoom
+                showModal={changeRoomPopup}
+                setShowModal={setChangeRoomPopup}
+                activeAppointment={activeAppointment}
+              />
+            )}
+          </React.Suspense>
         </PermissionGate>
       </div>
     </div>
@@ -485,9 +631,11 @@ const Appointments = () => {
 
 const ProtectedAppoitments = () => {
   return (
-    <ProtectedRoute>
-      <OrgGuard>
-        <Appointments />
+    <ProtectedRoute skeleton={APPOINTMENTS_SKELETON}>
+      <OrgGuard skeleton={APPOINTMENTS_SKELETON}>
+        <Suspense fallback={<AppointmentsSkeleton />}>
+          <Appointments />
+        </Suspense>
       </OrgGuard>
     </ProtectedRoute>
   );

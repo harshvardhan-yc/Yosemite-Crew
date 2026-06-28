@@ -107,8 +107,10 @@ const buildTokens = async (
   Pick<AuthTokens, 'idToken' | 'accessToken' | 'expiresAt' | 'userId'>
 > => {
   // Avoid forcing refresh to reduce deprecation noise; rely on Firebase to refresh as needed
-  const idToken = await getIdToken(user);
-  const idTokenResult = await getIdTokenResult(user);
+  const [idToken, idTokenResult] = await Promise.all([
+    getIdToken(user),
+    getIdTokenResult(user),
+  ]);
   const expiresAtTimestamp = idTokenResult?.expirationTime
     ? new Date(idTokenResult.expirationTime).getTime()
     : undefined;

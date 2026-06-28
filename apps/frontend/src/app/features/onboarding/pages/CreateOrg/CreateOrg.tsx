@@ -1,22 +1,17 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { HiShoppingBag } from 'react-icons/hi2';
 import { IoLocationSharp } from 'react-icons/io5';
-import { FaSuitcaseMedical } from 'react-icons/fa6';
 
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
-import CreateOrgProgress from '@/app/features/onboarding/components/Steps/Progress/Progress';
-import OrgStep from '@/app/features/onboarding/components/Steps/CreateOrg/OrgStep';
-import AddressStep from '@/app/features/onboarding/components/Steps/CreateOrg/AddressStep';
-import SpecialityStep from '@/app/features/onboarding/components/Steps/CreateOrg/SpecialityStep';
 import { Organisation } from '@yosemite-crew/types';
-import { SpecialityWeb } from '@/app/features/organization/types/speciality';
 import { useOrgOnboarding } from '@/app/hooks/useOrgOnboarding';
-import { useSpecialitiesWithServiceNamesForPrimaryOrg } from '@/app/hooks/useSpecialities';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { findPhoneData } from '@/app/features/companions/components/AddCompanion/type';
 import { validateOrgAddress, validateOrgBasics } from '@/app/lib/organizationOnboardingValidation';
 import { useFullscreenLoader } from '@/app/hooks/useFullscreenLoader';
+import { createOrg, updateOrg } from '@/app/features/organization/services/orgService';
 
 import './CreateOrg.css';
 
@@ -29,11 +24,23 @@ const OrgSteps = [
     title: 'Address',
     logo: <IoLocationSharp color="var(--color-neutral-0)" size={20} />,
   },
-  {
-    title: 'Specialties',
-    logo: <FaSuitcaseMedical color="var(--color-neutral-0)" size={18} />,
-  },
 ];
+
+const CreateOrgStepSkeleton = () => (
+  <div className="min-h-80 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
+);
+
+const CreateOrgProgress = dynamic(
+  () => import('@/app/features/onboarding/components/Steps/Progress/Progress')
+);
+const OrgStep = dynamic(
+  () => import('@/app/features/onboarding/components/Steps/CreateOrg/OrgStep'),
+  { loading: () => <CreateOrgStepSkeleton /> }
+);
+const AddressStep = dynamic(
+  () => import('@/app/features/onboarding/components/Steps/CreateOrg/AddressStep'),
+  { loading: () => <CreateOrgStepSkeleton /> }
+);
 
 const EMPTY_ORG: Organisation = {
   _id: '',
@@ -84,22 +91,14 @@ const CreateOrg = () => {
   const router = useRouter();
   const orgIdFromQuery = searchParams.get('orgId');
 
-  const {
-    org,
-    step: computedStep,
-    specialities: storeSpecialities,
-    isReady,
-  } = useOrgOnboarding(orgIdFromQuery);
-  const storeSpecialitiesWithServices = useSpecialitiesWithServiceNamesForPrimaryOrg();
+  const { org, step: computedStep, isReady } = useOrgOnboarding(orgIdFromQuery);
 
   const [activeStep, setActiveStep] = useState<number>(computedStep);
   const [addressErrors, setAddressErrors] = useState<AddressStepErrors>({});
-  const [initialSpecialities, setInitialSpecialities] = useState<SpecialityWeb[]>([]);
   const [orgErrors, setOrgErrors] = useState<OrgStepErrors>({});
-  const [specialities, setSpecialities] = useState<SpecialityWeb[]>([]);
   const [formData, setFormData] = useState<Organisation>(EMPTY_ORG);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const isCompletedRedirect = isReady && computedStep === 3;
+  const isCompletedRedirect = isReady && computedStep === 2;
   const shouldBlockForTransition = isTransitioning || isCompletedRedirect;
   useFullscreenLoader('create-org-transition', shouldBlockForTransition);
 
@@ -107,31 +106,18 @@ const CreateOrg = () => {
     if (!isReady) {
       return;
     }
-    if (computedStep === 3) {
+    if (computedStep === 2) {
       setIsTransitioning(true);
       router.replace('/dashboard');
       return;
     }
-    if (computedStep >= 0 && computedStep <= 2) {
+    if (computedStep >= 0 && computedStep <= 1) {
       setActiveStep(computedStep);
     }
     if (org) {
       setFormData(org);
     }
-    if (storeSpecialities.length > 0) {
-      setInitialSpecialities(storeSpecialitiesWithServices);
-      setSpecialities(
-        storeSpecialitiesWithServices.map((speciality) => ({
-          ...speciality,
-          services: (speciality.services ?? []).map((service) => ({
-            ...service,
-            organisationId:
-              service.organisationId || speciality.organisationId || org?._id?.toString() || '',
-          })),
-        }))
-      );
-    }
-  }, [org, storeSpecialities, storeSpecialitiesWithServices, computedStep, isReady, router]);
+  }, [org, computedStep, isReady, router]);
 
   if (!isReady || isCompletedRedirect) {
     return null;
@@ -160,6 +146,28 @@ const CreateOrg = () => {
     }
     setFormData(normalizedData);
     return true;
+  };
+
+  const submitOrg = async () => {
+    const { errors, normalizedData } = validateOrgAddress(formData);
+    setAddressErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+
+    setFormData(normalizedData);
+    setIsTransitioning(true);
+
+    try {
+      if (org) {
+        await updateOrg(normalizedData);
+      } else {
+        await createOrg(normalizedData);
+      }
+      router.replace('/dashboard');
+    } catch {
+      setIsTransitioning(false);
+    }
   };
 
   const canSelectStep = (stepIndex: number) => stepIndex <= activeStep;
@@ -198,7 +206,7 @@ const CreateOrg = () => {
         steps={OrgSteps}
       />
       <div className="flex flex-col gap-6">
-        <div className="create-org-title">Create organization</div>
+        <h1 className="create-org-title">Create organization</h1>
         {activeStep === 0 && (
           <OrgStep
             errors={orgErrors}
@@ -212,20 +220,10 @@ const CreateOrg = () => {
             errors={addressErrors}
             nextStep={nextStep}
             prevStep={prevStep}
+            submitText={org ? 'Save' : 'Create'}
+            onSubmit={submitOrg}
             formData={formData}
             setFormData={setFormData}
-          />
-        )}
-        {activeStep === 2 && (
-          <SpecialityStep
-            formData={formData}
-            initialSpecialities={initialSpecialities}
-            isExistingOrg={Boolean(orgIdFromQuery)}
-            onRedirectingChange={setIsTransitioning}
-            prevStep={prevStep}
-            specialities={specialities}
-            setFormData={setFormData}
-            setSpecialities={setSpecialities}
           />
         )}
       </div>
@@ -236,7 +234,9 @@ const CreateOrg = () => {
 const ProtectedCreateOrg = () => {
   return (
     <ProtectedRoute>
-      <CreateOrg />
+      <Suspense>
+        <CreateOrg />
+      </Suspense>
     </ProtectedRoute>
   );
 };

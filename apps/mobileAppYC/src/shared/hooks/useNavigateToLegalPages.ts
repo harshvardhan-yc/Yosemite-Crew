@@ -11,17 +11,20 @@ export const useNavigateToLegalPages = () => {
   const tabNavigation = navigation.getParent?.();
   const rootNavigation = tabNavigation?.getParent?.();
 
-  const findNavigatorWithRoute = useCallback((routeName: string) => {
-    let nav: any = navigation;
-    while (nav) {
-      const state = nav.getState?.();
-      if (state?.routeNames?.includes(routeName)) {
-        return nav as NavigationProp<any>;
+  const findNavigatorWithRoute = useCallback(
+    (routeName: string) => {
+      let nav: any = navigation;
+      while (nav) {
+        const state = nav.getState?.();
+        if (state?.routeNames && new Set(state.routeNames).has(routeName)) {
+          return nav as NavigationProp<any>;
+        }
+        nav = nav.getParent?.();
       }
-      nav = nav.getParent?.();
-    }
-    return null;
-  }, [navigation]);
+      return null;
+    },
+    [navigation],
+  );
 
   const navigateToRoute = useCallback(
     (screen: 'TermsAndConditions' | 'PrivacyPolicy') => {

@@ -54,7 +54,17 @@ const FAQCard: React.FC<{
   onRelatedPress: (id: string, isInFiltered: boolean) => void;
   styles: ReturnType<typeof createStyles>;
   theme: any;
-}> = ({faq, isExpanded, relatedEntries, helpfulSelection, onToggle, onHelpfulSelect, onRelatedPress, styles, theme}) => (
+}> = ({
+  faq,
+  isExpanded,
+  relatedEntries,
+  helpfulSelection,
+  onToggle,
+  onHelpfulSelect,
+  onRelatedPress,
+  styles,
+  theme,
+}) => (
   <View style={styles.faqCardShadowWrapper}>
     <LiquidGlassCard
       glassEffect="clear"
@@ -71,10 +81,7 @@ const FAQCard: React.FC<{
           <Text style={styles.questionText}>{faq.question}</Text>
           <Image
             source={Images.downArrow}
-            style={[
-              styles.toggleIcon,
-              isExpanded && styles.toggleIconExpanded
-            ]}
+            style={[styles.toggleIcon, isExpanded && styles.toggleIconExpanded]}
           />
         </TouchableOpacity>
 
@@ -92,7 +99,10 @@ const FAQCard: React.FC<{
                   interactive
                   borderRadius="xl"
                   tintColor={theme.colors.secondary}
-                  style={[styles.glassButtonDark, helpfulSelection === 'yes' && styles.glassButtonSelected]}
+                  style={[
+                    styles.glassButtonDark,
+                    helpfulSelection === 'yes' && styles.glassButtonSelected,
+                  ]}
                   textStyle={styles.glassButtonDarkText}
                   onPress={() => onHelpfulSelect(faq.id, 'yes')}
                 />
@@ -122,7 +132,10 @@ const FAQCard: React.FC<{
                     onPress={() => onRelatedPress(related.id, false)}
                     activeOpacity={0.7}>
                     <Text style={styles.relatedText}>{related.question}</Text>
-                    <Image source={Images.rightArrow} style={styles.relatedArrow} />
+                    <Image
+                      source={Images.rightArrow}
+                      style={styles.relatedArrow}
+                    />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -148,7 +161,11 @@ export const FAQScreen: React.FC<FAQScreenProps> = ({navigation}) => {
   const [searchQuery, setSearchQuery] = React.useState<string>('');
 
   const categoryOptions = React.useMemo(
-    () => FAQ_CATEGORIES.map(category => ({id: category.id, label: category.label})),
+    () =>
+      FAQ_CATEGORIES.map(category => ({
+        id: category.id,
+        label: category.label,
+      })),
     [],
   );
 
@@ -157,9 +174,7 @@ export const FAQScreen: React.FC<FAQScreenProps> = ({navigation}) => {
 
     // Filter by category
     if (selectedCategory !== 'all') {
-      faqs = faqs.filter(entry =>
-        entry.categoryIds.includes(selectedCategory),
-      );
+      faqs = faqs.filter(entry => entry.categoryIds.includes(selectedCategory));
     }
 
     // Filter by search query
@@ -183,29 +198,32 @@ export const FAQScreen: React.FC<FAQScreenProps> = ({navigation}) => {
     return map;
   }, []);
 
-  const handleToggle = React.useCallback(
-    (faqId: string) => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setExpandedFaqId(prev => (prev === faqId ? null : faqId));
+  const handleToggle = React.useCallback((faqId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedFaqId(prev => (prev === faqId ? null : faqId));
+  }, []);
+
+  const handleHelpfulSelection = React.useCallback(
+    (faqId: string, value: 'yes' | 'no') => {
+      setHelpfulState(prev => ({
+        ...prev,
+        [faqId]: prev[faqId] === value ? null : value,
+      }));
     },
     [],
   );
 
-  const handleHelpfulSelection = React.useCallback((faqId: string, value: 'yes' | 'no') => {
-    setHelpfulState(prev => ({
-      ...prev,
-      [faqId]: prev[faqId] === value ? null : value,
-    }));
-  }, []);
-
-  const onRelatedPress = React.useCallback((id: string, isInFiltered: boolean) => {
-    // keep behavior same as previous inline handler
-    setExpandedFaqId(id);
-    if (!isInFiltered) {
-      setSelectedCategory('all');
-      setSearchQuery('');
-    }
-  }, []);
+  const onRelatedPress = React.useCallback(
+    (id: string, isInFiltered: boolean) => {
+      // keep behavior same as previous inline handler
+      setExpandedFaqId(id);
+      if (!isInFiltered) {
+        setSelectedCategory('all');
+        setSearchQuery('');
+      }
+    },
+    [],
+  );
 
   const handleCategoryChange = React.useCallback((categoryId: string) => {
     setSelectedCategory(categoryId);
@@ -213,13 +231,16 @@ export const FAQScreen: React.FC<FAQScreenProps> = ({navigation}) => {
     // setSearchQuery('');
   }, []);
 
-  const handleSearchChange = React.useCallback((text: string) => {
-    setSearchQuery(text);
-    // If user is searching, show all categories
-    if (text.trim() && selectedCategory !== 'all') {
-      setSelectedCategory('all');
-    }
-  }, [selectedCategory]);
+  const handleSearchChange = React.useCallback(
+    (text: string) => {
+      setSearchQuery(text);
+      // If user is searching, show all categories
+      if (text.trim() && selectedCategory !== 'all') {
+        setSelectedCategory('all');
+      }
+    },
+    [selectedCategory],
+  );
 
   return (
     <LiquidGlassHeaderScreen
@@ -274,9 +295,12 @@ export const FAQScreen: React.FC<FAQScreenProps> = ({navigation}) => {
             ) : (
               filteredFaqs.map(faq => {
                 const isExpanded = expandedFaqId === faq.id;
-                const relatedEntries: FAQEntry[] = (faq.relatedIds ?? [])
-                  .map(id => relatedLookup.get(id))
-                  .filter(Boolean) as FAQEntry[];
+                const relatedEntries: FAQEntry[] = (
+                  faq.relatedIds ?? []
+                ).flatMap(id => {
+                  const entry = relatedLookup.get(id);
+                  return entry ? [entry] : [];
+                });
                 const helpfulSelection = helpfulState[faq.id] ?? null;
 
                 return (
@@ -351,8 +375,7 @@ const createStyles = (theme: any) => {
     faqCardShadowWrapper: {
       borderRadius: theme.borderRadius.lg,
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.lg,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 10px 15px ${theme.colors.neutralShadow}`,
       overflow: 'visible',
     },
     faqCard: {

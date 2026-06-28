@@ -49,6 +49,9 @@ import {AvatarGroup} from '@/shared/components/common/AvatarGroup/AvatarGroup';
 import i18n from '@/localization/i18n';
 
 type Nav = NativeStackNavigationProp<AppointmentStackParamList>;
+type InvoicePriceComponent = NonNullable<
+  Invoice['totalPriceComponent']
+>[number];
 
 const useGuardianInfo = (authUser: any, invoice: any) => {
   return useMemo(() => {
@@ -277,6 +280,9 @@ const buildInvoiceItemKey = ({
   lineTotal,
   qty,
 }: InvoiceItem) => `${description}-${rate}-${lineTotal}-${qty ?? 0}`;
+
+const buildPriceComponentKey = (priceComponent: InvoicePriceComponent) =>
+  JSON.stringify(priceComponent);
 
 const formatDateTimeDisplay = (iso?: string) => {
   if (!iso) return '—';
@@ -616,7 +622,7 @@ const BreakdownCard = ({
               const typeText = (pc?.type ?? '').toString().toLowerCase();
               return codeText !== 'grand-total' && typeText !== 'informational';
             })
-            .map((pc: any, idx: number) => {
+            .map((pc: InvoicePriceComponent, idx: number) => {
               const rawLabel =
                 pc.code?.text ??
                 pc.type?.toString().replaceAll('_', ' ').replaceAll('-', ' ') ??
@@ -631,7 +637,7 @@ const BreakdownCard = ({
                   : '—';
               return (
                 <BreakdownRow
-                  key={`${label}-${idx}`}
+                  key={buildPriceComponentKey(pc)}
                   label={label}
                   value={value}
                   subtle={label.toLowerCase().includes('discount')}
@@ -1236,13 +1242,14 @@ export const PaymentInvoiceScreen: React.FC = () => {
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [paymentIntentLoading, setPaymentIntentLoading] = useState(false);
 
-  // Reset one-shot guards when navigating between different appointments
-  useEffect(() => {
+  const [prevAppointmentId, setPrevAppointmentId] = useState(appointmentId);
+  if (appointmentId !== prevAppointmentId) {
+    setPrevAppointmentId(appointmentId);
     invoiceRequestedRef.current = false;
     paymentIntentRequestedRef.current = false;
     setInvoiceLoading(false);
     setPaymentIntentLoading(false);
-  }, [appointmentId]);
+  }
 
   const invoiceFromStore = useSelector(
     appointmentId ? selectInvoiceForAppointment(appointmentId) : () => null,
@@ -1370,12 +1377,18 @@ export const PaymentInvoiceScreen: React.FC = () => {
   });
 
   useEffect(() => {
-    // Always ensure we have a payment intent when opening from Pay Now
-    const needsIntent =
-      (!paymentIntent?.clientSecret || !paymentIntent?.paymentIntentId) &&
-      (isPaymentPendingStatus ||
-        (effectiveInvoice?.status ?? '').toString().toUpperCase() ===
-          'AWAITING_PAYMENT');
+    // Always ensure we have a payment intent when opening from Pay Now.
+    // Also re-fetch when connectedAccountId is missing — it only comes from the
+    // sessions endpoint, so existing appointments with a stored clientSecret but
+    // no connectedAccountId need a fresh session for Stripe Connect to work.
+    const missingSecret =
+      !paymentIntent?.clientSecret || !paymentIntent?.paymentIntentId;
+    const missingConnectedAccount = !paymentIntent?.connectedAccountId;
+    const isPending =
+      isPaymentPendingStatus ||
+      (effectiveInvoice?.status ?? '').toString().toUpperCase() ===
+        'AWAITING_PAYMENT';
+    const needsIntent = (missingSecret || missingConnectedAccount) && isPending;
     if (
       isInvoiceBasedFlow ||
       !appointmentId ||
@@ -1385,21 +1398,28 @@ export const PaymentInvoiceScreen: React.FC = () => {
       return;
     }
     paymentIntentRequestedRef.current = true;
-    setPaymentIntentLoading(true);
-    dispatch(fetchPaymentIntentForAppointment({appointmentId}))
-      .unwrap()
-      .catch(() => {
-        // best-effort
-      })
-      .finally(() => setPaymentIntentLoading(false));
+    (async () => {
+      setPaymentIntentLoading(true);
+      await dispatch(
+        fetchPaymentIntentForAppointment({
+          appointmentId,
+          invoiceId: invoice?.id,
+        }),
+      )
+        .unwrap()
+        .catch(() => {});
+      setPaymentIntentLoading(false);
+    })().catch(() => {});
   }, [
     appointmentId,
     dispatch,
     effectiveInvoice?.status,
+    invoice?.id,
     isInvoiceBasedFlow,
     isPaymentPendingStatus,
     paymentIntent?.clientSecret,
     paymentIntent?.paymentIntentId,
+    paymentIntent?.connectedAccountId,
   ]);
 
   const {
@@ -1456,6 +1476,7 @@ export const PaymentInvoiceScreen: React.FC = () => {
 
   const {handlePayNow, presentingSheet} = usePaymentHandler({
     clientSecret,
+    connectedAccountId: paymentIntent?.connectedAccountId ?? null,
     businessName,
     guardianName,
     guardianEmail,
@@ -1573,7 +1594,9 @@ const MetaRow = ({label, value}: {label: string; value: string}) => {
   return (
     <View style={styles.row}>
       <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
+      <Text style={styles.value} numberOfLines={1} ellipsizeMode="middle">
+        {value}
+      </Text>
     </View>
   );
 };
@@ -1622,8 +1645,7 @@ const createStyles = (theme: any) =>
     cardShadowWrapper: {
       borderRadius: theme.borderRadius.lg,
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.lg,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 10px 15px ${theme.colors.neutralShadow}`,
       overflow: 'visible',
     },
     glassCard: {
@@ -1803,17 +1825,22 @@ const metaStyles = (theme: any) =>
   StyleSheet.create({
     row: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
       paddingVertical: theme.spacing['2'],
+      gap: theme.spacing['2'],
     },
     label: {
       ...theme.typography.labelSmall,
       color: theme.colors.placeholder,
+      flexShrink: 0,
     },
     value: {
       ...theme.typography.labelSmall,
       color: theme.colors.secondary,
+      flex: 1,
+      flexShrink: 1,
+      minWidth: 0,
+      textAlign: 'right',
     },
   });
 

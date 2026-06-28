@@ -136,25 +136,31 @@ To run the app, you need to provide your own credentials for various services. W
 
 #### B. Android Native Configuration
 
+These native config files are local-only and gitignored. Do not commit copied files or real keys; commit only the example/template files.
+
 1.  **Firebase**: Download your `google-services.json` file from Firebase and place it in the `android/app/` directory.
 2.  **Gradle Properties**: Copy the sample Gradle properties file:
     ```sh
-    cp apps/mobileAppYC/android/gradle.properties.example apps/mobileAppYC/android/gradle.properties
+    cp apps/mobileAppYC/config-templates/android/gradle.properties.example apps/mobileAppYC/android/gradle.properties
     ```
 3.  **Other Keys**: Copy the sample `strings.xml` file:
     ```sh
     cp apps/mobileAppYC/config-templates/android/strings.example.xml apps/mobileAppYC/android/app/src/main/res/values/strings.xml
     ```
-4.  Open `android/app/src/main/res/values/strings.xml` and fill in all the required values.
+4.  Open `android/app/src/main/res/values/strings.xml` and fill in the Facebook SDK values.
+5.  Copy `apps/mobileAppYC/config-templates/android/local.properties.example` to `apps/mobileAppYC/android/local.properties`, then set your local `sdk.dir` and `MAPS_API_KEY`. The Android Maps SDK key is injected into `AndroidManifest.xml` from `MAPS_API_KEY`.
 
 #### C. iOS Native Configuration
 
-1.  **Firebase**: Download your `GoogleService-Info.plist` file from Firebase. Place it in `apps/mobileAppYC/ios/mobileAppYC/` and **add it to the project using Xcode**.
-2.  **Other Keys**: Copy the sample `Info.plist` file:
+`AppDelegate.swift` is tracked source code. Do not put API keys or service tokens there; use the gitignored native config files below.
+
+1.  **Firebase**: Download your `GoogleService-Info.plist` file from Firebase. Place it in `apps/mobileAppYC/ios/` and **add it to the project using Xcode**.
+2.  **Other Keys**: Copy the sample `Info.plist` and `Secrets.xcconfig` files:
     ```sh
     cp apps/mobileAppYC/config-templates/ios/Info.plist.example apps/mobileAppYC/ios/mobileAppYC/Info.plist
+    cp apps/mobileAppYC/config-templates/ios/Secrets.xcconfig.example apps/mobileAppYC/ios/mobileAppYC/Secrets.xcconfig
     ```
-3.  Open `apps/mobileAppYC/ios/mobileAppYC/Info.plist` and input your keys where indicated.
+3.  Open `apps/mobileAppYC/ios/mobileAppYC/Info.plist` and input your Facebook/Google Sign-In values where indicated. Open `Secrets.xcconfig` and set `GOOGLE_MAPS_API_KEY` for the iOS Google Maps SDK.
 
 ---
 

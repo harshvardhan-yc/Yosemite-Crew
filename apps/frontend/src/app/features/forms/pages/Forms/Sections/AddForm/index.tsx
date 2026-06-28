@@ -1,5 +1,5 @@
 import Modal from '@/app/ui/overlays/Modal';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Details from '@/app/features/forms/pages/Forms/Sections/AddForm/Details';
 import Build from '@/app/features/forms/pages/Forms/Sections/AddForm/Build';
@@ -7,11 +7,16 @@ import Review from '@/app/features/forms/pages/Forms/Sections/AddForm/Review';
 import AppointmentMerckSearch from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/AppointmentMerckSearch';
 import { FormsCategory, FormsProps } from '@/app/features/forms/types/forms';
 import { publishForm, saveFormDraft } from '@/app/features/forms/services/formService';
+import {
+  publishTemplateForm,
+  saveTemplateFormDraft,
+} from '@/app/features/forms/services/templateFormsService';
 import Close from '@/app/ui/primitives/Icons/Close';
 import Labels from '@/app/ui/widgets/Labels/Labels';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { useResolvedMerckIntegrationForPrimaryOrg } from '@/app/hooks/useMerckIntegration';
+import { shouldUseTemplateApi } from '@/app/lib/forms';
 
 const LabelOptions = [
   {
@@ -48,7 +53,7 @@ type AddFormProps = {
   setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
   initialForm?: FormsProps | null;
   onClose?: () => void;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string }[];
   draft?: FormsProps | null;
   onDraftChange?: (draft: FormsProps | null) => void;
 };
@@ -65,6 +70,10 @@ const defaultForm = (): FormsProps => {
     status: 'Draft',
     schema: [],
     businessType: primaryOrg?.type,
+    // New templates default to the YC-default (structure-locked) type so the builder lands on
+    // the curated, content-only presets; switching to "Custom" unlocks full structural editing.
+    templateSource: 'YC_LIBRARY',
+    isTemplateBacked: true,
   };
 };
 
@@ -87,13 +96,14 @@ const AddForm = ({
   const { isEnabled: merckEnabled } = useResolvedMerckIntegrationForPrimaryOrg();
 
   const isEditing = useMemo(() => Boolean(initialForm?._id), [initialForm]);
+  const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const labelOptions = useMemo(
     () =>
       merckEnabled ? LabelOptions : LabelOptions.filter((label) => label.key !== 'merck-manuals'),
     [merckEnabled]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (showModal && !wasOpenRef.current) {
       setActiveLabel('form-details');
       const next = {
@@ -150,10 +160,14 @@ const AddForm = ({
   const handleSaveDraft = async () => {
     setIsSaving(true);
     try {
-      const saved = await saveFormDraft({
+      const draftData = {
         ...formData,
-        status: 'Draft',
-      });
+        status: 'Draft' as const,
+      };
+      const saved =
+        shouldUseTemplateApi(draftData) && primaryOrgId
+          ? await saveTemplateFormDraft(draftData, primaryOrgId)
+          : await saveFormDraft(draftData);
       setFormData(saved);
       onDraftChange?.(null);
       setFormData(defaultForm());
@@ -169,10 +183,16 @@ const AddForm = ({
   const handlePublish = async () => {
     setIsSaving(true);
     try {
-      const saved = await saveFormDraft(formData);
+      const saved =
+        shouldUseTemplateApi(formData) && primaryOrgId
+          ? await saveTemplateFormDraft(formData, primaryOrgId)
+          : await saveFormDraft(formData);
       if (saved._id) {
-        await publishForm(saved._id);
-        setFormData({ ...saved, status: 'Published' });
+        const published =
+          saved.isTemplateBacked && primaryOrgId
+            ? await publishTemplateForm(saved, primaryOrgId)
+            : await publishForm(saved._id).then(() => ({ ...saved, status: 'Published' as const }));
+        setFormData(published);
       }
       onDraftChange?.(null);
       setFormData(defaultForm());

@@ -1,10 +1,24 @@
 import React, {useState} from 'react';
-import {View, Text, TouchableOpacity, StyleSheet, Image, Animated, Platform} from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  Animated,
+  Platform,
+} from 'react-native';
 import {useTheme} from '@/hooks';
 import {Images} from '@/assets/images';
 import {LiquidGlassButton} from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
 import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
 import {resolveCurrencySymbol} from '@/shared/utils/currency';
+import type {VetPackage} from '@/features/appointments/types';
+import {PackageItem} from '@/features/appointments/components/PackageAccordion/PackageAccordion';
+import {
+  createAccordionSectionStyles,
+  KIND_LABELS,
+} from '@/features/appointments/components/accordionSectionStyles';
 
 interface Service {
   id: string;
@@ -13,26 +27,39 @@ interface Service {
   basePrice?: number;
   currency?: string;
   icon?: any;
+  appointmentKinds?: string[];
+}
+
+interface SpecialtyGroup {
+  name: string;
+  serviceCount: number;
+  services: Service[];
+  packages: VetPackage[];
 }
 
 interface SpecialtyAccordionProps {
   title: string;
   icon?: any;
-  specialties: {
-    name: string;
-    serviceCount: number;
-    services: Service[];
-  }[];
+  specialties: SpecialtyGroup[];
   onSelectService: (serviceId: string, specialtyName: string) => void;
+  onSelectPackage: (packageId: string, packageName: string) => void;
 }
+
+// ─── Specialty Item ───────────────────────────────────────────────────────────
 
 interface SpecialtyItemProps {
-  specialty: SpecialtyAccordionProps['specialties'][number];
+  specialty: SpecialtyGroup;
   defaultExpanded?: boolean;
   onSelectService: (serviceId: string, specialtyName: string) => void;
+  onSelectPackage: (packageId: string, packageName: string) => void;
 }
 
-const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService, defaultExpanded = false}) => {
+const SpecialtyItem: React.FC<SpecialtyItemProps> = ({
+  specialty,
+  onSelectService,
+  onSelectPackage,
+  defaultExpanded = false,
+}) => {
   const {theme} = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -55,16 +82,14 @@ const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService
 
   return (
     <View style={styles.specialtyItem}>
-
       <TouchableOpacity
         style={styles.specialtyHeader}
         onPress={toggleExpanded}
-        activeOpacity={0.7}
-      >
+        activeOpacity={0.7}>
         <View style={styles.specialtyHeaderContent}>
           <Text style={styles.specialtyName}>{specialty.name}</Text>
           <Text style={styles.doctorCount}>
-            {specialty.serviceCount} Service{specialty.serviceCount === 1 ? '' : 's'}
+            {specialty.serviceCount + specialty.packages.length}
           </Text>
         </View>
         <Animated.Image
@@ -77,7 +102,6 @@ const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService
       </TouchableOpacity>
 
       {expanded && (
-        
         <View style={styles.servicesList}>
           {specialty.services.map(service => (
             <LiquidGlassCard
@@ -88,17 +112,37 @@ const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService
               style={styles.serviceCard}
               fallbackStyle={styles.serviceCardFallback}>
               <View style={styles.serviceTopRow}>
-                <Text style={styles.serviceName} numberOfLines={1} ellipsizeMode="tail">
+                <Text
+                  style={styles.serviceName}
+                  numberOfLines={1}
+                  ellipsizeMode="tail">
                   {service.name}
                 </Text>
                 {service.basePrice ? (
-                  <View style={styles.priceChip}>
-                    <Text style={styles.priceChipText}>{resolveCurrencySymbol(service?.currency ?? 'USD')}{service.basePrice}</Text>
+                  <View style={styles.chipContainer}>
+                    <Text style={styles.chipText}>
+                      {resolveCurrencySymbol(service?.currency ?? 'USD')}
+                      {service.basePrice}
+                    </Text>
                   </View>
                 ) : null}
               </View>
+              {service.appointmentKinds &&
+              service.appointmentKinds.length > 0 ? (
+                <View style={styles.kindBadgeRow}>
+                  {service.appointmentKinds.map(kind => (
+                    <View key={kind} style={styles.kindBadge}>
+                      <Text style={styles.kindBadgeText}>
+                        {KIND_LABELS[kind] ?? kind}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               {service.description ? (
-                <Text style={styles.serviceDescription}>{service.description}</Text>
+                <Text style={styles.serviceDescription}>
+                  {service.description}
+                </Text>
               ) : null}
               <LiquidGlassButton
                 title="Select service"
@@ -112,17 +156,36 @@ const SpecialtyItem: React.FC<SpecialtyItemProps> = ({specialty, onSelectService
               />
             </LiquidGlassCard>
           ))}
+
+          {specialty.packages.length > 0 && (
+            <View style={styles.packagesSectionWrapper}>
+              <Text style={styles.packagesSectionLabel}>Packages</Text>
+              <View style={styles.pkgList}>
+                {specialty.packages.map(pkg => (
+                  <PackageItem
+                    key={pkg.id}
+                    pkg={pkg}
+                    compact
+                    onSelectPackage={onSelectPackage}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
         </View>
       )}
     </View>
   );
 };
 
+// ─── SpecialtyAccordion ───────────────────────────────────────────────────────
+
 export const SpecialtyAccordion: React.FC<SpecialtyAccordionProps> = ({
   title,
   icon,
   specialties,
   onSelectService,
+  onSelectPackage,
 }) => {
   const {theme} = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
@@ -130,7 +193,9 @@ export const SpecialtyAccordion: React.FC<SpecialtyAccordionProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.parentHeader}>
-        {icon && <Image source={icon} style={styles.parentIcon} />}
+        {icon && (
+          <Image testID="parent-icon" source={icon} style={styles.parentIcon} />
+        )}
         <Text style={styles.parentTitle}>{title}</Text>
       </View>
 
@@ -141,6 +206,7 @@ export const SpecialtyAccordion: React.FC<SpecialtyAccordionProps> = ({
             specialty={specialty}
             defaultExpanded={index === 0}
             onSelectService={onSelectService}
+            onSelectPackage={onSelectPackage}
           />
         ))}
       </View>
@@ -148,27 +214,11 @@ export const SpecialtyAccordion: React.FC<SpecialtyAccordionProps> = ({
   );
 };
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const createStyles = (theme: any) =>
   StyleSheet.create({
-    container: {
-      marginBottom: theme.spacing['4'],
-    },
-    parentHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: theme.spacing['2'],
-      paddingHorizontal: theme.spacing['1'],
-      marginBottom: theme.spacing['3'],
-    },
-    parentIcon: {
-      width: theme.spacing['7'],
-      height: theme.spacing['7'],
-      resizeMode: 'contain',
-    },
-    parentTitle: {
-      ...theme.typography.sectionHeading,
-      color: theme.colors.secondary,
-    },
+    ...createAccordionSectionStyles(theme),
     specialtiesList: {
       gap: theme.spacing['2'],
     },
@@ -177,8 +227,7 @@ const createStyles = (theme: any) =>
       borderRadius: theme.borderRadius.lg,
       borderWidth: 1,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
       overflow: 'hidden',
     },
     specialtyHeader: {
@@ -223,8 +272,7 @@ const createStyles = (theme: any) =>
       borderRadius: theme.borderRadius.lg,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.md,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 4px 6px ${theme.colors.neutralShadow}`,
     },
     serviceTopRow: {
       flexDirection: 'row',
@@ -244,25 +292,17 @@ const createStyles = (theme: any) =>
       marginTop: theme.spacing['1'],
       marginBottom: theme.spacing['3'],
     },
-    priceChip: {
-      paddingHorizontal: theme.spacing['2'],
-      paddingVertical: theme.spacing['1'],
-      borderRadius: theme.borderRadius.full,
-      backgroundColor: theme.colors.primaryTint,
+    // ── Package section inside specialty ──
+    packagesSectionWrapper: {
+      gap: theme.spacing['2'],
     },
-    priceChipText: {
-      ...theme.typography.subtitleBold12,
-      color: theme.colors.primary,
+    packagesSectionLabel: {
+      ...theme.typography.subtitleBold14,
+      color: theme.colors.textSecondary,
+      paddingHorizontal: theme.spacing['1'],
     },
-    selectButton: {
-      width: '100%',
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderRadius: theme.borderRadius.lg,
-    },
-    selectButtonText: {
-      ...theme.typography.titleSmall,
-      color: theme.colors.white,
+    pkgList: {
+      gap: theme.spacing['2'],
     },
   });
 

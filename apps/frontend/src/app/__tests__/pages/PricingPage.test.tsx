@@ -50,6 +50,9 @@ describe('PricingPage', () => {
   test('toggles billing cycles and shows plans', () => {
     render(<PricingPage />);
 
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Transparent pricing, no hidden fees' })
+    ).toBeInTheDocument();
     const monthly = screen.getByText('Pay monthly');
     const yearly = screen.getByText('Pay yearly');
     expect(yearly.className).toMatch(/bg-blue-light/);
@@ -102,5 +105,16 @@ describe('PricingPage', () => {
     fireEvent.click(screen.getByText('Send'));
 
     expect(screen.getByTestId('Enter email-error')).toHaveTextContent('Enter a valid email');
+  });
+
+  test('shows all current integrations in the pricing table', () => {
+    render(<PricingPage />);
+
+    expect(screen.getByAltText('IDEXX')).toBeInTheDocument();
+    expect(screen.getByAltText('MSD Veterinary Manual')).toBeInTheDocument();
+    expect(screen.getByAltText('RadAnalyzer')).toBeInTheDocument();
+    expect(screen.getByAltText('Vetnio')).toBeInTheDocument();
+    expect(screen.getByText('qb')).toBeInTheDocument();
+    expect(screen.getByAltText('Laika')).toBeInTheDocument();
   });
 });

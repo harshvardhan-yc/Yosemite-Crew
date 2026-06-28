@@ -16,6 +16,8 @@ export interface AccordionProps {
   /** Controlled open state. When provided the component is controlled. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Override the title text class. Defaults to text-body-2. */
+  titleClassName?: string;
 }
 
 const Accordion: React.FC<AccordionProps> = ({
@@ -30,6 +32,7 @@ const Accordion: React.FC<AccordionProps> = ({
   rightElement,
   open: controlledOpen,
   onOpenChange,
+  titleClassName = 'text-body-2',
 }) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const open = controlledOpen ?? uncontrolledOpen;
@@ -61,7 +64,7 @@ const Accordion: React.FC<AccordionProps> = ({
   return (
     <div className="flex flex-col w-full gap-0">
       <div
-        className={`flex items-center justify-between w-full border-card-border px-3 py-3 ${open ? 'border-x border-t rounded-t-2xl' : 'border rounded-2xl'}`}
+        className={`flex items-center justify-between w-full border-card-border p-3 ${open ? 'border-x border-t rounded-t-2xl' : 'border rounded-2xl'}`}
       >
         <button
           type="button"
@@ -75,10 +78,10 @@ const Accordion: React.FC<AccordionProps> = ({
             aria-hidden="true"
             className={`text-black-text transition-transform ${open ? 'rotate-0' : '-rotate-90'}`}
           />
-          <span className="text-body-2 text-text-primary text-left">{title}</span>
+          <span className={`${titleClassName} text-text-primary text-left`}>{title}</span>
         </button>
 
-        <div className="flex items-center gap-2" aria-label={`${title} actions`}>
+        <div className="flex items-center gap-2">
           {rightElement}
 
           {showEditIcon && !isEditing && (

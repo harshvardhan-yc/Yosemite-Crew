@@ -40,6 +40,7 @@ import { isReadFromPostgres } from "src/config/read-switch";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
 import { ensureObjectId as ensureObjectIdStrict } from "src/utils/mongo";
 import { assertEmail } from "src/utils/sanitize";
+import { CatalogService, CatalogServiceError } from "./catalog.service";
 
 export class AppointmentServiceError extends Error {
   constructor(
@@ -58,6 +59,58 @@ const ensureObjectId = (id: string | Types.ObjectId, field: string) =>
 
 type LegacyAppointmentStatus = AppointmentStatus | "NO_PAYMENT";
 
+type ParentCancelableAppointment = {
+  id: string;
+  status: AppointmentStatus;
+  organisationId: string;
+  patient: Prisma.JsonValue;
+  lead: Prisma.JsonValue | null;
+  supportStaff: Prisma.JsonValue | null;
+  room: Prisma.JsonValue | null;
+  appointmentType: Prisma.JsonValue | null;
+  appointmentDate: Date;
+  startTime: Date;
+  timeSlot: string;
+  durationMinutes: number;
+  endTime: Date;
+  isEmergency: boolean;
+  concern: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  attachments: Prisma.JsonValue | null;
+  formIds: string[];
+};
+
+type ParentCancelableAppointmentDocument = AppointmentDocument & {
+  patient?: Prisma.JsonValue | null;
+  lead?: Prisma.JsonValue | null;
+  concern?: string | null;
+  organisationId: string;
+  status: LegacyAppointmentStatus;
+};
+
+const getNestedId = (value: Prisma.JsonValue | null | undefined) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const id = (value as { id?: unknown }).id;
+  return typeof id === "string" ? id : undefined;
+};
+
+const getParentId = (patient: Prisma.JsonValue | null | undefined) => {
+  if (!patient || typeof patient !== "object" || Array.isArray(patient)) {
+    return undefined;
+  }
+
+  return getNestedId((patient as { parent?: Prisma.JsonValue | null }).parent);
+};
+
+const getAppointmentPatientId = (appointment: {
+  patient?: Prisma.JsonValue | null;
+  companion?: Prisma.JsonValue | null;
+}) => getNestedId(appointment.patient) ?? getNestedId(appointment.companion);
+
 const normalizeAppointmentStatus = (
   status: LegacyAppointmentStatus,
 ): AppointmentStatus => (status === "NO_PAYMENT" ? "REQUESTED" : status);
@@ -75,7 +128,7 @@ const APPOINTMENT_STATUS_TRANSITIONS: Record<
   NO_SHOW: [],
 };
 
-const assertAppointmentStatusTransition = (
+export const assertAppointmentStatusTransition = (
   current: LegacyAppointmentStatus,
   next: AppointmentStatus,
   context: string,
@@ -92,7 +145,7 @@ const assertAppointmentStatusTransition = (
   }
 };
 
-const buildUsageCounterPayload = (doc: {
+export const buildUsageCounterPayload = (doc: {
   appointmentsUsed?: number | null;
   toolsUsed?: number | null;
   usersActiveCount?: number | null;
@@ -128,7 +181,7 @@ const assertRequestedAppointment = (
   assertAppointmentStatusTransition(status, "UPCOMING", context);
 };
 
-const resolvePaymentStatusByAppointmentIds = async (
+export const resolvePaymentStatusByAppointmentIds = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> => {
   const uniqueIds = Array.from(new Set(appointmentIds.filter(Boolean)));
@@ -144,7 +197,7 @@ const resolvePaymentStatusByAppointmentIds = async (
   return resolvePaymentStatusByAppointmentIdsFromMongo(uniqueIds);
 };
 
-const resolvePaymentStatusByAppointmentIdsFromPostgres = async (
+export const resolvePaymentStatusByAppointmentIdsFromPostgres = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> => {
   const statusMap = new Map<string, AppointmentPaymentStatus>();
@@ -191,7 +244,7 @@ const resolvePaymentStatusByAppointmentIdsFromPostgres = async (
   return statusMap;
 };
 
-const resolvePaymentStatusByAppointmentIdsFromMongo = async (
+export const resolvePaymentStatusByAppointmentIdsFromMongo = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> => {
   const statusMap = new Map<string, AppointmentPaymentStatus>();
@@ -237,37 +290,214 @@ const resolvePaymentStatusByAppointmentIdsFromMongo = async (
 
 type AppointmentRequestInput = ReturnType<typeof fromAppointmentRequestDTO>;
 
-const requireBaseAppointmentInput = (
+type DraftInvoiceItemInput = {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discountPercent?: number;
+};
+
+type LegacyServiceBridge = {
+  name: string;
+  cost: number;
+  maxDiscount?: number | null;
+  serviceType?: string;
+  observationToolId?: unknown;
+};
+
+const mapCatalogSelectionToDraftItems = (selection: {
+  billingItems: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    defaultDiscountPercent?: number | null;
+  }>;
+}): DraftInvoiceItemInput[] =>
+  selection.billingItems.map((item) => ({
+    description: item.name,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    discountPercent: item.defaultDiscountPercent ?? undefined,
+  }));
+
+const mapLegacyServiceToDraftItems = (
+  service: Pick<LegacyServiceBridge, "name" | "cost" | "maxDiscount">,
+  fallbackName?: string,
+): DraftInvoiceItemInput[] => [
+  {
+    description: fallbackName ?? service.name ?? "Consultation",
+    quantity: 1,
+    unitPrice: service.cost,
+    discountPercent: service.maxDiscount ?? undefined,
+  },
+];
+
+export const resolveCatalogSelectionSafe = async (
+  selectionId: string,
+  organisationId: string,
+) => {
+  try {
+    return await CatalogService.resolveSelection(selectionId, organisationId);
+  } catch (error) {
+    if (error instanceof CatalogServiceError && error.statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const assertParentCanCancelAppointment = (params: {
+  appointment:
+    | ParentCancelableAppointment
+    | ParentCancelableAppointmentDocument;
+  parentId: string;
+  context: string;
+}) => {
+  const { appointment, parentId, context } = params;
+
+  if (getParentId(appointment.patient) !== parentId) {
+    throw new AppointmentServiceError("Not your appointment", 403);
+  }
+
+  const normalizedStatus = normalizeAppointmentStatus(appointment.status);
+  if (!["REQUESTED", "UPCOMING"].includes(normalizedStatus)) {
+    throw new AppointmentServiceError(
+      "Only requested or upcoming appointments can be cancelled",
+      400,
+    );
+  }
+
+  assertAppointmentStatusTransition(appointment.status, "CANCELLED", context);
+};
+
+const cancelAppointmentFromParentPrisma = async (params: {
+  appointment: ParentCancelableAppointment;
+  parentId: string;
+  reason: string;
+}) => {
+  const { appointment, parentId, reason } = params;
+
+  const result = await InvoiceService.handleAppointmentCancellation(
+    appointment.id,
+    reason,
+  );
+
+  if (!result) {
+    throw new AppointmentServiceError("Not able to cancle appointment", 400);
+  }
+
+  const updated = (await prisma.appointment.update({
+    where: { id: appointment.id },
+    data: { status: "CANCELLED", updatedAt: new Date() },
+  })) as ParentCancelableAppointment;
+  const patientId = getAppointmentPatientId(updated) ?? parentId;
+
+  await AuditTrailService.recordSafely({
+    organisationId: updated.organisationId,
+    patientId,
+    eventType: "APPOINTMENT_CANCELLED",
+    actorType: "PARENT",
+    actorId: parentId,
+    entityType: "APPOINTMENT",
+    entityId: updated.id,
+    metadata: {
+      status: updated.status,
+      reason,
+    },
+  });
+
+  if (getNestedId(appointment.lead)) {
+    await prisma.occupancy.deleteMany({
+      where: {
+        referenceId: appointment.id,
+        sourceType: "APPOINTMENT",
+      },
+    });
+  }
+
+  return toAppointmentResponseDTOWithPaymentStatusFromPrisma(updated);
+};
+
+const cancelAppointmentFromParentMongo = async (params: {
+  appointment: ParentCancelableAppointmentDocument;
+  parentId: string;
+  reason: string;
+}) => {
+  const { appointment, parentId, reason } = params;
+  const patientId = getAppointmentPatientId(appointment) ?? parentId;
+
+  const result = await InvoiceService.handleAppointmentCancellation(
+    appointment._id.toString(),
+    reason,
+  );
+
+  if (!result) {
+    throw new AppointmentServiceError("Not able to cancle appointment", 400);
+  }
+
+  appointment.status = "CANCELLED";
+  await appointment.save();
+  await syncAppointmentToPostgres(appointment);
+
+  await AuditTrailService.recordSafely({
+    organisationId: appointment.organisationId,
+    patientId,
+    eventType: "APPOINTMENT_CANCELLED",
+    actorType: "PARENT",
+    actorId: parentId,
+    entityType: "APPOINTMENT",
+    entityId: appointment._id.toString(),
+    metadata: {
+      status: appointment.status,
+      reason,
+    },
+  });
+
+  if (getNestedId(appointment.lead)) {
+    await OccupancyModel.deleteMany({
+      referenceId: appointment._id.toString(),
+      sourceType: "APPOINTMENT",
+    });
+  }
+
+  return toAppointmentResponseDTOWithPaymentStatus(appointment);
+};
+
+export const requireBaseAppointmentInput = (
   input: AppointmentRequestInput,
   messages: {
     organisation: string;
-    companion: string;
+    patient: string;
     timing: string;
   },
 ) => {
   if (!input.organisationId) {
     throw new AppointmentServiceError(messages.organisation, 400);
   }
-  if (!input.companion?.id || !input.companion.parent?.id) {
-    throw new AppointmentServiceError(messages.companion, 400);
+  if (!input.patient?.id || !input.patient.parent?.id) {
+    throw new AppointmentServiceError(messages.patient, 400);
   }
   if (!input.startTime || !input.endTime || !input.durationMinutes) {
     throw new AppointmentServiceError(messages.timing, 400);
   }
 };
 
-const validateRequestedFromMobileInput = (input: AppointmentRequestInput) => {
+export const validateRequestedFromMobileInput = (
+  input: AppointmentRequestInput,
+) => {
   requireBaseAppointmentInput(input, {
     organisation: "organisationId is required",
-    companion: "Companion and parent details are required",
+    patient: "Companion and parent details are required",
     timing: "startTime, endTime, durationMinutes required",
   });
 };
 
-const validateAppointmentFromPmsInput = (input: AppointmentRequestInput) => {
+export const validateAppointmentFromPmsInput = (
+  input: AppointmentRequestInput,
+) => {
   requireBaseAppointmentInput(input, {
     organisation: "organisationId is required.",
-    companion: "Companion and parent information is required.",
+    patient: "Companion and parent information is required.",
     timing: "startTime, endTime and durationMinutes are required.",
   });
   if (!input.lead?.id) {
@@ -432,11 +662,14 @@ const buildPmsUpdatePlanFromPrisma = (args: {
   const nextEndTime = args.parsed.endTimeFromDto ?? args.appointment.endTime;
 
   const timesProvided =
-    args.parsed.startTimeFromDto != null || args.parsed.endTimeFromDto != null;
-  const sameSlot = !timesProvided
-    ? true
-    : args.appointment.startTime.getTime() === nextStartTime.getTime() &&
+    args.parsed.startTimeFromDto !== undefined ||
+    args.parsed.endTimeFromDto !== undefined;
+  let sameSlot = true;
+  if (timesProvided) {
+    sameSlot =
+      args.appointment.startTime.getTime() === nextStartTime.getTime() &&
       args.appointment.endTime.getTime() === nextEndTime.getTime();
+  }
 
   const nextDurationMinutes =
     args.parsed.durationMinutesFromDto ??
@@ -611,7 +844,7 @@ const updateAppointmentPMSFromPostgresRow = async ({
 
     await AuditTrailService.recordSafely({
       organisationId: updated.organisationId,
-      companionId: appointmentDomain.companion.id,
+      patientId: appointmentDomain.patient.id,
       eventType,
       actorType: "SYSTEM",
       entityType: "APPOINTMENT",
@@ -747,7 +980,7 @@ const recordPmsMongoAppointmentAuditIfNeeded = async (args: {
 
   await AuditTrailService.recordSafely({
     organisationId: args.appointment.organisationId,
-    companionId: args.appointment.companion.id,
+    patientId: args.appointment.patient.id,
     eventType,
     actorType: "SYSTEM",
     entityType: "APPOINTMENT",
@@ -900,10 +1133,10 @@ const sendCheckoutEmailIfNeeded = async ({
 
   const parent = isReadFromPostgres()
     ? await prisma.parent.findUnique({
-        where: { id: appointment.companion.parent.id },
+        where: { id: appointment.patient.parent.id },
         select: { email: true, firstName: true, lastName: true },
       })
-    : await ParentModel.findById(appointment.companion.parent.id)
+    : await ParentModel.findById(appointment.patient.parent.id)
         .select("email firstName lastName")
         .lean();
   if (!parent?.email) return;
@@ -933,7 +1166,7 @@ const sendCheckoutEmailIfNeeded = async ({
       templateId: "appointmentPaymentCheckout",
       templateData: {
         parentName: parentName || undefined,
-        companionName: appointment.companion.name,
+        companionName: appointment.patient.name,
         organisationName: organisationName ?? undefined,
         appointmentTime,
         amountText,
@@ -957,7 +1190,7 @@ const recordFormAttachmentAudit = async (
   for (const formId of appointment.formIds) {
     await AuditTrailService.recordSafely({
       organisationId: appointment.organisationId,
-      companionId: appointment.companion.id,
+      patientId: appointment.patient.id,
       eventType: "FORM_ATTACHED",
       actorType: "SYSTEM",
       entityType: "FORM",
@@ -993,8 +1226,8 @@ const maybeCreateObservationToolTask = async (
   await createObservationToolTaskForAppointment({
     appointmentId,
     organisationId: appointment.organisationId,
-    companionId: appointment.companion.id,
-    parentId: appointment.companion.parent.id,
+    patientId: appointment.patient.id,
+    parentId: appointment.patient.parent.id,
     observationToolId,
     appointmentStartTime: appointment.startTime,
   });
@@ -1212,7 +1445,7 @@ const sendAppointmentAssignmentEmails = async (
             templateId: "appointmentAssigned",
             templateData: {
               employeeName,
-              companionName: appointment.companion.name,
+              companionName: appointment.patient.name,
               appointmentType: appointment.appointmentType?.name,
               appointmentTime,
               organisationName,
@@ -1422,7 +1655,8 @@ const releaseAppointmentUsage = async (reservation: {
 
 const buildAppointmentDomain = (input: {
   id?: string;
-  companion: Appointment["companion"];
+  patient: Appointment["patient"];
+  companion?: Appointment["companion"];
   lead?: Appointment["lead"];
   supportStaff?: Appointment["supportStaff"];
   room?: Appointment["room"];
@@ -1442,7 +1676,8 @@ const buildAppointmentDomain = (input: {
   formIds?: string[];
 }): Appointment => ({
   id: input.id,
-  companion: input.companion,
+  patient: input.patient,
+  companion: input.companion ?? input.patient,
   lead: input.lead ?? undefined,
   supportStaff: input.supportStaff ?? [],
   room: input.room ?? undefined,
@@ -1469,7 +1704,7 @@ const toDomain = (doc: AppointmentDocument): Appointment => {
 
   return buildAppointmentDomain({
     id: obj._id.toString(),
-    companion: obj.companion,
+    patient: obj.companion,
     lead: obj.lead ?? undefined,
     supportStaff: obj.supportStaff ?? [],
     room: obj.room ?? undefined,
@@ -1492,7 +1727,7 @@ const toDomain = (doc: AppointmentDocument): Appointment => {
 
 const toDomainFromPrisma = (row: {
   id: string;
-  companion: unknown;
+  patient: unknown;
   lead: unknown;
   supportStaff: unknown;
   room: unknown;
@@ -1513,7 +1748,7 @@ const toDomainFromPrisma = (row: {
 }): Appointment =>
   buildAppointmentDomain({
     id: row.id,
-    companion: row.companion as Appointment["companion"],
+    patient: row.patient as Appointment["patient"],
     lead: (row.lead ?? undefined) as Appointment["lead"] | undefined,
     supportStaff: (row.supportStaff ?? []) as Appointment["supportStaff"],
     room: (row.room ?? undefined) as Appointment["room"] | undefined,
@@ -1549,7 +1784,7 @@ const toDomainLean = (
 
   return buildAppointmentDomain({
     id,
-    companion: obj.companion,
+    patient: obj.companion,
     lead: obj.lead ?? undefined,
     supportStaff: obj.supportStaff ?? [],
     room: obj.room ?? undefined,
@@ -1577,7 +1812,8 @@ const buildAppointmentFromInput = (
 ): Appointment => ({
   id: undefined,
   organisationId: input.organisationId,
-  companion: input.companion,
+  patient: input.patient,
+  companion: input.patient,
   appointmentType: input.appointmentType,
   appointmentDate: input.startTime,
   startTime: input.startTime,
@@ -1596,12 +1832,48 @@ const buildAppointmentFromInput = (
   updatedAt: new Date(),
 });
 
+// Batch-load the inpatient ward/unit for a set of appointment rows so the
+// appointments list can show "Room / Unit" without opening the workspace. The
+// link is Appointment.encounterId -> Encounter.admission -> RoomUnit.
+const buildInpatientUnitMapForAppointments = async (
+  rows: Array<{ id: string }>,
+): Promise<Map<string, { id: string; displayName: string; code: string }>> => {
+  const encounterIds = Array.from(
+    new Set(
+      rows
+        .map((row) => (row as { encounterId?: string | null }).encounterId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const unitByEncounter = new Map<
+    string,
+    { id: string; displayName: string; code: string }
+  >();
+  if (encounterIds.length === 0) {
+    return unitByEncounter;
+  }
+  const admissions = await prisma.admission.findMany({
+    where: { encounterId: { in: encounterIds } },
+    select: {
+      encounterId: true,
+      currentUnit: { select: { id: true, displayName: true, code: true } },
+    },
+  });
+  for (const admission of admissions) {
+    if (admission.currentUnit) {
+      unitByEncounter.set(admission.encounterId, admission.currentUnit);
+    }
+  }
+  return unitByEncounter;
+};
+
 const mapAppointmentsFromPrisma = async (
   rows: Array<{ id: string }>,
 ): Promise<AppointmentResponseDTO[]> => {
-  const paymentStatusMap = await buildPaymentStatusMapForAppointments(
-    rows.map((row) => row.id),
-  );
+  const [paymentStatusMap, unitByEncounter] = await Promise.all([
+    buildPaymentStatusMapForAppointments(rows.map((row) => row.id)),
+    buildInpatientUnitMapForAppointments(rows),
+  ]);
 
   return rows.map((row) => {
     const domain = attachPaymentStatus(
@@ -1610,7 +1882,26 @@ const mapAppointmentsFromPrisma = async (
       ),
       paymentStatusMap.get(row.id) ?? "UNPAID",
     );
-    return toAppointmentResponseDTO(domain);
+    const encounterId = (row as { encounterId?: string | null }).encounterId;
+    const unit = encounterId ? unitByEncounter.get(encounterId) : undefined;
+    const withUnit =
+      unit && domain.room
+        ? {
+            ...domain,
+            room: {
+              ...domain.room,
+              unitId: unit.id,
+              unitName: unit.displayName,
+              unit: {
+                id: unit.id,
+                name: unit.displayName,
+                displayName: unit.displayName,
+                code: unit.code,
+              },
+            },
+          }
+        : domain;
+    return toAppointmentResponseDTO(withUnit);
   });
 };
 
@@ -1630,7 +1921,7 @@ const mapAppointmentsFromDocs = async (
   });
 };
 
-const attachPaymentStatus = (
+export const attachPaymentStatus = (
   appointment: Appointment,
   paymentStatus: AppointmentPaymentStatus | undefined,
 ): Appointment => {
@@ -1640,23 +1931,26 @@ const attachPaymentStatus = (
   return appointment;
 };
 
-const buildPaymentStatusMapForDocs = async (
-  docs: AppointmentMongo[],
-): Promise<Map<string, AppointmentPaymentStatus>> => {
-  const appointmentIds = docs
+const extractAppointmentIdsFromDocs = (docs: AppointmentMongo[]) =>
+  docs
     .map((doc) => (doc as AppointmentMongo & { _id?: Types.ObjectId })._id)
     .filter((id): id is Types.ObjectId => Boolean(id))
     .map((id) => id.toString());
 
-  return resolvePaymentStatusByAppointmentIds(appointmentIds);
+export const buildPaymentStatusMapForDocs = async (
+  docs: AppointmentMongo[],
+): Promise<Map<string, AppointmentPaymentStatus>> => {
+  return resolvePaymentStatusByAppointmentIds(
+    extractAppointmentIdsFromDocs(docs),
+  );
 };
 
-const buildPaymentStatusMapForAppointments = async (
+export const buildPaymentStatusMapForAppointments = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> =>
   resolvePaymentStatusByAppointmentIds(appointmentIds);
 
-const resolvePaymentStatusForAppointment = async (
+export const resolvePaymentStatusForAppointment = async (
   appointmentId: string,
 ): Promise<AppointmentPaymentStatus> => {
   const map = await resolvePaymentStatusByAppointmentIds([appointmentId]);
@@ -1674,7 +1968,7 @@ const toAppointmentResponseDTOWithPaymentStatus = async (
 
 const toAppointmentResponseDTOWithPaymentStatusFromPrisma = async (row: {
   id: string;
-  companion: Prisma.JsonValue;
+  patient: Prisma.JsonValue;
   lead: Prisma.JsonValue | null;
   supportStaff: Prisma.JsonValue | null;
   room: Prisma.JsonValue | null;
@@ -1699,7 +1993,8 @@ const toAppointmentResponseDTOWithPaymentStatusFromPrisma = async (row: {
 };
 
 const toPersistable = (appointment: Appointment): AppointmentMongo => ({
-  companion: appointment.companion,
+  patient: appointment.patient,
+  companion: appointment.patient,
   lead: appointment.lead,
   supportStaff: appointment.supportStaff ?? [],
   room: appointment.room,
@@ -1732,7 +2027,7 @@ const toPrismaAppointmentData = (
 
   return {
     id: obj._id.toString(),
-    companion: obj.companion,
+    patient: obj.patient,
     lead: obj.lead ?? undefined,
     supportStaff: obj.supportStaff ?? [],
     room: obj.room ?? undefined,
@@ -1816,31 +2111,46 @@ export const AppointmentService = {
     validateRequestedFromMobileInput(input);
 
     if (isReadFromPostgres()) {
-      const serviceId = input.appointmentType?.id;
-      if (!serviceId) {
+      const selectionId = input.appointmentType?.id;
+      if (!selectionId) {
         throw new AppointmentServiceError("serviceId is required", 400);
       }
+      const catalogSelection = await resolveCatalogSelectionSafe(
+        selectionId,
+        input.organisationId,
+      );
+      const legacyServiceId = catalogSelection?.legacyServiceId ?? selectionId;
       const service = await prisma.service.findFirst({
         where: {
-          id: serviceId,
+          id: legacyServiceId,
           organisationId: input.organisationId,
           isActive: true,
         },
       });
 
-      if (!service) {
+      if (!catalogSelection && !service) {
         throw new AppointmentServiceError("Invalid service selected", 404);
+      }
+
+      if (
+        catalogSelection &&
+        (!catalogSelection.isBookable ||
+          !catalogSelection.appointmentKinds.includes("OUTPATIENT"))
+      ) {
+        throw new AppointmentServiceError(
+          "Selected product is not bookable for outpatient appointments.",
+          400,
+        );
       }
 
       const usageReservation = await reserveAppointmentUsage(
         input.organisationId,
-        service.serviceType === "OBSERVATION_TOOL",
+        service?.serviceType === "OBSERVATION_TOOL",
       );
 
-      const consentForm = await getConsentFormForParentSafe(
-        input.organisationId,
-        serviceId,
-      );
+      const consentForm = service
+        ? await getConsentFormForParentSafe(input.organisationId, service.id)
+        : null;
 
       if (consentForm?.id) {
         input.formIds?.push(consentForm.id);
@@ -1852,14 +2162,14 @@ export const AppointmentService = {
       try {
         created = await prisma.appointment.create({
           data: {
-            companion:
-              appointment.companion as unknown as Prisma.InputJsonValue,
+            patient: appointment.patient as unknown as Prisma.InputJsonValue,
             lead: appointment.lead as unknown as Prisma.InputJsonValue,
             supportStaff: (appointment.supportStaff ??
               []) as unknown as Prisma.InputJsonValue,
             room: appointment.room as unknown as Prisma.InputJsonValue,
             appointmentType:
               appointment.appointmentType as unknown as Prisma.InputJsonValue,
+            productItemId: catalogSelection?.productItemId ?? undefined,
             organisationId: appointment.organisationId,
             appointmentDate: appointment.appointmentDate,
             startTime: appointment.startTime,
@@ -1882,10 +2192,10 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: appointment.organisationId,
-        companionId: appointment.companion.id,
+        patientId: appointment.patient.id,
         eventType: "APPOINTMENT_REQUESTED",
         actorType: "PARENT",
-        actorId: appointment.companion.parent.id,
+        actorId: appointment.patient.parent.id,
         entityType: "APPOINTMENT",
         entityId: created.id,
         metadata: {
@@ -1898,20 +2208,15 @@ export const AppointmentService = {
 
       const invoice = await InvoiceService.getOrCreateDraftForAppointment({
         appointmentId: created.id,
-        parentId: appointment.companion.parent.id,
-        companionId: appointment.companion.id,
+        parentId: appointment.patient.parent.id,
+        patientId: appointment.patient.id,
         organisationId: appointment.organisationId,
-        items: [
-          {
-            description:
-              appointment.appointmentType?.name ??
-              service.name ??
-              "Consultation",
-            quantity: 1,
-            unitPrice: service.cost,
-            discountPercent: service.maxDiscount ?? undefined,
-          },
-        ],
+        items: catalogSelection
+          ? mapCatalogSelectionToDraftItems(catalogSelection)
+          : mapLegacyServiceToDraftItems(
+              service as LegacyServiceBridge,
+              appointment.appointmentType?.name,
+            ),
         notes: appointment.concern ?? undefined,
         paymentCollectionMethod: "PAYMENT_INTENT",
       });
@@ -1921,11 +2226,20 @@ export const AppointmentService = {
           ? (invoice as { id: string }).id
           : (invoice as { _id?: Types.ObjectId })._id?.toString();
 
+      if (invoiceId) {
+        await InvoiceService.setInvoiceDepositTarget(
+          invoiceId,
+          invoice.totalAmount,
+        );
+      }
+
       const paymentIntent = invoiceId
         ? await StripeService.createPaymentIntentForInvoice(invoiceId)
         : undefined;
 
-      await maybeCreateObservationToolTask(service, appointment, created.id);
+      if (service) {
+        await maybeCreateObservationToolTask(service, appointment, created.id);
+      }
 
       return {
         appointment:
@@ -1936,30 +2250,53 @@ export const AppointmentService = {
     }
 
     // Validate service
-    const serviceId = ensureObjectId(input.appointmentType!.id, "serviceId");
+    const selectionId = input.appointmentType!.id;
+    const catalogSelection = await resolveCatalogSelectionSafe(
+      selectionId,
+      input.organisationId,
+    );
     const organisationId = ensureObjectId(
       input.organisationId,
       "organisationId",
     );
-    const service = await ServiceModel.findOne({
-      _id: serviceId,
-      organisationId: organisationId,
-      isActive: true,
-    });
+    const legacyServiceLookupId =
+      catalogSelection?.legacyServiceId ?? selectionId;
+    const serviceId =
+      legacyServiceLookupId && Types.ObjectId.isValid(legacyServiceLookupId)
+        ? ensureObjectId(legacyServiceLookupId, "serviceId")
+        : null;
+    const service = serviceId
+      ? await ServiceModel.findOne({
+          _id: serviceId,
+          organisationId: organisationId,
+          isActive: true,
+        })
+      : null;
 
-    if (!service) {
+    if (!catalogSelection && !service) {
       throw new AppointmentServiceError("Invalid service selected", 404);
+    }
+
+    if (
+      catalogSelection &&
+      (!catalogSelection.isBookable ||
+        !catalogSelection.appointmentKinds.includes("OUTPATIENT"))
+    ) {
+      throw new AppointmentServiceError(
+        "Selected product is not bookable for outpatient appointments.",
+        400,
+      );
     }
 
     const usageReservation = await reserveAppointmentUsage(
       organisationId,
-      service.serviceType === "OBSERVATION_TOOL",
+      service?.serviceType === "OBSERVATION_TOOL",
     );
 
-    const consentForm = await getConsentFormForParentSafe(
-      organisationId,
-      serviceId,
-    );
+    const consentForm =
+      service && serviceId
+        ? await getConsentFormForParentSafe(organisationId, serviceId)
+        : null;
 
     if (consentForm?.id) {
       input.formIds?.push(consentForm.id);
@@ -1980,10 +2317,10 @@ export const AppointmentService = {
 
     await AuditTrailService.recordSafely({
       organisationId: appointment.organisationId,
-      companionId: appointment.companion.id,
+      patientId: appointment.patient.id,
       eventType: "APPOINTMENT_REQUESTED",
       actorType: "PARENT",
-      actorId: appointment.companion.parent.id,
+      actorId: appointment.patient.parent.id,
       entityType: "APPOINTMENT",
       entityId: savedAppointment._id.toString(),
       metadata: {
@@ -1999,18 +2336,15 @@ export const AppointmentService = {
 
     const invoice = await InvoiceService.getOrCreateDraftForAppointment({
       appointmentId: savedAppointment._id.toString(),
-      parentId: appointment.companion.parent.id,
-      companionId: appointment.companion.id,
+      parentId: appointment.patient.parent.id,
+      patientId: appointment.patient.id,
       organisationId: appointment.organisationId,
-      items: [
-        {
-          description:
-            appointment.appointmentType?.name ?? service.name ?? "Consultation",
-          quantity: 1,
-          unitPrice: service.cost,
-          discountPercent: service.maxDiscount ?? undefined,
-        },
-      ],
+      items: catalogSelection
+        ? mapCatalogSelectionToDraftItems(catalogSelection)
+        : mapLegacyServiceToDraftItems(
+            service as LegacyServiceBridge,
+            appointment.appointmentType?.name,
+          ),
       notes: appointment.concern ?? undefined,
       paymentCollectionMethod: "PAYMENT_INTENT",
     });
@@ -2025,11 +2359,13 @@ export const AppointmentService = {
       ? await StripeService.createPaymentIntentForInvoice(invoiceId)
       : undefined;
 
-    await maybeCreateObservationToolTask(
-      service,
-      appointment,
-      savedAppointment._id.toString(),
-    );
+    if (service) {
+      await maybeCreateObservationToolTask(
+        service,
+        appointment,
+        savedAppointment._id.toString(),
+      );
+    }
 
     return {
       appointment:
@@ -2067,42 +2403,50 @@ export const AppointmentService = {
     }
 
     if (isReadFromPostgres()) {
-      const serviceId = input.appointmentType!.id;
+      const selectionId = input.appointmentType!.id;
+      const catalogSelection = await resolveCatalogSelectionSafe(
+        selectionId,
+        input.organisationId,
+      );
+      const legacyServiceId = catalogSelection?.legacyServiceId ?? selectionId;
       const service = await prisma.service.findFirst({
         where: {
-          id: serviceId,
+          id: legacyServiceId,
           organisationId: input.organisationId,
           isActive: true,
         },
       });
 
-      if (!service) {
+      if (!catalogSelection && !service) {
         throw new AppointmentServiceError(
           "Invalid or inactive service for this organisation.",
           404,
         );
       }
 
+      if (
+        catalogSelection &&
+        (!catalogSelection.isBookable ||
+          !catalogSelection.appointmentKinds.includes("OUTPATIENT"))
+      ) {
+        throw new AppointmentServiceError(
+          "Selected product is not bookable for outpatient appointments.",
+          400,
+        );
+      }
+
       const usageReservation = await reserveAppointmentUsage(
         input.organisationId,
-        service.serviceType === "OBSERVATION_TOOL",
+        service?.serviceType === "OBSERVATION_TOOL",
       );
 
-      const consentForm = await getConsentFormForParentSafe(
-        input.organisationId,
-        serviceId,
-      );
+      const consentForm = service
+        ? await getConsentFormForParentSafe(input.organisationId, service.id)
+        : null;
 
       if (consentForm?.id) {
         input.formIds?.push(consentForm.id);
       }
-
-      const pricing = {
-        baseCost: service.cost,
-        quantity: 1,
-        finalCost: service.cost,
-        discountPercent: service.maxDiscount ?? undefined,
-      };
 
       const appointment = buildAppointmentFromInput(input, "UPCOMING", {
         lead: input.lead,
@@ -2130,11 +2474,12 @@ export const AppointmentService = {
 
           const created = await tx.appointment.create({
             data: {
-              companion: appointment.companion,
+              patient: appointment.patient,
               lead: appointment.lead,
               supportStaff: appointment.supportStaff ?? [],
               room: appointment.room,
               appointmentType: appointment.appointmentType,
+              productItemId: catalogSelection?.productItemId ?? undefined,
               organisationId: appointment.organisationId,
               appointmentDate: appointment.appointmentDate,
               startTime: appointment.startTime,
@@ -2166,17 +2511,15 @@ export const AppointmentService = {
 
         const invoice = await InvoiceService.createDraftForAppointment({
           appointmentId: appointmentRow.id,
-          parentId: appointment.companion.parent.id,
-          companionId: appointment.companion.id,
+          parentId: appointment.patient.parent.id,
+          patientId: appointment.patient.id,
           organisationId: appointment.organisationId,
-          items: [
-            {
-              description: appointment.appointmentType?.name ?? "Consultation",
-              quantity: 1,
-              unitPrice: pricing.baseCost,
-              discountPercent: pricing.discountPercent,
-            },
-          ],
+          items: catalogSelection
+            ? mapCatalogSelectionToDraftItems(catalogSelection)
+            : mapLegacyServiceToDraftItems(
+                service as LegacyServiceBridge,
+                appointment.appointmentType?.name,
+              ),
           notes: appointment.concern,
           paymentCollectionMethod: resolvedPaymentCollectionMethod,
         });
@@ -2185,7 +2528,7 @@ export const AppointmentService = {
 
         await AuditTrailService.recordSafely({
           organisationId: appointment.organisationId,
-          companionId: appointment.companion.id,
+          patientId: appointment.patient.id,
           eventType: "APPOINTMENT_CREATED",
           actorType: "SYSTEM",
           entityType: "APPOINTMENT",
@@ -2210,26 +2553,27 @@ export const AppointmentService = {
         }
 
         if (
+          service &&
           service.serviceType === "OBSERVATION_TOOL" &&
           service.observationToolId
         ) {
           await createObservationToolTaskForAppointment({
             appointmentId: appointmentRow.id,
             organisationId: appointment.organisationId,
-            companionId: appointment.companion.id,
-            parentId: appointment.companion.parent.id,
+            patientId: appointment.patient.id,
+            parentId: appointment.patient.parent.id,
             observationToolId: service.observationToolId,
             appointmentStartTime: appointment.startTime,
           });
         }
 
         const notificationPayload = NotificationTemplates.Appointment.APPROVED(
-          appointment.companion.name,
+          appointment.patient.name,
           appointment.startTime.toDateString(),
         );
 
         await NotificationService.sendToUser(
-          appointment.companion.parent.id,
+          appointment.patient.parent.id,
           notificationPayload,
         );
 
@@ -2261,44 +2605,60 @@ export const AppointmentService = {
     }
 
     // 2️⃣ Validate service
-    const serviceId = ensureObjectId(input.appointmentType!.id, "serviceId");
+    const selectionId = input.appointmentType!.id;
+    const catalogSelection = await resolveCatalogSelectionSafe(
+      selectionId,
+      input.organisationId,
+    );
     const organisationId = ensureObjectId(
       input.organisationId,
       "organisationId",
     );
-    const service = await ServiceModel.findOne({
-      _id: serviceId,
-      organisationId: organisationId,
-      isActive: true,
-    }).lean();
+    const legacyServiceLookupId =
+      catalogSelection?.legacyServiceId ?? selectionId;
+    const serviceId =
+      legacyServiceLookupId && Types.ObjectId.isValid(legacyServiceLookupId)
+        ? ensureObjectId(legacyServiceLookupId, "serviceId")
+        : null;
+    const service = serviceId
+      ? await ServiceModel.findOne({
+          _id: serviceId,
+          organisationId: organisationId,
+          isActive: true,
+        }).lean()
+      : null;
 
-    if (!service) {
+    if (!catalogSelection && !service) {
       throw new AppointmentServiceError(
         "Invalid or inactive service for this organisation.",
         404,
       );
     }
 
+    if (
+      catalogSelection &&
+      (!catalogSelection.isBookable ||
+        !catalogSelection.appointmentKinds.includes("OUTPATIENT"))
+    ) {
+      throw new AppointmentServiceError(
+        "Selected product is not bookable for outpatient appointments.",
+        400,
+      );
+    }
+
     const usageReservation = await reserveAppointmentUsage(
       organisationId,
-      service.serviceType === "OBSERVATION_TOOL",
+      service?.serviceType === "OBSERVATION_TOOL",
     );
 
-    const consentForm = await getConsentFormForParentSafe(
-      organisationId,
-      serviceId,
-    );
+    const consentForm =
+      service && serviceId
+        ? await getConsentFormForParentSafe(organisationId, serviceId)
+        : null;
 
     if (consentForm?.id) {
       input.formIds?.push(consentForm.id);
     }
-
-    const pricing = {
-      baseCost: service.cost,
-      quantity: 1,
-      finalCost: service.cost,
-      discountPercent: service.maxDiscount ?? undefined,
-    };
 
     const appointment = buildAppointmentFromInput(input, "UPCOMING", {
       lead: input.lead,
@@ -2345,25 +2705,20 @@ export const AppointmentService = {
         { session },
       );
 
-      const invoice = await InvoiceService.createDraftForAppointment(
-        {
-          appointmentId: doc._id.toString(),
-          parentId: appointment.companion.parent.id,
-          companionId: appointment.companion.id,
-          organisationId: appointment.organisationId,
-          items: [
-            {
-              description: appointment.appointmentType?.name ?? "Consultation",
-              quantity: 1,
-              unitPrice: pricing.baseCost,
-              discountPercent: pricing.discountPercent,
-            },
-          ],
-          notes: appointment.concern,
-          paymentCollectionMethod: resolvedPaymentCollectionMethod,
-        },
-        session,
-      );
+      const invoice = await InvoiceService.createDraftForAppointment({
+        appointmentId: doc._id.toString(),
+        parentId: appointment.patient.parent.id,
+        patientId: appointment.patient.id,
+        organisationId: appointment.organisationId,
+        items: catalogSelection
+          ? mapCatalogSelectionToDraftItems(catalogSelection)
+          : mapLegacyServiceToDraftItems(
+              service as LegacyServiceBridge,
+              appointment.appointmentType?.name,
+            ),
+        notes: appointment.concern,
+        paymentCollectionMethod: resolvedPaymentCollectionMethod,
+      });
 
       let checkout;
 
@@ -2375,7 +2730,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: appointment.organisationId,
-        companionId: appointment.companion.id,
+        patientId: appointment.patient.id,
         eventType: "APPOINTMENT_CREATED",
         actorType: "SYSTEM",
         entityType: "APPOINTMENT",
@@ -2402,26 +2757,30 @@ export const AppointmentService = {
       }
 
       if (
+        service &&
         service.serviceType === "OBSERVATION_TOOL" &&
         service.observationToolId
       ) {
         await createObservationToolTaskForAppointment({
           appointmentId: doc._id.toString(),
           organisationId: appointment.organisationId,
-          companionId: appointment.companion.id,
-          parentId: appointment.companion.parent.id,
+          patientId: appointment.patient.id,
+          parentId: appointment.patient.parent.id,
           observationToolId: service.observationToolId._id.toString(),
           appointmentStartTime: appointment.startTime,
         });
       }
 
       const notificationPayload = NotificationTemplates.Appointment.APPROVED(
-        appointment.companion.name,
+        appointment.patient.name,
         appointment.startTime.toDateString(),
       );
 
       // Send notification to parent
-      const parentId = appointment.companion.parent.id;
+      const parentId = getParentId(appointment.patient);
+      if (!parentId) {
+        throw new AppointmentServiceError("Appointment not found", 404);
+      }
       await NotificationService.sendToUser(parentId, notificationPayload);
 
       const organisationName = await getOrganisationName(
@@ -2544,7 +2903,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: updated.organisationId,
-        companionId: (updated.companion as { id: string }).id,
+        patientId: (updated.patient as { id: string }).id,
         eventType: "APPOINTMENT_APPROVED",
         actorType: "SYSTEM",
         entityType: "APPOINTMENT",
@@ -2556,11 +2915,11 @@ export const AppointmentService = {
 
       const appointmentDomain = toDomainFromPrisma(updated);
       const notificationPayload = NotificationTemplates.Appointment.APPROVED(
-        appointmentDomain.companion.name,
+        appointmentDomain.patient.name,
         appointmentDomain.startTime.toDateString(),
       );
 
-      const parentId = appointmentDomain.companion.parent.id;
+      const parentId = appointmentDomain.patient.parent.id;
       await NotificationService.sendToUser(parentId, notificationPayload);
 
       const organisationName = await getOrganisationName(
@@ -2656,7 +3015,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: appointment.organisationId,
-        companionId: appointment.companion.id,
+        patientId: appointment.patient.id,
         eventType: "APPOINTMENT_APPROVED",
         actorType: "SYSTEM",
         entityType: "APPOINTMENT",
@@ -2667,12 +3026,12 @@ export const AppointmentService = {
       });
 
       const notificationPayload = NotificationTemplates.Appointment.APPROVED(
-        appointment.companion.name,
+        appointment.patient.name,
         appointment.startTime.toDateString(),
       );
 
       // Send notification to parent
-      const parentId = appointment.companion.parent.id;
+      const parentId = appointment.patient.parent.id;
       await NotificationService.sendToUser(parentId, notificationPayload);
 
       const organisationName = await getOrganisationName(
@@ -2693,9 +3052,9 @@ export const AppointmentService = {
 
   async cancelAppointment(appointmentId: string, reason?: string) {
     if (isReadFromPostgres()) {
-      const appointment = await prisma.appointment.findUnique({
+      const appointment = (await prisma.appointment.findUnique({
         where: { id: appointmentId },
-      });
+      })) as ParentCancelableAppointment | null;
       if (!appointment) {
         throw new AppointmentServiceError("Appointment not found", 404);
       }
@@ -2715,19 +3074,16 @@ export const AppointmentService = {
         "cancelAppointment",
       );
 
-      const updated = await prisma.appointment.update({
+      const updated = (await prisma.appointment.update({
         where: { id: appointment.id },
         data: {
           status: "CANCELLED",
           concern: reason ?? appointment.concern ?? undefined,
           updatedAt: new Date(),
         },
-      });
+      })) as ParentCancelableAppointment;
 
-      const leadId =
-        typeof appointment.lead === "object" && appointment.lead
-          ? (appointment.lead as { id?: string }).id
-          : undefined;
+      const leadId = getNestedId(appointment.lead);
       if (leadId) {
         await prisma.occupancy.deleteMany({
           where: {
@@ -2740,7 +3096,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: updated.organisationId,
-        companionId: (updated.companion as { id: string }).id,
+        patientId: (updated.patient as { id: string }).id,
         eventType: "APPOINTMENT_CANCELLED",
         actorType: "SYSTEM",
         entityType: "APPOINTMENT",
@@ -2753,9 +3109,9 @@ export const AppointmentService = {
 
       const appointmentDomain = toDomainFromPrisma(updated);
       const notificationPayload = NotificationTemplates.Appointment.CANCELLED(
-        appointmentDomain.companion.name,
+        appointmentDomain.patient.name,
       );
-      const parentId = appointmentDomain.companion.parent.id;
+      const parentId = appointmentDomain.patient.parent.id;
       await NotificationService.sendToUser(parentId, notificationPayload);
 
       return toAppointmentResponseDTOWithPaymentStatusFromPrisma(updated);
@@ -2810,7 +3166,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: appointment.organisationId,
-        companionId: appointment.companion.id,
+        patientId: appointment.patient.id,
         eventType: "APPOINTMENT_CANCELLED",
         actorType: "SYSTEM",
         entityType: "APPOINTMENT",
@@ -2822,10 +3178,10 @@ export const AppointmentService = {
       });
 
       const notificationPayload = NotificationTemplates.Appointment.CANCELLED(
-        appointment.companion.name,
+        appointment.patient.name,
       );
       // Send notification to parent
-      const parentId = appointment.companion.parent.id;
+      const parentId = appointment.patient.parent.id;
       await NotificationService.sendToUser(parentId, notificationPayload);
 
       return toAppointmentResponseDTOWithPaymentStatus(appointment);
@@ -2842,77 +3198,23 @@ export const AppointmentService = {
     reason: string,
   ) {
     if (isReadFromPostgres()) {
-      const appointment = await prisma.appointment.findUnique({
+      const appointment = (await prisma.appointment.findUnique({
         where: { id: appointmentId },
-      });
+      })) as ParentCancelableAppointment | null;
       if (!appointment) {
         throw new AppointmentServiceError("Appointment not found", 404);
       }
-
-      const appointmentDomain = toDomainFromPrisma(appointment);
-
-      if (appointmentDomain.companion.parent.id !== parentId) {
-        throw new AppointmentServiceError("Not your appointment", 403);
-      }
-
-      const normalizedStatus = normalizeAppointmentStatus(appointment.status);
-      if (!["REQUESTED", "UPCOMING"].includes(normalizedStatus)) {
-        throw new AppointmentServiceError(
-          "Only requested or upcoming appointments can be cancelled",
-          400,
-        );
-      }
-      assertAppointmentStatusTransition(
-        appointment.status,
-        "CANCELLED",
-        "cancelAppointmentFromParent",
-      );
-
-      const result = await InvoiceService.handleAppointmentCancellation(
-        appointment.id,
-        reason ?? "Cancelled",
-      );
-
-      if (!result) {
-        throw new AppointmentServiceError(
-          "Not able to cancle appointment",
-          400,
-        );
-      }
-
-      const updated = await prisma.appointment.update({
-        where: { id: appointment.id },
-        data: { status: "CANCELLED", updatedAt: new Date() },
+      assertParentCanCancelAppointment({
+        appointment,
+        parentId,
+        context: "cancelAppointmentFromParent",
       });
 
-      await AuditTrailService.recordSafely({
-        organisationId: updated.organisationId,
-        companionId: (updated.companion as { id: string }).id,
-        eventType: "APPOINTMENT_CANCELLED",
-        actorType: "PARENT",
-        actorId: parentId,
-        entityType: "APPOINTMENT",
-        entityId: updated.id,
-        metadata: {
-          status: updated.status,
-          reason,
-        },
+      return cancelAppointmentFromParentPrisma({
+        appointment,
+        parentId,
+        reason: reason ?? "Cancelled",
       });
-
-      const leadId =
-        typeof appointment.lead === "object" && appointment.lead
-          ? (appointment.lead as { id?: string }).id
-          : undefined;
-      if (leadId) {
-        await prisma.occupancy.deleteMany({
-          where: {
-            referenceId: appointment.id,
-            sourceType: "APPOINTMENT",
-          },
-        });
-      }
-
-      return toAppointmentResponseDTOWithPaymentStatusFromPrisma(updated);
     }
 
     const appointment = await AppointmentModel.findById(appointmentId);
@@ -2920,63 +3222,17 @@ export const AppointmentService = {
       throw new AppointmentServiceError("Appointment not found", 404);
     }
 
-    // Verify parent is owner of companion
-    if (appointment.companion.parent.id !== parentId) {
-      throw new AppointmentServiceError("Not your appointment", 403);
-    }
-
-    // Only these statuses can be cancelled from mobile
-    const normalizedStatus = normalizeAppointmentStatus(appointment.status);
-    if (!["REQUESTED", "UPCOMING"].includes(normalizedStatus)) {
-      throw new AppointmentServiceError(
-        "Only requested or upcoming appointments can be cancelled",
-        400,
-      );
-    }
-    assertAppointmentStatusTransition(
-      appointment.status,
-      "CANCELLED",
-      "cancelAppointmentFromParent",
-    );
-
-    // Cancel invoice and refund
-    const result = await InvoiceService.handleAppointmentCancellation(
-      appointment._id.toString(),
-      reason ?? "Cancelled",
-    );
-
-    if (!result) {
-      throw new AppointmentServiceError("Not able to cancle appointment", 400);
-    }
-
-    // Mark appointment cancelled
-    appointment.status = "CANCELLED";
-    await appointment.save();
-    await syncAppointmentToPostgres(appointment);
-
-    await AuditTrailService.recordSafely({
-      organisationId: appointment.organisationId,
-      companionId: appointment.companion.id,
-      eventType: "APPOINTMENT_CANCELLED",
-      actorType: "PARENT",
-      actorId: parentId,
-      entityType: "APPOINTMENT",
-      entityId: appointment._id.toString(),
-      metadata: {
-        status: appointment.status,
-        reason,
-      },
+    assertParentCanCancelAppointment({
+      appointment,
+      parentId,
+      context: "cancelAppointmentFromParent",
     });
 
-    // Remove occupancy (only if vet was assigned)
-    if (appointment.lead?.id) {
-      await OccupancyModel.deleteMany({
-        referenceId: appointment._id.toString(),
-        sourceType: "APPOINTMENT",
-      });
-    }
-
-    return toAppointmentResponseDTOWithPaymentStatus(appointment);
+    return cancelAppointmentFromParentMongo({
+      appointment,
+      parentId,
+      reason: reason ?? "Cancelled",
+    });
   },
 
   // PMS Rejects appointment request
@@ -3021,7 +3277,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: updated.organisationId,
-        companionId: (updated.companion as { id: string }).id,
+        patientId: (updated.patient as { id: string }).id,
         eventType: "APPOINTMENT_CANCELLED",
         actorType: "SYSTEM",
         entityType: "APPOINTMENT",
@@ -3034,10 +3290,10 @@ export const AppointmentService = {
 
       const appointmentDomain = toDomainFromPrisma(updated);
       const notificationPayload = NotificationTemplates.Appointment.CANCELLED(
-        appointmentDomain.companion.name,
+        appointmentDomain.patient.name,
       );
 
-      const parentId = appointmentDomain.companion.parent.id;
+      const parentId = appointmentDomain.patient.parent.id;
       await NotificationService.sendToUser(parentId, notificationPayload);
 
       return toAppointmentResponseDTOWithPaymentStatusFromPrisma(updated);
@@ -3077,7 +3333,7 @@ export const AppointmentService = {
 
     await AuditTrailService.recordSafely({
       organisationId: appointment.organisationId,
-      companionId: appointment.companion.id,
+      patientId: appointment.patient.id,
       eventType: "APPOINTMENT_CANCELLED",
       actorType: "SYSTEM",
       entityType: "APPOINTMENT",
@@ -3089,11 +3345,14 @@ export const AppointmentService = {
     });
 
     const notificationPayload = NotificationTemplates.Appointment.CANCELLED(
-      appointment.companion.name,
+      appointment.patient.name,
     );
 
     // Send notification to parent
-    const parentId = appointment.companion.parent.id;
+    const parentId = getParentId(appointment.patient);
+    if (!parentId) {
+      throw new AppointmentServiceError("Not your appointment", 403);
+    }
     await NotificationService.sendToUser(parentId, notificationPayload);
 
     return toAppointmentResponseDTOWithPaymentStatus(appointment);
@@ -3221,7 +3480,7 @@ export const AppointmentService = {
       for (const formId of newIds) {
         await AuditTrailService.recordSafely({
           organisationId: appointment.organisationId,
-          companionId: (appointment.companion as { id: string }).id,
+          patientId: (appointment.patient as { id: string }).id,
           eventType: "FORM_ATTACHED",
           actorType: "SYSTEM",
           entityType: "FORM",
@@ -3297,7 +3556,7 @@ export const AppointmentService = {
     for (const formId of newIds) {
       await AuditTrailService.recordSafely({
         organisationId: appointment.organisationId,
-        companionId: appointment.companion.id,
+        patientId: appointment.patient.id,
         eventType: "FORM_ATTACHED",
         actorType: "SYSTEM",
         entityType: "FORM",
@@ -3322,7 +3581,7 @@ export const AppointmentService = {
 
       const appointmentDomain = toDomainFromPrisma(appointment);
 
-      if (appointmentDomain.companion.parent.id !== parentId) {
+      if (appointmentDomain.patient.parent.id !== parentId) {
         throw new AppointmentServiceError("Not your appointment", 403);
       }
 
@@ -3346,7 +3605,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: updated.organisationId,
-        companionId: appointmentDomain.companion.id,
+        patientId: appointmentDomain.patient.id,
         eventType: "APPOINTMENT_CHECKED_IN",
         actorType: "PARENT",
         actorId: parentId,
@@ -3366,7 +3625,7 @@ export const AppointmentService = {
     }
 
     // Verify parent is owner of companion
-    if (appointment.companion.parent.id !== parentId) {
+    if (appointment.patient.parent.id !== parentId) {
       throw new AppointmentServiceError("Not your appointment", 403);
     }
 
@@ -3390,7 +3649,7 @@ export const AppointmentService = {
 
     await AuditTrailService.recordSafely({
       organisationId: appointment.organisationId,
-      companionId: appointment.companion.id,
+      patientId: appointment.patient.id,
       eventType: "APPOINTMENT_CHECKED_IN",
       actorType: "PARENT",
       actorId: parentId,
@@ -3433,7 +3692,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: updated.organisationId,
-        companionId: (updated.companion as { id: string }).id,
+        patientId: (updated.patient as { id: string }).id,
         eventType: "APPOINTMENT_CHECKED_IN",
         actorType: "SYSTEM",
         entityType: "APPOINTMENT",
@@ -3470,7 +3729,7 @@ export const AppointmentService = {
 
     await AuditTrailService.recordSafely({
       organisationId: appointment.organisationId,
-      companionId: appointment.companion.id,
+      patientId: appointment.patient.id,
       eventType: "APPOINTMENT_CHECKED_IN",
       actorType: "SYSTEM",
       entityType: "APPOINTMENT",
@@ -3523,7 +3782,7 @@ export const AppointmentService = {
       }
 
       const appointmentDomain = toDomainFromPrisma(existing);
-      const existingParentId = appointmentDomain.companion.parent.id;
+      const existingParentId = appointmentDomain.patient.parent.id;
 
       if (!existingParentId || existingParentId !== parentId) {
         throw new AppointmentServiceError(
@@ -3597,7 +3856,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: updated.organisationId,
-        companionId: appointmentDomain.companion.id,
+        patientId: appointmentDomain.patient.id,
         eventType: "APPOINTMENT_RESCHEDULED",
         actorType: "PARENT",
         actorId: parentId,
@@ -3627,7 +3886,7 @@ export const AppointmentService = {
 
       // 1. Auth: ensure this parent owns the appointment
       const existingParentId =
-        existing.companion?.parent?.id ?? existing.companion?.parent?.id;
+        existing.patient?.parent?.id ?? existing.patient?.parent?.id;
 
       if (!existingParentId || existingParentId !== parentId) {
         throw new AppointmentServiceError(
@@ -3701,7 +3960,7 @@ export const AppointmentService = {
 
       await AuditTrailService.recordSafely({
         organisationId: existing.organisationId,
-        companionId: existing.companion.id,
+        patientId: existing.patient.id,
         eventType: "APPOINTMENT_RESCHEDULED",
         actorType: "PARENT",
         actorId: parentId,
@@ -3726,15 +3985,15 @@ export const AppointmentService = {
     }
   },
 
-  async getAppointmentsForCompanion(companionId: string) {
-    if (!companionId) {
-      throw new AppointmentServiceError("companionId is required", 400);
+  async getAppointmentsForCompanion(patientId: string) {
+    if (!patientId) {
+      throw new AppointmentServiceError("patientId is required", 400);
     }
 
     if (isReadFromPostgres()) {
       const rows = await prisma.appointment.findMany({
         where: {
-          companion: { path: ["id"], equals: companionId },
+          patient: { path: ["id"], equals: patientId },
         },
         orderBy: { startTime: "desc" },
       });
@@ -3786,7 +4045,7 @@ export const AppointmentService = {
     }
 
     const docs: AppointmentMongo[] = await AppointmentModel.find({
-      "companion.id": companionId,
+      "companion.id": patientId,
     })
       .sort({ startTime: -1 })
       .lean<AppointmentMongo[]>();
@@ -3859,11 +4118,11 @@ export const AppointmentService = {
   },
 
   async getAppointmentsForCompanionByOrganisation(
-    companionId: string,
+    patientId: string,
     organisationId: string,
   ) {
-    if (!companionId) {
-      throw new AppointmentServiceError("companionId is required", 400);
+    if (!patientId) {
+      throw new AppointmentServiceError("patientId is required", 400);
     }
     if (!organisationId) {
       throw new AppointmentServiceError("organisationId is required", 400);
@@ -3873,7 +4132,7 @@ export const AppointmentService = {
       const rows = await prisma.appointment.findMany({
         where: {
           organisationId,
-          companion: { path: ["id"], equals: companionId },
+          patient: { path: ["id"], equals: patientId },
         },
         orderBy: { startTime: "desc" },
       });
@@ -3882,7 +4141,7 @@ export const AppointmentService = {
     }
 
     const docs: AppointmentMongo[] = await AppointmentModel.find({
-      "companion.id": companionId,
+      "companion.id": patientId,
       organisationId,
     })
       .sort({ startTime: -1 })
@@ -3925,7 +4184,7 @@ export const AppointmentService = {
     if (isReadFromPostgres()) {
       const rows = await prisma.appointment.findMany({
         where: {
-          companion: { path: ["parent", "id"], equals: parentId },
+          patient: { path: ["parent", "id"], equals: parentId },
         },
         orderBy: { startTime: "desc" },
       });
@@ -4120,7 +4379,7 @@ export const AppointmentService = {
   },
 
   async searchAppointments(filter: {
-    companionId?: string;
+    patientId?: string;
     parentId?: string;
     organisationId?: string;
     leadId?: string;
@@ -4140,14 +4399,14 @@ export const AppointmentService = {
           lte: filter.endDate ?? undefined,
         };
       }
-      if (filter.companionId) {
+      if (filter.patientId) {
         andFilters.push({
-          companion: { path: ["id"], equals: filter.companionId },
+          patient: { path: ["id"], equals: filter.patientId },
         });
       }
       if (filter.parentId) {
         andFilters.push({
-          companion: { path: ["parent", "id"], equals: filter.parentId },
+          patient: { path: ["parent", "id"], equals: filter.parentId },
         });
       }
       if (filter.leadId) {
@@ -4188,7 +4447,7 @@ export const AppointmentService = {
 
     const query: FilterQuery<AppointmentMongo> = {};
 
-    if (filter.companionId) query["companion.id"] = filter.companionId;
+    if (filter.patientId) query["companion.id"] = filter.patientId;
     if (filter.parentId) query["companion.parent.id"] = filter.parentId;
     if (filter.organisationId) query.organisationId = filter.organisationId;
     if (filter.leadId) query["lead.id"] = filter.leadId;
@@ -4283,14 +4542,14 @@ export const AppointmentService = {
 const createObservationToolTaskForAppointment = async ({
   appointmentId,
   organisationId,
-  companionId,
+  patientId,
   parentId,
   observationToolId,
   appointmentStartTime,
 }: {
   appointmentId: string;
   organisationId: string;
-  companionId: string;
+  patientId: string;
   parentId: string;
   observationToolId: string;
   appointmentStartTime: Date;
@@ -4301,7 +4560,7 @@ const createObservationToolTaskForAppointment = async ({
     organisationId,
     appointmentId,
 
-    companionId,
+    patientId,
 
     createdBy: parentId,
     assignedBy: parentId,

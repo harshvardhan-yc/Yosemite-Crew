@@ -3,6 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import mongoose from "mongoose";
 import { PrismaClient } from "@prisma/client";
+import {
+  deriveOrganisationRoomCode,
+  getMissingCompanionForeignKeyReason,
+} from "./migrate-all.helpers";
 
 dotenv.config();
 
@@ -234,8 +238,11 @@ const migrateModel = async (
   let userProfileAddressBatch: Record<string, unknown>[] = [];
   let processed = 0;
   let skipped = 0;
+  let skippedMissingForm = 0;
+  let skippedMissingCompanionFk = 0;
 
   let existingFormIds: Set<string> | null = null;
+  let existingCompanionIds: Set<string> | null = null;
   if (
     prismaName === "FormField" ||
     prismaName === "FormVersion" ||
@@ -243,6 +250,16 @@ const migrateModel = async (
   ) {
     const forms = await prisma.form.findMany({ select: { id: true } });
     existingFormIds = new Set(forms.map((form) => form.id));
+  }
+  if (
+    prismaName === "Document" ||
+    prismaName === "CompanionOrganisation" ||
+    prismaName === "ParentCompanion"
+  ) {
+    const companions = await prisma.patient.findMany({
+      select: { id: true },
+    });
+    existingCompanionIds = new Set(companions.map((companion) => companion.id));
   }
 
   const cursor = model.find().sort({ _id: 1 }).cursor();
@@ -269,8 +286,34 @@ const migrateModel = async (
       const formId = data.formId;
       if (typeof formId !== "string" || !existingFormIds?.has(formId)) {
         skipped += 1;
+        skippedMissingForm += 1;
         continue;
       }
+    }
+
+    if (prismaName === "OrganisationRoom" && typeof data.code !== "string") {
+      const derivedCode = deriveOrganisationRoomCode({
+        data: { ...obj, ...data },
+      });
+      if (!derivedCode) {
+        skipped += 1;
+        console.warn(
+          `Skipping ${mongooseName} ${String(data.id ?? obj._id ?? "")} because a room code could not be derived.`,
+        );
+        continue;
+      }
+      data.code = derivedCode;
+    }
+
+    const missingCompanionFkReason = getMissingCompanionForeignKeyReason(
+      prismaName,
+      data,
+      existingCompanionIds ?? new Set(),
+    );
+    if (missingCompanionFkReason) {
+      skipped += 1;
+      skippedMissingCompanionFk += 1;
+      continue;
     }
 
     batch.push(data);
@@ -408,16 +451,22 @@ const migrateModel = async (
   }
 
   if (skipped > 0) {
-    console.log(
-      `\nSkipped ${skipped} ${mongooseName} rows due to missing Form.`,
-    );
+    if (skippedMissingCompanionFk > 0) {
+      console.log(
+        `\nSkipped ${skippedMissingCompanionFk} ${mongooseName} rows due to missing Companion references.`,
+      );
+    }
+    if (skippedMissingForm > 0) {
+      console.log(
+        `\nSkipped ${skippedMissingForm} ${mongooseName} rows due to missing Form.`,
+      );
+    }
   }
   console.log(`\nDone. ${mongooseName}: ${processed}`);
 };
 
 const main = async () => {
-  process.env.MONO;
-  const mongoUri = "mongodb://localhost:27017/yosemitecrew";
+  const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
     throw new Error("MONGODB_URI is not set");
   }
@@ -425,7 +474,10 @@ const main = async () => {
   await loadModels();
   await mongoose.connect(mongoUri);
 
-  const schemaPath = path.join(process.cwd(), "prisma/schema.prisma");
+  const schemaPath = path.resolve(
+    process.cwd(),
+    "../../packages/database/prisma/schema.prisma",
+  );
   const schemaText = await fs.readFile(schemaPath, "utf8");
   const { modelFields, modelHasId } = parseSchema(schemaText);
 

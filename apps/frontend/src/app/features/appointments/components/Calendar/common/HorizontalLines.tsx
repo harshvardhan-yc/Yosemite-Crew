@@ -23,10 +23,7 @@ const HorizontalLines = ({
   pixelsPerStep = PIXELS_PER_STEP,
   slotStepMinutes = 15,
 }: HorizontalLinesProps) => {
-  const totalHeightPx = useMemo(
-    () => ((windowEnd - windowStart) / MINUTES_PER_STEP) * pixelsPerStep,
-    [pixelsPerStep, windowEnd, windowStart]
-  );
+  const totalHeightPx = ((windowEnd - windowStart) / MINUTES_PER_STEP) * pixelsPerStep;
 
   const nowTopPx = useMemo(() => {
     const baseTopPx = getNowTopPxForWindow(date, windowStart, windowEnd, now);
@@ -98,11 +95,11 @@ const HorizontalLines = ({
       {nowTopPx != null && (
         <div className="absolute left-0 right-0 z-10" style={{ top: nowTopPx }}>
           {nowTimeLabel && (
-            <div className="absolute left-3 -translate-y-[115%] text-[10px] leading-none font-semibold text-red-500 whitespace-nowrap">
+            <div className="absolute left-3 -translate-y-[115%] text-[10px] leading-none font-semibold text-danger-700 whitespace-nowrap">
               {nowTimeLabel}
             </div>
           )}
-          <div className="absolute left-[-5px] w-3 h-3 rounded-full bg-red-500 translate-y-[-50%]" />
+          <div className="absolute left-[-5px] size-3 rounded-full bg-red-500 translate-y-[-50%]" />
           <div className="border-t-2 border-t-red-500 translate-y-[-50%]" />
         </div>
       )}

@@ -1,52 +1,71 @@
 import React from 'react';
 import TestRenderer from 'react-test-renderer';
-import {Provider} from 'react-redux';
-import {configureStore} from '@reduxjs/toolkit';
 import {Text, View} from 'react-native';
-import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
-import {themeReducer} from '@/features/theme';
 
-// Mock the liquid glass library
+// Always use clear/predictable mocks so tests don't depend on variables.local.ts
+jest.mock('@/config/variables', () => ({
+  UI_FEATURE_FLAGS: {forceLiquidGlassBorder: false},
+}));
+
+// Controlled isDark flag — toggled per describe block
+let mockIsDark = false;
+jest.mock('@/hooks', () => ({
+  useTheme: () => ({
+    theme: require('../../__tests__/setup/mockTheme').mockTheme,
+    isDark: mockIsDark,
+  }),
+}));
+
 jest.mock('@callstack/liquid-glass', () => ({
   LiquidGlassView: ({children, style, interactive, effect}: any) => {
     const MockReact = require('react');
     const {View: MockView} = require('react-native');
     return MockReact.createElement(
       MockView,
-      {testID: 'liquid-glass-view', style, 'data-interactive': interactive, 'data-effect': effect},
-      children
+      {
+        testID: 'liquid-glass-view',
+        style,
+        'data-interactive': interactive,
+        'data-effect': effect,
+      },
+      children,
     );
   },
   isLiquidGlassSupported: true,
 }));
 
-describe('LiquidGlassCard', () => {
-  const createTestStore = () => {
-    return configureStore({
-      reducer: {
-        theme: themeReducer,
-      },
-    });
-  };
+import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
 
-  const wrap = (children: React.ReactElement) => (
-    <Provider store={createTestStore()}>{children}</Provider>
-  );
+describe('LiquidGlassCard — light mode (isDark=false)', () => {
+  beforeAll(() => {
+    mockIsDark = false;
+  });
 
   it('should render children', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard>
-            <Text>Card Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard>
+          <Text>Card Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     const text = tree.root.findByType(Text);
     expect(text.props.children).toBe('Card Content');
+  });
+
+  it('should render LiquidGlassView on iOS (native glass path)', () => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard>
+          <Text>Content</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(
+      tree.root.findAll(n => n.props.testID === 'liquid-glass-view').length,
+    ).toBeGreaterThan(0);
   });
 
   it('should render fallback View on Android', () => {
@@ -56,194 +75,311 @@ describe('LiquidGlassCard', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard>
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard>
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     const views = tree.root.findAllByType(View);
     expect(views.length).toBeGreaterThan(0);
 
     require('react-native').Platform.OS = originalPlatform;
   });
 
-  it('should use default glassEffect regular', () => {
+  it('should render fallback View when glassEffect=none', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard>
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard glassEffect="none">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
-    // On iOS with liquid glass support, should render LiquidGlassView
-    expect(tree.root).toBeTruthy();
+    expect(tree.root.findAllByType(View).length).toBeGreaterThan(0);
   });
 
-  it('should accept custom glassEffect', () => {
+  it('should resolve colorScheme=system to light', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard glassEffect="clear">
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard colorScheme="system">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     expect(tree.root).toBeTruthy();
   });
 
-  it('should accept interactive prop', () => {
+  it('should use IOS_DARK_CARD_TINT on iOS with colorScheme=dark', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard interactive={true}>
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard colorScheme="dark">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     expect(tree.root).toBeTruthy();
   });
 
-  it('should accept custom tintColor', () => {
+  it('should use custom tintColor (short-circuits platform tint logic)', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard tintColor='#F44336'>
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard tintColor="#FF0000">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     expect(tree.root).toBeTruthy();
   });
 
-  it('should accept custom colorScheme', () => {
+  it('should apply individual corner radii from style override', () => {
+    const customStyle = {
+      borderTopLeftRadius: 8,
+      borderTopRightRadius: 8,
+      borderBottomLeftRadius: 0,
+      borderBottomRightRadius: 0,
+    };
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard colorScheme="dark">
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard style={customStyle}>
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     expect(tree.root).toBeTruthy();
   });
 
-  it('should apply custom style', () => {
-    const customStyle = {marginTop: 20};
+  it('should apply numeric borderRadius from style override', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard style={customStyle}>
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard style={{borderRadius: 20}}>
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     expect(tree.root).toBeTruthy();
   });
 
-  it('should accept custom padding', () => {
+  it('should apply custom borderColor from style override', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard padding="8">
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard style={{borderColor: '#AABBCC', borderWidth: 2}}>
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     expect(tree.root).toBeTruthy();
   });
 
-  it('should accept custom borderRadius', () => {
+  it('should apply custom backgroundColor from style override', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard borderRadius="xl">
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard style={{backgroundColor: '#FFFFFF'}}>
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     expect(tree.root).toBeTruthy();
   });
 
-  it('should accept custom shadow', () => {
-    let tree!: TestRenderer.ReactTestRenderer;
-    TestRenderer.act(() => {
-      tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard shadow="lg">
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
-      );
-    });
-
-    expect(tree.root).toBeTruthy();
-  });
-
-  it('should accept fallbackStyle', () => {
+  it('should accept fallbackStyle on Android', () => {
     const originalPlatform = require('react-native').Platform.OS;
     require('react-native').Platform.OS = 'android';
 
-    const fallbackStyle = {opacity: 0.9};
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard fallbackStyle={fallbackStyle}>
-            <Text>Content</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard fallbackStyle={{opacity: 0.9}}>
+          <Text>Content</Text>
+        </LiquidGlassCard>,
       );
     });
-
     expect(tree.root).toBeTruthy();
 
     require('react-native').Platform.OS = originalPlatform;
+  });
+
+  it('should use Android dark clear tint (android + clear + dark colorScheme)', () => {
+    const originalPlatform = require('react-native').Platform.OS;
+    require('react-native').Platform.OS = 'android';
+
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard glassEffect="clear" colorScheme="dark">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(tree.root).toBeTruthy();
+
+    require('react-native').Platform.OS = originalPlatform;
+  });
+
+  it('should use Android regular dark tint (android + regular + dark colorScheme)', () => {
+    const originalPlatform = require('react-native').Platform.OS;
+    require('react-native').Platform.OS = 'android';
+
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard glassEffect="regular" colorScheme="dark">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(tree.root).toBeTruthy();
+
+    require('react-native').Platform.OS = originalPlatform;
+  });
+
+  it('should use Android light clear tint (android + clear + light)', () => {
+    const originalPlatform = require('react-native').Platform.OS;
+    require('react-native').Platform.OS = 'android';
+
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard glassEffect="clear" colorScheme="light">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(tree.root).toBeTruthy();
+
+    require('react-native').Platform.OS = originalPlatform;
+  });
+
+  it('should use Android regular light tint (android + regular + light)', () => {
+    const originalPlatform = require('react-native').Platform.OS;
+    require('react-native').Platform.OS = 'android';
+
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard glassEffect="regular" colorScheme="light">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(tree.root).toBeTruthy();
+
+    require('react-native').Platform.OS = originalPlatform;
+  });
+
+  it('should accept custom padding, borderRadius, shadow', () => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard padding="8" borderRadius="xl" shadow="lg">
+          <Text>Content</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(tree.root).toBeTruthy();
   });
 
   it('should render multiple children', () => {
     let tree!: TestRenderer.ReactTestRenderer;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
-        wrap(
-          <LiquidGlassCard>
-            <Text>First</Text>
-            <Text>Second</Text>
-          </LiquidGlassCard>
-        )
+        <LiquidGlassCard>
+          <Text>First</Text>
+          <Text>Second</Text>
+        </LiquidGlassCard>,
       );
     });
-
     const texts = tree.root.findAllByType(Text);
     expect(texts.length).toBe(2);
     expect(texts[0].props.children).toBe('First');
     expect(texts[1].props.children).toBe('Second');
+  });
+
+  it('should set interactive prop on LiquidGlassView', () => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard interactive={true}>
+          <Text>Content</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    const glassView = tree.root.find(
+      n => n.props.testID === 'liquid-glass-view',
+    );
+    expect(glassView.props['data-interactive']).toBe(true);
+  });
+});
+
+describe('LiquidGlassCard — dark mode (isDark=true)', () => {
+  beforeAll(() => {
+    mockIsDark = true;
+  });
+
+  afterAll(() => {
+    mockIsDark = false;
+  });
+
+  it('should use dark background on Android with isDark=true', () => {
+    const originalPlatform = require('react-native').Platform.OS;
+    require('react-native').Platform.OS = 'android';
+
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard>
+          <Text>Dark content</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(tree.root).toBeTruthy();
+
+    require('react-native').Platform.OS = originalPlatform;
+  });
+
+  it('should render dark fallback style on iOS glass path with isDark=true', () => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard>
+          <Text>Dark iOS</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(tree.root).toBeTruthy();
+  });
+});
+
+describe('LiquidGlassCard — FORCE_CARD_BORDER=true', () => {
+  beforeAll(() => {
+    mockIsDark = false;
+    // Override the module-level mock so FORCE_CARD_BORDER evaluates to true
+    jest.mock('@/config/variables', () => ({
+      UI_FEATURE_FLAGS: {forceLiquidGlassBorder: true},
+    }));
+  });
+
+  afterAll(() => {
+    jest.mock('@/config/variables', () => ({
+      UI_FEATURE_FLAGS: {forceLiquidGlassBorder: false},
+    }));
+  });
+
+  it('renders without error when force border flag is active', () => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <LiquidGlassCard>
+          <Text>Forced border</Text>
+        </LiquidGlassCard>,
+      );
+    });
+    expect(tree.root).toBeTruthy();
   });
 });

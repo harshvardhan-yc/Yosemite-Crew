@@ -8,7 +8,7 @@ import {
 } from '@/app/features/forms/types/forms';
 import React, { useEffect, useMemo, useState } from 'react';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
-import { getStatusStyle as getFormsStatusStyle } from '@/app/ui/tables/FormsTable';
+import { getFormsStatusStyle } from '@/app/ui/tables/tableUtils';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { Organisation } from '@yosemite-crew/types';
 
@@ -60,23 +60,26 @@ const FormsFilters = ({
     }));
   }, [effectiveOrgType]);
 
+  const allowedCategoryValues = useMemo(
+    () => new Set(filteredCategoryOptions.map((opt) => opt.value)),
+    [filteredCategoryOptions]
+  );
+  const effectiveCategory = allowedCategoryValues.has(activeCategory) ? activeCategory : 'All';
+
   useEffect(() => {
-    const allowedValues = new Set(filteredCategoryOptions.map((opt) => opt.value));
-    if (!allowedValues.has(activeCategory)) {
-      setActiveCategory('All');
-    }
-  }, [filteredCategoryOptions, activeCategory]);
+    if (effectiveCategory !== activeCategory) setActiveCategory(effectiveCategory);
+  }, [activeCategory, effectiveCategory]);
 
   const filteredList = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return list.filter((item) => {
       const matchesStatus = activeStatus === 'All' || item.status === activeStatus;
-      const matchesCategory = activeCategory === 'All' || item.category === activeCategory;
+      const matchesCategory = effectiveCategory === 'All' || item.category === effectiveCategory;
       const matchesQuery =
         !q || item.name?.toLowerCase().includes(q) || item.category?.toLowerCase().includes(q);
       return matchesStatus && matchesCategory && matchesQuery;
     });
-  }, [list, activeCategory, activeStatus, searchQuery]);
+  }, [list, effectiveCategory, activeStatus, searchQuery]);
 
   useEffect(() => {
     setFilteredList(filteredList);
@@ -100,6 +103,7 @@ const FormsFilters = ({
 
           return (
             <button
+              type="button"
               key={status}
               onClick={() => setActiveStatus(status)}
               className={`min-w-20 text-body-4 px-3 py-1.5 rounded-2xl! border! transition-all duration-300 hover:bg-card-hover text-text-tertiary${isActive ? '' : ' border-card-border! hover:border-card-hover!'}`}

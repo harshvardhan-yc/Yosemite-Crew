@@ -8,14 +8,17 @@ const withInventoryItemOrgPermissions = jest.fn(() =>
 const requirePermission = jest.fn(() => jest.fn((_req, _res, next) => next()));
 
 const InventoryController = {
+  getItemImageUploadUrl: jest.fn(),
   createItem: jest.fn(),
   updateItem: jest.fn(),
   hideItem: jest.fn(),
   archiveItem: jest.fn(),
   activeItem: jest.fn(),
+  toggleItemStatus: jest.fn(),
   listItems: jest.fn(),
   getInventoryTurnOver: jest.fn(),
   getItemWithBatches: jest.fn(),
+  getCategories: jest.fn(),
   addBatch: jest.fn(),
   updateBatch: jest.fn(),
   deleteBatch: jest.fn(),
@@ -86,6 +89,22 @@ const findRoute = (path: string, method: string) => {
 };
 
 describe("inventory.router", () => {
+  it("registers the inventory image upload route with org RBAC", () => {
+    const uploadRoute = findRoute(
+      "/organisation/:organisationId/items/upload-url",
+      "post",
+    );
+
+    expect(uploadRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(withOrgPermissions).toHaveBeenCalled();
+    expect(requirePermission).toHaveBeenCalledWith("inventory:edit:any");
+    expect(uploadRoute?.stack.map((layer) => layer.handle)).toContain(
+      InventoryController.getItemImageUploadUrl,
+    );
+  });
+
   it("protects org-scoped inventory list routes with org RBAC", () => {
     const listItemsRoute = findRoute(
       "/organisation/:organisationId/items",
@@ -112,6 +131,7 @@ describe("inventory.router", () => {
     const hideRoute = findRoute("/items/:itemId/hide", "post");
     const archiveRoute = findRoute("/items/:itemId/archive", "post");
     const activeRoute = findRoute("/items/:itemId/active", "post");
+    const statusRoute = findRoute("/items/:itemId/status", "patch");
 
     expect(detailRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
@@ -128,8 +148,11 @@ describe("inventory.router", () => {
     expect(activeRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
+    expect(statusRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
 
-    expect(withInventoryItemOrgPermissions).toHaveBeenCalledTimes(5);
+    expect(withInventoryItemOrgPermissions).toHaveBeenCalledTimes(6);
     expect(requirePermission).toHaveBeenCalledWith("inventory:view:any");
     expect(requirePermission).toHaveBeenCalledWith("inventory:edit:any");
   });

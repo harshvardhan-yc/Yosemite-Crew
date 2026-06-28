@@ -22,7 +22,7 @@ import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import {
   MERCK_COPYRIGHT_NOTICE,
   getMerckSubtopicPillStyle,
-  sanitizeMerckHtml,
+  stripMerckHtml,
 } from '@/app/features/integrations/constants/merck';
 
 type AppointmentMerckSearchProps = {
@@ -54,7 +54,7 @@ const getAppointmentEntriesContent = (
 ) => {
   if (entries.length === 0) {
     if (loading) {
-      return <div className="text-body-4 text-text-secondary">Searching manuals...</div>;
+      return <div className="text-body-4 text-text-secondary">Searching manuals…</div>;
     }
     if (hasSearched) {
       return (
@@ -75,17 +75,13 @@ const getAppointmentEntriesContent = (
       className="w-full min-w-0 rounded-2xl border border-card-border p-4 flex flex-col gap-3 overflow-x-hidden"
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
-        <div
-          className="text-body-2 text-text-primary wrap-break-word min-w-0"
-          dangerouslySetInnerHTML={{ __html: sanitizeMerckHtml(entry.title) }}
-        />
+        <div className="text-body-2 text-text-primary wrap-break-word min-w-0">
+          {stripMerckHtml(entry.title)}
+        </div>
       </div>
-      <div
-        className="text-body-4 text-text-secondary line-clamp-3 wrap-break-word"
-        dangerouslySetInnerHTML={{
-          __html: sanitizeMerckHtml(entry.summaryText || 'No summary available.'),
-        }}
-      />
+      <div className="text-body-4 text-text-secondary line-clamp-3 wrap-break-word">
+        {stripMerckHtml(entry.summaryText || '') || 'No summary available.'}
+      </div>
 
       <div className="flex gap-2 flex-wrap items-center">
         <Primary href="#" text="Open" onClick={() => onOpenReader(entry, entry.primaryUrl)} />
@@ -94,7 +90,7 @@ const getAppointmentEntriesContent = (
           onClick={() => globalThis.window.open(entry.primaryUrl, '_blank', 'noopener,noreferrer')}
           aria-label="Open in new tab"
           title="Open in new tab"
-          className="h-12 w-12 rounded-2xl! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover transition-colors cursor-pointer"
+          className="size-12 rounded-2xl! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover transition-colors cursor-pointer"
         >
           <IoOpenOutline size={18} />
         </button>
@@ -105,7 +101,7 @@ const getAppointmentEntriesContent = (
           }}
           aria-label="Copy manual URL"
           title="Copy URL"
-          className="h-12 w-12 rounded-2xl! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover transition-colors cursor-pointer"
+          className="size-12 rounded-2xl! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover transition-colors cursor-pointer"
         >
           <IoCopyOutline size={18} />
         </button>
@@ -222,7 +218,8 @@ const AppointmentMerckSearch = ({ activeAppointment }: AppointmentMerckSearchPro
   const [readerTitle, setReaderTitle] = useState('Merck Manual');
   const [readerLoading, setReaderLoading] = useState(false);
   const requestRef = useRef(0);
-  const resultCacheRef = useRef<Map<string, MerckEntry[]>>(new Map());
+  const resultCacheRef = useRef<Map<string, MerckEntry[]>>(null!);
+  resultCacheRef.current ??= new Map();
 
   const performSearch = async (audienceOverride?: MerckAudience) => {
     if (!primaryOrgId || !query.trim()) return;
@@ -343,13 +340,7 @@ const AppointmentMerckSearch = ({ activeAppointment }: AppointmentMerckSearchPro
           embedded reader.
         </div>
 
-        <form
-          className="flex items-center gap-2 flex-nowrap"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void performFreshSearch();
-          }}
-        >
+        <div className="flex items-center gap-2 flex-nowrap">
           <div className="flex-1 min-w-0">
             <FormInput
               intype="text"
@@ -372,7 +363,7 @@ const AppointmentMerckSearch = ({ activeAppointment }: AppointmentMerckSearchPro
               onClick={() => setAdvancedOpen((prev) => !prev)}
               aria-label={advancedOpen ? 'Hide filters' : 'Show filters'}
               title={advancedOpen ? 'Hide filters' : 'Show filters'}
-              className={`h-12 w-12 rounded-2xl! border border-card-border flex items-center justify-center transition-colors cursor-pointer ${
+              className={`size-12 rounded-2xl! border border-card-border flex items-center justify-center transition-colors cursor-pointer ${
                 advancedOpen
                   ? 'bg-card-hover text-text-primary'
                   : 'text-text-secondary hover:bg-card-hover'
@@ -382,7 +373,7 @@ const AppointmentMerckSearch = ({ activeAppointment }: AppointmentMerckSearchPro
             </button>
             {copied ? <span className="text-body-4 text-green-700">URL copied</span> : null}
           </div>
-        </form>
+        </div>
 
         {advancedOpen ? (
           <div className="rounded-2xl border border-card-border bg-white p-3 flex flex-col gap-2">
@@ -391,7 +382,7 @@ const AppointmentMerckSearch = ({ activeAppointment }: AppointmentMerckSearchPro
               <button
                 type="button"
                 onClick={() => setAdvancedOpen(false)}
-                className="h-7 w-7 rounded-xl! border border-card-border flex items-center justify-center text-text-secondary hover:bg-card-hover transition-colors cursor-pointer"
+                className="size-7 rounded-xl! border border-card-border flex items-center justify-center text-text-secondary hover:bg-card-hover transition-colors cursor-pointer"
                 aria-label="Close refine results"
                 title="Close refine results"
               >
@@ -443,7 +434,7 @@ const AppointmentMerckSearch = ({ activeAppointment }: AppointmentMerckSearchPro
               data-signing-overlay="true"
               className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
             >
-              <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
+              <div className="relative bg-white rounded-2xl shadow-2xl size-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
                   <div className="text-body-2 text-text-primary truncate pr-2">{readerTitle}</div>
                   <button
@@ -472,8 +463,10 @@ const AppointmentMerckSearch = ({ activeAppointment }: AppointmentMerckSearchPro
                   <iframe
                     src={readerUrl}
                     title={readerTitle}
-                    className="flex-1 w-full h-full border-0"
+                    className="flex-1 size-full border-0"
                     loading="lazy"
+                    referrerPolicy="strict-origin"
+                    sandbox="allow-scripts allow-popups allow-forms allow-same-origin"
                     onLoad={() => setReaderLoading(false)}
                   />
                 </div>

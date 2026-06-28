@@ -1,54 +1,22 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import BookDemo from '@/app/features/marketing/pages/BookDemo/BookDemo';
-import { getCalApi } from '@calcom/embed-react';
 
-jest.mock('@calcom/embed-react', () => {
-  const mockGetCalApi = jest.fn();
-  const MockCal = ({ calLink, ...restProps }: any) => (
-    <div data-testid="mock-cal" {...restProps} />
-  );
-
-  return {
-    __esModule: true,
-    getCalApi: mockGetCalApi,
-    default: MockCal,
-  };
-});
-
-const mockedGetCalApi = getCalApi as jest.Mock;
+jest.mock('@/app/ui/overlays/CalEmbedFrame', () => ({
+  __esModule: true,
+  default: ({ title, className }: { title: string; className: string }) => (
+    <div aria-label={title} data-testid="cal-embed-frame" className={className} />
+  ),
+}));
 
 describe('BookDemo Page', () => {
-
-  beforeEach(() => {
-    const mockCalApiFunction = jest.fn();
-    mockedGetCalApi.mockResolvedValue(mockCalApiFunction);
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('should render the mock Cal component with correct props', () => {
+  it('renders a full-size Cal embed for demo booking', () => {
     render(<BookDemo />);
 
-    const calComponent = screen.getByTestId('mock-cal');
-    expect(calComponent).toBeInTheDocument();
-  });
+    expect(screen.getByRole('heading', { level: 1, name: 'Book a demo' })).toBeInTheDocument();
+    const frame = screen.getByTestId('cal-embed-frame');
 
-  it('should call getCalApi and configure the UI inside useEffect', async () => {
-    render(<BookDemo />);
-
-    await waitFor(() => {
-      expect(mockedGetCalApi).toHaveBeenCalledWith({ namespace: '30min' });
-    });
-
-    const calApiFunction = await mockedGetCalApi.mock.results[0].value;
-
-    expect(calApiFunction).toHaveBeenCalledWith('ui', {
-      hideEventTypeDetails: false,
-      layout: 'month_view',
-    });
+    expect(frame).toHaveClass('size-full', 'border-0');
   });
 });

@@ -23,70 +23,117 @@
   font-style: italic;
 }
 
-@font-face {
-  font-family: 'Satoshi';
-  src:
-    url('/fonts/satoshi-font/Satoshi-Light.woff2') format('woff2'),
-    url('/fonts/satoshi-font/Satoshi-Light.woff') format('woff'),
-    url('/fonts/satoshi-font/Satoshi-Light.ttf') format('truetype');
-  font-weight: 300;
-  font-display: swap;
-  font-style: normal;
+html {
+  scroll-behavior: auto;
 }
 
-@font-face {
-  font-family: 'Satoshi';
-  src:
-    url('/fonts/satoshi-font/Satoshi-Regular.woff2') format('woff2'),
-    url('/fonts/satoshi-font/Satoshi-Regular.woff') format('woff'),
-    url('/fonts/satoshi-font/Satoshi-Regular.ttf') format('truetype');
+body {
+  min-height: 100vh;
+  background-color: var(--whitebg) !important;
+  color: var(--color-text-primary);
+  font-family: var(--font-satoshi) !important;
+  font-size: 1rem;
+  font-style: normal;
   font-weight: 400;
-  font-display: swap;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: 'Satoshi';
-  src:
-    url('/fonts/satoshi-font/Satoshi-Medium.woff2') format('woff2'),
-    url('/fonts/satoshi-font/Satoshi-Medium.woff') format('woff'),
-    url('/fonts/satoshi-font/Satoshi-Medium.ttf') format('truetype');
-  font-weight: 500;
-  font-display: swap;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: 'Satoshi';
-  src:
-    url('/fonts/satoshi-font/Satoshi-Bold.woff2') format('woff2'),
-    url('/fonts/satoshi-font/Satoshi-Bold.woff') format('woff'),
-    url('/fonts/satoshi-font/Satoshi-Bold.ttf') format('truetype');
-  font-weight: 700;
-  font-display: swap;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: 'Satoshi';
-  src:
-    url('/fonts/satoshi-font/Satoshi-Black.woff2') format('woff2'),
-    url('/fonts/satoshi-font/Satoshi-Black.woff') format('woff'),
-    url('/fonts/satoshi-font/Satoshi-Black.ttf') format('truetype');
-  font-weight: 900;
-  font-display: swap;
-  font-style: normal;
+  letter-spacing: -0.02em;
+  text-rendering: geometricPrecision;
 }
 
 * {
   box-sizing: border-box;
-  scroll-behavior: smooth;
   font-family: inherit;
   font-optical-sizing: auto;
   font-kerning: normal;
   font-synthesis-weight: none;
 }
+
+#main-content {
+  scroll-margin-top: 96px;
+}
+
+.yc-skip-link {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 10000;
+  transform: translateY(-220%);
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-input-border-active);
+  background: var(--color-white-bg);
+  color: var(--color-text-primary);
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px 0 var(--color-shadow-soft);
+  transition: transform 0.2s ease;
+}
+
+.yc-skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+:where(
+  a[href],
+  button,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [tabindex]:not([tabindex='-1'])
+):focus-visible {
+  outline: 2px solid var(--color-input-border-active);
+  outline-offset: 2px;
+}
+
+/* Inputs, selects, and textareas manage focus via border-color change.
+   The global ring is suppressed here to avoid double-border on styled fields.
+   Each field shows border-color: var(--color-input-border-active) on focus. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
+/* The rich-text editor's contenteditable is the focus surface; its wrapping
+   SectionContainer turns its border blue on focus-within instead, so suppress
+   the global focus ring here to avoid an inner box on top of that border. */
+.yc-rte-content:focus,
+.yc-rte-content:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 @layer utilities {
+  /*
+   * Viewport-unit fallbacks for Safari < 15.4 (no dvh/svw support).
+   * CSS cascade: the browser applies the last declaration it understands,
+   * so the dvh/svw line wins on supporting browsers and the vh/vw line wins elsewhere.
+   * Used by the appointment central modal.
+   */
+  .modal-max-h {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  @media (min-width: 640px) {
+    .modal-max-h {
+      max-height: calc(100vh - 32px);
+      max-height: calc(100dvh - 32px);
+    }
+  }
+
   .scrollbar-hidden {
     &::-webkit-scrollbar {
       display: none;
@@ -117,6 +164,34 @@
   .scrollbar-custom::-webkit-scrollbar-thumb:hover {
     background: var(--color-neutral-500);
     background-clip: padding-box;
+  }
+
+  /* Floating horizontal scrollbar — renders a thin visible scrollbar only on
+     the x-axis. Use on containers that scroll horizontally but hide the native
+     scrollbar (scrollbar-hidden) so mouse users can still see scroll position. */
+  .scrollbar-x-float {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-neutral-300) transparent;
+    overflow-x: auto;
+  }
+
+  .scrollbar-x-float::-webkit-scrollbar {
+    height: 5px;
+    width: 0;
+  }
+
+  .scrollbar-x-float::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 0 8px;
+  }
+
+  .scrollbar-x-float::-webkit-scrollbar-thumb {
+    background: var(--color-neutral-300);
+    border-radius: 999px;
+  }
+
+  .scrollbar-x-float::-webkit-scrollbar-thumb:hover {
+    background: var(--color-neutral-500);
   }
 }
 @theme {
@@ -327,6 +402,13 @@
   --status-no-show-bg: #fff7ed;
   --status-no-show-text: #9a3412;
   --status-no-show-border: #f97316;
+
+  /* Alert / document-category palette (workspace revamp — Figma "documents cat" sheet) */
+  --color-category-caution: #b9501f;
+  --color-category-medical: #6b3fd6;
+  --color-category-info: #0b6f92;
+  --color-category-attention: #7a6d00;
+  --color-category-admin: #2e4d85;
 }
 :root {
   --black-text: var(--color-black-text);
@@ -379,16 +461,6 @@ body {
   width: 100%;
   height: 100%;
 }
-body {
-  background-color: var(--whitebg) !important;
-  color: var(--color-text-primary);
-  font-family: var(--font-satoshi) !important;
-  font-size: 1rem;
-  font-style: normal;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  text-rendering: geometricPrecision;
-}
 
 a {
   text-decoration: none !important;
@@ -409,7 +481,7 @@ input[type='checkbox'] {
   -webkit-appearance: none;
   appearance: none;
   border-radius: 5px;
-  border: 1px solid var(--blue-text) !important;
+  border: 1px solid var(--color-neutral-900) !important;
   background-color: transparent;
   cursor: pointer;
   position: relative;
@@ -417,7 +489,7 @@ input[type='checkbox'] {
   font-family: var(--satoshi-font);
 }
 input[type='checkbox']:checked {
-  background-color: var(--blue-text);
+  background-color: var(--color-neutral-900);
 }
 input[type='checkbox']:checked::after {
   content: '';
@@ -519,6 +591,117 @@ input[type='number'] {
   .text-caption-2 {
     @apply font-satoshi text-[0.75rem] font-medium leading-[1.125rem] tracking-[-0.24px];
   }
+
+  .text-yc-12-r-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-12-b-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-12-m-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-14-m-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-14-b-primary {
+    color: var(--color-primary-600);
+    font-family: var(--font-satoshi);
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-16-r-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 16px;
+    font-style: normal;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-16-b-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 16px;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-16-b-primary {
+    color: var(--color-primary-600);
+    font-family: var(--font-satoshi);
+    font-size: 16px;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-20-b-primary {
+    color: var(--color-primary-600);
+    font-family: var(--font-satoshi);
+    font-size: 20px;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-16-m-white {
+    color: var(--color-neutral-0);
+    font-family: var(--font-satoshi);
+    font-size: 16px;
+    font-style: normal;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 120%;
+  }
+
+  .text-yc-20-b-neutral {
+    color: var(--color-neutral-900);
+    font-family: var(--font-satoshi);
+    font-size: 20px;
+    font-style: normal;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 120%;
+    text-align: center;
+  }
 }
 
 /* Typography overrides outside @layer — beats Bootstrap's unlayered element resets on button/input.
@@ -602,7 +785,12 @@ input[type='number'] {
 
 /* Outer shell */
 .yc-datepicker-popper {
-  z-index: 1200;
+  z-index: 5000;
+}
+
+#yc-datepicker-portal {
+  position: relative;
+  z-index: 5000;
 }
 
 .yc-datepicker-calendar {
@@ -649,6 +837,12 @@ input[type='number'] {
   padding: 3px 8px;
   outline: none;
   cursor: pointer;
+}
+
+.yc-datepicker-calendar .react-datepicker__month-select:focus-visible,
+.yc-datepicker-calendar .react-datepicker__year-select:focus-visible {
+  outline: 2px solid var(--color-input-border-active);
+  outline-offset: 1px;
 }
 
 .yc-datepicker-calendar .react-datepicker__month-select:focus,
@@ -747,4 +941,16 @@ input[type='number'] {
 /* Time-only picker radius */
 .yc-datepicker-calendar.react-datepicker--time-only {
   border-radius: 16px !important;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-6px);
+    opacity: 0.6;
+  }
 }

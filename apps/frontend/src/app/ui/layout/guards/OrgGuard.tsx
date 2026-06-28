@@ -5,9 +5,8 @@ import { useRouter, usePathname } from 'next/navigation';
 
 import { useFullscreenLoader } from '@/app/hooks/useFullscreenLoader';
 import { useOrgStore } from '@/app/stores/orgStore';
-import { useSpecialityStore } from '@/app/stores/specialityStore';
 import { computeOrgOnboardingStep } from '@/app/lib/orgOnboarding';
-import type { Organisation, Speciality, UserOrganization } from '@yosemite-crew/types';
+import type { Organisation, UserOrganization } from '@yosemite-crew/types';
 import type { UserProfile } from '@/app/features/users/types/profile';
 import { useLoadTeam } from '@/app/hooks/useTeam';
 import { useTeamStore } from '@/app/stores/teamStore';
@@ -28,6 +27,7 @@ import { useLoadInvoicesForPrimaryOrg } from '@/app/hooks/useInvoices';
 import { useLoadIntegrationsForPrimaryOrg } from '@/app/hooks/useIntegrations';
 import { resolveDefaultOpenScreenRouteForProfile } from '@/app/lib/defaultOpenScreen';
 import { useLoadSpecialitiesForPrimaryOrg } from '@/app/hooks/useSpecialities';
+import { getStorage, getStorageItem, setStorageItem } from '@/app/lib/browserStorage';
 import {
   canAccessPathByPermissions,
   resolveFirstAccessibleAppRoute,
@@ -36,6 +36,7 @@ import { appRoutes } from '@/app/constants/routes';
 
 type OrgGuardProps = {
   children: React.ReactNode;
+  skeleton?: React.ReactNode;
 };
 
 const isLocalGuardBypassEnabled = () => {
@@ -48,13 +49,31 @@ const isLocalGuardBypassEnabled = () => {
 
 const isStatusPending = (status?: string) => status === 'idle' || status === 'loading';
 
+const ORG_GUARD_KEY_PREFIX = 'yc_org_guard_passed:';
+const orgGuardPassedKey = (orgId: string) => `${ORG_GUARD_KEY_PREFIX}${orgId}`;
+const readOrgGuardPassed = (orgId: string): boolean =>
+  getStorageItem('session', orgGuardPassedKey(orgId)) === '1';
+const writeOrgGuardPassed = (orgId: string) =>
+  setStorageItem('session', orgGuardPassedKey(orgId), '1');
+
+// Returns true if ANY org has previously passed the guard in this session.
+// Used as the fast-path initial state before primaryOrgId is known from the store.
+const readAnyOrgGuardPassed = (): boolean => {
+  const ss = getStorage('session');
+  if (!ss) return false;
+  for (let i = 0; i < ss.length; i++) {
+    const key = ss.key(i);
+    if (key?.startsWith(ORG_GUARD_KEY_PREFIX) && ss.getItem(key) === '1') return true;
+  }
+  return false;
+};
+
 type RedirectParams = {
   pathname: string;
   primaryOrgId: string;
   primaryOrg: Organisation;
   membership: UserOrganization;
   profile: UserProfile | null | undefined;
-  specialities: Speciality[];
   availabilities: ApiDayAvailability[];
 };
 
@@ -74,7 +93,7 @@ const resolveUnverifiedOwnerRedirect = (
   pathname: string,
   primaryOrgId: string
 ): string | null => {
-  if (step < 3) return `/create-org?orgId=${primaryOrgId}`;
+  if (step < 2) return `/create-org?orgId=${primaryOrgId}`;
   if (profileStep < 3 && pathname !== '/team-onboarding') {
     return `/team-onboarding?orgId=${primaryOrgId}`;
   }
@@ -88,10 +107,9 @@ const resolveOrgRedirect = ({
   primaryOrg,
   membership,
   profile,
-  specialities,
   availabilities,
 }: RedirectParams): string | null => {
-  const step = computeOrgOnboardingStep(primaryOrg, specialities);
+  const step = computeOrgOnboardingStep(primaryOrg);
   const profileStep = computeTeamOnboardingStep(profile, availabilities);
   const role = membership.roleDisplay ?? membership.roleCode;
 
@@ -114,13 +132,11 @@ const resolveOrgRedirect = ({
 
 const shouldWaitForOrgGuardData = (
   availabilityStatus: string,
-  specialityStatus: string,
   profileStatus: string,
   teamStatus: string,
   hasTeamDataForOrg: boolean
 ) =>
   isStatusPending(availabilityStatus) ||
-  isStatusPending(specialityStatus) ||
   isStatusPending(profileStatus) ||
   (isStatusPending(teamStatus) && !hasTeamDataForOrg);
 
@@ -147,15 +163,14 @@ const applyDefaultLandingRedirect = (
   if (!shouldEvaluateLanding) return null;
 
   const landingAppliedKey = `yc_default_landing_applied:${primaryOrgId}`;
-  const isLandingAlreadyApplied =
-    globalThis.window?.sessionStorage.getItem(landingAppliedKey) === '1';
+  const isLandingAlreadyApplied = getStorageItem('session', landingAppliedKey) === '1';
 
   if (preferredLanding !== pathname && !isLandingAlreadyApplied) {
-    globalThis.window?.sessionStorage.setItem(landingAppliedKey, '1');
+    setStorageItem('session', landingAppliedKey, '1');
     return preferredLanding;
   }
 
-  globalThis.window?.sessionStorage.setItem(landingAppliedKey, '1');
+  setStorageItem('session', landingAppliedKey, '1');
   return null;
 };
 
@@ -168,14 +183,14 @@ const applyDefaultLandingRedirect = (
  *    - isVerified === true:
  *        - if on /create-org → /dashboard
  *    - isVerified === false:
- *        - onboarding step < 3 → force /create-org
- *        - onboarding step === 3 → /dashboard
+ *        - onboarding step < 2 → force /create-org
+ *        - onboarding step === 2 → /dashboard
  * - Member:
  *    - isOnboarded === false → force /complete-profile
  *    - isOnboarded === true:
  *        - if on /complete-profile → /dashboard
  */
-const OrgGuard = ({ children }: OrgGuardProps) => {
+const OrgGuard = ({ children, skeleton = null }: OrgGuardProps) => {
   useLoadSubscriptionCounterForPrimaryOrg();
   useLoadSpecialitiesForPrimaryOrg();
   useLoadTeam();
@@ -204,10 +219,6 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
     primaryOrgId ? (s.membershipsByOrgId[primaryOrgId] ?? null) : null
   );
 
-  const specialityStatus = useSpecialityStore((s) => s.status);
-  const specialityIdsByOrgId = useSpecialityStore((s) => s.specialityIdsByOrgId);
-  const getSpecialitiesByOrgId = useSpecialityStore((s) => s.getSpecialitiesByOrgId);
-
   const availabilityStatus = useAvailabilityStore((s) => s.status);
   const getAvailabilitiesByOrgId = useAvailabilityStore((s) => s.getAvailabilitiesByOrgId);
   const teamStatus = useTeamStore((s) => s.status);
@@ -218,11 +229,19 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
   );
   const profileStatus = useUserProfileStore((s) => s.status);
 
-  const [checked, setChecked] = useState(false);
+  const [checked, setChecked] = useState(
+    () =>
+      isLocalGuardBypassEnabled() ||
+      (primaryOrgId ? readOrgGuardPassed(primaryOrgId) : readAnyOrgGuardPassed())
+  );
   useFullscreenLoader('org-guard', !isAuthGuardDisabled && !checked);
 
   useEffect(() => {
-    setChecked(false);
+    if (primaryOrgId && readOrgGuardPassed(primaryOrgId)) {
+      setChecked(true);
+    } else {
+      setChecked(false);
+    }
   }, [primaryOrgId]);
 
   useEffect(() => {
@@ -244,13 +263,7 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
     }
     const hasTeamDataForOrg = !teamIdsByOrgId || Object.hasOwn(teamIdsByOrgId, primaryOrgId);
     if (
-      shouldWaitForOrgGuardData(
-        availabilityStatus,
-        specialityStatus,
-        profileStatus,
-        teamStatus,
-        hasTeamDataForOrg
-      )
+      shouldWaitForOrgGuardData(availabilityStatus, profileStatus, teamStatus, hasTeamDataForOrg)
     ) {
       return;
     }
@@ -264,16 +277,6 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
     }
 
     const role = membership.roleDisplay ?? membership.roleCode;
-    const shouldWaitForSpecialitiesForOrg =
-      role.toLowerCase() === 'owner' &&
-      !primaryOrg.isVerified &&
-      specialityStatus !== 'error' &&
-      !Object.hasOwn(specialityIdsByOrgId, primaryOrgId);
-    if (shouldWaitForSpecialitiesForOrg) {
-      return;
-    }
-
-    const specialities = getSpecialitiesByOrgId(primaryOrgId);
     const availabilities = getAvailabilitiesByOrgId(primaryOrgId);
     const redirectTo = resolveOrgRedirect({
       pathname,
@@ -281,7 +284,6 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
       primaryOrg,
       membership,
       profile,
-      specialities,
       availabilities,
     });
 
@@ -311,27 +313,25 @@ const OrgGuard = ({ children }: OrgGuardProps) => {
       return;
     }
 
+    writeOrgGuardPassed(primaryOrgId);
     setChecked(true);
   }, [
     isAuthGuardDisabled,
+    router,
     primaryOrgId,
     primaryOrg,
-    getSpecialitiesByOrgId,
     pathname,
-    router,
     profile,
     orgStatus,
     getAvailabilitiesByOrgId,
-    specialityStatus,
     availabilityStatus,
     profileStatus,
     membership,
-    specialityIdsByOrgId,
     teamStatus,
     teamIdsByOrgId,
   ]);
 
-  if (!checked) return null;
+  if (!checked) return <>{skeleton}</>;
 
   return <>{children}</>;
 };

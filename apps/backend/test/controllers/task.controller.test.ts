@@ -218,6 +218,8 @@ describe("Task Controllers", () => {
     describe("getById", () => {
       it("should 404 if not found", async () => {
         req.params = { taskId: "t1" };
+        (req as any).userId = "u1";
+        (req as any).userPermissions = ["tasks:view:own"];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (mockedTaskService.getById as any).mockResolvedValue(null);
         await TaskController.getById(req as any, res as Response);
@@ -226,13 +228,25 @@ describe("Task Controllers", () => {
 
       it("should success (200)", async () => {
         req.params = { taskId: "t1" };
+        (req as any).userId = "u1";
+        (req as any).userPermissions = ["tasks:view:own"];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (mockedTaskService.getById as any).mockResolvedValue({ id: "t1" });
+        (mockedTaskService.getById as any).mockResolvedValue({
+          id: "t1",
+          assignedTo: "u1",
+          createdBy: "u2",
+        });
         await TaskController.getById(req as any, res as Response);
-        expect(jsonMock).toHaveBeenCalledWith({ id: "t1" });
+        expect(jsonMock).toHaveBeenCalledWith({
+          id: "t1",
+          assignedTo: "u1",
+          createdBy: "u2",
+        });
       });
 
       it("should handle error", async () => {
+        (req as any).userId = "u1";
+        (req as any).userPermissions = ["tasks:view:own"];
         mockGenericError(mockedTaskService.getById as jest.Mock);
         await TaskController.getById(req as any, res as Response);
         expect(statusMock).toHaveBeenCalledWith(500);
@@ -341,7 +355,7 @@ describe("Task Controllers", () => {
       it("should list with full filters", async () => {
         (req as any).userId = "u1";
         req.query = {
-          companionId: "c1",
+          patientId: "c1",
           fromDueAt: "2023-01-01",
           toDueAt: "2023-01-31",
           status: "PENDING,IN_PROGRESS",
@@ -356,7 +370,7 @@ describe("Task Controllers", () => {
         await TaskController.listParentTasks(req as any, res as Response);
         expect(mockedTaskService.listForParent).toHaveBeenCalledWith({
           parentId: "p1",
-          companionId: "c1",
+          patientId: "c1",
           fromDueAt: new Date("2023-01-01"),
           toDueAt: new Date("2023-01-31"),
           status: ["PENDING", "IN_PROGRESS"],
@@ -393,6 +407,7 @@ describe("Task Controllers", () => {
         req.params = { organisationId: "o1" };
         (req as any).organisationId = "org-from-rbac";
         req.query = { userId: "u2", status: ["PENDING"] as any }; // array input
+        (req as any).userPermissions = ["tasks:view:any"];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (mockedTaskService.listForEmployee as any).mockResolvedValue([]);
 
@@ -406,7 +421,84 @@ describe("Task Controllers", () => {
         );
       });
 
+      it("should map the extended task list query params", async () => {
+        req.params = { organisationId: "o1" };
+        (req as any).organisationId = "org-from-rbac";
+        req.query = {
+          assignedTo: "u2",
+          companionId: "comp-1",
+          clientId: "client-1",
+          appointmentId: "appt-1",
+          encounterId: "enc-1",
+          episodeOfCareId: "case-1",
+          admissionId: "adm-1",
+          templateInstanceId: "inst-1",
+          scheduleId: "sched-1",
+          audience: "EMPLOYEE_TASK",
+          assignedRole: "EMPLOYEE_TASK",
+          status: "PENDING,IN_PROGRESS",
+          category: "CARE",
+          subcategory: "Medication prep",
+          kind: "MEDICATION",
+          dueFrom: "2024-01-01",
+          dueTo: "2024-01-31",
+          includeCompleted: "true",
+        };
+        (req as any).userPermissions = ["tasks:view:any"];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (mockedTaskService.listForEmployee as any).mockResolvedValue([]);
+
+        await TaskController.listEmployeeTasks(req as any, res as Response);
+
+        expect(mockedTaskService.listForEmployee).toHaveBeenCalledWith(
+          expect.objectContaining({
+            organisationId: "org-from-rbac",
+            assignedTo: "u2",
+            patientId: "comp-1",
+            companionId: "comp-1",
+            clientId: "client-1",
+            appointmentId: "appt-1",
+            encounterId: "enc-1",
+            episodeOfCareId: "case-1",
+            admissionId: "adm-1",
+            templateInstanceId: "inst-1",
+            scheduleId: "sched-1",
+            audience: "EMPLOYEE_TASK",
+            assignedRole: "EMPLOYEE_TASK",
+            status: ["PENDING", "IN_PROGRESS"],
+            category: "CARE",
+            subcategory: "Medication prep",
+            kind: "MEDICATION",
+            dueFrom: new Date("2024-01-01"),
+            dueTo: new Date("2024-01-31"),
+            includeCompleted: true,
+          }),
+        );
+      });
+
+      it("should force own-scope users to their actor id", async () => {
+        req.params = { organisationId: "o1" };
+        (req as any).organisationId = "org-from-rbac";
+        (req as any).userId = "u-own";
+        (req as any).userPermissions = ["tasks:view:own"];
+        req.query = { userId: "u2", assignedTo: "u2" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (mockedTaskService.listForEmployee as any).mockResolvedValue([]);
+
+        await TaskController.listEmployeeTasks(req as any, res as Response);
+
+        expect(mockedTaskService.listForEmployee).toHaveBeenCalledWith(
+          expect.objectContaining({
+            organisationId: "org-from-rbac",
+            userId: "u-own",
+            assignedTo: "u-own",
+          }),
+        );
+      });
+
       it("should handle error", async () => {
+        (req as any).userId = "u1";
+        (req as any).userPermissions = ["tasks:view:any"];
         mockGenericError(mockedTaskService.listForEmployee as jest.Mock);
         await TaskController.listEmployeeTasks(req as any, res as Response);
         expect(statusMock).toHaveBeenCalledWith(500);
@@ -415,7 +507,7 @@ describe("Task Controllers", () => {
 
     describe("listForCompanion", () => {
       it("should list with filters", async () => {
-        req.params = { companionId: "c1" };
+        req.params = { patientId: "c1" };
         (req as any).organisationId = "org-1";
         req.query = { audience: "EMPLOYEE_TASK" };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -424,15 +516,57 @@ describe("Task Controllers", () => {
         await TaskController.listForCompanion(req as any, res as Response);
         expect(mockedTaskService.listForCompanion).toHaveBeenCalledWith(
           expect.objectContaining({
-            companionId: "c1",
+            patientId: "c1",
             organisationId: "org-1",
             audience: "EMPLOYEE_TASK",
           }),
         );
       });
 
+      it("should map extended companion filters", async () => {
+        req.params = { patientId: "c1" };
+        (req as any).organisationId = "org-1";
+        req.query = {
+          audience: "PARENT_TASK",
+          companionId: "c1",
+          clientId: "client-1",
+          assignedTo: "user-1",
+          assignedRole: "PARENT_TASK",
+          status: "PENDING",
+          category: "CARE",
+          subcategory: "follow-up",
+          kind: "DIET",
+          dueFrom: "2024-02-01",
+          dueTo: "2024-02-29",
+          includeCompleted: "false",
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (mockedTaskService.listForCompanion as any).mockResolvedValue([]);
+
+        await TaskController.listForCompanion(req as any, res as Response);
+
+        expect(mockedTaskService.listForCompanion).toHaveBeenCalledWith(
+          expect.objectContaining({
+            patientId: "c1",
+            organisationId: "org-1",
+            audience: "PARENT_TASK",
+            companionId: "c1",
+            clientId: "client-1",
+            assignedTo: "user-1",
+            assignedRole: "PARENT_TASK",
+            status: ["PENDING"],
+            category: "CARE",
+            subcategory: "follow-up",
+            kind: "DIET",
+            dueFrom: new Date("2024-02-01"),
+            dueTo: new Date("2024-02-29"),
+            includeCompleted: false,
+          }),
+        );
+      });
+
       it("should handle invalid audience/status filters", async () => {
-        req.params = { companionId: "c1" };
+        req.params = { patientId: "c1" };
         (req as any).organisationId = "org-1";
         req.query = { audience: "INVALID", status: "INVALID" };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -449,7 +583,7 @@ describe("Task Controllers", () => {
       });
 
       it("should handle array inputs for query params", async () => {
-        req.params = { companionId: "c1" };
+        req.params = { patientId: "c1" };
         (req as any).organisationId = "org-1";
         req.query = {
           audience: ["PARENT_TASK"] as any,
@@ -599,7 +733,7 @@ describe("Task Controllers", () => {
     describe("list", () => {
       it("should list with filters", async () => {
         req.params = { organisationId: "o1" };
-        req.query = { kind: "CUSTOM" };
+        req.query = { kind: "CUSTOM", inpatientOnly: "true", search: "care" };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (
           mockedTaskTemplateService.listForOrganisation as any
@@ -607,7 +741,10 @@ describe("Task Controllers", () => {
         await TaskTemplateController.list(req as any, res as Response);
         expect(
           mockedTaskTemplateService.listForOrganisation,
-        ).toHaveBeenCalledWith("o1", "CUSTOM");
+        ).toHaveBeenCalledWith("o1", "CUSTOM", {
+          inpatientOnly: true,
+          search: "care",
+        });
       });
 
       it("should handle error", async () => {

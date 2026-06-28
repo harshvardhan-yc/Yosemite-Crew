@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { securityHeaders } from './src/securityHeaders';
 
 const nextConfig: NextConfig = {
   images: {
@@ -12,6 +13,7 @@ const nextConfig: NextConfig = {
         hostname: 'yosemitecrew-backend.s3.eu-central-1.amazonaws.com',
       },
       { protocol: 'https', hostname: 'cdn.yc.dev' },
+      { protocol: 'https', hostname: 'laika.aitemsolutions.com' },
     ],
   },
   outputFileTracingExcludes: {
@@ -22,6 +24,14 @@ const nextConfig: NextConfig = {
     serverSourceMaps: false,
   },
   productionBrowserSourceMaps: false,
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -1,8 +1,5 @@
-import React from "react";
-import AboutUs from "@/app/features/marketing/pages/AboutUs/AboutUs";
+import { redirect } from 'next/navigation';
 
-function page() {
-  return <AboutUs />;
+export default function page() {
+  redirect('/about-us');
 }
-
-export default page;

@@ -3,7 +3,7 @@ import {mockTheme} from '../setup/mockTheme';
 import {render, fireEvent, screen} from '@testing-library/react-native';
 import {QRScannerScreen} from '../../../../src/features/linkedBusinesses/screens/QRScannerScreen';
 import * as Redux from 'react-redux';
-import * as LinkedBusinessActions from '../../../../src/features/linkedBusinesses/index';
+import * as LinkedBusinessSelectors from '../../../../src/features/linkedBusinesses/selectors';
 
 // --- Mocks ---
 
@@ -44,8 +44,8 @@ jest.mock('@/shared/components/common/Header/Header', () => ({
   },
 }));
 
-// Mock the specific selector from index to ensure it's recognized
-jest.mock('../../../../src/features/linkedBusinesses/index', () => ({
+// Mock the selectors module — the component imports directly from '../selectors', not index
+jest.mock('../../../../src/features/linkedBusinesses/selectors', () => ({
   selectLinkedBusinessesLoading: jest.fn(),
 }));
 
@@ -104,7 +104,7 @@ describe('QRScannerScreen', () => {
     render(<QRScannerScreen {...props} />);
 
     expect(Redux.useSelector).toHaveBeenCalledWith(
-      LinkedBusinessActions.selectLinkedBusinessesLoading,
+      LinkedBusinessSelectors.selectLinkedBusinessesLoading,
     );
   });
 });

@@ -1,5 +1,6 @@
 import React from 'react';
 import { LabResultTest } from '@/app/features/integrations/services/types';
+import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 
 type ParsedCultureResult = {
   summary: Array<{ label: string; value: string }>;
@@ -55,8 +56,10 @@ const parseCultureResult = (raw: string): ParsedCultureResult => {
   const lines = raw
     .replaceAll('\r', '')
     .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .flatMap((line) => {
+      const trimmedLine = line.trim();
+      return trimmedLine ? [trimmedLine] : [];
+    });
 
   const parsed: ParsedCultureResult = {
     summary: [],
@@ -85,6 +88,7 @@ const parseCultureResult = (raw: string): ParsedCultureResult => {
 };
 
 const LabResultValue = ({ test }: { test: LabResultTest }) => {
+  const onWheelHorizontal = useWheelToHorizontalScroll();
   const resultText = String(test.result ?? '');
   const isCultureLike =
     /culture results/i.test(String(test.name ?? '')) && /isolate/i.test(resultText);
@@ -126,7 +130,7 @@ const LabResultValue = ({ test }: { test: LabResultTest }) => {
       ) : null}
 
       {parsed.susceptibility.length > 0 ? (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scrollbar-x-float" onWheel={onWheelHorizontal}>
           <table className="min-w-[360px] w-full">
             <thead>
               <tr className="border-b border-card-border">

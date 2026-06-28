@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import OrganizationList, { getStatusStyle } from '@/app/ui/tables/OrganizationList';
+import OrganizationList from '@/app/ui/tables/OrganizationList';
+import { getOrganizationStatusStyle } from '@/app/ui/tables/tableUtils';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useRouter } from 'next/navigation';
 import { OrgWithMembership } from '@/app/features/organization/types/org';
@@ -109,7 +110,7 @@ describe('OrganizationList Component', () => {
 
   describe('getStatusStyle', () => {
     it("returns correct style for 'Active'", () => {
-      const style = getStatusStyle('Active');
+      const style = getOrganizationStatusStyle('Active');
       expect(style).toEqual({
         color: 'var(--color-success-400)',
         backgroundColor: 'var(--color-success-100)',
@@ -117,7 +118,7 @@ describe('OrganizationList Component', () => {
     });
 
     it("returns correct style for 'active' (case insensitive)", () => {
-      const style = getStatusStyle('active');
+      const style = getOrganizationStatusStyle('active');
       expect(style).toEqual({
         color: 'var(--color-success-400)',
         backgroundColor: 'var(--color-success-100)',
@@ -125,7 +126,7 @@ describe('OrganizationList Component', () => {
     });
 
     it("returns correct style for 'Pending'", () => {
-      const style = getStatusStyle('Pending');
+      const style = getOrganizationStatusStyle('Pending');
       expect(style).toEqual({
         color: 'var(--color-warning-600)',
         backgroundColor: '#FEF3E9',
@@ -133,7 +134,7 @@ describe('OrganizationList Component', () => {
     });
 
     it('returns default style for unknown status', () => {
-      const style = getStatusStyle('Unknown');
+      const style = getOrganizationStatusStyle('Unknown');
       expect(style).toEqual({
         color: 'var(--color-neutral-0)',
         backgroundColor: 'var(--color-badge-blue-bg)',

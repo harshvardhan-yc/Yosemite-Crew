@@ -22,6 +22,7 @@ const SelectLabel = ({ title, options, activeOption, setOption, type }: SelectLa
       <div className={`flex gap-2 ${type === 'coloumn' ? 'flex-wrap' : 'flex-1'}`}>
         {options.map((option) => (
           <button
+            type="button"
             key={option.value}
             onClick={() => setOption(option.value)}
             className={`${type === 'coloumn' ? '' : 'flex-1'} ${activeOption === option.value ? 'border-blue-text! bg-blue-light! text-blue-text!' : 'border-black-text! text-black-text'} rounded-2xl! border! px-4! h-10! text-body-4 font-satoshi!`}

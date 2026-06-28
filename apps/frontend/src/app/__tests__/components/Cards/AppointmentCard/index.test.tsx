@@ -23,6 +23,9 @@ jest.mock('@/app/lib/appointments', () => ({
   allowCalendarDrag: jest.fn(() => true),
   canAssignAppointmentRoom: jest.fn(() => true),
   canShowStatusChangeAction: jest.fn(() => true),
+  getAppointmentCompanion: jest.fn(
+    (appointment: Appointment) => appointment.companion ?? appointment.patient
+  ),
   getAppointmentCompanionPhotoUrl: jest.fn(() => ''),
   getClinicalNotesIntent: jest.fn(() => ({ label: 'prescription', subLabel: 'subjective' })),
   getClinicalNotesLabel: jest.fn(() => 'Medical Records'),
@@ -34,7 +37,9 @@ jest.mock('@/app/lib/appointments', () => ({
 
 describe('AppointmentCard', () => {
   const handleViewAppointment = jest.fn();
+  const handleWorkspaceAppointment = jest.fn();
   const handleRescheduleAppointment = jest.fn();
+  const handleChangeStatusAppointment = jest.fn();
   const getSoapViewIntent: jest.MockedFunction<
     (appointment: Appointment) => AppointmentViewIntent
   > = jest.fn((appointment: Appointment): AppointmentViewIntent => {
@@ -66,6 +71,7 @@ describe('AppointmentCard', () => {
       <AppointmentCard
         appointment={appointment}
         handleViewAppointment={handleViewAppointment}
+        handleWorkspaceAppointment={handleWorkspaceAppointment}
         getSoapViewIntent={getSoapViewIntent}
         handleRescheduleAppointment={handleRescheduleAppointment}
         canEditAppointments
@@ -96,6 +102,7 @@ describe('AppointmentCard', () => {
       <AppointmentCard
         appointment={appointment}
         handleViewAppointment={handleViewAppointment}
+        handleWorkspaceAppointment={handleWorkspaceAppointment}
         getSoapViewIntent={getSoapViewIntent}
         handleRescheduleAppointment={handleRescheduleAppointment}
         canEditAppointments
@@ -109,18 +116,55 @@ describe('AppointmentCard', () => {
     expect(handleRescheduleAppointment).toHaveBeenCalledWith(appointment);
   });
 
-  it('renders accept/decline icon actions for requested-like status', () => {
+  it('routes medical, finance, and lab quick actions through workspace handler', () => {
     render(
       <AppointmentCard
-        appointment={{ ...appointment, status: 'NO_PAYMENT' }}
+        appointment={appointment}
         handleViewAppointment={handleViewAppointment}
+        handleWorkspaceAppointment={handleWorkspaceAppointment}
         getSoapViewIntent={getSoapViewIntent}
         handleRescheduleAppointment={handleRescheduleAppointment}
         canEditAppointments
       />
     );
 
-    expect(screen.getAllByRole('button')).toHaveLength(2);
+    fireEvent.click(screen.getByTitle('Medical Records'));
+    fireEvent.click(screen.getByTitle('Finance'));
+    fireEvent.click(screen.getByTitle('Lab tests'));
+
+    expect(handleWorkspaceAppointment).toHaveBeenCalledWith(appointment, {
+      label: 'prescription',
+      subLabel: 'subjective',
+    });
+    expect(handleWorkspaceAppointment).toHaveBeenCalledWith(appointment, {
+      label: 'finance',
+      subLabel: 'summary',
+    });
+    expect(handleWorkspaceAppointment).toHaveBeenCalledWith(appointment, {
+      label: 'labs',
+      subLabel: 'idexx-labs',
+    });
+  });
+
+  it('renders accept/decline icon actions for requested-like status', () => {
+    render(
+      <AppointmentCard
+        appointment={{ ...appointment, status: 'NO_PAYMENT' }}
+        handleViewAppointment={handleViewAppointment}
+        handleWorkspaceAppointment={handleWorkspaceAppointment}
+        getSoapViewIntent={getSoapViewIntent}
+        handleRescheduleAppointment={handleRescheduleAppointment}
+        handleChangeStatusAppointment={handleChangeStatusAppointment}
+        canEditAppointments
+      />
+    );
+
+    const actionButtons = screen.getAllByRole('button');
+    expect(actionButtons).toHaveLength(2);
+    fireEvent.click(actionButtons[0]);
+    expect(handleChangeStatusAppointment).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'NO_PAYMENT' })
+    );
     expect(screen.queryByTitle('View')).not.toBeInTheDocument();
   });
 });

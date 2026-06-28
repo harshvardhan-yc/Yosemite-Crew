@@ -6,6 +6,8 @@ export type ButtonSize = 'default' | 'large';
 export type BaseButtonProps = {
   text: string;
   icon?: React.ReactNode;
+  /** Render the icon after the text (e.g. trailing "→"). Defaults to `left`. */
+  iconPosition?: 'left' | 'right';
   href?: string;
   onClick?: React.MouseEventHandler<HTMLAnchorElement | HTMLButtonElement>;
   style?: React.CSSProperties;
@@ -18,9 +20,20 @@ export type BaseButtonProps = {
   baseClasses: string;
 };
 
+const updateInteractionPosition = (
+  event: React.PointerEvent<HTMLAnchorElement | HTMLButtonElement>
+) => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  event.currentTarget.style.setProperty('--yc-button-x', `${x}px`);
+  event.currentTarget.style.setProperty('--yc-button-y', `${y}px`);
+};
+
 const BaseButton = ({
   text,
   icon,
+  iconPosition = 'left',
   href,
   onClick,
   style,
@@ -34,25 +47,26 @@ const BaseButton = ({
 }: Readonly<BaseButtonProps>) => {
   const classes = `${sizeClasses[size]} ${baseClasses} ${isDisabled ? 'pointer-events-none opacity-60' : ''} ${className ?? ''}`;
   const iconNode = icon ? (
-    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-current [&>svg]:h-[18px] [&>svg]:w-[18px]">
+    <span className="inline-flex size-5 shrink-0 items-center justify-center text-current [&>svg]:h-[18px] [&>svg]:w-[18px]">
       {icon}
     </span>
   ) : null;
-  const updateInteractionPosition = (
-    event: React.PointerEvent<HTMLAnchorElement | HTMLButtonElement>
-  ) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    event.currentTarget.style.setProperty('--yc-button-x', `${x}px`);
-    event.currentTarget.style.setProperty('--yc-button-y', `${y}px`);
-  };
+  const content = (
+    <>
+      {iconPosition === 'left' && iconNode}
+      <span>{text}</span>
+      {iconPosition === 'right' && iconNode}
+    </>
+  );
+  const normalizedHref = href?.trim();
+  const isLink = normalizedHref !== undefined && normalizedHref !== '' && normalizedHref !== '#';
 
-  if (href) {
+  if (isLink) {
     return (
       <Link
-        href={href}
+        href={normalizedHref}
         aria-disabled={isDisabled}
+        tabIndex={isDisabled ? -1 : undefined}
         aria-label={ariaLabel}
         className={classes}
         onClick={(e) => {
@@ -69,10 +83,7 @@ const BaseButton = ({
         onPointerMove={updateInteractionPosition}
         style={style}
       >
-        <>
-          {iconNode}
-          <span>{text}</span>
-        </>
+        {content}
       </Link>
     );
   }
@@ -89,8 +100,7 @@ const BaseButton = ({
       onPointerMove={updateInteractionPosition}
       style={style}
     >
-      {iconNode}
-      <span>{text}</span>
+      {content}
     </button>
   );
 };

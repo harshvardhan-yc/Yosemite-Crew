@@ -15,7 +15,7 @@ import {
 } from '@/app/features/appointments/types/appointments';
 import { buildUtcDateFromDateAndTime, getDurationMinutes, toUtcCalendarDate } from '@/app/lib/date';
 import { Appointment } from '@yosemite-crew/types';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import Accordion from '@/app/ui/primitives/Accordion/Accordion';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import FormDesc from '@/app/ui/inputs/FormDesc/FormDesc';
@@ -100,7 +100,7 @@ type AppointmentInfoProps = {
 
 const ReadOnlyEditField = ({ label, value }: { label: string; value?: string | null }) => (
   <div className="py-2.5! flex items-center gap-2 justify-between border border-card-border rounded-2xl px-4 bg-card-hover/40">
-    <div className="text-body-4-emphasis text-text-tertiary">{label}</div>
+    <div className="text-body-4-emphasis text-text-secondary">{label}</div>
     <div className="text-body-4 text-text-primary text-right">{value || '-'}</div>
   </div>
 );
@@ -236,15 +236,15 @@ const buildUpdatedAppointment = (ctx: AppointmentSaveContext): Appointment => {
     const id = member.practionerId || member._id;
     return id === appointmentValues.leadId;
   });
-  const supportStaff = teams
-    .filter((member) => {
-      const id = member.practionerId || member._id;
-      return id ? appointmentValues.supportIds.includes(id) : false;
-    })
-    .map((member) => ({
+  const supportStaff = teams.reduce<Array<{ id: string; name: string }>>((items, member) => {
+    const id = member.practionerId || member._id;
+    if (!id || !appointmentValues.supportIds.includes(id)) return items;
+    items.push({
       id: member.practionerId || member._id || '',
       name: member.name || member.practionerId || member._id || '',
-    }));
+    });
+    return items;
+  }, []);
   return {
     ...activeAppointment,
     concern: appointmentValues.concern,
@@ -332,23 +332,28 @@ const AppointmentInfo = ({
         (slot.vetIds?.length ? slot : null);
       if (!foundSlot?.vetIds?.length) return [];
       const vetIdSet = new Set(
-        foundSlot.vetIds.map((id) => normalizeId(id)).filter(Boolean) as string[]
-      );
-      const options = teams
-        .filter((team) => {
-          const normalizedTeamIds = [
-            normalizeId(team.practionerId),
-            normalizeId(team._id),
-            normalizeId((team as any).userId),
-            normalizeId((team as any).id),
-            normalizeId((team as any).userOrganisation?.userId),
-          ].filter(Boolean) as string[];
-          return normalizedTeamIds.some((id) => vetIdSet.has(id));
+        foundSlot.vetIds.flatMap((id) => {
+          const normalizedId = normalizeId(id);
+          return normalizedId ? [normalizedId] : [];
         })
-        .map((team) => ({
-          label: team.name || team.practionerId || team._id,
-          value: team.practionerId || team._id,
-        }));
+      );
+      const options = teams.reduce<Array<{ label: string; value: string }>>((items, team) => {
+        const teamId = team.practionerId || team._id;
+        if (!teamId) return items;
+        const normalizedTeamIds = [
+          normalizeId(team.practionerId),
+          normalizeId(team._id),
+          normalizeId((team as any).userId),
+          normalizeId((team as any).id),
+          normalizeId((team as any).userOrganisation?.userId),
+        ].filter(Boolean) as string[];
+        if (!normalizedTeamIds.some((id) => vetIdSet.has(id))) return items;
+        items.push({
+          label: team.name || teamId,
+          value: teamId,
+        });
+        return items;
+      }, []);
 
       const currentSlotStart = toIsoTimePart(activeAppointment.startTime);
       const currentSlotEnd = toIsoTimePart(activeAppointment.endTime);
@@ -454,7 +459,7 @@ const AppointmentInfo = ({
   const canAssignRoomByStatus = canAssignAppointmentRoom(activeAppointment.status);
   const canChangeStatusByStatus = canShowStatusChangeAction(activeAppointment.status);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const currentId = activeAppointment.id;
     const previousId = lastAppointmentIdRef.current;
     if (previousId && currentId && previousId !== currentId) {
@@ -477,7 +482,7 @@ const AppointmentInfo = ({
     setErrors({});
   }, [activeAppointment]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isEditingAppointment || !canRescheduleByStatus) return;
     if (!appointmentValues.serviceId || !selectedDate) {
       setTimeSlots([]);
@@ -501,11 +506,11 @@ const AppointmentInfo = ({
         const matchingSlot =
           slots.find((slot) => slot.startTime === currentStart && slot.endTime === currentEnd) ??
           (currentStart && currentEnd
-            ? ({
+            ? {
                 startTime: currentStart,
                 endTime: currentEnd,
                 vetIds: activeAppointment.lead?.id ? [activeAppointment.lead.id] : [],
-              } as Slot)
+              }
             : null);
         setSelectedSlot(matchingSlot);
       } catch (error) {
@@ -529,7 +534,7 @@ const AppointmentInfo = ({
     activeAppointment.lead?.id,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isEditingAppointment || !canRescheduleByStatus || !selectedSlot) return;
     const options = getLeadOptionsForSlot(selectedSlot);
     const currentLeadId = appointmentValues.leadId;
@@ -587,10 +592,7 @@ const AppointmentInfo = ({
       status: activeAppointment.status ?? '',
       lead: activeAppointment.lead?.name ?? '',
       staff:
-        activeAppointment.supportStaff
-          ?.map((s) => s.name)
-          .filter(Boolean)
-          .join(', ') ?? '',
+        activeAppointment.supportStaff?.flatMap((s) => (s.name ? [s.name] : [])).join(', ') ?? '',
     }),
     [activeAppointment]
   );
@@ -854,7 +856,7 @@ const AppointmentInfo = ({
                       key={field.key}
                       className="py-2.5! flex items-center gap-2 justify-between border-t border-card-border"
                     >
-                      <div className="text-body-4-emphasis text-text-tertiary">{field.label}</div>
+                      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
                       <span
                         className="text-caption-2 font-medium px-2.5 py-1 rounded-2xl! whitespace-nowrap"
                         style={{
@@ -876,7 +878,7 @@ const AppointmentInfo = ({
                     key={field.key}
                     className="py-2.5! flex items-center gap-2 justify-between border-t border-card-border"
                   >
-                    <div className="text-body-4-emphasis text-text-tertiary">{field.label}</div>
+                    <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
                     <div className="text-body-4 text-text-primary text-right">{display}</div>
                   </div>
                 );

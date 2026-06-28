@@ -6,6 +6,7 @@ import ChangeTaskStatus from '@/app/features/tasks/pages/Tasks/Sections/ChangeSt
 import { changeTaskStatus } from '@/app/features/tasks/services/taskService';
 
 const modalSpy = jest.fn();
+const fixedDueAt = new Date('2026-05-27T12:00:00.000Z');
 
 jest.mock('@/app/features/tasks/services/taskService', () => ({
   changeTaskStatus: jest.fn(),
@@ -31,7 +32,7 @@ describe('Tasks ChangeStatus wrapper', () => {
       <ChangeTaskStatus
         showModal
         setShowModal={setShowModal}
-        activeTask={{ _id: 'task-1', status: 'PENDING', dueAt: new Date() } as any}
+        activeTask={{ _id: 'task-1', status: 'PENDING', dueAt: fixedDueAt } as any}
         preferredStatus="IN_PROGRESS"
       />
     );
@@ -54,7 +55,7 @@ describe('Tasks ChangeStatus wrapper', () => {
       <ChangeTaskStatus
         showModal
         setShowModal={setShowModal}
-        activeTask={{ _id: 'task-2', status: 'IN_PROGRESS', dueAt: new Date() } as any}
+        activeTask={{ _id: 'task-2', status: 'IN_PROGRESS', dueAt: fixedDueAt } as any}
       />
     );
 

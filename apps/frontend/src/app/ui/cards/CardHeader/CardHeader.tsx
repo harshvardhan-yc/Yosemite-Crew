@@ -21,11 +21,9 @@ const CardHeader = ({ title, options, selected, onSelect }: CardHeaderProps) => 
     setOpen(false);
   };
 
-  useEffect(() => {
-    if (!selected && options.length > 0 && !options.includes(internalSelected)) {
-      setInternalSelected(options[0]);
-    }
-  }, [selected, options, internalSelected]);
+  if (!selected && options.length > 0 && !options.includes(internalSelected)) {
+    setInternalSelected(options[0]);
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -44,16 +42,32 @@ const CardHeader = ({ title, options, selected, onSelect }: CardHeaderProps) => 
       <div className="text-body-1 text-text-primary">{title}</div>
       <div className="relative" ref={filterRef}>
         <button
+          type="button"
           onClick={() => setOpen((e) => !e)}
+          aria-label={`Filter ${title} by time period: ${selectedValue}`}
+          aria-expanded={open}
+          aria-haspopup="listbox"
           className="outline-none w-[140px] flex items-center justify-end gap-2 border-0 bg-white"
         >
-          <span className="text-body-4 text-text-primary">{selectedValue}</span>
-          <FaAngleDown color="var(--color-neutral-900)" size={14} className="mt-0.5" />
+          <span className="text-body-4 text-text-primary" aria-hidden="true">
+            {selectedValue}
+          </span>
+          <FaAngleDown
+            color="var(--color-neutral-900)"
+            size={14}
+            className="mt-0.5"
+            aria-hidden="true"
+          />
         </button>
         {open && (
-          <div className="bg-white border border-card-border px-2 py-1 w-full absolute top-[120%] left-0 flex flex-col rounded-2xl z-10">
+          <div
+            aria-label={`Filter ${title} by time period`}
+            className="bg-white border border-card-border px-2 py-1 w-full absolute top-[120%] left-0 flex flex-col rounded-2xl z-10"
+          >
             {options.map((option: string) => (
               <button
+                type="button"
+                aria-pressed={option === selectedValue}
                 className="outline-none border-0 bg-white hover:bg-card-hover! rounded-2xl! transition-all duration-300 p-2"
                 key={option}
                 onClick={() => handleSelect(option)}

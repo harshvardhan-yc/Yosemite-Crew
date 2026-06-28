@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { usePopoverManager } from '@/app/hooks/usePopoverManager';
 import { IoEyeOutline } from 'react-icons/io5';
-import { getStatusStyle } from '@/app/ui/tables/Tasks';
 import { Task } from '@/app/features/tasks/types/task';
 import {
   autoScrollCalendarHorizontally,
@@ -21,6 +20,38 @@ import {
   getTaskStatusLabel,
 } from '@/app/lib/tasks';
 import { DropAvailabilityInterval } from '@/app/features/appointments/components/Calendar/availabilityIntervals';
+
+const DEFAULT_DROP_AVAILABILITY_INTERVALS: DropAvailabilityInterval[] = [];
+const DEFAULT_SLOT_OFFSET_MINUTES: number[] = [];
+
+const TASK_MARKER_STYLES: Record<
+  string,
+  { backgroundColor: string; borderColor: string; color: string }
+> = {
+  PENDING: {
+    backgroundColor: 'rgba(37, 99, 235, 0.92)',
+    borderColor: 'rgba(29, 78, 216, 1)',
+    color: '#ffffff',
+  },
+  IN_PROGRESS: {
+    backgroundColor: 'rgba(14, 116, 144, 0.94)',
+    borderColor: 'rgba(8, 145, 178, 1)',
+    color: '#ffffff',
+  },
+  COMPLETED: {
+    backgroundColor: 'rgba(22, 163, 74, 0.92)',
+    borderColor: 'rgba(21, 128, 61, 1)',
+    color: '#ffffff',
+  },
+  CANCELLED: {
+    backgroundColor: 'rgba(185, 28, 28, 0.92)',
+    borderColor: 'rgba(153, 27, 27, 1)',
+    color: '#ffffff',
+  },
+};
+
+const getTaskMarkerStyle = (status: string) =>
+  TASK_MARKER_STYLES[status.toUpperCase()] ?? TASK_MARKER_STYLES.PENDING;
 
 type TaskSlotProps = {
   slotEvents: Task[];
@@ -73,11 +104,11 @@ const TaskSlot = ({
   onTaskDropAt,
   onCreateTaskAt,
   onDragHoverTarget,
-  dropAvailabilityIntervals = [],
+  dropAvailabilityIntervals = DEFAULT_DROP_AVAILABILITY_INTERVALS,
   draggedTaskDurationMinutes = 30,
   zoomMode = 'in',
   showGridLines = false,
-  slotOffsetMinutes = [],
+  slotOffsetMinutes = DEFAULT_SLOT_OFFSET_MINUTES,
   isLastVisibleHour = false,
   resolveDisplayName,
 }: TaskSlotProps) => {
@@ -93,6 +124,8 @@ const TaskSlot = ({
     getPopoverStyle,
   } = usePopoverManager();
   const resolvedDayIndex = dayIndex ?? index ?? 0;
+  const taskPopoverTitleId = useId();
+  const taskPopoverId = useId();
   const hourStartMinute = hour * 60;
   const hourEndMinute = hourStartMinute + 60;
   const TASK_BLOCK_DURATION_MINUTES = 30;
@@ -106,6 +139,23 @@ const TaskSlot = ({
     },
     [resolveDisplayName]
   );
+
+  const createTaskLabel = `Create task on ${formatDateInPreferredTimeZone(dropDate, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })} at ${formatDateInPreferredTimeZone(new Date(dropDate.getTime() + hour * 60 * 60 * 1000), {
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`;
+  const taskSlotLabel = `Tasks slot for ${formatDateInPreferredTimeZone(dropDate, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })} at ${formatDateInPreferredTimeZone(new Date(dropDate.getTime() + hour * 60 * 60 * 1000), {
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`;
 
   useEffect(() => {
     if (!draggedTaskId) return;
@@ -123,16 +173,14 @@ const TaskSlot = ({
 
   const availabilitySegments = useMemo(() => {
     const duration = Math.max(5, draggedTaskDurationMinutes);
-    return dropAvailabilityIntervals
-      .map((interval) => {
-        const segmentStart = Math.max(hourStartMinute, interval.startMinute);
-        const segmentEnd = Math.min(hourEndMinute, interval.endMinute + duration);
-        if (segmentEnd <= segmentStart) return null;
-        const top = ((segmentStart - hourStartMinute) / 60) * height;
-        const segmentHeight = Math.max(6, ((segmentEnd - segmentStart) / 60) * height);
-        return { top, height: segmentHeight };
-      })
-      .filter(Boolean) as Array<{ top: number; height: number }>;
+    return dropAvailabilityIntervals.flatMap((interval) => {
+      const segmentStart = Math.max(hourStartMinute, interval.startMinute);
+      const segmentEnd = Math.min(hourEndMinute, interval.endMinute + duration);
+      if (segmentEnd <= segmentStart) return [];
+      const top = ((segmentStart - hourStartMinute) / 60) * height;
+      const segmentHeight = Math.max(6, ((segmentEnd - segmentStart) / 60) * height);
+      return [{ top, height: segmentHeight }];
+    });
   }, [
     draggedTaskDurationMinutes,
     dropAvailabilityIntervals,
@@ -142,7 +190,7 @@ const TaskSlot = ({
   ]);
 
   const laidOutEvents = useMemo(() => {
-    const sorted = [...slotEvents].sort(
+    const sorted = slotEvents.toSorted(
       (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
     );
     const laneEnds: number[] = [];
@@ -194,9 +242,8 @@ const TaskSlot = ({
 
   return (
     <>
-      <div
-        role="application"
-        tabIndex={-1}
+      <section
+        aria-label={taskSlotLabel}
         className={`relative bg-white border-l border-grey-light ${
           resolvedDayIndex === length ? 'border-r' : ''
         }`}
@@ -204,8 +251,8 @@ const TaskSlot = ({
         onDragOver={(event) => {
           if (!draggedTaskId) return;
           event.preventDefault();
-          autoScrollCalendarHorizontally(event.clientX, event.currentTarget as HTMLDivElement);
-          autoScrollCalendarVertically(event.clientY, event.currentTarget as HTMLDivElement);
+          autoScrollCalendarHorizontally(event.clientX, event.currentTarget);
+          autoScrollCalendarVertically(event.clientY, event.currentTarget);
           onDragHoverTarget?.(dropDate, dropAssigneeId);
           const minute = getMinuteFromPointer(event.clientY, event.currentTarget as HTMLDivElement);
           setDropPreviewMinute(getNearestAvailableMinute(minute));
@@ -230,7 +277,7 @@ const TaskSlot = ({
         {onCreateTaskAt && !draggedTaskId ? (
           <button
             type="button"
-            aria-label="Create task in this calendar slot"
+            aria-label={createTaskLabel}
             className="absolute inset-0 z-[1] rounded-none!"
             onClick={(event) => {
               createTaskAtMinute(
@@ -285,7 +332,7 @@ const TaskSlot = ({
                 height: Math.max(12, (Math.max(5, draggedTaskDurationMinutes) / 60) * height),
               }}
             >
-              <div className="h-full w-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
+              <div className="size-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
                 {draggedTaskLabel || 'Task'}
               </div>
             </div>
@@ -301,8 +348,8 @@ const TaskSlot = ({
           const isCompact = !isZoomOutMode && laneCount > 1;
           const compactPaddingClass = isCompact ? 'px-1.5 py-1' : 'px-2 py-1.5';
           const markerClassName = isZoomOutMode
-            ? 'h-full w-full text-left rounded-full! overflow-hidden px-0 py-0 border border-transparent'
-            : `h-full w-full text-left rounded-2xl! overflow-hidden ${compactPaddingClass} flex flex-col justify-between`;
+            ? 'size-full text-left rounded-full! overflow-hidden p-0 border border-transparent'
+            : `size-full text-left rounded-2xl! overflow-hidden ${compactPaddingClass} flex flex-col justify-between`;
           const taskKey = task._id || `${task.name}-${String(task.dueAt)}-${eventIndex}`;
           const dueTimeLabel = formatDateInPreferredTimeZone(new Date(task.dueAt), {
             hour: 'numeric',
@@ -324,10 +371,13 @@ const TaskSlot = ({
               <button
                 type="button"
                 className={markerClassName}
+                aria-haspopup="dialog"
+                aria-expanded={activePopoverKey === taskKey}
+                aria-controls={taskPopoverId}
                 style={{
-                  ...getStatusStyle(task.status),
-                  borderColor: isZoomOutMode ? 'rgba(0,0,0,0.08)' : undefined,
+                  ...getTaskMarkerStyle(task.status),
                   borderRadius: isZoomOutMode ? 9999 : 16,
+                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.16)',
                 }}
                 title={markerTitle}
                 onClick={() => handleViewTask(task)}
@@ -339,7 +389,16 @@ const TaskSlot = ({
                   handleOpenPopover(taskKey, event.currentTarget, event.clientX, event.clientY)
                 }
                 onMouseLeave={schedulePopoverClose}
-                onFocus={(event) => handleOpenPopover(taskKey, event.currentTarget)}
+                onFocus={(event) =>
+                  openPopover(
+                    taskKey,
+                    event.currentTarget,
+                    draggedTaskId,
+                    undefined,
+                    undefined,
+                    'focus'
+                  )
+                }
                 onBlur={schedulePopoverClose}
                 onDragStart={() => onTaskDragStart?.(task)}
                 onDragEnd={() => {
@@ -350,12 +409,14 @@ const TaskSlot = ({
                 {isZoomOutMode ? null : (
                   <>
                     <div
-                      className={`text-caption-1 text-white truncate ${isCompact ? 'text-center' : ''}`}
+                      className={`text-caption-1 truncate ${isCompact ? 'text-center' : ''}`}
+                      style={{ color: '#ffffff' }}
                     >
                       {task.name || '-'}
                     </div>
                     <div
-                      className={`text-[10px] text-white/90 truncate ${isCompact ? 'text-center' : ''}`}
+                      className={`text-[10px] truncate ${isCompact ? 'text-center' : ''}`}
+                      style={{ color: 'rgba(255,255,255,0.92)' }}
                     >
                       Due: {dueTimeLabel}
                     </div>
@@ -371,7 +432,7 @@ const TaskSlot = ({
                 <button
                   type="button"
                   title="View task"
-                  className="h-6 w-6 rounded-full bg-white/95 border border-card-border flex items-center justify-center cursor-pointer shadow-sm"
+                  className="size-6 rounded-full bg-white/95 border border-card-border flex items-center justify-center cursor-pointer shadow-sm"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -384,24 +445,36 @@ const TaskSlot = ({
             </div>
           );
         })}
-      </div>
+      </section>
 
       {activeTask && activePopoverKey && typeof document !== 'undefined'
         ? createPortal(
             <dialog
+              id={taskPopoverId}
               ref={popoverDialogRef}
               open
               className="fixed z-[1000] m-0 box-border w-[304px] max-w-[calc(100vw-16px)] rounded-2xl border border-card-border bg-white p-3 shadow-[0_8px_24px_0_rgba(0,0,0,0.16)] outline-none"
               style={popoverStyle}
+              aria-labelledby={taskPopoverTitleId}
+              aria-modal="false"
+              data-popover-panel="true"
+              tabIndex={-1}
               onMouseEnter={clearCloseTimer}
               onMouseLeave={schedulePopoverClose}
               onFocus={clearCloseTimer}
               onBlur={schedulePopoverClose}
+              onCancel={(event) => {
+                event.preventDefault();
+                setActivePopoverKey(null);
+              }}
             >
               <div className="flex min-w-0 w-full flex-col gap-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-body-4-emphasis text-text-primary">
+                    <div
+                      id={taskPopoverTitleId}
+                      className="truncate text-body-4-emphasis text-text-primary"
+                    >
                       {activeTask.name || '-'}
                     </div>
                     <div className="mt-0.5 text-[11px] leading-4 text-text-secondary">
@@ -420,8 +493,8 @@ const TaskSlot = ({
                   <span
                     className="shrink-0 rounded-full px-2 py-0.5 text-[10px] leading-4 font-medium text-white whitespace-nowrap"
                     style={{
-                      backgroundColor:
-                        getStatusStyle(activeTask.status).backgroundColor || '#1a73e8',
+                      backgroundColor: getTaskMarkerStyle(activeTask.status).backgroundColor,
+                      border: `1px solid ${getTaskMarkerStyle(activeTask.status).borderColor}`,
                     }}
                   >
                     {getTaskStatusLabel(activeTask.status)}
@@ -460,13 +533,14 @@ const TaskSlot = ({
                     <button
                       type="button"
                       title="View task"
-                      className="h-8 w-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
+                      aria-label="View task"
+                      className="size-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                       onClick={() => {
                         handleViewTask(activeTask);
                         setActivePopoverKey(null);
                       }}
                     >
-                      <IoEyeOutline size={16} />
+                      <IoEyeOutline size={16} aria-hidden="true" />
                     </button>
                   </GlassTooltip>
                   {canEditTasks && canShowTaskStatusChangeAction(activeTask.status) && (
@@ -474,13 +548,14 @@ const TaskSlot = ({
                       <button
                         type="button"
                         title="Change status"
-                        className="h-8 w-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
+                        aria-label="Change task status"
+                        className="size-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                         onClick={() => {
                           handleChangeStatusTask?.(activeTask);
                           setActivePopoverKey(null);
                         }}
                       >
-                        <MdOutlineAutorenew size={16} />
+                        <MdOutlineAutorenew size={16} aria-hidden="true" />
                       </button>
                     </GlassTooltip>
                   )}
@@ -489,13 +564,14 @@ const TaskSlot = ({
                       <button
                         type="button"
                         title="Reschedule"
-                        className="h-8 w-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
+                        aria-label="Reschedule task"
+                        className="size-8 rounded-full! flex items-center justify-center text-black-text hover:bg-card-bg border border-card-border"
                         onClick={() => {
                           handleRescheduleTask?.(activeTask);
                           setActivePopoverKey(null);
                         }}
                       >
-                        <IoIosCalendar size={16} />
+                        <IoIosCalendar size={16} aria-hidden="true" />
                       </button>
                     </GlassTooltip>
                   )}

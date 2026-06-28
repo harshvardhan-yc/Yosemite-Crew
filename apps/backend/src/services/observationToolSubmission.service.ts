@@ -83,11 +83,16 @@ export interface CreateObservationToolSubmissionInput {
   toolId: string;
   taskId?: string;
 
-  companionId: string;
+  patientId: string;
   filledBy: string;
 
   answers: ObservationToolAnswers;
   summary?: string;
+}
+
+export interface CreateAppointmentSubmissionInput extends CreateObservationToolSubmissionInput {
+  appointmentId: string;
+  organisationId: string;
 }
 
 export interface LinkSubmissionToAppointmentInput {
@@ -100,7 +105,7 @@ export interface LinkSubmissionToAppointmentInput {
 
 export interface ListSubmissionsFilter {
   organisationId?: string;
-  companionId?: string;
+  patientId?: string;
   toolId?: string;
   fromDate?: Date;
   toDate?: Date;
@@ -108,7 +113,7 @@ export interface ListSubmissionsFilter {
 
 type AppointmentTaskPreview = {
   taskId: string;
-  companionId?: string;
+  patientId?: string;
   status: string;
   dueAt: Date;
   toolId: string;
@@ -178,9 +183,9 @@ const assertSubmissionInput = (
   if (!input.toolId) {
     throw new ObservationToolSubmissionServiceError("toolId is required", 400);
   }
-  if (!input.companionId) {
+  if (!input.patientId) {
     throw new ObservationToolSubmissionServiceError(
-      "companionId is required",
+      "patientId is required",
       400,
     );
   }
@@ -223,9 +228,9 @@ const assertTaskSubmission = async (
       403,
     );
   }
-  if (task.companionId !== input.companionId) {
+  if (task.patientId !== input.patientId) {
     throw new ObservationToolSubmissionServiceError(
-      "companionId does not match task",
+      "patientId does not match task",
       400,
     );
   }
@@ -239,7 +244,7 @@ const assertTaskSubmission = async (
 
 const applyStringFilter = (
   q: Record<string, unknown>,
-  key: "companionId" | "toolId",
+  key: "patientId" | "toolId",
   value: unknown,
 ): void => {
   if (value === undefined) return;
@@ -269,13 +274,13 @@ const applyDateRangeFilter = (
 };
 
 const ensureCompanionInOrganisation = async (
-  companionId: string,
+  patientId: string,
   organisationId: string,
 ): Promise<void> => {
   if (isReadFromPostgres()) {
-    const link = await prisma.companionOrganisation.findFirst({
+    const link = await prisma.patientOrganisation.findFirst({
       where: {
-        companionId,
+        patientId: patientId,
         organisationId,
         status: "ACTIVE",
       },
@@ -288,14 +293,14 @@ const ensureCompanionInOrganisation = async (
     return;
   }
 
-  const safeCompanionId = ensureMongoObjectId(companionId, "companionId");
+  const safeCompanionId = ensureMongoObjectId(patientId, "patientId");
   const safeOrganisationId = ensureMongoObjectId(
     organisationId,
     "organisationId",
   );
 
   const link = await CompanionOrganisationModel.findOne({
-    companionId: safeCompanionId,
+    patientId: safeCompanionId,
     organisationId: safeOrganisationId,
     status: "ACTIVE",
   })
@@ -347,7 +352,7 @@ const toPrismaObservationToolSubmissionData = (
     _id: { toString(): string };
     toolId: string;
     taskId?: string;
-    companionId: string;
+    patientId: string;
     filledBy: string;
     answers: unknown;
     score?: number;
@@ -361,7 +366,7 @@ const toPrismaObservationToolSubmissionData = (
     id: obj._id.toString(),
     toolId: obj.toolId,
     taskId: obj.taskId ?? undefined,
-    companionId: obj.companionId,
+    patientId: obj.patientId,
     filledBy: obj.filledBy,
     answers: obj.answers as Prisma.InputJsonValue,
     score: obj.score ?? undefined,
@@ -440,9 +445,9 @@ export const ObservationToolSubmissionService = {
           );
         }
 
-        if (task.companionId !== input.companionId) {
+        if (task.patientId !== input.patientId) {
           throw new ObservationToolSubmissionServiceError(
-            "companionId does not match task",
+            "patientId does not match task",
             400,
           );
         }
@@ -466,7 +471,7 @@ export const ObservationToolSubmissionService = {
         data: {
           toolId: input.toolId,
           taskId,
-          companionId: input.companionId,
+          patientId: input.patientId,
           filledBy: input.filledBy,
           answers: input.answers as Prisma.InputJsonValue,
           score: score ?? undefined,
@@ -509,7 +514,7 @@ export const ObservationToolSubmissionService = {
     const doc = await ObservationToolSubmissionModel.create({
       toolId: input.toolId,
       taskId,
-      companionId: input.companionId,
+      patientId: input.patientId,
       filledBy: input.filledBy,
       answers: input.answers,
       score,
@@ -528,6 +533,93 @@ export const ObservationToolSubmissionService = {
         summary: input.summary,
       });
     }
+
+    return doc;
+  },
+
+  /**
+   * PMS — clinician records an observation-tool submission directly against an
+   * appointment. The score is computed from the tool definition (never trusted
+   * from the client) and the submission is linked to the appointment via
+   * evaluationAppointmentId so it surfaces in the appointment workspace.
+   */
+  async createForAppointment(
+    input: CreateAppointmentSubmissionInput,
+  ): Promise<ObservationToolSubmissionDocument> {
+    assertSubmissionInput(input);
+
+    const appointmentId = assertObjectId(input.appointmentId, "appointmentId");
+    const organisationId = assertObjectId(
+      input.organisationId,
+      "organisationId",
+    );
+    const taskId = input.taskId
+      ? assertObjectId(input.taskId, "taskId")
+      : undefined;
+
+    await ensureAppointmentInOrganisation(appointmentId, organisationId);
+    await ensureCompanionInOrganisation(input.patientId, organisationId);
+
+    if (isReadFromPostgres()) {
+      const tool = await prisma.observationToolDefinition.findFirst({
+        where: { id: input.toolId },
+      });
+
+      if (!tool?.isActive) {
+        throw new ObservationToolSubmissionServiceError(
+          "Observation tool not found or inactive",
+          404,
+        );
+      }
+
+      const toolForScore = {
+        fields: (tool.fields ??
+          []) as unknown as ObservationToolDefinitionDocument["fields"],
+      } as ObservationToolDefinitionDocument;
+
+      const score = computeScore(toolForScore, input.answers);
+
+      const doc = await prisma.observationToolSubmission.create({
+        data: {
+          toolId: input.toolId,
+          taskId,
+          patientId: input.patientId,
+          filledBy: input.filledBy,
+          answers: input.answers as Prisma.InputJsonValue,
+          score: score ?? undefined,
+          summary: input.summary ?? undefined,
+          evaluationAppointmentId: appointmentId,
+        },
+      });
+
+      return doc as unknown as ObservationToolSubmissionDocument;
+    }
+
+    const tool = await ObservationToolDefinitionModel.findById(
+      input.toolId,
+    ).exec();
+
+    if (!tool?.isActive) {
+      throw new ObservationToolSubmissionServiceError(
+        "Observation tool not found or inactive",
+        404,
+      );
+    }
+
+    const score = computeScore(tool, input.answers);
+
+    const doc = await ObservationToolSubmissionModel.create({
+      toolId: input.toolId,
+      taskId,
+      patientId: input.patientId,
+      filledBy: input.filledBy,
+      answers: input.answers,
+      score,
+      summary: input.summary,
+      evaluationAppointmentId: appointmentId,
+    });
+
+    await syncObservationToolSubmissionToPostgres(doc);
 
     return doc;
   },
@@ -551,7 +643,7 @@ export const ObservationToolSubmissionService = {
         );
       }
       if (organisationId) {
-        await ensureCompanionInOrganisation(doc.companionId, organisationId);
+        await ensureCompanionInOrganisation(doc.patientId, organisationId);
         await ensureAppointmentInOrganisation(appointmentId, organisationId);
       }
 
@@ -586,7 +678,7 @@ export const ObservationToolSubmissionService = {
       );
     }
     if (organisationId) {
-      await ensureCompanionInOrganisation(doc.companionId, organisationId);
+      await ensureCompanionInOrganisation(doc.patientId, organisationId);
       await ensureAppointmentInOrganisation(appointmentId, organisationId);
     }
 
@@ -623,10 +715,7 @@ export const ObservationToolSubmissionService = {
         where: { id: safeId },
       });
       if (doc && safeOrganisationId) {
-        await ensureCompanionInOrganisation(
-          doc.companionId,
-          safeOrganisationId,
-        );
+        await ensureCompanionInOrganisation(doc.patientId, safeOrganisationId);
       }
       return (doc ??
         null) as unknown as ObservationToolSubmissionDocument | null;
@@ -634,7 +723,7 @@ export const ObservationToolSubmissionService = {
 
     const doc = await ObservationToolSubmissionModel.findById(safeId).exec();
     if (doc && safeOrganisationId) {
-      await ensureCompanionInOrganisation(doc.companionId, safeOrganisationId);
+      await ensureCompanionInOrganisation(doc.patientId, safeOrganisationId);
     }
     return doc;
   },
@@ -645,14 +734,14 @@ export const ObservationToolSubmissionService = {
     const organisationId = asNonEmptyString(filter.organisationId);
     const q: Record<string, unknown> = {};
 
-    applyStringFilter(q, "companionId", filter.companionId);
+    applyStringFilter(q, "patientId", filter.patientId);
     applyStringFilter(q, "toolId", filter.toolId);
     applyDateRangeFilter(q, filter.fromDate, filter.toDate);
 
     if (isReadFromPostgres()) {
       const where: Prisma.ObservationToolSubmissionWhereInput = {};
 
-      if (filter.companionId) where.companionId = filter.companionId;
+      if (filter.patientId) where.patientId = filter.patientId;
       if (filter.toolId) where.toolId = filter.toolId;
       if (filter.fromDate || filter.toDate) {
         where.createdAt = {};
@@ -660,18 +749,15 @@ export const ObservationToolSubmissionService = {
         if (filter.toDate) where.createdAt.lte = filter.toDate;
       }
       if (organisationId) {
-        if (filter.companionId) {
-          await ensureCompanionInOrganisation(
-            filter.companionId,
-            organisationId,
-          );
+        if (filter.patientId) {
+          await ensureCompanionInOrganisation(filter.patientId, organisationId);
         } else {
-          const scopedCompanions = await prisma.companionOrganisation.findMany({
+          const scopedCompanions = await prisma.patientOrganisation.findMany({
             where: { organisationId, status: "ACTIVE" },
-            select: { companionId: true },
+            select: { patientId: true },
           });
-          where.companionId = {
-            in: scopedCompanions.map((item) => item.companionId),
+          where.patientId = {
+            in: scopedCompanions.map((item) => item.patientId),
           };
         }
       }
@@ -684,19 +770,19 @@ export const ObservationToolSubmissionService = {
     }
 
     if (organisationId) {
-      if (filter.companionId) {
-        await ensureCompanionInOrganisation(filter.companionId, organisationId);
+      if (filter.patientId) {
+        await ensureCompanionInOrganisation(filter.patientId, organisationId);
       } else {
         const scopedCompanions = (await CompanionOrganisationModel.find({
           organisationId,
           status: "ACTIVE",
         })
           .setOptions({ sanitizeFilter: true })
-          .select({ companionId: 1 })
-          .lean()) as unknown as Array<{ companionId: Types.ObjectId }>;
+          .select({ patientId: 1 })
+          .lean()) as unknown as Array<{ patientId: Types.ObjectId }>;
 
-        q.companionId = {
-          $in: scopedCompanions.map((item) => item.companionId.toString()),
+        q.patientId = {
+          $in: scopedCompanions.map((item) => item.patientId.toString()),
         };
       }
     }
@@ -904,7 +990,7 @@ export const ObservationToolSubmissionService = {
         },
         select: {
           id: true,
-          companionId: true,
+          patientId: true,
           status: true,
           dueAt: true,
           observationToolId: true,
@@ -950,7 +1036,7 @@ export const ObservationToolSubmissionService = {
         return [
           {
             taskId: t.id,
-            companionId: t.companionId ?? undefined,
+            patientId: t.patientId ?? undefined,
             status: String(t.status),
             dueAt: t.dueAt,
             toolId: tool.id,
@@ -973,10 +1059,10 @@ export const ObservationToolSubmissionService = {
       observationToolId: { $exists: true, $ne: null },
     })
       .setOptions({ sanitizeFilter: true })
-      .select("_id companionId status dueAt observationToolId")
+      .select("_id patientId status dueAt observationToolId")
       .lean()) as unknown as Array<{
       _id: Types.ObjectId;
-      companionId?: string | null;
+      patientId?: string | null;
       status?: string;
       dueAt?: Date;
       observationToolId?: Types.ObjectId | string | null;
@@ -1029,7 +1115,7 @@ export const ObservationToolSubmissionService = {
       return [
         {
           taskId: t._id.toString(),
-          companionId: t.companionId ? String(t.companionId) : undefined,
+          patientId: t.patientId ? String(t.patientId) : undefined,
           status: String(t.status),
           dueAt: t.dueAt,
           toolId: tool._id.toString(),

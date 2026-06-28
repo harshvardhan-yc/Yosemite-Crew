@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import SelectLabel from '@/app/ui/inputs/SelectLabel';
@@ -6,6 +6,9 @@ import {
   CountriesOptions,
   EMPTY_STORED_COMPANION,
   EMPTY_STORED_PARENT,
+  CompanionFormData,
+  fromStoredCompanionAlerts,
+  toStoredCompanionAlerts,
   GenderOptions,
   InsuredOptions,
   getNeuteredOptions,
@@ -94,8 +97,8 @@ const toNonNegativeNumber = (value: string | number | undefined) => {
 
 type CompanionProps = {
   setActiveLabel: React.Dispatch<React.SetStateAction<string>>;
-  formData: StoredCompanion;
-  setFormData: React.Dispatch<React.SetStateAction<StoredCompanion>>;
+  formData: CompanionFormData;
+  setFormData: React.Dispatch<React.SetStateAction<CompanionFormData>>;
   parentFormData: StoredParent;
   setParentFormData: React.Dispatch<React.SetStateAction<StoredParent>>;
   setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
@@ -143,7 +146,7 @@ const Companion = ({
     [results]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const parentId = parentFormData.id;
     if (!parentId) {
       setResults([]);
@@ -194,7 +197,7 @@ const Companion = ({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const selected = speciesOptions.find((option) => option.type === formData.type);
     if (!selected) {
       setBreedOptions([]);
@@ -206,12 +209,19 @@ const Companion = ({
         if (!mounted) {
           return;
         }
-        const nextOptions: BreedOption[] = entries.map((entry) => ({
-          value: entry.display,
-          label: entry.display,
-          breedCode: entry.code,
-          speciesCode: entry.meta?.speciesCode ?? selected.speciesCode,
-        }));
+        const seen = new Set<string>();
+        const nextOptions: BreedOption[] = entries.reduce<BreedOption[]>((acc, entry) => {
+          if (!seen.has(entry.display)) {
+            seen.add(entry.display);
+            acc.push({
+              value: entry.display,
+              label: entry.display,
+              breedCode: entry.code,
+              speciesCode: entry.meta?.speciesCode ?? selected.speciesCode,
+            });
+          }
+          return acc;
+        }, []);
         setBreedOptions(nextOptions);
       })
       .catch(() => {
@@ -273,12 +283,14 @@ const Companion = ({
       if (formData.id) {
         const payload: StoredCompanion = {
           ...formData,
+          alerts: toStoredCompanionAlerts(formData.alerts),
           parentId: parentFormData.id,
         };
         return await linkCompanion(payload, parentFormData);
       } else {
         const payload: StoredCompanion = {
           ...formData,
+          alerts: toStoredCompanionAlerts(formData.alerts),
           parentId: parentFormData.id,
         };
         return await createCompanion(payload, parentFormData);
@@ -287,6 +299,7 @@ const Companion = ({
       const parent_id = await createParent(parentFormData);
       const payload: StoredCompanion = {
         ...formData,
+        alerts: toStoredCompanionAlerts(formData.alerts),
         parentId: parent_id!,
       };
       const parentPayload: StoredParent = {
@@ -300,7 +313,10 @@ const Companion = ({
   const handleSelect = (parentId: string) => {
     const selected = results.find((p) => p.id === parentId);
     if (!selected) return;
-    setFormData(selected);
+    setFormData({
+      ...selected,
+      alerts: fromStoredCompanionAlerts(selected.alerts),
+    });
     setQuery(`${selected.name}`);
   };
 
@@ -433,7 +449,7 @@ const Companion = ({
                   intype="number"
                   inname="weight"
                   value={formData.currentWeight + ''}
-                  inlabel="Current weight (optional) (lbs)"
+                  inlabel="Current weight (optional) (kg)"
                   onChange={(e) =>
                     setFormData({
                       ...formData,

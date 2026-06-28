@@ -7,6 +7,8 @@ import { useTeamStore } from '@/app/stores/teamStore';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { Organisation } from '@yosemite-crew/types';
 
+import { getFormsStatusStyle } from '@/app/ui/tables/tableUtils';
+
 import './DataTable.css';
 
 type Column<T> = {
@@ -21,42 +23,6 @@ type FormsTableProps = {
   setActiveForm: (companion: FormsProps) => void;
   setViewPopup: (open: boolean) => void;
   loading?: boolean;
-};
-
-export const getStatusStyle = (status: string) => {
-  if (!status) {
-    return {
-      color: 'var(--color-pill-neutral-text)',
-      backgroundColor: 'var(--color-pill-neutral-bg)',
-      borderColor: 'var(--color-pill-neutral-border)',
-    };
-  }
-  switch (status.toLowerCase()) {
-    case 'published':
-      return {
-        color: 'var(--color-pill-info-text)',
-        backgroundColor: 'var(--color-pill-info-bg)',
-        borderColor: 'var(--color-pill-info-border)',
-      };
-    case 'draft':
-      return {
-        color: 'var(--color-pill-neutral-text)',
-        backgroundColor: 'var(--color-pill-neutral-bg)',
-        borderColor: 'var(--color-pill-neutral-border)',
-      };
-    case 'archived':
-      return {
-        color: 'var(--color-pill-warning-text)',
-        backgroundColor: 'var(--color-pill-warning-bg)',
-        borderColor: 'var(--color-pill-warning-border)',
-      };
-    default:
-      return {
-        color: 'var(--color-pill-progress-text)',
-        backgroundColor: 'var(--color-pill-progress-bg)',
-        borderColor: 'var(--color-pill-progress-border)',
-      };
-  }
 };
 
 const FormsTable = ({
@@ -138,7 +104,7 @@ const FormsTable = ({
       key: 'status',
       width: '110px',
       render: (item: FormsProps) => (
-        <div className="appointment-status" style={getStatusStyle(item.status || '')}>
+        <div className="appointment-status" style={getFormsStatusStyle(item.status || '')}>
           {item.status}
         </div>
       ),
@@ -150,8 +116,9 @@ const FormsTable = ({
       render: (item: FormsProps) => (
         <div className="action-btn-col">
           <button
+            type="button"
             onClick={() => handleViewForm(item)}
-            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
           >
             <IoEye size={20} color="var(--color-neutral-900)" />
           </button>
@@ -165,7 +132,7 @@ const FormsTable = ({
       <div className="table-list hidden xl:flex h-full min-h-0 flex-1 overflow-y-auto pr-1 pb-2">
         {loading ? (
           <div className="w-full py-6 flex items-center justify-center text-grey-noti font-satoshi font-semibold">
-            Loading forms...
+            Loading forms…
           </div>
         ) : (
           <GenericTable
@@ -183,7 +150,7 @@ const FormsTable = ({
           if (loading) {
             return (
               <div className="w-full py-6 flex items-center justify-center text-body-4 text-text-primary">
-                Loading forms...
+                Loading forms…
               </div>
             );
           }

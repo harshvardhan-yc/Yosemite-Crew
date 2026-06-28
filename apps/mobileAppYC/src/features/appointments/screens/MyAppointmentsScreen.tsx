@@ -379,6 +379,7 @@ export const MyAppointmentsScreen: React.FC = () => {
       theme,
       item.status,
       item.paymentStatus,
+      item.bookingPaymentStatus,
     );
 
     const requestedBadge = isRequested ? (
@@ -408,6 +409,7 @@ export const MyAppointmentsScreen: React.FC = () => {
     return (
       <View style={styles.cardWrapper}>
         <AppointmentCard
+          key={`${item.id}-${String(avatarSource || '')}`}
           doctorName={cardTitle}
           specialization={cardSubtitle}
           hospital={businessName}
@@ -643,6 +645,7 @@ const PastAppointmentCard: React.FC<PastAppointmentCardProps> = ({
     theme,
     item.status,
     item.paymentStatus,
+    item.bookingPaymentStatus,
   );
 
   let ratingContent: React.ReactNode = null;
@@ -682,6 +685,7 @@ const PastAppointmentCard: React.FC<PastAppointmentCardProps> = ({
   return (
     <View style={styles.cardWrapper}>
       <AppointmentCard
+        key={`${item.id}-${String(avatarSource || '')}`}
         doctorName={cardTitle}
         specialization={cardSubtitle}
         hospital={businessName}

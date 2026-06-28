@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 type ModalBaseProps = {
@@ -40,9 +40,11 @@ const ModalBase = ({
   'aria-labelledby': ariaLabelledBy,
   'aria-describedby': ariaDescribedBy,
 }: ModalBaseProps) => {
-  const containerRef = useRef<HTMLDialogElement | null>(null);
-  /** Tracks the element focused before the modal opened so we can restore it. */
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  // React 19 owns the inert attribute via this boolean prop (true = inert, undefined = not inert).
+  // Never mix with imperative setAttribute to avoid the empty-string boolean warning.
+  const [isInert, setIsInert] = useState(!showModal);
 
   const closeModal = useCallback(() => {
     if (canClose && !canClose()) return;
@@ -50,38 +52,64 @@ const ModalBase = ({
     onClose?.();
   }, [canClose, setShowModal, onClose]);
 
-  // Focus management: move focus into modal on open, restore on close.
-  // Body scroll is locked while open to prevent layout shifts (scrollbar width change)
-  // from displacing sticky calendar rows or triggering the planner auto-lock hook.
+  const closeModalRef = useRef(closeModal);
+  closeModalRef.current = closeModal;
+
+  const ignoreOutsideClickRef = useRef(ignoreOutsideClick);
+  ignoreOutsideClickRef.current = ignoreOutsideClick;
+
+  // Sync inert state and body scroll lock with showModal.
+  // Focus is moved in a separate effect that fires after isInert settles (below).
   useEffect(() => {
     if (showModal) {
+      setIsInert(false);
       previousFocusRef.current = document.activeElement as HTMLElement;
-      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      const scrollbarWidth =
+        globalThis.window === undefined
+          ? 0
+          : globalThis.window.innerWidth - document.documentElement.clientWidth;
       document.body.style.overflow = 'hidden';
       document.body.style.paddingRight = `${scrollbarWidth}px`;
-      const firstFocusable = containerRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-      firstFocusable?.focus();
+      // Safari requires overflow:hidden on <html> to prevent body scroll
+      document.documentElement.style.overflow = 'hidden';
     } else {
+      setIsInert(true);
+      // Restore focus to the element that was active before the modal opened.
+      // This runs before inert is applied to the DOM (React batches the state update),
+      // so the focused element is already outside the modal when inert renders.
       previousFocusRef.current?.focus();
       previousFocusRef.current = null;
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
+      document.documentElement.style.overflow = '';
     }
   }, [showModal]);
+
+  // Move focus into the modal after inert is removed (i.e. after the open render).
+  useEffect(() => {
+    if (isInert) return;
+    const el = containerRef.current;
+    const firstFocusable = el?.querySelector<HTMLElement>(FOCUSABLE);
+    if (firstFocusable) {
+      firstFocusable.focus();
+    } else {
+      el?.focus();
+    }
+  }, [isInert]);
 
   // Outside-click handler.
   useEffect(() => {
     if (!showModal) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
-      if (ignoreOutsideClick?.(target)) return;
+      if (ignoreOutsideClickRef.current?.(target)) return;
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        closeModal();
+        closeModalRef.current();
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showModal, closeModal, ignoreOutsideClick]);
+  }, [showModal]);
 
   // Escape key handler.
   useEffect(() => {
@@ -89,12 +117,12 @@ const ModalBase = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        closeModal();
+        closeModalRef.current();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showModal, closeModal]);
+  }, [showModal]);
 
   // Focus trap: keep focus inside the modal while it is open.
   useEffect(() => {
@@ -125,21 +153,19 @@ const ModalBase = ({
       {/* Backdrop — purely visual; click-outside is handled via mousedown listener */}
       <div className={overlayClassName} style={overlayStyle} aria-hidden="true" />
 
-      <dialog
-        open
+      <div
+        role="dialog"
         ref={containerRef}
-        aria-modal="true"
+        aria-modal={showModal ? 'true' : undefined}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
-        onCancel={(event) => {
-          event.preventDefault();
-          closeModal();
-        }}
-        className={`inset-auto m-0 border-0 p-0 max-h-none max-w-none overflow-visible ${containerClassName} ${showModal ? '' : 'pointer-events-none'}`}
+        tabIndex={-1}
+        inert={isInert || undefined}
+        className={`${containerClassName} ${showModal ? '' : 'pointer-events-none'}`}
       >
         {children}
-      </dialog>
+      </div>
     </>,
     document.body
   );

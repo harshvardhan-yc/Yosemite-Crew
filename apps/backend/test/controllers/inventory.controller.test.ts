@@ -15,6 +15,11 @@ import {
   InventoryAlertService,
   InventoryServiceError,
 } from "../../src/services/inventory.service";
+import { generatePresignedUrl } from "../../src/middlewares/upload";
+
+jest.mock("../../src/middlewares/upload", () => ({
+  generatePresignedUrl: jest.fn(),
+}));
 
 // --- MOCKS ---
 jest.mock("../../src/services/inventory.service", () => {
@@ -43,6 +48,7 @@ jest.mock("../../src/services/inventory.service", () => {
       consumeStock: jest.fn(),
       bulkConsumeStock: jest.fn(),
       getInventoryTurnoverByItem: jest.fn(),
+      getCategories: jest.fn(),
     },
     InventoryAdjustmentService: { adjustStock: jest.fn() },
     InventoryAllocationService: {
@@ -154,6 +160,46 @@ describe("Inventory Controllers", () => {
   });
 
   describe("InventoryController", () => {
+    describe("getItemImageUploadUrl", () => {
+      it("returns a presigned upload URL for inventory images", async () => {
+        req = mockRequest({
+          params: { organisationId: "org1" },
+          body: { mimeType: "image/png" },
+        });
+        (generatePresignedUrl as jest.Mock).mockResolvedValueOnce({
+          url: "https://s3.example/upload",
+          key: "inventory/org1/image.png",
+        });
+
+        await InventoryController.getItemImageUploadUrl(req as any, res);
+
+        expect(generatePresignedUrl).toHaveBeenCalledWith(
+          "image/png",
+          "inventory",
+          "org1",
+        );
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith({
+          uploadUrl: "https://s3.example/upload",
+          s3Key: "inventory/org1/image.png",
+        });
+      });
+
+      it("rejects missing mimeType", async () => {
+        req = mockRequest({
+          params: { organisationId: "org1" },
+          body: {},
+        });
+
+        await InventoryController.getItemImageUploadUrl(req as any, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+          message: "MIME type is required in the request body.",
+        });
+      });
+    });
+
     describe("createItem", () => {
       it("should create item successfully", async () => {
         req = mockRequest({ body: { name: "Test" } });
@@ -237,6 +283,34 @@ describe("Inventory Controllers", () => {
         );
         await InventoryController.activeItem(req as any, res);
         expect(res.status).toHaveBeenCalledWith(500);
+      });
+    });
+
+    describe("toggleItemStatus", () => {
+      it("activates an item when active is true", async () => {
+        req = mockRequest({
+          params: { itemId: "1" },
+          organisationId: "org1",
+          body: { active: true },
+        } as any);
+        (InventoryService.activeItem as jest.Mock).mockResolvedValueOnce({
+          id: "1",
+        });
+        await InventoryController.toggleItemStatus(req as any, res);
+        expect(InventoryService.activeItem).toHaveBeenCalledWith("1", "org1");
+      });
+
+      it("hides an item when active is false", async () => {
+        req = mockRequest({
+          params: { itemId: "1" },
+          organisationId: "org1",
+          body: { active: false },
+        } as any);
+        (InventoryService.hideItem as jest.Mock).mockResolvedValueOnce({
+          id: "1",
+        });
+        await InventoryController.toggleItemStatus(req as any, res);
+        expect(InventoryService.hideItem).toHaveBeenCalledWith("1", "org1");
       });
     });
 
@@ -558,6 +632,19 @@ describe("Inventory Controllers", () => {
         await InventoryController.getInventoryTurnOver(req, res);
         expect(res.status).toHaveBeenCalledWith(400);
         expect(res.json).toHaveBeenCalledWith({ message: "Turnover err" });
+      });
+    });
+
+    describe("getCategories", () => {
+      it("returns catalog categories", async () => {
+        req = mockRequest();
+        (InventoryService.getCategories as jest.Mock).mockResolvedValueOnce([
+          { name: "Medicine" },
+        ]);
+        await InventoryController.getCategories(req as any, res);
+        expect(res.json).toHaveBeenCalledWith({
+          categories: [{ name: "Medicine" }],
+        });
       });
     });
   });

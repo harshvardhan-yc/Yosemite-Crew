@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 import AppointmentCalendar from '@/app/features/appointments/components/Calendar/AppointmentCalendar';
+import { filterAppointmentsForWeek } from '@/app/features/appointments/components/Calendar/availabilityIntervals';
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
   getSlotsForServiceAndDateForPrimaryOrg,
@@ -128,6 +129,7 @@ jest.mock('@/app/stores/authStore', () => ({
 }));
 
 jest.mock('@/app/features/appointments/components/Calendar/availabilityIntervals', () => ({
+  ...jest.requireActual('@/app/features/appointments/components/Calendar/availabilityIntervals'),
   resolveAvailabilityIntervalsForDay: jest.fn(() => []),
 }));
 
@@ -228,6 +230,14 @@ describe('AppointmentCalendar', () => {
     renderCalendar();
 
     expect(dayCalendarSpy).toHaveBeenCalledTimes(1);
+    expect(dayCalendarSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        events: expect.arrayContaining([
+          expect.objectContaining({ id: 'a1' }),
+          expect.objectContaining({ id: 'a2' }),
+        ]),
+      })
+    );
     expect(headerSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         activeCalendar: 'day',
@@ -277,6 +287,24 @@ describe('AppointmentCalendar', () => {
 
     expect(setChangeStatusPopup).not.toHaveBeenCalled();
     expect(notifyMock).toHaveBeenCalledWith(
+      'warning',
+      expect.objectContaining({ title: 'Status change blocked' })
+    );
+  });
+
+  it('opens accept modal for requested appointments even when generic status action is blocked', () => {
+    (canShowStatusChangeAction as jest.Mock).mockReturnValue(false);
+    renderCalendar();
+    const props = dayCalendarSpy.mock.calls[0][0];
+
+    act(() => {
+      props.handleAcceptAppointment(appointments[0]);
+    });
+
+    expect(setActiveAppointment).toHaveBeenCalledWith(appointments[0]);
+    expect(setChangeStatusPreferredStatus).toHaveBeenCalledWith('UPCOMING');
+    expect(setChangeStatusPopup).toHaveBeenCalledWith(true);
+    expect(notifyMock).not.toHaveBeenCalledWith(
       'warning',
       expect.objectContaining({ title: 'Status change blocked' })
     );
@@ -461,15 +489,55 @@ describe('AppointmentCalendar', () => {
     });
   });
 
-  it('renders week calendar with current-user filtered appointments in week mode', () => {
-    renderCalendar({ activeCalendar: 'week' });
+  it('renders week calendar with all filtered appointments in week mode', () => {
+    const weekAppointments = appointments.map((appointment, index) => ({
+      ...appointment,
+      startTime: new Date(`2025-01-0${6 + index}T10:00:00Z`),
+      endTime: new Date(`2025-01-0${6 + index}T10:30:00Z`),
+      appointmentDate: new Date(`2025-01-0${6 + index}T10:00:00Z`),
+    }));
+    renderCalendar({
+      activeCalendar: 'week',
+      filteredList: weekAppointments as any,
+      allAppointments: weekAppointments as any,
+      weekStart: new Date('2025-01-06T00:00:00Z'),
+    });
 
     expect(weekCalendarSpy).toHaveBeenCalledTimes(1);
     expect(weekCalendarSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        events: [],
+        events: expect.arrayContaining([
+          expect.objectContaining({ id: 'a1' }),
+          expect.objectContaining({ id: 'a2' }),
+        ]),
       })
     );
+  });
+
+  it('filters week appointments to only overlapping events', () => {
+    const mockedWeekStart = new Date('2025-01-06T00:00:00Z');
+    const result = filterAppointmentsForWeek(
+      [
+        {
+          ...appointments[0],
+          startTime: new Date('2025-01-06T09:00:00Z'),
+          endTime: new Date('2025-01-06T09:30:00Z'),
+        },
+        {
+          ...appointments[1],
+          id: 'a3',
+          startTime: new Date('2025-02-10T10:00:00Z'),
+          endTime: new Date('2025-02-10T10:30:00Z'),
+        },
+      ] as any,
+      mockedWeekStart
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'a1',
+      }),
+    ]);
   });
 
   it('prefetches drag availability on hover after drag start', async () => {

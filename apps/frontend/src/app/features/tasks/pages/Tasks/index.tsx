@@ -1,16 +1,11 @@
 'use client';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
-import TasksTable from '@/app/ui/tables/Tasks';
-import AddTask from '@/app/features/tasks/pages/Tasks/Sections/AddTask';
-import TaskInfo from '@/app/features/tasks/pages/Tasks/Sections/TaskInfo';
-import ChangeTaskStatus from '@/app/features/tasks/pages/Tasks/Sections/ChangeStatus';
-import RescheduleTask from '@/app/features/tasks/pages/Tasks/Sections/Reschedule';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
 import TitleCalendar from '@/app/ui/widgets/TitleCalendar';
 import { startOfDay } from '@/app/features/appointments/components/Calendar/weekHelpers';
-import TaskCalendar from '@/app/features/appointments/components/Calendar/TaskCalendar';
-import TaskBoard from '@/app/features/tasks/components/TaskBoard';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
 import { useTasksForPrimaryOrg } from '@/app/hooks/useTask';
 import { Task, TaskFilters, TaskStatus, TaskStatusFilters } from '@/app/features/tasks/types/task';
@@ -21,11 +16,37 @@ import { PERMISSIONS } from '@/app/lib/permissions';
 import { PermissionGate } from '@/app/ui/layout/guards/PermissionGate';
 import Fallback from '@/app/ui/overlays/Fallback';
 import { getPlannerLayoutClassNames, usePlannerAutoLock } from '@/app/hooks/usePlannerLayout';
+import MobileSearchBar from '@/app/ui/layout/MobileSearchBar/MobileSearchBar';
+
+const TASKS_PAGE_SKELETON = <PageSkeleton variant="planner" />;
+
+const TaskPlannerSkeleton = () => (
+  <div className="h-full min-h-125 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
+);
+
+const TasksTable = dynamic(() => import('@/app/ui/tables/Tasks'), {
+  loading: () => <TaskPlannerSkeleton />,
+});
+const TaskCalendar = dynamic(
+  () => import('@/app/features/appointments/components/Calendar/TaskCalendar'),
+  { loading: () => <TaskPlannerSkeleton /> }
+);
+const TaskBoard = dynamic(() => import('@/app/features/tasks/components/TaskBoard'), {
+  loading: () => <TaskPlannerSkeleton />,
+});
+const AddTask = dynamic(() => import('@/app/features/tasks/pages/Tasks/Sections/AddTask'));
+const TaskInfo = dynamic(() => import('@/app/features/tasks/pages/Tasks/Sections/TaskInfo'));
+const ChangeTaskStatus = dynamic(
+  () => import('@/app/features/tasks/pages/Tasks/Sections/ChangeStatus')
+);
+const RescheduleTask = dynamic(
+  () => import('@/app/features/tasks/pages/Tasks/Sections/Reschedule')
+);
 
 const Tasks = () => {
   const tasks = useTasksForPrimaryOrg();
-  const { can } = usePermissions();
-  const canEditTasks = can(PERMISSIONS.TASKS_EDIT_ANY);
+  const permissions = usePermissions();
+  const canEditTasks = permissions.can(PERMISSIONS.TASKS_EDIT_ANY);
   const query = useSearchStore((s) => s.query);
   const searchParams = useSearchParams();
   const handledDeepLinkRef = useRef<string | null>(null);
@@ -43,7 +64,7 @@ const Tasks = () => {
   const [activeCalendar, setActiveCalendar] = useState('week');
   const [activeView, setActiveView] = useState('calendar');
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [weekStart, setWeekStart] = useState(startOfDay(currentDate));
+  const [weekStart, setWeekStart] = useState(() => startOfDay(currentDate));
   const { plannerSectionRef } = usePlannerAutoLock({ activeView });
 
   useEffect(() => {
@@ -188,6 +209,7 @@ const Tasks = () => {
           showAdd={false}
           viewOptions={['calendar', 'board', 'list']}
         />
+        <MobileSearchBar placeholder="Search tasks" />
 
         <PermissionGate allOf={[PERMISSIONS.TASKS_VIEW_ANY]} fallback={<Fallback />}>
           <div className={wrapperClassName}>
@@ -246,9 +268,11 @@ const Tasks = () => {
 
 const ProtectedTasks = () => {
   return (
-    <ProtectedRoute>
-      <OrgGuard>
-        <Tasks />
+    <ProtectedRoute skeleton={TASKS_PAGE_SKELETON}>
+      <OrgGuard skeleton={TASKS_PAGE_SKELETON}>
+        <Suspense fallback={TASKS_PAGE_SKELETON}>
+          <Tasks />
+        </Suspense>
       </OrgGuard>
     </ProtectedRoute>
   );

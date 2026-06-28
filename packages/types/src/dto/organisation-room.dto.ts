@@ -1,9 +1,9 @@
-import type { Location as FHIRLocation } from "@yosemite-crew/fhirtypes";
+import type { Location as FHIRLocation } from '@yosemite-crew/fhir';
 import {
   fromFHIROrganisationRoom,
   toFHIROrganisationRoom,
   type OrganisationRoom,
-} from "../organisationRoom";
+} from '../organisationRoom';
 
 export type OrganisationRoomRequestDTO = FHIRLocation;
 

@@ -3,27 +3,33 @@ import { Schema, model, HydratedDocument } from "mongoose";
 export type AuditActorType = "PMS_USER" | "PARENT" | "SYSTEM";
 
 export type AuditEntityType =
-  | "COMPANION_ORGANISATION"
+  | "PATIENT_ORGANISATION"
   | "APPOINTMENT"
+  | "ENCOUNTER"
   | "INVOICE"
   | "DOCUMENT"
-  | "FORM";
+  | "FORM"
+  | "TASK"
+  | "PARENT"
+  | "COMPANION";
 
 export type AuditEventType =
-  | "COMPANION_ORG_LINK_CREATED"
-  | "COMPANION_ORG_LINK_REQUESTED"
-  | "COMPANION_ORG_LINK_APPROVED"
-  | "COMPANION_ORG_LINK_REJECTED"
-  | "COMPANION_ORG_LINK_REVOKED"
-  | "COMPANION_ORG_INVITE_ACCEPTED"
-  | "COMPANION_ORG_INVITE_REJECTED"
-  | "COMPANION_ORG_LINK_AUTO"
+  | "PATIENT_ORG_LINK_CREATED"
+  | "PATIENT_ORG_LINK_REQUESTED"
+  | "PATIENT_ORG_LINK_APPROVED"
+  | "PATIENT_ORG_LINK_REJECTED"
+  | "PATIENT_ORG_LINK_REVOKED"
+  | "PATIENT_ORG_INVITE_ACCEPTED"
+  | "PATIENT_ORG_INVITE_REJECTED"
+  | "PATIENT_ORG_LINK_AUTO"
   | "APPOINTMENT_REQUESTED"
   | "APPOINTMENT_CREATED"
   | "APPOINTMENT_APPROVED"
   | "APPOINTMENT_CANCELLED"
   | "APPOINTMENT_RESCHEDULED"
   | "APPOINTMENT_CHECKED_IN"
+  | "ENCOUNTER_DISCHARGE_OVERRIDDEN"
+  | "ENCOUNTER_DISCHARGED"
   | "INVOICE_CREATED"
   | "INVOICE_UPDATED"
   | "INVOICE_PAID"
@@ -34,11 +40,20 @@ export type AuditEventType =
   | "DOCUMENT_UPDATED"
   | "DOCUMENT_DELETED"
   | "FORM_ATTACHED"
-  | "FORM_SUBMITTED";
+  | "FORM_SUBMITTED"
+  | "TASK_CREATED"
+  | "TASK_REASSIGNED"
+  | "TASK_STATUS_CHANGED"
+  | "PARENT_ALERT_CREATED"
+  | "PARENT_ALERT_UPDATED"
+  | "PARENT_ALERT_DELETED"
+  | "COMPANION_ALERT_CREATED"
+  | "COMPANION_ALERT_UPDATED"
+  | "COMPANION_ALERT_DELETED";
 
 export interface AuditTrailMongo {
   organisationId: string;
-  companionId: string;
+  patientId: string;
   eventType: AuditEventType;
 
   actorType?: AuditActorType;
@@ -57,7 +72,7 @@ export interface AuditTrailMongo {
 const AuditTrailSchema = new Schema(
   {
     organisationId: { type: String, required: true, index: true },
-    companionId: { type: String, required: true, index: true },
+    patientId: { type: String, required: true, index: true },
     eventType: { type: String, required: true, index: true },
 
     actorType: {
@@ -71,11 +86,15 @@ const AuditTrailSchema = new Schema(
     entityType: {
       type: String,
       enum: [
-        "COMPANION_ORGANISATION",
+        "PATIENT_ORGANISATION",
         "APPOINTMENT",
+        "ENCOUNTER",
         "INVOICE",
         "DOCUMENT",
         "FORM",
+        "TASK",
+        "PARENT",
+        "COMPANION",
       ],
       default: null,
     },
@@ -87,7 +106,7 @@ const AuditTrailSchema = new Schema(
   { timestamps: true },
 );
 
-AuditTrailSchema.index({ organisationId: 1, companionId: 1, occurredAt: -1 });
+AuditTrailSchema.index({ organisationId: 1, patientId: 1, occurredAt: -1 });
 AuditTrailSchema.index({ organisationId: 1, occurredAt: -1 });
 
 export type AuditTrailDocument = HydratedDocument<AuditTrailMongo>;

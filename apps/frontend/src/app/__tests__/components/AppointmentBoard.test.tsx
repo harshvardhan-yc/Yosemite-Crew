@@ -120,6 +120,7 @@ describe('AppointmentBoard', () => {
   const setCurrentDate = jest.fn();
   const setActiveAppointment = jest.fn();
   const setViewPopup = jest.fn();
+  const setDetailPopup = jest.fn();
 
   const baseAppointment = {
     organisationId: 'org-1',
@@ -159,6 +160,7 @@ describe('AppointmentBoard', () => {
         canEditAppointments
         setActiveAppointment={setActiveAppointment}
         setViewPopup={setViewPopup}
+        setDetailPopup={setDetailPopup}
       />
     );
 
@@ -169,7 +171,7 @@ describe('AppointmentBoard', () => {
     );
   });
 
-  it('opens the appointment side modal on click when the card is not draggable', () => {
+  it('opens the central view modal on click when the card is not draggable', () => {
     render(
       <AppointmentBoard
         appointments={[{ ...baseAppointment, id: 'appt-completed', status: 'COMPLETED' } as any]}
@@ -178,6 +180,7 @@ describe('AppointmentBoard', () => {
         canEditAppointments
         setActiveAppointment={setActiveAppointment}
         setViewPopup={setViewPopup}
+        setDetailPopup={setDetailPopup}
       />
     );
 
@@ -189,6 +192,24 @@ describe('AppointmentBoard', () => {
       expect.objectContaining({ id: 'appt-completed' })
     );
     expect(setViewPopup).toHaveBeenCalledWith(true);
+    expect(setDetailPopup).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the side modal when no central view setter is provided', () => {
+    render(
+      <AppointmentBoard
+        appointments={[{ ...baseAppointment, id: 'appt-completed', status: 'COMPLETED' } as any]}
+        currentDate={new Date('2026-03-16T00:00:00.000Z')}
+        setCurrentDate={setCurrentDate}
+        canEditAppointments
+        setActiveAppointment={setActiveAppointment}
+        setDetailPopup={setDetailPopup}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText('Open appointment Buddy'));
+
+    expect(setDetailPopup).toHaveBeenCalledWith(true);
   });
 
   it('does not render a full-card click target when the card is draggable', () => {
@@ -210,6 +231,27 @@ describe('AppointmentBoard', () => {
       'draggable',
       'true'
     );
+  });
+
+  it('shows room and unit on inpatient status board cards', () => {
+    render(
+      <AppointmentBoard
+        appointments={[
+          {
+            ...baseAppointment,
+            id: 'appt-inpatient',
+            status: 'UPCOMING',
+            appointmentKind: 'INPATIENT',
+            room: { name: 'Ward 1', unitName: 'Kennel A' },
+          } as any,
+        ]}
+        currentDate={new Date('2026-03-16T00:00:00.000Z')}
+        setCurrentDate={setCurrentDate}
+        canEditAppointments
+      />
+    );
+
+    expect(screen.getByText('Room / Unit: Ward 1 / Kennel A')).toBeInTheDocument();
   });
 
   it('triggers add appointment and date navigation callbacks', () => {
@@ -294,12 +336,17 @@ describe('AppointmentBoard', () => {
     expect(screen.queryByText('Other')).not.toBeInTheDocument();
   });
 
-  it('invokes accept and decline actions for requested appointments', () => {
+  it('opens change-status to assign a lead on accept and declines requested appointments', () => {
+    const setChangeStatusPopup = jest.fn();
+    const setChangeStatusPreferredStatus = jest.fn();
     render(
       <AppointmentBoard
         appointments={[{ ...baseAppointment, id: 'appt-requested', status: 'REQUESTED' } as any]}
         currentDate={new Date('2026-03-16T00:00:00.000Z')}
         setCurrentDate={setCurrentDate}
+        setActiveAppointment={setActiveAppointment}
+        setChangeStatusPopup={setChangeStatusPopup}
+        setChangeStatusPreferredStatus={setChangeStatusPreferredStatus}
         canEditAppointments
       />
     );
@@ -309,9 +356,12 @@ describe('AppointmentBoard', () => {
     fireEvent.click(cardButtons[1]);
     fireEvent.click(cardButtons[2]);
 
-    expect(acceptAppointment).toHaveBeenCalledWith(
+    // Accept now routes through the change-status modal so a lead/support can be assigned.
+    expect(acceptAppointment).not.toHaveBeenCalled();
+    expect(setActiveAppointment).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'appt-requested' })
     );
+    expect(setChangeStatusPopup).toHaveBeenCalledWith(true);
     expect(rejectAppointment).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'appt-requested' })
     );

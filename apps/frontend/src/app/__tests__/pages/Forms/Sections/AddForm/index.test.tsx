@@ -92,7 +92,32 @@ jest.mock('@/app/features/forms/services/formService', () => ({
   publishForm: jest.fn(),
 }));
 
+jest.mock('@/app/features/forms/services/templateFormsService', () => ({
+  saveTemplateFormDraft: jest.fn(),
+  publishTemplateForm: jest.fn(),
+}));
+
+jest.mock('@/app/stores/orgStore', () => ({
+  useOrgStore: Object.assign(
+    jest.fn((selector) =>
+      selector({
+        primaryOrgId: 'org-1',
+        getPrimaryOrg: () => ({ type: 'HOSPITAL' }),
+        orgsById: { 'org-1': { type: 'HOSPITAL' } },
+      })
+    ),
+    {
+      getState: jest.fn(() => ({
+        primaryOrgId: 'org-1',
+        getPrimaryOrg: () => ({ type: 'HOSPITAL' }),
+        orgsById: { 'org-1': { type: 'HOSPITAL' } },
+      })),
+    }
+  ),
+}));
+
 const formService = jest.requireMock('@/app/features/forms/services/formService');
+const templateFormsService = jest.requireMock('@/app/features/forms/services/templateFormsService');
 
 describe('AddForm modal', () => {
   const serviceOptions = [{ label: 'Checkup', value: 'serv-1' }];
@@ -104,6 +129,17 @@ describe('AddForm modal', () => {
     isMerckEnabled = true;
     formService.saveFormDraft.mockResolvedValue({ _id: 'form-1' });
     formService.publishForm.mockResolvedValue(undefined);
+    templateFormsService.saveTemplateFormDraft.mockResolvedValue({
+      _id: 'tpl-1',
+      templateId: 'tpl-1',
+      isTemplateBacked: true,
+    });
+    templateFormsService.publishTemplateForm.mockResolvedValue({
+      _id: 'tpl-1',
+      templateId: 'tpl-1',
+      isTemplateBacked: true,
+      status: 'Published',
+    });
   });
 
   it('navigates through steps and publishes', async () => {
@@ -119,9 +155,11 @@ describe('AddForm modal', () => {
 
     fireEvent.click(screen.getByText('Publish'));
 
+    // New forms default to YC-default (template-backed), so publishing routes through the
+    // template API rather than the legacy FHIR form service.
     await waitFor(() => {
-      expect(formService.saveFormDraft).toHaveBeenCalled();
-      expect(formService.publishForm).toHaveBeenCalledWith('form-1');
+      expect(templateFormsService.saveTemplateFormDraft).toHaveBeenCalled();
+      expect(templateFormsService.publishTemplateForm).toHaveBeenCalled();
     });
   });
 
@@ -133,8 +171,45 @@ describe('AddForm modal', () => {
     fireEvent.click(screen.getByText('Save Draft'));
 
     await waitFor(() => {
-      expect(formService.saveFormDraft).toHaveBeenCalled();
+      expect(templateFormsService.saveTemplateFormDraft).toHaveBeenCalled();
     });
+  });
+
+  it('routes template categories through the template API', async () => {
+    render(
+      <AddForm
+        showModal
+        setShowModal={jest.fn()}
+        serviceOptions={serviceOptions}
+        initialForm={
+          {
+            name: 'SOAP template',
+            category: 'SOAP',
+            usage: 'Internal',
+            updatedBy: '',
+            lastUpdated: '',
+            schema: [],
+          } as any
+        }
+      />
+    );
+
+    fireEvent.click(screen.getByText('Next Details'));
+    fireEvent.click(screen.getByText('Next Build'));
+    fireEvent.click(screen.getByText('Publish'));
+
+    await waitFor(() => {
+      expect(templateFormsService.saveTemplateFormDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ category: 'SOAP' }),
+        'org-1'
+      );
+      expect(templateFormsService.publishTemplateForm).toHaveBeenCalledWith(
+        expect.objectContaining({ templateId: 'tpl-1' }),
+        'org-1'
+      );
+    });
+    expect(formService.saveFormDraft).not.toHaveBeenCalled();
+    expect(formService.publishForm).not.toHaveBeenCalled();
   });
 
   it('allows opening merck any time but blocks build/review when details is invalid', () => {

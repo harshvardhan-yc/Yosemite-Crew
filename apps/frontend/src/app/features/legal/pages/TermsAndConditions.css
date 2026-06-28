@@ -1,5 +1,5 @@
 .PrivacyPolicySec {
-  padding: 80px 0px;
+  padding: 88px 0px 80px;
 }
 .PrivacyPolicySec .PrivacyPolicyData {
   display: flex;
@@ -218,9 +218,10 @@
 
 /* Links */
 .doc-link {
-  color: #0073e6 !important;
+  color: #005ea8 !important;
   font-weight: 400;
-  text-decoration: none;
+  text-decoration: underline !important;
+  text-underline-offset: 0.14em;
 }
 .doc-link:hover {
   text-decoration: underline;

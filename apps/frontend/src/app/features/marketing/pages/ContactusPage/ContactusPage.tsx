@@ -1,6 +1,5 @@
 'use client';
 import React, { useState } from 'react';
-import { Button } from 'react-bootstrap';
 import { TicketCategory } from '@yosemite-crew/types';
 import Link from 'next/link';
 import { isEmail } from 'validator';
@@ -64,6 +63,130 @@ type ContactPayload = {
   };
 };
 
+type Option = {
+  value: string;
+  label: string;
+};
+
+const queryTypes: TicketCategory[] = [
+  'General Enquiry',
+  'Feature Request',
+  'Data Service Access Request',
+  'Complaint',
+];
+
+const subrequestOptions: { label: string; value: DsraRequesterType }[] = [
+  {
+    value: 'SELF',
+    label: 'The person whose name appears above',
+  },
+  {
+    value: 'PARENT_GUARDIAN',
+    label: 'The parent / guardian of the person whose name appears above',
+  },
+  {
+    value: 'AUTHORIZED_AGENT',
+    label: 'An agent authorized by the consumer to make this request on their behalf',
+  },
+];
+
+const requestOptions: { label: string; value: DsraRight }[] = [
+  {
+    label: 'Know what information is being collected from you',
+    value: 'KNOW_INFORMATION_COLLECTED',
+  },
+  {
+    label: 'Have your information deleted',
+    value: 'DELETE_DATA',
+  },
+  {
+    label: 'Opt-out of having your data sold to third-parties',
+    value: 'OPT_OUT_SELLING_SHARING',
+  },
+  {
+    label: 'Opt-in to the sale of your personal data to third-parties',
+    value: 'OTHER',
+  },
+  {
+    label: 'Access your personal information',
+    value: 'ACCESS_PERSONAL_INFORMATION',
+  },
+  {
+    label: 'Fix inaccurate information',
+    value: 'RECTIFY_INACCURATE_INFORMATION',
+  },
+  {
+    label: 'Receive a copy of your personal information',
+    value: 'PORTABILITY_COPY',
+  },
+  {
+    label: 'Opt-out of having your data shared for cross-context behavioral advertising',
+    value: 'OPT_OUT_SELLING_SHARING',
+  },
+  {
+    label: 'Limit the use and disclosure of your sensitive personal information',
+    value: 'LIMIT_SENSITIVE_PROCESSING',
+  },
+  {
+    label: 'Others (please specify in the comment box below)',
+    value: 'OTHER',
+  },
+];
+
+const areaOptions: Option[] = [
+  {
+    value: 'GDPR',
+    label: 'EU GDPR (General Data Protection Regulation)',
+  },
+  {
+    value: 'UK_GDPR',
+    label: 'UK GDPR / Data Protection Act 2018',
+  },
+  {
+    value: 'CCPA',
+    label: 'CCPA / CPRA (California Consumer Privacy Act)',
+  },
+  {
+    value: 'LGPD',
+    label: 'LGPD (Brazilian General Data Protection Law)',
+  },
+  {
+    value: 'PIPEDA',
+    label: 'PIPEDA (Personal Information Protection and Electronic Documents Act, Canada)',
+  },
+  {
+    value: 'POPIA',
+    label: 'POPIA (Protection of Personal Information Act, South Africa)',
+  },
+  {
+    value: 'PDPA',
+    label: 'PDPA (Personal Data Protection Act, Singapore)',
+  },
+  {
+    value: 'PIPL',
+    label: 'PIPL (Personal Information Protection Law, China)',
+  },
+  {
+    value: 'PA_1988_AU',
+    label: 'Privacy Act 1988 (Australia)',
+  },
+  {
+    value: 'OTHER',
+    label: 'Other',
+  },
+];
+
+const confirmOptions = [
+  'Under penalty of perjury, I declare all the above information to be true and accurate.',
+  'I understand that the deletion or restriction of my personal data is irreversible and may result in the termination of services with Yosemite Crew.',
+  'I understand that I will be required to validate my request my email, and I may be contacted in order to complete the request.',
+];
+
+const isValidEmail = (email: string): boolean => isEmail(email);
+
+const getDsarLawBasis = (selectedArea: string): DsraLawBasis =>
+  (areaOptions.find((option) => option.value === selectedArea)?.value as DsraLawBasis) || 'OTHER';
+
 const ContactusPage = () => {
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState<string>('');
@@ -73,122 +196,14 @@ const ContactusPage = () => {
   // Query Type
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [selectedQueryType, setSelectedQueryType] = useState<TicketCategory>('General Enquiry');
-  const queryTypes: TicketCategory[] = [
-    'General Enquiry',
-    'Feature Request',
-    'Data Service Access Request',
-    'Complaint',
-  ];
   // Subrequest options for Data Service Access Request
   const [subselectedRequest, setSubselectedRequest] = useState<DsraRequesterType | ''>('');
-  const subrequestOptions: { label: string; value: DsraRequesterType }[] = [
-    {
-      value: 'SELF',
-      label: 'The person whose name appears above',
-    },
-    {
-      value: 'PARENT_GUARDIAN',
-      label: 'The parent / guardian of the person whose name appears above',
-    },
-    {
-      value: 'AUTHORIZED_AGENT',
-      label: 'An agent authorized by the consumer to make this request on their behalf',
-    },
-  ];
 
   // Data Service Access Request options
   const [selectedRequest, setSelectedRequest] = useState<string>('');
-  const requestOptions: { label: string; value: DsraRight }[] = [
-    {
-      label: 'Know what information is being collected from you',
-      value: 'KNOW_INFORMATION_COLLECTED',
-    },
-    {
-      label: 'Have your information deleted',
-      value: 'DELETE_DATA',
-    },
-    {
-      label: 'Opt-out of having your data sold to third-parties',
-      value: 'OPT_OUT_SELLING_SHARING',
-    },
-    {
-      label: 'Opt-in to the sale of your personal data to third-parties',
-      value: 'OTHER',
-    },
-    {
-      label: 'Access your personal information',
-      value: 'ACCESS_PERSONAL_INFORMATION',
-    },
-    {
-      label: 'Fix inaccurate information',
-      value: 'RECTIFY_INACCURATE_INFORMATION',
-    },
-    {
-      label: 'Receive a copy of your personal information',
-      value: 'PORTABILITY_COPY',
-    },
-    {
-      label: 'Opt-out of having your data shared for cross-context behavioral advertising',
-      value: 'OPT_OUT_SELLING_SHARING',
-    },
-    {
-      label: 'Limit the use and disclosure of your sensitive personal information',
-      value: 'LIMIT_SENSITIVE_PROCESSING',
-    },
-    {
-      label: 'Others (please specify in the comment box below)',
-      value: 'OTHER',
-    },
-  ];
 
   // Areas
   const [area, setArea] = useState<string>('');
-  type Option = {
-    value: string;
-    label: string;
-  };
-  const areaOptions: Option[] = [
-    {
-      value: 'GDPR',
-      label: 'EU GDPR (General Data Protection Regulation)',
-    },
-    {
-      value: 'UK_GDPR',
-      label: 'UK GDPR / Data Protection Act 2018',
-    },
-    {
-      value: 'CCPA',
-      label: 'CCPA / CPRA (California Consumer Privacy Act)',
-    },
-    {
-      value: 'LGPD',
-      label: 'LGPD (Brazilian General Data Protection Law)',
-    },
-    {
-      value: 'PIPEDA',
-      label: 'PIPEDA (Personal Information Protection and Electronic Documents Act, Canada)',
-    },
-    {
-      value: 'POPIA',
-      label: 'POPIA (Protection of Personal Information Act, South Africa)',
-    },
-    {
-      value: 'PDPA',
-      label: 'PDPA (Personal Data Protection Act, Singapore)',
-    },
-    {
-      value: 'PIPL',
-      label: 'PIPL (Personal Information Protection Law, China)',
-    },
-    {
-      value: 'PA_1988_AU',
-      label: 'Privacy Act 1988 (Australia)',
-    },
-    {
-      value: 'OTHER',
-      label: 'Other',
-    },
-  ];
 
   // Confirm checklist (multiple selections)
   const [confirmSelections, setConfirmSelections] = useState<string[]>([]);
@@ -196,11 +211,6 @@ const ContactusPage = () => {
   const [complaintLink, setComplaintLink] = useState<string>('');
   const [complaintImage, setComplaintImage] = useState<File | null>(null);
   console.log(complaintImage);
-  const confirmOptions = [
-    'Under penalty of perjury, I declare all the above information to be true and accurate.',
-    'I understand that the deletion or restriction of my personal data is irreversible and may result in the termination of services with Yosemite Crew.',
-    'I understand that I will be required to validate my request my email, and I may be contacted in order to complete the request.',
-  ];
   const isComplaintValid =
     fullName &&
     email &&
@@ -222,13 +232,6 @@ const ContactusPage = () => {
       prev.includes(option) ? prev.filter((o) => o !== option) : [...prev, option]
     );
   };
-  const isValidEmail = (email: string): boolean => {
-    return isEmail(email);
-  };
-
-  const getDsarLawBasis = (selectedArea: string): DsraLawBasis =>
-    (areaOptions.find((option) => option.value === selectedArea)?.value as DsraLawBasis) || 'OTHER';
-
   const validateContactForm = (): FormErrors => {
     const newErrors: FormErrors = {};
     if (!fullName.trim()) newErrors.fullName = 'Full name is required';
@@ -320,9 +323,9 @@ const ContactusPage = () => {
             <div className="LeftContactUs">
               <div className="conttexted">
                 <div className="text-body-4-emphasis text-text-brand">Contact us</div>
-                <div className="text-display-2 text-text-primary">
+                <h1 className="text-display-2 text-text-primary">
                   Need help? We&rsquo;re all ears!
-                </div>
+                </h1>
               </div>
               <Image
                 alt="Contact Image"
@@ -334,9 +337,7 @@ const ContactusPage = () => {
 
             <div className="RightContactUs">
               <div className="QueryText">
-                <div className="text-display-2 text-text-primary text-center">
-                  Submit your query
-                </div>
+                <h2 className="text-display-2 text-text-primary text-center">Submit your query</h2>
               </div>
 
               {/* Contact Form */}
@@ -373,6 +374,7 @@ const ContactusPage = () => {
                     <input
                       type="radio"
                       name="queryType"
+                      aria-label={type}
                       value={type}
                       checked={selectedQueryType === type}
                       onChange={() => setSelectedQueryType(type)}
@@ -394,6 +396,7 @@ const ContactusPage = () => {
                         <input
                           type="radio"
                           name="dsarSubmitAs"
+                          aria-label={`Submit data service access request as ${option.label}`}
                           value={option.value}
                           checked={subselectedRequest === option.value}
                           onChange={() => setSubselectedRequest(option.value)}
@@ -425,6 +428,7 @@ const ContactusPage = () => {
                         <input
                           type="radio"
                           name="dsarRequestTo"
+                          aria-label={`Submit data service access request to ${option.label}`}
                           value={option.value}
                           checked={selectedRequest === option.label}
                           onChange={() => setSelectedRequest(option.label)}
@@ -441,6 +445,7 @@ const ContactusPage = () => {
                     <textarea
                       rows={3}
                       id="dsar-message"
+                      aria-label="Data service access request details"
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Your Message"
@@ -465,6 +470,7 @@ const ContactusPage = () => {
                         <input
                           type="checkbox"
                           name="confirmDsar"
+                          aria-label={`Confirm ${option}`}
                           value={option}
                           checked={confirmSelections.includes(option)}
                           onChange={() => toggleConfirmOption(option)}
@@ -474,7 +480,8 @@ const ContactusPage = () => {
                     ))}
                   </div>
 
-                  <Button
+                  <button
+                    type="button"
                     className="SendBtn"
                     onClick={handleContectSubmit}
                     disabled={submitting || !isDSARValid}
@@ -484,7 +491,7 @@ const ContactusPage = () => {
                     }}
                   >
                     {submitting ? 'submitting...' : 'Send message'}
-                  </Button>
+                  </button>
                 </div>
               )}
 
@@ -499,6 +506,7 @@ const ContactusPage = () => {
                         <input
                           type="radio"
                           name="complaintSubmitAs"
+                          aria-label={`Submit complaint as ${option.label}`}
                           value={option.value}
                           checked={subselectedRequest === option.value}
                           onChange={() => setSubselectedRequest(option.value)}
@@ -515,6 +523,7 @@ const ContactusPage = () => {
                     <textarea
                       rows={3}
                       id="complaint-message"
+                      aria-label="Complaint details"
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Your Message"
@@ -575,6 +584,7 @@ const ContactusPage = () => {
                         <input
                           type="checkbox"
                           name="confirmComplaint"
+                          aria-label={`Confirm ${option}`}
                           value={option}
                           checked={confirmSelections.includes(option)}
                           onChange={() => toggleConfirmOption(option)}
@@ -584,7 +594,8 @@ const ContactusPage = () => {
                     ))}
                   </div>
 
-                  <Button
+                  <button
+                    type="button"
                     className="SendBtn"
                     onClick={handleContectSubmit}
                     disabled={submitting || !isComplaintValid}
@@ -594,7 +605,7 @@ const ContactusPage = () => {
                     }}
                   >
                     {submitting ? 'submitting...' : 'Send message'}
-                  </Button>
+                  </button>
                 </div>
               )}
 
@@ -607,6 +618,7 @@ const ContactusPage = () => {
                     </label>
                     <textarea
                       rows={3}
+                      aria-label="Request details"
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       placeholder="Your Message"
@@ -624,7 +636,8 @@ const ContactusPage = () => {
                       </div>
                     )}
                   </div>
-                  <Button
+                  <button
+                    type="button"
                     className="SendBtn"
                     onClick={handleContectSubmit}
                     disabled={submitting || !isGeneralValid}
@@ -634,7 +647,7 @@ const ContactusPage = () => {
                     }}
                   >
                     {submitting ? 'submitting...' : 'Send message'}
-                  </Button>
+                  </button>
                 </>
               )}
             </div>
@@ -647,7 +660,7 @@ const ContactusPage = () => {
           <div className="ContactInfoData">
             <div className="LeftContInfo">
               <div className="text-body-4-emphasis text-text-brand">Contact Info</div>
-              <div className="text-display-2 text-text-primary">We are happy to assist you</div>
+              <h2 className="text-display-2 text-text-primary">We are happy to assist you</h2>
             </div>
             <div className="ContactInfoDetail">
               <div className="LeftDetails">

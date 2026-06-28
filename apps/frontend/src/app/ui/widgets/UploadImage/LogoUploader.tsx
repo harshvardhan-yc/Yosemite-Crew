@@ -1,5 +1,5 @@
-/* eslint-disable @next/next/no-img-element */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
+import Image from 'next/image';
 import { IoCamera } from 'react-icons/io5';
 import { FiMinusCircle } from 'react-icons/fi';
 import { postData } from '@/app/services/axios';
@@ -15,12 +15,20 @@ type LogoUploaderProps = {
 };
 type GetSignedUrlResponse = { uploadUrl: string; s3Key: string };
 
+const isSafePreviewUrl = (url: string) => url.startsWith('blob:');
+
+const uploadLogoToS3 = async (uploadUrl: string, file: File) => {
+  await axios.put(uploadUrl, file, {
+    headers: { 'Content-Type': file?.type },
+    withCredentials: false,
+  });
+};
+
 const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
+  const inputId = useId();
   const [preview, setPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const isSafePreviewUrl = (url: string) => url.startsWith('blob:');
 
   useEffect(() => {
     return () => {
@@ -42,13 +50,6 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
     return res.data;
   };
 
-  const uploadToS3 = async (uploadUrl: string, file: File) => {
-    await axios.put(uploadUrl, file, {
-      headers: { 'Content-Type': file?.type },
-      withCredentials: false,
-    });
-  };
-
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -64,7 +65,7 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
     setPreview(localUrl);
     try {
       const signed = await getSignedUrl(file);
-      await uploadToS3(signed.uploadUrl, file);
+      await uploadLogoToS3(signed.uploadUrl, file);
       setImageUrl(signed.s3Key);
     } catch (err: any) {
       setError(err?.message || 'Upload failed');
@@ -85,39 +86,48 @@ const LogoUploader = ({ title, apiUrl, setImageUrl }: LogoUploaderProps) => {
       <div className="step-logo-upload">
         {preview && isSafePreviewUrl(preview) && sanitizeUrl(preview) !== 'about:blank' ? (
           <>
-            <img
+            <Image
               src={sanitizeUrl(preview)}
               alt="Logo Preview"
-              style={{
-                width: 58,
-                height: 58,
-                objectFit: 'cover',
-                borderRadius: '50%',
-              }}
-              className="step-logo-preview"
+              width={58}
+              height={58}
+              unoptimized
+              className="step-logo-preview rounded-full object-cover"
             />
-            <button className="remove-icon" onClick={handleRemoveImage}>
-              <FiMinusCircle color="var(--color-primary-500)" size={16} />
+            <button
+              type="button"
+              className="remove-icon"
+              onClick={handleRemoveImage}
+              aria-label="Remove uploaded logo"
+            >
+              <FiMinusCircle color="var(--color-primary-500)" size={16} aria-hidden="true" />
             </button>
           </>
         ) : (
           <>
             <input
               type="file"
-              id="logo-upload"
+              id={inputId}
+              aria-label="Upload logo image"
               accept="image/*"
               onChange={handleImageChange}
               style={{ display: 'none' }}
             />
-            <label htmlFor="logo-upload" style={{ cursor: 'pointer' }}>
-              <IoCamera color="var(--color-neutral-700)" size={32} />
+            <label htmlFor={inputId} style={{ cursor: 'pointer' }} aria-label={title}>
+              <IoCamera color="var(--color-neutral-700)" size={32} aria-hidden="true" />
             </label>
           </>
         )}
       </div>
       <div className="step-logo-title-container">
-        <div className="step-logo-title">{isUploading ? 'Uploading...' : title}</div>
-        {error && <div className="text-red-600 text-sm">{error}</div>}
+        <div className="step-logo-title" aria-live="polite">
+          {isUploading ? 'Uploading...' : title}
+        </div>
+        {error && (
+          <div className="text-red-600 text-sm" role="alert">
+            {error}
+          </div>
+        )}
       </div>
     </div>
   );

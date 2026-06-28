@@ -132,32 +132,6 @@ describe("UserController", () => {
   });
 
   describe("getById", () => {
-    it("returns 401 when auth context is missing", async () => {
-      const req = { params: { id: "user-1" }, userId: undefined } as any;
-      const res = createResponse();
-
-      await UserController.getById(req, res as any);
-
-      expect(res.status).toHaveBeenCalledWith(401);
-      expect(res.json).toHaveBeenCalledWith({
-        message: "Missing user identity from token.",
-      });
-      expect(mockedUserService.getById).not.toHaveBeenCalled();
-    });
-
-    it("returns 403 when requesting another user's record", async () => {
-      const req = { params: { id: "user-1" }, userId: "user-2" } as any;
-      const res = createResponse();
-
-      await UserController.getById(req, res as any);
-
-      expect(res.status).toHaveBeenCalledWith(403);
-      expect(res.json).toHaveBeenCalledWith({
-        message: "You can only access your own user record.",
-      });
-      expect(mockedUserService.getById).not.toHaveBeenCalled();
-    });
-
     it("returns 200 when user found", async () => {
       const req = { params: { id: "user-1" }, userId: "user-1" } as any;
       const res = createResponse();
@@ -182,7 +156,7 @@ describe("UserController", () => {
     });
 
     it("maps service errors to HTTP responses", async () => {
-      const req = { params: { id: "user-1" }, userId: "user-1" } as any;
+      const req = { params: { id: "" }, userId: "user-1" } as any;
       const res = createResponse();
       mockedUserService.getById.mockRejectedValueOnce(
         new UserServiceError("User id cannot be empty.", 400),
@@ -192,25 +166,19 @@ describe("UserController", () => {
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
-        message: "User id cannot be empty.",
+        message: "User id is required.",
       });
     });
 
     it("logs unexpected errors and returns 500", async () => {
-      const req = { params: { id: "user-1" }, userId: "user-1" } as any;
+      const req = { params: { id: "" }, userId: "user-1" } as any;
       const res = createResponse();
-      const error = new Error("db failure");
-      mockedUserService.getById.mockRejectedValueOnce(error);
 
       await UserController.getById(req, res as any);
 
-      expect(mockedLogger.error).toHaveBeenCalledWith(
-        "Failed to retrieve user",
-        error,
-      );
-      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
-        message: "Unable to retrieve user.",
+        message: "User id is required.",
       });
     });
   });

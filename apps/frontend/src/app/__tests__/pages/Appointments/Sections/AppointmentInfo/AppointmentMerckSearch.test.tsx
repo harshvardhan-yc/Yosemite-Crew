@@ -61,11 +61,14 @@ jest.mock('@/app/features/integrations/services/merckService', () => ({
   isAllowedMerckUrl: (url: string) => isAllowedMerckUrlMock(url),
 }));
 
-jest.mock('@/app/features/integrations/constants/merck', () => ({
-  MERCK_COPYRIGHT_NOTICE: 'copyright notice',
-  getMerckSubtopicPillStyle: () => ({}),
-  sanitizeMerckHtml: (value: string) => value,
-}));
+jest.mock('@/app/features/integrations/constants/merck', () => {
+  const actual = jest.requireActual('@/app/features/integrations/constants/merck');
+  return {
+    ...actual,
+    MERCK_COPYRIGHT_NOTICE: 'copyright notice',
+    getMerckSubtopicPillStyle: () => ({}),
+  };
+});
 
 jest.mock('@/app/constants/mediaSources', () => ({
   MEDIA_SOURCES: {
@@ -137,7 +140,10 @@ describe('AppointmentMerckSearch', () => {
     fireEvent.change(screen.getByLabelText('Search manuals'), { target: { value: 'fever' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    await waitFor(() => expect(searchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(searchMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Canine Fever')).toBeInTheDocument();
+    });
     expect(searchMock).toHaveBeenCalledWith(
       expect.objectContaining({
         organisationId: 'org-1',
@@ -146,7 +152,9 @@ describe('AppointmentMerckSearch', () => {
         language: 'en',
       })
     );
-    expect(screen.getByText('Canine Fever')).toBeInTheDocument();
+    // Wait for the async results render — a bare getByText here races the search
+    // promise resolving and can catch the component still in its "Searching…" state.
+    expect(await screen.findByText('Canine Fever')).toBeInTheDocument();
     expect(screen.queryByText('Blocked result')).not.toBeInTheDocument();
     expect(screen.getByText('copyright notice')).toBeInTheDocument();
   });

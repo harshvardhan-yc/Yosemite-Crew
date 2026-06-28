@@ -11,16 +11,22 @@ import { getAppointmentByIdFromList } from '@/app/lib/invoice';
 import { getInvoicePaymentMethodLabel } from '@/app/lib/invoicePaymentMethod';
 import { toTitle } from '@/app/lib/validators';
 import { Invoice } from '@yosemite-crew/types';
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { formatCompanionNameWithOwnerLastName, getOwnerFirstName } from '@/app/lib/companionName';
+import { getAppointmentCompanion } from '@/app/lib/appointments';
 import InvoicePaymentActions from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Finance/InvoicePaymentActions';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import Image from 'next/image';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
-import { getStatusStyle } from '@/app/ui/tables/InvoiceTable';
+import { getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 
 type ActiveTab = 'details' | 'payment';
+
+const tabs: { key: ActiveTab; label: string }[] = [
+  { key: 'details', label: 'Details' },
+  { key: 'payment', label: 'Payment' },
+];
 
 const CompanionFields = [
   { label: 'Pet', key: 'pet', type: 'text' },
@@ -47,6 +53,11 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
   const currency = useCurrencyForPrimaryOrg();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ActiveTab>('details');
+  const titleId = useId();
+  const detailsTabId = useId();
+  const paymentTabId = useId();
+  const detailsPanelId = useId();
+  const paymentPanelId = useId();
 
   const appointment = useMemo(
     () => getAppointmentByIdFromList(appointments, activeInvoice?.appointmentId),
@@ -55,7 +66,7 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
 
   const invoiceStatusLabel = toTitle(activeInvoice?.status ?? '');
   const invoiceStatusStyle = (() => {
-    const s = getStatusStyle(activeInvoice?.status ?? '');
+    const s = getInvoiceStatusStyle(activeInvoice?.status ?? '');
     return { ...s, borderColor: s.color };
   })();
 
@@ -63,10 +74,10 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
     if (appointment) {
       return {
         pet: formatCompanionNameWithOwnerLastName(
-          appointment.companion.name,
-          appointment.companion.parent
+          getAppointmentCompanion(appointment).name,
+          getAppointmentCompanion(appointment).parent
         ),
-        parent: getOwnerFirstName(appointment.companion.parent) || '-',
+        parent: getOwnerFirstName(getAppointmentCompanion(appointment).parent) || '-',
         service: appointment.appointmentType?.name,
       };
     }
@@ -96,11 +107,6 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
     setShowModal(false);
   };
 
-  const tabs: { key: ActiveTab; label: string }[] = [
-    { key: 'details', label: 'Details' },
-    { key: 'payment', label: 'Payment' },
-  ];
-
   return (
     <Modal showModal={showModal} setShowModal={setShowModal}>
       <div className="flex flex-col h-full gap-4">
@@ -109,17 +115,29 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
           <div className="opacity-0 pointer-events-none">
             <Close onClick={() => {}} />
           </div>
-          <div className="text-body-1 text-text-primary">View invoice</div>
+          <h2 id={titleId} className="text-body-1 text-text-primary">
+            View invoice
+          </h2>
           <Close onClick={() => setShowModal(false)} />
         </div>
 
         {/* Tab pills */}
-        <div className="flex items-center justify-center gap-2 border-b border-card-border pb-3">
+        <div
+          className="flex items-center justify-center gap-2 border-b border-card-border pb-3"
+          role="tablist"
+          aria-label="Invoice detail sections"
+          aria-labelledby={titleId}
+        >
           {tabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
+              id={tab.key === 'details' ? detailsTabId : paymentTabId}
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              aria-controls={tab.key === 'details' ? detailsPanelId : paymentPanelId}
+              tabIndex={activeTab === tab.key ? 0 : -1}
               className={clsx(
                 'h-9 px-4 rounded-2xl! text-body-4 transition-all duration-200',
                 activeTab === tab.key
@@ -141,7 +159,12 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
         {/* Content */}
         <div className="flex overflow-y-auto flex-1 flex-col gap-6 scrollbar-hidden">
           {activeTab === 'details' && (
-            <>
+            <div
+              id={detailsPanelId}
+              role="tabpanel"
+              aria-labelledby={detailsTabId}
+              className="flex flex-col gap-6"
+            >
               <EditableAccordion
                 key="Appointments-key"
                 title="Appointment details"
@@ -178,11 +201,16 @@ const InvoiceInfo = ({ showModal, setShowModal, activeInvoice }: InvoiceInfoProp
                   />
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {activeTab === 'payment' && (
-            <div className="flex flex-col gap-6 w-full flex-1 justify-between">
+            <div
+              id={paymentPanelId}
+              role="tabpanel"
+              aria-labelledby={paymentTabId}
+              className="flex flex-col gap-6 w-full flex-1 justify-between"
+            >
               <div className="flex flex-col gap-6">
                 <div className="flex flex-col px-3! py-3! rounded-2xl border border-card-border">
                   <div className="flex items-center justify-between mb-3">

@@ -1,7 +1,7 @@
 'use client';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import Cal, { getCalApi } from '@calcom/embed-react';
+import CalEmbedFrame from '@/app/ui/overlays/CalEmbedFrame';
 import Close from '@/app/ui/primitives/Icons/Close';
 
 type CalBookingOverlayProps = {
@@ -10,44 +10,45 @@ type CalBookingOverlayProps = {
 };
 
 const CalBookingOverlay = ({ open, onClose }: CalBookingOverlayProps) => {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
-    (async () => {
-      const cal = await getCalApi({ namespace: '30min' });
-      cal('ui', { hideEventTypeDetails: false, layout: 'month_view' });
-    })();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onCloseRef.current();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [open]);
 
   if (!open || typeof document === 'undefined') return null;
 
   return createPortal(
-    <dialog
-      open
-      className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 m-0 w-full h-full max-w-none border-0"
-      aria-label="Book onboarding call"
+    <div
+      className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      data-cal-booking-overlay="true"
+      style={{ pointerEvents: 'auto' }}
     >
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-300 max-h-[95vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 shrink-0">
-          <div className="text-body-2 text-text-primary">Book an onboarding call</div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer"
-            aria-label="Close booking overlay"
-          >
-            <Close iconOnly />
-          </button>
-        </div>
-        <div className="flex-1 overflow-auto">
-          <Cal
-            namespace="30min"
-            calLink="yosemitecrew/onboarding"
-            style={{ width: '100%', height: '100%', minHeight: '600px' }}
-            config={{ theme: 'light', layout: 'month_view' }}
-          />
-        </div>
-      </div>
-    </dialog>,
+      <button
+        type="button"
+        onClick={onClose}
+        className="fixed right-4 top-4 z-[10001] p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer bg-white/90 shadow-sm"
+        aria-label="Close booking overlay"
+        style={{ pointerEvents: 'auto' }}
+      >
+        <Close iconOnly />
+      </button>
+      <CalEmbedFrame
+        calLink="yosemitecrew/onboarding"
+        title="Book onboarding call"
+        className="size-full border-0"
+      />
+    </div>,
     document.body
   );
 };

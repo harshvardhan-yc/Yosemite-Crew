@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useScrollBoundaryWheel } from '@/app/hooks/useScrollBoundaryWheel';
+import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import {
   eventsForDayHour,
   getWeekDays,
@@ -41,17 +42,31 @@ import {
   useCalendarWeekNavigation,
   useSlotOffsetMinutes,
 } from '@/app/features/appointments/components/Calendar/useCalendarSlots';
+import type { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
+
 const HOUR_ROW_TOP_OFFSET_PX = 0;
+
+const getAllDayAppointmentAriaLabel = (appointment: Appointment) => {
+  const concernSuffix = appointment.concern ? `. ${appointment.concern}` : '';
+  return `All-day appointment for ${formatCompanionNameWithOwnerLastName(
+    (appointment.companion ?? appointment.patient).name,
+    (appointment.companion ?? appointment.patient).parent
+  )}${concernSuffix}`;
+};
+
 type WeekCalendarProps = {
   events: Appointment[];
   zoomMode?: CalendarZoomMode;
   handleViewAppointment: any;
+  handleDetailAppointment?: any;
+  handleOpenWorkspace?: (appointment: Appointment, intent?: AppointmentViewIntent) => void;
   weekStart: Date;
   setWeekStart: React.Dispatch<React.SetStateAction<Date>>;
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
   handleRescheduleAppointment: any;
   handleChangeStatusAppointment?: any;
   handleChangeRoomAppointment?: any;
+  handleAcceptAppointment?: (appt: Appointment) => void;
   canEditAppointments: boolean;
   draggedAppointmentId?: string | null;
   draggedAppointmentLabel?: string | null;
@@ -79,12 +94,14 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
   events,
   zoomMode = 'in',
   handleViewAppointment,
+  handleDetailAppointment,
+  handleOpenWorkspace,
   weekStart,
   setWeekStart,
   setCurrentDate,
   handleRescheduleAppointment,
-  handleChangeStatusAppointment,
   handleChangeRoomAppointment,
+  handleAcceptAppointment,
   canEditAppointments,
   draggedAppointmentId,
   draggedAppointmentLabel,
@@ -104,10 +121,19 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
   const days = useMemo<Date[]>(() => getWeekDays(weekStart), [weekStart]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const onWheelBoundary = useScrollBoundaryWheel();
+  const onWheelHorizontal = useWheelToHorizontalScroll();
   const now = useCalendarNow();
   const invoices = useInvoicesForPrimaryOrg();
   const invoicesByAppointmentId = useMemo(() => createInvoiceByAppointmentId(invoices), [invoices]);
   const height = getHourRowHeightPx(zoomMode);
+  const weekTimelineLabel = `Appointments week calendar starting ${formatDateInPreferredTimeZone(
+    weekStart,
+    {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    }
+  )}`;
   const dayColumnsStyle = useMemo(
     () => getCalendarColumnGridStyle(days.length, zoomMode === 'out' ? 96 : 140),
     [days.length, zoomMode]
@@ -131,7 +157,6 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
     }
     return { allDayByDay: byDay, timedEvents: timed };
   }, [events, days]);
-
   const visibleHourRange = useMemo(() => {
     const minutes: number[] = [];
     days.forEach((day) => {
@@ -151,6 +176,18 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
   }, [days, getVisibleAvailabilityIntervals, timedEvents, zoomMode]);
 
   const visibleHours = useMemo(() => getVisibleHours(visibleHourRange), [visibleHourRange]);
+  const timedEventsByDayHour = useMemo(() => {
+    const entries = new Map<string, Appointment[]>();
+
+    days.forEach((day) => {
+      visibleHours.forEach((hour) => {
+        const key = `${day.toISOString()}-${hour}`;
+        entries.set(key, eventsForDayHour(timedEvents, day, hour));
+      });
+    });
+
+    return entries;
+  }, [days, timedEvents, visibleHours]);
   const lastVisibleHour = visibleHours.at(-1) ?? visibleHourRange.endHour;
   const { handlePrevWeek, handleNextWeek } = useCalendarWeekNavigation(
     setWeekStart,
@@ -215,7 +252,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
       topPx = Math.max(0, currentNowPosition.topPx);
     } else {
       const focusStart = getFirstRelevantTimedEventStart(
-        currentTimedEvents as never,
+        currentTimedEvents,
         rangeStart,
         effectiveRangeEnd
       );
@@ -225,8 +262,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
       topPx = ((focusMinutes - currentRange.startHour * 60) / 60) * height + HOUR_ROW_TOP_OFFSET_PX;
     }
     scrollContainerToTarget(container, topPx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStartKey, scrollRef.current, draggedAppointmentId, skipAutoScroll, days.length, height]);
+  }, [weekStartKey, draggedAppointmentId, skipAutoScroll, days, height, scrollRef]);
 
   const unavailableByDay = useMemo(
     () =>
@@ -247,13 +283,15 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
 
   return (
     <div className="h-full flex flex-col">
-      <div
-        className="w-full flex-1 overflow-x-auto relative rounded-2xl"
+      <section
+        className="w-full flex-1 overflow-x-auto relative rounded-2xl scrollbar-x-float"
         data-calendar-scroll="true"
+        aria-label={weekTimelineLabel}
+        onWheel={onWheelHorizontal}
       >
         <div className="min-w-max h-full flex flex-col">
-          <div className="z-30 bg-white">
-            <div className="grid border-b border-grey-light py-3 grid-cols-[64px_minmax(0,1fr)_64px] min-w-max bg-white">
+          <div className="z-30 bg-white shrink-0">
+            <div className="grid border-b border-grey-light py-2 grid-cols-[64px_minmax(0,1fr)_64px] min-w-max bg-white">
               <div className="sticky left-0 z-40 bg-white flex items-center justify-center">
                 <Back onClick={handlePrevWeek} />
               </div>
@@ -271,13 +309,13 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                     <div key={day.toISOString()} className="flex items-center justify-center gap-2">
                       <div
                         className={`text-body-4 ${
-                          isToday ? 'text-text-brand' : 'text-text-primary'
+                          isToday ? 'text-(--color-primary-700)' : 'text-text-primary'
                         }`}
                       >
                         {weekday}
                       </div>
                       <div
-                        className={`text-body-4-emphasis h-10 w-10 flex items-center justify-center rounded-full border ${dateNumberClass}`}
+                        className={`text-body-4-emphasis size-10 flex items-center justify-center rounded-full border ${dateNumberClass}`}
                       >
                         {dateNumber}
                       </div>
@@ -303,9 +341,10 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                         <div key={day.toISOString()} className="flex flex-col gap-1 pr-2">
                           {dayAllEvents.map((ev) => (
                             <button
-                              key={`${ev.companion.name}-${ev.startTime.toISOString()}`}
+                              key={`${(ev.companion ?? ev.patient).name}-${ev.startTime.toISOString()}`}
                               type="button"
                               onClick={() => handleViewAppointment(ev)}
+                              aria-label={getAllDayAppointmentAriaLabel(ev)}
                               className="w-full rounded-md! px-2 py-1 text-[11px] font-satoshi text-left truncate"
                               style={{
                                 ...({
@@ -316,8 +355,8 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                             >
                               <div className="font-medium truncate">
                                 {formatCompanionNameWithOwnerLastName(
-                                  ev.companion.name,
-                                  ev.companion.parent
+                                  (ev.companion ?? ev.patient).name,
+                                  (ev.companion ?? ev.patient).parent
                                 )}{' '}
                                 • {ev.concern || ''}
                               </div>
@@ -360,7 +399,8 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                   />
                   <div className="grid min-w-max" style={dayColumnsStyle}>
                     {days.map((day, dayIndex) => {
-                      const slotEvents = eventsForDayHour(timedEvents, day, hour);
+                      const slotEvents =
+                        timedEventsByDayHour.get(`${day.toISOString()}-${hour}`) ?? [];
                       const hourStart = hour * 60;
                       const hourEnd = hourStart + 60;
                       return (
@@ -369,34 +409,37 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                           className="relative"
                           style={{ height: `${height}px` }}
                         >
-                          {unavailableByDay[dayIndex]
-                            .filter((seg) => seg.endMinute > hourStart && seg.startMinute < hourEnd)
-                            .map((seg) => {
-                              const clampedStart = Math.max(seg.startMinute, hourStart);
-                              const clampedEnd = Math.min(seg.endMinute, hourEnd);
-                              const topPct = ((clampedStart - hourStart) / 60) * 100;
-                              const heightPct = ((clampedEnd - clampedStart) / 60) * 100;
-                              return (
-                                <div
-                                  key={`unavail-${dayIndex}-${hour}-${seg.startMinute}`}
-                                  className="pointer-events-none absolute left-0 right-0 z-1"
-                                  style={{
-                                    top: `${topPct}%`,
-                                    height: `${heightPct}%`,
-                                    backgroundColor: 'rgba(0,0,0,0.045)',
-                                    transition: 'opacity 0.25s ease',
-                                  }}
-                                />
-                              );
-                            })}
+                          {unavailableByDay[dayIndex].flatMap((seg) => {
+                            if (!(seg.endMinute > hourStart && seg.startMinute < hourEnd))
+                              return [];
+                            const clampedStart = Math.max(seg.startMinute, hourStart);
+                            const clampedEnd = Math.min(seg.endMinute, hourEnd);
+                            const topPct = ((clampedStart - hourStart) / 60) * 100;
+                            const heightPct = ((clampedEnd - clampedStart) / 60) * 100;
+                            return [
+                              <div
+                                key={`unavail-${dayIndex}-${hour}-${seg.startMinute}`}
+                                className="pointer-events-none absolute left-0 right-0 z-1"
+                                style={{
+                                  top: `${topPct}%`,
+                                  height: `${heightPct}%`,
+                                  backgroundColor: 'rgba(0,0,0,0.045)',
+                                  transition: 'opacity 0.25s ease',
+                                }}
+                              />,
+                            ];
+                          })}
                           <Slot
                             slotEvents={slotEvents}
                             height={height}
                             zoomMode={zoomMode}
                             dayIndex={dayIndex}
                             handleViewAppointment={handleViewAppointment}
+                            handleDetailAppointment={handleDetailAppointment}
+                            handleOpenWorkspace={handleOpenWorkspace}
                             handleRescheduleAppointment={handleRescheduleAppointment}
                             handleChangeRoomAppointment={handleChangeRoomAppointment}
+                            handleAcceptAppointment={handleAcceptAppointment}
                             canEditAppointments={canEditAppointments}
                             length={days.length - 1}
                             draggedAppointmentId={draggedAppointmentId}
@@ -444,11 +487,11 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
                               }}
                             >
                               {nowTimeLabel && (
-                                <div className="absolute left-3 -translate-y-[115%] text-[10px] leading-none font-semibold text-red-500 whitespace-nowrap">
+                                <div className="absolute left-3 -translate-y-[115%] text-[10px] leading-none font-semibold text-danger-700 whitespace-nowrap">
                                   {nowTimeLabel}
                                 </div>
                               )}
-                              <div className="absolute left-[-5px] w-3 h-3 rounded-full bg-red-500 translate-y-[-50%]" />
+                              <div className="absolute -left-1.25 size-3 rounded-full bg-red-500 -translate-y-1/2" />
                               <div className="border-t-2 border-t-red-500 translate-y-[-50%]" />
                             </div>
                           )}
@@ -462,7 +505,7 @@ const WeekCalendar: React.FC<WeekCalendarProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 };

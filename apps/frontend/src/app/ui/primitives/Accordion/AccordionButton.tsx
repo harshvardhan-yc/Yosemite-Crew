@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { IoIosArrowDown, IoIosWarning } from 'react-icons/io';
 import { Secondary } from '@/app/ui/primitives/Buttons';
 import { getStripeBillingPortal } from '@/app/features/billing/services/billingService';
+import { getSafeStripeRedirectUrl } from '@/app/lib/urls';
 import { useSubscriptionForPrimaryOrg } from '@/app/hooks/useBilling';
 import { usePermissions } from '@/app/hooks/usePermissions';
 import { PERMISSIONS } from '@/app/lib/permissions';
@@ -78,7 +79,11 @@ const AccordionButton: React.FC<AccordionButtonProps> = ({
     setLoadingPortal(true);
     try {
       const url = await getStripeBillingPortal();
-      globalThis.location.href = url;
+      const safeUrl = getSafeStripeRedirectUrl(url);
+      if (!safeUrl) {
+        throw new Error('Received an unexpected billing portal URL.');
+      }
+      globalThis.location.href = safeUrl;
     } catch (e: any) {
       setError(e?.message || 'Failed to open billing portal');
     } finally {
@@ -98,10 +103,10 @@ const AccordionButton: React.FC<AccordionButtonProps> = ({
     <div
       className={`flex flex-col gap-3 rounded-2xl border border-card-border px-6 ${paddingYClass}`}
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex items-center gap-x-4 gap-y-2">
         <button
           type="button"
-          className="flex shrink-0 items-center gap-2 text-left cursor-pointer"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
           onClick={() => setOpen(!open)}
           aria-label={title}
           aria-expanded={open}
@@ -111,9 +116,9 @@ const AccordionButton: React.FC<AccordionButtonProps> = ({
             color="var(--color-neutral-900)"
             className={`text-black-text transition-transform shrink-0 ${open ? 'rotate-0' : '-rotate-90'}`}
           />
-          <div className="text-heading-3 text-text-primary">{title}</div>
+          <span className="text-heading-3 text-text-primary">{title}</span>
         </button>
-        <div className="flex items-center gap-3 flex-wrap ml-auto">
+        <div className="flex shrink-0 items-center gap-3 flex-wrap">
           {error && (
             <div className="flex items-center gap-1 px-4 text-caption-2 text-text-error">
               <IoIosWarning className="text-text-error" size={14} />

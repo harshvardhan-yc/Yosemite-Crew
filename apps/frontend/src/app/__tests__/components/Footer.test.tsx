@@ -67,10 +67,13 @@ describe('Footer Component', () => {
     renderFooter();
 
     expect(screen.getByAltText('Yosemite Crew Logo')).toBeInTheDocument();
-    expect(screen.getByAltText('GDPR')).toBeInTheDocument();
-    expect(screen.getByAltText('SOC2')).toBeInTheDocument();
-    expect(screen.getByAltText('FHIR')).toBeInTheDocument();
-    expect(screen.getByAltText('ISO')).toBeInTheDocument();
+    const certifications = screen.getByRole('list', { name: 'Certifications' });
+    expect(certifications).toBeInTheDocument();
+    expect(certifications.querySelectorAll('li')).toHaveLength(4);
+    expect(screen.queryByAltText('GDPR')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('SOC2')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('FHIR')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('ISO')).not.toBeInTheDocument();
   });
 
   it('should render all navigation section titles', () => {
@@ -94,7 +97,11 @@ describe('Footer Component', () => {
 
     const aboutUsLink = screen.getByRole('link', { name: 'About us' });
     expect(aboutUsLink).toBeInTheDocument();
-    expect(aboutUsLink).toHaveAttribute('href', '/about');
+    expect(aboutUsLink).toHaveAttribute('href', '/about-us');
+
+    const dmcaLink = screen.getByRole('link', { name: 'DMCA' });
+    expect(dmcaLink).toBeInTheDocument();
+    expect(dmcaLink).toHaveAttribute('href', '/dmca');
   });
 
   it('should render the copyright and contact information', () => {

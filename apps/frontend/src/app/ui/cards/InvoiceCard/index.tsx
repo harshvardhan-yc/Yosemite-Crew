@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { getInvoiceItemNames, getStatusStyle } from '@/app/ui/tables/InvoiceTable';
+import { getInvoiceItemNames, getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 import { Invoice } from '@yosemite-crew/types';
 import { formatDateLabel } from '@/app/lib/forms';
 import { Secondary } from '@/app/ui/primitives/Buttons';
@@ -30,7 +30,7 @@ const InvoiceCard = ({ invoice, handleViewInvoice }: InvoiceCardProps) => {
   );
 
   return (
-    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-hover bg-white px-3 py-3 flex flex-col justify-between gap-2 cursor-pointer">
+    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-hover bg-white p-3 flex flex-col justify-between gap-2 cursor-pointer">
       <div className="flex gap-1">
         <div className="text-body-3-emphasis text-text-primary">{companionName}</div>
       </div>
@@ -71,7 +71,7 @@ const InvoiceCard = ({ invoice, handleViewInvoice }: InvoiceCardProps) => {
         </div>
       </div>
       <div
-        style={getStatusStyle(invoice.status)}
+        style={getInvoiceStatusStyle(invoice.status)}
         className="w-full rounded-2xl h-12 flex items-center justify-center text-body-4"
       >
         {toTitle(invoice?.status)}

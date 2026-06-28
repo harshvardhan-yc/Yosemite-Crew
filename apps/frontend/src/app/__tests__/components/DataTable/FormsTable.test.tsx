@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import FormsTable, { getStatusStyle } from '@/app/ui/tables/FormsTable';
+import FormsTable from '@/app/ui/tables/FormsTable';
+import { getFormsStatusStyle } from '@/app/ui/tables/tableUtils';
 import { FormsProps } from '@/app/features/forms/types/forms';
 
 // --- Mocks ---
@@ -96,7 +97,7 @@ describe('FormsTable Component', () => {
 
   describe('getStatusStyle', () => {
     it("returns correct style for 'Published'", () => {
-      const style = getStatusStyle('Published');
+      const style = getFormsStatusStyle('Published');
       expect(style).toEqual({
         color: 'var(--color-pill-info-text)',
         backgroundColor: 'var(--color-pill-info-bg)',
@@ -105,7 +106,7 @@ describe('FormsTable Component', () => {
     });
 
     it("returns correct style for 'published' (case insensitive)", () => {
-      const style = getStatusStyle('published');
+      const style = getFormsStatusStyle('published');
       expect(style).toEqual({
         color: 'var(--color-pill-info-text)',
         backgroundColor: 'var(--color-pill-info-bg)',
@@ -114,7 +115,7 @@ describe('FormsTable Component', () => {
     });
 
     it("returns correct style for 'Draft'", () => {
-      const style = getStatusStyle('Draft');
+      const style = getFormsStatusStyle('Draft');
       expect(style).toEqual({
         color: 'var(--color-pill-neutral-text)',
         backgroundColor: 'var(--color-pill-neutral-bg)',
@@ -123,7 +124,7 @@ describe('FormsTable Component', () => {
     });
 
     it('returns default style for unknown status', () => {
-      const style = getStatusStyle('Archived');
+      const style = getFormsStatusStyle('Archived');
       expect(style).toEqual({
         color: 'var(--color-pill-warning-text)',
         backgroundColor: 'var(--color-pill-warning-bg)',
@@ -132,7 +133,7 @@ describe('FormsTable Component', () => {
     });
 
     it('returns neutral style for empty status', () => {
-      const style = getStatusStyle('');
+      const style = getFormsStatusStyle('');
       expect(style).toEqual({
         color: 'var(--color-pill-neutral-text)',
         backgroundColor: 'var(--color-pill-neutral-bg)',
@@ -181,7 +182,7 @@ describe('FormsTable Component', () => {
     render(<FormsTable {...defaultProps} loading={true} />);
 
     // Expect loading text (getAllByText because it might render in mobile view too)
-    expect(screen.getAllByText('Loading forms...').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Loading forms…').length).toBeGreaterThan(0);
     expect(screen.queryByTestId('generic-table')).not.toBeInTheDocument();
   });
 
@@ -207,7 +208,7 @@ describe('FormsTable Component', () => {
   it('shows loading state in mobile view', () => {
     render(<FormsTable {...defaultProps} loading={true} />);
 
-    expect(screen.getAllByText('Loading forms...').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Loading forms…').length).toBeGreaterThan(0);
     expect(screen.queryByTestId('form-card-Intake Form')).not.toBeInTheDocument();
   });
 

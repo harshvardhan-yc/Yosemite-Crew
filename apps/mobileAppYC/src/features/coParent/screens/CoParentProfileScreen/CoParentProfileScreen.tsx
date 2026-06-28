@@ -1,12 +1,5 @@
-import React, {useEffect, useState, useMemo} from 'react';
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  Image,
-  Text,
-  Alert,
-} from 'react-native';
+import React, {useMemo, useState} from 'react';
+import {View, StyleSheet, ScrollView, Image, Text, Alert} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {useDispatch, useSelector} from 'react-redux';
@@ -18,9 +11,9 @@ import {Images} from '@/assets/images';
 import {LiquidGlassButton} from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
 import {LiquidGlassCard} from '@/shared/components/common/LiquidGlassCard/LiquidGlassCard';
 import {normalizeImageUri} from '@/shared/utils/imageUri';
-import {addCoParent, selectCoParentById} from '../../index';
+import {addCoParent} from '../../thunks';
+import {selectCoParentById, selectCoParentLoading} from '../../selectors';
 import type {CoParentStackParamList} from '@/navigation/types';
-import type {CoParent} from '../../types';
 import AddCoParentBottomSheet from '../../components/AddCoParentBottomSheet/AddCoParentBottomSheet';
 import CoParentInviteBottomSheet from '../../components/CoParentInviteBottomSheet/CoParentInviteBottomSheet';
 import {useCoParentInviteFlow} from '../../hooks/useCoParentInviteFlow';
@@ -32,15 +25,19 @@ type Props = NativeStackScreenProps<CoParentStackParamList, 'CoParentProfile'>;
 export const CoParentProfileScreen: React.FC<Props> = ({route, navigation}) => {
   const {coParentId} = route.params;
   const {theme} = useTheme();
-  const commonStyles = useMemo(() => createCommonCoParentStyles(theme), [theme]);
+  const commonStyles = useMemo(
+    () => createCommonCoParentStyles(theme),
+    [theme],
+  );
   const styles = useMemo(() => createStyles(theme), [theme]);
   const dispatch = useDispatch<AppDispatch>();
 
   const coParentFromStore = useSelector(state =>
     selectCoParentById(coParentId)(state as any),
   );
-  const [coParent, setCoParent] = useState<CoParent | null>(coParentFromStore ?? null);
-  const [loading, setLoading] = useState(true);
+  const coParent = coParentFromStore ?? null;
+  const isCoParentLoading = useSelector(selectCoParentLoading);
+  const loading = isCoParentLoading && !coParent;
   const [sendingInvite, setSendingInvite] = useState(false);
   const companions = useSelector(selectCompanions);
 
@@ -56,11 +53,6 @@ export const CoParentProfileScreen: React.FC<Props> = ({route, navigation}) => {
       navigation.goBack();
     },
   });
-
-  useEffect(() => {
-    setCoParent(coParentFromStore ?? null);
-    setLoading(false);
-  }, [coParentFromStore]);
 
   const handleBack = () => {
     navigation.goBack();
@@ -79,10 +71,14 @@ export const CoParentProfileScreen: React.FC<Props> = ({route, navigation}) => {
 
     const inviteEmail = coParent.email?.trim();
     if (!inviteEmail) {
-      Alert.alert('Missing email', 'This co-parent does not have an email address on file.');
+      Alert.alert(
+        'Missing email',
+        'This co-parent does not have an email address on file.',
+      );
       return;
     }
-    const inviteName = `${coParent.firstName ?? ''} ${coParent.lastName ?? ''}`.trim();
+    const inviteName =
+      `${coParent.firstName ?? ''} ${coParent.lastName ?? ''}`.trim();
     setSendingInvite(true);
     try {
       await dispatch(
@@ -141,10 +137,7 @@ export const CoParentProfileScreen: React.FC<Props> = ({route, navigation}) => {
         showsVerticalScrollIndicator={false}>
         {/* Background Image & Profile Section */}
         <View style={styles.profileSection}>
-          <Image
-            source={Images.bgCoParent}
-            style={styles.backgroundImage}
-          />
+          <Image source={Images.bgCoParent} style={styles.backgroundImage} />
           <View style={styles.profileImageWrapper}>
             {coParent.profilePicture ? (
               <Image
@@ -154,10 +147,12 @@ export const CoParentProfileScreen: React.FC<Props> = ({route, navigation}) => {
             ) : (
               <View style={styles.profileImageInitials}>
                 <Text style={styles.profileInitialsText}>
-                  {(coParent.firstName ||
+                  {(
+                    coParent.firstName ||
                     coParent.lastName ||
                     coParent.email ||
-                    'C')
+                    'C'
+                  )
                     .trim()
                     .charAt(0)
                     .toUpperCase()}
@@ -182,7 +177,9 @@ export const CoParentProfileScreen: React.FC<Props> = ({route, navigation}) => {
             <View style={styles.detailDivider} />
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Phone number:</Text>
-              <Text style={styles.detailValue}>{coParent.phoneNumber || 'N/A'}</Text>
+              <Text style={styles.detailValue}>
+                {coParent.phoneNumber || 'N/A'}
+              </Text>
             </View>
             <View style={styles.detailDivider} />
             <View style={styles.detailRow}>
@@ -206,7 +203,9 @@ export const CoParentProfileScreen: React.FC<Props> = ({route, navigation}) => {
                   <View style={styles.companionRow}>
                     {companion.profileImage ? (
                       <Image
-                        source={{uri: normalizeImageUri(companion.profileImage) ?? ''}}
+                        source={{
+                          uri: normalizeImageUri(companion.profileImage) ?? '',
+                        }}
                         style={styles.companionAvatar}
                       />
                     ) : (
@@ -217,11 +216,17 @@ export const CoParentProfileScreen: React.FC<Props> = ({route, navigation}) => {
                       </View>
                     )}
                     <View style={styles.companionInfo}>
-                      <Text style={styles.companionName}>{companion.companionName}</Text>
-                      <Text style={styles.companionBreed}>{companion.breed || 'Unknown'}</Text>
+                      <Text style={styles.companionName}>
+                        {companion.companionName}
+                      </Text>
+                      <Text style={styles.companionBreed}>
+                        {companion.breed || 'Unknown'}
+                      </Text>
                     </View>
                   </View>
-                  {index < coParent.companions.length - 1 && <View style={styles.detailDivider} />}
+                  {index < coParent.companions.length - 1 && (
+                    <View style={styles.detailDivider} />
+                  )}
                 </View>
               ))}
             </LiquidGlassCard>

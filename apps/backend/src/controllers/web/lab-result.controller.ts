@@ -7,6 +7,7 @@ import {
 } from "src/services/lab-result.service";
 import { IdexxResultsQueryService } from "src/services/idexx-results-query.service";
 import { mapAxiosError } from "src/utils/external-error";
+import { mergePdfBuffers } from "@yosemite-crew/lib";
 
 const ensureProviderAndResultId = (
   res: Response,
@@ -53,6 +54,44 @@ const sendPdfResponse = (
   return res.status(200).send(Buffer.from(payload.data));
 };
 
+const handlePdfRequest = async (params: {
+  req: Request;
+  res: Response;
+  fetchPayload: (resultId: string) => Promise<{
+    data: ArrayBuffer;
+    headers: Record<string, string>;
+  } | null>;
+}) => {
+  const organisationId = resolveOrganisationId(params.req);
+  const provider = params.req.params.provider;
+  const resultId = params.req.params.resultId;
+  if (!ensureOrganisationId(params.res, organisationId)) {
+    return;
+  }
+  if (!ensureProviderAndResultId(params.res, provider, resultId)) {
+    return;
+  }
+  if (!ensureIdexxProvider(params.res, provider)) {
+    return;
+  }
+
+  const stored = await LabResultService.getByResultId(
+    organisationId,
+    provider,
+    resultId,
+  );
+  if (!stored) {
+    return params.res.status(404).json({ message: "Result not found." });
+  }
+
+  const payload = await params.fetchPayload(resultId);
+  if (!payload) {
+    return params.res.status(500).json({ message: "PDF unavailable." });
+  }
+
+  return sendPdfResponse(params.res, payload);
+};
+
 const handleIdexxError = (
   res: Response,
   error: unknown,
@@ -76,16 +115,13 @@ export const LabResultController = {
       const organisationId = orgReq.organisationId ?? req.params.organisationId;
       const provider = req.params.provider;
 
-      const { orderId, companionId, limit } = req.query as Record<
-        string,
-        string
-      >;
+      const { orderId, patientId, limit } = req.query as Record<string, string>;
 
       const results = await LabResultService.list({
         organisationId,
         provider,
         orderId,
-        companionId,
+        patientId,
         limit: limit ? Number(limit) : undefined,
       });
 
@@ -136,34 +172,12 @@ export const LabResultController = {
 
   async getPdf(req: Request, res: Response) {
     try {
-      const organisationId = resolveOrganisationId(req);
-      const provider = req.params.provider;
-      const resultId = req.params.resultId;
-      if (!ensureOrganisationId(res, organisationId)) {
-        return;
-      }
-      if (!ensureProviderAndResultId(res, provider, resultId)) {
-        return;
-      }
-
-      if (!ensureIdexxProvider(res, provider)) {
-        return;
-      }
-
-      const stored = await LabResultService.getByResultId(
-        organisationId,
-        provider,
-        resultId,
-      );
-      if (!stored) {
-        return res.status(404).json({ message: "Result not found." });
-      }
-
-      const payload = await IdexxResultsQueryService.getResultPdf(resultId);
-      if (!payload)
-        return res.status(500).json({ message: "PDF unavailable." });
-
-      return sendPdfResponse(res, payload);
+      return await handlePdfRequest({
+        req,
+        res,
+        fetchPayload: (resultId) =>
+          IdexxResultsQueryService.getResultPdf(resultId),
+      });
     } catch (error) {
       return handleIdexxError(
         res,
@@ -174,37 +188,82 @@ export const LabResultController = {
     }
   },
 
-  async getNotificationsPdf(req: Request, res: Response) {
+  async getCombinedPdf(req: Request, res: Response) {
     try {
       const organisationId = resolveOrganisationId(req);
       const provider = req.params.provider;
-      const resultId = req.params.resultId;
       if (!ensureOrganisationId(res, organisationId)) {
         return;
       }
-      if (!ensureProviderAndResultId(res, provider, resultId)) {
-        return;
+      if (!provider) {
+        return res.status(400).json({ message: "provider required." });
       }
-
       if (!ensureIdexxProvider(res, provider)) {
         return;
       }
 
-      const stored = await LabResultService.getByResultId(
-        organisationId,
-        provider,
-        resultId,
-      );
-      if (!stored) {
-        return res.status(404).json({ message: "Result not found." });
+      const resultIdsParam = req.query.resultIds;
+      const resultIds = (
+        typeof resultIdsParam === "string" ? resultIdsParam : ""
+      )
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (!resultIds.length) {
+        return res
+          .status(400)
+          .json({ message: "At least one resultId is required." });
       }
 
-      const payload =
-        await IdexxResultsQueryService.getResultNotificationsPdf(resultId);
-      if (!payload)
-        return res.status(500).json({ message: "PDF unavailable." });
+      const buffers: Buffer[] = [];
+      for (const resultId of resultIds) {
+        // Verify the result is stored for this organisation before fetching its
+        // PDF from IDEXX — otherwise a user could pull PDFs for arbitrary result
+        // ids belonging to other organisations.
+        const stored = await LabResultService.getByResultId(
+          organisationId,
+          provider,
+          resultId,
+        );
+        if (!stored) {
+          return res
+            .status(404)
+            .json({ message: `Result not found for ${resultId}.` });
+        }
+        const payload = await IdexxResultsQueryService.getResultPdf(resultId);
+        if (!payload) {
+          return res
+            .status(502)
+            .json({ message: `Result PDF unavailable for ${resultId}.` });
+        }
+        buffers.push(Buffer.from(payload.data));
+      }
 
-      return sendPdfResponse(res, payload);
+      const merged = await mergePdfBuffers(buffers);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="lab-results-${resultIds.length}.pdf"`,
+      );
+      return res.status(200).send(merged);
+    } catch (error) {
+      return handleIdexxError(
+        res,
+        error,
+        "Failed to build combined results PDF",
+        "Failed to build combined results PDF.",
+      );
+    }
+  },
+
+  async getNotificationsPdf(req: Request, res: Response) {
+    try {
+      return await handlePdfRequest({
+        req,
+        res,
+        fetchPayload: (resultId) =>
+          IdexxResultsQueryService.getResultNotificationsPdf(resultId),
+      });
     } catch (error) {
       return handleIdexxError(
         res,
@@ -219,10 +278,7 @@ export const LabResultController = {
     try {
       const organisationId = resolveOrganisationId(req);
       const provider = req.params.provider;
-      const { orderId, companionId, limit } = req.query as Record<
-        string,
-        string
-      >;
+      const { orderId, patientId, limit } = req.query as Record<string, string>;
       if (!ensureOrganisationId(res, organisationId)) {
         return;
       }
@@ -238,7 +294,7 @@ export const LabResultController = {
         organisationId,
         provider,
         orderId,
-        companionId,
+        patientId,
         limit: limit ? Number(limit) : undefined,
       });
 

@@ -1,10 +1,18 @@
-import type { CodeableConcept, Extension, Identifier, Patient } from '@yosemite-crew/fhirtypes';
+import type { CodeableConcept, Extension, Identifier, Patient } from '@yosemite-crew/fhir';
 
 export interface InsuranceDetails {
   isInsured: boolean;
   companyName?: string;
   policyNumber?: string;
 }
+
+export interface AlertSummary {
+  title: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+}
+
+export const COMPANION_ALERTS_EXTENSION_URL =
+  'https://yosemitecrew.com/fhir/StructureDefinition/companion-alerts';
 
 export type CompanionType = 'dog' | 'cat' | 'horse' | 'other';
 export type Gender = 'male' | 'female' | 'unknown';
@@ -85,6 +93,7 @@ export interface Companion {
     uploadedAt: Date;
   }>;
 
+  alerts?: AlertSummary[];
   isProfileComplete?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
@@ -92,6 +101,12 @@ export interface Companion {
 
 type BreedingParentDetails = NonNullable<NonNullable<Companion['breedingInfo']>['sire']>;
 type MedicalRecord = NonNullable<Companion['medicalRecords']>[number];
+type PatientAnimal = {
+  species?: CodeableConcept;
+  breed?: CodeableConcept;
+  genderStatus?: CodeableConcept;
+};
+type PatientWithAnimal = Patient & { animal?: PatientAnimal };
 
 export const SPECIES_SYSTEM_URL = 'http://hl7.org/fhir/animal-species';
 export const GENDER_STATUS_SYSTEM_URL = 'http://hl7.org/fhir/animal-genderstatus';
@@ -420,10 +435,29 @@ const buildExtensions = (companion: Companion): Extension[] => {
     });
   }
 
+  if (companion.alerts?.length) {
+    extensions.push({
+      url: COMPANION_ALERTS_EXTENSION_URL,
+      extension: companion.alerts.map((alert) => ({
+        url: 'alert',
+        extension: [
+          {
+            url: 'title',
+            valueString: alert.title,
+          },
+          {
+            url: 'severity',
+            valueString: alert.severity,
+          },
+        ],
+      })),
+    });
+  }
+
   return extensions;
 };
 
-const toFHIRAnimal = (companion: Companion): Patient['animal'] | undefined => {
+const toFHIRAnimal = (companion: Companion): PatientAnimal | undefined => {
   const species = toFHIRSpecies(companion.type);
   const breed = companion.breed ? ({ text: companion.breed } as CodeableConcept) : undefined;
   const genderStatus = toFHIRGenderStatus(companion.isneutered);
@@ -699,6 +733,43 @@ const parsePhoto = (photos?: Patient['photo']): Companion['photoUrl'] | undefine
 
 const parseUpdatedAt = (dto: Patient): Date | undefined => parseDate(dto.meta?.lastUpdated);
 
+const parseAlerts = (extensions: Extension[] | undefined): Companion['alerts'] => {
+  const extension = filterExtensions(extensions, COMPANION_ALERTS_EXTENSION_URL)[0];
+  const nested = extension?.extension;
+
+  if (!nested?.length) {
+    return undefined;
+  }
+
+  const alerts = nested
+    .map((item) => {
+      if (item.url !== 'alert') {
+        return undefined;
+      }
+
+      const title = item.extension?.find((ext) => ext.url === 'title')?.valueString;
+      const severity = item.extension?.find((ext) => ext.url === 'severity')?.valueString;
+
+      if (
+        !title ||
+        (severity !== 'critical' &&
+          severity !== 'high' &&
+          severity !== 'medium' &&
+          severity !== 'low')
+      ) {
+        return undefined;
+      }
+
+      return {
+        title,
+        severity,
+      } as AlertSummary;
+    })
+    .filter((alert): alert is AlertSummary => Boolean(alert));
+
+  return alerts.length ? alerts : undefined;
+};
+
 const parseInsuranceExtension = (
   extensions: Extension[] | undefined
 ): { isInsured: boolean; insurance?: InsuranceDetails } => {
@@ -766,13 +837,14 @@ export const toFHIRCompanion = (companion: Companion): Patient => {
           lastUpdated: companion.updatedAt.toISOString(),
         }
       : undefined,
-  };
+  } as PatientWithAnimal;
 };
 
 export const fromFHIRCompanion = (dto: Patient): Companion => {
+  const dtoWithAnimal = dto as PatientWithAnimal;
   const extensions = dto.extension;
-  const species = parseSpecies(dto.animal?.species) ?? ('other' as CompanionType);
-  const breed = requireField(parseBreed(dto.animal?.breed), 'animal.breed.text');
+  const species = parseSpecies(dtoWithAnimal.animal?.species) ?? ('other' as CompanionType);
+  const breed = requireField(parseBreed(dtoWithAnimal.animal?.breed), 'animal.breed.text');
   const dateOfBirth = requireField(parseDate(dto.birthDate), 'birthDate');
   const name = requireField(parseName(dto.name), 'name');
   const { isInsured, insurance } = parseInsuranceExtension(extensions);
@@ -791,7 +863,7 @@ export const fromFHIRCompanion = (dto: Patient): Companion => {
     colour: parseStringExtension(extensions, EXTENSION_COLOUR_URL),
     allergy: parseAllergyExtension(extensions),
     bloodGroup: parseStringExtension(extensions, EXTENSION_BLOOD_GROUP_URL),
-    isneutered: parseGenderStatus(dto.animal?.genderStatus),
+    isneutered: parseGenderStatus(dtoWithAnimal.animal?.genderStatus),
     ageWhenNeutered: parseStringExtension(extensions, EXTENSION_AGE_WHEN_NEUTERED_URL),
     microchipNumber: findIdentifierValue(dto.identifier, MICROCHIP_IDENTIFIER_SYSTEM_URL),
     passportNumber: findIdentifierValue(dto.identifier, PASSPORT_IDENTIFIER_SYSTEM_URL),
@@ -802,6 +874,7 @@ export const fromFHIRCompanion = (dto: Patient): Companion => {
     physicalAttribute: parsePhysicalAttribute(extensions),
     breedingInfo: parseBreedingInfo(extensions),
     medicalRecords: parseMedicalRecords(extensions),
+    alerts: parseAlerts(extensions),
     status: parseStatus(dto.active),
     updatedAt: parseUpdatedAt(dto),
   };

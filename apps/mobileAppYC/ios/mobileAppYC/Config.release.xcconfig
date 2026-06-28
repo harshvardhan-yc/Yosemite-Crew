@@ -1,0 +1,6 @@
+// Local developer secrets — not committed to git.
+// Create Secrets.xcconfig from config-templates/ios/Secrets.xcconfig.example and set your keys there.
+#include? "Secrets.xcconfig"
+
+// Pods-generated config (must come after Secrets so values above are not overridden).
+#include "../Pods/Target Support Files/Pods-mobileAppYC/Pods-mobileAppYC.release.xcconfig"

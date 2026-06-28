@@ -150,14 +150,14 @@ jest.mock('@/shared/components/common/FormRowComponents', () => {
         testID={`mock-row-${props.label}`}
         {...props}
         onPress={props.onPress}>
-                <MockText>{props.label}</MockText>       {' '}
-        <MockText>{props.value}</MockText>     {' '}
+                <MockText>{props.label}</MockText>
+        <MockText>{props.value}</MockText>
       </MockView>
     )),
     ReadOnlyRow: jest.fn((props: any) => (
       <MockView testID={`mock-row-${props.label}`} {...props}>
-                <MockText>{props.label}</MockText>       {' '}
-        <MockText>{props.value}</MockText>     {' '}
+                <MockText>{props.label}</MockText>
+        <MockText>{props.value}</MockText>
       </MockView>
     )),
   };
@@ -168,13 +168,12 @@ jest.mock('@/shared/components/common/InlineEditRow/InlineEditRow', () => {
   return {
     InlineEditRow: jest.fn((props: any) => (
       <MockView testID={`mock-inline-edit-${props.label}`} {...props}>
-                <MockText>{props.label}</MockText>       {' '}
-        <MockText>{props.value}</MockText>       {' '}
+                <MockText>{props.label}</MockText>
+        <MockText>{props.value}</MockText>
         <MockView
           testID={`mock-inline-save-${props.label}`}
           onPress={() => props.onSave('newValue')}
         />
-             {' '}
       </MockView>
     )),
   };
@@ -185,27 +184,36 @@ const mockCurrencySheetRef = {current: {open: jest.fn(), close: jest.fn()}};
 const mockAddressSheetRef = {current: {open: jest.fn(), close: jest.fn()}};
 const mockPhoneSheetRef = {current: {open: jest.fn(), close: jest.fn()}};
 
-jest.mock('@/shared/components/common/CurrencyBottomSheet/CurrencyBottomSheet', () => {
-  const ReactInside = require('react');
-  const {View: MockView} = require('react-native');
-  return {
-    CurrencyBottomSheet: ReactInside.forwardRef((props: any, ref: any) => {
-      ReactInside.useImperativeHandle(ref, () => mockCurrencySheetRef.current);
-      return <MockView testID="mock-currency-sheet" {...props} />;
-    }),
-  };
-});
+jest.mock(
+  '@/shared/components/common/CurrencyBottomSheet/CurrencyBottomSheet',
+  () => {
+    const ReactInside = require('react');
+    const {View: MockView} = require('react-native');
+    return {
+      CurrencyBottomSheet: ReactInside.forwardRef((props: any, ref: any) => {
+        ReactInside.useImperativeHandle(
+          ref,
+          () => mockCurrencySheetRef.current,
+        );
+        return <MockView testID="mock-currency-sheet" {...props} />;
+      }),
+    };
+  },
+);
 
-jest.mock('@/shared/components/common/AddressBottomSheet/AddressBottomSheet', () => {
-  const ReactInside = require('react');
-  const {View: MockView} = require('react-native');
-  return {
-    AddressBottomSheet: ReactInside.forwardRef((props: any, ref: any) => {
-      ReactInside.useImperativeHandle(ref, () => mockAddressSheetRef.current);
-      return <MockView testID="mock-address-sheet" {...props} />;
-    }),
-  };
-});
+jest.mock(
+  '@/shared/components/common/AddressBottomSheet/AddressBottomSheet',
+  () => {
+    const ReactInside = require('react');
+    const {View: MockView} = require('react-native');
+    return {
+      AddressBottomSheet: ReactInside.forwardRef((props: any, ref: any) => {
+        ReactInside.useImperativeHandle(ref, () => mockAddressSheetRef.current);
+        return <MockView testID="mock-address-sheet" {...props} />;
+      }),
+    };
+  },
+);
 
 jest.mock(
   '@/shared/components/common/CountryMobileBottomSheet/CountryMobileBottomSheet',
@@ -226,46 +234,52 @@ jest.mock(
 // Date Picker
 // --- UPDATED MOCK ---
 // Add 'value' prop and a 'clear' button to test all paths
-jest.mock('@/shared/components/common/SimpleDatePicker/SimpleDatePicker', () => {
-  const {View: MockView} = require('react-native');
-  return {
-    SimpleDatePicker: jest.fn(({onDateChange, onDismiss, show, value}: any) =>
-      show ? (
-        <MockView testID="mock-date-picker" value={value}>
-                   {' '}
-          <MockView
-            testID="mock-date-picker-save"
-            onPress={() => onDateChange(new Date('2000-01-01T00:00:00.000Z'))}
-          />
-                   {' '}
-          <MockView
-            testID="mock-date-picker-clear"
-            onPress={() => onDateChange(null)}
-          />
-                   {' '}
-          <MockView testID="mock-date-picker-dismiss" onPress={onDismiss} />   
-             {' '}
-        </MockView>
-      ) : null,
-    ),
-    formatDateForDisplay: jest.fn(date => date?.toLocaleDateString('en-US')),
-  };
-});
+jest.mock(
+  '@/shared/components/common/SimpleDatePicker/SimpleDatePicker',
+  () => {
+    const {View: MockView} = require('react-native');
+    return {
+      SimpleDatePicker: jest.fn(
+        ({onDateChange, onDismiss, show, value}: any) =>
+          show ? (
+            <MockView testID="mock-date-picker" value={value}>
+              <MockView
+                testID="mock-date-picker-save"
+                onPress={() =>
+                  onDateChange(new Date('2000-01-01T00:00:00.000Z'))
+                }
+              />
+              <MockView
+                testID="mock-date-picker-clear"
+                onPress={() => onDateChange(null)}
+              />
+              <MockView testID="mock-date-picker-dismiss" onPress={onDismiss} />
+                 
+            </MockView>
+          ) : null,
+      ),
+      formatDateForDisplay: jest.fn(date => date?.toLocaleDateString('en-US')),
+    };
+  },
+);
 // --- END UPDATED MOCK ---
 
 // Image Picker
-jest.mock('@/shared/components/common/ProfileImagePicker/ProfileImagePicker', () => {
-  const {View: MockView} = require('react-native');
-  return {
-    ProfileImagePicker: jest.fn((props: any) => (
-      <MockView
-        testID="mock-image-picker"
-        {...props}
-        onPress={() => props.onImageSelected('new-uri')}
-      />
-    )),
-  };
-});
+jest.mock(
+  '@/shared/components/common/ProfileImagePicker/ProfileImagePicker',
+  () => {
+    const {View: MockView} = require('react-native');
+    return {
+      ProfileImagePicker: jest.fn((props: any) => (
+        <MockView
+          testID="mock-image-picker"
+          {...props}
+          onPress={() => props.onImageSelected('new-uri')}
+        />
+      )),
+    };
+  },
+);
 
 // User Profile Header
 jest.mock('@/features/account/components/UserProfileHeader', () => {
@@ -273,7 +287,9 @@ jest.mock('@/features/account/components/UserProfileHeader', () => {
   return {
     UserProfileHeader: jest.fn((props: any) => (
       <MockView testID="mock-user-profile-header">
-        <MockText>{props.firstName} {props.lastName}</MockText>
+        <MockText>
+          {props.firstName} {props.lastName}
+        </MockText>
         <MockView
           testID="mock-image-picker"
           {...props}

@@ -16,11 +16,14 @@ jest.mock('@/hooks', () => ({
 // Components
 jest.mock('@/shared/components/common/AvatarGroup/AvatarGroup', () => {
   const {View, Text} = require('react-native');
+  const getAvatarKey = (avatar: any) =>
+    avatar.uri ?? avatar.source?.uri ?? avatar.placeholder;
+
   return {
     AvatarGroup: ({avatars}: any) => (
       <View testID="avatar-group">
         {avatars.map((a: any, i: number) => (
-          <Text key={i} testID={`avatar-${i}`}>
+          <Text key={getAvatarKey(a)} testID={`avatar-${i}`}>
             {a.uri || a.placeholder}
           </Text>
         ))}

@@ -7,6 +7,7 @@ import FirebaseMessaging
 import RNBootSplash
 import FBSDKCoreKit   // ✅ Facebook SDK
 import UserNotifications
+import GoogleMaps
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
@@ -18,6 +19,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+
+    if let apiKey = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String, !apiKey.isEmpty {
+      GMSServices.provideAPIKey(apiKey)
+    } else {
+      assertionFailure("GOOGLE_MAPS_API_KEY is not set. Copy config-templates/ios/Secrets.xcconfig.example to ios/mobileAppYC/Secrets.xcconfig and add your key.")
+    }
 
     // ✅ Firebase
     FirebaseApp.configure()

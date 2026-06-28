@@ -51,7 +51,7 @@ const mockDoc = (data: any) => ({
 describe("AuditTrailService", () => {
   const validRecordInput: any = {
     organisationId: "org-1",
-    companionId: "comp-1",
+    patientId: "comp-1",
     eventType: "APPOINTMENT_BOOKED",
     actorType: "PARENT",
     actorId: "parent-1",
@@ -233,7 +233,7 @@ describe("AuditTrailService", () => {
       expect(prisma.auditTrail.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           organisationId: "org-1",
-          companionId: "comp-1",
+          patientId: "comp-1",
           eventType: "APPOINTMENT_BOOKED",
         }),
       });
@@ -325,7 +325,7 @@ describe("AuditTrailService", () => {
 
       const res = await AuditTrailService.listForOrganisation({
         organisationId: "org-1",
-        companionId: "comp-1",
+        patientId: "comp-1",
         eventTypes: ["APPOINTMENT_BOOKED"] as any, // Cast to avoid TS enum issues
         entityTypes: ["APPOINTMENT"] as any,
         limit: 10,
@@ -334,7 +334,7 @@ describe("AuditTrailService", () => {
 
       expect(AuditTrailModel.find).toHaveBeenCalledWith({
         organisationId: "org-1",
-        companionId: "comp-1",
+        patientId: "comp-1",
         eventType: { $in: ["APPOINTMENT_BOOKED"] },
         entityType: { $in: ["APPOINTMENT"] },
         occurredAt: { $lt: mockDate },
@@ -390,7 +390,7 @@ describe("AuditTrailService", () => {
 
       const res = await AuditTrailService.listForOrganisation({
         organisationId: "org-1",
-        companionId: "comp-1",
+        patientId: "comp-1",
         eventTypes: ["APPOINTMENT_BOOKED"] as any,
         entityTypes: ["APPOINTMENT"] as any,
         limit: 10,
@@ -400,9 +400,9 @@ describe("AuditTrailService", () => {
       expect(prisma.auditTrail.findMany).toHaveBeenCalledWith({
         where: {
           organisationId: "org-1",
-          companionId: "comp-1",
-          eventType: { in: { $in: ["APPOINTMENT_BOOKED"] } },
-          entityType: { in: { $in: ["APPOINTMENT"] } },
+          patientId: "comp-1",
+          eventType: { in: ["APPOINTMENT_BOOKED"] },
+          entityType: { in: ["APPOINTMENT"] },
           occurredAt: { lt: occurredAt },
         },
         orderBy: { occurredAt: "desc" },
@@ -512,6 +512,88 @@ describe("AuditTrailService", () => {
       expect(err.name).toBe("AuditTrailServiceError");
       expect(err.statusCode).toBe(418);
       expect(err.message).toBe("Test Error");
+    });
+  });
+
+  describe("recordAlertMutation", () => {
+    let recordSafelySpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      recordSafelySpy = jest
+        .spyOn(AuditTrailService, "recordSafely")
+        .mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      recordSafelySpy.mockRestore();
+    });
+
+    it("records CREATED when alerts go from empty to present", async () => {
+      await AuditTrailService.recordAlertMutation({
+        entity: "COMPANION",
+        organisationId: "org-1",
+        patientId: "comp-1",
+        actorId: "user-1",
+        previousAlerts: [],
+        nextAlerts: [{ text: "Diabetic" }],
+      });
+      expect(recordSafelySpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organisationId: "org-1",
+          patientId: "comp-1",
+          eventType: "COMPANION_ALERT_CREATED",
+          entityType: "COMPANION",
+          actorType: "PMS_USER",
+          actorId: "user-1",
+        }),
+      );
+    });
+
+    it("records UPDATED when the alert set changes", async () => {
+      await AuditTrailService.recordAlertMutation({
+        entity: "PARENT",
+        organisationId: "org-1",
+        patientId: "parent-1",
+        previousAlerts: [{ text: "A" }],
+        nextAlerts: [{ text: "B" }],
+      });
+      expect(recordSafelySpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: "PARENT_ALERT_UPDATED" }),
+      );
+    });
+
+    it("records DELETED when alerts are cleared", async () => {
+      await AuditTrailService.recordAlertMutation({
+        entity: "PARENT",
+        organisationId: "org-1",
+        patientId: "parent-1",
+        previousAlerts: [{ text: "A" }],
+        nextAlerts: [],
+      });
+      expect(recordSafelySpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: "PARENT_ALERT_DELETED" }),
+      );
+    });
+
+    it("no-ops when the alert set is unchanged", async () => {
+      await AuditTrailService.recordAlertMutation({
+        entity: "COMPANION",
+        organisationId: "org-1",
+        patientId: "comp-1",
+        previousAlerts: [{ text: "A" }],
+        nextAlerts: [{ text: "A" }],
+      });
+      expect(recordSafelySpy).not.toHaveBeenCalled();
+    });
+
+    it("no-ops when no organisation context is available", async () => {
+      await AuditTrailService.recordAlertMutation({
+        entity: "COMPANION",
+        patientId: "comp-1",
+        previousAlerts: [],
+        nextAlerts: [{ text: "A" }],
+      });
+      expect(recordSafelySpy).not.toHaveBeenCalled();
     });
   });
 });

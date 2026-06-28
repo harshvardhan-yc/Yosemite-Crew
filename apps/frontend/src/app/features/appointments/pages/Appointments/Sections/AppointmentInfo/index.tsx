@@ -17,13 +17,7 @@ import Documents from '@/app/features/appointments/pages/Appointments/Sections/A
 import Discharge from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/Discharge';
 import Audit from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/Audit';
 import Plan from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/Plan';
-import {
-  Appointment,
-  FormSubmission,
-  InvoiceItem,
-  Organisation,
-  Service,
-} from '@yosemite-crew/types';
+import { Appointment, FormSubmission, Organisation } from '@yosemite-crew/types';
 import {
   createSubmission,
   fetchSubmissions,
@@ -39,7 +33,8 @@ import { useOrgStore } from '@/app/stores/orgStore';
 import { AppointmentFormEntry } from '@/app/features/appointments/types/appointmentForms';
 import { FormField } from '@/app/features/forms/types/forms';
 import FormRenderer from '@/app/features/forms/pages/Forms/Sections/AddForm/components/FormRenderer';
-import { buildInitialValues } from '@/app/features/forms/pages/Forms/Sections/AddForm/Review';
+import { buildInitialValues } from '@/app/features/forms/pages/Forms/Sections/AddForm/reviewUtils';
+import { collectMissingRequiredFields } from '@/app/features/forms/pages/Forms/Sections/AddForm/validationUtils';
 import { useAuthStore } from '@/app/stores/authStore';
 import SearchDropdown from '@/app/ui/inputs/SearchDropdown';
 import { useFormsStore } from '@/app/stores/formsStore';
@@ -60,11 +55,16 @@ import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { useResolvedMerckIntegrationForPrimaryOrg } from '@/app/hooks/useMerckIntegration';
 import {
   getAppointmentCompanionPhotoUrl,
+  getClinicalNotesIntent,
   normalizeAppointmentStatus,
+  toStatusLabel,
 } from '@/app/lib/appointments';
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
+import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
+import { buildWorkspaceHrefForIntent } from '@/app/lib/appointmentWorkspace';
+import { IoCardOutline, IoDocumentTextOutline, IoFlaskOutline } from 'react-icons/io5';
 
 const COMPANION_IMAGE_TYPES = new Set<ImageType>(['dog', 'cat', 'horse', 'other']);
 
@@ -72,6 +72,32 @@ const SPECIES_DISPLAY_TO_IMAGE_TYPE: Record<string, ImageType> = {
   canine: 'dog',
   feline: 'cat',
   equine: 'horse',
+};
+
+const getAppointmentStateSummary = (status?: string | null): string => {
+  const normalized = normalizeAppointmentStatus(status);
+  if (normalized === 'CANCELLED') {
+    return 'This appointment was cancelled. Scheduling actions are limited, but records and finance history remain available.';
+  }
+  if (normalized === 'NO_SHOW') {
+    return 'This appointment was marked no-show. Use the record, finance, and lab tabs for any follow-up documentation.';
+  }
+  if (normalized === 'COMPLETED') {
+    return 'This appointment is completed. Review finalized medical records, invoices, lab results, and summaries.';
+  }
+  if (normalized === 'IN_PROGRESS') {
+    return 'This appointment is in progress. Continue in the workspace for clinical records, labs, treatment, and billing.';
+  }
+  if (normalized === 'CHECKED_IN') {
+    return 'This appointment is checked in and ready to continue in the workspace.';
+  }
+  if (normalized === 'UPCOMING') {
+    return 'This appointment is upcoming. Confirm details or start the visit from the workspace.';
+  }
+  if (normalized === 'REQUESTED') {
+    return 'This appointment request is waiting for confirmation.';
+  }
+  return 'Review appointment details and related records.';
 };
 
 const resolveCompanionImageType = (species?: string | null): ImageType => {
@@ -139,6 +165,8 @@ const getLabelsForOrgType = (orgType: string | undefined, hospitalLabels: any[])
   ];
 };
 
+const createSubmissionTimestamp = () => new Date();
+
 type CustomFormsSectionProps = {
   forms: AppointmentFormEntry[];
   loading: boolean;
@@ -185,6 +213,26 @@ const CustomFormsSection: React.FC<CustomFormsSectionProps> = ({
   />
 );
 
+const getFormBadge = (
+  entry: AppointmentFormEntry,
+  needsSignature: boolean | undefined,
+  isSigned: boolean,
+  isClientSigner: boolean
+) => {
+  const isCompleted = entry.status === 'completed' && (!needsSignature || isSigned);
+  let label = 'Pending';
+  if (isClientSigner) {
+    label = isSigned ? 'Signed by pet parent' : 'Pending parent signature';
+  } else if (isCompleted) {
+    label = 'Completed';
+  } else if (needsSignature && !isSigned) {
+    label = 'Signature Pending';
+  }
+  const badgeClass =
+    isSigned || isCompleted ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-700';
+  return { label, badgeClass };
+};
+
 const CustomFormsView = ({
   forms,
   loading,
@@ -225,26 +273,6 @@ const CustomFormsView = ({
   if (error) {
     return <div className="text-body-3 text-error-main">{error}</div>;
   }
-
-  const getFormBadge = (
-    entry: AppointmentFormEntry,
-    needsSignature: boolean | undefined,
-    isSigned: boolean,
-    isClientSigner: boolean
-  ) => {
-    const isCompleted = entry.status === 'completed' && (!needsSignature || isSigned);
-    let label = 'Pending';
-    if (isClientSigner) {
-      label = isSigned ? 'Signed by pet parent' : 'Pending parent signature';
-    } else if (isCompleted) {
-      label = 'Completed';
-    } else if (needsSignature && !isSigned) {
-      label = 'Signature Pending';
-    }
-    const badgeClass =
-      isSigned || isCompleted ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-700';
-    return { label, badgeClass };
-  };
 
   return (
     <Accordion
@@ -355,17 +383,28 @@ const CustomFormsView = ({
                           const requiresSignature =
                             requiredSigner === 'VET' && hasSignatureField(template.schema);
                           const companion = activeAppointment?.companion;
+                          const valuesToSubmit =
+                            valuesByForm[selectedTemplateId] ?? buildInitialValues(template.schema);
+                          const missingRequired = collectMissingRequiredFields(
+                            template.schema ?? [],
+                            valuesToSubmit
+                          );
+                          if (missingRequired.length > 0) {
+                            setSubmitError(
+                              `Please complete the required field(s): ${missingRequired.join(', ')}`
+                            );
+                            setSubmittingId(null);
+                            return;
+                          }
                           const submission: FormSubmission = {
                             _id: '',
                             formVersion: 1,
-                            submittedAt: new Date(),
+                            submittedAt: createSubmissionTimestamp(),
                             formId: template.value,
                             appointmentId: activeAppointment.id,
                             companionId: companion?.id ?? '',
                             parentId: companion?.parent?.id ?? '',
-                            answers:
-                              valuesByForm[selectedTemplateId] ??
-                              buildInitialValues(template.schema),
+                            answers: valuesToSubmit,
                             submittedBy: attributes.sub,
                           };
                           const created = await createSubmission(submission);
@@ -495,15 +534,27 @@ const CustomFormsView = ({
                         try {
                           const requiresSignature = signatureRequired;
                           const companion = activeAppointment?.companion;
+                          const valuesToSubmit = valuesByForm[formId] ?? formValues;
+                          const missingRequired = collectMissingRequiredFields(
+                            entry.form.schema ?? [],
+                            valuesToSubmit
+                          );
+                          if (missingRequired.length > 0) {
+                            setSubmitError(
+                              `Please complete the required field(s): ${missingRequired.join(', ')}`
+                            );
+                            setSubmittingId(null);
+                            return;
+                          }
                           const submission: FormSubmission = {
                             _id: '',
                             formVersion: entry.submission?.formVersion ?? 1,
-                            submittedAt: new Date(),
+                            submittedAt: createSubmissionTimestamp(),
                             formId: entry.form._id,
                             appointmentId: activeAppointment.id,
                             companionId: companion?.id ?? '',
                             parentId: companion?.parent?.id ?? '',
-                            answers: valuesByForm[formId] ?? formValues,
+                            answers: valuesToSubmit,
                             submittedBy: attributes.sub,
                           };
                           const created = await createSubmission(submission);
@@ -581,35 +632,13 @@ type AppoitmentInfoProps = {
   onReschedule?: (appointment: Appointment) => void;
 };
 
-export type ServiceEdit = Service & {
-  discount: string;
-};
-
-export type FormDataProps = {
-  subjective: SoapNoteSubmission[];
-  objective: SoapNoteSubmission[];
-  assessment: SoapNoteSubmission[];
-  discharge: SoapNoteSubmission[];
-  plan: SoapNoteSubmission[];
-  total: string;
-  subTotal: string;
-  tax: string;
-  discount: string;
-  lineItems: InvoiceItem[];
-};
-
-export const createEmptyFormData = (): FormDataProps => ({
-  subjective: [],
-  objective: [],
-  assessment: [],
-  discharge: [],
-  plan: [],
-  total: '',
-  discount: '',
-  subTotal: '',
-  tax: '',
-  lineItems: [],
-});
+export type {
+  ServiceEdit,
+  FormDataProps,
+} from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
+export { createEmptyFormData } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
+import type { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
+import { createEmptyFormData } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
 
 type LabelKey = 'info' | 'prescription' | 'care' | 'tasks' | 'finance' | 'labs';
 
@@ -617,6 +646,15 @@ const normalizeInfoSubLabel = (label: string, subLabel?: string) => {
   if (label === 'info' && subLabel === 'overview') return 'history';
   return subLabel;
 };
+
+const SOAP_SUB_LABELS = new Set([
+  'forms',
+  'subjective',
+  'objective',
+  'assessment',
+  'plan',
+  'discharge-summary',
+]);
 
 const resolveIntentLabel = (
   availableLabels: Array<{ key: string }>,
@@ -707,6 +745,42 @@ const hospitalLabels = [
   },
 ];
 
+const COMPONENT_MAP: Record<string, Record<string, React.FC<any>>> = {
+  info: {
+    appointment: AppointmentInfo,
+    companion: Companion,
+    history: History,
+  },
+  prescription: {
+    subjective: Subjective,
+    objective: Objective,
+    assessment: Assessment,
+    plan: Plan,
+    'audit-trail': Audit,
+    'discharge-summary': Discharge,
+    forms: CustomFormsSection,
+    documents: Documents,
+    'merck-manuals': AppointmentMerckSearch,
+  },
+  care: {
+    forms: CustomFormsSection,
+    documents: Documents,
+    'discharge-summary': Discharge,
+  },
+  tasks: {
+    'parent-chat': Chat,
+    task: Task,
+    'parent-task': ParentTask,
+  },
+  finance: {
+    summary: Summary,
+    'payment-details': Details,
+  },
+  labs: {
+    'idexx-labs': LabTests,
+  },
+};
+
 const AppoitmentInfo = ({
   showModal,
   setShowModal,
@@ -762,10 +836,24 @@ const AppoitmentInfo = ({
     (orgTypeOverride as Organisation['type'] | undefined) ||
     (activeAppointment?.organisationId && orgsById[activeAppointment.organisationId]?.type) ||
     'HOSPITAL';
+  const statusSummary = getAppointmentStateSummary(activeAppointment?.status);
+  const statusLabel = toStatusLabel(activeAppointment?.status);
+  const clinicalWorkspaceIntent = getClinicalNotesIntent(orgType);
+  const openWorkspaceIntent = useCallback(
+    (intent: AppointmentViewIntent) => {
+      if (!activeAppointment?.id) return;
+      router.push(buildWorkspaceHrefForIntent(activeAppointment.id, intent));
+      setShowModal(false);
+    },
+    [activeAppointment?.id, router, setShowModal]
+  );
   const formsById = useFormsStore((s) => s.formsById);
   useLoadFormsForPrimaryOrg();
   const formIds = useFormsStore((s) => s.formIds);
-  const allForms = formIds.map((id) => formsById[id]).filter(Boolean);
+  const allForms = formIds.flatMap((id) => {
+    const form = formsById[id];
+    return form ? [form] : [];
+  });
   const signingOverlayOpen = useSigningOverlayStore((s) => s.open);
   const { isEnabled: merckEnabled } = useResolvedMerckIntegrationForPrimaryOrg();
   const templatesForOrg = useMemo(() => {
@@ -776,14 +864,11 @@ const AppoitmentInfo = ({
       return allowed.includes(category) || allowed.includes(normalized);
     };
     const allowedCategories = getAllowedCategories(orgType);
-    return allForms
-      .filter((f) => matchesAllowed(f.category, allowedCategories))
-      .map((f) => ({
-        value: f._id ?? f.name,
-        label: trimPrefix(f.name),
-        schema: f.schema ?? [],
-        form: f,
-      }));
+    return allForms.flatMap((f) =>
+      matchesAllowed(f.category, allowedCategories)
+        ? [{ value: f._id ?? f.name, label: trimPrefix(f.name), schema: f.schema ?? [], form: f }]
+        : []
+    );
   }, [allForms, orgType]);
 
   const labels = useMemo(() => {
@@ -869,44 +954,8 @@ const AppoitmentInfo = ({
     }
   }, [showModal, activeAppointment?.id, initialViewIntent, labels]);
 
-  const COMPONENT_MAP: Record<string, Record<string, React.FC<any>>> = {
-    info: {
-      appointment: AppointmentInfo,
-      companion: Companion,
-      history: History,
-    },
-    prescription: {
-      subjective: Subjective,
-      objective: Objective,
-      assessment: Assessment,
-      plan: Plan,
-      'audit-trail': Audit,
-      'discharge-summary': Discharge,
-      forms: CustomFormsSection,
-      documents: Documents,
-      'merck-manuals': AppointmentMerckSearch,
-    },
-    care: {
-      forms: CustomFormsSection,
-      documents: Documents,
-      'discharge-summary': Discharge,
-    },
-    tasks: {
-      'parent-chat': Chat,
-      task: Task,
-      'parent-task': ParentTask,
-    },
-    finance: {
-      summary: Summary,
-      'payment-details': Details,
-    },
-    labs: {
-      'idexx-labs': LabTests,
-    },
-  };
-
   const Content = COMPONENT_MAP[activeLabel]?.[activeSubLabel];
-  const [formData, setFormData] = useState<FormDataProps>(createEmptyFormData());
+  const [formData, setFormData] = useState<FormDataProps>(() => createEmptyFormData());
 
   const loadAppointmentForms = useCallback(async () => {
     if (!activeAppointment?.id) {
@@ -1002,8 +1051,8 @@ const AppoitmentInfo = ({
       setActiveSubLabel(labels[0].labels[0].key);
       return;
     }
-    const sub = current.labels.find((l: { key: string }) => l.key === activeSubLabel);
-    if (!sub) {
+    const hasSub = current.labels.some((l: { key: string }) => l.key === activeSubLabel);
+    if (!hasSub) {
       setActiveSubLabel(current.labels[0].key);
     }
   }, [labels, activeLabel, activeSubLabel]);
@@ -1045,6 +1094,9 @@ const AppoitmentInfo = ({
         setFormData(createEmptyFormData());
         return;
       }
+      if (activeLabel !== 'prescription' || !SOAP_SUB_LABELS.has(activeSubLabel)) {
+        return;
+      }
       try {
         const soap = await fetchSubmissions(appointmentId);
         if (cancelled) return;
@@ -1072,7 +1124,7 @@ const AppoitmentInfo = ({
     return () => {
       cancelled = true;
     };
-  }, [activeAppointment?.id]);
+  }, [activeAppointment?.id, activeLabel, activeSubLabel]);
 
   useEffect(() => {
     void loadAppointmentForms();
@@ -1102,13 +1154,14 @@ const AppoitmentInfo = ({
     scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
   }, [activeLabel, activeSubLabel]);
 
+  if (!activeAppointment) {
+    return null;
+  }
+
+  const companion = activeAppointment.companion ?? activeAppointment.patient;
   const companionImageSrc = getSafeImageUrl(
-    getAppointmentCompanionPhotoUrl(
-      activeAppointment?.companion as
-        | (Appointment['companion'] & { photoUrl?: string | null })
-        | undefined
-    ),
-    resolveCompanionImageType(activeAppointment?.companion?.species)
+    getAppointmentCompanionPhotoUrl(companion),
+    resolveCompanionImageType(companion.species)
   );
 
   return (
@@ -1116,39 +1169,78 @@ const AppoitmentInfo = ({
       <SigningOverlay />
       <div className={`flex flex-col h-full ${activeLabel === 'labs' ? 'gap-1' : 'gap-3'}`}>
         <div className="flex flex-col gap-3">
-          <div className="flex justify-between items-center">
-            <div className="flex justify-center items-center gap-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex items-start gap-3">
               <Image
                 alt="pet image"
                 src={companionImageSrc}
-                className="h-10 w-10 rounded-full object-cover border border-card-border bg-white"
+                className="size-10 shrink-0 rounded-full object-cover border border-card-border bg-white"
                 height={40}
                 width={40}
               />
-              <button
-                type="button"
-                className="text-body-1 text-text-primary cursor-pointer text-left hover:underline underline-offset-2"
-                onClick={() => {
-                  router.push(
-                    buildAppointmentCompanionHistoryHref(
-                      activeAppointment?.id,
-                      activeAppointment?.companion?.id,
-                      '/appointments'
-                    )
-                  );
-                  setShowModal(false);
-                }}
-              >
-                {formatCompanionNameWithOwnerLastName(
-                  activeAppointment?.companion.name,
-                  activeAppointment?.companion.parent
-                )}
-              </button>
-              <div className="text-body-4 text-text-primary mt-1">
-                {activeAppointment?.companion.breed}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="text-body-1 text-text-primary cursor-pointer text-left hover:underline underline-offset-2"
+                    onClick={() => {
+                      router.push(
+                        buildAppointmentCompanionHistoryHref(
+                          activeAppointment?.id,
+                          companion.id,
+                          '/appointments'
+                        )
+                      );
+                      setShowModal(false);
+                    }}
+                  >
+                    {formatCompanionNameWithOwnerLastName(companion.name, companion.parent)}
+                  </button>
+                  {activeAppointment ? (
+                    <AppointmentStatusPill
+                      appointment={activeAppointment}
+                      canEdit={canEditAppointments}
+                    />
+                  ) : null}
+                </div>
+                <div className="text-body-4 text-text-primary mt-1">{companion.breed}</div>
+                <div className="mt-2 max-w-3xl rounded-2xl border border-card-border bg-card-bg px-3 py-2 text-caption-1 text-text-secondary">
+                  <span className="font-medium text-text-primary">{statusLabel}:</span>{' '}
+                  {statusSummary}
+                </div>
               </div>
             </div>
             <Close onClick={() => setShowModal(false)} />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-label="Open medical records in workspace"
+              onClick={() => openWorkspaceIntent(clinicalWorkspaceIntent)}
+              className="inline-flex h-9 items-center gap-2 rounded-2xl border border-card-border px-3 text-caption-1 font-medium text-text-primary hover:bg-card-hover"
+            >
+              <IoDocumentTextOutline size={16} aria-hidden="true" />
+              <span>Medical records</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Open finance in workspace"
+              onClick={() => openWorkspaceIntent({ label: 'finance', subLabel: 'summary' })}
+              className="inline-flex h-9 items-center gap-2 rounded-2xl border border-card-border px-3 text-caption-1 font-medium text-text-primary hover:bg-card-hover"
+            >
+              <IoCardOutline size={16} aria-hidden="true" />
+              <span>Finance</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Open labs in workspace"
+              onClick={() => openWorkspaceIntent({ label: 'labs', subLabel: 'idexx-labs' })}
+              className="inline-flex h-9 items-center gap-2 rounded-2xl border border-card-border px-3 text-caption-1 font-medium text-text-primary hover:bg-card-hover"
+            >
+              <IoFlaskOutline size={16} aria-hidden="true" />
+              <span>Labs</span>
+            </button>
           </div>
 
           <Labels

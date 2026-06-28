@@ -178,30 +178,27 @@ jest.mock(
   }),
 );
 
-jest.mock(
-  '@/features/tasks/components/shared/TaskMonthDateSelector',
-  () => ({
-    TaskMonthDateSelector: ({
-      selectedDate,
-      datesWithTasks: _datesWithTasks,
-      onDateSelect,
-    }: any) => {
-      const {View, Text, TouchableOpacity} = require('react-native');
-      return (
-        <View testID="task-month-date-selector">
-          <Text testID="selected-date">
-            {selectedDate.toISOString().split('T')[0]}
-          </Text>
-          <TouchableOpacity
-            testID="date-selector-trigger"
-            onPress={() => onDateSelect(new Date('2025-12-31'))}>
-            <Text>Select Date</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    },
-  }),
-);
+jest.mock('@/features/tasks/components/shared/TaskMonthDateSelector', () => ({
+  TaskMonthDateSelector: ({
+    selectedDate,
+    datesWithTasks: _datesWithTasks,
+    onDateSelect,
+  }: any) => {
+    const {View, Text, TouchableOpacity} = require('react-native');
+    return (
+      <View testID="task-month-date-selector">
+        <Text testID="selected-date">
+          {selectedDate.toISOString().split('T')[0]}
+        </Text>
+        <TouchableOpacity
+          testID="date-selector-trigger"
+          onPress={() => onDateSelect(new Date('2025-12-31'))}>
+          <Text>Select Date</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  },
+}));
 
 jest.mock('@/features/tasks/components', () => ({
   TaskCard: ({
@@ -307,9 +304,7 @@ describe('TasksListScreen', () => {
   });
 
   it('renders correctly with list of tasks for selected date', () => {
-    const {getByText, queryByTestId, getByTestId} = render(
-      <TasksListScreen />,
-    );
+    const {getByText, queryByTestId, getByTestId} = render(<TasksListScreen />);
 
     expect(getByText('HEALTH tasks')).toBeTruthy();
     expect(getByTestId('task-month-date-selector')).toBeTruthy();
@@ -418,5 +413,54 @@ describe('TasksListScreen', () => {
     // 'User' is the fallback string in the code: `name: authUser?.firstName || 'User'`
     const assignedText = getByTestId('assigned-Task No Name');
     expect(assignedText.props.children).toBe('User');
+  });
+  it('handles task card view action', () => {
+    const {getByTestId} = render(<TasksListScreen />);
+
+    fireEvent.press(getByTestId('view-Regular Task'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('t1');
+  });
+
+  it('handles task card edit action', () => {
+    const {getByTestId} = render(<TasksListScreen />);
+
+    fireEvent.press(getByTestId('edit-Regular Task'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('t1');
+  });
+
+  it('handles task card complete action', () => {
+    const {getByTestId} = render(<TasksListScreen />);
+
+    fireEvent.press(getByTestId('complete-Regular Task'));
+
+    expect(mockDispatch).toHaveBeenCalledWith('t1');
+  });
+
+  it('handles observational tool task action', () => {
+    const {getByTestId} = render(<TasksListScreen />);
+
+    fireEvent.press(getByTestId('start-ot-OT Task'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('t2');
+  });
+
+  it('does not show edit action for completed task', () => {
+    const {queryByTestId} = render(<TasksListScreen />);
+
+    expect(queryByTestId('edit-OT Task')).toBeNull();
+  });
+
+  it('does not show complete button for completed task', () => {
+    const {queryByTestId} = render(<TasksListScreen />);
+
+    expect(queryByTestId('complete-OT Task')).toBeNull();
+  });
+
+  it('does not show observational tool button for regular task', () => {
+    const {queryByTestId} = render(<TasksListScreen />);
+
+    expect(queryByTestId('start-ot-Regular Task')).toBeNull();
   });
 });

@@ -1,6 +1,5 @@
 'use client';
 import React, { useState } from 'react';
-import { Form } from 'react-bootstrap';
 import Link from 'next/link';
 import { GoCheckCircleFill } from 'react-icons/go';
 import { Icon } from '@iconify/react/dist/iconify.js';
@@ -17,9 +16,72 @@ import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { getEmailValidationError, normalizeEmail } from '@/app/lib/validators';
 import { YosemiteLoader } from '@/app/ui/overlays/Loader';
 import { useSignUpDraft } from '@/app/hooks/useSignUpDraft';
+import { setStorageItem } from '@/app/lib/browserStorage';
 import { defaultSidebarToCollapsed } from '@/app/lib/sidebarPreference';
 
 import '../AuthPages.css';
+
+const passwordErrors = (
+  password: string,
+  confirmPassword: string
+): { pError?: string; confirmPError?: string } => {
+  const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
+
+  if (!password) {
+    return {
+      pError: 'Password is required',
+      ...(confirmPassword ? {} : { confirmPError: 'Confirm Password is required' }),
+    };
+  }
+
+  if (!strongPasswordRegex.test(password)) {
+    return {
+      pError:
+        'Password must be at least 8 characters long, include uppercase, lowercase, number, and special character',
+    };
+  }
+
+  if (!confirmPassword) {
+    return { confirmPError: 'Confirm Password is required' };
+  }
+
+  if (password !== confirmPassword) {
+    return { confirmPError: 'Passwords do not match' };
+  }
+
+  return {};
+};
+
+const validateSignUpInputs = (
+  firstName: string,
+  lastName: string,
+  email: string,
+  password: string,
+  confirmPassword: string,
+  agree: boolean
+) => {
+  const errors: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    pError?: string;
+    confirmPError?: string;
+    agree?: string;
+  } = {};
+
+  if (!firstName) errors.firstName = 'First name is required';
+  if (!lastName) errors.lastName = 'Last name is required';
+  const emailError = getEmailValidationError(email);
+  if (emailError) errors.email = emailError;
+
+  Object.assign(errors, passwordErrors(password, confirmPassword));
+
+  if (!agree) {
+    errors.agree = 'Please check the Terms and Conditions box';
+  }
+
+  return errors;
+};
 
 type SignUpProps = {
   postAuthRedirect?: string;
@@ -64,73 +126,11 @@ const SignUp = ({
     agree?: string;
   }>({});
 
-  const passwordErrors = (
-    password: string,
-    confirmPassword: string
-  ): { pError?: string; confirmPError?: string } => {
-    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
-
-    if (!password) {
-      return {
-        pError: 'Password is required',
-        ...(confirmPassword ? {} : { confirmPError: 'Confirm Password is required' }),
-      };
-    }
-
-    if (!strongPasswordRegex.test(password)) {
-      return {
-        pError:
-          'Password must be at least 8 characters long, include uppercase, lowercase, number, and special character',
-      };
-    }
-
-    if (!confirmPassword) {
-      return { confirmPError: 'Confirm Password is required' };
-    }
-
-    if (password !== confirmPassword) {
-      return { confirmPError: 'Passwords do not match' };
-    }
-
-    return {};
-  };
-
-  const validateSignUpInputs = (
-    firstName: string,
-    lastName: string,
-    email: string,
-    password: string,
-    confirmPassword: string,
-    agree: boolean
-  ) => {
-    const errors: {
-      firstName?: string;
-      lastName?: string;
-      email?: string;
-      pError?: string;
-      confirmPError?: string;
-      agree?: string;
-    } = {};
-
-    if (!firstName) errors.firstName = 'First name is required';
-    if (!lastName) errors.lastName = 'Last name is required';
-    const emailError = getEmailValidationError(email);
-    if (emailError) errors.email = emailError;
-
-    Object.assign(errors, passwordErrors(password, confirmPassword));
-
-    if (!agree) {
-      errors.agree = 'Please check the Terms and Conditions box';
-    }
-
-    return errors;
-  };
-
   const handleSignupSuccess = () => {
     defaultSidebarToCollapsed();
     clearSignUpDraft();
     globalThis.window?.scrollTo({ top: 0, behavior: 'smooth' });
-    globalThis.window?.sessionStorage?.setItem('devAuth', isDeveloper ? 'true' : 'false');
+    setStorageItem('session', 'devAuth', isDeveloper ? 'true' : 'false');
     setIsSubmitting(false);
     setShowVerifyModal(true);
   };
@@ -198,18 +198,17 @@ const SignUp = ({
         <YosemiteLoader
           variant="fullscreen-translucent"
           label="Creating your account..."
-          size={120}
           testId="signup-loader"
         />
       ) : null}
-      <div className="flex gap-10 xl:gap-20 w-full md:max-w-[900px] mx-3 py-3 sm:mx-12 sm:my-12 md:flex-row flex-col items-center md:items-start">
+      <div className="flex gap-10 xl:gap-20 w-full md:max-w-[900px] mx-3 py-3 sm:mx-12 md:flex-row flex-col items-center md:items-start">
         <div className="flex align-center justify-center flex-col gap-8 w-[90%] sm:w-[70%] md:w-1/2 md:mt-16">
           <div className="flex w-full items-center justify-center">
-            <div className="text-display-2 text-text-primary text-center max-w-[350px] auth-title">
+            <p className="text-display-2 text-text-primary text-center max-w-87.5 auth-title">
               {isDeveloper
                 ? 'Build, test, and ship apps on Yosemite Crew'
                 : 'Built for everyone, from day one'}
-            </div>
+            </p>
           </div>
 
           <div className="flex flex-col gap-6">
@@ -282,11 +281,11 @@ const SignUp = ({
         </div>
 
         <div className="w-full sm:w-[70%] md:w-1/2 bg-white p-[20px] border border-card-border rounded-3xl elevation-1">
-          <Form onSubmit={handleSignUp} method="post" className="flex flex-col gap-6">
+          <form onSubmit={handleSignUp} method="post" className="flex flex-col gap-6">
             <div className="flex flex-col gap-6">
-              <div className="text-display-2 text-text-primary text-center auth-title">
+              <h1 className="text-display-2 text-text-primary text-center auth-title">
                 {isDeveloper ? 'Sign up for developer access' : 'Sign up'}
-              </div>
+              </h1>
 
               <div className="flex flex-col gap-3">
                 <FormInput
@@ -294,7 +293,10 @@ const SignUp = ({
                   inname="first name"
                   value={firstName}
                   inlabel="First name"
-                  onChange={(e) => setFirstName(e.target.value)}
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    setInputErrors((prev) => ({ ...prev, firstName: undefined }));
+                  }}
                   error={inputErrors.firstName}
                 />
                 <FormInput
@@ -302,7 +304,10 @@ const SignUp = ({
                   inname="last name"
                   value={lastName}
                   inlabel="Last name"
-                  onChange={(e) => setLastName(e.target.value)}
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    setInputErrors((prev) => ({ ...prev, lastName: undefined }));
+                  }}
                   error={inputErrors.lastName}
                 />
                 <FormInput
@@ -342,43 +347,36 @@ const SignUp = ({
             </div>
 
             <div className="flex flex-col gap-2">
-              <Form.Check
-                type="checkbox"
-                label={
-                  <>
-                    I agree to Yosemite Crew’s{' '}
-                    <Link className="policylink" href="/terms-and-conditions?ref=signup">
-                      terms and conditions
-                    </Link>{' '}
-                    and{' '}
-                    <Link className="policylink" href="/privacy-policy?ref=signup">
-                      privacy policy
-                    </Link>
-                  </>
-                }
-                className="flex! gap-2! items-start text-caption-1 text-text-primary"
-                onChange={(e) => {
-                  setAgree(e.target.checked);
-                  setInputErrors((prev) => ({ ...prev, agree: undefined }));
-                }}
-              />
-              {/* Show error for terms */}
+              <label className="flex! gap-2! items-start text-caption-1 text-text-primary cursor-pointer">
+                <input
+                  type="checkbox"
+                  aria-label="I agree to the terms and conditions and privacy policy"
+                  onChange={(e) => {
+                    setAgree(e.target.checked);
+                    setInputErrors((prev) => ({ ...prev, agree: undefined }));
+                  }}
+                />
+                <span>
+                  {"I agree to Yosemite Crew's "}
+                  <Link className="policylink" href="/terms-and-conditions?ref=signup">
+                    terms and conditions
+                  </Link>
+                  {' and '}
+                  <Link className="policylink" href="/privacy-policy?ref=signup">
+                    privacy policy
+                  </Link>
+                </span>
+              </label>
               {inputErrors.agree && (
-                <div
-                  className={`
-                      flex items-center gap-1 px-4
-                      text-caption-2 text-text-error
-                    `}
-                >
+                <div className="flex items-center gap-1 px-4 text-caption-2 text-text-error">
                   <IoIosWarning className="text-text-error" size={14} />
                   {inputErrors.agree}
                 </div>
               )}
-              <Form.Check
-                type="checkbox"
-                label={<>Sign me up for newsletter and promotional emails</>}
-                className="flex! gap-2! items-end! text-caption-1 text-text-primary"
-              />
+              <label className="flex! gap-2! items-end! text-caption-1 text-text-primary cursor-pointer">
+                <input type="checkbox" aria-label="Sign up for newsletter and promotional emails" />
+                <span>Sign me up for newsletter and promotional emails</span>
+              </label>
             </div>
 
             <div className="flex flex-col items-center gap-3">
@@ -397,7 +395,7 @@ const SignUp = ({
                 </Link>
               </div>
             </div>
-          </Form>
+          </form>
         </div>
       </div>
       <OtpModal

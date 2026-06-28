@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import {
   computeUnavailableSegments,
   appointentsForUser,
@@ -39,16 +40,20 @@ import {
   getVisibleHours,
   useSlotOffsetMinutes,
 } from '@/app/features/appointments/components/Calendar/useCalendarSlots';
+import type { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 
 type UserCalendarProps = {
   events: Appointment[];
   date: Date;
   zoomMode?: CalendarZoomMode;
   handleViewAppointment: any;
+  handleDetailAppointment?: any;
+  handleOpenWorkspace?: (appointment: Appointment, intent?: AppointmentViewIntent) => void;
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
   handleRescheduleAppointment: any;
   handleChangeStatusAppointment?: any;
   handleChangeRoomAppointment?: any;
+  handleAcceptAppointment?: (appt: Appointment) => void;
   canEditAppointments: boolean;
   draggedAppointmentId?: string | null;
   draggedAppointmentLabel?: string | null;
@@ -78,9 +83,11 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
   date,
   zoomMode = 'in',
   handleViewAppointment,
+  handleDetailAppointment,
+  handleOpenWorkspace,
   handleRescheduleAppointment,
-  handleChangeStatusAppointment,
   handleChangeRoomAppointment,
+  handleAcceptAppointment,
   setCurrentDate,
   canEditAppointments,
   draggedAppointmentId,
@@ -107,6 +114,7 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
   const { handleNextDay, handlePrevDay } = useCalendarNavigation(setCurrentDate);
   const height = getHourRowHeightPx(zoomMode);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const onWheelHorizontal = useWheelToHorizontalScroll();
   const teamColumnsStyle = useMemo(
     () => getCalendarColumnGridStyle(team.length, zoomMode === 'out' ? 108 : 170),
     [team.length, zoomMode]
@@ -205,25 +213,21 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
     if (currentNowPosition) {
       topPx = Math.max(0, currentNowPosition.topPx);
     } else {
-      const focusStart = getFirstRelevantTimedEventStart(
-        currentEvents as never,
-        rangeStart,
-        rangeEnd
-      );
+      const focusStart = getFirstRelevantTimedEventStart(currentEvents, rangeStart, rangeEnd);
       const focusMinutes = focusStart
         ? getMinutesSinceStartOfDayInPreferredTimeZone(focusStart)
         : DEFAULT_CALENDAR_FOCUS_MINUTES;
       topPx = ((focusMinutes - currentRange.startHour * 60) / 60) * height + HOUR_ROW_TOP_OFFSET_PX;
     }
     scrollContainerToTarget(container, topPx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateKey, scrollRef.current, draggedAppointmentId, skipAutoScroll, height]);
+  }, [dateKey, date, draggedAppointmentId, skipAutoScroll, height]);
 
   return (
     <div className="h-full flex flex-col">
       <div
-        className="w-full flex-1 overflow-x-auto overflow-y-hidden relative rounded-b-2xl"
+        className="w-full flex-1 overflow-x-auto overflow-y-hidden relative rounded-b-2xl scrollbar-x-float"
         data-calendar-scroll="true"
+        onWheel={onWheelHorizontal}
       >
         <div className="min-w-max h-full flex flex-col">
           <CalendarDayHeader
@@ -273,34 +277,37 @@ const UserCalendar: React.FC<UserCalendarProps> = ({
                           className="relative"
                           style={{ height: `${height}px` }}
                         >
-                          {unavailableByMember[index]
-                            .filter((seg) => seg.endMinute > hourStart && seg.startMinute < hourEnd)
-                            .map((seg) => {
-                              const clampedStart = Math.max(seg.startMinute, hourStart);
-                              const clampedEnd = Math.min(seg.endMinute, hourEnd);
-                              const topPct = ((clampedStart - hourStart) / 60) * 100;
-                              const heightPct = ((clampedEnd - clampedStart) / 60) * 100;
-                              return (
-                                <div
-                                  key={`unavail-${user._id}-${hour}-${seg.startMinute}`}
-                                  className="pointer-events-none absolute left-0 right-0 z-1"
-                                  style={{
-                                    top: `${topPct}%`,
-                                    height: `${heightPct}%`,
-                                    backgroundColor: 'rgba(0,0,0,0.045)',
-                                    transition: 'opacity 0.25s ease',
-                                  }}
-                                />
-                              );
-                            })}
+                          {unavailableByMember[index].flatMap((seg) => {
+                            if (!(seg.endMinute > hourStart && seg.startMinute < hourEnd))
+                              return [];
+                            const clampedStart = Math.max(seg.startMinute, hourStart);
+                            const clampedEnd = Math.min(seg.endMinute, hourEnd);
+                            const topPct = ((clampedStart - hourStart) / 60) * 100;
+                            const heightPct = ((clampedEnd - clampedStart) / 60) * 100;
+                            return [
+                              <div
+                                key={`unavail-${user._id}-${hour}-${seg.startMinute}`}
+                                className="pointer-events-none absolute left-0 right-0 z-1"
+                                style={{
+                                  top: `${topPct}%`,
+                                  height: `${heightPct}%`,
+                                  backgroundColor: 'rgba(0,0,0,0.045)',
+                                  transition: 'opacity 0.25s ease',
+                                }}
+                              />,
+                            ];
+                          })}
                           <Slot
                             slotEvents={slotEvents}
                             height={height}
                             zoomMode={zoomMode}
                             dayIndex={index}
                             handleViewAppointment={handleViewAppointment}
+                            handleDetailAppointment={handleDetailAppointment}
+                            handleOpenWorkspace={handleOpenWorkspace}
                             handleRescheduleAppointment={handleRescheduleAppointment}
                             handleChangeRoomAppointment={handleChangeRoomAppointment}
+                            handleAcceptAppointment={handleAcceptAppointment}
                             length={team.length - 1}
                             canEditAppointments={canEditAppointments}
                             draggedAppointmentId={draggedAppointmentId}

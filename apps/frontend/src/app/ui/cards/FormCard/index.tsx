@@ -1,6 +1,6 @@
 import { FormsProps, getFormCategoryDisplayLabel } from '@/app/features/forms/types/forms';
 import React from 'react';
-import { getStatusStyle } from '@/app/ui/tables/FormsTable';
+import { getFormsStatusStyle } from '@/app/ui/tables/tableUtils';
 import { Secondary } from '@/app/ui/primitives/Buttons';
 import { Organisation } from '@yosemite-crew/types';
 
@@ -13,7 +13,7 @@ type FormCardProps = {
 
 const FormCard = ({ form, handleViewForm, getUserName, orgType }: FormCardProps) => {
   return (
-    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white px-3 py-3 flex flex-col justify-between gap-2 cursor-pointer">
+    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white p-3 flex flex-col justify-between gap-2 cursor-pointer">
       <div className="flex gap-1">
         <div className="text-body-3-emphasis text-text-primary">{form.name}</div>
       </div>
@@ -42,7 +42,7 @@ const FormCard = ({ form, handleViewForm, getUserName, orgType }: FormCardProps)
         <div className="text-caption-1 text-text-primary">{form.lastUpdated}</div>
       </div>
       <div
-        style={getStatusStyle(form.status || '')}
+        style={getFormsStatusStyle(form.status || '')}
         className="w-full rounded-2xl h-12 flex items-center justify-center text-body-4"
       >
         {form.status}

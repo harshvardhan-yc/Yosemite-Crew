@@ -11,7 +11,6 @@ import {
   type SpecialityResponseDTO,
 } from "@yosemite-crew/types";
 import { ServiceService } from "./service.service";
-import OrganisationRoomModel from "src/models/organisation-room";
 import UserModel from "src/models/user";
 import OrganizationModel from "src/models/organization";
 import { sendEmailTemplate } from "src/utils/email";
@@ -623,12 +622,6 @@ export const SpecialityService = {
 
     await ServiceService.deleteAllBySpecialityId(document._id.toString());
 
-    await OrganisationRoomModel.updateMany(
-      { assignedSpecialiteis: query._id ?? query.fhirId },
-      { $pull: { assignedSpecialiteis: specialityId } },
-      { sanitizeFilter: true },
-    );
-
     if (shouldDualWrite) {
       try {
         await prisma.speciality.deleteMany({
@@ -637,25 +630,13 @@ export const SpecialityService = {
       } catch (err) {
         handleDualWriteError("Speciality delete", err);
       }
-
-      try {
-        const rooms = await prisma.organisationRoom.findMany({
-          where: {
-            assignedSpecialiteis: { has: specialityId },
-          },
-        });
-        for (const room of rooms) {
-          const next = (room.assignedSpecialiteis ?? []).filter(
-            (id) => id !== specialityId,
-          );
-          await prisma.organisationRoom.update({
-            where: { id: room.id },
-            data: { assignedSpecialiteis: next },
-          });
-        }
-      } catch (err) {
-        handleDualWriteError("OrganisationRoom updateSpeciality", err);
-      }
     }
+
+    await prisma.organisationRoomSpeciality.deleteMany({
+      where: {
+        organisationId: orgId,
+        specialityId,
+      },
+    });
   },
 };

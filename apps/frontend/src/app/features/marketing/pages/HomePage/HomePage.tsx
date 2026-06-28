@@ -1,20 +1,26 @@
 'use client';
-import React, { ReactNode } from 'react';
-import Link from 'next/link';
+import React from 'react';
 import Image from 'next/image';
+import { FaApple, FaWindows } from 'react-icons/fa';
 
 import Footer from '@/app/ui/widgets/Footer/Footer';
-import { Primary } from '@/app/ui/primitives/Buttons';
+import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import FeatureBox from '@/app/features/marketing/pages/HomePage/FeatureBox/FeatureBox';
 import FocusCard from '@/app/features/marketing/pages/HomePage/FocusCard/FocusCard';
 import data from './data';
 import { useAuthStore } from '@/app/stores/authStore';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { resolveDefaultOpenScreenRoute } from '@/app/lib/defaultOpenScreen';
+export { FillBtn, UnFillBtn } from './HomePageButtons';
 
 import './HomePage.css';
 
-const HomePage = () => {
+type HomePageProps = {
+  macDownloadHref?: string;
+  windowsDownloadHref?: string;
+};
+
+const HomePage = ({ macDownloadHref, windowsDownloadHref }: Readonly<HomePageProps>) => {
   const { focusCards, practiceFeatures, heroList } = data;
   const { user, role } = useAuthStore();
 
@@ -26,6 +32,18 @@ const HomePage = () => {
   };
 
   const ctaText = user ? 'Go to app' : 'Get started free';
+  const downloadButtons = [
+    {
+      text: 'Download Mac App',
+      icon: <FaApple aria-hidden="true" />,
+      href: macDownloadHref,
+    },
+    {
+      text: 'Download Windows App',
+      icon: <FaWindows aria-hidden="true" />,
+      href: windowsDownloadHref,
+    },
+  ];
 
   return (
     <>
@@ -34,12 +52,10 @@ const HomePage = () => {
           <div className="HomeHeroData">
             <div className="LeftHeroDiv">
               <div className="herotext">
-                <div className="text-display-1 text-text-primary type first">
-                  Helping you help pets,
-                </div>
-                <div className="text-display-1 text-text-primary">
-                  <span className="type second">without the hassle</span>
-                </div>
+                <h1 className="text-display-1 text-text-primary hero-heading">
+                  <span className="hero-line hero-line-1">Helping you help pets,</span>
+                  <span className="hero-line hero-line-2"> without the hassle</span>
+                </h1>
               </div>
               <div className="heroPara">
                 {heroList.map((hero, index) => (
@@ -59,6 +75,17 @@ const HomePage = () => {
               </div>
               <div className="HeroBtn">
                 <Primary size="large" text={ctaText} href={getCtaHref()} />
+                <div className="HeroDownloadButtons">
+                  {downloadButtons.map((button) => (
+                    <Secondary
+                      key={button.text}
+                      text={button.text}
+                      href={button.href}
+                      icon={button.icon}
+                      isDisabled={button.href === undefined}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
             <div className="RytHeroDiv">
@@ -78,9 +105,9 @@ const HomePage = () => {
         <div className="Container">
           <div className="PracticedData">
             <div className="PractHeading">
-              <div className="text-display-2 text-text-primary">
+              <h2 className="text-display-2 text-text-primary">
                 Everything you need to run your pet business
-              </div>
+              </h2>
             </div>
             <div className="Practice_Box_Data">
               {practiceFeatures.map((feature, index) => (
@@ -101,7 +128,7 @@ const HomePage = () => {
         <div className="Container">
           <div className="FocusData">
             <div className="FocusTexted">
-              <div className="text-display-2 text-text-primary">Focus on care, not admin</div>
+              <h2 className="text-display-2 text-text-primary">Focus on care, not admin</h2>
               <div className="text-body-4 text-text-secondary">
                 The easy-to-use, cloud-based software that simplifies practice management and
                 elevates animal care.
@@ -210,9 +237,9 @@ const HomePage = () => {
         <div className="Container">
           <div className="whocareData">
             <div className="lftcare">
-              <div className="text-display-2 text-text-primary">
+              <h2 className="text-display-2 text-text-primary">
                 Caring for vets, who care for pets
-              </div>
+              </h2>
               <div className="text-body-4 text-text-secondary">
                 We prioritise your data security and compliance with industry-leading standards. Our
                 platform is fully compliant with GDPR, SOC 2 and ISO 27001 standards.
@@ -258,9 +285,9 @@ const HomePage = () => {
             <div className="lftbetter">
               <div className="betInner">
                 <div className="careText">
-                  <div className="text-display-2 text-text-primary">
+                  <h2 className="text-display-2 text-text-primary">
                     Better care is just a click away
-                  </div>
+                  </h2>
                   <div className="text-body-4 text-text-secondary">
                     Join hundreds of veterinary clinics already enhancing animal care and
                     streamlining their workflow.
@@ -288,40 +315,3 @@ const HomePage = () => {
 };
 
 export default HomePage;
-
-// ButtonProps
-
-type ButtonProps = {
-  icon: ReactNode;
-  text: string;
-  href: string;
-  onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
-  style?: React.CSSProperties;
-};
-
-const FillBtn = ({ icon, text, onClick, href, style }: Readonly<ButtonProps>) => {
-  return (
-    <Link
-      href={href}
-      className="Fillbtn"
-      onClick={(e) => {
-        if (onClick) {
-          e.preventDefault(); // ✅ stops immediate navigation
-          onClick(e); // ✅ trigger your handler
-        }
-      }}
-      style={style}
-    >
-      {icon} {text}
-    </Link>
-  );
-};
-const UnFillBtn = ({ icon, text, href, onClick, style }: Readonly<ButtonProps>) => {
-  return (
-    <Link className="UnFillbtn" href={href} onClick={onClick} style={style}>
-      {icon} {text}
-    </Link>
-  );
-};
-
-export { FillBtn, UnFillBtn };

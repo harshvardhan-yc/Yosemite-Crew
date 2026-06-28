@@ -1,7 +1,10 @@
 import apiClient, {withAuthHeaders} from '@/shared/services/apiClient';
 import {documentApi} from '@/features/documents/services/documentService';
 import type {DocumentFile} from '@/features/documents/types';
-import {ensureAccessContext, toErrorMessage} from '@/shared/utils/serviceHelpers';
+import {
+  ensureAccessContext,
+  toErrorMessage,
+} from '@/shared/utils/serviceHelpers';
 
 export type ContactType =
   | 'GENERAL_ENQUIRY'
@@ -102,9 +105,10 @@ export const uploadContactAttachments = async ({
     uploaded.push(uploadedFile);
   }
 
-  const attachments = uploaded
-    .map(mapFileToAttachment)
-    .filter(Boolean) as ContactAttachmentPayload[];
+  const attachments = uploaded.flatMap(f => {
+    const a = mapFileToAttachment(f);
+    return a ? [a] : [];
+  });
 
   return {uploaded, attachments};
 };
@@ -112,22 +116,17 @@ export const uploadContactAttachments = async ({
 export const contactService = {
   async submitContact(payload: ContactRequestPayload) {
     try {
-      const {accessToken, userId} = await ensureAccessContext();
+      const {accessToken} = await ensureAccessContext();
       const body = {
         ...payload,
         source: payload.source ?? CONTACT_SOURCE,
       };
 
-      const headers = withAuthHeaders(
-        accessToken,
-        userId ? {'x-user-id': userId} : undefined,
-      );
+      const headers = withAuthHeaders(accessToken);
 
-      const {data} = await apiClient.post(
-        '/v1/contact-us/contact',
-        body,
-        {headers},
-      );
+      const {data} = await apiClient.post('/v1/contact-us/contact', body, {
+        headers,
+      });
       return data;
     } catch (error) {
       throw new Error(toErrorMessage(error, 'Failed to submit your request.'));

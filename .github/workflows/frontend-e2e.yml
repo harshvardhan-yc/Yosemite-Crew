@@ -10,13 +10,41 @@ on:
       - '.github/workflows/frontend-e2e.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  NEXT_PUBLIC_BASE_URL: https://devapi.yosemitecrew.com/
+  NEXT_PUBLIC_COGNITO_USERPOOLID: eu-central-1_hxzTCq5oY
+  NEXT_PUBLIC_COGNITO_CLIENTID: 2aaosvrhi2ukh6unle6gcn46en
+  NEXT_PUBLIC_DISABLE_AUTH_GUARD: 'false'
+
 concurrency:
   group: frontend-e2e-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  playwright:
-    name: Playwright E2E (frontend)
+  # `secrets` is not available in a job-level `if:` — gate on a preflight output instead.
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      has-auth-creds: ${{ steps.check.outputs.has-auth-creds }}
+    steps:
+      - id: check
+        env:
+          YC_E2E_EMAIL: ${{ secrets.YC_E2E_EMAIL }}
+          YC_E2E_PASSWORD: ${{ secrets.YC_E2E_PASSWORD }}
+        run: |
+          if [ -n "$YC_E2E_EMAIL" ] && [ -n "$YC_E2E_PASSWORD" ]; then
+            echo "has-auth-creds=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-auth-creds=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Build the frontend once and share it with both Playwright jobs, instead of
+  # doing an identical cold Next.js build inside each one.
+  build:
+    name: Build frontend (shared)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -30,20 +58,68 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Setup
+        uses: ./.github/actions/setup
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Cache Next.js build cache
+        uses: actions/cache@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          path: apps/frontend/.next/cache
+          key: next-build-${{ runner.os }}-${{ hashFiles('apps/frontend/package.json', 'apps/frontend/next.config.*', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            next-build-${{ runner.os }}-
 
       - name: Build packages
         run: pnpm run build --filter "@yosemite-crew/types" --filter "@yosemite-crew/fhirtypes"
+
+      - name: Build frontend
+        run: pnpm --filter frontend run build
+
+      - name: Upload frontend build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-e2e-build
+          path: |
+            apps/frontend/.next
+            !apps/frontend/.next/cache
+            packages/types/dist
+            packages/fhirtypes/dist
+          include-hidden-files: true
+          retention-days: 1
+          if-no-files-found: error
+
+  playwright-public:
+    name: Playwright public smoke + a11y
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Cache Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/frontend/.next/cache
+          key: next-build-${{ runner.os }}-${{ hashFiles('apps/frontend/package.json', 'apps/frontend/next.config.*', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            next-build-${{ runner.os }}-
+
+      - name: Download frontend build output
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-e2e-build
+          path: .
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
@@ -54,16 +130,18 @@ jobs:
             playwright-${{ runner.os }}-
 
       - name: Install Playwright browsers
-        run: pnpm --filter frontend exec playwright install --with-deps chromium
+        run: pnpm --filter frontend exec playwright install --with-deps chromium firefox
 
-      - name: Run frontend E2E
-        run: pnpm --filter frontend e2e:ci
+      - name: Run public smoke and accessibility flows
+        env:
+          E2E_WEB_SERVER_COMMAND: pnpm exec next start -p 3001 -H 127.0.0.1
+        run: pnpm --filter frontend exec playwright test e2e/smoke.spec.ts e2e/a11y.spec.ts
 
       - name: Upload Playwright HTML report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-playwright-report
+          name: frontend-playwright-public-report
           path: apps/frontend/playwright-report
           if-no-files-found: ignore
 
@@ -71,6 +149,66 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-playwright-test-results
+          name: frontend-playwright-public-test-results
+          path: apps/frontend/test-results
+          if-no-files-found: ignore
+
+  playwright-auth:
+    name: Playwright authenticated flow
+    needs: [preflight, build]
+    if: needs.preflight.outputs.has-auth-creds == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      YC_E2E_EMAIL: ${{ secrets.YC_E2E_EMAIL }}
+      YC_E2E_PASSWORD: ${{ secrets.YC_E2E_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Download frontend build output
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-e2e-build
+          path: .
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install Playwright browsers
+        run: pnpm --filter frontend exec playwright install --with-deps chromium firefox
+
+      - name: Run authenticated Playwright flow
+        env:
+          E2E_WEB_SERVER_COMMAND: pnpm exec next start -p 3001 -H 127.0.0.1
+        run: pnpm --filter frontend exec playwright test e2e/auth-flow.spec.ts
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-playwright-auth-report
+          path: apps/frontend/playwright-report
+          if-no-files-found: ignore
+
+      - name: Upload Playwright test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-playwright-auth-test-results
           path: apps/frontend/test-results
           if-no-files-found: ignore

@@ -5,12 +5,15 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {useSelector} from 'react-redux';
 import {useTheme} from '@/hooks';
 import {Header} from '@/shared/components/common/Header/Header';
-import {selectLinkedBusinessesLoading} from '../index';
+import {selectLinkedBusinessesLoading} from '../selectors';
 import type {LinkedBusinessStackParamList} from '@/navigation/types';
 
 type Props = NativeStackScreenProps<LinkedBusinessStackParamList, 'QRScanner'>;
 
-export const QRScannerScreen: React.FC<Props> = ({route: _route, navigation}) => {
+export const QRScannerScreen: React.FC<Props> = ({
+  route: _route,
+  navigation,
+}) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   useSelector(selectLinkedBusinessesLoading);

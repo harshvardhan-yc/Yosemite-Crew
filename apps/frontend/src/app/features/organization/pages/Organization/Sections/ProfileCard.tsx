@@ -15,10 +15,13 @@ import { useAuthStore } from '@/app/stores/authStore';
 import { UserProfile } from '@/app/features/users/types/profile';
 import { getSafeImageUrl } from '@/app/lib/urls';
 import { Organisation } from '@yosemite-crew/types';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { RiEdit2Fill } from 'react-icons/ri';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
-import CalBookingOverlay from '@/app/ui/overlays/CalBookingOverlay';
+import dynamic from 'next/dynamic';
+const CalBookingOverlay = dynamic(() => import('@/app/ui/overlays/CalBookingOverlay'), {
+  ssr: false,
+});
 
 type FieldConfig = {
   label: string;
@@ -259,7 +262,7 @@ const toDateOrNull = (raw: any): Date | null => {
   return null;
 };
 
-const renderValue = (field: FieldConfig, formValues: FormValues) => {
+const FieldValue = ({ field, formValues }: { field: FieldConfig; formValues: FormValues }) => {
   const type = field.type || 'text';
   const raw = formValues[field.key];
 
@@ -289,10 +292,10 @@ const renderValue = (field: FieldConfig, formValues: FormValues) => {
     return options.length ? resolveLabel(options, raw) : raw;
   };
 
-  if (type === 'date' || type === 'dateString') return formatDate();
-  if (type === 'multiSelect') return formatMultiSelect();
-  if (type === 'select' || type === 'dropdown') return formatSelect();
-  return raw || '-';
+  if (type === 'date' || type === 'dateString') return <>{formatDate()}</>;
+  if (type === 'multiSelect') return <>{formatMultiSelect()}</>;
+  if (type === 'select' || type === 'dropdown') return <>{formatSelect()}</>;
+  return <>{raw || '-'}</>;
 };
 
 const ProfileCard = ({
@@ -314,10 +317,14 @@ const ProfileCard = ({
   const orgId = primaryOrg?._id;
   const isDisabled = !orgId;
 
-  useEffect(() => {
+  const prevOrgRef = useRef(org);
+  const prevFieldsRef = useRef(fields);
+  if (prevOrgRef.current !== org || prevFieldsRef.current !== fields) {
+    prevOrgRef.current = org;
+    prevFieldsRef.current = fields;
     setFormValues(buildInitialValues(fields, org));
     setFormValuesErrors({});
-  }, [org, fields]);
+  }
 
   const isActuallyEditable = useMemo(() => editable && !!onSave, [editable, onSave]);
 
@@ -470,7 +477,7 @@ const ProfileCard = ({
           return (
             <div key={field.key}>
               {isEditing && field.editable ? (
-                <div className="flex-1 py-2 px-2">
+                <div className="flex-1 p-2">
                   <Component
                     field={field}
                     value={formValues[field.key]}
@@ -482,7 +489,7 @@ const ProfileCard = ({
               ) : (
                 <FieldValueRow
                   label={field.label}
-                  value={renderValue(field, formValues)}
+                  value={<FieldValue field={field} formValues={formValues} />}
                   showDivider={showDivider}
                 />
               )}

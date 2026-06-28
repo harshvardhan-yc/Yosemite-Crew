@@ -1,10 +1,12 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import StarRipple from '@/app/features/marketing/components/LandingPage/StarRipple';
 
 jest.mock('framer-motion', () => ({
-  motion: {
+  LazyMotion: ({ children }: any) => <>{children}</>,
+  domAnimation: {},
+  m: {
     svg: ({ children, className }: any) => <svg className={className}>{children}</svg>,
   },
 }));
@@ -24,14 +26,21 @@ describe('StarRipple', () => {
     expect(paths[0].getAttribute('d')).toContain('M ');
   });
 
-  it('creates linear gradients with animateTransform for each ripple', () => {
+  it('creates eight linear gradients with stable Safari-safe IDs', () => {
     const { container } = render(<StarRipple />);
 
     const gradients = container.querySelectorAll('linearGradient');
     expect(gradients).toHaveLength(8);
 
+    gradients.forEach((g) => {
+      const id = g.getAttribute('id') ?? '';
+      // IDs must not contain colons. React.useId() produces :r0: which breaks Safari SVG url() refs.
+      expect(id).not.toContain(':');
+      expect(id.length).toBeGreaterThan(0);
+    });
+
+    // No animateTransform. Removed for Safari compatibility.
     const rotateAnimations = container.querySelectorAll('animateTransform');
-    expect(rotateAnimations).toHaveLength(8);
-    expect(rotateAnimations[0]).toHaveAttribute('type', 'rotate');
+    expect(rotateAnimations).toHaveLength(0);
   });
 });

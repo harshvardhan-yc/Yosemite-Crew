@@ -56,9 +56,7 @@ import {normalizeImageUri} from '@/shared/utils/imageUri';
 import {resolveImageSource} from '@/shared/utils/resolveImageSource';
 
 const normalizeToken = (value?: string | null) =>
-  (value ?? '')
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]/g, '');
+  (value ?? '').toLowerCase().replaceAll(/[^a-z0-9]/g, '');
 
 const normalizeName = (value?: string | null) => normalizeToken(value);
 
@@ -68,20 +66,29 @@ const findMatchingField = (
 ): ObservationToolField | null => {
   const stepTokens = [step.id, step.title].map(normalizeToken).filter(Boolean);
   const exactMatch = fields.find(field => {
-    const fieldTokens = [field.key, field.label].map(normalizeToken).filter(Boolean);
+    const fieldTokens = [field.key, field.label]
+      .map(normalizeToken)
+      .filter(Boolean);
     return fieldTokens.some(token => stepTokens.includes(token));
   });
   if (exactMatch) return exactMatch;
   const fuzzyMatch = fields.find(field => {
-    const fieldTokens = [field.key, field.label].map(normalizeToken).filter(Boolean);
+    const fieldTokens = [field.key, field.label]
+      .map(normalizeToken)
+      .filter(Boolean);
     return fieldTokens.some(token =>
-      stepTokens.some(stepToken => stepToken.includes(token) || token.includes(stepToken)),
+      stepTokens.some(
+        stepToken => stepToken.includes(token) || token.includes(stepToken),
+      ),
     );
   });
   return fuzzyMatch ?? null;
 };
 
-type Navigation = NativeStackNavigationProp<TaskStackParamList, 'ObservationalTool'>;
+type Navigation = NativeStackNavigationProp<
+  TaskStackParamList,
+  'ObservationalTool'
+>;
 type Route = RouteProp<TaskStackParamList, 'ObservationalTool'>;
 
 interface ProviderEntry {
@@ -113,9 +120,13 @@ export const ObservationalToolScreen: React.FC = () => {
   const task = useSelector((state: RootState) => selectTaskById(taskId)(state));
   const currentUser = useSelector(selectAuthUser);
   const companion = useSelector((state: RootState) =>
-    task ? state.companion.companions.find(c => c.id === task.companionId) : null,
+    task
+      ? state.companion.companions.find(c => c.id === task.companionId)
+      : null,
   );
-  const businesses = useSelector((state: RootState) => state.businesses.businesses);
+  const businesses = useSelector(
+    (state: RootState) => state.businesses.businesses,
+  );
   const services = useSelector((state: RootState) => state.businesses.services);
   const {businessFallbacks, requestBusinessPhoto, handleAvatarError} =
     useBusinessPhotoFallback();
@@ -129,12 +140,17 @@ export const ObservationalToolScreen: React.FC = () => {
   const [stage, setStage] = useState<'landing' | 'form'>('landing');
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [responses, setResponses] = useState<ObservationalToolResponses>({});
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
+    null,
+  );
   const [providerTouched, setProviderTouched] = useState(false);
   const [stepTouched, setStepTouched] = useState(false);
   const [definitionLoading, setDefinitionLoading] = useState(false);
-  const [remoteDefinition, setRemoteDefinition] = useState<ObservationToolDefinitionRemote | null>(null);
-  const [companionImageError, setCompanionImageError] = useState(false);
+  const [remoteDefinition, setRemoteDefinition] =
+    useState<ObservationToolDefinitionRemote | null>(null);
+  const [companionImageErrorUri, setCompanionImageErrorUri] = useState<
+    string | null
+  >(null);
   const scrollToTop = useCallback(() => {
     scrollViewRef.current?.scrollTo({y: 0, animated: true});
   }, []);
@@ -180,14 +196,20 @@ export const ObservationalToolScreen: React.FC = () => {
 
   const inferSpeciesFromName = useCallback((name?: string | null) => {
     const normalized = (name ?? '').toLowerCase();
-    if (normalized.includes('feline') || normalized.includes('cat')) return 'cat';
-    if (normalized.includes('canine') || normalized.includes('dog')) return 'dog';
-    if (normalized.includes('equine') || normalized.includes('horse')) return 'horse';
+    if (normalized.includes('feline') || normalized.includes('cat'))
+      return 'cat';
+    if (normalized.includes('canine') || normalized.includes('dog'))
+      return 'dog';
+    if (normalized.includes('equine') || normalized.includes('horse'))
+      return 'horse';
     return null;
   }, []);
 
   const staticDefinition = useMemo(() => {
-    if (toolId && (observationalToolDefinitions as Record<string, any>)[toolId]) {
+    if (
+      toolId &&
+      (observationalToolDefinitions as Record<string, any>)[toolId]
+    ) {
       return (observationalToolDefinitions as Record<string, any>)[toolId];
     }
     const normalizedRemote = normalizeName(remoteDefinition?.name);
@@ -197,20 +219,31 @@ export const ObservationalToolScreen: React.FC = () => {
       return (
         normalizedDef === normalizedRemote ||
         normalizedShort === normalizedRemote ||
-        (normalizedRemote?.includes(normalizedDef)) ||
+        normalizedRemote?.includes(normalizedDef) ||
         (normalizedDef && normalizedRemote?.includes(normalizedDef))
       );
     });
     if (byName) return byName;
     const fallbackBySpecies = (species: string | null) => {
-      if (species === 'cat') return observationalToolDefinitions['feline-grimace-scale'];
-      if (species === 'dog') return observationalToolDefinitions['canine-acute-pain-scale'];
-      if (species === 'horse') return observationalToolDefinitions['equine-grimace-scale'];
+      if (species === 'cat')
+        return observationalToolDefinitions['feline-grimace-scale'];
+      if (species === 'dog')
+        return observationalToolDefinitions['canine-acute-pain-scale'];
+      if (species === 'horse')
+        return observationalToolDefinitions['equine-grimace-scale'];
       return null;
     };
-    const inferredSpecies = inferSpeciesFromName(remoteDefinition?.name) ?? companion?.category ?? null;
+    const inferredSpecies =
+      inferSpeciesFromName(remoteDefinition?.name) ??
+      companion?.category ??
+      null;
     return fallbackBySpecies(inferredSpecies);
-  }, [companion?.category, inferSpeciesFromName, remoteDefinition?.name, toolId]);
+  }, [
+    companion?.category,
+    inferSpeciesFromName,
+    remoteDefinition?.name,
+    toolId,
+  ]);
 
   const displayDefinition = useMemo(() => {
     const fallbackEmpty = {
@@ -220,21 +253,33 @@ export const ObservationalToolScreen: React.FC = () => {
       image: Images.otNoProviders,
     };
 
-    const overviewParagraphs = staticDefinition?.overviewParagraphs ??
+    const overviewParagraphs =
+      staticDefinition?.overviewParagraphs ??
       (remoteDefinition?.description
         ? [remoteDefinition.description]
-        : ['Answer a quick checklist to help your care team understand how your companion is doing today.']);
+        : [
+            'Answer a quick checklist to help your care team understand how your companion is doing today.',
+          ]);
 
     return {
       name: remoteDefinition?.name ?? staticDefinition?.name ?? toolLabel,
-      overviewTitle: staticDefinition?.overviewTitle ?? remoteDefinition?.name ?? toolLabel,
+      overviewTitle:
+        staticDefinition?.overviewTitle ?? remoteDefinition?.name ?? toolLabel,
       overviewParagraphs,
-      subtitle: staticDefinition?.steps?.[0]?.subtitle ?? remoteDefinition?.description ?? '',
+      subtitle:
+        staticDefinition?.steps?.[0]?.subtitle ??
+        remoteDefinition?.description ??
+        '',
       footer: staticDefinition?.steps?.[0]?.footerNote ?? '',
       emptyState: staticDefinition?.emptyState ?? fallbackEmpty,
       heroImage: staticDefinition?.heroImage,
     };
-  }, [remoteDefinition?.description, remoteDefinition?.name, staticDefinition, toolLabel]);
+  }, [
+    remoteDefinition?.description,
+    remoteDefinition?.name,
+    staticDefinition,
+    toolLabel,
+  ]);
 
   const getFieldOptions = (field: ObservationToolField) => {
     if (Array.isArray(field.options) && field.options.length > 0) {
@@ -252,12 +297,14 @@ export const ObservationalToolScreen: React.FC = () => {
   const steps = useMemo<ObservationalToolStep[]>(() => {
     if (staticDefinition) {
       const fields = remoteDefinition?.fields ?? [];
-      return staticDefinition.steps.map((step: ObservationalToolStep, index: number) => {
-        const matchedField =
-          (fields.length ? findMatchingField(fields, step) : null) ??
-          (fields.length === staticDefinition.steps.length ? fields[index] : null);
-        const mappedOptions =
-          matchedField?.options?.length
+      return staticDefinition.steps.map(
+        (step: ObservationalToolStep, index: number) => {
+          const matchedField =
+            (fields.length ? findMatchingField(fields, step) : null) ??
+            (fields.length === staticDefinition.steps.length
+              ? fields[index]
+              : null);
+          const mappedOptions = matchedField?.options?.length
             ? matchedField.options.map((backendOption, optionIdx) => {
                 const fallbackOption = step.options[optionIdx];
                 return {
@@ -268,14 +315,16 @@ export const ObservationalToolScreen: React.FC = () => {
                 };
               })
             : step.options;
-        return {
-          ...step,
-          subtitle: step.subtitle || displayDefinition.subtitle || '',
-          footerNote: step.footerNote ?? displayDefinition.footer ?? undefined,
-          required: matchedField?.required ?? step.required,
-          options: mappedOptions,
-        };
-      });
+          return {
+            ...step,
+            subtitle: step.subtitle || displayDefinition.subtitle || '',
+            footerNote:
+              step.footerNote ?? displayDefinition.footer ?? undefined,
+            required: matchedField?.required ?? step.required,
+            options: mappedOptions,
+          };
+        },
+      );
     }
     if (remoteDefinition) {
       return remoteDefinition.fields.map(field => ({
@@ -299,19 +348,21 @@ export const ObservationalToolScreen: React.FC = () => {
 
   const submissionKeyByStepId = useMemo(() => {
     if (!staticDefinition || !remoteDefinition?.fields?.length) {
-      return {} as Record<string, string>;
+      return {};
     }
     const mapping: Record<string, string> = {};
-    staticDefinition.steps.forEach((step: ObservationalToolStep, index: number) => {
-      const matchedField =
-        findMatchingField(remoteDefinition.fields, step) ??
-        (remoteDefinition.fields.length === staticDefinition.steps.length
-          ? remoteDefinition.fields[index]
-          : null);
-      if (matchedField?.key) {
-        mapping[step.id] = matchedField.key;
-      }
-    });
+    staticDefinition.steps.forEach(
+      (step: ObservationalToolStep, index: number) => {
+        const matchedField =
+          findMatchingField(remoteDefinition.fields, step) ??
+          (remoteDefinition.fields.length === staticDefinition.steps.length
+            ? remoteDefinition.fields[index]
+            : null);
+        if (matchedField?.key) {
+          mapping[step.id] = matchedField.key;
+        }
+      },
+    );
     return mapping;
   }, [remoteDefinition?.fields, staticDefinition]);
 
@@ -325,16 +376,24 @@ export const ObservationalToolScreen: React.FC = () => {
     return null;
   }, []);
 
-  const toolDisplayName = remoteDefinition?.name ?? staticDefinition?.name ?? toolLabel;
-  const toolSpecies = inferSpeciesFromName(toolDisplayName) ?? companion?.category ?? null;
+  const toolDisplayName =
+    remoteDefinition?.name ?? staticDefinition?.name ?? toolLabel;
+  const toolSpecies =
+    inferSpeciesFromName(toolDisplayName) ?? companion?.category ?? null;
 
   const otServices = useMemo(() => {
     const normalizedName = (toolDisplayName ?? '').toLowerCase();
     const speciesToken = (toolSpecies ?? '').toLowerCase();
     return services.filter(service => {
-      const specialtyMatch = (service.specialty ?? '').toLowerCase().includes('observation');
-      const nameMatch = normalizedName ? service.name.toLowerCase().includes(normalizedName) : false;
-      const speciesMatch = speciesToken ? service.name.toLowerCase().includes(speciesToken) : true;
+      const specialtyMatch = (service.specialty ?? '')
+        .toLowerCase()
+        .includes('observation');
+      const nameMatch = normalizedName
+        ? service.name.toLowerCase().includes(normalizedName)
+        : false;
+      const speciesMatch = speciesToken
+        ? service.name.toLowerCase().includes(speciesToken)
+        : true;
       return specialtyMatch && (nameMatch || speciesMatch || !normalizedName);
     });
   }, [services, toolDisplayName, toolSpecies]);
@@ -364,7 +423,9 @@ export const ObservationalToolScreen: React.FC = () => {
 
     const currentUserId = currentUser?.parentId ?? currentUser?.id ?? null;
     if (task?.createdBy && currentUserId && task.createdBy !== currentUserId) {
-      const matched = entries.filter(entry => entry.businessId === task.createdBy);
+      const matched = entries.filter(
+        entry => entry.businessId === task.createdBy,
+      );
       if (matched.length > 0) {
         return matched;
       }
@@ -386,18 +447,21 @@ export const ObservationalToolScreen: React.FC = () => {
       if (typeof entry.image === 'number') {
         return;
       }
-      const imageUri = typeof entry.image === 'string' ? entry.image : entry.image?.uri ?? null;
+      const imageUri =
+        typeof entry.image === 'string'
+          ? entry.image
+          : (entry.image?.uri ?? null);
       if ((!imageUri || isDummyPhoto(imageUri)) && entry.googlePlacesId) {
         requestBusinessPhoto(entry.googlePlacesId, entry.businessId);
       }
     });
   }, [providerEntries, requestBusinessPhoto]);
 
-  useEffect(() => {
-    if (!selectedProviderId && providerEntries.length === 1) {
-      setSelectedProviderId(providerEntries[0].businessId);
-    }
-  }, [providerEntries, selectedProviderId]);
+  const effectiveProviderId =
+    selectedProviderId ??
+    (providerEntries.length === 1
+      ? (providerEntries[0]?.businessId ?? null)
+      : null);
 
   const totalSteps = steps.length;
   const effectiveStepIndex =
@@ -409,7 +473,9 @@ export const ObservationalToolScreen: React.FC = () => {
     if (Array.isArray(value)) return value;
     return value ? [value] : [];
   })();
-  const isStepCompleted = currentStep ? (!currentStep.required || selectionsForStep.length > 0) : false;
+  const isStepCompleted = currentStep
+    ? !currentStep.required || selectionsForStep.length > 0
+    : false;
   const isImageOptionLayout =
     currentStep?.options?.some(option => option.image) ?? false;
 
@@ -472,14 +538,15 @@ export const ObservationalToolScreen: React.FC = () => {
     () => normalizeImageUri(companion?.profileImage ?? null),
     [companion?.profileImage],
   );
+  const companionImageError =
+    !!companionImageUri && companionImageErrorUri === companionImageUri;
   const companionImageSource = useMemo(
-    () => (companionImageUri && !companionImageError ? {uri: companionImageUri} : null),
+    () =>
+      companionImageUri && !companionImageError
+        ? {uri: companionImageUri}
+        : null,
     [companionImageError, companionImageUri],
   );
-
-  useEffect(() => {
-    setCompanionImageError(false);
-  }, [companionImageUri]);
 
   const companionInitial = useMemo(() => {
     const nameSource = companion?.name ?? toolLabel;
@@ -510,7 +577,7 @@ export const ObservationalToolScreen: React.FC = () => {
   };
 
   const startAssessment = () => {
-    if (providerEntries.length > 0 && !selectedProviderId) {
+    if (providerEntries.length > 0 && !effectiveProviderId) {
       setProviderTouched(true);
       return;
     }
@@ -521,8 +588,13 @@ export const ObservationalToolScreen: React.FC = () => {
     if (!providerEntries.length) {
       return null;
     }
-    if (selectedProviderId) {
-      const selected = providerEntries.find(entry => entry.businessId === selectedProviderId);
+    const epid =
+      selectedProviderId ??
+      (providerEntries.length === 1
+        ? (providerEntries[0]?.businessId ?? null)
+        : null);
+    if (epid) {
+      const selected = providerEntries.find(entry => entry.businessId === epid);
       if (selected) return selected;
     }
     return providerEntries[0] ?? null;
@@ -533,7 +605,12 @@ export const ObservationalToolScreen: React.FC = () => {
       return;
     }
 
-    if (providerEntries.length > 0 && !selectedProviderId) {
+    const epid =
+      selectedProviderId ??
+      (providerEntries.length === 1
+        ? (providerEntries[0]?.businessId ?? null)
+        : null);
+    if (providerEntries.length > 0 && !epid) {
       setProviderTouched(true);
       return;
     }
@@ -544,7 +621,10 @@ export const ObservationalToolScreen: React.FC = () => {
     }
 
     if (!resolvedProvider) {
-      Alert.alert('Provider required', 'Please select a provider offering this observational tool.');
+      Alert.alert(
+        'Provider required',
+        'Please select a provider offering this observational tool.',
+      );
       return;
     }
 
@@ -572,7 +652,11 @@ export const ObservationalToolScreen: React.FC = () => {
 
     try {
       const submissionToolId =
-        task.observationToolId ?? details.toolType ?? remoteDefinition?.id ?? toolId ?? '';
+        task.observationToolId ??
+        details.toolType ??
+        remoteDefinition?.id ??
+        toolId ??
+        '';
       const submission = await observationToolApi.submit({
         toolId: submissionToolId,
         companionId: companion?.id ?? task.companionId,
@@ -595,10 +679,13 @@ export const ObservationalToolScreen: React.FC = () => {
       tabNavigation?.navigate('Appointments', {
         screen: 'BookingForm',
         params: {
-          businessId: resolvedProvider?.businessId ?? providerEntries[0]?.businessId,
-          serviceId: resolvedProvider?.serviceId ?? providerEntries[0]?.serviceId,
+          businessId:
+            resolvedProvider?.businessId ?? providerEntries[0]?.businessId,
+          serviceId:
+            resolvedProvider?.serviceId ?? providerEntries[0]?.serviceId,
           serviceName: resolvedProvider?.serviceName ?? toolDisplayName,
-          serviceSpecialty: resolvedProvider?.serviceSpecialty ?? 'Observational Tool',
+          serviceSpecialty:
+            resolvedProvider?.serviceSpecialty ?? 'Observational Tool',
           serviceSpecialtyId: resolvedProvider?.specialityId ?? null,
           employeeId: undefined,
           appointmentType,
@@ -606,7 +693,8 @@ export const ObservationalToolScreen: React.FC = () => {
         },
       } as any);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to submit responses';
+      const message =
+        error instanceof Error ? error.message : 'Unable to submit responses';
       Alert.alert('Submission failed', message);
     }
   }, [
@@ -682,7 +770,9 @@ export const ObservationalToolScreen: React.FC = () => {
         contentPadding={theme.spacing['3']}>
         {contentPaddingStyle => (
           <View style={[styles.errorContainer, contentPaddingStyle]}>
-            <Text style={styles.errorText}>Unable to load observational tool.</Text>
+            <Text style={styles.errorText}>
+              Unable to load observational tool.
+            </Text>
           </View>
         )}
       </LiquidGlassHeaderScreen>
@@ -720,33 +810,35 @@ export const ObservationalToolScreen: React.FC = () => {
     });
 
   const renderTextOptions = () =>
-    currentStep.options.map((option: ObservationalToolOption, index: number) => {
-      const selected = selectionsForStep.includes(option.id);
-      const showDivider = index < currentStep.options.length - 1;
-      return (
-        <View key={option.id}>
-          <Pressable
-            onPress={() => toggleOption(currentStep.id, option.id)}
-            style={[styles.optionRadioRow]}>
-            <Text
-              style={[
-                styles.optionRadioLabel,
-                selected && styles.optionRadioLabelSelected,
-              ]}>
-              {option.title}
-            </Text>
-            <View
-              style={[
-                styles.radioOuter,
-                selected && styles.radioOuterSelected,
-              ]}>
-              {selected ? <View style={styles.radioInner} /> : null}
-            </View>
-          </Pressable>
-          {showDivider ? <View style={styles.optionDivider} /> : null}
-        </View>
-      );
-    });
+    currentStep.options.map(
+      (option: ObservationalToolOption, index: number) => {
+        const selected = selectionsForStep.includes(option.id);
+        const showDivider = index < currentStep.options.length - 1;
+        return (
+          <View key={option.id}>
+            <Pressable
+              onPress={() => toggleOption(currentStep.id, option.id)}
+              style={styles.optionRadioRow}>
+              <Text
+                style={[
+                  styles.optionRadioLabel,
+                  selected && styles.optionRadioLabelSelected,
+                ]}>
+                {option.title}
+              </Text>
+              <View
+                style={[
+                  styles.radioOuter,
+                  selected && styles.radioOuterSelected,
+                ]}>
+                {selected ? <View style={styles.radioInner} /> : null}
+              </View>
+            </Pressable>
+            {showDivider ? <View style={styles.optionDivider} /> : null}
+          </View>
+        );
+      },
+    );
 
   const renderOptions = () =>
     isImageOptionLayout ? renderImageOptions() : renderTextOptions();
@@ -831,11 +923,13 @@ export const ObservationalToolScreen: React.FC = () => {
               <Image
                 source={companionImageSource}
                 style={styles.stepHero}
-                onError={() => setCompanionImageError(true)}
+                onError={() => setCompanionImageErrorUri(companionImageUri)}
               />
             ) : (
               <View style={styles.stepHeroFallback}>
-                <Text style={styles.stepHeroFallbackText}>{companionInitial}</Text>
+                <Text style={styles.stepHeroFallbackText}>
+                  {companionInitial}
+                </Text>
               </View>
             )}
           </View>
@@ -850,7 +944,9 @@ export const ObservationalToolScreen: React.FC = () => {
           fallbackStyle={styles.glassCardFallback}>
           <View style={styles.optionsContainer}>{renderOptions()}</View>
           {showValidationMessage ? (
-            <Text style={styles.validationText}>Please select an option to continue.</Text>
+            <Text style={styles.validationText}>
+              Please select an option to continue.
+            </Text>
           ) : null}
           {currentStep.footerNote ? (
             <Text style={styles.stepFooterNote}>{currentStep.footerNote}</Text>
@@ -871,16 +967,18 @@ export const ObservationalToolScreen: React.FC = () => {
         fallbackStyle={styles.glassCardFallback}>
         <View style={styles.providerList}>
           {providerEntries.map(entry => {
-            const selected = selectedProviderId === entry.businessId;
+            const selected = effectiveProviderId === entry.businessId;
             const isLocalAsset = typeof entry.image === 'number';
             const primaryUri =
               typeof entry.image === 'string'
                 ? entry.image
-                : entry.image?.uri ?? null;
+                : (entry.image?.uri ?? null);
             const shouldUseFallback =
               !isLocalAsset && (!primaryUri || isDummyPhoto(primaryUri));
             const imageSource = resolveImageSource(
-              shouldUseFallback ? entry.fallbackImage ?? entry.image : entry.image,
+              shouldUseFallback
+                ? (entry.fallbackImage ?? entry.image)
+                : entry.image,
             );
             return (
               <LiquidGlassCard
@@ -904,7 +1002,10 @@ export const ObservationalToolScreen: React.FC = () => {
                       source={imageSource}
                       style={styles.providerImage}
                       onError={() =>
-                        handleAvatarError(entry.googlePlacesId ?? null, entry.businessId)
+                        handleAvatarError(
+                          entry.googlePlacesId ?? null,
+                          entry.businessId,
+                        )
                       }
                     />
                   ) : (
@@ -917,16 +1018,25 @@ export const ObservationalToolScreen: React.FC = () => {
                   <View style={styles.providerContent}>
                     <View style={styles.providerTitleRow}>
                       <Text style={styles.providerName}>{entry.name}</Text>
-                      <Text style={styles.serviceBadge}>{entry.serviceName}</Text>
+                      <Text style={styles.serviceBadge}>
+                        {entry.serviceName}
+                      </Text>
                     </View>
                     {entry.subtitle ? (
-                      <Text style={styles.providerSubtitle}>{entry.subtitle}</Text>
+                      <Text style={styles.providerSubtitle}>
+                        {entry.subtitle}
+                      </Text>
                     ) : null}
                     {entry.description ? (
-                      <Text style={styles.providerDescription}>{entry.description}</Text>
+                      <Text style={styles.providerDescription}>
+                        {entry.description}
+                      </Text>
                     ) : null}
-                    {entry.appointmentFee === null || entry.appointmentFee === undefined ? (
-                      <Text style={styles.costLabel}>Appointment fee shared during booking</Text>
+                    {entry.appointmentFee === null ||
+                    entry.appointmentFee === undefined ? (
+                      <Text style={styles.costLabel}>
+                        Appointment fee shared during booking
+                      </Text>
                     ) : (
                       <View style={styles.providerCosts}>
                         <View style={styles.costColumn}>
@@ -944,7 +1054,7 @@ export const ObservationalToolScreen: React.FC = () => {
           })}
         </View>
       </LiquidGlassCard>
-      {providerTouched && !selectedProviderId ? (
+      {providerTouched && !effectiveProviderId ? (
         <Text style={styles.validationText}>Please select a provider</Text>
       ) : null}
     </>
@@ -957,14 +1067,23 @@ export const ObservationalToolScreen: React.FC = () => {
       shadow="sm"
       style={[styles.glassCard, styles.emptyStateCard]}
       fallbackStyle={styles.glassCardFallback}>
-      <Image source={displayDefinition.emptyState.image || Images.otNoProviders} style={styles.emptyStateImage} />
-      <Text style={styles.emptyStateTitle}>{displayDefinition.emptyState.title}</Text>
-      <Text style={styles.emptyStateMessage}>{displayDefinition.emptyState.message}</Text>
+      <Image
+        source={displayDefinition.emptyState.image || Images.otNoProviders}
+        style={styles.emptyStateImage}
+      />
+      <Text style={styles.emptyStateTitle}>
+        {displayDefinition.emptyState.title}
+      </Text>
+      <Text style={styles.emptyStateMessage}>
+        {displayDefinition.emptyState.message}
+      </Text>
     </LiquidGlassCard>
   );
 
   const renderProvidersSection = () =>
-    providerEntries.length > 0 ? renderProvidersCard() : renderProvidersEmptyState();
+    providerEntries.length > 0
+      ? renderProvidersCard()
+      : renderProvidersEmptyState();
 
   const renderLandingStage = () => (
     <>
@@ -979,7 +1098,7 @@ export const ObservationalToolScreen: React.FC = () => {
             <Image
               source={companionImageSource}
               style={styles.introImage}
-              onError={() => setCompanionImageError(true)}
+              onError={() => setCompanionImageErrorUri(companionImageUri)}
             />
           ) : (
             <View style={styles.initialFallback}>
@@ -997,9 +1116,11 @@ export const ObservationalToolScreen: React.FC = () => {
         </View>
       </LiquidGlassCard>
 
-      <View style={styles.providersHeader}>
-        <Text style={styles.providersTitle}>Evaluation offered by</Text>
-      </View>
+      {providerEntries.length > 0 && (
+        <View style={styles.providersHeader}>
+          <Text style={styles.providersTitle}>Evaluation offered by</Text>
+        </View>
+      )}
 
       {renderProvidersSection()}
 
@@ -1090,8 +1211,7 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     introImageWrapper: {
       width: theme.spacing['24'],
@@ -1140,7 +1260,7 @@ const createStyles = (theme: any) =>
       color: theme.colors.black,
       textAlign: 'left',
     },
-    nextText:{
+    nextText: {
       color: theme.colors.white,
     },
     confirmPrimaryButtonText: {
@@ -1171,7 +1291,7 @@ const createStyles = (theme: any) =>
     providerCardSelected: {
       borderColor: theme.colors.primary,
       borderWidth: 1.5,
-      ...theme.shadows.medium,
+      boxShadow: `0px 4px 6px ${theme.colors.neutralShadow}`,
     },
     providerImage: {
       width: theme.spacing['32'],
@@ -1250,8 +1370,8 @@ const createStyles = (theme: any) =>
       // Spacing handled by container gap
     },
     emptyStateImage: {
-      width: theme.spacing['50'],
-      height: theme.spacing['60'],
+      width: theme.spacing['40'],
+      height: theme.spacing['40'],
       resizeMode: 'contain',
     },
     emptyStateTitle: {
@@ -1334,7 +1454,7 @@ const createStyles = (theme: any) =>
     },
     optionImageCardSelected: {
       borderColor: theme.colors.primary,
-      ...theme.shadows.medium,
+      boxShadow: `0px 4px 6px ${theme.colors.neutralShadow}`,
     },
     optionImageLarge: {
       width: theme.spacing['25'],

@@ -1,0 +1,44 @@
+{
+  "name": "@yosemite-crew/fhir",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "description": "Generated TypeScript types for FHIR releases.",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./r4": {
+      "types": "./src/r4/index.ts",
+      "default": "./src/r4/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit",
+    "generate": "tsx scripts/generate.ts",
+    "generate:r4": "tsx scripts/generate.ts --release r4 --file definitions/r4/definitions.json.zip"
+  },
+  "keywords": [
+    "fhir",
+    "hl7",
+    "healthcare",
+    "typescript",
+    "types"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@types/adm-zip": "latest",
+    "adm-zip": "latest",
+    "tar": "latest",
+    "tsx": "latest",
+    "typescript": "5.0.4"
+  }
+}

@@ -16,17 +16,19 @@ import {
 } from 'react-native';
 import CustomBottomSheet from '@/shared/components/common/BottomSheet/BottomSheet';
 import type {BottomSheetRef} from '@/shared/components/common/BottomSheet/BottomSheet';
-import LiquidGlassButton from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
 import {LiquidGlassIconButton} from '@/shared/components/common/LiquidGlassIconButton/LiquidGlassIconButton';
+import {BottomSheetActions} from '@/shared/components/common/BottomSheetActions/BottomSheetActions';
 import {useTheme, useAddressAutocomplete, useKeyboardVisible} from '@/hooks';
 import type {PlaceSuggestion} from '@/shared/services/maps/googlePlaces';
-import {AddressFields, type AddressFieldValues} from '@/shared/components/forms/AddressFields';
+import {
+  AddressFields,
+  type AddressFieldValues,
+} from '@/shared/components/forms/AddressFields';
 import {Images} from '@/assets/images';
 import {
   createBottomSheetImperativeHandle,
   createBottomSheetStyles,
   createBottomSheetContainerStyles,
-  createBottomSheetButtonStyles,
 } from '@/shared/utils/bottomSheetHelpers';
 
 export interface AddressBottomSheetRef {
@@ -76,7 +78,9 @@ export const AddressBottomSheet = forwardRef<
     () =>
       createBottomSheetImperativeHandle(bottomSheetRef, () => {
         setTempAddress(selectedAddress);
-        setAddressQuery(selectedAddress.addressLine ?? '', {suppressLookup: true});
+        setAddressQuery(selectedAddress.addressLine ?? '', {
+          suppressLookup: true,
+        });
         clearSuggestions();
         resetError();
       }),
@@ -113,7 +117,10 @@ export const AddressBottomSheet = forwardRef<
     closeSheet();
   };
 
-  const handleFieldChange = (field: keyof AddressFieldValues, value: string) => {
+  const handleFieldChange = (
+    field: keyof AddressFieldValues,
+    value: string,
+  ) => {
     setTempAddress(prev => ({...prev, [field]: value}));
     if (field === 'addressLine') {
       setAddressQuery(value);
@@ -152,59 +159,42 @@ export const AddressBottomSheet = forwardRef<
       android_keyboardInputMode="adjustResize">
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Address</Text>
-          <LiquidGlassIconButton
-            onPress={handleCancel}
-            size={closeButtonSize}
-            style={styles.closeButton}>
-            <Image source={Images.crossIcon} style={styles.closeIcon} resizeMode="contain" />
-          </LiquidGlassIconButton>
-        </View>
+          <View style={styles.header}>
+            <Text style={styles.title}>Address</Text>
+            <LiquidGlassIconButton
+              onPress={handleCancel}
+              size={closeButtonSize}
+              style={styles.closeButton}>
+              <Image
+                source={Images.crossIcon}
+                style={styles.closeIcon}
+                resizeMode="contain"
+              />
+            </LiquidGlassIconButton>
+          </View>
 
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          onScrollBeginDrag={Keyboard.dismiss}>
-          <AddressFields
-            values={tempAddress}
-            onChange={handleFieldChange}
-            addressSuggestions={addressSuggestions}
-            isFetchingSuggestions={isFetchingAddressSuggestions}
-            error={addressLookupError}
-            onSelectSuggestion={handleAddressSuggestionPress}
-          />
-        </ScrollView>
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            onScrollBeginDrag={Keyboard.dismiss}>
+            <AddressFields
+              values={tempAddress}
+              onChange={handleFieldChange}
+              addressSuggestions={addressSuggestions}
+              isFetchingSuggestions={isFetchingAddressSuggestions}
+              error={addressLookupError}
+              onSelectSuggestion={handleAddressSuggestionPress}
+            />
+          </ScrollView>
 
-        <View style={styles.buttonContainer}>
-          <LiquidGlassButton
-            title="Cancel"
-            onPress={handleCancel}
-            style={styles.cancelButton}
-            textStyle={styles.cancelButtonText}
-            tintColor={theme.colors.surface}
-            shadowIntensity="light"
-            forceBorder
-            borderColor={theme.colors.borderMuted}
-            height={theme.spacing['14']}
-            borderRadius={theme.borderRadius.lg}
+          <BottomSheetActions
+            onCancel={handleCancel}
+            onSave={handleSave}
+            theme={theme}
+            cancelTintColor={theme.colors.surface}
           />
-
-          <LiquidGlassButton
-            title="Save"
-            onPress={handleSave}
-            style={styles.saveButton}
-            textStyle={styles.saveButtonText}
-            tintColor={theme.colors.secondary}
-            shadowIntensity="medium"
-            forceBorder
-            borderColor={theme.colors.borderMuted}
-            height={theme.spacing['14']}
-            borderRadius={theme.borderRadius.lg}
-          />
-        </View>
         </View>
       </TouchableWithoutFeedback>
     </CustomBottomSheet>
@@ -216,7 +206,6 @@ AddressBottomSheet.displayName = 'AddressBottomSheet';
 const createStyles = (theme: any) =>
   StyleSheet.create({
     ...createBottomSheetContainerStyles(theme),
-    ...createBottomSheetButtonStyles(theme),
     ...createBottomSheetStyles(theme),
     closeButton: {
       position: 'absolute',

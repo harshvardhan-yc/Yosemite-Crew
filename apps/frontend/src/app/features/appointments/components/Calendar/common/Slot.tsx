@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePopoverManager } from '@/app/hooks/usePopoverManager';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import Image from 'next/image';
@@ -14,17 +14,21 @@ import { calcNearestAvailableMinute } from '@/app/features/appointments/componen
 import { createPortal } from 'react-dom';
 import AppointmentPopover from '@/app/features/appointments/components/Calendar/common/AppointmentPopover';
 import AppointmentContextMenu from '@/app/features/appointments/components/Calendar/common/AppointmentContextMenu';
-import { getDatePartsInPreferredTimeZone } from '@/app/lib/timezone';
+import { formatDateInPreferredTimeZone, getDatePartsInPreferredTimeZone } from '@/app/lib/timezone';
 import { CalendarZoomMode } from '@/app/features/appointments/components/Calendar/calendarLayout';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { useNotify } from '@/app/hooks/useNotify';
+import { canEnterAppointmentWorkspace } from '@/app/lib/appointmentWorkspace';
 
 type SlotProps = {
   slotEvents: Appointment[];
   height: number;
   handleViewAppointment: (appt: Appointment, intent?: AppointmentViewIntent) => void;
+  handleDetailAppointment?: (appt: Appointment, intent?: AppointmentViewIntent) => void;
+  handleOpenWorkspace?: (appt: Appointment, intent?: AppointmentViewIntent) => void;
   handleRescheduleAppointment: (appt: Appointment) => void;
   handleChangeRoomAppointment?: (appt: Appointment) => void;
+  handleAcceptAppointment?: (appt: Appointment) => void;
   dayIndex: number;
   length: number;
   canEditAppointments: boolean;
@@ -48,18 +52,107 @@ type SlotProps = {
 
 const MARKER_CLICK_DELAY_MS = 180;
 
+const getCompanionDisplayName = (appointment: Appointment) =>
+  formatCompanionNameWithOwnerLastName(
+    (appointment.companion ?? appointment.patient).name,
+    (appointment.companion ?? appointment.patient).parent
+  );
+
+const setCustomDragGhost = (
+  event: React.DragEvent<HTMLButtonElement>,
+  appointment: Appointment
+) => {
+  const ghost = document.createElement('img');
+  ghost.src = getSafeImageUrl(
+    getAppointmentCompanionPhotoUrl(appointment.companion ?? appointment.patient),
+    (appointment.companion ?? appointment.patient).species.toLowerCase() as ImageType
+  );
+  ghost.width = 24;
+  ghost.height = 24;
+  ghost.style.position = 'fixed';
+  ghost.style.top = '-9999px';
+  ghost.style.left = '-9999px';
+  ghost.style.width = '24px';
+  ghost.style.height = '24px';
+  ghost.style.borderRadius = '999px';
+  document.body.appendChild(ghost);
+  event.dataTransfer.setDragImage(ghost, 12, 12);
+  globalThis.setTimeout(() => {
+    ghost.remove();
+  }, 0);
+};
+const DEFAULT_DROP_AVAILABILITY_INTERVALS: Array<{ startMinute: number; endMinute: number }> = [];
+const DEFAULT_UNAVAILABLE_SEGMENTS: Array<{ startMinute: number; endMinute: number }> = [];
+const DEFAULT_INVOICES_BY_APPOINTMENT_ID: Record<string, Invoice> = {};
+
 type ContextMenuState = {
   appointment: Appointment;
   x: number;
   y: number;
 };
 
-const Slot: React.FC<SlotProps> = ({
+type MarkerSizing = {
+  multiLane: boolean;
+  tall: boolean;
+  medium: boolean;
+  showImage: boolean;
+  imgSize: number;
+  verticalPadding: string;
+  horizontalPadding: string;
+  buttonGap: string;
+};
+
+// Derive the responsive display tier for a zoom-in appointment marker from its lane count
+// and rendered height. Extracted to keep the marker map callback under the complexity limit.
+const getMarkerSizing = (laneCount: number, blockHeightPx: number): MarkerSizing => {
+  const multiLane = laneCount > 1;
+  // tall: ≥72px single-lane — big pic, service + reason on separate lines with •
+  const tall = !multiLane && blockHeightPx >= 72;
+  // medium: ≥44px single-lane — smaller pic, one subtitle line
+  const medium = !multiLane && blockHeightPx >= 44;
+  // small: short single-lane slots (e.g. 5-min) — compact avatar, name only
+  const small = !multiLane && !medium && !tall;
+  const showImage = small || medium || tall;
+  // tall: scales 48px (30-min/90px) → 60px (60-min/180px); medium: 34px; small: 24px
+  let imgSize: number;
+  if (tall) {
+    imgSize = Math.min(60, Math.round(blockHeightPx * 0.52));
+  } else if (medium) {
+    imgSize = 34;
+  } else {
+    imgSize = 24;
+  }
+  let verticalPadding: string;
+  if (tall) {
+    verticalPadding = 'py-2.5';
+  } else if (medium) {
+    verticalPadding = 'py-2';
+  } else {
+    verticalPadding = 'py-0.5';
+  }
+  const horizontalPadding = small ? 'pl-1.5 pr-2' : 'pl-3 pr-3';
+  const buttonGap = small ? 'gap-1.5' : 'gap-2.5';
+  return {
+    multiLane,
+    tall,
+    medium,
+    showImage,
+    imgSize,
+    verticalPadding,
+    horizontalPadding,
+    buttonGap,
+  };
+};
+
+const SlotComponent: React.FC<SlotProps> = ({
   slotEvents,
   height,
   handleViewAppointment,
+  handleDetailAppointment,
+  handleOpenWorkspace,
   handleRescheduleAppointment,
   handleChangeRoomAppointment,
+  handleAcceptAppointment,
   dayIndex,
   length,
   canEditAppointments,
@@ -71,20 +164,19 @@ const Slot: React.FC<SlotProps> = ({
   onAppointmentDropAt,
   onDragHoverTarget,
   onCreateAppointmentAt,
-  dropAvailabilityIntervals = [],
-  unavailableSegments = [],
+  dropAvailabilityIntervals = DEFAULT_DROP_AVAILABILITY_INTERVALS,
+  unavailableSegments = DEFAULT_UNAVAILABLE_SEGMENTS,
   draggedAppointmentDurationMinutes,
   dropDate,
   dropHour = 0,
   dropPractitionerId,
   zoomMode = 'in',
-  invoicesByAppointmentId = {},
+  invoicesByAppointmentId = DEFAULT_INVOICES_BY_APPOINTMENT_ID,
 }) => {
   const isZoomOutMode = zoomMode === 'out';
   const { notify } = useNotify();
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
   const [dropPreviewMinute, setDropPreviewMinute] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const {
@@ -96,12 +188,9 @@ const Slot: React.FC<SlotProps> = ({
     getPopoverStyle,
     registerAnchorEl,
   } = usePopoverManager({ closeOnHoverLeave: false });
+  const appointmentPopoverId = useId();
 
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!draggedAppointmentId) return;
     setActivePopoverKey(null);
     setDropPreviewMinute(null);
@@ -165,23 +254,19 @@ const Slot: React.FC<SlotProps> = ({
   }, [contextMenu]);
 
   const sortedSlotEvents = useMemo(
-    () => [...slotEvents].sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
+    () => slotEvents.toSorted((a, b) => a.startTime.getTime() - b.startTime.getTime()),
     [slotEvents]
   );
 
   const activeEvent = useMemo(
     () =>
       sortedSlotEvents.find(
-        (ev, i) => `${ev.companion.name}-${ev.startTime.toISOString()}-${i}` === activePopoverKey
+        (ev, i) =>
+          `${(ev.companion ?? ev.patient).name}-${ev.startTime.toISOString()}-${i}` ===
+          activePopoverKey
       ) ?? null,
     [sortedSlotEvents, activePopoverKey]
   );
-  const getCompanionDisplayName = (appointment: Appointment) =>
-    formatCompanionNameWithOwnerLastName(
-      appointment.companion?.name,
-      appointment.companion?.parent
-    );
-
   const handleOpenPopover = (
     key: string,
     target: HTMLButtonElement,
@@ -200,30 +285,6 @@ const Slot: React.FC<SlotProps> = ({
     return { left, top, width };
   }, [contextMenu]);
 
-  const setCustomDragGhost = (
-    event: React.DragEvent<HTMLButtonElement>,
-    appointment: Appointment
-  ) => {
-    const ghost = document.createElement('img');
-    ghost.src = getSafeImageUrl(
-      getAppointmentCompanionPhotoUrl(appointment.companion),
-      appointment.companion.species.toLowerCase() as ImageType
-    );
-    ghost.width = 24;
-    ghost.height = 24;
-    ghost.style.position = 'fixed';
-    ghost.style.top = '-9999px';
-    ghost.style.left = '-9999px';
-    ghost.style.width = '24px';
-    ghost.style.height = '24px';
-    ghost.style.borderRadius = '999px';
-    document.body.appendChild(ghost);
-    event.dataTransfer.setDragImage(ghost, 12, 12);
-    globalThis.setTimeout(() => {
-      ghost.remove();
-    }, 0);
-  };
-
   const getMinuteFromSlotPointer = (clientY: number, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();
     const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
@@ -241,17 +302,17 @@ const Slot: React.FC<SlotProps> = ({
   const hourEnd = hourStart + 60;
   const availabilitySegments = useMemo(() => {
     const effectiveDuration = Math.max(5, draggedAppointmentDurationMinutes ?? 5);
-    return dropAvailabilityIntervals
-      .map((interval) => {
-        const segmentStart = Math.max(hourStart, interval.startMinute);
-        const segmentEnd = Math.min(hourEnd, interval.endMinute + effectiveDuration);
-        if (segmentEnd <= segmentStart) return null;
-        return {
+    return dropAvailabilityIntervals.flatMap((interval) => {
+      const segmentStart = Math.max(hourStart, interval.startMinute);
+      const segmentEnd = Math.min(hourEnd, interval.endMinute + effectiveDuration);
+      if (segmentEnd <= segmentStart) return [];
+      return [
+        {
           top: ((segmentStart - hourStart) / 60) * height,
           segmentHeight: Math.max(4, ((segmentEnd - segmentStart) / 60) * height),
-        };
-      })
-      .filter(Boolean) as Array<{ top: number; segmentHeight: number }>;
+        },
+      ];
+    });
   }, [draggedAppointmentDurationMinutes, dropAvailabilityIntervals, height, hourEnd, hourStart]);
 
   const laidOutZoomInEvents = useMemo(() => {
@@ -302,7 +363,13 @@ const Slot: React.FC<SlotProps> = ({
         }
       > = [];
       cluster.forEach((item) => {
-        let laneIndex = laneEnds.findIndex((laneEnd) => laneEnd <= item.startMinute);
+        let laneIndex = -1;
+        for (let i = 0; i < laneEnds.length; i += 1) {
+          if (laneEnds[i] <= item.startMinute) {
+            laneIndex = i;
+            break;
+          }
+        }
         if (laneIndex === -1) {
           laneIndex = laneEnds.length;
           laneEnds.push(item.endMinute);
@@ -343,7 +410,11 @@ const Slot: React.FC<SlotProps> = ({
     clearPendingMarkerClick();
     setContextMenu(null);
     setActivePopoverKey(null);
-    handleViewAppointment(appointment);
+    if (handleOpenWorkspace && canEnterAppointmentWorkspace(appointment.status)) {
+      handleOpenWorkspace(appointment);
+      return;
+    }
+    (handleDetailAppointment ?? handleViewAppointment)(appointment);
   };
 
   const handleMarkerContextMenu = (
@@ -360,18 +431,70 @@ const Slot: React.FC<SlotProps> = ({
     });
   };
 
+  const tryCreateAppointmentAt = (minute: number) => {
+    if (!dropDate || !onCreateAppointmentAt) return;
+    const snapped = Math.round(minute / 5) * 5;
+    const slotTime = new Date(dropDate);
+    slotTime.setHours(Math.floor(snapped / 60), snapped % 60, 0, 0);
+    if (slotTime < new Date()) {
+      notify('warning', {
+        title: 'Past time slot',
+        text: "You can't book appointments in the past. Please select a future time.",
+      });
+      return;
+    }
+    const isUnavailable = unavailableSegments.some(
+      (seg) => snapped >= seg.startMinute && snapped < seg.endMinute
+    );
+    if (isUnavailable) {
+      notify('warning', {
+        title: 'Slot unavailable',
+        text: 'This time is outside available hours. Please select a different slot.',
+      });
+      return;
+    }
+    onCreateAppointmentAt(dropDate, snapped, dropPractitionerId);
+  };
+
+  const createAppointmentLabel = dropDate
+    ? `Create appointment on ${formatDateInPreferredTimeZone(dropDate, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })} at ${formatDateInPreferredTimeZone(
+        new Date(dropDate.getTime() + dropHour * 60 * 60 * 1000),
+        {
+          hour: 'numeric',
+          minute: '2-digit',
+        }
+      )}`
+    : 'Create appointment in this calendar slot';
+  const slotRegionLabel = dropDate
+    ? `Appointments slot for ${formatDateInPreferredTimeZone(dropDate, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })} at ${formatDateInPreferredTimeZone(
+        new Date(dropDate.getTime() + dropHour * 60 * 60 * 1000),
+        {
+          hour: 'numeric',
+          minute: '2-digit',
+        }
+      )}`
+    : 'Appointments slot';
+  const canPortal = typeof document !== 'undefined';
+
   return (
     <>
-      <div
-        role="application"
-        tabIndex={-1}
+      <section
+        aria-label={slotRegionLabel}
         className={`relative overflow-auto scrollbar-hidden border-l border-grey-light ${dayIndex === length && 'border-r'}`}
         style={{ height: `${height}px` }}
         onDragOver={(event) => {
           if (!draggedAppointmentId) return;
           event.preventDefault();
-          autoScrollCalendarHorizontally(event.clientX, event.currentTarget as HTMLDivElement);
-          autoScrollCalendarVertically(event.clientY, event.currentTarget as HTMLDivElement);
+          autoScrollCalendarHorizontally(event.clientX, event.currentTarget);
+          autoScrollCalendarVertically(event.clientY, event.currentTarget);
           if (dropDate) {
             onDragHoverTarget?.(dropDate, dropPractitionerId);
           }
@@ -404,39 +527,15 @@ const Slot: React.FC<SlotProps> = ({
         {dropDate && onCreateAppointmentAt && !draggedAppointmentId ? (
           <button
             type="button"
-            aria-label="Create appointment in this calendar slot"
-            className="absolute inset-0 z-[1] rounded-none!"
+            aria-label={createAppointmentLabel}
+            className="absolute inset-0 z-1 rounded-none!"
             onClick={(event) => {
               const parent = event.currentTarget.parentElement as HTMLDivElement;
-              const minute = getMinuteFromSlotPointer(event.clientY, parent);
-              const snapped = Math.round(minute / 5) * 5;
-              const isUnavailable = unavailableSegments.some(
-                (seg) => snapped >= seg.startMinute && snapped < seg.endMinute
-              );
-              if (isUnavailable) {
-                notify('warning', {
-                  title: 'Slot unavailable',
-                  text: 'This time is outside available hours. Please select a different slot.',
-                });
-                return;
-              }
-              onCreateAppointmentAt(dropDate, snapped, dropPractitionerId);
+              tryCreateAppointmentAt(getMinuteFromSlotPointer(event.clientY, parent));
             }}
             onDoubleClick={(event) => {
               const parent = event.currentTarget.parentElement as HTMLDivElement;
-              const minute = getMinuteFromSlotPointer(event.clientY, parent);
-              const snapped = Math.round(minute / 5) * 5;
-              const isUnavailable = unavailableSegments.some(
-                (seg) => snapped >= seg.startMinute && snapped < seg.endMinute
-              );
-              if (isUnavailable) {
-                notify('warning', {
-                  title: 'Slot unavailable',
-                  text: 'This time is outside available hours. Please select a different slot.',
-                });
-                return;
-              }
-              onCreateAppointmentAt(dropDate, snapped, dropPractitionerId);
+              tryCreateAppointmentAt(getMinuteFromSlotPointer(event.clientY, parent));
             }}
           />
         ) : null}
@@ -444,13 +543,13 @@ const Slot: React.FC<SlotProps> = ({
           availabilitySegments.map((segment, index) => (
             <div
               key={`drop-availability-${index}-${segment.top}`}
-              className="pointer-events-none absolute inset-x-1 z-20 rounded-md border border-grey-light bg-[var(--color-calendar-availability-overlay)]"
+              className="pointer-events-none absolute inset-x-1 z-20 rounded-md border border-grey-light bg-calendar-availability-overlay"
               style={{ top: segment.top, height: segment.segmentHeight }}
             />
           ))}
         {draggedAppointmentId && dropPreviewMinute != null && (
           <div
-            className="pointer-events-none absolute inset-x-1 z-30 rounded-md border-2 border-dashed border-grey-light bg-[var(--color-calendar-preview-overlay)]"
+            className="pointer-events-none absolute inset-x-1 z-30 rounded-md border-2 border-dashed border-grey-light bg-calendar-preview-overlay"
             style={{
               top: `${((dropPreviewMinute % 60) / 60) * height}px`,
               height: `${Math.max(
@@ -464,7 +563,7 @@ const Slot: React.FC<SlotProps> = ({
               )}px`,
             }}
           >
-            <div className="h-full w-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
+            <div className="size-full flex items-center justify-center px-2 text-caption-1 text-text-brand truncate">
               {draggedAppointmentLabel || 'Appointment'}
             </div>
           </div>
@@ -474,7 +573,7 @@ const Slot: React.FC<SlotProps> = ({
             {(() => {
               let cursorMinute = 0;
               return sortedSlotEvents.map((ev, i) => {
-                const itemKey = `${ev.companion.name}-${ev.startTime.toISOString()}-${i}`;
+                const itemKey = `${(ev.companion ?? ev.patient).name}-${ev.startTime.toISOString()}-${i}`;
                 const startMinute = getDatePartsInPreferredTimeZone(ev.startTime).minute;
                 const rawDurationMinutes = Math.max(
                   5,
@@ -500,7 +599,7 @@ const Slot: React.FC<SlotProps> = ({
                 return (
                   <div
                     key={itemKey}
-                    className="relative z-20 rounded-md px-0 py-0 border-0 bg-transparent"
+                    className="relative z-20 rounded-md p-0 border-0 bg-transparent"
                     style={{
                       marginTop: marginTopPx,
                       minHeight: blockHeightPx,
@@ -522,6 +621,9 @@ const Slot: React.FC<SlotProps> = ({
                       className={`min-w-0 absolute inset-x-0 -inset-y-2 z-20 ${
                         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                       }`}
+                      aria-haspopup="dialog"
+                      aria-expanded={activePopoverKey === itemKey}
+                      aria-controls={appointmentPopoverId}
                       onClick={(event) => handleMarkerClick(event, itemKey)}
                       onDoubleClick={() => handleMarkerDoubleClick(ev)}
                       onContextMenu={(event) => handleMarkerContextMenu(event, ev)}
@@ -561,7 +663,7 @@ const Slot: React.FC<SlotProps> = ({
                 laneIndex,
                 laneCount,
               }) => {
-                const itemKey = `${ev.companion.name}-${ev.startTime.toISOString()}-${originalIndex}`;
+                const itemKey = `${(ev.companion ?? ev.patient).name}-${ev.startTime.toISOString()}-${originalIndex}`;
                 const statusStyle = getStatusStyle(ev.status);
                 const serviceName = ev.appointmentType?.name?.trim() ?? '';
                 const concern = ev.concern?.trim() ?? '';
@@ -576,25 +678,17 @@ const Slot: React.FC<SlotProps> = ({
                 const topPx = (startMinute / 60) * height;
                 const blockHeightPx = Math.max((visibleDurationMinutes / 60) * height, 40);
 
-                // Responsive tiers based on available pixel height (hour row = 180px at zoom-in)
-                // 30-min slot = 90px, 15-min = 45px
-                const multiLane = laneCount > 1;
-                // tall: ≥72px single-lane — big pic, service + reason on separate lines with •
-                const tall = !multiLane && blockHeightPx >= 72;
-                // medium: ≥44px single-lane — smaller pic, one subtitle line
-                const medium = !multiLane && blockHeightPx >= 44;
-                const showImage = medium || tall;
-                // tall: scales 48px (30-min/90px) → 60px (60-min/180px); medium: 34px
-                const imgSize = tall ? Math.min(60, Math.round(blockHeightPx * 0.52)) : 34;
-
-                let verticalPadding: string;
-                if (tall) {
-                  verticalPadding = 'py-2.5';
-                } else if (medium) {
-                  verticalPadding = 'py-2';
-                } else {
-                  verticalPadding = 'py-1';
-                }
+                // Responsive display tier derived from lane count + rendered height.
+                const {
+                  multiLane,
+                  tall,
+                  medium,
+                  showImage,
+                  imgSize,
+                  verticalPadding,
+                  horizontalPadding,
+                  buttonGap,
+                } = getMarkerSizing(laneCount, blockHeightPx);
                 const cursorClass = draggable
                   ? 'cursor-grab active:cursor-grabbing'
                   : 'cursor-pointer';
@@ -643,25 +737,30 @@ const Slot: React.FC<SlotProps> = ({
                   onAppointmentDragEnd?.();
                 };
 
+                const appointmentBlockStyle: React.CSSProperties = {
+                  ...statusStyle,
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
+                  borderColor: statusStyle.borderColor,
+                  top: topPx,
+                  left: `calc(${leftPercent}% + ${laneGapPx}px)`,
+                  width: `calc(${widthPercent}% - ${laneGapPx * 2}px)`,
+                  minHeight: blockHeightPx,
+                  height: blockHeightPx,
+                };
+
                 return (
                   <div
                     key={itemKey}
                     className="absolute z-20 overflow-hidden rounded-2xl!"
-                    style={{
-                      ...statusStyle,
-                      borderWidth: '1px',
-                      borderStyle: 'solid',
-                      borderColor: statusStyle.borderColor,
-                      top: topPx,
-                      left: `calc(${leftPercent}% + ${laneGapPx}px)`,
-                      width: `calc(${widthPercent}% - ${laneGapPx * 2}px)`,
-                      minHeight: blockHeightPx,
-                      height: blockHeightPx,
-                    }}
+                    style={appointmentBlockStyle}
                   >
                     <button
                       type="button"
-                      className={`h-full w-full flex items-center justify-between gap-2.5 pl-3 pr-3 text-left ${verticalPadding} ${cursorClass}`}
+                      className={`size-full flex items-center justify-between ${buttonGap} ${horizontalPadding} text-left ${verticalPadding} ${cursorClass}`}
+                      aria-haspopup="dialog"
+                      aria-expanded={activePopoverKey === itemKey}
+                      aria-controls={appointmentPopoverId}
                       onClick={(event) => handleMarkerClick(event, itemKey)}
                       onDoubleClick={() => handleMarkerDoubleClick(ev)}
                       onContextMenu={(event) => handleMarkerContextMenu(event, ev)}
@@ -678,7 +777,7 @@ const Slot: React.FC<SlotProps> = ({
                           <Image
                             src={getSafeImageUrl(
                               getAppointmentCompanionPhotoUrl(ev.companion),
-                              ev.companion.species.toLowerCase() as ImageType
+                              (ev.companion ?? ev.patient).species.toLowerCase() as ImageType
                             )}
                             height={imgSize}
                             width={imgSize}
@@ -701,8 +800,8 @@ const Slot: React.FC<SlotProps> = ({
             )}
           </div>
         )}
-      </div>
-      {isMounted &&
+      </section>
+      {canPortal &&
         !draggedAppointmentId &&
         activeEvent &&
         activeRect &&
@@ -711,17 +810,18 @@ const Slot: React.FC<SlotProps> = ({
             appointment={activeEvent}
             invoicesByAppointmentId={invoicesByAppointmentId}
             canEditAppointments={canEditAppointments}
+            popoverId={appointmentPopoverId}
             popoverDialogRef={popoverDialogRef}
             popoverStyle={popoverStyle}
-            handleViewAppointment={handleViewAppointment}
             handleRescheduleAppointment={handleRescheduleAppointment}
             handleChangeRoomAppointment={handleChangeRoomAppointment}
+            handleAcceptAppointment={handleAcceptAppointment}
             onClose={() => setActivePopoverKey(null)}
             registerAnchorEl={registerAnchorEl}
           />,
           document.body
         )}
-      {isMounted &&
+      {canPortal &&
         contextMenu &&
         contextMenuStyle &&
         createPortal(
@@ -740,4 +840,5 @@ const Slot: React.FC<SlotProps> = ({
   );
 };
 
+const Slot = React.memo(SlotComponent);
 export default Slot;

@@ -11,13 +11,7 @@ import configureStore from 'redux-mock-store';
 // FIX: Relative imports
 import {AccountScreen} from '../../../../src/features/account/screens/AccountScreen';
 import {useAuth} from '../../../../src/features/auth/context/AuthContext';
-import {
-  Linking,
-  Alert,
-  Image,
-  BackHandler,
-  ToastAndroid,
-} from 'react-native';
+import {Linking, Alert, Image, BackHandler, ToastAndroid} from 'react-native';
 import {deleteParentProfile} from '../../../../src/features/account/services/profileService';
 import {
   deleteAmplifyAccount,
@@ -117,7 +111,7 @@ jest.mock('react-native-device-info', () => ({
 // Mock Preferences
 jest.mock('../../../../src/features/preferences/PreferencesContext', () => ({
   usePreferences: jest.fn(() => ({
-    weightUnit: 'lbs',
+    weightUnit: 'kg',
     temperatureUnit: 'F',
   })),
 }));
@@ -444,7 +438,10 @@ describe('AccountScreen', () => {
     fireEvent.press(editIcons[1].parent);
 
     // Check if permission was denied (should show toast on Android, not navigate)
-    if (toastSpy.mock.calls.length > 0 || (Alert.alert as jest.Mock).mock.calls.length > 0) {
+    if (
+      toastSpy.mock.calls.length > 0 ||
+      (Alert.alert as jest.Mock).mock.calls.length > 0
+    ) {
       // Permission denied successfully
       expect(mockNavigate).not.toHaveBeenCalledWith(
         'ProfileOverview',
@@ -600,7 +597,7 @@ describe('AccountScreen', () => {
       await act(async () => {
         await fireEvent.press(confirmBtn);
       });
-    } catch (e) {
+    } catch (_error) {
       // Expected error bubbling up
     }
 
@@ -655,7 +652,7 @@ describe('AccountScreen', () => {
       await act(async () => {
         await fireEvent.press(confirmBtn);
       });
-    } catch (e) {
+    } catch (_error) {
       // Expected re-throw
     }
 
@@ -674,7 +671,7 @@ describe('AccountScreen', () => {
       await act(async () => {
         await fireEvent.press(screen.getByTestId('confirm-delete-btn'));
       });
-    } catch (e) {
+    } catch (_error) {
       // expected error
     }
 
@@ -690,7 +687,7 @@ describe('AccountScreen', () => {
       await act(async () => {
         await fireEvent.press(screen.getByTestId('confirm-delete-btn'));
       });
-    } catch (e) {
+    } catch (_error) {
       // expected error
     }
 

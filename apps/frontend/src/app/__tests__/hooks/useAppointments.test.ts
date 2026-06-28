@@ -2,8 +2,10 @@ import { renderHook } from '@testing-library/react';
 import {
   useLoadAppointmentsForPrimaryOrg,
   useAppointmentsForPrimaryOrg,
+  useAppointmentsForCompanionInPrimaryOrg,
 } from '@/app/hooks/useAppointments';
 import { loadAppointmentsForPrimaryOrg } from '@/app/features/appointments/services/appointmentService';
+import { AppointmentWithCompanion } from '@/app/features/appointments/types/appointments';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useAppointmentStore } from '@/app/stores/appointmentStore';
 import { Appointment } from '@yosemite-crew/types';
@@ -89,8 +91,18 @@ describe('useAppointments Hooks', () => {
 
   // --- Section 2: useAppointmentsForPrimaryOrg ---
   describe('useAppointmentsForPrimaryOrg', () => {
-    const mockAppt1 = { id: 'appt-1', title: 'Meeting' } as unknown as Appointment;
-    const mockAppt2 = { id: 'appt-2', title: 'Surgery' } as unknown as Appointment;
+    const mockAppt1 = {
+      id: 'appt-1',
+      title: 'Meeting',
+      patient: { id: 'pet-1' },
+      companion: { id: 'companion-1' },
+    } as unknown as AppointmentWithCompanion;
+    const mockAppt2 = {
+      id: 'appt-2',
+      title: 'Surgery',
+      patient: { id: 'pet-2' },
+      companion: { id: 'companion-2' },
+    } as unknown as AppointmentWithCompanion;
 
     it('returns an empty array if primaryOrgId is missing', () => {
       mockOrgState.primaryOrgId = null;
@@ -127,13 +139,39 @@ describe('useAppointments Hooks', () => {
       mockAppointmentState.appointmentsById = {
         'appt-1': mockAppt1,
         'appt-2': mockAppt2,
-        'appt-3': { id: 'appt-3' } as Appointment, // Belongs to another org/list
+        'appt-3': { id: 'appt-3', patient: { id: 'pet-3' } } as Appointment, // Belongs to another org/list
       };
 
       const { result } = renderHook(() => useAppointmentsForPrimaryOrg());
 
       expect(result.current).toHaveLength(2);
       expect(result.current).toEqual([mockAppt1, mockAppt2]);
+    });
+
+    it('returns FHIR-converted appointments that only have patient data', () => {
+      mockOrgState.primaryOrgId = 'org-1';
+      const patientOnlyAppointment = {
+        id: 'appt-patient-only',
+        patient: {
+          id: 'pet-1',
+          name: 'Buddy',
+          species: 'Canine',
+          parent: { id: 'parent-1', name: 'John Doe' },
+        },
+      } as Appointment;
+      mockAppointmentState.appointmentIdsByOrgId['org-1'] = ['appt-patient-only'];
+      mockAppointmentState.appointmentsById = {
+        'appt-patient-only': patientOnlyAppointment,
+      };
+
+      const { result } = renderHook(() => useAppointmentsForPrimaryOrg());
+
+      expect(result.current).toEqual([
+        expect.objectContaining({
+          id: 'appt-patient-only',
+          companion: patientOnlyAppointment.patient,
+        }),
+      ]);
     });
 
     it('filters out null/undefined appointments (data integrity check)', () => {
@@ -148,6 +186,33 @@ describe('useAppointments Hooks', () => {
 
       expect(result.current).toHaveLength(1);
       expect(result.current[0]).toEqual(mockAppt1);
+    });
+  });
+
+  describe('useAppointmentsForCompanionInPrimaryOrg', () => {
+    it('matches companion id against patient fallback data', () => {
+      mockOrgState.primaryOrgId = 'org-1';
+      mockAppointmentState.appointmentIdsByOrgId['org-1'] = ['appt-patient-only'];
+      mockAppointmentState.appointmentsById = {
+        'appt-patient-only': {
+          id: 'appt-patient-only',
+          patient: {
+            id: 'pet-1',
+            name: 'Buddy',
+            species: 'Canine',
+            parent: { id: 'parent-1', name: 'John Doe' },
+          },
+        } as Appointment,
+      };
+
+      const { result } = renderHook(() => useAppointmentsForCompanionInPrimaryOrg('pet-1'));
+
+      expect(result.current).toEqual([
+        expect.objectContaining({
+          id: 'appt-patient-only',
+          companion: expect.objectContaining({ id: 'pet-1' }),
+        }),
+      ]);
     });
   });
 });

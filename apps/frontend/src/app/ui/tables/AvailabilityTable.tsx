@@ -9,6 +9,8 @@ import AvailabilityCard from '@/app/ui/cards/AvailabilityCard';
 import { toTitleCase } from '@/app/lib/validators';
 import { getSafeImageUrl } from '@/app/lib/urls';
 
+import { formatWeeklyWorkingHours, getAvailabilityStatusStyle } from '@/app/ui/tables/tableUtils';
+
 import './DataTable.css';
 
 type Column<T> = {
@@ -16,47 +18,6 @@ type Column<T> = {
   key: keyof T | string;
   width?: string;
   render?: (item: T) => React.ReactNode;
-};
-
-export const formatWeeklyWorkingHours = (value: Team['weeklyWorkingHours']) => {
-  const parsed = Number(value);
-  if (Number.isNaN(parsed)) {
-    return value || '0';
-  }
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(parsed);
-};
-
-export const getStatusStyle = (status: string) => {
-  switch (status.toLowerCase()) {
-    case 'available':
-      return {
-        color: 'var(--color-pill-success-text)',
-        backgroundColor: 'var(--color-pill-success-bg)',
-        borderColor: 'var(--color-pill-success-border)',
-      };
-    case 'consulting':
-      return {
-        color: 'var(--color-pill-progress-text)',
-        backgroundColor: 'var(--color-pill-progress-bg)',
-        borderColor: 'var(--color-pill-progress-border)',
-      };
-    case 'off-duty':
-      return {
-        color: 'var(--color-pill-warning-text)',
-        backgroundColor: 'var(--color-pill-warning-bg)',
-        borderColor: 'var(--color-pill-warning-border)',
-      };
-    case 'requested':
-    default:
-      return {
-        color: 'var(--color-pill-neutral-text)',
-        backgroundColor: 'var(--color-pill-neutral-bg)',
-        borderColor: 'var(--color-pill-neutral-border)',
-      };
-  }
 };
 
 type AvailabilityTableProps = {
@@ -83,13 +44,13 @@ const AvailabilityTable = ({
       key: 'image',
       width: '56px',
       render: (item: Team) => (
-        <div className="appointment-profile w-10 h-10">
+        <div className="appointment-profile size-10">
           <Image
             src={getSafeImageUrl(item.image, 'person')}
             alt=""
             height={40}
             width={40}
-            className="w-10 h-10 object-cover rounded-full"
+            className="size-10 object-cover rounded-full"
           />
         </div>
       ),
@@ -151,7 +112,7 @@ const AvailabilityTable = ({
       key: 'status',
       width: '12%',
       render: (item: Team) => (
-        <div className="appointment-status" style={getStatusStyle(item.status)}>
+        <div className="appointment-status" style={getAvailabilityStatusStyle(item.status)}>
           {item.status}
         </div>
       ),
@@ -164,8 +125,9 @@ const AvailabilityTable = ({
     render: (item: Team) => (
       <div className="action-btn-col">
         <button
+          type="button"
           onClick={() => handleViewTeam(item)}
-          className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+          className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
         >
           <IoEye size={18} color="var(--color-neutral-900)" />
         </button>

@@ -41,6 +41,7 @@ export interface VetEmployee {
 
 export interface VetService {
   id: string;
+  productItemId?: string | null;
   businessId: string;
   specialty: string;
   specialityId?: string | null;
@@ -50,6 +51,7 @@ export interface VetService {
   currency?: string;
   icon?: any; // Image source
   defaultEmployeeId?: string;
+  appointmentKinds?: string[];
 }
 
 export interface SlotWindow {
@@ -91,6 +93,7 @@ export interface Appointment {
   id: string;
   companionId: string;
   businessId: string;
+  encounterId?: string | null;
   serviceId?: string | null;
   serviceName?: string | null;
   serviceCode?: string | null;
@@ -116,6 +119,7 @@ export interface Appointment {
   }[];
   status: AppointmentStatus;
   paymentStatus?: string | null;
+  bookingPaymentStatus?: string | null;
   invoiceId?: string;
   paymentIntent?: PaymentIntentInfo | null;
   species?: string | null;
@@ -141,10 +145,11 @@ export interface InvoiceItem {
 
 export interface PaymentIntentInfo {
   paymentIntentId: string;
-  clientSecret: string;
+  clientSecret: string | null;
   amount: number;
   currency: string;
   paymentLinkUrl?: string | null;
+  connectedAccountId?: string | null;
 }
 
 export type PaymentCollectionMethod =
@@ -153,11 +158,31 @@ export type PaymentCollectionMethod =
   | 'PAYMENT_AT_CLINIC'
   | (string & {});
 
+export type BillingCollectionMode =
+  | 'PREPAY_AT_BOOKING'
+  | 'PAY_AT_VISIT_END'
+  | 'STAGED_DURING_VISIT'
+  | 'DEPOSIT_THEN_SETTLE'
+  | 'MANUAL_OFFLINE'
+  | (string & {});
+
+export type InvoiceVisitBillingStage =
+  | 'DRAFT'
+  | 'READY_FOR_BILLING'
+  | 'SETTLED'
+  | (string & {});
+
 export interface Invoice {
   id: string;
   appointmentId: string;
+  parentId?: string;
+  patientId?: string;
+  organisationId?: string;
   items: InvoiceItem[];
   subtotal: number;
+  totalAmount?: number;
+  discountTotal?: number | null;
+  taxTotal?: number | null;
   totalPriceComponent?: Array<{
     type?: string;
     amount?: {value: number; currency?: string};
@@ -175,9 +200,14 @@ export interface Invoice {
   billedToEmail?: string;
   image?: any; // invoice preview
   status?: string;
+  billingCollectionMode?: BillingCollectionMode;
+  visitBillingStage?: InvoiceVisitBillingStage;
+  depositTargetAmount?: number | null;
+  depositCollectedAmount?: number | null;
   stripePaymentIntentId?: string | null;
   stripeInvoiceId?: string | null;
   stripePaymentLinkId?: string | null;
+  stripeCustomerId?: string | null;
   paymentIntent?: PaymentIntentInfo | null;
   downloadUrl?: string | null;
   refundId?: string | null;
@@ -193,6 +223,28 @@ export interface Invoice {
   stripeReceiptUrl?: string | null;
   stripeCheckoutSessionId?: string | null;
   stripeCheckoutUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PackageBreakdownItem {
+  id: string;
+  name: string;
+  price: number;
+  currency?: string;
+}
+
+export interface VetPackage {
+  id: string;
+  businessId: string;
+  name: string;
+  description?: string;
+  totalPrice: number;
+  currency?: string;
+  specialty?: string;
+  specialityId?: string;
+  items: PackageBreakdownItem[];
+  appointmentKinds?: string[];
 }
 
 export interface AppointmentsState {
@@ -207,6 +259,7 @@ export interface BusinessesState {
   businesses: VetBusiness[];
   employees: VetEmployee[];
   services: VetService[];
+  packages: VetPackage[];
   availability: EmployeeAvailability[];
   loading: boolean;
   error: string | null;

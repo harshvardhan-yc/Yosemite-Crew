@@ -14,15 +14,15 @@ type SpecialityCardProps = {
   setSpecialities: React.Dispatch<React.SetStateAction<SpecialityWeb[]>>;
 };
 
+const checkIfAlready = (name: string, services: Service[] = []) =>
+  services.some((s) => s.name.toLowerCase() === name.toLowerCase());
+
 const ServiceSearch = ({ speciality, setSpecialities }: SpecialityCardProps) => {
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const primaryOrgType = useOrgStore((state) =>
     state.primaryOrgId ? state.orgsById[state.primaryOrgId]?.type : undefined
   );
   const businessType = getResolvedBusinessType(primaryOrgType);
-
-  const checkIfAlready = (name: string, services: Service[] = []) =>
-    services.some((s) => s.name.toLowerCase() === name.toLowerCase());
 
   const buildService = (serviceName: string): Service => {
     const matchedTemplate = findOnboardingSpecialityTemplate(

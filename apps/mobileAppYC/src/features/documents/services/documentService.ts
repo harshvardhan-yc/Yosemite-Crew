@@ -5,6 +5,8 @@ import type {Document, DocumentFile} from '@/features/documents/types';
 import {normalizeImageUri} from '@/shared/utils/imageUri';
 import {buildCdnUrlFromKey} from '@/shared/utils/cdnHelpers';
 import {formatDateToISODate} from '@/shared/utils/dateHelpers';
+import {SUBCATEGORY_IDS as S} from '@/features/documents/subcategoryIds';
+import RNFS from 'react-native-fs';
 
 const CATEGORY_ALIASES: Record<string, string> = {
   hygiene: 'hygiene-maintenance',
@@ -21,18 +23,25 @@ const CATEGORY_API_MAP: Record<string, string> = {
 };
 
 const SUBCATEGORY_API_MAP: Record<string, string> = {
-  passport: 'PASSPORT',
-  certificates: 'CERTIFICATES',
-  insurance: 'INSURANCE',
-  'hospital-visits': 'HOSPITAL_VISITS',
-  'prescriptions-treatments': 'PRESCRIPTIONS_AND_TREATMENTS',
-  'vaccination-parasite': 'VACCINATION_AND_PARASITE_PREVENTION',
-  'lab-tests': 'LAB_TESTS',
-  'grooming-visits': 'GROOMER_VISIT',
-  'boarding-records': 'BOARDER_VISIT',
-  'training-behaviour': 'TRAINING_AND_BEHAVIOUR_REPORTS',
-  'breeder-interactions': 'BREEDER_VISIT',
-  'nutrition-plans': 'NUTRITION_PLANS',
+  [S.PASSPORT]: 'PASSPORT',
+  [S.CERTIFICATES]: 'CERTIFICATES',
+  [S.INSURANCE]: 'INSURANCE',
+  [S.SURGERY_PROCEDURE]: 'SURGERY_OR_PROCEDURE',
+  [S.PRESCRIPTION]: 'PRESCRIPTION',
+  [S.VACCINATION]: 'VACCINATION',
+  [S.DISCHARGE_SUMMARY]: 'DISCHARGE_SUMMARY',
+  [S.LAB_TEST]: 'LAB_TEST',
+  [S.IMAGING_DIAGNOSTIC]: 'IMAGING_OR_DIAGNOSTIC',
+  [S.PARASITE_PREVENTION]: 'PARASITE_PREVENTION',
+  [S.MEDICAL_CONDITION]: 'MEDICAL_CONDITION',
+  [S.BATHING]: 'BATHING',
+  [S.NAIL_TRIM]: 'NAIL_TRIM',
+  [S.GROOMING]: 'GROOMING',
+  [S.EAR_CLEANING]: 'EAR_CLEANING',
+  [S.DENTAL_CLEANING]: 'DENTAL_CLEANING',
+  [S.SKIN_CARE]: 'SKIN_CARE',
+  [S.ANAL_GLAND_EXPRESSION]: 'ANAL_GLAND_EXPRESSION',
+  [S.NUTRITION_PLANS]: 'NUTRITION_PLANS',
 };
 
 const normalizeKey = (value?: string | null): string => {
@@ -168,6 +177,28 @@ const serializeIssueDateForApi = (value?: string | null): string => {
   return formatDateToISODate(date);
 };
 
+const trimTrailingSlashes = (value: string): string => {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') {
+    end -= 1;
+  }
+  return end === value.length ? value : value.slice(0, end);
+};
+
+const trimLeadingSlashes = (value: string): string => {
+  let start = 0;
+  while (start < value.length && value[start] === '/') {
+    start += 1;
+  }
+  return start === 0 ? value : value.slice(start);
+};
+
+const buildApiUrl = (path: string): string => {
+  const base = trimTrailingSlashes(String(apiClient.defaults.baseURL ?? ''));
+  const normalizedPath = trimLeadingSlashes(path);
+  return `${base}/${normalizedPath}`;
+};
+
 const formatAppointmentId = (payload: any): string => {
   if (payload?.appointmentId != null) {
     return String(payload.appointmentId);
@@ -286,10 +317,12 @@ const mapAttachmentFromApi = (
 
   const resolvedUri =
     typeof resolvedUrl === 'string' ? resolvedUrl : (fallback?.uri ?? '');
-  const resolvedS3 =
-    typeof resolvedUrl === 'string'
-      ? resolvedUrl
-      : (fallback?.s3Url ?? cdnUrl ?? undefined);
+  let resolvedS3: string | undefined;
+  if (typeof resolvedUrl === 'string') {
+    resolvedS3 = resolvedUrl;
+  } else {
+    resolvedS3 = fallback?.s3Url ?? cdnUrl ?? undefined;
+  }
   const resolvedView =
     raw?.viewUrl ??
     (typeof resolvedUrl === 'string'
@@ -321,9 +354,24 @@ const normalizeDocumentFromApi = (
   companionIdFallback?: string,
 ): Document => {
   const attachments = pickAttachmentList(payload);
-  const files = attachments.map((item, index) =>
-    mapAttachmentFromApi(item, index),
-  );
+  let files: DocumentFile[] = [];
+  if (attachments.length) {
+    files = attachments.map((item, index) => mapAttachmentFromApi(item, index));
+  } else if (payload?.pdfUrl) {
+    files = [
+      mapAttachmentFromApi(
+        {
+          id: `${payload?.id ?? payload?.documentId ?? 'document'}-pdf`,
+          url: payload.pdfUrl,
+          viewUrl: payload.pdfUrl,
+          downloadUrl: payload.pdfUrl,
+          mimeType: 'application/pdf',
+          name: payload?.title ?? payload?.documentTitle ?? 'Rendered document',
+        },
+        0,
+      ),
+    ];
+  }
 
   const category = toUiSlug(
     payload?.category ??
@@ -546,17 +594,17 @@ export const documentApi = {
       return {...file, status: 'ready'};
     }
 
-    const uploadMeta = await documentApi.requestUploadUrl({
-      mimeType: file.type ?? 'application/octet-stream',
-      companionId,
-      accessToken,
-    });
-
     if (!file.uri) {
       throw new Error(
         `File path missing for upload: ${file.name || file.key || 'unknown file'}`,
       );
     }
+
+    const uploadMeta = await documentApi.requestUploadUrl({
+      mimeType: file.type ?? 'application/octet-stream',
+      companionId,
+      accessToken,
+    });
 
     // Preserve the original URI (content:// or file://); the upload service will normalize.
     const filePath = file.uri;
@@ -734,6 +782,79 @@ export const documentApi = {
 
     const collection = extractDocumentsCollection(data);
     return collection.map(doc => normalizeDocumentFromApi(doc, companionId));
+  },
+
+  async listForAppointment({
+    appointmentId,
+    companionId: _companionId,
+    accessToken,
+    encounterId,
+  }: {
+    appointmentId: string;
+    companionId?: string;
+    accessToken: string;
+    encounterId?: string | null;
+  }): Promise<Document[]> {
+    if (!encounterId) {
+      console.log('[documentService] listForAppointment skipped', {
+        appointmentId,
+        reason: 'missing encounterId',
+      });
+      return [];
+    }
+
+    const endpoint = `/v1/workspace/mobile/encounters/${encodeURIComponent(
+      encounterId,
+    )}/document-packet/pdf`;
+    const absoluteUrl = buildApiUrl(endpoint);
+    const packetPath = `${RNFS.TemporaryDirectoryPath ?? RNFS.CachesDirectoryPath}/clinical-packet-${appointmentId}.pdf`;
+
+    console.log('[documentService] listForAppointment request', {
+      endpoint,
+      appointmentId,
+      encounterId,
+      packetPath,
+    });
+
+    await RNFS.mkdir(RNFS.TemporaryDirectoryPath ?? RNFS.CachesDirectoryPath);
+    const result = await RNFS.downloadFile({
+      fromUrl: absoluteUrl,
+      toFile: packetPath,
+      headers: withAuthHeaders(accessToken) as Record<string, string>,
+      discretionary: true,
+    }).promise;
+
+    if (result.statusCode && result.statusCode >= 400) {
+      throw new Error('Unable to load appointment document packet.');
+    }
+
+    const collection = [
+      {
+        id: `clinical-packet-${appointmentId}`,
+        appointmentId,
+        title: 'Clinical Packet',
+        category: 'HEALTH',
+        issueDate: new Date().toISOString(),
+        attachments: [
+          {
+            id: `clinical-packet-file-${appointmentId}`,
+            url: `file://${packetPath}`,
+            viewUrl: `file://${packetPath}`,
+            downloadUrl: `file://${packetPath}`,
+            mimeType: 'application/pdf',
+            name: 'Clinical Packet.pdf',
+          },
+        ],
+      },
+    ];
+    console.log('[documentService] listForAppointment response', {
+      endpoint,
+      appointmentId,
+      encounterId,
+      response: result,
+      count: collection.length,
+    });
+    return collection.map(doc => normalizeDocumentFromApi(doc));
   },
 
   async search({

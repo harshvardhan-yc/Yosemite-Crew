@@ -20,30 +20,30 @@ const PROFILE_ITEMS_TO_REMOVE = [
 
 const DeleteProfile = () => {
   const router = useRouter();
-  const { signOut } = useSignOut();
+  const signOutHook = useSignOut();
   const [deletePopup, setDeletePopup] = useState(false);
-  const { notify } = useNotify();
+  const notifyHook = useNotify();
   const userId = useAuthStore((s) => s.attributes?.sub);
   const membershipsByOrgId = useOrgStore((s) => s.membershipsByOrgId);
   const orgsById = useOrgStore((s) => s.orgsById);
   const ownerOrgNames = useMemo(
     () =>
-      Object.entries(membershipsByOrgId)
-        .filter(
-          ([, membership]) =>
-            String(membership?.roleDisplay ?? membership?.roleCode ?? '')
-              .trim()
-              .toLowerCase() === 'owner'
-        )
-        .map(([orgId]) => orgsById[orgId]?.name)
-        .filter((name): name is string => Boolean(name)),
+      Object.entries(membershipsByOrgId).reduce<string[]>((names, [orgId, membership]) => {
+        const isOwner =
+          String(membership?.roleDisplay ?? membership?.roleCode ?? '')
+            .trim()
+            .toLowerCase() === 'owner';
+        const orgName = orgsById[orgId]?.name;
+        if (isOwner && orgName) names.push(orgName);
+        return names;
+      }, []),
     [membershipsByOrgId, orgsById]
   );
   const hasOwnedOrganizations = ownerOrgNames.length > 0;
 
   const handleDelete = useCallback(async () => {
     if (!userId) {
-      notify('error', {
+      notifyHook.notify('error', {
         title: 'Unable to delete profile',
         text: 'Missing user identity. Please sign in again.',
       });
@@ -52,23 +52,23 @@ const DeleteProfile = () => {
     startRouteLoader();
     try {
       await deleteData(`/fhir/v1/user/${userId}`);
-      await signOut();
+      await signOutHook.signOut();
       router.replace('/signin');
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        notify('error', {
+        notifyHook.notify('error', {
           title: 'Unable to delete profile',
           text: error.response?.data?.message ?? error.message,
         });
       } else {
-        notify('error', {
+        notifyHook.notify('error', {
           title: 'Unable to delete profile',
           text: 'Please try again.',
         });
       }
       stopRouteLoader();
     }
-  }, [notify, router, signOut, userId]);
+  }, [notifyHook, router, signOutHook, userId]);
 
   const handleOpenDelete = () => {
     if (!hasOwnedOrganizations) {
@@ -76,7 +76,7 @@ const DeleteProfile = () => {
       return;
     }
 
-    notify('warning', {
+    notifyHook.notify('warning', {
       title: 'Transfer ownership first',
       text: `You still own ${ownerOrgNames.join(', ')}. Transfer ownership before deleting your profile.`,
     });

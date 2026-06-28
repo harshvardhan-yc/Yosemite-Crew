@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
@@ -19,16 +19,18 @@ type RescheduleTaskProps = {
 
 const RescheduleTask = ({ showModal, setShowModal, activeTask }: RescheduleTaskProps) => {
   const { notify } = useNotify();
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date(activeTask.dueAt));
-  const [dueTimeValue, setDueTimeValue] = useState(
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date(activeTask.dueAt));
+  const [dueTimeValue, setDueTimeValue] = useState(() =>
     getPreferredTimeValue(activeTask.dueAt, '00:00')
   );
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const prevActiveTaskRef = useRef(activeTask);
+  if (prevActiveTaskRef.current !== activeTask) {
+    prevActiveTaskRef.current = activeTask;
     setSelectedDate(new Date(activeTask.dueAt));
     setDueTimeValue(getPreferredTimeValue(activeTask.dueAt, '00:00'));
-  }, [activeTask]);
+  }
 
   useEffect(() => {
     if (!showModal) return;

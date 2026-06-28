@@ -23,7 +23,7 @@ const SmallAccordionButton: React.FC<SmallAccordionButtonProps> = ({
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-card-border px-6 py-3">
       <div className="flex items-center justify-between">
-        <button className="flex items-center gap-2" onClick={() => setOpen(!open)}>
+        <button type="button" className="flex items-center gap-2" onClick={() => setOpen(!open)}>
           <IoIosArrowDown
             size={20}
             color="var(--color-neutral-900)"
@@ -33,6 +33,7 @@ const SmallAccordionButton: React.FC<SmallAccordionButtonProps> = ({
         </button>
         {showButton && (
           <button
+            type="button"
             onClick={() => buttonClick(true)}
             className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] transition-all duration-300 ease-in-out px-4 py-2 border border-black-text! rounded-2xl! font-satoshi text-black-text text-[1rem] font-medium"
           >

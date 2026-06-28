@@ -9,6 +9,13 @@ import { Primary } from '@/app/ui/primitives/Buttons';
 import { useAuthStore } from '@/app/stores/authStore';
 import { resolveDefaultOpenScreenRoute } from '@/app/lib/defaultOpenScreen';
 
+const formatStat = (num: number) => {
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'k';
+  }
+  return num.toString();
+};
+
 const OverviewPage = () => {
   const {
     trafficChart,
@@ -28,18 +35,11 @@ const OverviewPage = () => {
     return '/signup';
   };
 
-  const formatStat = (num: number) => {
-    if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'k';
-    }
-    return num.toString();
-  };
-
   return (
     <>
       <div className="OverviewPageWrapper">
         <div className="OverviewHeroSection">
-          <main className="OverviewMainContent">
+          <section className="OverviewMainContent">
             <h1 className="OverviewMainTitle">Building in Public</h1>
 
             <p className="OverviewLeadText">
@@ -84,11 +84,11 @@ const OverviewPage = () => {
                 priority
               />
             </div>
-          </main>
+          </section>
         </div>
 
         <div className="OverviewBottomSection">
-          <main className="OverviewMainContent">
+          <section className="OverviewMainContent">
             <p className="OverviewSecondaryText">
               What you measure shows what you actually care about, and it attracts people who care
               about the same things. Some months are messy. That’s part of it. Hiding it only delays
@@ -110,7 +110,7 @@ const OverviewPage = () => {
                 isLoading={isLoading}
               />
             </div>
-          </main>
+          </section>
         </div>
       </div>
       <Footer />

@@ -19,7 +19,7 @@ const config: Config = {
   // bail: 0,
 
   // The directory where Jest should store its cached dependency information
-  // cacheDirectory: "/private/var/folders/vv/3t3btncj0416sw4f557ff9km0000gn/T/jest_dx",
+  cacheDirectory: '.jest-cache',
 
   // Disable watchman to avoid permission issues in constrained environments.
   watchman: false,
@@ -62,6 +62,12 @@ const config: Config = {
     '!<rootDir>/src/app/(routes)/**/*page.tsx',
     '!<rootDir>/src/app/lib/data/**',
     '!<rootDir>/src/app/constants/**',
+    // Re-include real components that happen to be named index.tsx inside their
+    // own folder. The `features/*/*/*/index.tsx` excludes above target barrel
+    // re-export files, but they also swallow large, unit-tested components,
+    // which made Sonar report them as 0% coverage. A trailing positive pattern
+    // re-includes them (micromatch honours order).
+    '<rootDir>/src/app/features/companions/components/AddCompanionCentralModal/index.tsx',
   ],
 
   // The directory where Jest should output its coverage files

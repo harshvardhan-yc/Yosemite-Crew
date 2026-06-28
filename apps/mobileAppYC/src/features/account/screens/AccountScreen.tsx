@@ -34,8 +34,14 @@ import DeleteAccountBottomSheet, {
 } from '@/features/account/components/DeleteAccountBottomSheet';
 import {AccountMenuList} from '@/features/account/components/AccountMenuList';
 import {Header} from '@/shared/components/common/Header/Header';
-import {calculateAgeFromDateOfBirth, truncateText} from '@/shared/utils/helpers';
-import {getFreshStoredTokens, isTokenExpired} from '@/features/auth/sessionManager';
+import {
+  calculateAgeFromDateOfBirth,
+  truncateText,
+} from '@/shared/utils/helpers';
+import {
+  getFreshStoredTokens,
+  isTokenExpired,
+} from '@/features/auth/sessionManager';
 import {deleteParentProfile} from '@/features/account/services/profileService';
 import {
   deleteAmplifyAccount,
@@ -43,7 +49,6 @@ import {
 } from '@/features/auth/services/accountDeletion';
 import {normalizeImageUri} from '@/shared/utils/imageUri';
 import {usePreferences} from '@/features/preferences/PreferencesContext';
-import {convertWeight} from '@/shared/utils/measurementSystem';
 
 type Props = NativeStackScreenProps<HomeStackParamList, 'Account'>;
 
@@ -77,8 +82,12 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
   const deleteSheetRef = React.useRef<DeleteAccountBottomSheetRef>(null);
   const [isDeleteSheetOpen, setIsDeleteSheetOpen] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-  const [failedProfileImages, setFailedProfileImages] = useState<Record<string, boolean>>({});
-  const [appVersion, setAppVersion] = useState<string>('');
+  const [failedProfileImages, setFailedProfileImages] = useState<
+    Record<string, boolean>
+  >({});
+  const [appVersion] = useState<string>(
+    () => `${DeviceInfo.getVersion()} (${DeviceInfo.getBuildNumber()})`,
+  );
   const handleProfileImageError = React.useCallback((id: string) => {
     setFailedProfileImages(prev => {
       if (prev[id]) {
@@ -93,8 +102,12 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
   const accessByCompanionId =
     useSelector((state: RootState) => state.coParent?.accessByCompanionId) ??
     EMPTY_ACCESS_MAP;
-  const defaultAccess = useSelector((state: RootState) => state.coParent?.defaultAccess ?? null);
-  const globalRole = useSelector((state: RootState) => state.coParent?.lastFetchedRole);
+  const defaultAccess = useSelector(
+    (state: RootState) => state.coParent?.defaultAccess ?? null,
+  );
+  const globalRole = useSelector(
+    (state: RootState) => state.coParent?.lastFetchedRole,
+  );
   const globalPermissions = useSelector(
     (state: RootState) => state.coParent?.lastFetchedPermissions,
   );
@@ -142,14 +155,9 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
           ageString = age > 0 ? `${age}Y` : null;
         }
 
-        // Convert weight from kg (storage) to user's preferred unit
         let weightDisplay: string | null = null;
         if (companion.currentWeight) {
-          let weight = companion.currentWeight;
-          if (weightUnit === 'lbs') {
-            weight = convertWeight(weight, 'kg', 'lbs');
-          }
-          weightDisplay = `${weight.toFixed(1)} ${weightUnit}`;
+          weightDisplay = `${companion.currentWeight.toFixed(1)} ${weightUnit}`;
         }
 
         // Dynamically build the subtitle
@@ -174,7 +182,13 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
 
     // 3. Combine them: User first, then companions
     return [userProfile, ...companionProfiles];
-  }, [authUser?.profilePicture, authUser?.profileToken, companionsFromStore, displayName, weightUnit]); // Re-run when companions or weightUnit change
+  }, [
+    authUser?.profilePicture,
+    authUser?.profileToken,
+    companionsFromStore,
+    displayName,
+    weightUnit,
+  ]); // Re-run when companions or weightUnit change
 
   const getInitial = (name: string, fallback: string) => {
     const trimmed = name?.trim();
@@ -188,19 +202,23 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
     const isUserProfile = index === 0;
     const hasRemoteImage = Boolean(profile.remoteUri && profile.avatar);
     const shouldShowImage =
-      hasRemoteImage && failedProfileImages[profile.id] !== true && profile.avatar;
+      hasRemoteImage &&
+      failedProfileImages[profile.id] !== true &&
+      profile.avatar;
 
     if (shouldShowImage) {
       return (
         <Image
-          source={profile.avatar as ImageSourcePropType}
+          source={profile.avatar}
           style={styles.companionAvatar}
           onError={() => handleProfileImageError(profile.id)}
         />
       );
     }
 
-    const initial = isUserProfile ? userInitials : getInitial(profile.name, 'C');
+    const initial = isUserProfile
+      ? userInitials
+      : getInitial(profile.name, 'C');
 
     return (
       <View style={styles.companionAvatarInitials}>
@@ -228,22 +246,20 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
 
   // Handle Android back button for delete bottom sheet
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (isDeleteSheetOpen) {
-        deleteSheetRef.current?.close();
-        setIsDeleteSheetOpen(false);
-        return true;
-      }
-      return false;
-    });
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        if (isDeleteSheetOpen) {
+          deleteSheetRef.current?.close();
+          setIsDeleteSheetOpen(false);
+          return true;
+        }
+        return false;
+      },
+    );
 
     return () => backHandler.remove();
   }, [isDeleteSheetOpen]);
-
-  useEffect(() => {
-    const version = `${DeviceInfo.getVersion()} (${DeviceInfo.getBuildNumber()})`;
-    setAppVersion(version);
-  }, []);
 
   const handleDeletePress = React.useCallback(() => {
     setIsDeleteSheetOpen(true);
@@ -326,7 +342,9 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
         label: 'About us',
         icon: Images.aboutusIcon,
         onPress: () => {
-          Linking.openURL('https://www.yosemitecrew.com/about').catch(console.warn);
+          Linking.openURL('https://www.yosemitecrew.com/about').catch(
+            console.warn,
+          );
         },
       },
       {
@@ -398,7 +416,8 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
                       key={profile.id}
                       style={[
                         styles.companionRow,
-                        index < profiles.length - 1 && styles.companionRowDivider,
+                        index < profiles.length - 1 &&
+                          styles.companionRowDivider,
                       ]}>
                       <View style={styles.companionInfo}>
                         {renderProfileAvatar(profile, index)}
@@ -432,14 +451,25 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
                             });
                             // e.g., navigation.navigate('EditUserProfile');
                           } else {
-                            const access = accessByCompanionId[profile.id] ?? defaultAccess ?? null;
-                            const role = (access?.role ?? globalRole ?? '').toUpperCase();
+                            const access =
+                              accessByCompanionId[profile.id] ??
+                              defaultAccess ??
+                              null;
+                            const role = (
+                              access?.role ??
+                              globalRole ??
+                              ''
+                            ).toUpperCase();
                             const isPrimary = role.includes('PRIMARY');
                             const permissions =
-                              access?.permissions ?? defaultAccess?.permissions ?? globalPermissions;
+                              access?.permissions ??
+                              defaultAccess?.permissions ??
+                              globalPermissions;
                             const canEdit =
                               isPrimary ||
-                              (permissions ? Boolean(permissions.companionProfile) : false);
+                              (permissions
+                                ? Boolean(permissions.companionProfile)
+                                : false);
                             if (!canEdit) {
                               showPermissionToast('companion profile');
                               return;
@@ -450,7 +480,10 @@ export const AccountScreen: React.FC<Props> = ({navigation}) => {
                             });
                           }
                         }}>
-                        <Image source={Images.blackEdit} style={styles.editIcon} />
+                        <Image
+                          source={Images.blackEdit}
+                          style={styles.editIcon}
+                        />
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -621,8 +654,7 @@ const createStyles = (theme: any) => {
     cardShadowWrapper: {
       borderRadius: theme.borderRadius.lg,
       backgroundColor: theme.colors.cardBackground,
-      ...theme.shadows.lg,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 10px 15px ${theme.colors.neutralShadow}`,
       overflow: 'visible',
     },
   });

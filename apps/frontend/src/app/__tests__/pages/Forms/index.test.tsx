@@ -1,20 +1,52 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import ProtectedForms from '@/app/features/forms/pages/Forms';
 import { useFormsStore } from '@/app/stores/formsStore';
 import { loadForms } from '@/app/features/forms/services/formService';
-import {
-  useLoadSpecialitiesForPrimaryOrg,
-  useSpecialitiesForPrimaryOrg,
-  useServicesForPrimaryOrgSpecialities,
-} from '@/app/hooks/useSpecialities';
+
+expect.extend(toHaveNoViolations);
+import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
+import { useOrgStore } from '@/app/stores/orgStore';
+
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: (loader: () => Promise<unknown>) => {
+    const source = loader.toString();
+    const LoadableComponent = (props: Record<string, unknown>) => {
+      if (source.includes('Sections/AddForm')) {
+        const MockAddForm = (
+          jest.requireMock('@/app/features/forms/pages/Forms/Sections/AddForm') as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockAddForm {...props} />;
+      }
+
+      if (source.includes('Sections/FormInfo')) {
+        const MockFormInfo = (
+          jest.requireMock('@/app/features/forms/pages/Forms/Sections/FormInfo') as {
+            default: React.FC<Record<string, unknown>>;
+          }
+        ).default;
+        return <MockFormInfo {...props} />;
+      }
+
+      return null;
+    };
+
+    LoadableComponent.displayName = 'MockDynamicComponent';
+    return LoadableComponent;
+  },
+}));
 
 // --- Mocks ---
 
 // 1. Mock Hooks & Services
 jest.mock('@/app/stores/formsStore');
 jest.mock('@/app/features/forms/services/formService');
-jest.mock('@/app/hooks/useSpecialities');
+jest.mock('@/app/stores/revampCatalogStore');
+jest.mock('@/app/stores/orgStore');
 jest.mock('@/app/hooks/usePermissions', () => ({
   usePermissions: () => ({
     can: () => true,
@@ -134,14 +166,42 @@ const mockForms = {
 };
 const mockFormIds = ['form-1', 'form-2'];
 
+const ORG_ID = 'org-1';
 const mockServices = [
-  { id: 'srv-1', name: 'General Consult', specialityId: 'spec-1' },
-  { _id: 'srv-2', name: 'General Consult', specialityId: 'spec-2' }, // Test _id fallback
-  { id: 'srv-3', name: 'Vaccination', specialityId: 'spec-1' },
+  {
+    id: 'srv-1',
+    name: 'General Consult',
+    specialityId: 'spec-1',
+    organisationId: ORG_ID,
+    status: 'ACTIVE',
+  },
+  {
+    id: 'srv-2',
+    name: 'General Consult',
+    specialityId: 'spec-2',
+    organisationId: ORG_ID,
+    status: 'ACTIVE',
+  },
+  {
+    id: 'srv-3',
+    name: 'Vaccination',
+    specialityId: 'spec-1',
+    organisationId: ORG_ID,
+    status: 'ACTIVE',
+  },
+];
+const mockPackages = [
+  {
+    id: 'pkg-1',
+    name: 'Wellness Package',
+    specialityId: 'spec-1',
+    organisationId: ORG_ID,
+    status: 'ACTIVE',
+  },
 ];
 const mockSpecialities = [
-  { _id: 'spec-1', name: 'General Practice' },
-  { _id: 'spec-2', name: 'Emergency Care' },
+  { id: 'spec-1', name: 'General Practice', organisationId: ORG_ID },
+  { id: 'spec-2', name: 'Emergency Care', organisationId: ORG_ID },
 ];
 
 describe('Forms Page', () => {
@@ -151,9 +211,19 @@ describe('Forms Page', () => {
     jest.clearAllMocks();
 
     // Default Hook Returns
-    (useLoadSpecialitiesForPrimaryOrg as jest.Mock).mockReturnValue({});
-    (useServicesForPrimaryOrgSpecialities as jest.Mock).mockReturnValue(mockServices);
-    (useSpecialitiesForPrimaryOrg as jest.Mock).mockReturnValue(mockSpecialities);
+    const catalogState = {
+      specialities: mockSpecialities,
+      services: mockServices,
+      packages: mockPackages,
+      loadOrganisationCatalog: jest.fn().mockResolvedValue(undefined),
+      loadSpecialityCatalog: jest.fn().mockResolvedValue(undefined),
+    };
+    (useRevampCatalogStore as unknown as jest.Mock).mockImplementation((selector: any) =>
+      selector(catalogState)
+    );
+    (useOrgStore as unknown as jest.Mock).mockImplementation((selector: any) =>
+      selector({ primaryOrgId: ORG_ID })
+    );
     (useFormsStore as unknown as jest.Mock).mockReturnValue({
       formsById: mockForms,
       formIds: mockFormIds,
@@ -161,9 +231,26 @@ describe('Forms Page', () => {
       setActiveForm: mockSetActiveForm,
       loading: false,
     });
+    // Component reads the action imperatively via getState() inside effects
+    // to avoid re-subscribing; mirror that on the mock.
+    (useFormsStore as unknown as { getState: () => unknown }).getState = () => ({
+      setActiveForm: mockSetActiveForm,
+    });
   });
 
   // --- Section 1: Rendering & Initialization ---
+
+  it('has no axe violations on initial render', async () => {
+    const { container } = render(<ProtectedForms />);
+    await screen.findByRole('heading', { level: 1, name: /Templates/ });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('renders h1 page heading', () => {
+    render(<ProtectedForms />);
+    expect(screen.getByRole('heading', { level: 1, name: /Templates/ })).toBeInTheDocument();
+  });
 
   it('renders structure, guards, and fetches data on mount if list is empty', async () => {
     // Mock empty store to trigger loadForms
@@ -180,7 +267,7 @@ describe('Forms Page', () => {
     // Verify Guards
     expect(screen.getByTestId('protected-route')).toBeInTheDocument();
     expect(screen.getByTestId('org-guard')).toBeInTheDocument();
-    expect(screen.getByText('Templates')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Templates/ })).toBeInTheDocument();
 
     // Verify Load Effect
     await waitFor(() => {
@@ -346,16 +433,27 @@ describe('Forms Page', () => {
     expect(mockSetActiveForm).not.toHaveBeenCalled();
   });
 
-  it('formats duplicate service labels as Speciality / Service name', () => {
+  it('builds service and package options with badges, deduping shared names by speciality', () => {
     render(<ProtectedForms />);
     fireEvent.click(screen.getByTestId('btn-add'));
 
     const serviceOptions = JSON.parse(screen.getByTestId('service-options').textContent ?? '[]');
 
     expect(serviceOptions).toEqual([
-      { label: 'General Practice / General Consult', value: 'srv-1' },
-      { label: 'Emergency Care / General Consult', value: 'srv-2' },
-      { label: 'Vaccination', value: 'srv-3' },
+      {
+        label: 'General Practice / General Consult',
+        value: 'srv-1',
+        badge: 'Service',
+        isInpatient: false,
+      },
+      {
+        label: 'Emergency Care / General Consult',
+        value: 'srv-2',
+        badge: 'Service',
+        isInpatient: false,
+      },
+      { label: 'Vaccination', value: 'srv-3', badge: 'Service', isInpatient: false },
+      { label: 'Wellness Package', value: 'pkg-1', badge: 'Package', isInpatient: false },
     ]);
   });
 });

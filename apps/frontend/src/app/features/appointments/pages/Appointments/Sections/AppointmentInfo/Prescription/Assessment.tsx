@@ -1,6 +1,6 @@
 import React from 'react';
 import { Appointment } from '@yosemite-crew/types';
-import { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo';
+import { FormDataProps } from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/appointmentInfoTypes';
 import PrescriptionFormSection from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Prescription/PrescriptionFormSection';
 
 type AssessmentProps = {

@@ -9,13 +9,15 @@
 # the `language` matrix defined below to confirm you have the correct set of
 # supported CodeQL languages.
 #
-name: "CodeQL Advanced"
+name: 'CodeQL Advanced'
 
 on:
   push:
+    branches: [main, dev]
   pull_request:
+    branches: [main, dev]
   schedule:
-    - cron: "21 10 * * 5"
+    - cron: '21 10 * * 5'
 
 jobs:
   analyze:
@@ -68,13 +70,13 @@ jobs:
       #   uses: actions/setup-example@v1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           run_install: false
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "pnpm"
+          cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # - name: Install CocoaPods 1.14.3
@@ -119,4 +121,4 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:${{matrix.language}}"
+          category: '/language:${{matrix.language}}'

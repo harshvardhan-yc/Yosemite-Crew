@@ -7,10 +7,7 @@
 
 import {StreamChat, OwnUserResponse} from 'stream-chat';
 import {STREAM_CHAT_CONFIG} from '@/config/variables';
-import {
-  createOrFetchChatSession,
-  fetchChatToken,
-} from './chatBackendService';
+import {createOrFetchChatSession, fetchChatToken} from './chatBackendService';
 
 let chatClient: StreamChat | null = null;
 
@@ -40,7 +37,10 @@ export const getChatClient = (): StreamChat => {
   if (!chatClient) {
     const apiKey = getStreamApiKey();
 
-    console.log('[Stream] Initializing chat client with API key:', apiKey.substring(0, 8) + '...');
+    console.log(
+      '[Stream] Initializing chat client with API key:',
+      apiKey.substring(0, 8) + '...',
+    );
     chatClient = StreamChat.getInstance(apiKey);
   }
 
@@ -87,14 +87,14 @@ export const connectStreamUser = async (
     };
 
     let userToken = token;
-  if (!userToken) {
-    try {
-      userToken = await fetchChatToken();
-    } catch (backendError) {
-      console.warn(
-        '[Stream] Failed to fetch chat token from backend. Falling back to development token.',
-        backendError,
-      );
+    if (!userToken) {
+      try {
+        userToken = await fetchChatToken();
+      } catch (backendError) {
+        console.warn(
+          '[Stream] Failed to fetch chat token from backend. Falling back to development token.',
+          backendError,
+        );
         userToken = client.devToken(userId);
       }
     }
@@ -218,9 +218,10 @@ export const getAppointmentChannel = async (
   await channel.watch();
   const memberIds =
     channel.state?.members && typeof channel.state.members === 'object'
-      ? Object.values(channel.state.members)
-          .map(m => m?.user?.id ?? (m as any)?.user_id ?? (m as any)?.id ?? null)
-          .filter(Boolean)
+      ? Object.values(channel.state.members).flatMap(m => {
+          const id = m?.user?.id ?? (m as any)?.user_id ?? (m as any)?.id;
+          return id ? [id] : [];
+        })
       : undefined;
 
   console.log('[Stream][Session] Channel watch established', {
@@ -261,7 +262,7 @@ export const getUnreadCount = async (): Promise<number> => {
     if (!client.userID) return 0;
 
     const unreadCount =
-      ((client.user as OwnUserResponse | undefined)?.total_unread_count) || 0;
+      (client.user as OwnUserResponse | undefined)?.total_unread_count || 0;
     return unreadCount;
   } catch (error) {
     console.error('[Stream] Failed to get unread count:', error);

@@ -1,8 +1,8 @@
-import React from "react";
+import React from 'react';
 
-import { ToastContentProps } from "react-toastify";
-import { Close } from "../../primitives/Icons";
-import { IoIosWarning } from "react-icons/io";
+import { ToastContentProps } from 'react-toastify';
+import Close from '../../primitives/Icons/Close';
+import { IoIosWarning } from 'react-icons/io';
 
 type MsgData = {
   title: string;

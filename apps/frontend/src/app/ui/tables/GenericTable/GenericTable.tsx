@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 
 import Next from '@/app/ui/primitives/Icons/Next';
 import Back from '@/app/ui/primitives/Icons/Back';
@@ -20,6 +20,7 @@ interface GenericTableProps<T extends object> {
   pagination?: boolean;
   pageSize?: number;
   tableClassName?: string;
+  caption?: string;
 }
 
 // Bottom padding applied by .TableBodyScroll — must match Generictable.css
@@ -28,24 +29,20 @@ const TABLE_BODY_PADDING_BOTTOM = 16;
 const GenericTable = <T extends object>({
   data,
   columns,
-  bordered = false,
+  bordered: _bordered = false,
   pagination = false,
   pageSize = 10,
   tableClassName,
+  caption,
 }: Readonly<GenericTableProps<T>>) => {
   const [currentPage, setCurrentPage] = useState(1);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   const [autoPageSize, setAutoPageSize] = useState(pageSize);
 
-  useEffect(() => {
-    const totalPages = Math.ceil(data.length / autoPageSize);
-    if (currentPage > totalPages && totalPages > 0) {
-      setCurrentPage(totalPages);
-    } else if (totalPages === 0) {
-      setCurrentPage(1);
-    }
-  }, [autoPageSize, currentPage, data.length]);
+  const totalPagesForClamp = Math.ceil(data.length / autoPageSize);
+  const clampedPage = totalPagesForClamp === 0 ? 1 : Math.min(currentPage, totalPagesForClamp);
+  if (clampedPage !== currentPage) setCurrentPage(clampedPage);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -125,6 +122,7 @@ const GenericTable = <T extends object>({
           className={`TableBodyScroll min-h-0 overflow-y-auto scrollbar-custom ${needsFill ? 'h-full' : 'h-auto'}`}
         >
           <table className={['TableDiv', tableClassName].filter(Boolean).join(' ')}>
+            {caption ? <caption className="sr-only">{caption}</caption> : null}
             <colgroup>
               {columns.map((col) => (
                 <col key={String(col.key)} style={col.width ? { width: col.width } : {}} />
@@ -133,7 +131,9 @@ const GenericTable = <T extends object>({
             <thead>
               <tr>
                 {columns.map((col) => (
-                  <th key={String(col.key)}>{col.label}</th>
+                  <th key={String(col.key)} scope="col">
+                    {col.label}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -170,7 +170,7 @@ const GenericTable = <T extends object>({
             disabled={currentPage === 1}
             className={currentPage === 1 ? 'hover:bg-white! cursor-not-allowed' : ''}
           />
-          <div className="text-body-4 text-text-primary">
+          <div className="text-body-4 text-text-primary" aria-live="polite">
             Showing{' '}
             <span>
               {Math.min(endIdx, total)} of {total}

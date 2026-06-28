@@ -7,11 +7,12 @@ interface TaskMongo {
   organisationId?: string;
   appointmentId?: string;
 
-  companionId?: string;
+  patientId?: string;
 
   createdBy: string;
   assignedBy?: string;
   assignedTo: string;
+  assignedGroupId?: string;
 
   audience: "EMPLOYEE_TASK" | "PARENT_TASK";
 
@@ -20,6 +21,7 @@ interface TaskMongo {
   templateId?: string;
 
   category: string;
+  subcategory?: string;
   name: string;
   description?: string;
   additionalNotes?: string;
@@ -129,11 +131,12 @@ const TaskSchema = new Schema<TaskMongo>(
     organisationId: String,
     appointmentId: String,
 
-    companionId: String,
+    patientId: String,
 
     createdBy: { type: String, required: true },
     assignedBy: String,
     assignedTo: { type: String, required: true },
+    assignedGroupId: String,
 
     audience: {
       type: String,
@@ -179,7 +182,8 @@ const TaskSchema = new Schema<TaskMongo>(
 );
 
 TaskSchema.index({ assignedTo: 1, dueAt: 1 });
-TaskSchema.index({ companionId: 1, dueAt: 1 });
+TaskSchema.index({ assignedGroupId: 1, dueAt: 1 });
+TaskSchema.index({ patientId: 1, dueAt: 1 });
 TaskSchema.index({ organisationId: 1, dueAt: 1 });
 TaskSchema.index({ "recurrence.masterTaskId": 1 });
 

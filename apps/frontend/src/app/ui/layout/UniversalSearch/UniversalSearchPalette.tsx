@@ -14,6 +14,7 @@ import { useSearchStore } from '@/app/stores/searchStore';
 import { useUniversalSearchStore } from '@/app/stores/universalSearchStore';
 import { startRouteLoader } from '@/app/lib/routeLoader';
 import { formatCompanionNameWithOwnerLastName, getOwnerFirstName } from '@/app/lib/companionName';
+import { getAppointmentCompanion } from '@/app/lib/appointments';
 
 type SearchModule =
   | 'appointments'
@@ -76,15 +77,15 @@ const buildSearchItems = (
     const appointmentId = String(appointment.id ?? '').trim();
     if (!appointmentId) return;
     const companionDisplayName = formatCompanionNameWithOwnerLastName(
-      appointment.companion.name,
-      appointment.companion.parent
+      getAppointmentCompanion(appointment).name,
+      getAppointmentCompanion(appointment).parent
     );
     moduleItems.push({
       id: `appointments:${appointmentId}`,
       module: 'appointments',
       title: companionDisplayName || 'Appointment',
       subtitle: `${appointment.status} • ${appointment.concern || 'No concern'} • ${appointmentId}`,
-      keywords: `${companionDisplayName} ${getOwnerFirstName(appointment.companion.parent)} ${appointment.status || ''} ${appointment.concern || ''} ${appointmentId}`,
+      keywords: `${companionDisplayName} ${getOwnerFirstName(getAppointmentCompanion(appointment).parent)} ${appointment.status || ''} ${appointment.concern || ''} ${appointmentId}`,
       href: `/appointments?appointmentId=${encodeURIComponent(appointmentId)}&open=details`,
     });
   });
@@ -187,14 +188,21 @@ const UniversalSearchPalette = () => {
   const activeRowRef = useRef<HTMLButtonElement>(null);
 
   const forms = useMemo(
-    () => formIds.map((id) => formsById[id]).filter(Boolean),
+    () =>
+      formIds.flatMap((id) => {
+        const form = formsById[id];
+        return form ? [form] : [];
+      }),
     [formIds, formsById]
   );
 
   const inventory = useMemo(() => {
     if (!primaryOrgId) return [];
     const ids = inventoryIdsByOrgId[primaryOrgId] ?? [];
-    return ids.map((id) => inventoryById[id]).filter(Boolean);
+    return ids.flatMap((id) => {
+      const inventoryItem = inventoryById[id];
+      return inventoryItem ? [inventoryItem] : [];
+    });
   }, [primaryOrgId, inventoryIdsByOrgId, inventoryById]);
 
   const items = useMemo<SearchItem[]>(
@@ -220,21 +228,19 @@ const UniversalSearchPalette = () => {
 
     const tokens = q.split(/\s+/).filter(Boolean);
     const scored = items
-      .map((item) => {
+      .flatMap((item) => {
         const haystack = `${item.title} ${item.subtitle} ${item.keywords}`.toLowerCase();
         const allTokensMatch = tokens.every((token) => haystack.includes(token));
-        if (!allTokensMatch) return null;
+        if (!allTokensMatch) return [];
         const score = tokens.reduce((total, token) => {
           const idx = haystack.indexOf(token);
           return total + (idx === -1 ? 9999 : idx);
         }, 0);
-        return { item, score };
+        return [{ item, score }];
       })
-      .filter(Boolean)
-      .sort((a, b) => (a?.score ?? 0) - (b?.score ?? 0))
+      .sort((a, b) => a.score - b.score)
       .slice(0, 40)
-      .map((entry) => entry?.item)
-      .filter(Boolean) as SearchItem[];
+      .map((entry) => entry.item);
 
     const idexxAction: SearchItem[] = [
       {
@@ -263,6 +269,19 @@ const UniversalSearchPalette = () => {
     [close, router]
   );
 
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+  const activeIndexRef = useRef(activeIndex);
+  activeIndexRef.current = activeIndex;
+  const resultItemsRef = useRef(resultItems);
+  resultItemsRef.current = resultItems;
+  const openRef = useRef(open);
+  openRef.current = open;
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  const selectItemRef = useRef(selectItem);
+  selectItemRef.current = selectItem;
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
@@ -270,39 +289,39 @@ const UniversalSearchPalette = () => {
 
       if (withCommandKey && (key === 'k' || key === 'p')) {
         event.preventDefault();
-        open();
+        openRef.current();
         return;
       }
 
-      if (!isOpen) return;
+      if (!isOpenRef.current) return;
 
       if (event.key === 'Escape') {
         event.preventDefault();
-        close();
+        closeRef.current();
         return;
       }
 
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        setActiveIndex((prev) => getNextResultIndex(prev, resultItems.length, 1));
+        setActiveIndex((prev) => getNextResultIndex(prev, resultItemsRef.current.length, 1));
         return;
       }
 
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        setActiveIndex((prev) => getNextResultIndex(prev, resultItems.length, -1));
+        setActiveIndex((prev) => getNextResultIndex(prev, resultItemsRef.current.length, -1));
         return;
       }
 
       if (event.key === 'Enter') {
         event.preventDefault();
-        selectItem(resultItems[activeIndex]);
+        selectItemRef.current(resultItemsRef.current[activeIndexRef.current]);
       }
     };
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [activeIndex, close, isOpen, open, resultItems, selectItem]);
+  }, []);
 
   useEffect(() => {
     close();
@@ -346,7 +365,7 @@ const UniversalSearchPalette = () => {
         onClick={close}
       />
       <section className="mx-auto mt-2 sm:mt-8 w-full max-w-2xl overflow-hidden rounded-2xl! border border-white/40 bg-white/68 shadow-[0_24px_70px_rgba(29,28,27,0.24)] backdrop-blur-xl">
-        <div className="border-b border-white/55 bg-gradient-to-r from-brand-100/60 via-white/65 to-white/55 px-3 py-3 sm:px-4">
+        <div className="border-b border-white/55 bg-gradient-to-r from-brand-100/60 via-white/65 to-white/55 p-3 sm:px-4">
           <div className="flex items-center gap-2 rounded-2xl! border border-white/70 bg-white/72 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] backdrop-blur-md">
             <input
               ref={inputRef}

@@ -278,7 +278,7 @@ describe("ObservationTool Controllers", () => {
         });
         req.params = { toolId: "t1" };
         req.body = {
-          companionId: "c1",
+          patientId: "c1",
           answers: { q1: "a1" },
         };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -310,13 +310,13 @@ describe("ObservationTool Controllers", () => {
         expect(statusMock).toHaveBeenCalledWith(403);
       });
 
-      it("should 400 if companionId missing", async () => {
+      it("should 400 if patientId missing", async () => {
         (req as any).userId = "u1";
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (mockedAuthService.getByProviderUserId as any).mockResolvedValue({
           parentId: "p1",
         });
-        req.body = { answers: {} }; // missing companionId
+        req.body = { answers: {} }; // missing patientId
 
         await ObservationToolSubmissionController.createFromMobile(
           req as any,
@@ -331,7 +331,7 @@ describe("ObservationTool Controllers", () => {
         (mockedAuthService.getByProviderUserId as any).mockResolvedValue({
           parentId: "p1",
         });
-        req.body = { companionId: "c1" }; // missing answers
+        req.body = { patientId: "c1" }; // missing answers
 
         await ObservationToolSubmissionController.createFromMobile(
           req as any,
@@ -348,7 +348,7 @@ describe("ObservationTool Controllers", () => {
         });
         req.params = { toolId: "t1" };
         req.body = {
-          companionId: "c1",
+          patientId: "c1",
           answers: { q1: "a1" },
           summary: "sum",
           taskId: "tsk1",
@@ -367,7 +367,7 @@ describe("ObservationTool Controllers", () => {
         expect(mockedSubService.createSubmission).toHaveBeenCalledWith({
           toolId: "t1",
           taskId: "tsk1",
-          companionId: "c1",
+          patientId: "c1",
           filledBy: "p1",
           answers: { q1: "a1" },
           summary: "sum",
@@ -381,7 +381,7 @@ describe("ObservationTool Controllers", () => {
         (mockedAuthService.getByProviderUserId as any).mockResolvedValue({
           parentId: "p1",
         });
-        req.body = { companionId: "c1", answers: {} };
+        req.body = { patientId: "c1", answers: {} };
         mockSubError("createSubmission", 400);
 
         await ObservationToolSubmissionController.createFromMobile(
@@ -395,7 +395,7 @@ describe("ObservationTool Controllers", () => {
       it("should list with full filters", async () => {
         (req as any).organisationId = "org1";
         req.query = {
-          companionId: "c1",
+          patientId: "c1",
           toolId: "t1",
           fromDate: "2023-01-01",
           toDate: "2023-01-31",
@@ -410,7 +410,7 @@ describe("ObservationTool Controllers", () => {
 
         expect(mockedSubService.listSubmissions).toHaveBeenCalledWith({
           organisationId: "org1",
-          companionId: "c1",
+          patientId: "c1",
           toolId: "t1",
           fromDate: new Date("2023-01-01"),
           toDate: new Date("2023-01-31"),
@@ -430,7 +430,7 @@ describe("ObservationTool Controllers", () => {
         );
         expect(mockedSubService.listSubmissions).toHaveBeenCalledWith({
           organisationId: "org1",
-          companionId: undefined,
+          patientId: undefined,
           toolId: undefined,
           fromDate: undefined,
           toDate: undefined,
@@ -551,6 +551,79 @@ describe("ObservationTool Controllers", () => {
           res as Response,
         );
         expect(statusMock).toHaveBeenCalledWith(500);
+      });
+    });
+
+    describe("createForAppointment", () => {
+      it("should create and return the submission (201)", async () => {
+        (req as any).organisationId = "org1";
+        req.params = { appointmentId: "apt1" };
+        req.body = {
+          toolId: "t1",
+          companionId: "c1",
+          filledBy: "vet1",
+          answers: { q1: "a1" },
+          taskId: "tsk1",
+          summary: "sum",
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (mockedSubService.createForAppointment as any).mockResolvedValue({
+          id: "s1",
+          score: 5,
+        });
+
+        await ObservationToolSubmissionController.createForAppointment(
+          req as any,
+          res as Response,
+        );
+
+        expect(mockedSubService.createForAppointment).toHaveBeenCalledWith({
+          appointmentId: "apt1",
+          organisationId: "org1",
+          toolId: "t1",
+          patientId: "c1",
+          filledBy: "vet1",
+          answers: { q1: "a1" },
+          taskId: "tsk1",
+          summary: "sum",
+        });
+        expect(statusMock).toHaveBeenCalledWith(201);
+        expect(jsonMock).toHaveBeenCalledWith({ id: "s1", score: 5 });
+      });
+
+      it("should 400 when body fails validation", async () => {
+        (req as any).organisationId = "org1";
+        req.params = { appointmentId: "apt1" };
+        req.body = { toolId: "t1" }; // missing companionId/filledBy/answers
+
+        await ObservationToolSubmissionController.createForAppointment(
+          req as any,
+          res as Response,
+        );
+
+        expect(statusMock).toHaveBeenCalledWith(400);
+        expect(mockedSubService.createForAppointment).not.toHaveBeenCalled();
+      });
+
+      it("should handle service error", async () => {
+        (req as any).organisationId = "org1";
+        req.params = { appointmentId: "apt1" };
+        req.body = {
+          toolId: "t1",
+          companionId: "c1",
+          filledBy: "vet1",
+          answers: { q1: "a1" },
+        };
+        mockSubError("createForAppointment", 404);
+
+        await ObservationToolSubmissionController.createForAppointment(
+          req as any,
+          res as Response,
+        );
+        // The service error is routed through handleError (status asserted loosely
+        // because the auto-mocked error class cannot satisfy `instanceof` here, the
+        // same reason the sibling service-error tests assert nothing).
+        expect(statusMock).toHaveBeenCalled();
       });
     });
 

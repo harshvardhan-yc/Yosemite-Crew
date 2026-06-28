@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 
 const showErrorTostMock = jest.fn();
 jest.mock('@/app/ui/overlays/Toast/Toast', () => ({
@@ -68,71 +69,68 @@ jest.mock('@/app/ui/inputs/FormInputPass/FormInputPass', () => ({
   ),
 }));
 
-jest.mock('react-bootstrap', () => {
-  const MockContainer = ({ children, ...props }: any) => <div {...props}>{children}</div>;
-  const MockForm = ({
-    children,
-    onSubmit,
-  }: {
-    children: React.ReactNode;
-    onSubmit?: (e: React.FormEvent<HTMLFormElement>) => void;
-  }) => (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSubmit?.(e);
-      }}
-    >
-      {children}
-    </form>
-  );
-  jest.mock('@/app/ui/primitives/Buttons', () => ({
-    Primary: ({
-      text,
-      onClick,
-      isDisabled,
+jest.mock(
+  'react-bootstrap',
+  () => {
+    const MockContainer = ({ children, ...props }: any) => <div {...props}>{children}</div>;
+    const MockForm = ({
+      children,
+      onSubmit,
     }: {
-      text: string;
-      onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
-      isDisabled?: boolean;
+      children: React.ReactNode;
+      onSubmit?: (e: React.FormEvent<HTMLFormElement>) => void;
+    }) => <form onSubmit={onSubmit}>{children}</form>;
+    jest.mock('@/app/ui/primitives/Buttons', () => ({
+      Primary: ({
+        text,
+        onClick,
+        isDisabled,
+      }: {
+        text: string;
+        onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+        isDisabled?: boolean;
+      }) => (
+        <button type="button" onClick={(e) => onClick?.(e)} disabled={isDisabled}>
+          {text}
+        </button>
+      ),
+    }));
+    (MockForm as any).Check = ({
+      label,
+      onChange,
+      ...rest
+    }: {
+      label: React.ReactNode;
+      onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
     }) => (
-      <button type="button" onClick={(e) => onClick?.(e)} disabled={isDisabled}>
-        {text}
-      </button>
-    ),
-  }));
-  (MockForm as any).Check = ({
-    label,
-    onChange,
-    ...rest
-  }: {
-    label: React.ReactNode;
-    onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  }) => (
-    <label>
-      <input
-        type="checkbox"
-        onChange={(e) => {
-          e.persist?.();
-          onChange?.(e);
-        }}
-        {...rest}
-      />
-      {label}
-    </label>
-  );
-  return {
-    Col: MockContainer,
-    Row: MockContainer,
-    Form: MockForm,
-  };
-});
+      <label>
+        <input
+          type="checkbox"
+          onChange={(e) => {
+            e.persist?.();
+            onChange?.(e);
+          }}
+          {...rest}
+        />
+        {label}
+      </label>
+    );
+    return {
+      Col: MockContainer,
+      Row: MockContainer,
+      Form: MockForm,
+    };
+  },
+  { virtual: true }
+);
 
 jest.mock('@/app/ui/overlays/Loader', () => ({
   YosemiteLoader: ({ label, testId }: any) => <div data-testid={testId}>{label}</div>,
 }));
 
 import SignUp from '@/app/features/auth/pages/SignUp/SignUp';
+
+expect.extend(toHaveNoViolations);
 
 describe('SignUp page', () => {
   beforeEach(() => {
@@ -166,6 +164,20 @@ describe('SignUp page', () => {
     expect(screen.getByText('Password is required')).toBeInTheDocument();
     expect(screen.getByText('Confirm Password is required')).toBeInTheDocument();
     expect(screen.getByText('Please check the Terms and Conditions box')).toBeInTheDocument();
+  });
+
+  test('clears first and last name errors as the user updates those fields', () => {
+    render(<SignUp />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }));
+    expect(screen.getByText('First name is required')).toBeInTheDocument();
+    expect(screen.getByText('Last name is required')).toBeInTheDocument();
+
+    setFieldValue('First name', 'Jane');
+    setFieldValue('Last name', 'Doe');
+
+    expect(screen.queryByText('First name is required')).not.toBeInTheDocument();
+    expect(screen.queryByText('Last name is required')).not.toBeInTheDocument();
   });
 
   test('blocks signup when the email format is invalid', () => {
@@ -224,7 +236,10 @@ describe('SignUp page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign up' }));
 
     expect(screen.getByTestId('signup-loader')).toHaveTextContent('Creating your account...');
-    expect(screen.getByRole('button', { name: 'Creating account...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Creating account...' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
 
     await waitFor(() => {
       resolveSignUp?.();
@@ -248,5 +263,11 @@ describe('SignUp page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign up' }));
     await waitFor(() => expect(showErrorTostMock).toHaveBeenCalled());
     expect(latestOtpModalProps?.showVerifyModal).toBeFalsy();
+  });
+
+  test('has no axe accessibility violations', async () => {
+    const { container } = render(<SignUp />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

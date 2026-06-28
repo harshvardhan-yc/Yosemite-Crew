@@ -2,7 +2,7 @@ import Image from 'next/image';
 import React from 'react';
 import { Team } from '@/app/features/organization/types/team';
 import { getSafeImageUrl } from '@/app/lib/urls';
-import { formatWeeklyWorkingHours, getStatusStyle } from '@/app/ui/tables/AvailabilityTable';
+import { formatWeeklyWorkingHours, getAvailabilityStatusStyle } from '@/app/ui/tables/tableUtils';
 import { toTitleCase } from '@/app/lib/validators';
 import { Secondary } from '@/app/ui/primitives/Buttons';
 
@@ -13,15 +13,15 @@ type AvailabilityCardProps = {
 
 const AvailabilityCard = ({ team, handleViewTeam }: AvailabilityCardProps) => {
   return (
-    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white px-3 py-3 flex flex-col justify-between gap-2 cursor-pointer">
+    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white p-3 flex flex-col justify-between gap-2 cursor-pointer">
       <div className="flex gap-2 items-center">
-        <div className="h-10 w-10">
+        <div className="size-10">
           <Image
             alt={''}
             src={getSafeImageUrl(team.image, 'person')}
             height={40}
             width={40}
-            className="h-10 w-10 rounded-full object-cover"
+            className="size-10 rounded-full object-cover"
           />
         </div>
         <div className="flex flex-col gap-0">
@@ -55,7 +55,7 @@ const AvailabilityCard = ({ team, handleViewTeam }: AvailabilityCardProps) => {
         </div>
       </div>
       <div
-        style={getStatusStyle(team.status)}
+        style={getAvailabilityStatusStyle(team.status)}
         className="w-full rounded-2xl h-12 flex items-center justify-center text-body-4"
       >
         {team.status}

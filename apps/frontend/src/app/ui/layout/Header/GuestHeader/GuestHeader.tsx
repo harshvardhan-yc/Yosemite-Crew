@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -19,12 +19,12 @@ interface NavItem {
 
 const publicNavItems: NavItem[] = [
   { label: 'Home', href: '/' },
-  { label: 'Pet Businesses', href: '/pms' },
-  { label: 'Pet Parents', href: '/application' },
+  { label: 'Pet Businesses', href: '/pet-businesses' },
+  { label: 'Pet Parents', href: '/pet-parents' },
   { label: 'Developers', href: '/developers' },
   { label: 'Pricing', href: '/pricing' },
-  { label: 'Contact us', href: '/contact' },
-  { label: 'About us', href: '/about' },
+  { label: 'Contact us', href: '/contact-us' },
+  { label: 'About us', href: '/about-us' },
 ];
 
 const GuestHeader = () => {
@@ -33,6 +33,11 @@ const GuestHeader = () => {
   const status = useAuthStore((s) => s.status);
   const { user, role } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const prevPathnameRef = useRef(pathname);
+  if (prevPathnameRef.current !== pathname) {
+    prevPathnameRef.current = pathname;
+    if (menuOpen) setMenuOpen(false);
+  }
   const logoUrl = MEDIA_SOURCES.logo;
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
@@ -42,10 +47,6 @@ const GuestHeader = () => {
       void useAuthStore.getState().checkSession();
     }
   }, [status]);
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     const closeMenuOnDesktop = () => {
@@ -72,6 +73,7 @@ const GuestHeader = () => {
   const hideButtons = pathname === '/organizations' || pathname === '/forgot-password';
   const defaultAppRoute =
     role === 'developer' ? '/developers/home' : resolveDefaultOpenScreenRoute(role);
+  const mobileMenuId = 'guest-mobile-menu';
 
   const getMobileAuthButton = () => {
     if (user) {
@@ -129,21 +131,28 @@ const GuestHeader = () => {
   };
 
   return (
-    <div
-      className="flex items-center justify-between px-4! sm:px-12! lg:px-20! gap-10 w-full h-20"
-      data-terminology-lock="true"
-    >
-      <Link href="/" className="yc-guest-logo-link">
-        <Image src={logoUrl} alt="Logo" width={112} height={72} priority />
+    <div className="yc-guest-header" data-terminology-lock="true">
+      <Link href="/" className="yc-guest-logo-link" aria-label="Yosemite Crew home">
+        <Image
+          src={logoUrl}
+          alt="Yosemite Crew"
+          width={112}
+          height={72}
+          priority
+          style={{ width: 'auto' }}
+        />
       </Link>
 
-      <div className="max-w-[800px] flex-1 hidden lg:flex">
-        <ul className="list-none flex items-center justify-between flex-1 p-0 m-0">
+      <div className="yc-guest-nav">
+        <ul className="yc-guest-nav-list">
           {publicNavItems.map((item) => (
             <li key={item.label}>
               <Link
                 href={item.href ? item.href : '#'}
-                className={`${item.href === pathname ? 'text-text-primary!' : 'text-text-tertiary!'} inline-block text-body-4 hover:text-text-brand! transition-colors duration-200 ease-out`}
+                aria-current={item.href === pathname ? 'page' : undefined}
+                className={`yc-guest-nav-link text-body-4 ${
+                  item.href === pathname ? 'yc-guest-nav-link-active' : ''
+                }`}
               >
                 {item.label}
               </Link>
@@ -152,13 +161,15 @@ const GuestHeader = () => {
         </ul>
       </div>
 
-      <MobileMenu isOpen={menuOpen}>
+      <MobileMenu isOpen={menuOpen} id={mobileMenuId} onClose={() => setMenuOpen(false)}>
         {publicNavItems.map((item) => (
           <button
             type="button"
             key={item.label}
             onClick={() => handleClick(item.href ? item.href : '#')}
-            className={`text-body-4 px-3 py-2 rounded-2xl! border border-card-border! text-start transition-all duration-300 ease-in hover:bg-card-border ${item.href === pathname && 'text-text-brand border-text-brand! bg-brand-100'}`}
+            className={`yc-guest-mobile-route text-body-4 px-3 py-2 ${
+              item.href === pathname ? 'yc-guest-mobile-route-active' : ''
+            }`}
           >
             {item.label}
           </button>
@@ -166,7 +177,7 @@ const GuestHeader = () => {
         {!hideButtons && getMobileAuthButton()}
       </MobileMenu>
 
-      <HamburgerMenuButton menuOpen={menuOpen} onClick={toggleMenu} />
+      <HamburgerMenuButton menuOpen={menuOpen} onClick={toggleMenu} controlsId={mobileMenuId} />
 
       {!hideButtons && getDesktopAuthButton()}
     </div>

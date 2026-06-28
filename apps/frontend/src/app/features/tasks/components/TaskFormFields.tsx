@@ -33,6 +33,9 @@ type TaskFormFieldsProps = {
   onAssigneeSelect?: (option: Option) => void;
 };
 
+const DEFAULT_AUDIENCE_OPTIONS: Option[] = [];
+const DEFAULT_ASSIGNEE_OPTIONS: Option[] = [];
+
 const TaskFormFields = ({
   formData,
   setFormData,
@@ -44,10 +47,10 @@ const TaskFormFields = ({
   setDueTimeValue,
   onSelectTemplate,
   showAudienceSelect = false,
-  audienceOptions = [],
+  audienceOptions = DEFAULT_AUDIENCE_OPTIONS,
   onAudienceSelect,
   showAssigneeSelect = false,
-  assigneeOptions = [],
+  assigneeOptions = DEFAULT_ASSIGNEE_OPTIONS,
   onAssigneeSelect,
 }: TaskFormFieldsProps) => (
   <div className="flex flex-col gap-3">
@@ -78,7 +81,7 @@ const TaskFormFields = ({
           libraryTaskId: undefined,
           name: '',
           description: '',
-          category: 'CUSTOM',
+          category: formData.category || 'CUSTOM',
         });
       }}
       defaultOption={formData.source}

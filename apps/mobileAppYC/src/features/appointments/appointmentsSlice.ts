@@ -7,6 +7,7 @@ import type {
   PaymentIntentInfo,
 } from './types';
 import {appointmentApi} from './services/appointmentsService';
+import {deleteCompanion} from '@/features/companion/thunks';
 import {
   getFreshStoredTokens,
   isTokenExpired,
@@ -38,6 +39,7 @@ const ensureAccessToken = async (): Promise<string> => {
 type BookAppointmentInput = {
   businessId: string;
   serviceId: string;
+  productItemId?: string | null;
   serviceName: string;
   specialityId?: string | null;
   specialityName?: string | null;
@@ -51,6 +53,7 @@ type BookAppointmentInput = {
   concern?: string;
   emergency?: boolean;
   companionId: string;
+  appointmentKinds?: string[];
   attachments?: Array<{
     key: string;
     name?: string | null;
@@ -152,6 +155,19 @@ export const createAppointment = createAsyncThunk<
     const parentReferenceId = parentId ?? user?.id ?? null;
     const sharedAppointment: SharedAppointmentModel = {
       organisationId: payload.businessId,
+      patient: {
+        id: payload.companionId,
+        name: companion?.name ?? '',
+        species: companion?.category
+          ? companion.category.charAt(0).toUpperCase() +
+            companion.category.slice(1)
+          : '',
+        breed: companion?.breed?.breedName,
+        parent: {
+          id: parentReferenceId ?? '',
+          name: parentName,
+        },
+      },
       companion: {
         id: payload.companionId,
         name: companion?.name ?? '',
@@ -172,7 +188,7 @@ export const createAppointment = createAsyncThunk<
           }
         : undefined,
       appointmentType: {
-        id: payload.serviceId,
+        id: payload.productItemId ?? payload.serviceId,
         name: payload.serviceName,
         speciality: {
           id: payload.specialityId ?? payload.specialityName ?? '',
@@ -187,6 +203,7 @@ export const createAppointment = createAsyncThunk<
       status: 'REQUESTED',
       isEmergency: payload.emergency ?? false,
       concern: payload.concern ?? '',
+      appointmentKind: (payload.appointmentKinds?.[0] as any) ?? undefined,
       attachments: payload.attachments
         ?.filter(att => att.key)
         .map(att => ({
@@ -209,6 +226,11 @@ export const createAppointment = createAsyncThunk<
           !participant?.actor?.reference?.startsWith('RelatedPerson/'),
       );
     }
+
+    console.log(
+      '[createAppointment] bookPayload:',
+      JSON.stringify(bookPayload, null, 2),
+    );
 
     const {appointment, invoice, paymentIntent} =
       await appointmentApi.bookAppointment({
@@ -332,11 +354,15 @@ export const cancelAppointment = createAsyncThunk(
 
 export const fetchPaymentIntentForAppointment = createAsyncThunk(
   'appointments/fetchPaymentIntent',
-  async ({appointmentId}: {appointmentId: string}, {rejectWithValue}) => {
+  async (
+    {appointmentId, invoiceId}: {appointmentId: string; invoiceId?: string},
+    {rejectWithValue},
+  ) => {
     try {
       const accessToken = await ensureAccessToken();
       const intent = await appointmentApi.createPaymentIntent({
         appointmentId,
+        invoiceId,
         accessToken,
       });
       return {appointmentId, intent};
@@ -423,10 +449,7 @@ const appointmentsSlice = createSlice({
       })
       .addCase(fetchAppointmentsForCompanion.fulfilled, (state, action) => {
         state.loading = false;
-        const {companionId, items} = action.payload as {
-          companionId: string;
-          items: Appointment[];
-        };
+        const {companionId, items} = action.payload;
         state.items = state.items.filter(a => a.companionId !== companionId);
         state.items.push(...items);
         state.hydratedCompanions[companionId] = true;
@@ -521,10 +544,7 @@ const appointmentsSlice = createSlice({
         upsertAppointment(state, normalized);
       })
       .addCase(fetchPaymentIntentForAppointment.fulfilled, (state, action) => {
-        const {appointmentId, intent} = action.payload as {
-          appointmentId: string;
-          intent: PaymentIntentInfo;
-        };
+        const {appointmentId, intent} = action.payload;
         const idx = state.items.findIndex(a => a.id === appointmentId);
         if (idx >= 0) {
           state.items[idx] = {
@@ -568,6 +588,17 @@ const appointmentsSlice = createSlice({
         if (aptIdx >= 0 && paymentIntent) {
           state.items[aptIdx] = {...state.items[aptIdx], paymentIntent};
         }
+      })
+      .addCase(deleteCompanion.fulfilled, (state, action) => {
+        const deletedId = action.payload;
+        const deletedAppointmentIds = new Set(
+          state.items.filter(a => a.companionId === deletedId).map(a => a.id),
+        );
+        state.items = state.items.filter(a => a.companionId !== deletedId);
+        state.invoices = state.invoices.filter(
+          inv => !deletedAppointmentIds.has(inv.appointmentId),
+        );
+        delete state.hydratedCompanions[deletedId];
       })
       .addCase(recordPayment.fulfilled, (state, action) => {
         const refreshed = (action.payload as any)?.appointment as

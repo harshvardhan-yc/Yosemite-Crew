@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useMemo, useState} from 'react';
 import {
   Modal,
   Platform,
@@ -23,6 +23,132 @@ interface SimpleDatePickerProps {
   mode?: 'date' | 'time' | 'datetime';
 }
 
+interface IOSPickerModalProps {
+  value: Date;
+  onDateChange: (date: Date) => void;
+  onDismiss: () => void;
+  minimumDate?: Date;
+  maximumDate?: Date;
+  mode: 'date' | 'time' | 'datetime';
+}
+
+// Extracted so useState(value) reinitializes naturally each time this mounts (when show becomes true)
+const IOSPickerModal: React.FC<IOSPickerModalProps> = ({
+  value,
+  onDateChange,
+  onDismiss,
+  minimumDate,
+  maximumDate,
+  mode,
+}) => {
+  const [iosDraftDate, setIosDraftDate] = useState(value);
+  const {t} = useTranslation();
+  const {theme} = useTheme();
+  const isTimeMode = mode === 'time';
+
+  const iosActionTextColor = useMemo(() => PlatformColor('systemBlue'), []);
+  const iosBackgroundColor = useMemo(
+    () => PlatformColor('systemBackground'),
+    [],
+  );
+  const iosPillBackgroundColor = useMemo(
+    () => PlatformColor('secondarySystemBackground'),
+    [],
+  );
+  const useNativeGlass = isLiquidGlassSupported;
+
+  const confirmValue = () => {
+    onDateChange(iosDraftDate);
+    onDismiss();
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (event?.type === 'dismissed') {
+      onDismiss();
+      return;
+    }
+    if (selectedDate) {
+      setIosDraftDate(selectedDate);
+    }
+  };
+
+  const renderActionButton = (
+    testID: string,
+    labelKey: 'common.cancel' | 'common.done',
+    onPress: () => void,
+  ) => (
+    <Pressable
+      accessibilityRole="button"
+      testID={testID}
+      onPress={onPress}
+      style={styles.actionPressable}>
+      {useNativeGlass ? (
+        <LiquidGlassView
+          style={styles.actionPill}
+          interactive={false}
+          effect="regular">
+          <Text style={[styles.actionText, {color: iosActionTextColor}]}>
+            {t(labelKey)}
+          </Text>
+        </LiquidGlassView>
+      ) : (
+        <View
+          style={[
+            styles.actionPill,
+            {backgroundColor: iosPillBackgroundColor},
+          ]}>
+          <Text style={[styles.actionText, {color: iosActionTextColor}]}>
+            {t(labelKey)}
+          </Text>
+        </View>
+      )}
+    </Pressable>
+  );
+
+  return (
+    <Modal animationType="fade" transparent visible onRequestClose={onDismiss}>
+      <View style={styles.modalRoot}>
+        <Pressable
+          testID="ios-datetime-picker-backdrop"
+          style={styles.backdrop}
+          onPress={onDismiss}
+        />
+        <View
+          style={[
+            styles.iosDialog,
+            {
+              backgroundColor: iosBackgroundColor,
+              borderRadius: theme.borderRadius.lg,
+            },
+          ]}>
+          <DateTimePicker
+            value={iosDraftDate}
+            mode={mode}
+            display="spinner"
+            onChange={handleDateChange}
+            minimumDate={minimumDate}
+            maximumDate={maximumDate}
+            locale={isTimeMode ? 'en-US' : undefined}
+            style={styles.iosPicker}
+          />
+          <View style={styles.actionFloatingRow}>
+            {renderActionButton(
+              'ios-datetime-picker-cancel',
+              'common.cancel',
+              onDismiss,
+            )}
+            {renderActionButton(
+              'ios-datetime-picker-done',
+              'common.done',
+              confirmValue,
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 export const SimpleDatePicker: React.FC<SimpleDatePickerProps> = ({
   value,
   onDateChange,
@@ -32,160 +158,45 @@ export const SimpleDatePicker: React.FC<SimpleDatePickerProps> = ({
   maximumDate,
   mode = 'date',
 }) => {
-  const [internalShow, setInternalShow] = useState(show);
-  const [iosDraftDate, setIosDraftDate] = useState(value ?? new Date());
-  const {t} = useTranslation();
-  const {theme} = useTheme();
   const isIOS = Platform.OS === 'ios';
 
-  useEffect(() => {
-    setInternalShow(show);
-  }, [show]);
+  if (!show) {
+    return null;
+  }
 
-  useEffect(() => {
-    if (show) {
-      setIosDraftDate(value ?? new Date());
-    }
-  }, [show, value]);
+  if (isIOS) {
+    return (
+      <IOSPickerModal
+        value={value ?? new Date()}
+        onDateChange={onDateChange}
+        onDismiss={onDismiss}
+        minimumDate={minimumDate}
+        maximumDate={maximumDate}
+        mode={mode}
+      />
+    );
+  }
 
-  const iosActionTextColor = useMemo(
-    () => (isIOS ? PlatformColor('systemBlue') : '#007AFF'),
-    [isIOS],
-  );
-  const iosBackgroundColor = useMemo(
-    () => (isIOS ? PlatformColor('systemBackground') : '#FFFFFF'),
-    [isIOS],
-  );
-  const iosPillBackgroundColor = useMemo(
-    () => (isIOS ? PlatformColor('secondarySystemBackground') : '#F2F2F7'),
-    [isIOS],
-  );
-  const useNativeGlass = isIOS && isLiquidGlassSupported;
-
-  const dismissPicker = () => {
-    setInternalShow(false);
-    onDismiss();
-  };
-  const isTimeMode = mode === 'time';
-
-  const confirmIOSValue = () => {
-    onDateChange(iosDraftDate);
-    dismissPicker();
-  };
-
-  const handleDateChange = (event: any, selectedDate?: Date) => {
+  const handleAndroidDateChange = (event: any, selectedDate?: Date) => {
     const eventType = event?.type;
 
     if (eventType === 'dismissed') {
-      dismissPicker();
-      return;
-    }
-
-    if (isIOS) {
-      if (selectedDate) {
-        setIosDraftDate(selectedDate);
-      }
+      onDismiss();
       return;
     }
 
     if (selectedDate && eventType === 'set') {
       onDateChange(selectedDate);
     }
-    dismissPicker();
+    onDismiss();
   };
-
-  if (!internalShow) {
-    return null;
-  }
-
-  if (isIOS) {
-    const renderActionButton = (
-      testID: string,
-      labelKey: 'common.cancel' | 'common.done',
-      onPress: () => void,
-    ) => (
-      <Pressable
-        accessibilityRole="button"
-        testID={testID}
-        onPress={onPress}
-        style={styles.actionPressable}>
-        {useNativeGlass ? (
-          <LiquidGlassView
-            style={styles.actionPill}
-            interactive={false}
-            effect="regular">
-            <Text style={[styles.actionText, {color: iosActionTextColor}]}>
-              {t(labelKey)}
-            </Text>
-          </LiquidGlassView>
-        ) : (
-          <View
-            style={[
-              styles.actionPill,
-              {backgroundColor: iosPillBackgroundColor},
-            ]}>
-            <Text style={[styles.actionText, {color: iosActionTextColor}]}>
-              {t(labelKey)}
-            </Text>
-          </View>
-        )}
-      </Pressable>
-    );
-
-    return (
-      <Modal
-        animationType="fade"
-        transparent
-        visible={internalShow}
-        onRequestClose={dismissPicker}>
-        <View style={styles.modalRoot}>
-          <Pressable
-            testID="ios-datetime-picker-backdrop"
-            style={styles.backdrop}
-            onPress={dismissPicker}
-          />
-          <View
-            style={[
-              styles.iosDialog,
-              {
-                backgroundColor: iosBackgroundColor,
-                borderRadius: theme.borderRadius.lg,
-              },
-            ]}>
-            <DateTimePicker
-              value={iosDraftDate}
-              mode={mode}
-              display="spinner"
-              onChange={handleDateChange}
-              minimumDate={minimumDate}
-              maximumDate={maximumDate}
-              locale={isTimeMode ? 'en-US' : undefined}
-              style={styles.iosPicker}
-            />
-            <View style={styles.actionFloatingRow}>
-              {renderActionButton(
-                'ios-datetime-picker-cancel',
-                'common.cancel',
-                dismissPicker,
-              )}
-              {renderActionButton(
-                'ios-datetime-picker-done',
-                'common.done',
-                confirmIOSValue,
-              )}
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
-  }
 
   return (
     <DateTimePicker
       value={value || new Date()}
       mode={mode}
       display="default"
-      onChange={handleDateChange}
+      onChange={handleAndroidDateChange}
       minimumDate={minimumDate}
       maximumDate={maximumDate}
     />

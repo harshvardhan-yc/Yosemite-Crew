@@ -1,33 +1,33 @@
-import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 // Import Path: Go up 7 levels to 'src/app', then down to 'pages'
-import Chat from "@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Tasks/Chat";
-import { useAuthStore } from "@/app/stores/authStore";
+import Chat from '@/app/features/appointments/pages/Appointments/Sections/AppointmentInfo/Tasks/Chat';
+import { useAuthStore } from '@/app/stores/authStore';
 import {
   createChatSession,
   closeChatSession,
   getChatSession,
-} from "@/app/features/chat/services/chatService";
-import { Appointment } from "@yosemite-crew/types";
+} from '@/app/features/chat/services/chatService';
+import { Appointment } from '@yosemite-crew/types';
 
 // --- Mocks ---
 
 // Mock Next.js Router
 const mockPush = jest.fn();
-jest.mock("next/navigation", () => ({
+jest.mock('next/navigation', () => ({
   useRouter: () => ({
     push: mockPush,
   }),
 }));
 
 // Mock Auth Store
-jest.mock("@/app/stores/authStore");
+jest.mock('@/app/stores/authStore');
 
 // Mock Chat Service
-jest.mock("@/app/features/chat/services/chatService");
+jest.mock('@/app/features/chat/services/chatService');
 
 // Mock UI Buttons (Pass-through to standard buttons for easier testing)
-jest.mock("@/app/ui/primitives/Buttons", () => ({
+jest.mock('@/app/ui/primitives/Buttons', () => ({
   Primary: ({ text, onClick, isDisabled }: any) => (
     <button data-testid="primary-btn" onClick={onClick} disabled={isDisabled}>
       {text}
@@ -40,18 +40,18 @@ jest.mock("@/app/ui/primitives/Buttons", () => ({
   ),
 }));
 
-describe("Chat Component", () => {
+describe('Chat Component', () => {
   // --- Test Data ---
-  const currentUserId = "user-123";
+  const currentUserId = 'user-123';
 
   const mockActiveAppointment = {
-    id: "appt-1",
-    lead: { id: currentUserId, name: "Dr. Smith" },
+    id: 'appt-1',
+    lead: { id: currentUserId, name: 'Dr. Smith' },
   } as unknown as Appointment;
 
   const mockOtherAppointment = {
-    id: "appt-2",
-    lead: { id: "other-user", name: "Dr. Jones" },
+    id: 'appt-2',
+    lead: { id: 'other-user', name: 'Dr. Jones' },
   } as unknown as Appointment;
 
   beforeEach(() => {
@@ -59,13 +59,13 @@ describe("Chat Component", () => {
 
     // Default Auth State
     (useAuthStore as unknown as jest.Mock).mockReturnValue({
-      attributes: { sub: currentUserId, email: "test@example.com" },
+      attributes: { sub: currentUserId, email: 'test@example.com' },
     });
 
     // Default Window Mocks
-    jest.spyOn(globalThis, "confirm").mockReturnValue(true);
-    jest.spyOn(globalThis, "alert").mockImplementation(() => {});
-    jest.spyOn(console, "error").mockImplementation(() => {});
+    jest.spyOn(globalThis, 'confirm').mockReturnValue(true);
+    jest.spyOn(globalThis, 'alert').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   // --- Section 1: Ownership Logic & Rendering ---
@@ -74,78 +74,66 @@ describe("Chat Component", () => {
     // getChatSession shouldn't be called for others' appointments
     render(<Chat activeAppointment={mockOtherAppointment} />);
 
-    expect(
-      screen.getByText("This is not your appointment")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/This appointment is assigned to Dr. Jones/)
-    ).toBeInTheDocument();
+    expect(screen.getByText('This is not your appointment')).toBeInTheDocument();
+    expect(screen.getByText(/This appointment is assigned to Dr. Jones/)).toBeInTheDocument();
     expect(getChatSession).not.toHaveBeenCalled();
   });
 
-  it("renders the loading state initially for own appointment", async () => {
+  it('renders the loading state initially for own appointment', async () => {
     // Use a promise that doesn't resolve immediately to catch the loading state
-    (getChatSession as jest.Mock).mockImplementation(
-      () => new Promise(() => {})
-    );
+    (getChatSession as jest.Mock).mockImplementation(() => new Promise(() => {}));
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
-    expect(screen.getByText("Loading chat status...")).toBeInTheDocument();
+    expect(screen.getByText('Loading chat status…')).toBeInTheDocument();
   });
 
   // --- Section 2: Initialization (useEffect) ---
 
-  it("renders active chat interface when session exists and is OPEN", async () => {
-    (getChatSession as jest.Mock).mockResolvedValue({ _id: "session-1", status: "OPEN" });
+  it('renders active chat interface when session exists and is OPEN', async () => {
+    (getChatSession as jest.Mock).mockResolvedValue({ _id: 'session-1', status: 'OPEN' });
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Companion Parent Chat")).toBeInTheDocument();
+      expect(screen.getByText('Companion Parent Chat')).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Open Chat")).toBeInTheDocument();
-    expect(screen.getByText("Close Chat Session")).toBeInTheDocument();
+    expect(screen.getByText('Open Chat')).toBeInTheDocument();
+    expect(screen.getByText('Close Chat Session')).toBeInTheDocument();
     // Verify Note
-    expect(
-      screen.getByText(/Closing a chat session will prevent/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Closing a chat session will prevent/)).toBeInTheDocument();
   });
 
-  it("renders closed session interface when session is CLOSED", async () => {
-    (getChatSession as jest.Mock).mockResolvedValue({ _id: "session-1", status: "CLOSED" });
+  it('renders closed session interface when session is CLOSED', async () => {
+    (getChatSession as jest.Mock).mockResolvedValue({ _id: 'session-1', status: 'CLOSED' });
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("This chat session has been closed")
-      ).toBeInTheDocument();
+      expect(screen.getByText('This chat session has been closed')).toBeInTheDocument();
     });
 
     // Should see View History button
-    expect(screen.getByText("View Chat History")).toBeInTheDocument();
+    expect(screen.getByText('View Chat History')).toBeInTheDocument();
     // Should NOT see Close button
-    expect(screen.queryByText("Close Chat Session")).not.toBeInTheDocument();
+    expect(screen.queryByText('Close Chat Session')).not.toBeInTheDocument();
   });
 
-  it("renders closed session interface when session is frozen", async () => {
+  it('renders closed session interface when session is frozen', async () => {
     (getChatSession as jest.Mock).mockResolvedValue({
-      status: "OPEN",
+      status: 'OPEN',
       frozen: true,
     });
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("This chat session has been closed")
-      ).toBeInTheDocument();
+      expect(screen.getByText('This chat session has been closed')).toBeInTheDocument();
     });
   });
 
-  it("handles 404 (No session yet) by showing active interface", async () => {
+  it('handles 404 (No session yet) by showing active interface', async () => {
     // Simulate axios/fetch 404 error structure
     const error404 = { response: { status: 404 } };
     (getChatSession as jest.Mock).mockRejectedValue(error404);
@@ -153,105 +141,100 @@ describe("Chat Component", () => {
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Open Chat")).toBeInTheDocument();
+      expect(screen.getByText('Open Chat')).toBeInTheDocument();
     });
     // Session closed should be false
-    expect(
-      screen.queryByText("This chat session has been closed")
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('This chat session has been closed')).not.toBeInTheDocument();
   });
 
   it("handles 'not found' message in error object", async () => {
     // Simulate error message check
-    const errorMsg = { message: "Session not found" };
+    const errorMsg = { message: 'Session not found' };
     (getChatSession as jest.Mock).mockRejectedValue(errorMsg);
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Open Chat")).toBeInTheDocument();
+      expect(screen.getByText('Open Chat')).toBeInTheDocument();
     });
   });
 
-  it("handles unexpected errors during status check gracefully", async () => {
-    const errorUnexpected = { message: "Server exploded" };
+  it('treats any status-check failure as "no session yet" without logging', async () => {
+    // The backend errors (e.g. 500) when no session exists yet. The mount probe
+    // is silent and treats every failure as the benign "not started" state.
+    const errorUnexpected = { message: 'Server exploded' };
     (getChatSession as jest.Mock).mockRejectedValue(errorUnexpected);
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
-    // It defaults to open state (sessionClosed = false) on unexpected error
     await waitFor(() => {
-      expect(screen.getByText("Open Chat")).toBeInTheDocument();
+      expect(screen.getByText('Open Chat')).toBeInTheDocument();
     });
-    expect(console.error).toHaveBeenCalledWith(
-      "Unexpected error checking chat session status:",
+    expect(screen.queryByText('This chat session has been closed')).not.toBeInTheDocument();
+    // No error is logged for the expected first-visit/no-session case.
+    expect(console.error).not.toHaveBeenCalledWith(
+      'Unexpected error checking chat session status:',
       errorUnexpected
     );
+    // The probe is called silently.
+    expect(getChatSession).toHaveBeenCalledWith('appt-1', { silent: true });
   });
 
   // --- Section 3: Open Chat Interaction ---
 
-  it("handles opening chat successfully", async () => {
+  it('handles opening chat successfully', async () => {
     (getChatSession as jest.Mock).mockRejectedValue({ status: 404 }); // Initial state
     (createChatSession as jest.Mock).mockResolvedValue({});
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
-    await waitFor(() =>
-      expect(screen.getByText("Open Chat")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('Open Chat')).toBeInTheDocument());
 
-    const openBtn = screen.getByText("Open Chat");
+    const openBtn = screen.getByText('Open Chat');
     fireEvent.click(openBtn);
 
     // Verify loading text changes
-    expect(screen.getByText("Opening...")).toBeInTheDocument();
+    expect(screen.getByText('Opening...')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(createChatSession).toHaveBeenCalledWith("appt-1");
+      expect(createChatSession).toHaveBeenCalledWith('appt-1');
     });
-    expect(mockPush).toHaveBeenCalledWith("/chat?appointmentId=appt-1");
+    expect(mockPush).toHaveBeenCalledWith('/chat?appointmentId=appt-1');
   });
 
-  it("handles opening chat history (closed session)", async () => {
-    (getChatSession as jest.Mock).mockResolvedValue({ status: "CLOSED" });
+  it('handles opening chat history (closed session)', async () => {
+    (getChatSession as jest.Mock).mockResolvedValue({ status: 'CLOSED' });
     (createChatSession as jest.Mock).mockResolvedValue({});
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
 
-    await waitFor(() =>
-      expect(screen.getByText("View Chat History")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('View Chat History')).toBeInTheDocument());
 
-    const viewBtn = screen.getByText("View Chat History");
+    const viewBtn = screen.getByText('View Chat History');
     fireEvent.click(viewBtn);
 
     await waitFor(() => {
-      expect(createChatSession).toHaveBeenCalledWith("appt-1");
+      expect(createChatSession).toHaveBeenCalledWith('appt-1');
     });
-    expect(mockPush).toHaveBeenCalledWith("/chat?appointmentId=appt-1");
+    expect(mockPush).toHaveBeenCalledWith('/chat?appointmentId=appt-1');
   });
 
-  it("handles error when opening chat fails", async () => {
+  it('handles error when opening chat fails', async () => {
     (getChatSession as jest.Mock).mockRejectedValue({ status: 404 });
-    (createChatSession as jest.Mock).mockRejectedValue(
-      new Error("Network Error")
-    );
+    (createChatSession as jest.Mock).mockRejectedValue(new Error('Network Error'));
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
-    await waitFor(() =>
-      expect(screen.getByText("Open Chat")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('Open Chat')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText("Open Chat"));
+    fireEvent.click(screen.getByText('Open Chat'));
 
     await waitFor(() => {
-      expect(screen.getByText("Network Error")).toBeInTheDocument();
+      expect(screen.getByText('Network Error')).toBeInTheDocument();
     });
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("handles missing appointment ID when opening chat", async () => {
+  it('handles missing appointment ID when opening chat', async () => {
     // Edge case: Appointment object exists but ID is null
     const noIdAppt = { ...mockActiveAppointment, id: null } as any;
     render(<Chat activeAppointment={noIdAppt} />);
@@ -259,7 +242,7 @@ describe("Chat Component", () => {
     // We force the 'My Appointment' check to pass by mocking Auth store to match
     // However, the button is disabled if !id.
     // We can try to force click or check disabled state.
-    const openBtn = screen.getByText("Open Chat");
+    const openBtn = screen.getByText('Open Chat');
     expect(openBtn).toBeDisabled();
 
     // If we somehow clicked it (e.g. race condition), it should handle it
@@ -268,72 +251,60 @@ describe("Chat Component", () => {
 
   // --- Section 4: Close Chat Interaction ---
 
-  it("cancels closing chat if user denies confirmation", async () => {
+  it('cancels closing chat if user denies confirmation', async () => {
     (getChatSession as jest.Mock).mockRejectedValue({ status: 404 });
     (globalThis.confirm as jest.Mock).mockReturnValue(false); // User clicks Cancel
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
-    await waitFor(() =>
-      expect(screen.getByText("Close Chat Session")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('Close Chat Session')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText("Close Chat Session"));
+    fireEvent.click(screen.getByText('Close Chat Session'));
 
     expect(closeChatSession).not.toHaveBeenCalled();
   });
 
-  it("closes chat successfully when confirmed", async () => {
-    (getChatSession as jest.Mock).mockResolvedValue({ _id: "session-1", status: "OPEN" });
+  it('closes chat successfully when confirmed', async () => {
+    (getChatSession as jest.Mock).mockResolvedValue({ _id: 'session-1', status: 'OPEN' });
     (globalThis.confirm as jest.Mock).mockReturnValue(true); // User clicks OK
     (closeChatSession as jest.Mock).mockResolvedValue({});
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
-    await waitFor(() =>
-      expect(screen.getByText("Close Chat Session")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('Close Chat Session')).toBeInTheDocument());
 
-    const closeBtn = screen.getByText("Close Chat Session");
+    const closeBtn = screen.getByText('Close Chat Session');
     fireEvent.click(closeBtn);
 
     // Check loading state
-    expect(screen.getByText("Closing...")).toBeInTheDocument();
+    expect(screen.getByText('Closing...')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(closeChatSession).toHaveBeenCalledWith("session-1");
+      expect(closeChatSession).toHaveBeenCalledWith('session-1');
     });
 
-    expect(globalThis.alert).toHaveBeenCalledWith(
-      "Chat session closed successfully"
-    );
+    expect(globalThis.alert).toHaveBeenCalledWith('Chat session closed successfully');
 
     // UI should update to closed state
     await waitFor(() => {
-      expect(
-        screen.getByText("This chat session has been closed")
-      ).toBeInTheDocument();
+      expect(screen.getByText('This chat session has been closed')).toBeInTheDocument();
     });
   });
 
-  it("handles error when closing chat fails", async () => {
-    (getChatSession as jest.Mock).mockResolvedValue({ _id: "session-1", status: "OPEN" });
-    (closeChatSession as jest.Mock).mockRejectedValue(
-      new Error("Close Failed")
-    );
+  it('handles error when closing chat fails', async () => {
+    (getChatSession as jest.Mock).mockResolvedValue({ _id: 'session-1', status: 'OPEN' });
+    (closeChatSession as jest.Mock).mockRejectedValue(new Error('Close Failed'));
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
-    await waitFor(() =>
-      expect(screen.getByText("Close Chat Session")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('Close Chat Session')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText("Close Chat Session"));
+    fireEvent.click(screen.getByText('Close Chat Session'));
 
     await waitFor(() => {
-      expect(screen.getByText("Close Failed")).toBeInTheDocument();
+      expect(screen.getByText('Close Failed')).toBeInTheDocument();
     });
   });
 
-  it("prevents duplicate close calls if already closing", async () => {
-    (getChatSession as jest.Mock).mockResolvedValue({ _id: "session-1", status: "OPEN" });
+  it('prevents duplicate close calls if already closing', async () => {
+    (getChatSession as jest.Mock).mockResolvedValue({ _id: 'session-1', status: 'OPEN' });
 
     // Create a promise that we control to hold the "closing" state
     let resolveClose: any;
@@ -345,11 +316,9 @@ describe("Chat Component", () => {
     );
 
     render(<Chat activeAppointment={mockActiveAppointment} />);
-    await waitFor(() =>
-      expect(screen.getByText("Close Chat Session")).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('Close Chat Session')).toBeInTheDocument());
 
-    const closeBtn = screen.getByText("Close Chat Session");
+    const closeBtn = screen.getByText('Close Chat Session');
 
     // First Click
     fireEvent.click(closeBtn);
@@ -365,11 +334,11 @@ describe("Chat Component", () => {
     });
   });
 
-  it("handles missing appointment ID when closing chat", async () => {
+  it('handles missing appointment ID when closing chat', async () => {
     const noIdAppt = { ...mockActiveAppointment, id: null } as any;
     render(<Chat activeAppointment={noIdAppt} />);
 
-    const closeBtn = screen.getByText("Close Chat Session");
+    const closeBtn = screen.getByText('Close Chat Session');
     expect(closeBtn).toBeDisabled();
 
     fireEvent.click(closeBtn);
@@ -377,15 +346,11 @@ describe("Chat Component", () => {
 
   // --- Section 5: Effect Cleanup ---
 
-  it("unmounts safely while checking status", async () => {
+  it('unmounts safely while checking status', async () => {
     // Make request hang
-    (getChatSession as jest.Mock).mockImplementation(
-      () => new Promise(() => {})
-    );
+    (getChatSession as jest.Mock).mockImplementation(() => new Promise(() => {}));
 
-    const { unmount } = render(
-      <Chat activeAppointment={mockActiveAppointment} />
-    );
+    const { unmount } = render(<Chat activeAppointment={mockActiveAppointment} />);
 
     // Unmount before promise resolves
     unmount();

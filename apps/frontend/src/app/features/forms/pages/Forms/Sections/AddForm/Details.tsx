@@ -26,9 +26,20 @@ type DetailsProps = {
   formData: FormsProps;
   setFormData: React.Dispatch<React.SetStateAction<FormsProps>>;
   onNext: () => void;
-  serviceOptions: { label: string; value: string }[];
+  serviceOptions: { label: string; value: string; badge?: string; isInpatient?: boolean }[];
   registerValidator?: (fn: () => boolean) => void;
 };
+
+const YC_DEFAULT_CATEGORIES = new Set<FormsCategory>([
+  'SOAP',
+  'Prescription',
+  'Task Template',
+  'Discharge Form',
+  'Consent form',
+]);
+
+const getTemplateTypeOption = (templateSource?: FormsProps['templateSource']) =>
+  templateSource === 'YC_LIBRARY' ? 'YC_LIBRARY' : 'CUSTOM';
 
 const Details = ({
   formData,
@@ -52,8 +63,26 @@ const Details = ({
     | Organisation['type']
     | undefined;
   const effectiveOrgType = orgTypeOverride || orgType;
+  // Ownership: a "YC default" template is structure-locked (content-only, see
+  // Build.tsx `structureLocked`); a "Custom" template is fully editable and may
+  // be scoped to the whole org or a single user. The selector lives above
+  // Category because it gates what the rest of the builder can do.
+  const isYcDefault = formData.templateSource === 'YC_LIBRARY';
   const categoryOptions = useMemo(() => {
-    const base = new Set(['Consent form', 'Prescription', 'SOAP', 'Discharge Form', 'Custom']);
+    if (isYcDefault) {
+      return FormsCategoryOptions.filter((c) => YC_DEFAULT_CATEGORIES.has(c));
+    }
+    const base = new Set([
+      'Consent form',
+      'Prescription',
+      'SOAP',
+      'Discharge Form',
+      'Vitals',
+      'Prescription Template',
+      'Inpatient Schedule',
+      'Task Template',
+      'Custom',
+    ]);
     if (effectiveOrgType === 'HOSPITAL') {
       return FormsCategoryOptions.filter((c) => base.has(c));
     }
@@ -67,7 +96,41 @@ const Details = ({
       return FormsCategoryOptions.filter((c) => base.has(c) || c.startsWith('Groomer'));
     }
     return FormsCategoryOptions;
-  }, [effectiveOrgType]);
+  }, [effectiveOrgType, isYcDefault]);
+
+  // Task / Inpatient-Schedule templates only apply to in-patient services & packages, so the
+  // service/package picker is filtered to inpatient-preferred catalog items for those categories.
+  const isInpatientOnlyCategory =
+    formData.category === 'Task Template' || formData.category === 'Inpatient Schedule';
+  const effectiveServiceOptions = useMemo(
+    () =>
+      isInpatientOnlyCategory
+        ? serviceOptions.filter((option) => option.isInpatient)
+        : serviceOptions,
+    [isInpatientOnlyCategory, serviceOptions]
+  );
+
+  const handleOwnershipChange = (value: string) => {
+    if (value === 'YC_LIBRARY') {
+      setFormData((prev) => ({
+        ...prev,
+        templateSource: 'YC_LIBRARY',
+        isTemplateBacked: true,
+        category: YC_DEFAULT_CATEGORIES.has(prev.category) ? prev.category : ('' as FormsCategory),
+      }));
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      // Fall back to org-shared when leaving YC default so a custom template
+      // always has a concrete scope; keep an existing custom scope otherwise.
+      templateSource:
+        prev.templateSource && prev.templateSource !== 'YC_LIBRARY'
+          ? prev.templateSource
+          : 'ORG_TEMPLATE',
+      isTemplateBacked: false,
+    }));
+  };
 
   const handleCategoryChange = (category: FormsCategory) => {
     const shouldApplyTemplate = !formData._id || (formData.schema?.length ?? 0) === 0;
@@ -76,7 +139,7 @@ const Details = ({
     }
     const template =
       category && shouldApplyTemplate ? getCategoryTemplate(category) : formData.schema;
-    const clinicalCategories = new Set(['Prescription', 'SOAP', 'Discharge Form']);
+    const clinicalCategories = new Set(['Prescription', 'Discharge Form']);
     let normalizedTemplate = template;
     if (clinicalCategories.has(category)) {
       normalizedTemplate = formData.requiredSigner
@@ -87,6 +150,7 @@ const Details = ({
     setFormData((prev) => ({
       ...prev,
       category,
+      requiredSigner: category === 'SOAP' ? '' : prev.requiredSigner,
       schema: normalizedTemplate,
     }));
   };
@@ -117,7 +181,7 @@ const Details = ({
     }
     // Service is required for all categories except "Custom"
     if (formData.category !== 'Custom' && (!formData.services || formData.services.length === 0)) {
-      errors.services = 'Service is required for this form category';
+      errors.services = 'Services / Packages is required for this form category';
     }
     setFormDataErrors(errors);
     return Object.keys(errors).length === 0;
@@ -172,6 +236,21 @@ const Details = ({
               className="min-h-12!"
             />
             <LabelDropdown
+              placeholder="Template type"
+              defaultOption={getTemplateTypeOption(formData.templateSource)}
+              onSelect={(option) => handleOwnershipChange(option.value)}
+              options={[
+                { label: 'YC default (locked structure)', value: 'YC_LIBRARY' },
+                { label: 'Custom', value: 'CUSTOM' },
+              ]}
+            />
+            {isYcDefault && (
+              <p className="text-caption-2 text-text-secondary">
+                YC default templates have a fixed structure. You can edit field content, but adding,
+                removing, or reordering fields is locked.
+              </p>
+            )}
+            <LabelDropdown
               placeholder="Category"
               defaultOption={formData.category || ''}
               onSelect={(option) => handleCategoryChange(option.value as FormsCategory)}
@@ -200,7 +279,7 @@ const Details = ({
                   if (!nextSigner) {
                     next.schema = removeSignatureFields(next.schema ?? []);
                   } else if (
-                    new Set(['Prescription', 'SOAP', 'Discharge Form']).has(next.category) &&
+                    new Set(['Prescription', 'Discharge Form']).has(next.category) &&
                     !hasSignatureField(next.schema ?? [])
                   ) {
                     next.schema = ensureSingleSignatureAtEnd(next.schema ?? []);
@@ -208,7 +287,11 @@ const Details = ({
                   return next;
                 });
               }}
-              options={RequiredSignerOptions}
+              options={
+                formData.category === 'SOAP'
+                  ? RequiredSignerOptions.filter((option) => option.value === '')
+                  : RequiredSignerOptions
+              }
               error={formDataErrors.requiredSigner}
             />
           </div>
@@ -221,16 +304,41 @@ const Details = ({
               onSelect={(option) => setFormData({ ...formData, usage: option.value as FormsUsage })}
               options={FormsUsageOptions.map((opt) => ({ label: opt, value: opt }))}
             />
+            {!isYcDefault && (
+              <LabelDropdown
+                placeholder="Template scope"
+                defaultOption={formData.templateSource ?? 'ORG_TEMPLATE'}
+                onSelect={(option) =>
+                  setFormData({
+                    ...formData,
+                    templateSource: option.value as FormsProps['templateSource'],
+                  })
+                }
+                options={[
+                  { label: 'Organisation (shared with your team)', value: 'ORG_TEMPLATE' },
+                  { label: 'Personal (only you)', value: 'USER_TEMPLATE' },
+                ]}
+              />
+            )}
             <MultiSelectDropdown
-              placeholder={formData.category === 'Custom' ? 'Service (Optional)' : 'Service'}
+              placeholder={
+                formData.category === 'Custom'
+                  ? 'Services / Packages (Optional)'
+                  : 'Services / Packages'
+              }
               value={formData.services || []}
               error={formDataErrors.services}
               onChange={(e) => {
                 setFormData({ ...formData, services: e });
                 setFormDataErrors((prev) => ({ ...prev, services: undefined }));
               }}
-              options={serviceOptions}
+              options={effectiveServiceOptions}
             />
+            {isInpatientOnlyCategory && (
+              <p className="text-caption-2 text-text-secondary">
+                Task templates apply to in-patient services / packages only.
+              </p>
+            )}
             <MultiSelectDropdown
               placeholder="Species"
               value={formData.species || []}

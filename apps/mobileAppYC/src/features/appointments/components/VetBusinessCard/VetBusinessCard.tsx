@@ -1,5 +1,14 @@
 import React, {useMemo} from 'react';
-import {View, Text, StyleSheet, Image, TouchableOpacity, ViewStyle, ImageSourcePropType, Platform} from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  ViewStyle,
+  ImageSourcePropType,
+  Platform,
+} from 'react-native';
 import {useTheme} from '@/hooks';
 import {Images} from '@/assets/images';
 import {resolveImageSource} from '@/shared/utils/resolveImageSource';
@@ -38,9 +47,14 @@ export const VetBusinessCard: React.FC<VetBusinessCardProps> = ({
 }) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [imageSource, setImageSource] = React.useState<ImageSourcePropType | number | string | undefined>(photo);
+  const [imageSource, setImageSource] = React.useState<
+    ImageSourcePropType | number | string | undefined
+  >(photo);
 
-  const resolvedImageSource = useMemo(() => resolveImageSource(imageSource || photo), [imageSource, photo]);
+  const resolvedImageSource = useMemo(
+    () => resolveImageSource(imageSource || photo),
+    [imageSource, photo],
+  );
 
   const handleImageLoadError = React.useCallback(() => {
     console.log('[VetBusinessCard] Image load failed for:', name);
@@ -59,59 +73,70 @@ export const VetBusinessCard: React.FC<VetBusinessCardProps> = ({
       shadow="sm"
       style={[styles.card, style]}
       fallbackStyle={styles.cardFallback}>
-      <Image source={resolvedImageSource} style={styles.photo} resizeMode="cover" defaultSource={Images.hospitalIcon} onError={handleImageLoadError} />
+      <Image
+        source={resolvedImageSource}
+        style={styles.photo}
+        resizeMode="cover"
+        defaultSource={Images.hospitalIcon}
+        onError={handleImageLoadError}
+      />
       <View style={styles.contentPadding}>
         <View style={styles.infoContainer}>
-        <Text style={styles.name} numberOfLines={2}>{name}</Text>
+          <Text style={styles.name} numberOfLines={2}>
+            {name}
+          </Text>
 
-        {openHours && <Text style={styles.openHours}>{openHours}</Text>}
+          {openHours && <Text style={styles.openHours}>{openHours}</Text>}
 
-        {/* Distance and Rating Row */}
-        {(distance || rating) && (
-          <View style={styles.metaRow}>
-            {distance && (
-              <View style={styles.metaItem}>
-                <Image source={Images.distanceIcon} style={styles.metaIcon} />
-                <Text style={styles.metaText}>{distance}</Text>
-              </View>
-            )}
-            {rating && (
-              <View style={styles.metaItem}>
-                <Image source={Images.starIcon} style={styles.metaIcon} />
-                <Text style={styles.metaText}>{rating}</Text>
-              </View>
-            )}
-          </View>
-        )}
+          {/* Distance and Rating Row */}
+          {(distance || rating) && (
+            <View style={styles.metaRow}>
+              {distance ? (
+                <View style={styles.metaItem}>
+                  <Image source={Images.distanceIcon} style={styles.metaIcon} />
+                  <Text style={styles.metaText}>{distance}</Text>
+                </View>
+              ) : null}
+              {rating && (
+                <View style={styles.metaItem}>
+                  <Image source={Images.starIcon} style={styles.metaIcon} />
+                  <Text style={styles.metaText}>{rating}</Text>
+                </View>
+              )}
+            </View>
+          )}
 
-        {/* Address with icon */}
-        {address && (
-          <View style={styles.addressRow}>
-            <Image source={Images.locationIcon} style={styles.metaIcon} />
-            <Text style={styles.addressText} numberOfLines={2}>
-              {address}
-            </Text>
-          </View>
-        )}
+          {/* Address with icon */}
+          {address && (
+            <View style={styles.addressRow}>
+              <Image source={Images.locationIcon} style={styles.metaIcon} />
+              <Text style={styles.addressText} numberOfLines={2}>
+                {address}
+              </Text>
+            </View>
+          )}
 
-        {/* Website with icon */}
-        {website && (
-          <View style={styles.websiteRow}>
-            <Image source={Images.websiteIcon} style={styles.metaIcon} />
-            <Text style={styles.websiteText} numberOfLines={1}>
-              {website}
-            </Text>
-          </View>
-        )}
+          {/* Website with icon */}
+          {website && (
+            <View style={styles.websiteRow}>
+              <Image source={Images.websiteIcon} style={styles.metaIcon} />
+              <Text style={styles.websiteText} numberOfLines={1}>
+                {website}
+              </Text>
+            </View>
+          )}
 
-        {/* Legacy meta support */}
-        {!!meta && !address && <Text style={styles.meta}>{meta}</Text>}
+          {/* Legacy meta support */}
+          {!!meta && !address && <Text style={styles.meta}>{meta}</Text>}
 
-        {Boolean(cta?.length) && (
-          <TouchableOpacity style={styles.cta} onPress={onPress} activeOpacity={0.7}>
-            <Text style={styles.ctaText}>{cta}</Text>
-          </TouchableOpacity>
-        )}
+          {Boolean(cta?.length) && (
+            <TouchableOpacity
+              style={styles.cta}
+              onPress={onPress}
+              activeOpacity={0.7}>
+              <Text style={styles.ctaText}>{cta}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </LiquidGlassCard>
@@ -129,8 +154,7 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     photo: {
       width: '100%',

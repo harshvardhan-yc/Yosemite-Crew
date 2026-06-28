@@ -78,7 +78,18 @@ const DsraSchema = new Schema(
     },
     lawBasis: {
       type: String,
-      enum: ["GDPR", "CCPA", "UK_GDPR", "OTHER"],
+      enum: [
+        "GDPR",
+        "CCPA",
+        "UK_GDPR",
+        "LGPD",
+        "PIPEDA",
+        "POPIA",
+        "PDPA",
+        "PIPL",
+        "PA_1988_AU",
+        "OTHER",
+      ],
     },
     otherLawText: String,
     rightsRequested: {
@@ -119,7 +130,7 @@ export interface ContactRequestMongo {
 
   // domain context
   organisationId?: string;
-  companionId?: string;
+  patientId?: string;
   parentId?: string;
 
   // DSAR-specific
@@ -163,7 +174,7 @@ const ContactRequestSchema = new Schema(
     email: { type: String },
 
     organisationId: { type: String, index: true },
-    companionId: { type: String, index: true },
+    patientId: { type: String, index: true },
     parentId: { type: String, index: true },
 
     dsarDetails: { type: DsraSchema, required: false },

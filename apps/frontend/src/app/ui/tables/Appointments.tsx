@@ -12,7 +12,6 @@ import { Appointment } from '@yosemite-crew/types';
 import { formatDateLabel, formatTimeLabel } from '@/app/lib/forms';
 
 import {
-  acceptAppointment,
   cancelAppointment,
   rejectAppointment,
 } from '@/app/features/appointments/services/appointmentService';
@@ -39,6 +38,15 @@ import {
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { formatCompanionNameWithOwnerLastName, getOwnerFirstName } from '@/app/lib/companionName';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
+import {
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+} from '@/app/lib/appointmentWorkspace';
+import { startRouteLoader } from '@/app/lib/routeLoader';
+import { AppointmentModePill } from '@/app/features/appointments/components/AppointmentCardContent';
+import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
+import { getAppointmentRoomDisplay } from '@/app/lib/appointmentRoomDisplay';
 
 import './DataTable.css';
 import { getSafeImageUrl, ImageType } from '@/app/lib/urls';
@@ -61,6 +69,7 @@ type AppointmentTableProps = {
   filteredList: Appointment[];
   setActiveAppointment?: (appointment: Appointment) => void;
   setViewPopup?: React.Dispatch<React.SetStateAction<boolean>>;
+  setDetailPopup?: React.Dispatch<React.SetStateAction<boolean>>;
   setViewIntent?: (intent: AppointmentViewIntent | null) => void;
   setReschedulePopup?: React.Dispatch<React.SetStateAction<boolean>>;
   setChangeStatusPopup?: React.Dispatch<React.SetStateAction<boolean>>;
@@ -70,10 +79,23 @@ type AppointmentTableProps = {
   small?: boolean;
 };
 
-const Appointments = ({
+const handleCancelAppointment = async (appointment: Appointment) => {
+  try {
+    if (appointment.status === 'REQUESTED') {
+      await rejectAppointment(appointment);
+      return;
+    }
+    await cancelAppointment(appointment);
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+const AppointmentsComponent = ({
   filteredList,
   setActiveAppointment,
   setViewPopup,
+  setDetailPopup,
   setViewIntent,
   setReschedulePopup,
   setChangeStatusPopup,
@@ -86,6 +108,8 @@ const Appointments = ({
   useLoadTeam();
   const teams = useTeamForPrimaryOrg();
   const orgsById = useOrgStore((s) => s.orgsById);
+  const encountersById = useAppointmentWorkspaceStore((s) => s.encountersById);
+  const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
   const invoices = useInvoicesForPrimaryOrg();
   const invoicesByAppointmentId = React.useMemo(
     () => createInvoiceByAppointmentId(invoices),
@@ -116,10 +140,25 @@ const Appointments = ({
   const handleViewAppointment = (appointment: Appointment, intent?: AppointmentViewIntent) => {
     setActiveAppointment?.(appointment);
     setViewIntent?.(intent ?? null);
-    setViewPopup?.(true);
+    if (setViewPopup) {
+      setViewPopup(true);
+      return;
+    }
+    setDetailPopup?.(true);
+  };
+
+  const handleWorkspaceAppointment = (appointment: Appointment, intent?: AppointmentViewIntent) => {
+    if (!appointment.id) return;
+    if (!canEnterAppointmentWorkspace(appointment.status)) {
+      handleViewAppointment(appointment, intent);
+      return;
+    }
+    startRouteLoader();
+    router.push(buildWorkspaceHrefForIntent(appointment.id, intent));
   };
 
   const handleViewAppointmentHistory = (appointment: Appointment) => {
+    startRouteLoader();
     router.push(
       buildAppointmentCompanionHistoryHref(
         appointment.id,
@@ -145,43 +184,28 @@ const Appointments = ({
     setChangeRoomPopup?.(true);
   };
 
-  const handleAcceptAppointment = async (appointment: Appointment) => {
-    try {
-      await acceptAppointment(appointment);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const handleCancelAppointment = async (appointment: Appointment) => {
-    try {
-      if (appointment.status === 'REQUESTED') {
-        await rejectAppointment(appointment);
-        return;
-      }
-      await cancelAppointment(appointment);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
   const columns: Column<Appointment>[] = [
     {
       label: '',
       key: 'logo',
       width: '56px',
       render: (item: Appointment) => (
-        <div className="appointment-profile w-10 h-10">
-          <Image
-            src={getSafeImageUrl(
-              getAppointmentCompanionPhotoUrl(item.companion),
-              item.companion.species as ImageType
-            )}
-            alt=""
-            height={40}
-            width={40}
-            className="h-10 w-10 rounded-full object-cover"
-          />
+        <div className="appointment-profile size-10">
+          {(() => {
+            const companion = item.companion ?? item.patient;
+            return (
+              <Image
+                src={getSafeImageUrl(
+                  getAppointmentCompanionPhotoUrl(companion),
+                  companion.species as ImageType
+                )}
+                alt=""
+                height={40}
+                width={40}
+                className="size-10 rounded-full object-cover"
+              />
+            );
+          })()}
         </div>
       ),
     },
@@ -229,10 +253,24 @@ const Appointments = ({
     {
       label: 'Room',
       key: 'room',
-      width: '100px',
-      render: (item: Appointment) => (
-        <div className="appointment-profile-title">{item.room?.name || '-'}</div>
-      ),
+      width: '130px',
+      render: (item: Appointment) => {
+        const roomDisplay = getAppointmentRoomDisplay(item, encountersById, roomUnitsById);
+        return (
+          <div className="appointment-profile-two">
+            <div className="appointment-profile-title">{roomDisplay.roomName}</div>
+            {roomDisplay.unitLabel && (
+              <div className="appointment-profile-sub text-[12px]">{roomDisplay.unitLabel}</div>
+            )}
+            <AppointmentModePill
+              appointment={item}
+              className="mt-1 h-6 w-fit px-2.5 text-[10px]"
+              iconSize={12}
+              tone="strong"
+            />
+          </div>
+        );
+      },
     },
     {
       label: 'Date/Time',
@@ -272,8 +310,8 @@ const Appointments = ({
         return (
           <div className="appointment-profile-two">
             {supportStaff.length > 0 ? (
-              supportStaff.map((sup, i) => (
-                <div key={'sup' + i} className="appointment-profile-sub">
+              supportStaff.map((sup) => (
+                <div key={sup.id} className="appointment-profile-sub">
                   {sup.name}
                 </div>
               ))
@@ -333,9 +371,10 @@ const Appointments = ({
                   className="table-action-tooltip"
                 >
                   <button
+                    type="button"
                     className="action-btn"
                     style={{ background: 'var(--color-success-100)' }}
-                    onClick={() => handleAcceptAppointment(item)}
+                    onClick={() => handleChangeStatusAppointment(item)}
                   >
                     <FaCheckCircle size={22} color="var(--color-success-400)" />
                   </button>
@@ -346,6 +385,7 @@ const Appointments = ({
                   className="table-action-tooltip"
                 >
                   <button
+                    type="button"
                     onClick={() => handleCancelAppointment(item)}
                     className="action-btn"
                     style={{ background: 'var(--color-danger-100)' }}
@@ -367,16 +407,18 @@ const Appointments = ({
                 className="table-action-tooltip"
               >
                 <button
+                  type="button"
                   onClick={() => handleViewAppointment(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 >
                   <IoEyeOutline size={20} color="var(--color-neutral-900)" />
                 </button>
               </GlassTooltip>
               <GlassTooltip content="Overview" side="bottom" className="table-action-tooltip">
                 <button
+                  type="button"
                   onClick={() => handleViewAppointmentHistory(item)}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title="Appointment overview"
                 >
                   <RiHistoryLine size={18} color="var(--color-neutral-900)" />
@@ -389,8 +431,9 @@ const Appointments = ({
                   className="table-action-tooltip"
                 >
                   <button
+                    type="button"
                     onClick={() => handleChangeStatusAppointment(item)}
-                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   >
                     <MdOutlineAutorenew size={18} color="var(--color-neutral-900)" />
                   </button>
@@ -399,8 +442,9 @@ const Appointments = ({
               {canEditAppointments && allowCalendarDrag(item.status as any) && (
                 <GlassTooltip content="Reschedule" side="bottom" className="table-action-tooltip">
                   <button
+                    type="button"
                     onClick={() => handleRescheduleAppointment(item)}
-                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   >
                     <IoIosCalendar size={18} color="var(--color-neutral-900)" />
                   </button>
@@ -409,8 +453,9 @@ const Appointments = ({
               {canEditAppointments && canAssignAppointmentRoom(item.status) && (
                 <GlassTooltip content="Assign room" side="bottom" className="table-action-tooltip">
                   <button
+                    type="button"
                     onClick={() => handleChangeRoomAppointment(item)}
-                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                    className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   >
                     <MdMeetingRoom size={18} color="var(--color-neutral-900)" />
                   </button>
@@ -422,8 +467,9 @@ const Appointments = ({
                 className="table-action-tooltip"
               >
                 <button
-                  onClick={() => handleViewAppointment(item, getSoapViewIntent(item))}
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  type="button"
+                  onClick={() => handleWorkspaceAppointment(item, getSoapViewIntent(item))}
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                   title={clinicalNotesLabel}
                 >
                   <IoDocumentTextOutline size={18} color="var(--color-neutral-900)" />
@@ -435,26 +481,28 @@ const Appointments = ({
                 className="table-action-tooltip"
               >
                 <button
+                  type="button"
                   onClick={() =>
-                    handleViewAppointment(item, {
+                    handleWorkspaceAppointment(item, {
                       label: 'finance',
                       subLabel: 'summary',
                     })
                   }
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 >
                   <IoCardOutline size={18} color="var(--color-neutral-900)" />
                 </button>
               </GlassTooltip>
               <GlassTooltip content="Lab tests" side="bottom" className="table-action-tooltip">
                 <button
+                  type="button"
                   onClick={() =>
-                    handleViewAppointment(item, {
+                    handleWorkspaceAppointment(item, {
                       label: 'labs',
                       subLabel: 'idexx-labs',
                     })
                   }
-                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+                  className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
                 >
                   <MdScience size={18} color="var(--color-neutral-900)" />
                 </button>
@@ -487,11 +535,12 @@ const Appointments = ({
               </div>
             );
           }
-          return filteredList.map((item, i) => (
+          return filteredList.map((item) => (
             <AppointmentCard
-              key={'key-appointment' + i}
+              key={item.id}
               appointment={item}
               handleViewAppointment={handleViewAppointment}
+              handleWorkspaceAppointment={handleWorkspaceAppointment}
               getSoapViewIntent={getSoapViewIntent}
               handleRescheduleAppointment={handleRescheduleAppointment}
               handleChangeStatusAppointment={handleChangeStatusAppointment}
@@ -505,4 +554,5 @@ const Appointments = ({
   );
 };
 
+const Appointments = React.memo(AppointmentsComponent);
 export default Appointments;

@@ -1,8 +1,25 @@
-import {createSlice, createAsyncThunk, type PayloadAction} from '@reduxjs/toolkit';
-import type {BusinessesState, VetBusiness, VetService, SlotWindow} from './types';
+import {
+  createSlice,
+  createAsyncThunk,
+  type PayloadAction,
+} from '@reduxjs/toolkit';
+import type {
+  BusinessesState,
+  VetBusiness,
+  VetPackage,
+  VetService,
+  SlotWindow,
+} from './types';
 import {appointmentApi} from './services/appointmentsService';
-import {getFreshStoredTokens, isTokenExpired} from '@/features/auth/sessionManager';
-import {fetchBusinessDetails, fetchGooglePlacesImage} from '@/features/linkedBusinesses';
+import {
+  getFreshStoredTokens,
+  isTokenExpired,
+} from '@/features/auth/sessionManager';
+import LocationService from '@/shared/services/LocationService';
+import {
+  fetchBusinessDetails,
+  fetchGooglePlacesImage,
+} from '@/features/linkedBusinesses';
 import {isDummyPhoto} from '@/features/appointments/utils/photoUtils';
 
 const toErrorMessage = (error: unknown, fallback: string) =>
@@ -24,49 +41,71 @@ const ensureAccessTokenOptional = async (): Promise<string | null> => {
   }
 };
 
-const DEFAULT_NEARBY = {lat: 23, lng: 34.909, page: 1};
-const DEFAULT_SEARCH = {
-  serviceName: '',
-  lat: 39.7834,
-  lng: -89.625,
-};
-
 type FetchBusinessesArgs = {
   lat?: number;
   lng?: number;
   page?: number;
+  limit?: number;
   serviceName?: string;
 };
 
 export const fetchBusinesses = createAsyncThunk<
-  {businesses: VetBusiness[]; services: VetService[]; meta?: any},
+  {
+    businesses: VetBusiness[];
+    services: VetService[];
+    packages: VetPackage[];
+    meta?: any;
+  },
   FetchBusinessesArgs | undefined
 >('businesses/fetch', async (params, {rejectWithValue}) => {
   try {
     const accessToken = await ensureAccessTokenOptional();
+
+    // Resolve lat/lng: caller-supplied → live GPS → omit (backend returns all PIMS businesses)
+    let resolvedLat = params?.lat;
+    let resolvedLng = params?.lng;
+    if (resolvedLat == null || resolvedLng == null) {
+      try {
+        const coords = await LocationService.getCurrentPosition();
+        resolvedLat = coords.latitude;
+        resolvedLng = coords.longitude;
+      } catch {
+        // Permission denied or GPS unavailable — fetch top 10 PIMS businesses without location
+      }
+    }
+
+    const noLocation = resolvedLat == null || resolvedLng == null;
+
     const nearby = await appointmentApi.fetchNearbyBusinesses({
-      lat: params?.lat ?? DEFAULT_NEARBY.lat,
-      lng: params?.lng ?? DEFAULT_NEARBY.lng,
-      page: params?.page ?? DEFAULT_NEARBY.page,
+      lat: resolvedLat,
+      lng: resolvedLng,
+      page: noLocation ? 1 : (params?.page ?? 1),
+      limit: noLocation ? 10 : params?.limit,
       accessToken: accessToken ?? undefined,
     });
 
-    let search = {businesses: [] as VetBusiness[], services: [] as VetService[]};
+    let search = {
+      businesses: [] as VetBusiness[],
+      services: [] as VetService[],
+      packages: [] as VetPackage[],
+    };
     if (params?.serviceName) {
       search = await appointmentApi.searchBusinessesByService({
         serviceName: params.serviceName,
-        lat: params.lat ?? DEFAULT_SEARCH.lat,
-        lng: params.lng ?? DEFAULT_SEARCH.lng,
+        lat: resolvedLat,
+        lng: resolvedLng,
         accessToken: accessToken ?? undefined,
       });
     }
 
     const mergedBusinesses = [...nearby.businesses, ...search.businesses];
     const mergedServices = [...nearby.services, ...search.services];
+    const mergedPackages = [...nearby.packages, ...search.packages];
 
     return {
       businesses: mergedBusinesses,
       services: mergedServices,
+      packages: mergedPackages,
       meta: nearby.meta,
     };
   } catch (error) {
@@ -86,15 +125,18 @@ export const fetchServiceSlots = createAsyncThunk(
   ) => {
     try {
       const accessToken = await ensureAccessTokenOptional();
-      const {date: resolvedDate, windows} = await appointmentApi.fetchBookableSlots({
-        serviceId,
-        organisationId: businessId,
-        date,
-        accessToken: accessToken ?? undefined,
-      });
+      const {date: resolvedDate, windows} =
+        await appointmentApi.fetchBookableSlots({
+          serviceId,
+          organisationId: businessId,
+          date,
+          accessToken: accessToken ?? undefined,
+        });
       return {businessId, serviceId, date: resolvedDate, windows};
     } catch (error) {
-      return rejectWithValue(toErrorMessage(error, 'Failed to fetch availability'));
+      return rejectWithValue(
+        toErrorMessage(error, 'Failed to fetch availability'),
+      );
     }
   },
 );
@@ -103,6 +145,7 @@ const initialState: BusinessesState = {
   businesses: [],
   employees: [],
   services: [],
+  packages: [],
   availability: [],
   loading: false,
   error: null,
@@ -111,12 +154,15 @@ const initialState: BusinessesState = {
 const dedupeById = <T extends {id: string}>(items: T[]): T[] => {
   const map = new Map<string, T>();
   items.forEach(item => {
-    map.set(item.id, {...(map.get(item.id) ?? {} as T), ...item});
+    map.set(item.id, {...(map.get(item.id) ?? ({} as T)), ...item});
   });
   return Array.from(map.values());
 };
 
-const toDateFromTime = (time: string | null | undefined, date: string): Date | null => {
+const toDateFromTime = (
+  time: string | null | undefined,
+  date: string,
+): Date | null => {
   if (!time) return null;
   const [yyyy, mm, dd] = date.split('-').map(Number);
   const [hh, min] = time.split(':').map(Number);
@@ -140,15 +186,25 @@ const toLocalTimeString = (d: Date | null) =>
       })
     : null;
 
-const normalizeSlotsToLocal = (windows: SlotWindow[] | undefined, date: string): SlotWindow[] => {
+const normalizeSlotsToLocal = (
+  windows: SlotWindow[] | undefined,
+  date: string,
+): SlotWindow[] => {
   if (!windows?.length) {
     return [];
   }
   return windows.map(window => {
-    const startDate = toDateFromTime(window.startTime ?? (window as any)?.start, date);
-    const endDate = toDateFromTime(window.endTime ?? (window as any)?.end ?? window.startTime, date);
+    const startDate = toDateFromTime(
+      window.startTime ?? (window as any)?.start,
+      date,
+    );
+    const endDate = toDateFromTime(
+      window.endTime ?? (window as any)?.end ?? window.startTime,
+      date,
+    );
     const startLocal = toLocalTimeString(startDate) ?? window.startTime;
-    const endLocal = toLocalTimeString(endDate) ?? window.endTime ?? window.startTime;
+    const endLocal =
+      toLocalTimeString(endDate) ?? window.endTime ?? window.startTime;
     return {
       ...window,
       startTime: startLocal ?? '',
@@ -186,10 +242,12 @@ const businessesSlice = createSlice({
         // Replace (not append) to avoid stale data and preserve empty responses
         state.businesses = dedupeById(action.payload.businesses);
         state.services = dedupeById(action.payload.services);
+        state.packages = dedupeById(action.payload.packages);
       })
       .addCase(fetchBusinesses.rejected, (state, action) => {
         state.loading = false;
-        state.error = (action.payload as string) ?? 'Failed to fetch businesses';
+        state.error =
+          (action.payload as string) ?? 'Failed to fetch businesses';
       })
       .addCase(fetchBusinessDetails.fulfilled, (state, action) => {
         const {placeId, photoUrl, phoneNumber, website} = action.payload;
@@ -212,12 +270,7 @@ const businessesSlice = createSlice({
         });
       })
       .addCase(fetchServiceSlots.fulfilled, (state, action) => {
-        const {businessId, serviceId, date, windows} = action.payload as {
-          businessId: string;
-          serviceId: string;
-          date: string;
-          windows: SlotWindow[];
-        };
+        const {businessId, serviceId, date, windows} = action.payload;
         const normalizedWindows = normalizeSlotsToLocal(windows, date);
         const idx = state.availability.findIndex(
           av => av.businessId === businessId && av.serviceId === serviceId,

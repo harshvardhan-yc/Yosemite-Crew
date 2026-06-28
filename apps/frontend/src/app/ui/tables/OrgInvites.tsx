@@ -95,6 +95,7 @@ const OrgInvites = ({ invites, setInvites, onAccepting, onNavigate }: OrgInvites
         return (
           <div className="action-btn-col">
             <button
+              type="button"
               onClick={() => handleAccept(item)}
               disabled={isProcessing || processingId !== null}
               className="action-btn"
@@ -104,6 +105,7 @@ const OrgInvites = ({ invites, setInvites, onAccepting, onNavigate }: OrgInvites
               <FaCheckCircle size={22} color="var(--color-success-400)" />
             </button>
             <button
+              type="button"
               onClick={() => handleReject(item)}
               disabled={isProcessing || processingId !== null}
               className="action-btn"

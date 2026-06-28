@@ -9,6 +9,7 @@ import SearchDropdown from '@/app/ui/inputs/SearchDropdown';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import Close from '@/app/ui/primitives/Icons/Close';
 import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
+import { YosemiteLoader } from '@/app/ui/overlays/Loader';
 import LabResultValue from '@/app/ui/widgets/LabResultValue';
 import { Appointment } from '@yosemite-crew/types';
 import { useOrgStore } from '@/app/stores/orgStore';
@@ -41,16 +42,16 @@ const IDEXX_REGIONAL_AVAILABILITY_DISCLAIMER =
   'IDEXX integration availability is currently limited to the USA, Canada, and the UK.';
 
 const getOrderResultProgressFromResults = (allResults: LabResult[], orderId: string): string => {
+  const orderIdStr = String(orderId).trim();
   const statuses = new Set(
-    allResults
-      .filter((result) => getResultOrderId(result) === String(orderId).trim())
-      .map((result) => {
-        const raw = result.rawPayload as { status?: string; statusDetail?: string } | undefined;
-        return normalizeResultProgress(
-          result.statusDetail ?? result.status ?? raw?.statusDetail ?? raw?.status
-        );
-      })
-      .filter(Boolean)
+    allResults.flatMap((result) => {
+      if (getResultOrderId(result) !== orderIdStr) return [];
+      const raw = result.rawPayload;
+      const status = normalizeResultProgress(
+        result.statusDetail ?? result.status ?? raw?.statusDetail ?? raw?.status
+      );
+      return status ? [status] : [];
+    })
   );
   if (statuses.has('In process')) return 'In process';
   if (statuses.has('Error')) return 'Error';
@@ -59,11 +60,29 @@ const getOrderResultProgressFromResults = (allResults: LabResult[], orderId: str
 };
 
 const normalizeOrders = (orders: LabOrder[]): LabOrder[] =>
-  [...orders].sort((a, b) => {
+  orders.toSorted((a, b) => {
     const aDate = new Date(orderSortDate(a)).getTime();
     const bDate = new Date(orderSortDate(b)).getTime();
     return bDate - aDate;
   });
+
+/**
+ * Lists lab orders scoped to the appointment, falling back to companion-only when the labs
+ * provider does not recognise the appointment (e.g. it was never registered as a lab order
+ * context). The clinician still sees the companion's lab history instead of an error.
+ */
+const listIdexxOrdersWithFallback = async (
+  organisationId: string,
+  appointmentId: string,
+  companionId?: string
+): Promise<LabOrder[]> => {
+  try {
+    return await listIdexxOrders({ organisationId, appointmentId, companionId });
+  } catch (error) {
+    if (!companionId) throw error;
+    return listIdexxOrders({ organisationId, companionId });
+  }
+};
 
 const resolveLatestOrder = (prev: LabOrder | null, normalizedOrders: LabOrder[]): LabOrder => {
   if (!prev) return normalizedOrders[0];
@@ -92,7 +111,7 @@ const getResultOrderId = (result: LabResult) => {
   ).trim();
 };
 
-const formatTestPrice = (test: IdexxTest) => {
+export const formatTestPrice = (test: IdexxTest) => {
   const amount = String(test.meta?.listPrice ?? '').trim();
   if (!amount) return 'Rate unavailable';
   const currency = String(test.meta?.currencyCode ?? '').trim();
@@ -100,20 +119,20 @@ const formatTestPrice = (test: IdexxTest) => {
   const numericAmount = Number.parseFloat(amount.replaceAll(',', '.').replaceAll(/[^0-9.+-]/g, ''));
   if (!Number.isFinite(numericAmount)) return `${currency.toUpperCase()} ${amount}`;
   try {
-    return new Intl.NumberFormat(undefined, {
+    return numericAmount.toLocaleString(undefined, {
       style: 'currency',
       currency: currency.toUpperCase(),
       currencyDisplay: 'symbol',
-    }).format(numericAmount);
+    });
   } catch {
     return `${currency.toUpperCase()} ${amount}`;
   }
 };
 
-const getTestTurnaround = (test: IdexxTest) =>
+export const getTestTurnaround = (test: IdexxTest) =>
   String(test.meta?.turnaround ?? '').trim() || 'TAT not listed';
 
-const getTestSpecimen = (test: IdexxTest) =>
+export const getTestSpecimen = (test: IdexxTest) =>
   String(test.meta?.specimen ?? '').trim() || 'Specimen not listed';
 
 const formatCensusIvlsDevices = (entry: CensusEntry | null) => {
@@ -162,7 +181,7 @@ const getMeterMeta = (test: LabResultTest) => {
   return { canRender: true, percent, markerClass };
 };
 
-const toTitleCase = (value?: string | null) => {
+export const toTitleCase = (value?: string | null) => {
   const raw = String(value ?? '').trim();
   if (!raw) return '-';
   const normalized = raw.toLowerCase().replaceAll(/[_-]+/g, ' ');
@@ -171,7 +190,7 @@ const toTitleCase = (value?: string | null) => {
 
 const orderSortDate = (order: LabOrder) => order.updatedAt ?? order.createdAt ?? '';
 
-const resolveOrderUiUrl = (order: LabOrder | null) => {
+export const resolveOrderUiUrl = (order: LabOrder | null) => {
   if (!order) return '';
   const nested = String(
     (order as unknown as { responsePayload?: { uiURL?: string } })?.responsePayload?.uiURL ?? ''
@@ -180,7 +199,7 @@ const resolveOrderUiUrl = (order: LabOrder | null) => {
   return getSafeIdexxIframeUrl(raw);
 };
 
-const resolveOrderPdfUrl = (order: LabOrder | null) => {
+export const resolveOrderPdfUrl = (order: LabOrder | null) => {
   if (!order) return '';
   const nested = String(
     (order as unknown as { responsePayload?: { pdfURL?: string } })?.responsePayload?.pdfURL ?? ''
@@ -204,6 +223,24 @@ const formatOrderStatus = (order: LabOrder) => {
   return toTitleCase(status || '-');
 };
 
+const getOrderActionLabel = (order: LabOrder): string => {
+  const statusKey = String(order.status ?? '')
+    .trim()
+    .toUpperCase()
+    .replaceAll(/\s+/g, '_');
+  if (statusKey === 'SUBMITTED') return 'Follow up';
+  if (statusKey === 'CREATED' || !statusKey) return 'Continue';
+  return 'Open IDEXX';
+};
+
+const getOrderActionSource = (order: LabOrder): 'order' | 'followup' =>
+  String(order.status ?? '')
+    .trim()
+    .toUpperCase()
+    .replaceAll(/\s+/g, '_') === 'SUBMITTED'
+    ? 'followup'
+    : 'order';
+
 const normalizeResultProgress = (status?: string | null) => {
   const key = String(status ?? '')
     .trim()
@@ -217,7 +254,7 @@ const normalizeResultProgress = (status?: string | null) => {
   return '';
 };
 
-const getOrderStatusBadgeClass = (
+export const getOrderStatusBadgeClass = (
   order: LabOrder,
   resultProgressByOrderId: Map<string, string>
 ) => {
@@ -239,9 +276,6 @@ const shouldCloseOrderIframe = (args: {
   initialStatus: string | null;
   nextStatus: string;
   nextHasAcknowledgement: boolean;
-  sawNonSubmittedStatus: boolean;
-  initialUpdatedAt: string | null;
-  nextUpdatedAt?: string;
   initialOrderId: string | null;
   newestKnownOrderId: string;
 }) => {
@@ -250,42 +284,33 @@ const shouldCloseOrderIframe = (args: {
     initialStatus,
     nextStatus,
     nextHasAcknowledgement,
-    sawNonSubmittedStatus,
-    initialUpdatedAt,
-    nextUpdatedAt,
     initialOrderId,
     newestKnownOrderId,
   } = args;
-
-  if (source === 'order') {
-    const initialStatusKey = String(initialStatus ?? '')
-      .trim()
-      .toUpperCase()
-      .replaceAll(/\s+/g, '_');
-    const startedAsCreated = initialStatusKey === 'CREATED' || !initialStatusKey;
-    const startedAsInProgress = ['IN_PROCESS', 'INPROCESS', 'PENDING'].includes(initialStatusKey);
-    const updatedAtChanged = Boolean(
-      initialUpdatedAt && nextUpdatedAt && nextUpdatedAt !== initialUpdatedAt
+  const initialStatusKey = String(initialStatus ?? '')
+    .trim()
+    .toUpperCase()
+    .replaceAll(/\s+/g, '_');
+  const nextStatusKey = String(nextStatus ?? '')
+    .trim()
+    .toUpperCase()
+    .replaceAll(/\s+/g, '_');
+  if (!nextStatusKey) return false;
+  if (source === 'followup') {
+    return (
+      nextHasAcknowledgement &&
+      Boolean(initialOrderId) &&
+      Boolean(newestKnownOrderId) &&
+      newestKnownOrderId !== initialOrderId
     );
-    if (startedAsCreated) {
-      return nextStatus === 'SUBMITTED' && nextHasAcknowledgement;
-    }
-    if (startedAsInProgress) {
-      return (
-        (sawNonSubmittedStatus || updatedAtChanged) &&
-        nextStatus === 'SUBMITTED' &&
-        nextHasAcknowledgement
-      );
-    }
-    return false;
   }
-
-  const updatedAtChanged = Boolean(
-    initialUpdatedAt && nextUpdatedAt && nextUpdatedAt !== initialUpdatedAt
-  );
-  const followUpOrderCreated =
-    Boolean(initialOrderId) && Boolean(newestKnownOrderId) && newestKnownOrderId !== initialOrderId;
-  return updatedAtChanged || followUpOrderCreated;
+  const startedAsDraft =
+    initialStatusKey === 'CREATED' ||
+    initialStatusKey === 'IN_PROCESS' ||
+    initialStatusKey === 'INPROCESS' ||
+    initialStatusKey === 'PENDING' ||
+    !initialStatusKey;
+  return startedAsDraft && nextStatusKey === 'SUBMITTED' && nextHasAcknowledgement;
 };
 
 // ---------- Sub-components ----------
@@ -305,7 +330,7 @@ const LabResultMeter = ({ test }: { test: LabResultTest }) => {
   );
 };
 
-const LabResultCategoryTable = ({
+export const LabResultCategoryTable = ({
   category,
   resultId,
 }: {
@@ -391,10 +416,10 @@ const PastOrderCard = ({
       ) : (
         <Primary
           href="#"
-          text="Open IDEXX"
+          text={getOrderActionLabel(order)}
           onClick={() => {
             setActiveOrderForActions(order);
-            openOrderIframe('order', order.status, order);
+            openOrderIframe(getOrderActionSource(order), order.status, order);
           }}
           isDisabled={!resolveOrderUiUrl(order)}
         />
@@ -411,7 +436,7 @@ const PastOrderCard = ({
 
 // ---------- Custom hook ----------
 
-const useLabTests = (activeAppointment: Appointment | null) => {
+export const useLabTests = (activeAppointment: Appointment | null) => {
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const idexxIntegration = useIntegrationByProviderForPrimaryOrg('IDEXX');
   const [integrationEnabled, setIntegrationEnabled] = useState(false);
@@ -441,21 +466,22 @@ const useLabTests = (activeAppointment: Appointment | null) => {
   const [error, setError] = useState<string | null>(null);
   const [showOrderIframe, setShowOrderIframe] = useState(false);
   const [iframeInitialStatus, setIframeInitialStatus] = useState<string | null>(null);
-  const [iframeInitialResultProgress, setIframeInitialResultProgress] = useState<string | null>(
-    null
-  );
-  const [iframeInitialUpdatedAt, setIframeInitialUpdatedAt] = useState<string | null>(null);
   const [iframeInitialOrderId, setIframeInitialOrderId] = useState<string | null>(null);
   const [iframeOrderUiUrl, setIframeOrderUiUrl] = useState<string | null>(null);
   const [iframeOpenSource, setIframeOpenSource] = useState<'order' | 'followup'>('order');
-  const [iframeSawNonSubmittedStatus, setIframeSawNonSubmittedStatus] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState('IDEXX PDF');
   const [pdfPreviewLoadingId, setPdfPreviewLoadingId] = useState<string | null>(null);
+  const lastIframeOpenStateRef = React.useRef(false);
 
   const companionId = activeAppointment?.companion?.id;
   const parentId = activeAppointment?.companion?.parent?.id;
+
+  // Stable ref so callbacks can read the latest appointmentOrders without
+  // listing the array as a dep (new array ref every render → infinite loop).
+  const appointmentOrdersRef = React.useRef(appointmentOrders);
+  appointmentOrdersRef.current = appointmentOrders;
   const normalizedOrderStatus = getNormalizedLifecycleStatus(latestOrder);
   const needsInitialOrderPlacement = normalizedOrderStatus === 'CREATED';
 
@@ -474,7 +500,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     latestOrder &&
     resolveOrderUiUrl(latestOrder) &&
     !['INHOUSE', 'IN_HOUSE'].includes(String(latestOrder.modality ?? '').toUpperCase()) &&
-    normalizedOrderStatus !== 'CREATED'
+    normalizedOrderStatus === 'SUBMITTED'
   );
 
   const getOrderDisplayStatus = useCallback(
@@ -496,10 +522,14 @@ const useLabTests = (activeAppointment: Appointment | null) => {
   }, []);
 
   useEffect(() => {
-    const leadName = activeAppointment?.lead?.name ?? '';
-    const firstSupportName = activeAppointment?.supportStaff?.[0]?.name ?? '';
+    const leadName = (activeAppointment?.lead?.name ?? '').trim();
+    // Technician defaults to the first support staff member who isn't the lead,
+    // so the Veterinarian (lead) and Technician fields don't echo the same person.
+    const supportTechnicianName = (activeAppointment?.supportStaff ?? [])
+      .map((staff) => (staff.name ?? '').trim())
+      .find((name) => name && name !== leadName);
     setVeterinarian(leadName);
-    setTechnician(firstSupportName || leadName);
+    setTechnician(supportTechnicianName ?? '');
   }, [activeAppointment?.id, activeAppointment?.lead?.name, activeAppointment?.supportStaff]);
 
   useEffect(() => {
@@ -564,6 +594,10 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     void fetchTestsPage(testsPage + 1, true);
   }, [fetchTestsPage, testsHasMore, testsLoadingMore, testsPage]);
 
+  // refreshResultsRef lets refreshAppointmentOrders call refreshResults without
+  // creating a circular dep — refreshResults is defined after this callback.
+  const refreshResultsRef = React.useRef<() => Promise<void>>(async () => undefined);
+
   const refreshAppointmentOrders = useCallback(async () => {
     if (!primaryOrgId || !integrationEnabled || !activeAppointment?.id) {
       setAppointmentOrders([]);
@@ -573,18 +607,20 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     setOrdersLoading(true);
     setError(null);
     try {
-      const orders = await listIdexxOrders({
-        organisationId: primaryOrgId,
-        appointmentId: activeAppointment.id,
-        companionId,
-      });
+      const orders = await listIdexxOrdersWithFallback(
+        primaryOrgId,
+        activeAppointment.id,
+        companionId
+      );
       const normalized = normalizeOrders(orders);
       setAppointmentOrders(normalized);
+      appointmentOrdersRef.current = normalized;
       setLatestOrder((prev) => {
         if (!normalized.length) return null;
         if (!prev) return normalized[0];
         return normalized.find((order) => order._id === prev._id) ?? normalized[0];
       });
+      await refreshResultsRef.current();
     } catch (e) {
       setAppointmentOrders([]);
       setLatestOrder(null);
@@ -610,7 +646,10 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     setRefreshingResults(true);
     try {
       const appointmentOrderIds = new Set(
-        appointmentOrders.map((order) => String(order.idexxOrderId ?? '').trim()).filter(Boolean)
+        appointmentOrdersRef.current.flatMap((order) => {
+          const orderId = String(order.idexxOrderId ?? '').trim();
+          return orderId ? [orderId] : [];
+        })
       );
       if (appointmentOrderIds.size === 0) {
         setResults([]);
@@ -629,7 +668,10 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     } finally {
       setRefreshingResults(false);
     }
-  }, [appointmentOrders, companionId, integrationEnabled, primaryOrgId]);
+  }, [companionId, integrationEnabled, primaryOrgId]);
+
+  // Keep the ref current so refreshAppointmentOrders can call the latest version.
+  refreshResultsRef.current = refreshResults;
 
   useEffect(() => {
     void refreshResults();
@@ -653,13 +695,14 @@ const useLabTests = (activeAppointment: Appointment | null) => {
         });
         setLatestOrder(next);
         upsertAppointmentOrder(next);
-        let newestKnownOrderId = String(next.idexxOrderId ?? '').trim();
 
         if (iframeOpenSource === 'followup' && activeAppointment?.id) {
+          let newestKnownOrderId = String(next.idexxOrderId ?? '').trim();
           const appointmentOrderIds = new Set(
-            appointmentOrders
-              .map((order) => String(order.idexxOrderId ?? '').trim())
-              .filter(Boolean)
+            appointmentOrdersRef.current.flatMap((order) => {
+              const orderId = String(order.idexxOrderId ?? '').trim();
+              return orderId ? [orderId] : [];
+            })
           );
           if (appointmentOrderIds.size > 0) {
             const allResults = await listIdexxResults(primaryOrgId);
@@ -669,31 +712,37 @@ const useLabTests = (activeAppointment: Appointment | null) => {
               return companionMatch && appointmentOrderIds.has(resultOrderId);
             });
             setResults(filtered);
-
-            const nextProgress = getOrderResultProgressFromResults(filtered, next.idexxOrderId);
-            if ((iframeInitialResultProgress ?? '') !== (nextProgress ?? '') && nextProgress) {
-              setShowOrderIframe(false);
-              return;
-            }
           }
 
-          const refreshedOrders = await listIdexxOrders({
-            organisationId: primaryOrgId,
-            appointmentId: activeAppointment.id,
-            companionId,
-          });
+          const refreshedOrders = await listIdexxOrdersWithFallback(
+            primaryOrgId,
+            activeAppointment.id,
+            companionId
+          );
           const normalizedOrders = normalizeOrders(refreshedOrders);
           if (normalizedOrders.length > 0) {
             setAppointmentOrders(normalizedOrders);
             setLatestOrder((prev) => resolveLatestOrder(prev, normalizedOrders));
             newestKnownOrderId = String(normalizedOrders[0].idexxOrderId ?? '').trim();
           }
+          const nextHasAcknowledgement = Boolean(resolveOrderPdfUrl(next));
+          if (
+            shouldCloseOrderIframe({
+              source: iframeOpenSource,
+              initialStatus: iframeInitialStatus,
+              nextStatus: getNormalizedLifecycleStatus(next),
+              nextHasAcknowledgement,
+              initialOrderId: iframeInitialOrderId,
+              newestKnownOrderId,
+            })
+          ) {
+            setShowOrderIframe(false);
+            return;
+          }
+          return;
         }
 
         const nextStatus = getNormalizedLifecycleStatus(next);
-        if (nextStatus !== 'SUBMITTED') {
-          setIframeSawNonSubmittedStatus(true);
-        }
         const nextHasAcknowledgement = Boolean(resolveOrderPdfUrl(next));
         if (
           shouldCloseOrderIframe({
@@ -701,11 +750,8 @@ const useLabTests = (activeAppointment: Appointment | null) => {
             initialStatus: iframeInitialStatus,
             nextStatus,
             nextHasAcknowledgement,
-            sawNonSubmittedStatus: iframeSawNonSubmittedStatus,
-            initialUpdatedAt: iframeInitialUpdatedAt,
-            nextUpdatedAt: next.updatedAt,
             initialOrderId: iframeInitialOrderId,
-            newestKnownOrderId,
+            newestKnownOrderId: String(next.idexxOrderId ?? '').trim(),
           })
         ) {
           setShowOrderIframe(false);
@@ -724,11 +770,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     iframeInitialOrderId,
     iframeOpenSource,
     iframeInitialStatus,
-    iframeInitialResultProgress,
-    iframeInitialUpdatedAt,
-    iframeSawNonSubmittedStatus,
     upsertAppointmentOrder,
-    appointmentOrders,
     companionId,
   ]);
 
@@ -743,19 +785,24 @@ const useLabTests = (activeAppointment: Appointment | null) => {
       }
       setIframeOpenSource(source);
       setIframeInitialStatus((statusOverride ?? orderForFrame?.status ?? '').toUpperCase() || null);
-      setIframeInitialResultProgress(resultProgressByOrderId.get(frameOrderId) ?? null);
-      setIframeInitialUpdatedAt(orderForFrame?.updatedAt ?? null);
       setIframeInitialOrderId(frameOrderId);
       setIframeOrderUiUrl(frameUiUrl);
-      setIframeSawNonSubmittedStatus(false);
       setShowOrderIframe(true);
     },
-    [latestOrder, resultProgressByOrderId]
+    [latestOrder]
   );
 
   const closeOrderIframeManually = useCallback(() => {
     setShowOrderIframe(false);
   }, []);
+
+  useEffect(() => {
+    const wasOpen = lastIframeOpenStateRef.current;
+    lastIframeOpenStateRef.current = showOrderIframe;
+    if (wasOpen && !showOrderIframe) {
+      void refreshAppointmentOrders();
+    }
+  }, [refreshAppointmentOrders, showOrderIframe]);
 
   const closePdfPreview = useCallback(() => {
     setShowPdfPreview(false);
@@ -852,7 +899,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
     setError(null);
     try {
       const payload = {
-        companionId,
+        patientId: companionId,
         appointmentId: activeAppointment?.id,
         tests: selectedTests.map((test) => test.code),
         modality,
@@ -867,6 +914,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
       setSelectedTests([]);
       setSelectedTestLabel('');
       setQuery('');
+      setNotes('');
       openOrderIframe('order', created.status, created);
       await refreshAppointmentOrders();
       await refreshResults();
@@ -899,7 +947,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
       await addPatientToIdexxCensus({
         organisationId: primaryOrgId,
         payload: {
-          companionId,
+          patientId: companionId,
           parentId: parentId || undefined,
           veterinarian: veterinarian || undefined,
           ivls: selectedIvls ? [selectedIvls] : undefined,
@@ -1038,7 +1086,7 @@ const useLabTests = (activeAppointment: Appointment | null) => {
 
 // ---------- Sub-components ----------
 
-type UseLabTestsReturn = ReturnType<typeof useLabTests>;
+export type UseLabTestsReturn = ReturnType<typeof useLabTests>;
 
 const getCensusStatusLabel = (selectedIvls: string, companionInCensus: boolean): string => {
   if (selectedIvls) return companionInCensus ? 'Already added to census' : 'Not added to census';
@@ -1182,7 +1230,7 @@ const ReferenceLabForm = ({ s }: { s: UseLabTestsReturn }) => (
             key={test.code}
             type="button"
             onClick={() => s.removeTest(test.code)}
-            className="rounded-xl! border border-card-border bg-white px-3 py-2 text-left min-w-[220px] max-w-[280px] transition-colors hover:bg-white"
+            className="rounded-xl! border border-card-border bg-white px-3 py-2 text-left min-w-55 max-w-70 transition-colors hover:bg-white"
             title="Remove test from selection"
           >
             <div className="flex items-start justify-between gap-2">
@@ -1274,13 +1322,7 @@ const LabOrderForm = ({ s }: { s: UseLabTestsReturn }) => (
   </Accordion>
 );
 
-const LabOrderStatus = ({
-  s,
-  orderButtonText,
-}: {
-  s: UseLabTestsReturn;
-  orderButtonText: string;
-}) => (
+const LabOrderStatus = ({ s }: { s: UseLabTestsReturn }) => (
   <Accordion title="Order status and requisition" defaultOpen showEditIcon={false} isEditing>
     <div className="flex flex-col gap-3 py-2">
       <div className="flex items-center justify-end">
@@ -1315,7 +1357,7 @@ const LabOrderStatus = ({
                 text={
                   s.getOrderDisplayStatus(s.latestOrder) === 'Complete'
                     ? 'Result PDF'
-                    : orderButtonText
+                    : getOrderActionLabel(s.latestOrder)
                 }
                 onClick={() => {
                   if (!s.latestOrder) return;
@@ -1323,7 +1365,11 @@ const LabOrderStatus = ({
                     void s.openResultPdfForOrder(s.latestOrder);
                     return;
                   }
-                  s.openOrderIframe(s.canOpenFollowUpInCurrentOrder ? 'followup' : 'order');
+                  s.openOrderIframe(
+                    getOrderActionSource(s.latestOrder),
+                    s.latestOrder.status,
+                    s.latestOrder
+                  );
                 }}
                 isDisabled={
                   s.getOrderDisplayStatus(s.latestOrder) === 'Complete'
@@ -1342,20 +1388,22 @@ const LabOrderStatus = ({
           {s.appointmentOrders.length > 1 ? (
             <div className="rounded-2xl border border-card-border p-3 flex flex-col gap-2">
               <div className="text-body-4 text-text-primary">Past orders in this appointment</div>
-              {s.appointmentOrders
-                .filter((order) => order._id !== s.latestOrder!._id)
-                .map((order) => (
-                  <PastOrderCard
-                    key={order._id}
-                    order={order}
-                    resultProgressByOrderId={s.resultProgressByOrderId}
-                    getOrderDisplayStatus={s.getOrderDisplayStatus}
-                    openOrderIframe={s.openOrderIframe}
-                    openResultPdfForOrder={s.openResultPdfForOrder}
-                    openOrderAcknowledgement={s.openOrderAcknowledgement}
-                    setActiveOrderForActions={s.setActiveOrderForActions}
-                  />
-                ))}
+              {s.appointmentOrders.flatMap((order) =>
+                order._id === s.latestOrder!._id
+                  ? []
+                  : [
+                      <PastOrderCard
+                        key={order._id}
+                        order={order}
+                        resultProgressByOrderId={s.resultProgressByOrderId}
+                        getOrderDisplayStatus={s.getOrderDisplayStatus}
+                        openOrderIframe={s.openOrderIframe}
+                        openResultPdfForOrder={s.openResultPdfForOrder}
+                        openOrderAcknowledgement={s.openOrderAcknowledgement}
+                        setActiveOrderForActions={s.setActiveOrderForActions}
+                      />,
+                    ]
+              )}
             </div>
           ) : null}
         </>
@@ -1387,7 +1435,7 @@ const LabResultsList = ({ s }: { s: UseLabTestsReturn }) => (
           <Link
             href="/appointments/idexx-workspace"
             aria-label="Open IDEXX Hub"
-            className="h-8 w-8 rounded-full border border-card-border bg-white text-text-secondary hover:text-text-brand hover:border-text-brand transition-colors inline-flex items-center justify-center"
+            className="size-8 rounded-full border border-card-border bg-white text-text-secondary hover:text-text-brand hover:border-text-brand transition-colors inline-flex items-center justify-center"
           >
             <MdOpenInNew size={16} />
           </Link>
@@ -1435,6 +1483,65 @@ const LabResultsList = ({ s }: { s: UseLabTestsReturn }) => (
 
 // ---------- Main component ----------
 
+type IdexxOrderIframeOverlayProps = {
+  url: string;
+  title: string;
+  onClose: () => void;
+};
+
+const IdexxOrderIframeOverlay = ({ url, title, onClose }: IdexxOrderIframeOverlayProps) => {
+  const [loaded, setLoaded] = useState(false);
+  const isFollowUp = title.toLowerCase().includes('follow-up');
+  return (
+    <div
+      className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      data-signing-overlay="true"
+      style={{ pointerEvents: 'auto' }}
+    >
+      <div className="relative bg-white rounded-2xl shadow-2xl size-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
+          <div className="flex flex-col">
+            <div className="text-body-2 text-text-primary">{title}</div>
+            {isFollowUp ? (
+              <div className="text-caption-1 text-text-secondary">
+                If IDEXX shows the order was submitted and this window stays open, close it with the
+                top-right cross arrow to refresh this appointment.
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer"
+            aria-label="Close IDEXX order frame"
+            style={{ pointerEvents: 'auto' }}
+          >
+            <Close iconOnly />
+          </button>
+        </div>
+        <div className="relative flex-1">
+          {loaded ? null : (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
+              <YosemiteLoader label="Loading IDEXX" size={120} testId="idexx-order-loader" />
+            </div>
+          )}
+          <iframe
+            key={url}
+            src={url}
+            title="IDEXX order UI"
+            className="size-full border-0"
+            loading="lazy"
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            style={{ pointerEvents: 'auto' }}
+            onLoad={() => setLoaded(true)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 type LabTestsProps = {
   activeAppointment: Appointment | null;
 };
@@ -1443,7 +1550,7 @@ const LabTests = ({ activeAppointment }: LabTestsProps) => {
   const s = useLabTests(activeAppointment);
 
   if (s.loading) {
-    return <div className="text-body-4 text-text-secondary">Loading IDEXX integration...</div>;
+    return <div className="text-body-4 text-text-secondary">Loading IDEXX integration…</div>;
   }
 
   if (!s.integrationEnabled) {
@@ -1465,45 +1572,16 @@ const LabTests = ({ activeAppointment }: LabTestsProps) => {
   const iframeTitle =
     s.iframeOpenSource === 'followup' ? 'IDEXX follow-up ordering' : 'IDEXX ordering';
   const orderIframeUrl = s.iframeOrderUiUrl || resolveOrderUiUrl(s.latestOrder);
-  let orderButtonText = 'Open IDEXX';
-  if (s.needsInitialOrderPlacement) {
-    orderButtonText = 'Resume order placement';
-  } else if (s.canOpenFollowUpInCurrentOrder) {
-    orderButtonText = 'Follow up';
-  }
 
   return (
     <>
       {s.showOrderIframe && orderIframeUrl && typeof document !== 'undefined'
         ? createPortal(
-            <div
-              className="fixed inset-0 z-[5000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-              data-signing-overlay="true"
-              style={{ pointerEvents: 'auto' }}
-            >
-              <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
-                  <div className="text-body-2 text-text-primary">{iframeTitle}</div>
-                  <button
-                    type="button"
-                    onClick={s.closeOrderIframeManually}
-                    className="p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer"
-                    aria-label="Close IDEXX order frame"
-                    style={{ pointerEvents: 'auto' }}
-                  >
-                    <Close iconOnly />
-                  </button>
-                </div>
-                <iframe
-                  src={orderIframeUrl}
-                  title="IDEXX order UI"
-                  className="flex-1 w-full border-0"
-                  loading="lazy"
-                  allowFullScreen
-                  style={{ pointerEvents: 'auto' }}
-                />
-              </div>
-            </div>,
+            <IdexxOrderIframeOverlay
+              url={orderIframeUrl}
+              title={iframeTitle}
+              onClose={s.closeOrderIframeManually}
+            />,
             document.body
           )
         : null}
@@ -1518,7 +1596,7 @@ const LabTests = ({ activeAppointment }: LabTestsProps) => {
       <div className="flex flex-col gap-4 w-full">
         {s.error ? <div className="text-body-4 text-text-error">{s.error}</div> : null}
         <LabOrderForm s={s} />
-        <LabOrderStatus s={s} orderButtonText={orderButtonText} />
+        <LabOrderStatus s={s} />
         <LabResultsList s={s} />
       </div>
     </>

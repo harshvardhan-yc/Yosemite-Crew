@@ -1,5 +1,5 @@
-import React from "react";
-import Close from "@/app/ui/primitives/Icons/Close";
+import React from 'react';
+import Close from '@/app/ui/primitives/Icons/Close';
 
 type ModalHeaderProps = {
   title: string;
@@ -8,9 +8,8 @@ type ModalHeaderProps = {
 
 const ModalHeader = ({ title, onClose }: ModalHeaderProps) => (
   <div className="flex justify-between items-center">
-    <div className="opacity-0">
-      <Close onClick={() => {}} />
-    </div>
+    {/* Spacer that mirrors the Close button size — keeps title visually centred */}
+    <div aria-hidden="true" className="size-9 shrink-0" />
     <div className="flex justify-center items-center gap-2">
       <div className="text-body-1 text-text-primary">{title}</div>
     </div>

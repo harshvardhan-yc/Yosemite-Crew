@@ -1,6 +1,9 @@
 'use client';
 import React, { useState } from 'react';
-import DynamicChartCard from '@/app/ui/widgets/DynamicChart/DynamicChartCard';
+import dynamic from 'next/dynamic';
+const DynamicChartCard = dynamic(() => import('@/app/ui/widgets/DynamicChart/DynamicChartCard'), {
+  ssr: false,
+});
 import { TrafficDataPoint, StarsDataPoint } from '../hooks/useOverviewStats';
 
 type CommunityStatsProps = {
@@ -35,21 +38,23 @@ const getMonthKey = (dateKey: string) => dateKey.slice(0, 7);
 
 const getYearKey = (dateKey: string) => dateKey.slice(0, 4);
 
+const shortMonthYearFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  year: '2-digit',
+  timeZone: 'UTC',
+});
+
+const longMonthYearFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
 const formatMonthLabel = (dateKey: string) =>
-  new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    year: '2-digit',
-    timeZone: 'UTC',
-  })
-    .format(new Date(dateKey))
-    .replace(' ', " '");
+  shortMonthYearFormatter.format(new Date(dateKey)).replace(' ', " '");
 
 const formatMonthHeading = (monthKey: string) =>
-  new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(`${monthKey}-01T00:00:00.000Z`));
+  longMonthYearFormatter.format(new Date(`${monthKey}-01T00:00:00.000Z`));
 
 const formatYearHeading = (yearKey: string) => yearKey;
 
@@ -190,10 +195,13 @@ const buildStarsChartConfig = (
 ): ChartConfig => {
   const chartData =
     effectiveGranularity === 'Yearly'
-      ? aggregateStarsByYear(starsChart).map(({ dateKey, ...dataPoint }) => dataPoint)
-      : starsChart
-          .filter((dataPoint) => getYearKey(dataPoint.dateKey) === resolvedPeriodKey)
-          .map(({ dateKey, ...dataPoint }) => dataPoint);
+      ? aggregateStarsByYear(starsChart).map(({ dateKey: _dateKey, ...dataPoint }) => dataPoint)
+      : starsChart.reduce<Omit<StarsDataPoint, 'dateKey'>[]>((dataPoints, dataPoint) => {
+          if (getYearKey(dataPoint.dateKey) !== resolvedPeriodKey) return dataPoints;
+          const { dateKey: _dateKey, ...chartPoint } = dataPoint;
+          dataPoints.push(chartPoint);
+          return dataPoints;
+        }, []);
   return { chartData, yAxisWidth: 45 };
 };
 
@@ -212,12 +220,20 @@ const buildTrafficChartConfig = (
 
   const trafficData =
     effectiveGranularity === 'Monthly'
-      ? aggregateTrafficByMonth(trafficChart, view)
-          .filter((dataPoint) => getYearKey(dataPoint.dateKey) === resolvedPeriodKey)
-          .map(({ dateKey, ...dataPoint }) => dataPoint)
-      : trafficChart
-          .filter((dataPoint) => getMonthKey(dataPoint.dateKey) === resolvedPeriodKey)
-          .map(mapTrafficPoint);
+      ? aggregateTrafficByMonth(trafficChart, view).reduce<Array<Record<string, number | string>>>(
+          (dataPoints, dataPoint) => {
+            if (getYearKey(dataPoint.dateKey) !== resolvedPeriodKey) return dataPoints;
+            const { dateKey: _dateKey, ...chartPoint } = dataPoint;
+            dataPoints.push(chartPoint);
+            return dataPoints;
+          },
+          []
+        )
+      : trafficChart.reduce<ReturnType<typeof mapTrafficPoint>[]>((dataPoints, dataPoint) => {
+          if (getMonthKey(dataPoint.dateKey) !== resolvedPeriodKey) return dataPoints;
+          dataPoints.push(mapTrafficPoint(dataPoint));
+          return dataPoints;
+        }, []);
 
   const chartData = trafficData.length > 0 ? trafficData : [];
 
@@ -226,8 +242,11 @@ const buildTrafficChartConfig = (
   }
 
   const dayTicks = (chartData as Array<Record<string, number | string>>)
-    .map((dataPoint) => Number(dataPoint.dayNumber))
-    .filter((value, index, values) => values.indexOf(value) === index)
+    .reduce<number[]>((ticks, dataPoint) => {
+      const value = Number(dataPoint.dayNumber);
+      if (!ticks.includes(value)) ticks.push(value);
+      return ticks;
+    }, [])
     .sort((left, right) => left - right);
 
   return {
@@ -242,6 +261,12 @@ const buildTrafficChartConfig = (
   };
 };
 
+const chartKeys = [
+  { name: 'Self Hosters', color: 'var(--color-badge-blue-bg)' },
+  { name: 'Builders', color: '#10B981' },
+  { name: 'Github Stars', color: 'var(--color-warning-600)' },
+];
+
 const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsProps) => {
   const [view, setView] = useState<ViewType>('Unique');
   const [granularity, setGranularity] = useState<GranularityType>('Daily');
@@ -250,17 +275,10 @@ const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsP
   if (isLoading) {
     return (
       <div className="text-center p-10 text-text-secondary font-satoshi">
-        Loading Repository Data...
+        Loading Repository Data…
       </div>
     );
   }
-
-  // We ALWAYS pass all three keys so the legend permanently shows them all.
-  const chartKeys = [
-    { name: 'Self Hosters', color: 'var(--color-badge-blue-bg)' },
-    { name: 'Builders', color: '#10B981' },
-    { name: 'Github Stars', color: 'var(--color-warning-600)' },
-  ];
 
   const granularityOptions = getGranularityOptions(view);
   const effectiveGranularity = granularityOptions.includes(granularity) ? granularity : 'Monthly';
@@ -305,6 +323,7 @@ const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsP
         <div className="PeriodToggle">
           {granularityOptions.map((option) => (
             <button
+              type="button"
               key={option}
               className={`TogglePill ${effectiveGranularity === option ? 'Active' : ''}`}
               onClick={() => {
@@ -328,6 +347,7 @@ const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsP
 
         <div className="DataToggle">
           <button
+            type="button"
             className={`TogglePill ${view === 'Unique' ? 'Active' : ''}`}
             onClick={() => {
               setView('Unique');
@@ -343,6 +363,7 @@ const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsP
             Unique
           </button>
           <button
+            type="button"
             className={`TogglePill ${view === 'Cumulative' ? 'Active' : ''}`}
             onClick={() => {
               setView('Cumulative');
@@ -358,6 +379,7 @@ const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsP
             Cumulative
           </button>
           <button
+            type="button"
             className={`TogglePill ${view === 'Stars' ? 'Active' : ''}`}
             onClick={() => {
               setView('Stars');
@@ -380,6 +402,7 @@ const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsP
   const chartFooter = navigationConfig ? (
     <div className="ChartNavigation">
       <button
+        type="button"
         className="ChartNavigationButton"
         onClick={navigationConfig.onPrevious}
         disabled={navigationConfig.isPreviousDisabled}
@@ -389,6 +412,7 @@ const CommunityStats = ({ trafficChart, starsChart, isLoading }: CommunityStatsP
       </button>
       <span className="ChartNavigationLabel">{navigationConfig.currentLabel}</span>
       <button
+        type="button"
         className="ChartNavigationButton"
         onClick={navigationConfig.onNext}
         disabled={navigationConfig.isNextDisabled}

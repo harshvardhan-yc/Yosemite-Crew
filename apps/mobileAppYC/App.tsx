@@ -5,9 +5,14 @@
  *
  * @format
  */
-import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {StatusBar, LogBox, Linking} from 'react-native';
-import * as Clarity from '@microsoft/react-native-clarity';
+import React, {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
+import {StatusBar, LogBox, Linking, DeviceEventEmitter} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {Provider} from 'react-redux';
@@ -18,11 +23,12 @@ import {
   type NavigationContainerRef,
 } from '@react-navigation/native';
 import {store, persistor} from '@/app/store';
-import {AppNavigator} from './src/navigation';
-import {useTheme} from './src/hooks';
+import {AppNavigator} from './src/navigation/AppNavigator';
+import {useTheme} from './src/shared/hooks/useTheme';
 import CustomSplashScreen from './src/shared/components/common/customSplashScreen/customSplash';
 import './src/localization';
-import outputs from './amplify_outputs.json';
+import devOutputs from './devamplify_outputs.json';
+import prodOutputs from './prodamplify_outputs.json';
 import {StripeProvider} from '@stripe/stripe-react-native';
 import {Amplify} from 'aws-amplify';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
@@ -38,7 +44,6 @@ import {
 } from '@/shared/services/firebaseNotifications';
 import {
   fetchMobileConfig,
-  isProductionMobileEnv,
   type MobileConfig,
 } from '@/shared/services/mobileConfig';
 import {
@@ -50,12 +55,17 @@ import type {RootStackParamList} from '@/navigation/types';
 import {
   API_CONFIG,
   AUTH_FEATURE_FLAGS,
+  DEV_API_MODE_CHANGED_EVENT,
   MOBILE_CONFIG_BEHAVIOR,
+  MOBILE_CONFIG_PATH,
+  POSTHOG_CONFIG,
   STRIPE_CONFIG,
   UI_FEATURE_FLAGS,
-  CLARITY_CONFIG,
+  DEVELOPMENT_API_BASE_URL,
 } from '@/config/variables';
+import {setResolvedStripePublishableKey} from '@/config/stripeKeyRegistry';
 import {updateApiClientBaseConfig} from '@/shared/services/apiClient';
+import {DEMO_API_MODE_KEY} from '@/features/auth/sessionManager';
 import {observationToolApi} from '@/features/observationalTools/services/observationToolService';
 import AppUpdateBottomSheet, {
   AppUpdateBottomSheetRef,
@@ -66,8 +76,12 @@ import {
   getCurrentAppIdentity,
   shouldShowOptionalPrompt,
 } from '@/features/appUpdate/services/appUpdatePolicy';
+import {
+  initializePostHog,
+  trackPostHogScreen,
+} from '@/shared/services/posthogAnalytics';
 
-Amplify.configure(outputs);
+Amplify.configure(MOBILE_CONFIG_BEHAVIOR.useDevApi ? devOutputs : prodOutputs);
 
 LogBox.ignoreLogs([
   'This method is deprecated (as well as all React Native Firebase namespaced API)',
@@ -91,12 +105,6 @@ const coerceBooleanFlag = (
   return false;
 };
 
-const resolveApiBaseUrlForEnv = (env?: MobileConfig['env']): string => {
-  if (isProductionMobileEnv(env)) {
-    return 'https://api.yosemitecrew.com';
-  }
-  return 'https://devapi.yosemitecrew.com';
-};
 const PRODUCTION_API_BASE_URL = 'https://api.yosemitecrew.com';
 
 const applyMockAppUpdateFlow = (
@@ -142,42 +150,111 @@ const applyMockAppUpdateFlow = (
   };
 };
 
-const shouldDisableReviewLogin = (env?: MobileConfig['env']): boolean => {
-  return isProductionMobileEnv(env);
-};
-
 const OPTIONAL_UPDATE_LAST_PROMPTED_AT_KEY =
   '@app_update_optional_last_prompted_at';
 
-// const noop = () => {};
-// console.log = noop;
-// console.info = noop;
-// console.debug = noop;
-// console.trace = noop;
+type MobileConfigState = {
+  mobileConfig: MobileConfig | null;
+  appUpdatePrompt: AppUpdatePrompt | null;
+  isConfigLoading: boolean;
+};
+
+type MobileConfigAction =
+  | {
+      type: 'CONFIG_LOADED';
+      config: MobileConfig;
+      prompt: AppUpdatePrompt | null;
+    }
+  | {type: 'CONFIG_DONE'}
+  | {type: 'CLEAR_OPTIONAL_PROMPT'};
+
+const initialMobileConfigState: MobileConfigState = {
+  mobileConfig: null,
+  appUpdatePrompt: null,
+  isConfigLoading: true,
+};
+
+function mobileConfigReducer(
+  state: MobileConfigState,
+  action: MobileConfigAction,
+): MobileConfigState {
+  switch (action.type) {
+    case 'CONFIG_LOADED':
+      return {
+        ...state,
+        mobileConfig: action.config,
+        appUpdatePrompt: action.prompt,
+      };
+    case 'CONFIG_DONE':
+      return {...state, isConfigLoading: false};
+    case 'CLEAR_OPTIONAL_PROMPT':
+      return {
+        ...state,
+        appUpdatePrompt:
+          state.appUpdatePrompt?.kind === 'optional'
+            ? null
+            : state.appUpdatePrompt,
+      };
+    default:
+      return state;
+  }
+}
+
+const noop = () => {};
+console.log = noop;
+console.info = noop;
+console.debug = noop;
+console.trace = noop;
+
+const PERSIST_GATE_LOADING = <CustomSplashScreen onAnimationEnd={() => {}} />;
 
 function App(): React.JSX.Element {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
-  const [mobileConfig, setMobileConfig] = useState<MobileConfig | null>(null);
-  const [appUpdatePrompt, setAppUpdatePrompt] =
-    useState<AppUpdatePrompt | null>(null);
-  const [isConfigLoading, setIsConfigLoading] = useState(true);
+  const [
+    {mobileConfig, appUpdatePrompt, isConfigLoading},
+    dispatchMobileConfig,
+  ] = useReducer(mobileConfigReducer, initialMobileConfigState);
+  const [devApiActive, setDevApiActive] = useState(
+    MOBILE_CONFIG_BEHAVIOR.useDevApi,
+  );
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const pendingIntentRef = useRef<NotificationNavigationIntent | null>(null);
   const currentRouteNameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      DEV_API_MODE_CHANGED_EVENT,
+      ({isDevApi}: {isDevApi: boolean}) => {
+        setDevApiActive(isDevApi);
+        if (!isDevApi && !MOBILE_CONFIG_BEHAVIOR.skipRemoteFetch) {
+          fetchMobileConfig()
+            .then(prodConfig => {
+              dispatchMobileConfig({
+                type: 'CONFIG_LOADED',
+                config: applyMockAppUpdateFlow(
+                  prodConfig,
+                  MOBILE_CONFIG_BEHAVIOR.mockAppUpdateFlow,
+                ),
+                prompt: null,
+              });
+            })
+            .catch(() => {});
+        }
+      },
+    );
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     configureSocialProviders();
   }, []);
 
   useEffect(() => {
-    const projectId = CLARITY_CONFIG.projectId.trim();
-    if (!projectId) {
-      console.warn('[Clarity] Missing project id; SDK initialization skipped.');
+    if (!POSTHOG_CONFIG.enabled) {
       return;
     }
-    Clarity.initialize(projectId, {
-      logLevel: Clarity.LogLevel.None,
-    });
+
+    initializePostHog();
   }, []);
 
   useEffect(() => {
@@ -185,25 +262,61 @@ function App(): React.JSX.Element {
 
     const loadMobileConfig = async () => {
       try {
-        // console.log('[MobileConfig] Loading mobile config…', {
-        //   skipRemoteFetch: MOBILE_CONFIG_BEHAVIOR.skipRemoteFetch,
-        //   hasOverride: Boolean(MOBILE_CONFIG_BEHAVIOR.override),
-        // });
-
         let config: MobileConfig = {
           env: 'production',
           enablePayments: false,
         };
 
+        // Check stored demo mode BEFORE fetching so we use the correct endpoint
+        // from the start — avoiding a prod-fetch failure blocking dev rehydration.
+        const storedDemoMode =
+          !MOBILE_CONFIG_BEHAVIOR.overrides?.apiBaseUrl &&
+          !MOBILE_CONFIG_BEHAVIOR.useDevApi
+            ? await AsyncStorage.getItem(DEMO_API_MODE_KEY)
+            : null;
+        const shouldUseDev =
+          MOBILE_CONFIG_BEHAVIOR.useDevApi || storedDemoMode === 'true';
+
         if (!MOBILE_CONFIG_BEHAVIOR.skipRemoteFetch) {
-          config = await fetchMobileConfig();
+          config = await fetchMobileConfig(
+            shouldUseDev
+              ? `${DEVELOPMENT_API_BASE_URL}${MOBILE_CONFIG_PATH}`
+              : undefined,
+          );
         }
 
-        if (MOBILE_CONFIG_BEHAVIOR.override) {
-          config = {
-            ...config,
-            ...MOBILE_CONFIG_BEHAVIOR.override,
-          };
+        // Apply local overrides on top of remote config (field is `overrides`, not `override`)
+        if (
+          MOBILE_CONFIG_BEHAVIOR.overrides &&
+          Object.keys(MOBILE_CONFIG_BEHAVIOR.overrides).length > 0
+        ) {
+          const {
+            enableReviewLogin: overrideReviewLogin,
+            apiBaseUrl: overrideApiBaseUrl,
+            pmsBaseUrl: overridePmsBaseUrl,
+            mobileConfig: overrideMobileConfig,
+            stripePublishableKey: overrideStripeKey,
+            forceLiquidGlassBorder: overrideGlassBorder,
+          } = MOBILE_CONFIG_BEHAVIOR.overrides;
+
+          if (overrideMobileConfig) {
+            config = {...config, ...overrideMobileConfig};
+          }
+          if (overrideStripeKey !== undefined) {
+            config = {...config, stripePublishableKey: overrideStripeKey};
+          }
+          if (overrideGlassBorder !== undefined) {
+            config = {...config, forceLiquidGlassBorder: overrideGlassBorder};
+          }
+          if (overrideReviewLogin !== undefined) {
+            config = {...config, enableReviewLogin: overrideReviewLogin};
+          }
+          if (
+            overrideApiBaseUrl !== undefined ||
+            overridePmsBaseUrl !== undefined
+          ) {
+            // These are applied below when resolving the base URL
+          }
         }
 
         config = applyMockAppUpdateFlow(
@@ -213,32 +326,51 @@ function App(): React.JSX.Element {
 
         console.log('[MobileConfig] Effective runtime config', {
           skipRemoteFetch: MOBILE_CONFIG_BEHAVIOR.skipRemoteFetch,
-          forceProductionApiBaseUrl:
-            MOBILE_CONFIG_BEHAVIOR.forceProductionApiBaseUrl,
+          useDevApi: MOBILE_CONFIG_BEHAVIOR.useDevApi,
           mockAppUpdateFlow: MOBILE_CONFIG_BEHAVIOR.mockAppUpdateFlow,
           env: config.env,
+          enableReviewLogin: config.enableReviewLogin,
           hasAppUpdate: Boolean(config.appUpdate),
           appUpdate: config.appUpdate,
         });
 
         if (mounted) {
-          const resolvedBaseUrl =
-            MOBILE_CONFIG_BEHAVIOR.forceProductionApiBaseUrl
-              ? PRODUCTION_API_BASE_URL
-              : resolveApiBaseUrlForEnv(config.env);
+          // Priority: local override > useDevApi flag > stored demo mode > prod default
+          let resolvedBaseUrl: string;
+          if (MOBILE_CONFIG_BEHAVIOR.overrides?.apiBaseUrl) {
+            resolvedBaseUrl = MOBILE_CONFIG_BEHAVIOR.overrides.apiBaseUrl;
+          } else if (MOBILE_CONFIG_BEHAVIOR.useDevApi) {
+            resolvedBaseUrl = DEVELOPMENT_API_BASE_URL;
+          } else if (storedDemoMode === 'true') {
+            resolvedBaseUrl = DEVELOPMENT_API_BASE_URL;
+            Amplify.configure(devOutputs);
+            setDevApiActive(true);
+          } else {
+            resolvedBaseUrl = PRODUCTION_API_BASE_URL;
+          }
+
+          const resolvedPmsUrl =
+            MOBILE_CONFIG_BEHAVIOR.overrides?.pmsBaseUrl ?? resolvedBaseUrl;
+
           API_CONFIG.baseUrl = resolvedBaseUrl;
-          API_CONFIG.pmsBaseUrl = resolvedBaseUrl;
+          API_CONFIG.pmsBaseUrl = resolvedPmsUrl;
           updateApiClientBaseConfig({
             baseUrl: resolvedBaseUrl,
             timeoutMs: API_CONFIG.timeoutMs,
           });
           console.log('[API] Runtime base URL applied', {
             baseUrl: resolvedBaseUrl,
+            useDevApi: MOBILE_CONFIG_BEHAVIOR.useDevApi,
           });
 
-          if (shouldDisableReviewLogin(config.env)) {
-            AUTH_FEATURE_FLAGS.enableReviewLogin = false;
+          // enableReviewLogin: remote config wins; local variables.local.ts override applies via
+          // MOBILE_CONFIG_BEHAVIOR.overrides.enableReviewLogin (set above). Never silently kill it.
+          if (config.enableReviewLogin !== undefined) {
+            AUTH_FEATURE_FLAGS.enableReviewLogin = coerceBooleanFlag(
+              config.enableReviewLogin,
+            );
           }
+          // If remote didn't send enableReviewLogin at all, keep whatever variables.ts default was.
 
           UI_FEATURE_FLAGS.forceLiquidGlassBorder = coerceBooleanFlag(
             config.forceLiquidGlassBorder ??
@@ -252,8 +384,6 @@ function App(): React.JSX.Element {
           //   forceLiquidGlassBorder: UI_FEATURE_FLAGS.forceLiquidGlassBorder,
           //   stripeKeyPresent: Boolean(config.stripePublishableKey),
           // });
-
-          setMobileConfig(config);
 
           const {currentVersion, currentBuildNumber, bundleId} =
             getCurrentAppIdentity();
@@ -271,6 +401,7 @@ function App(): React.JSX.Element {
             evaluatedPrompt,
           });
 
+          let finalPrompt: AppUpdatePrompt | null;
           if (evaluatedPrompt?.kind === 'optional') {
             const lastPromptedAt = await AsyncStorage.getItem(
               OPTIONAL_UPDATE_LAST_PROMPTED_AT_KEY,
@@ -289,10 +420,15 @@ function App(): React.JSX.Element {
               shouldBypassDeferral,
               shouldShow,
             });
-            setAppUpdatePrompt(shouldShow ? evaluatedPrompt : null);
+            finalPrompt = shouldShow ? evaluatedPrompt : null;
           } else {
-            setAppUpdatePrompt(evaluatedPrompt);
+            finalPrompt = evaluatedPrompt;
           }
+          dispatchMobileConfig({
+            type: 'CONFIG_LOADED',
+            config,
+            prompt: finalPrompt,
+          });
         }
       } catch (error) {
         if (mounted) {
@@ -300,7 +436,7 @@ function App(): React.JSX.Element {
         }
       } finally {
         if (mounted) {
-          setIsConfigLoading(false);
+          dispatchMobileConfig({type: 'CONFIG_DONE'});
         }
       }
     };
@@ -312,8 +448,11 @@ function App(): React.JSX.Element {
     };
   }, []);
 
-  const resolvedPublishableKey =
-    mobileConfig?.stripePublishableKey ?? STRIPE_CONFIG.publishableKey;
+  const resolvedPublishableKey = devApiActive
+    ? (mobileConfig?.stripePublishableKeyDev ??
+      mobileConfig?.stripePublishableKey ??
+      STRIPE_CONFIG.publishableKey)
+    : (mobileConfig?.stripePublishableKey ?? STRIPE_CONFIG.publishableKey);
 
   useEffect(() => {
     if (!resolvedPublishableKey && !isConfigLoading) {
@@ -321,11 +460,14 @@ function App(): React.JSX.Element {
         '[Stripe] Missing publishableKey from mobile config API and local config.',
       );
     }
+    if (resolvedPublishableKey) {
+      setResolvedStripePublishableKey(resolvedPublishableKey);
+    }
   }, [isConfigLoading, resolvedPublishableKey]);
 
-  const handleSplashAnimationEnd = () => {
+  const handleSplashAnimationEnd = useCallback(() => {
     setIsSplashVisible(false);
-  };
+  }, []);
 
   const handleNotificationNavigation = useCallback(
     (intent: NotificationNavigationIntent) => {
@@ -348,8 +490,8 @@ function App(): React.JSX.Element {
       return;
     }
     currentRouteNameRef.current = routeName;
-    Clarity.setCurrentScreenName(routeName).catch(error =>
-      console.warn('[Clarity] Failed to track screen on ready', error),
+    trackPostHogScreen(routeName).catch(error =>
+      console.warn('[PostHog] Failed to track screen on ready', error),
     );
   }, [navigationRef]);
 
@@ -359,8 +501,8 @@ function App(): React.JSX.Element {
       return;
     }
     currentRouteNameRef.current = routeName;
-    Clarity.setCurrentScreenName(routeName).catch(error =>
-      console.warn('[Clarity] Failed to track screen change', error),
+    trackPostHogScreen(routeName).catch(error =>
+      console.warn('[PostHog] Failed to track screen change', error),
     );
   }, [navigationRef]);
 
@@ -376,9 +518,7 @@ function App(): React.JSX.Element {
         error,
       );
     } finally {
-      setAppUpdatePrompt(currentPrompt =>
-        currentPrompt?.kind === 'optional' ? null : currentPrompt,
-      );
+      dispatchMobileConfig({type: 'CLEAR_OPTIONAL_PROMPT'});
     }
   }, []);
 
@@ -392,9 +532,7 @@ function App(): React.JSX.Element {
 
   return (
     <Provider store={store}>
-      <PersistGate
-        loading={<CustomSplashScreen onAnimationEnd={() => {}} />}
-        persistor={persistor}>
+      <PersistGate loading={PERSIST_GATE_LOADING} persistor={persistor}>
         <GestureHandlerRootView style={{flex: 1}}>
           <SafeAreaProvider>
             <AuthProvider>
@@ -465,9 +603,8 @@ const AppUpdateGate: React.FC<AppUpdateGateProps> = ({
       hasStoreUrl: Boolean(prompt?.storeUrl),
     });
     if (!prompt) return;
-    if (prompt.kind === 'required') {
-      return;
-    }
+
+    // For mock-optional, the sheet opens via initialIndex — no ref call needed.
     if (
       prompt.kind === 'optional' &&
       MOBILE_CONFIG_BEHAVIOR.mockAppUpdateFlow === 'optional'
@@ -478,8 +615,10 @@ const AppUpdateGate: React.FC<AppUpdateGateProps> = ({
     let cancelled = false;
     let retries = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const maxRetries = 8;
-    const retryIntervalMs = 80;
+    // Required updates need more retries — iOS gesture handler may not be ready
+    // immediately after the component mounts with initialIndex={0}.
+    const maxRetries = prompt.kind === 'required' ? 20 : 8;
+    const retryIntervalMs = prompt.kind === 'required' ? 100 : 80;
 
     const tryOpenSheet = () => {
       if (cancelled) return;

@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import ReactDatePicker from 'react-datepicker';
 import { IoIosWarning } from 'react-icons/io';
 import { IoTimeOutline } from 'react-icons/io5';
@@ -18,39 +18,49 @@ type TimeInputButtonProps = {
   onClick?: () => void;
   label: string;
   error?: string;
+  errorId?: string;
   className?: string;
+  ref?: React.Ref<HTMLButtonElement>;
 };
 
-const TimeInputButton = forwardRef<HTMLButtonElement, TimeInputButtonProps>(
-  function TimeInputButton({ value, onClick, label, error, className }, ref) {
-    return (
-      <button
-        ref={ref}
-        type="button"
-        onClick={onClick}
-        className={`peer relative flex min-h-12 w-full items-center rounded-2xl! border bg-transparent px-6 py-2.5 text-left text-body-4 text-text-primary outline-none transition-colors ${
-          error ? 'border-input-border-error!' : 'border-input-border-default!'
-        } focus:border-input-border-active! ${className ?? ''}`}
-        aria-label={label}
-        aria-haspopup="dialog"
+const TimeInputButton = ({
+  value,
+  onClick,
+  label,
+  error,
+  errorId,
+  className,
+  ref,
+}: TimeInputButtonProps) => {
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      className={`peer relative flex min-h-12 w-full items-center rounded-2xl! border bg-transparent px-6 py-2.5 text-left text-body-4 text-text-primary transition-colors focus-visible:outline-none! ${
+        error ? 'border-input-border-error!' : 'border-input-border-default!'
+      } focus:border-input-border-active! ${className ?? ''}`}
+      aria-label={value ? `${label}: ${value}` : label}
+      aria-haspopup="dialog"
+      aria-describedby={error && errorId ? errorId : undefined}
+    >
+      <span aria-hidden="true">{value || ''}</span>
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute left-6 text-body-4 transition-all duration-200 ${
+          value
+            ? '-top-[11px] translate-y-0 bg-(--whitebg) px-1 text-sm! text-input-text-placeholder-active'
+            : 'top-1/2 -translate-y-1/2 text-input-text-placeholder'
+        }`}
       >
-        <span>{value || ''}</span>
-        <span
-          className={`pointer-events-none absolute left-6 text-body-4 transition-all duration-200 ${
-            value
-              ? '-top-[11px] translate-y-0 bg-(--whitebg) px-1 text-sm! text-input-text-placeholder-active'
-              : 'top-1/2 -translate-y-1/2 text-input-text-placeholder'
-          }`}
-        >
-          {label}
-        </span>
-        <span className="absolute right-6 top-1/2 -translate-y-1/2">
-          <IoTimeOutline size={20} color="var(--color-neutral-900)" />
-        </span>
-      </button>
-    );
-  }
-);
+        {label}
+      </span>
+      <span className="absolute right-6 top-1/2 -translate-y-1/2" aria-hidden="true">
+        <IoTimeOutline size={20} color="var(--color-neutral-900)" />
+      </span>
+    </button>
+  );
+};
 
 const toDateFromTimeString = (value: string): Date | null => {
   if (!value) return null;
@@ -58,7 +68,6 @@ const toDateFromTimeString = (value: string): Date | null => {
   const hours = Number.parseInt(hourRaw ?? '', 10);
   const minutes = Number.parseInt(minuteRaw ?? '', 10);
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-
   const parsedDate = new Date(2000, 0, 1, hours, minutes, 0, 0);
   if (Number.isNaN(parsedDate.getTime())) return null;
   return parsedDate;
@@ -80,17 +89,26 @@ const Timepicker = ({
   minuteInterval = 5,
 }: TimepickerProps) => {
   const selectedTime = useMemo(() => toDateFromTimeString(value), [value]);
+  const errorId = useId();
+  const customInput = useMemo(
+    () => (
+      <TimeInputButton
+        value={value}
+        label={label}
+        error={error}
+        errorId={error ? errorId : undefined}
+        className={className}
+      />
+    ),
+    [value, label, error, errorId, className]
+  );
 
   return (
     <div className="w-full">
       <ReactDatePicker
         selected={selectedTime}
         onChange={(nextValue) => {
-          if (!nextValue) {
-            onChange('');
-            return;
-          }
-          onChange(formatTimeString(nextValue));
+          onChange(nextValue ? formatTimeString(nextValue) : '');
         }}
         showTimeSelect
         showTimeSelectOnly
@@ -102,16 +120,19 @@ const Timepicker = ({
         popperPlacement="bottom-start"
         calendarClassName="yc-datepicker-calendar"
         popperClassName="yc-datepicker-popper"
+        portalId="yc-datepicker-portal"
         wrapperClassName="w-full"
-        customInput={
-          <TimeInputButton value={value} label={label} error={error} className={className} />
-        }
+        customInput={customInput}
         id={name}
       />
 
       {error && (
-        <div className="mt-1.5 flex items-center gap-1 px-4 text-caption-2 text-text-error">
-          <IoIosWarning className="text-text-error" size={14} />
+        <div
+          id={errorId}
+          role="alert"
+          className="mt-1.5 flex items-center gap-1 px-4 text-caption-2 text-text-error"
+        >
+          <IoIosWarning className="text-text-error" size={14} aria-hidden="true" />
           <span>{error}</span>
         </div>
       )}

@@ -11,14 +11,16 @@ import {
 import type {
   Appointment as FHIRAppointment,
   Invoice as FHIRInvoice,
-} from '@yosemite-crew/fhirtypes';
+} from '@yosemite-crew/fhir';
 import type {
   Appointment,
   AppointmentStatus,
   Invoice,
+  PackageBreakdownItem,
   PaymentIntentInfo,
   SlotWindow,
   VetBusiness,
+  VetPackage,
   VetService,
 } from '@/features/appointments/types';
 
@@ -75,7 +77,7 @@ const toStatus = (status?: string): AppointmentStatus => {
     case 'RESCHEDULED':
     case 'SCHEDULED':
     case 'PAYMENT_FAILED':
-      return normalized as AppointmentStatus;
+      return normalized;
     case 'ARRIVED':
       return 'CHECKED_IN';
     case 'CANCELLED':
@@ -210,8 +212,10 @@ const extractIntegerFromExtensions = (
     return undefined;
   }
 
+  const extensionsByUrl = new Map(extensions.map(ext => [ext?.url, ext]));
+
   for (const url of urls) {
-    const matched = extensions.find(ext => ext?.url === url);
+    const matched = extensionsByUrl.get(url);
     if (!matched) {
       continue;
     }
@@ -543,6 +547,18 @@ const mapAppointmentResource = (incoming: any): Appointment => {
     paymentStatusValue === null || paymentStatusValue === undefined
       ? null
       : String(paymentStatusValue).toUpperCase();
+  const bookingPaymentStatusExt = extractExtensionValue(
+    resource?.extension,
+    (ext: any) =>
+      ext?.url ===
+      'https://yosemitecrew.com/fhir/StructureDefinition/appointment-booking-payment-status',
+  );
+  const bookingPaymentStatusValue = bookingPaymentStatusExt?.valueString;
+  const normalizedBookingPaymentStatus =
+    bookingPaymentStatusValue === null ||
+    bookingPaymentStatusValue === undefined
+      ? null
+      : String(bookingPaymentStatusValue).toUpperCase();
   const {organisationAddress, addressObj} = resolveOrganisationAddress(
     org,
     resource?.location?.address,
@@ -569,6 +585,11 @@ const mapAppointmentResource = (incoming: any): Appointment => {
     id: resource?.id ?? resource?._id ?? '',
     companionId: converted?.companion?.id ?? patient.id ?? '',
     businessId: organisation.id ?? '',
+    encounterId:
+      converted?.encounterId ??
+      resource?.encounterId ??
+      incoming?.encounterId ??
+      null,
     serviceId: converted?.appointmentType?.id ?? serviceCoding?.code ?? null,
     serviceName:
       converted?.appointmentType?.name ??
@@ -614,6 +635,7 @@ const mapAppointmentResource = (incoming: any): Appointment => {
           })),
     status: toStatus(resource?.status),
     paymentStatus: normalizedPaymentStatus,
+    bookingPaymentStatus: normalizedBookingPaymentStatus,
     invoiceId: resource?.invoiceId ?? null,
     organisationName: organisation.display ?? org?.name ?? null,
     organisationAddress,
@@ -628,6 +650,35 @@ const mapAppointmentResource = (incoming: any): Appointment => {
     createdAt,
     updatedAt,
   };
+};
+
+const resolveRawItems = (raw: any): any[] => {
+  if (Array.isArray(raw.items)) return raw.items;
+  if (Array.isArray(raw.lines)) return raw.lines;
+  if (Array.isArray(raw.lineItems)) return raw.lineItems;
+  return [];
+};
+
+const parseMetadataFromExtension = (
+  metadataExtension: any,
+): Record<string, string | number | boolean> | undefined => {
+  const nested = Array.isArray(metadataExtension?.extension)
+    ? metadataExtension.extension
+    : [];
+  if (nested.length === 0) {
+    return undefined;
+  }
+  const metadata: Record<string, string | number | boolean> = {};
+  nested.forEach((ext: any) => {
+    if (ext?.valueString != null) {
+      metadata[ext.url] = String(ext.valueString);
+    } else if (typeof ext?.valueDecimal === 'number') {
+      metadata[ext.url] = ext.valueDecimal;
+    } else if (typeof ext?.valueBoolean === 'boolean') {
+      metadata[ext.url] = ext.valueBoolean;
+    }
+  });
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 };
 
 const mapInvoiceFromApi = (
@@ -653,7 +704,7 @@ const mapInvoiceFromApi = (
       ? convertedInvoice
       : null;
 
-  const items = Array.isArray(raw.items) ? raw.items : [];
+  const items = resolveRawItems(raw);
   const convertedItems = invoiceFromConverter?.items ?? [];
   let normalizedItems: Array<{
     description: string;
@@ -706,6 +757,7 @@ const mapInvoiceFromApi = (
     )?.valueString ??
     invoiceFromConverter?.stripePaymentIntentId ??
     raw.stripePaymentIntentId ??
+    raw.providerPaymentIntentId ??
     raw.paymentIntentId ??
     null;
 
@@ -713,11 +765,24 @@ const mapInvoiceFromApi = (
   if (raw.paymentIntent) {
     paymentIntent = {
       paymentIntentId:
-        raw.paymentIntent.paymentIntentId ?? raw.paymentIntent.id,
-      clientSecret: raw.paymentIntent.clientSecret,
-      amount: raw.paymentIntent.amount,
+        raw.paymentIntent.paymentIntentId ??
+        raw.paymentIntent.providerPaymentIntentId ??
+        raw.paymentIntent.id,
+      clientSecret:
+        raw.paymentIntent.clientSecret ??
+        raw.paymentIntent.client_secret ??
+        raw.paymentIntent.paymentIntentClientSecret ??
+        '',
+      amount: raw.paymentIntent.amount ?? raw.totalAmount ?? total,
       currency: raw.paymentIntent.currency ?? raw.currency ?? 'USD',
-      paymentLinkUrl: raw.paymentIntent.paymentLinkUrl ?? null,
+      paymentLinkUrl:
+        raw.paymentIntent.paymentLinkUrl ??
+        raw.paymentIntent.checkoutUrl ??
+        null,
+      connectedAccountId:
+        raw.paymentIntent.connectedAccountId ??
+        raw.paymentIntent.stripeAccountId ??
+        null,
     };
   } else if (paymentIntentIdFromExt) {
     paymentIntent = {
@@ -730,6 +795,10 @@ const mapInvoiceFromApi = (
       amount: raw.paymentIntent?.amount ?? total,
       currency: raw.paymentIntent?.currency ?? raw.currency ?? 'USD',
       paymentLinkUrl: raw.paymentIntent?.paymentLinkUrl ?? null,
+      connectedAccountId:
+        raw.paymentIntent?.connectedAccountId ??
+        raw.paymentIntent?.stripeAccountId ??
+        null,
     };
   }
 
@@ -773,27 +842,6 @@ const mapInvoiceFromApi = (
     invoiceFromConverter?.paidAt?.toISOString?.() ??
     raw.paidAt ??
     null;
-  const parseMetadataFromExtension = (
-    metadataExtension: any,
-  ): Record<string, string | number | boolean> | undefined => {
-    const nested = Array.isArray(metadataExtension?.extension)
-      ? metadataExtension.extension
-      : [];
-    if (nested.length === 0) {
-      return undefined;
-    }
-    const metadata: Record<string, string | number | boolean> = {};
-    nested.forEach((ext: any) => {
-      if (ext?.valueString != null) {
-        metadata[ext.url] = String(ext.valueString);
-      } else if (typeof ext?.valueDecimal === 'number') {
-        metadata[ext.url] = ext.valueDecimal;
-      } else if (typeof ext?.valueBoolean === 'boolean') {
-        metadata[ext.url] = ext.valueBoolean;
-      }
-    });
-    return Object.keys(metadata).length > 0 ? metadata : undefined;
-  };
   const appointmentFromExt = extensions.find(
     (ext: any) =>
       ext?.url ===
@@ -845,6 +893,19 @@ const mapInvoiceFromApi = (
     factor: pc?.factor ?? pc?.Factor ?? null,
   }));
 
+  const resolvedSubtotal = subtotalFromTotals ?? subtotal;
+  const resolvedDiscountPercent: number | null = (() => {
+    if (raw.discountPercent != null) return raw.discountPercent;
+    if (raw.discountTotal != null && resolvedSubtotal > 0) {
+      return (raw.discountTotal / resolvedSubtotal) * 100;
+    }
+    const itemDiscount = Array.isArray(raw.items)
+      ? (raw.items.find((it: any) => it?.discountPercent != null)
+          ?.discountPercent ?? null)
+      : null;
+    return itemDiscount;
+  })();
+
   const invoice: Invoice = {
     id:
       invoiceFromConverter?.id ??
@@ -859,8 +920,8 @@ const mapInvoiceFromApi = (
       raw.appointmentId ??
       '',
     items: normalizedItems,
-    subtotal: subtotalFromTotals ?? subtotal,
-    discountPercent: raw.discountPercent ?? null,
+    subtotal: resolvedSubtotal,
+    discountPercent: resolvedDiscountPercent,
     taxPercent: raw.taxPercent ?? null,
     total: grandTotalFromTotals ?? total,
     totalPriceComponent: normalizedPriceComponents,
@@ -878,6 +939,7 @@ const mapInvoiceFromApi = (
     stripePaymentIntentId:
       invoiceFromConverter?.stripePaymentIntentId ??
       raw.stripePaymentIntentId ??
+      raw.providerPaymentIntentId ??
       null,
     stripeInvoiceId:
       invoiceFromConverter?.stripeInvoiceId ?? raw.stripeInvoiceId ?? null,
@@ -915,6 +977,7 @@ const mapInvoiceFromApi = (
           'https://yosemitecrew.com/fhir/StructureDefinition/stripe-checkout-session-id',
       )?.valueString ??
       invoiceFromConverter?.stripeCheckoutSessionId ??
+      raw.providerCheckoutSessionId ??
       raw.stripeCheckoutSessionId ??
       null,
     stripeCheckoutUrl:
@@ -929,10 +992,26 @@ const mapInvoiceFromApi = (
           'https://yosemitecrew.com/fhir/StructureDefinition/stripe-checkout-url',
       )?.valueString ??
       invoiceFromConverter?.stripeCheckoutUrl ??
+      raw.checkoutUrl ??
       raw.stripeCheckoutUrl ??
       null,
     paymentIntent,
     downloadUrl: receiptUrl,
+    parentId: raw.parentId ?? raw.parent?.id,
+    patientId: raw.patientId ?? raw.patient?.id,
+    organisationId:
+      raw.organisationId ?? raw.organizationId ?? raw.organisation?.id,
+    totalAmount: raw.totalAmount ?? total,
+    discountTotal: raw.discountTotal ?? null,
+    taxTotal: raw.taxTotal ?? null,
+    billingCollectionMode:
+      raw.billingCollectionMode ?? raw.collectionMode ?? undefined,
+    visitBillingStage: raw.visitBillingStage ?? raw.billingState ?? undefined,
+    depositTargetAmount: raw.depositTargetAmount ?? null,
+    depositCollectedAmount: raw.depositCollectedAmount ?? null,
+    ...(raw.organisation || raw.organistion
+      ? {organisation: raw.organisation ?? raw.organistion}
+      : {}),
     refundId,
     refundAmount,
     refundDate,
@@ -949,7 +1028,7 @@ const mapInvoiceFromApi = (
 
 const mapBusinessFromApi = (
   raw: any,
-): {business: VetBusiness; services: VetService[]} => {
+): {business: VetBusiness; services: VetService[]; packages: VetPackage[]} => {
   const org = raw?.org ?? raw; // handle wrapper {org, distanceInMeters, specialitiesWithServices}
   const distanceMeters =
     raw?.distanceInMeters ?? raw?.distance ?? org?.distanceInMeters ?? 0;
@@ -991,23 +1070,65 @@ const mapBusinessFromApi = (
     [];
 
   const services: VetService[] = [];
+  const packages: VetPackage[] = [];
   specialities.forEach((spec: any) => {
     const specName = spec?.name ?? spec?.text ?? spec?.coding?.[0]?.display;
     const specId = spec?._id ?? spec?.id ?? spec?.coding?.[0]?.code;
     if (Array.isArray(spec?.services)) {
       spec.services.forEach((svc: any) => {
-        services.push({
-          id:
-            svc?._id ?? svc?.id ?? `${id}-${specId}-${svc?.name ?? 'service'}`,
-          businessId: id,
-          specialty: specName ?? '',
-          specialityId: specId ?? null,
-          name: svc?.name ?? svc?.display ?? 'Service',
-          description: svc?.description,
-          basePrice: svc?.cost ?? svc?.price ?? undefined,
-          currency: svc?.currency,
-          defaultEmployeeId: undefined,
-        });
+        const kind = (svc?.kind ?? '').toString().toUpperCase();
+        if (kind === 'PACKAGE') {
+          const items: PackageBreakdownItem[] = Array.isArray(svc?.packageItems)
+            ? svc.packageItems.map((item: any) => ({
+                id:
+                  item?.id ??
+                  item?.childProductItemId ??
+                  `${svc?.id}-item-${item?.sortOrder ?? 0}`,
+                name: item?.childProductName ?? item?.name ?? 'Item',
+                price:
+                  item?.finalAmount ??
+                  item?.grossAmount ??
+                  item?.overridePrice ??
+                  0,
+                currency: item?.currency ?? svc?.currency ?? undefined,
+              }))
+            : [];
+          const totalPrice =
+            svc?.cost ?? items.reduce((sum, item) => sum + item.price, 0);
+          packages.push({
+            id: svc?._id ?? svc?.id ?? `${id}-${specId}-${svc?.name ?? 'pkg'}`,
+            businessId: id,
+            name: svc?.name ?? svc?.display ?? 'Package',
+            description: svc?.description,
+            totalPrice,
+            currency: svc?.currency,
+            specialty: specName ?? '',
+            specialityId: specId ?? undefined,
+            items,
+            appointmentKinds: Array.isArray(svc?.appointmentKinds)
+              ? svc.appointmentKinds
+              : undefined,
+          });
+        } else {
+          services.push({
+            id:
+              svc?._id ??
+              svc?.id ??
+              `${id}-${specId}-${svc?.name ?? 'service'}`,
+            productItemId: svc?.productItemId ?? null,
+            businessId: id,
+            specialty: specName ?? '',
+            specialityId: specId ?? null,
+            name: svc?.name ?? svc?.display ?? 'Service',
+            description: svc?.description,
+            basePrice: svc?.cost ?? svc?.price ?? undefined,
+            currency: svc?.currency,
+            defaultEmployeeId: undefined,
+            appointmentKinds: Array.isArray(svc?.appointmentKinds)
+              ? svc.appointmentKinds
+              : undefined,
+          });
+        }
       });
     }
   });
@@ -1027,11 +1148,10 @@ const mapBusinessFromApi = (
       (typeof distanceMeters === 'number' ? 0 : undefined),
     openHours: org?.openHours,
     photo,
-    specialties: specialities
-      .map(
-        (spec: any) => spec?.name ?? spec?.text ?? spec?.coding?.[0]?.display,
-      )
-      .filter(Boolean),
+    specialties: specialities.flatMap((spec: any) => {
+      const v = spec?.name ?? spec?.text ?? spec?.coding?.[0]?.display;
+      return v ? [v] : [];
+    }),
     website:
       org?.telecom?.find?.((t: any) => t?.system === 'url')?.value ??
       org?.website ??
@@ -1052,7 +1172,7 @@ const mapBusinessFromApi = (
       checkInConfig.appointmentCheckInRadiusMeters,
   };
 
-  return {business, services};
+  return {business, services, packages};
 };
 
 export const appointmentApi = {
@@ -1110,27 +1230,46 @@ export const appointmentApi = {
   async fetchNearbyBusinesses({
     lat,
     lng,
-    page = 1,
+    page,
+    limit,
     accessToken,
   }: {
-    lat: number;
-    lng: number;
+    lat?: number;
+    lng?: number;
     page?: number;
+    limit?: number;
     accessToken?: string;
-  }): Promise<{businesses: VetBusiness[]; services: VetService[]; meta?: any}> {
+  }): Promise<{
+    businesses: VetBusiness[];
+    services: VetService[];
+    packages: VetPackage[];
+    meta?: any;
+  }> {
+    const qs = new URLSearchParams();
+    if (page != null) qs.set('page', String(page));
+    if (lat != null) qs.set('lat', String(lat));
+    if (lng != null) qs.set('lng', String(lng));
+    if (limit != null) qs.set('limit', String(limit));
+    const queryString = qs.toString();
+    const querySuffix = queryString ? `?${queryString}` : '';
     const url = buildUrl(
-      `/fhir/v1/organization/getNearby?lat=${lat}&lng=${lng}&page=${page}`,
+      `/fhir/v1/organization/mobile/getNearby${querySuffix}`,
     );
     const config = accessToken
       ? {headers: withAuthHeaders(accessToken)}
       : undefined;
     const {data} = await apiClient.get(url, config);
-    const items = Array.isArray(data?.data) ? data.data : [];
-    const mapped: Array<{business: VetBusiness; services: VetService[]}> =
-      items.map(mapBusinessFromApi);
+    const dataArray = Array.isArray(data?.data) ? data.data : data;
+    const items = Array.isArray(dataArray) ? dataArray : [];
+    const mapped: Array<{
+      business: VetBusiness;
+      services: VetService[];
+      packages: VetPackage[];
+    }> = items.map(mapBusinessFromApi);
     return {
       businesses: mapped.map(m => m.business),
       services: mapped.flatMap(m => m.services),
+      packages: mapped.flatMap(m => m.packages),
       meta: data?.meta,
     };
   },
@@ -1142,25 +1281,36 @@ export const appointmentApi = {
     accessToken,
   }: {
     serviceName: string;
-    lat: number;
-    lng: number;
+    lat?: number;
+    lng?: number;
     accessToken?: string;
-  }): Promise<{businesses: VetBusiness[]; services: VetService[]}> {
+  }): Promise<{
+    businesses: VetBusiness[];
+    services: VetService[];
+    packages: VetPackage[];
+  }> {
+    const qs = new URLSearchParams({
+      serviceName: encodeURIComponent(serviceName),
+    });
+    if (lat != null) qs.set('lat', String(lat));
+    if (lng != null) qs.set('lng', String(lng));
     const url = buildUrl(
-      `/fhir/v1/service/organisation/search?serviceName=${encodeURIComponent(
-        serviceName,
-      )}&lat=${lat}&lng=${lng}`,
+      `/fhir/v1/service/organisation/search?${qs.toString()}`,
     );
     const config = accessToken
       ? {headers: withAuthHeaders(accessToken)}
       : undefined;
     const {data} = await apiClient.get(url, config);
     const items = extractArrayFromResponse(data);
-    const mapped: Array<{business: VetBusiness; services: VetService[]}> =
-      items.map(mapBusinessFromApi);
+    const mapped: Array<{
+      business: VetBusiness;
+      services: VetService[];
+      packages: VetPackage[];
+    }> = items.map(mapBusinessFromApi);
     return {
       businesses: mapped.map(m => m.business),
       services: mapped.flatMap(m => m.services),
+      packages: mapped.flatMap(m => m.packages),
     };
   },
 
@@ -1202,7 +1352,7 @@ export const appointmentApi = {
     invoice: Invoice | null;
     paymentIntent: PaymentIntentInfo | null;
   }> {
-    const url = buildUrl('/fhir/v1/appointment/mobile/?createPayment=true', {
+    const url = buildUrl('/fhir/v1/appointment/mobile', {
       usePms: true,
     });
     const {data} = await apiClient.post(url, payload, {
@@ -1221,6 +1371,10 @@ export const appointmentApi = {
             amount: resp.paymentIntent.amount,
             currency: resp.paymentIntent.currency ?? invoice?.currency ?? 'USD',
             paymentLinkUrl: resp.paymentIntent.paymentLinkUrl ?? null,
+            connectedAccountId:
+              resp.paymentIntent.connectedAccountId ??
+              resp.paymentIntent.stripeAccountId ??
+              null,
           }
         : null);
 
@@ -1271,8 +1425,7 @@ export const appointmentApi = {
     paymentIntent?: PaymentIntentInfo | null;
   }> {
     const url = buildUrl(
-      `/fhir/v1/invoice/mobile/appointment/${encodeURIComponent(appointmentId)}`,
-      {usePms: true},
+      `/v1/finance/mobile/appointments/${encodeURIComponent(appointmentId)}/invoices`,
     );
     const {data} = await apiClient.post(url, undefined, {
       headers: withAuthHeaders(accessToken),
@@ -1283,8 +1436,29 @@ export const appointmentApi = {
     } else if (Array.isArray(data)) {
       collection = data;
     }
+
+    if (collection.length === 0) {
+      const seedUrl = buildUrl(
+        `/v1/finance/mobile/appointments/${encodeURIComponent(appointmentId)}/seed`,
+      );
+      try {
+        const seedResp = await apiClient.post(seedUrl, undefined, {
+          headers: withAuthHeaders(accessToken),
+        });
+        const seededPayload = seedResp.data?.data ?? seedResp.data ?? null;
+        const seeded = Array.isArray(seededPayload)
+          ? (seededPayload[0] ?? null)
+          : seededPayload;
+        if (seeded && typeof seeded === 'object') collection = [seeded];
+      } catch {
+        // seed failed — proceed with no invoice
+      }
+    }
+
     const raw = collection[0] ?? null;
-    if (!raw) return {invoice: null, paymentIntent: undefined};
+    if (!raw || Array.isArray(raw)) {
+      return {invoice: null, paymentIntent: undefined};
+    }
     const base = mapInvoiceFromApi(raw);
     const stripeReceipt =
       raw?.extension?.find?.(
@@ -1321,25 +1495,64 @@ export const appointmentApi = {
 
   async createPaymentIntent({
     appointmentId,
+    invoiceId: existingInvoiceId,
     accessToken,
   }: {
     appointmentId: string;
+    invoiceId?: string;
     accessToken: string;
   }): Promise<PaymentIntentInfo> {
-    const url = buildUrl(
-      `/v1/stripe/payment-intent/${encodeURIComponent(appointmentId)}`,
+    // Step 1: use existing invoiceId or seed to create one
+    let invoiceId = existingInvoiceId;
+    if (!invoiceId) {
+      const seedUrl = buildUrl(
+        `/v1/finance/mobile/appointments/${encodeURIComponent(appointmentId)}/seed`,
+      );
+      const seedResp = await apiClient.post(seedUrl, undefined, {
+        headers: withAuthHeaders(accessToken),
+      });
+      invoiceId = seedResp.data?.data?.id ?? seedResp.data?.id;
+    }
+    if (!invoiceId) {
+      throw new Error('Unable to resolve invoice for appointment');
+    }
+
+    // Step 2: create payment session — returns paymentIntentId + clientSecret
+    const sessionUrl = buildUrl(
+      `/v1/finance/mobile/invoices/${encodeURIComponent(invoiceId)}/payments/sessions`,
     );
-    const {data} = await apiClient.post(url, undefined, {
-      headers: withAuthHeaders(accessToken),
-    });
+    const {data} = await apiClient.post(
+      sessionUrl,
+      {provider: 'STRIPE'},
+      {headers: withAuthHeaders(accessToken)},
+    );
     const payload = data?.data ?? data ?? {};
+    const paymentIntentId =
+      payload.providerPaymentIntentId ?? payload.paymentIntentId ?? payload.id;
+    let clientSecret: string | null = payload.clientSecret ?? null;
+
+    // Step 3: if clientSecret missing, fetch it via the mobile payment-intent route
+    if (!clientSecret && paymentIntentId) {
+      const intentUrl = buildUrl(
+        `/v1/finance/mobile/payment-intent/${encodeURIComponent(paymentIntentId)}`,
+      );
+      const intentResp = await apiClient.get(intentUrl, {
+        headers: withAuthHeaders(accessToken),
+      });
+      const intentPayload = intentResp.data?.data ?? intentResp.data ?? {};
+      console.log('[Payment] /mobile/payment-intent response:', intentPayload);
+      clientSecret =
+        intentPayload.clientSecret ?? intentPayload.client_secret ?? null;
+    }
+
     return {
-      paymentIntentId:
-        payload.paymentIntentId ?? payload.id ?? `pi-${appointmentId}`,
-      clientSecret: payload.clientSecret,
-      amount: payload.amount,
+      paymentIntentId: paymentIntentId ?? `pi-${appointmentId}`,
+      clientSecret,
+      amount: payload.amount ?? null,
       currency: payload.currency ?? 'USD',
-      paymentLinkUrl: payload.paymentLinkUrl ?? null,
+      paymentLinkUrl: payload.checkoutUrl ?? payload.paymentLinkUrl ?? null,
+      connectedAccountId:
+        payload.connectedAccountId ?? payload.stripeAccountId ?? null,
     };
   },
 
@@ -1401,11 +1614,10 @@ export const appointmentApi = {
       headers: withAuthHeaders(accessToken),
     });
     const payload = data?.data ?? data ?? {};
-    const base = payload?.hasRated ?? payload ?? {};
     return {
-      isRated: Boolean(base.isRated),
-      rating: base.rating ?? null,
-      review: base.review ?? null,
+      isRated: Boolean(payload?.hasRated ?? payload?.isRated),
+      rating: payload?.rating ?? payload?.hasRated?.rating ?? null,
+      review: payload?.review ?? payload?.hasRated?.review ?? null,
     };
   },
 };

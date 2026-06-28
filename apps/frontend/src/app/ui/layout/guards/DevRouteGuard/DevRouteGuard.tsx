@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { getStorageItem } from '@/app/lib/browserStorage';
 import { useAuthStore } from '@/app/stores/authStore';
 
 const isLocalDeveloperFallbackEnabled = () => {
@@ -17,7 +18,8 @@ const isLocalDeveloperFallbackEnabled = () => {
 const DevRouteGuard = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter();
   const pathname = usePathname();
-  const { status, role, signout } = useAuthStore();
+  const authStore = useAuthStore();
+  const { status, role } = authStore;
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
@@ -27,7 +29,7 @@ const DevRouteGuard = ({ children }: { children: React.ReactNode }) => {
     const isDevPath = pathname?.startsWith('/developers');
 
     const devFlag =
-      isLocalDeveloperFallbackEnabled() && globalThis.sessionStorage?.getItem('devAuth') === 'true';
+      isLocalDeveloperFallbackEnabled() && getStorageItem('session', 'devAuth') === 'true';
 
     const isDevRole = role === 'developer' || devFlag;
 
@@ -52,10 +54,10 @@ const DevRouteGuard = ({ children }: { children: React.ReactNode }) => {
 
     // Authenticated but not a developer - sign out and redirect
     if (isAuthenticated && !isDevRole) {
-      signout();
+      authStore.signout();
       router.replace('/developers/signin');
     }
-  }, [status, role, pathname, router, signout]);
+  }, [status, role, pathname, router, authStore]);
 
   if (!allowed) return null;
 

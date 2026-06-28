@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useBoardDragScroll } from '@/app/hooks/useBoardDragScroll';
+import { useScrollBoundaryWheel } from '@/app/hooks/useScrollBoundaryWheel';
+import { useWheelToHorizontalScroll } from '@/app/hooks/useWheelToHorizontalScroll';
 import { buildDragPreview } from '@/app/lib/buildDragPreview';
 import AppointmentScopeToggle from '@/app/ui/primitives/AppointmentScopeToggle/AppointmentScopeToggle';
 import { Appointment } from '@yosemite-crew/types';
 import { getStatusStyle } from '@/app/config/statusConfig';
 import {
-  acceptAppointment,
   changeAppointmentStatus,
   rejectAppointment,
 } from '@/app/features/appointments/services/appointmentService';
@@ -58,8 +59,17 @@ import { useNotify } from '@/app/hooks/useNotify';
 import { AppointmentStatus } from '@/app/features/appointments/types/appointments';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
+import {
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+} from '@/app/lib/appointmentWorkspace';
+import { startRouteLoader } from '@/app/lib/routeLoader';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import clsx from 'clsx';
+import { AppointmentModePill } from '@/app/features/appointments/components/AppointmentCardContent';
+import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
+import { getAppointmentRoomDisplay } from '@/app/lib/appointmentRoomDisplay';
 
 type BoardStatus =
   | 'REQUESTED'
@@ -129,6 +139,7 @@ type AppointmentBoardProps = {
   canEditAppointments: boolean;
   setActiveAppointment?: (appointment: Appointment) => void;
   setViewPopup?: React.Dispatch<React.SetStateAction<boolean>>;
+  setDetailPopup?: React.Dispatch<React.SetStateAction<boolean>>;
   setViewIntent?: (intent: AppointmentViewIntent | null) => void;
   setChangeStatusPopup?: React.Dispatch<React.SetStateAction<boolean>>;
   setChangeStatusPreferredStatus?: React.Dispatch<React.SetStateAction<AppointmentStatus | null>>;
@@ -140,13 +151,21 @@ type AppointmentBoardProps = {
   hasEmergency?: boolean;
 };
 
-const AppointmentBoard = ({
+const normalizeId = (value?: string | null) =>
+  String(value ?? '')
+    .trim()
+    .split('/')
+    .pop()
+    ?.toLowerCase() ?? '';
+
+const AppointmentBoardComponent = ({
   appointments,
   currentDate,
   setCurrentDate,
   canEditAppointments,
   setActiveAppointment,
   setViewPopup,
+  setDetailPopup,
   setViewIntent,
   setChangeStatusPopup,
   setChangeStatusPreferredStatus,
@@ -159,6 +178,8 @@ const AppointmentBoard = ({
 }: AppointmentBoardProps) => {
   const { notify } = useNotify();
   const orgsById = useOrgStore((s) => s.orgsById);
+  const encountersById = useAppointmentWorkspaceStore((s) => s.encountersById);
+  const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
   const team = useTeamForPrimaryOrg();
   const authUserId = useAuthStore(
     (s) => s.attributes?.sub || s.attributes?.email || s.attributes?.['cognito:username'] || ''
@@ -171,13 +192,6 @@ const AppointmentBoard = ({
   const columnScrollRefs = useRef<Partial<Record<BoardStatus, HTMLDivElement | null>>>({});
   const invoices = useInvoicesForPrimaryOrg();
   const invoicesByAppointmentId = useMemo(() => createInvoiceByAppointmentId(invoices), [invoices]);
-
-  const normalizeId = (value?: string | null) =>
-    String(value ?? '')
-      .trim()
-      .split('/')
-      .pop()
-      ?.toLowerCase() ?? '';
 
   const currentUserLeadId = useMemo(() => {
     const normalizedCurrentUser = normalizeId(authUserId);
@@ -196,11 +210,10 @@ const AppointmentBoard = ({
   const todayAppointments = useMemo(
     () =>
       appointments
-        .filter((appointment) =>
-          isOnPreferredTimeZoneCalendarDay(appointment.startTime, currentDate)
-        )
-        .filter((appointment) =>
-          showMineOnly ? normalizeId(appointment.lead?.id) === currentUserLeadId : true
+        .filter(
+          (appointment) =>
+            isOnPreferredTimeZoneCalendarDay(appointment.startTime, currentDate) &&
+            (!showMineOnly || normalizeId(appointment.lead?.id) === currentUserLeadId)
         )
         .sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
     [appointments, currentDate, currentUserLeadId, showMineOnly]
@@ -236,16 +249,25 @@ const AppointmentBoard = ({
   const openAppointment = (appointment: Appointment) => {
     setActiveAppointment?.(appointment);
     setViewIntent?.(null);
-    setViewPopup?.(true);
+    if (setViewPopup) {
+      setViewPopup(true);
+      return;
+    }
+    setDetailPopup?.(true);
   };
 
-  const openAppointmentWithIntent = (appointment: Appointment, intent?: AppointmentViewIntent) => {
-    setActiveAppointment?.(appointment);
-    setViewIntent?.(intent ?? null);
-    setViewPopup?.(true);
+  const openAppointmentWorkspace = (appointment: Appointment, intent?: AppointmentViewIntent) => {
+    if (!appointment.id) return;
+    if (!canEnterAppointmentWorkspace(appointment.status)) {
+      openAppointment(appointment);
+      return;
+    }
+    startRouteLoader();
+    router.push(buildWorkspaceHrefForIntent(appointment.id, intent));
   };
 
   const openAppointmentHistory = (appointment: Appointment) => {
+    startRouteLoader();
     router.push(
       buildAppointmentCompanionHistoryHref(
         appointment.id,
@@ -272,6 +294,8 @@ const AppointmentBoard = ({
   };
 
   const { autoScrollBoardOnDrag } = useBoardDragScroll();
+  const onWheelHorizontal = useWheelToHorizontalScroll();
+  const onWheelBoundary = useScrollBoundaryWheel();
 
   const moveToStatus = useCallback(
     async (appointmentId: string, nextStatus: BoardStatus) => {
@@ -324,6 +348,9 @@ const AppointmentBoard = ({
     [moveToStatus]
   );
 
+  const handleDroppedAppointmentStatusRef = useRef(handleDroppedAppointmentStatus);
+  handleDroppedAppointmentStatusRef.current = handleDroppedAppointmentStatus;
+
   useEffect(() => {
     const boardRoot = boardRootRef.current;
     if (!boardRoot) return;
@@ -352,7 +379,7 @@ const AppointmentBoard = ({
       const handleColumnDrop = (event: DragEvent) => {
         if (!draggedAppointmentId || !canEditAppointments) return;
         event.preventDefault();
-        handleDroppedAppointmentStatus(draggedAppointmentId, column.key);
+        handleDroppedAppointmentStatusRef.current(draggedAppointmentId, column.key);
       };
 
       const handleScrollDragOver = (event: DragEvent) => {
@@ -373,12 +400,7 @@ const AppointmentBoard = ({
     });
 
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [
-    autoScrollBoardOnDrag,
-    canEditAppointments,
-    draggedAppointmentId,
-    handleDroppedAppointmentStatus,
-  ]);
+  }, [autoScrollBoardOnDrag, canEditAppointments, draggedAppointmentId]);
 
   return (
     <div className="h-full min-h-0 rounded-2xl border border-grey-light bg-white overflow-hidden flex flex-col">
@@ -422,8 +444,9 @@ const AppointmentBoard = ({
             </div>
           </div>
           <div
-            className="relative z-20 min-w-0 flex-1 overflow-x-auto scrollbar-hidden py-1 -my-1"
+            className="relative z-20 min-w-0 flex-1 overflow-x-auto scrollbar-x-float py-1 -my-1"
             style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+            onWheel={onWheelHorizontal}
           >
             <div className="flex w-max items-center gap-3 ml-auto">
               <button
@@ -445,7 +468,7 @@ const AppointmentBoard = ({
                 {hasEmergency && (
                   <span
                     aria-label="Emergency appointments present"
-                    className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full"
+                    className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full"
                     style={{
                       backgroundColor: 'var(--color-semantic-error-700)',
                       outline: '2px solid white',
@@ -473,9 +496,10 @@ const AppointmentBoard = ({
       </div>
       <div
         ref={boardRootRef}
-        className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-3"
+        className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-3 scrollbar-x-float"
         data-calendar-scroll="true"
         data-board-scroll-root="true"
+        onWheel={onWheelHorizontal}
       >
         <div className="h-full min-w-max flex items-stretch gap-3">
           {BOARD_COLUMNS.map((column) => {
@@ -521,15 +545,22 @@ const AppointmentBoard = ({
                     columnScrollRefs.current[column.key] = element;
                   }}
                   className="flex-1 min-h-0 h-0 flex flex-col gap-2 p-3 pb-4 bg-white overflow-y-auto"
+                  onWheel={onWheelBoundary}
                   data-calendar-scroll="true"
                 >
                   {columnAppointments.map((appointment) => {
+                    const companion = appointment.companion ?? appointment.patient;
+                    const roomDisplay = getAppointmentRoomDisplay(
+                      appointment,
+                      encountersById,
+                      roomUnitsById
+                    );
                     const isCardDraggable =
                       canEditAppointments &&
                       getAllowedAppointmentStatusTransitions(appointment.status).length > 0;
                     const companionDisplayName = formatCompanionNameWithOwnerLastName(
-                      appointment.companion.name,
-                      appointment.companion.parent
+                      companion.name,
+                      companion.parent
                     );
 
                     return (
@@ -538,28 +569,25 @@ const AppointmentBoard = ({
                         aria-label={
                           isCardDraggable
                             ? `Draggable appointment ${companionDisplayName}`
-                            : `Open appointment ${companionDisplayName}`
+                            : `Appointment ${companionDisplayName}`
                         }
                         className={`relative w-full min-h-[142px] shrink-0 rounded-2xl! overflow-hidden border border-card-border bg-white px-4 py-3 text-left transition-colors flex flex-col items-stretch justify-start ${
                           draggedAppointmentId === (appointment.id ?? null)
                             ? 'opacity-60 shadow-none'
                             : 'hover:border-input-border-active! hover:bg-card-hover!'
-                        } ${isCardDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
+                        } ${isCardDraggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
                         draggable={isCardDraggable}
                         onDragStart={(event) => handleAppointmentDragStart(event, appointment.id)}
                         onDragEnd={() => setDraggedAppointmentId(null)}
-                        onClick={isCardDraggable ? undefined : () => openAppointment(appointment)}
-                        onKeyDown={
-                          isCardDraggable
-                            ? undefined
-                            : (e) => {
-                                if (e.key === 'Enter' || e.key === ' ')
-                                  openAppointment(appointment);
-                              }
-                        }
-                        role={isCardDraggable ? undefined : 'button'}
-                        tabIndex={isCardDraggable ? undefined : 0}
                       >
+                        {!isCardDraggable && (
+                          <button
+                            type="button"
+                            aria-label={`Open appointment ${companionDisplayName}`}
+                            className="absolute inset-0 z-0 w-full h-full cursor-pointer bg-transparent border-0 p-0"
+                            onClick={() => openAppointment(appointment)}
+                          />
+                        )}
                         <div className="relative z-10 flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="text-caption-1 font-semibold text-text-primary">
@@ -585,19 +613,19 @@ const AppointmentBoard = ({
                                 Reason: {appointment.concern || '-'}
                               </div>
                               <div className="break-words text-[10px] font-normal text-text-secondary">
-                                Room: {appointment.room?.name || '-'}
+                                {roomDisplay.label}: {roomDisplay.value}
                               </div>
                             </div>
                           </div>
                           <div className="flex shrink-0 flex-col items-end gap-1">
                             <Image
                               src={getSafeImageUrl(
-                                getAppointmentCompanionPhotoUrl(appointment.companion),
-                                appointment.companion.species.toLowerCase() as ImageType
+                                getAppointmentCompanionPhotoUrl(companion),
+                                companion.species.toLowerCase() as ImageType
                               )}
                               height={24}
                               width={24}
-                              className="h-6 w-6 rounded-full border border-card-border bg-white object-cover"
+                              className="size-6 rounded-full border border-card-border bg-white object-cover"
                               alt=""
                             />
                             <div className="text-[10px] text-text-secondary whitespace-nowrap">
@@ -606,6 +634,11 @@ const AppointmentBoard = ({
                                 minute: '2-digit',
                               })}
                             </div>
+                            <AppointmentModePill
+                              appointment={appointment}
+                              className="h-6 px-2.5 text-[10px]"
+                              iconSize={12}
+                            />
                           </div>
                         </div>
                         <div className="relative z-10 pt-1 pb-1 border-t border-card-border/60 flex items-center justify-between gap-2">
@@ -622,11 +655,11 @@ const AppointmentBoard = ({
                             <GlassTooltip content="Accept request" side="bottom">
                               <button
                                 type="button"
-                                className="h-7 w-7 rounded-full! bg-success-100 border border-success-200 flex items-center justify-center"
+                                className="size-7 rounded-full! bg-success-100 border border-success-200 flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  void acceptAppointment(appointment);
+                                  openChangeStatus(appointment);
                                 }}
                               >
                                 <FaCheckCircle size={14} color="var(--color-success-400)" />
@@ -635,7 +668,7 @@ const AppointmentBoard = ({
                             <GlassTooltip content="Decline request" side="bottom">
                               <button
                                 type="button"
-                                className="h-7 w-7 rounded-full! bg-danger-100 border border-danger-200 flex items-center justify-center"
+                                className="size-7 rounded-full! bg-danger-100 border border-danger-200 flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -649,23 +682,25 @@ const AppointmentBoard = ({
                         )}
                         {!isRequestedLikeStatus(appointment.status) && (
                           <div className="relative z-10 mt-2 flex items-center gap-1.5 flex-wrap max-w-[184px]">
-                            <GlassTooltip content="View appointment" side="bottom">
-                              <button
-                                type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  openAppointmentWithIntent(appointment);
-                                }}
-                              >
-                                <IoEyeOutline size={16} color="var(--color-neutral-900)" />
-                              </button>
-                            </GlassTooltip>
+                            {canEnterAppointmentWorkspace(appointment.status) && (
+                              <GlassTooltip content="View appointment" side="bottom">
+                                <button
+                                  type="button"
+                                  className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    openAppointment(appointment);
+                                  }}
+                                >
+                                  <IoEyeOutline size={16} color="var(--color-neutral-900)" />
+                                </button>
+                              </GlassTooltip>
+                            )}
                             <GlassTooltip content="Overview" side="bottom">
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -681,7 +716,7 @@ const AppointmentBoard = ({
                                 <GlassTooltip content="Change status" side="bottom">
                                   <button
                                     type="button"
-                                    className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                    className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                     onClick={(event) => {
                                       event.preventDefault();
                                       event.stopPropagation();
@@ -699,7 +734,7 @@ const AppointmentBoard = ({
                               <GlassTooltip content="Reschedule" side="bottom">
                                 <button
                                   type="button"
-                                  className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                  className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
@@ -715,7 +750,7 @@ const AppointmentBoard = ({
                                 <GlassTooltip content="Assign room" side="bottom">
                                   <button
                                     type="button"
-                                    className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                    className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                     onClick={(event) => {
                                       event.preventDefault();
                                       event.stopPropagation();
@@ -734,11 +769,11 @@ const AppointmentBoard = ({
                             >
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  openAppointmentWithIntent(
+                                  openAppointmentWorkspace(
                                     appointment,
                                     getClinicalNotesIntent(getBoardOrgType(appointment, orgsById))
                                   );
@@ -753,11 +788,11 @@ const AppointmentBoard = ({
                             <GlassTooltip content="Finance summary" side="bottom">
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  openAppointmentWithIntent(appointment, {
+                                  openAppointmentWorkspace(appointment, {
                                     label: 'finance',
                                     subLabel: 'summary',
                                   });
@@ -769,11 +804,11 @@ const AppointmentBoard = ({
                             <GlassTooltip content="Lab tests" side="bottom">
                               <button
                                 type="button"
-                                className="h-8 w-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
+                                className="size-8 rounded-full! border border-black-text! bg-white flex items-center justify-center"
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
-                                  openAppointmentWithIntent(appointment, {
+                                  openAppointmentWorkspace(appointment, {
                                     label: 'labs',
                                     subLabel: 'idexx-labs',
                                   });
@@ -786,7 +821,7 @@ const AppointmentBoard = ({
                         )}
                         {updatingStatusId === appointment.id && (
                           <div className="relative z-10 mt-1 text-[10px] text-text-secondary">
-                            Updating...
+                            Updating…
                           </div>
                         )}
                       </article>
@@ -807,4 +842,5 @@ const AppointmentBoard = ({
   );
 };
 
+const AppointmentBoard = React.memo(AppointmentBoardComponent);
 export default AppointmentBoard;

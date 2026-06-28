@@ -1,7 +1,15 @@
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { BatchValues, InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
 import { BusinessType } from '@/app/features/organization/types/org';
-import { formatDisplayDate, toStringSafe } from '@/app/features/inventory/pages/Inventory/utils';
+import {
+  formatCurrencyValue,
+  formatDisplayDate,
+  formatPercentValue,
+  getGrossProfitPerUnit,
+  getMarginPercent,
+  getStockValue,
+  toStringSafe,
+} from '@/app/features/inventory/pages/Inventory/utils';
 import {
   ConfigItem,
   InventoryFormConfig,
@@ -13,9 +21,14 @@ import Datepicker from '@/app/ui/inputs/Datepicker';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import Modal from '@/app/ui/overlays/Modal';
+import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
+import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import InfoSection from '@/app/features/inventory/components/InfoSection';
 import Close from '@/app/ui/primitives/Icons/Close';
 import Labels from '@/app/ui/widgets/Labels/Labels';
+import Delete from '@/app/ui/primitives/Buttons/Delete';
+
+const drugOnlyBatchFieldNames = new Set(['tracking']);
 
 const emptyBatch: BatchValues = {
   batch: '',
@@ -102,6 +115,54 @@ const sectionValidationHandlers: Partial<
   stock: getStockErrors,
 };
 
+const parseDate = (value?: string): Date | null => {
+  if (!value) return null;
+  if (value.includes('/')) {
+    const [dd, mm, yyyy] = value.split('/');
+    const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDate = (date: Date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const normalizeOptions = (options?: Array<string | { label: string; value: string }>) =>
+  options?.map((option: any) =>
+    typeof option === 'string' ? { label: option, value: option } : option
+  ) ?? [];
+
+const resolveLabel = (options: Array<{ label: string; value: string }>, value: string) =>
+  options.find((o) => o.value === value)?.label ?? value;
+
+const formatDateValue = (value?: string) => {
+  return formatDisplayDate(value) || '—';
+};
+
+const formatFinalValue = (display: string | string[]): string => {
+  if (Array.isArray(display)) {
+    return display.length > 0 ? display.join(', ') : '—';
+  }
+  if (display !== undefined && display !== '') {
+    return String(display);
+  }
+  return '—';
+};
+
 type BatchEditorProps = {
   businessType: BusinessType;
   inventory: InventoryItem;
@@ -135,7 +196,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editableExistingBatches, setEditableExistingBatches] = useState<BatchValues[]>([]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setNewBatches([]);
     setIsEditing(false);
     setEditableExistingBatches([]);
@@ -143,36 +204,16 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
   }, [inventory, onEditingChange]);
 
   const configForBusiness = InventoryFormConfig[businessType] || {};
+  const isNonDrug = String(inventory.classification?.itemType ?? '').toLowerCase() === 'non-drug';
   const sectionConfig = useMemo<ConfigItem<any>[]>(
-    () => configForBusiness.batch || [],
-    [configForBusiness.batch]
+    () =>
+      (configForBusiness.batch || []).filter((item) => {
+        if (!isNonDrug) return true;
+        const names = item.kind === 'row' ? item.fields.map((f: any) => f.name) : [item.field.name];
+        return names.every((n: string) => !drugOnlyBatchFieldNames.has(n));
+      }),
+    [configForBusiness.batch, isNonDrug]
   );
-
-  const parseDate = (value?: string): Date | null => {
-    if (!value) return null;
-    if (value.includes('/')) {
-      const [dd, mm, yyyy] = value.split('/');
-      const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-    if (isoMatch) {
-      const [, yyyy, mm, dd] = isoMatch;
-      const parsed = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
-      if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
-  };
-
-  const formatDate = (date: Date) => {
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
 
   const beginEditing = useCallback(() => {
     if (disableEditing) return;
@@ -276,7 +317,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     setIsEditing(false);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (disableEditing && isEditing) {
       setIsEditing(false);
     }
@@ -291,18 +332,6 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     });
     return () => onRegisterActions?.(null);
   }, [onRegisterActions, handleSave, handleCancel, beginEditing, inventory, isEditing]);
-
-  const normalizeOptions = (options?: Array<string | { label: string; value: string }>) =>
-    options?.map((option: any) =>
-      typeof option === 'string' ? { label: option, value: option } : option
-    ) ?? [];
-
-  const resolveLabel = (options: Array<{ label: string; value: string }>, value: string) =>
-    options.find((o) => o.value === value)?.label ?? value;
-
-  const formatDateValue = (value?: string) => {
-    return formatDisplayDate(value) || '—';
-  };
 
   const renderField = (
     field: any,
@@ -323,10 +352,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
           key={key ?? name}
           currentDate={currentDate}
           setCurrentDate={(next: Date | null | ((prev: Date | null) => Date | null)) => {
-            const resolved =
-              typeof next === 'function'
-                ? (next as (prev: Date | null) => Date | null)(currentDate)
-                : next;
+            const resolved = typeof next === 'function' ? next(currentDate) : next;
             if (!resolved) {
               onChangeHandler(batchIndex, typedName, '');
               return;
@@ -368,62 +394,6 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     );
   };
 
-  const getFieldDisplay = (
-    component: string,
-    value: any,
-    normalizedOptions: any[]
-  ): string | string[] => {
-    if (component === 'multiSelect') {
-      if (Array.isArray(value)) return value;
-      if (typeof value === 'string' && value.trim() !== '') {
-        return value.split(',').map((v: string) => v.trim());
-      }
-      return [];
-    }
-
-    if (component === 'dropdown') {
-      if (value !== undefined && value !== '') {
-        return resolveLabel(normalizedOptions, String(value));
-      }
-      return '—';
-    }
-
-    if (component === 'date') {
-      return formatDateValue(String(value ?? ''));
-    }
-
-    return String(value ?? '');
-  };
-
-  const formatFinalValue = (display: string | string[]): string => {
-    if (Array.isArray(display)) {
-      return display.length > 0 ? display.join(', ') : '—';
-    }
-    if (display !== undefined && display !== '') {
-      return String(display);
-    }
-    return '—';
-  };
-
-  const renderPreviewField = (field: any, batchData: BatchValues, key?: React.Key) => {
-    const { placeholder, label, component, options, name } = field;
-    const value = batchData[name as keyof BatchValues];
-    const displayLabel = placeholder || label || name;
-    const normalizedOptions = normalizeOptions(options);
-
-    const display = getFieldDisplay(component, value, normalizedOptions);
-    const finalValue = formatFinalValue(display);
-
-    return (
-      <div key={key ?? name} className="flex flex-col gap-1">
-        <div className="font-satoshi font-semibold text-grey-bg text-[14px]">{displayLabel}</div>
-        <div className="font-satoshi font-semibold text-black-text text-[15px] overflow-scroll scrollbar-hidden">
-          {finalValue}
-        </div>
-      </div>
-    );
-  };
-
   const renderItem = (
     item: ConfigItem<any>,
     index: number,
@@ -447,25 +417,6 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
     return (
       <div key={fullKey} className="w-full">
         {renderField(item.field, batchIndex, index, source, changeHandler)}
-      </div>
-    );
-  };
-
-  const renderPreviewItem = (item: ConfigItem<any>, index: number, batchData: BatchValues) => {
-    const itemKey =
-      item.kind === 'row' ? item.fields.map((field) => field.name).join('-') : item.field.name;
-    const fullKey = `${batchData?._id ?? 'batch'}-${itemKey}`;
-    if ('fields' in item && item.kind === 'row') {
-      return (
-        <div key={fullKey} className="grid grid-cols-2 gap-3">
-          {item.fields.map((field, i) => renderPreviewField(field, batchData, `${index}-${i}`))}
-        </div>
-      );
-    }
-
-    return (
-      <div key={fullKey} className="w-full">
-        {renderPreviewField(item.field, batchData, index)}
       </div>
     );
   };
@@ -504,7 +455,11 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
                             : existingBatches;
                         return renderItem(item, index, batchIdx, batchSource, handleExistingChange);
                       }
-                      return renderPreviewItem(item, index, batch);
+                      const itemKey =
+                        item.kind === 'row'
+                          ? item.fields.map((f: any) => f.name).join('-')
+                          : item.field.name;
+                      return <PreviewItem key={itemKey} item={item} batchData={batch} />;
                     })}
                   </div>
                 </div>
@@ -567,15 +522,17 @@ type InventoryInfoProps = {
   onUnhide: (itemId: string) => Promise<void>;
   canEdit?: boolean;
   stockLocationOptions?: string[];
+  initialSection?: InventorySectionKey;
+  organisationId?: string;
 };
 
 const modalSections: { key: InventorySectionKey; name: string }[] = [
-  { key: 'basicInfo', name: 'Basic Information' },
-  { key: 'classification', name: 'Classification attribute' },
+  { key: 'basicInfo', name: 'Basic Details' },
+  { key: 'classification', name: 'Clinical Details' },
+  { key: 'stock', name: 'Stock Control' },
+  { key: 'batch', name: 'Batch and expiry' },
   { key: 'pricing', name: 'Pricing' },
   { key: 'vendor', name: 'Vendor details' },
-  { key: 'stock', name: 'Stock and quantity details' },
-  { key: 'batch', name: 'Batch / Lot details' },
 ];
 
 const getPrimaryButtonText = (
@@ -590,7 +547,104 @@ const getPrimaryButtonText = (
   if (isHiding) {
     return isHidden ? 'Unhiding...' : 'Hiding...';
   }
-  return isHidden ? 'Unhide item' : 'Hide item';
+  return isHidden ? 'Restore item' : 'Delete item';
+};
+
+const getFieldDisplay = (
+  component: string,
+  value: any,
+  normalizedOptions: any[]
+): string | string[] => {
+  if (component === 'multiSelect') {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value.split(',').map((v: string) => v.trim());
+    }
+    return [];
+  }
+
+  if (component === 'dropdown') {
+    if (value !== undefined && value !== '') {
+      return resolveLabel(normalizedOptions, String(value));
+    }
+    return '—';
+  }
+
+  if (component === 'date') {
+    return formatDateValue(String(value ?? ''));
+  }
+
+  return String(value ?? '');
+};
+
+const PreviewField = ({ field, batchData }: { field: any; batchData: BatchValues }) => {
+  const { placeholder, label, component, options, name } = field;
+  const value = batchData[name as keyof BatchValues];
+  const displayLabel = placeholder || label || name;
+  const normalizedOptions = normalizeOptions(options);
+  const display = getFieldDisplay(component, value, normalizedOptions);
+  const finalValue = formatFinalValue(display);
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="font-satoshi font-semibold text-grey-bg text-[14px]">{displayLabel}</div>
+      <div className="font-satoshi font-semibold text-black-text text-[15px] overflow-scroll scrollbar-hidden">
+        {finalValue}
+      </div>
+    </div>
+  );
+};
+
+const PreviewItem = ({ item, batchData }: { item: ConfigItem<any>; batchData: BatchValues }) => {
+  const itemKey =
+    item.kind === 'row' ? item.fields.map((field) => field.name).join('-') : item.field.name;
+  const fullKey = `${batchData?._id ?? 'batch'}-${itemKey}`;
+  if ('fields' in item && item.kind === 'row') {
+    return (
+      <div key={fullKey} className="grid grid-cols-2 gap-3">
+        {item.fields.map((field) => (
+          <PreviewField key={field.name} field={field} batchData={batchData} />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div key={fullKey} className="w-full">
+      <PreviewField field={item.field} batchData={batchData} />
+    </div>
+  );
+};
+
+const PricingCurrencySummary = ({ inventory }: { inventory: InventoryItem }) => {
+  const currency = inventory.currency;
+  return (
+    <div className="flex flex-col gap-2 px-4 pt-2 text-body-4 text-text-primary">
+      <div>
+        <span>Gross profit per unit : </span>
+        <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
+          {formatCurrencyValue(getGrossProfitPerUnit(inventory), currency)}
+        </span>
+      </div>
+      <div>
+        <span>Margin : </span>
+        <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
+          {formatPercentValue(getMarginPercent(inventory))}
+        </span>
+      </div>
+      <div className="relative rounded-2xl border border-input-border-default px-6 py-3 min-h-12">
+        <span className="absolute left-4 -top-[11px] bg-white px-1.5 text-xs text-input-text-placeholder">
+          Total stock value
+        </span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-body-4 text-text-primary">
+            {formatCurrencyValue(getStockValue(inventory), currency)}
+          </span>
+          <span className="text-caption-1 text-text-extra whitespace-nowrap">
+            on-hand stock x unit cost
+          </span>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const InventoryInfo = ({
@@ -605,11 +659,27 @@ const InventoryInfo = ({
   onUpdateBatch,
   canEdit = true,
   stockLocationOptions,
+  initialSection,
+  organisationId,
 }: InventoryInfoProps) => {
-  const [activeLabel, setActiveLabel] = useState<InventorySectionKey>(modalSections[0].key);
+  const [activeLabel, setActiveLabel] = useState<InventorySectionKey>(
+    initialSection ?? modalSections[0].key
+  );
+  // On each (re)open, land on the requested section (e.g. Restock → Stock Control)
+  // or fall back to the first tab. Adjusted during render via a prev-prop comparison
+  // rather than an effect, so the correct tab shows on the first commit.
+  const [lastOpenKey, setLastOpenKey] = useState<string | null>(null);
+  const openKey = showModal ? `${activeInventory?.id ?? ''}:${initialSection ?? ''}` : null;
+  if (openKey !== null && openKey !== lastOpenKey) {
+    setLastOpenKey(openKey);
+    setActiveLabel(initialSection ?? modalSections[0].key);
+  } else if (openKey === null && lastOpenKey !== null) {
+    setLastOpenKey(null);
+  }
   const [isUpdating, setIsUpdating] = useState(false);
   const [isHiding, setIsHiding] = useState(false);
   const [isSectionEditing, setIsSectionEditing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const sectionActions = useRef<{
     save: () => Promise<void>;
     cancel: () => void;
@@ -624,7 +694,7 @@ const InventoryInfo = ({
   } | null>(null);
   const currentLabelConfig = modalSections.find((l) => l.key === activeLabel) || modalSections[0];
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setIsSectionEditing(false);
     sectionActions.current = null;
     batchActions.current = null;
@@ -741,7 +811,7 @@ const InventoryInfo = ({
     if (isHidden) {
       await handleUnhide();
     } else {
-      await handleHide();
+      setShowDeleteConfirm(true);
     }
   };
 
@@ -759,77 +829,114 @@ const InventoryInfo = ({
   };
 
   return (
-    <Modal showModal={showModal} setShowModal={setShowModal}>
-      <div className="flex flex-col h-full gap-6">
-        <div className="flex justify-between items-center">
-          <div className="opacity-0">
-            <Close onClick={() => {}} />
+    <>
+      <Modal showModal={showModal} setShowModal={setShowModal}>
+        <div className="flex flex-col h-full gap-6">
+          <div className="flex items-center justify-between border-b border-card-border pb-4">
+            <div className="min-w-0">
+              <div className="truncate text-body-1 text-text-primary">
+                {activeInventory?.basicInfo.name}
+              </div>
+              <div className="text-caption-1 text-text-secondary">
+                {activeInventory?.basicInfo.category || 'Inventory item'}
+                {activeInventory?.basicInfo.skuCode
+                  ? ` · ${activeInventory.basicInfo.skuCode}`
+                  : ''}
+              </div>
+            </div>
+            <Close onClick={() => setShowModal(false)} />
           </div>
-          <div className="flex justify-center items-center gap-2">
-            <div className="text-body-1 text-text-primary">{activeInventory?.basicInfo.name}</div>
-          </div>
-          <Close onClick={() => setShowModal(false)} />
-        </div>
 
-        <Labels labels={modalSections} activeLabel={activeLabel} setActiveLabel={setActiveLabel} />
-
-        <div className="flex overflow-y-auto flex-1 scrollbar-hidden">
-          {activeInventory && (
-            <>
-              {activeLabel === 'batch' ? (
-                <BatchEditor
-                  businessType={businessType}
-                  inventory={activeInventory}
-                  onSave={(vals) => handleSectionSave('batch', vals)}
-                  disableEditing={!canEdit || isUpdating || isHiding}
-                  onEditingChange={setIsSectionEditing}
-                  onRegisterActions={(actions) => {
-                    batchActions.current = actions;
-                  }}
-                />
-              ) : (
-                <InfoSection
-                  businessType={businessType}
-                  sectionKey={activeLabel}
-                  sectionTitle={currentLabelConfig.name}
-                  inventory={activeInventory}
-                  onSaveSection={handleSectionSave}
-                  disableEditing={!canEdit || isUpdating || isHiding}
-                  onEditingChange={setIsSectionEditing}
-                  stockLocationOptions={stockLocationOptions}
-                  onRegisterActions={(actions) => {
-                    sectionActions.current = actions;
-                  }}
-                />
-              )}
-            </>
-          )}
-        </div>
-
-        <div
-          className={`grid gap-3 ${canEdit || inEditMode ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}
-        >
-          <Secondary
-            href="#"
-            text={inEditMode ? 'Cancel' : 'Close'}
-            onClick={handleSecondaryAction}
-            isDisabled={isUpdating || isHiding}
-            className="h-12! text-lg! tracking-[-0.36px]!"
+          <Labels
+            labels={modalSections}
+            activeLabel={activeLabel}
+            setActiveLabel={setActiveLabel}
           />
-          {(canEdit || inEditMode) && (
-            <Primary
+
+          <div className="flex flex-col overflow-y-auto flex-1 scrollbar-hidden">
+            {activeInventory && (
+              <>
+                {activeLabel === 'batch' ? (
+                  <BatchEditor
+                    businessType={businessType}
+                    inventory={activeInventory}
+                    onSave={(vals) => handleSectionSave('batch', vals)}
+                    disableEditing={!canEdit || isUpdating || isHiding}
+                    onEditingChange={setIsSectionEditing}
+                    onRegisterActions={(actions) => {
+                      batchActions.current = actions;
+                    }}
+                  />
+                ) : (
+                  <InfoSection
+                    businessType={businessType}
+                    sectionKey={activeLabel}
+                    sectionTitle={currentLabelConfig.name}
+                    inventory={activeInventory}
+                    onSaveSection={handleSectionSave}
+                    disableEditing={!canEdit || isUpdating || isHiding}
+                    onEditingChange={setIsSectionEditing}
+                    stockLocationOptions={stockLocationOptions}
+                    organisationId={organisationId}
+                    onRegisterActions={(actions) => {
+                      sectionActions.current = actions;
+                    }}
+                  />
+                )}
+                {activeLabel === 'pricing' && (
+                  <PricingCurrencySummary inventory={activeInventory} />
+                )}
+              </>
+            )}
+          </div>
+
+          <div
+            className={`grid gap-3 ${canEdit || inEditMode ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}
+          >
+            <Secondary
               href="#"
-              text={getPrimaryButtonText(inEditMode, isUpdating, isHiding, isHidden)}
-              onClick={handlePrimaryAction}
-              isDisabled={
-                (inEditMode && isUpdating) || (!inEditMode && (isHiding || !activeInventory?.id))
-              }
+              text={inEditMode ? 'Cancel' : 'Close'}
+              onClick={handleSecondaryAction}
+              isDisabled={isUpdating || isHiding}
               className="h-12! text-lg! tracking-[-0.36px]!"
             />
-          )}
+            {(canEdit || inEditMode) && (
+              <Primary
+                href="#"
+                text={getPrimaryButtonText(inEditMode, isUpdating, isHiding, isHidden)}
+                onClick={handlePrimaryAction}
+                isDisabled={
+                  (inEditMode && isUpdating) || (!inEditMode && (isHiding || !activeInventory?.id))
+                }
+                className="h-12! text-lg! tracking-[-0.36px]!"
+              />
+            )}
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+
+      {showDeleteConfirm && (
+        <CenterModal showModal={showDeleteConfirm} setShowModal={setShowDeleteConfirm}>
+          <ModalHeader title="Delete inventory item?" onClose={() => setShowDeleteConfirm(false)} />
+          <div className="text-body-4 text-text-primary">
+            This will remove {activeInventory?.basicInfo.name || 'this item'} from active inventory.
+            Backend hard delete is not enabled yet, so the item will be hidden and can be restored.
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Secondary href="#" text="Discard" onClick={() => setShowDeleteConfirm(false)} />
+            <Delete
+              href="#"
+              text={isHiding ? 'Deleting...' : 'Delete'}
+              onClick={async () => {
+                await handleHide();
+                setShowDeleteConfirm(false);
+              }}
+              isDisabled={isHiding}
+            />
+          </div>
+        </CenterModal>
+      )}
+    </>
   );
 };
 

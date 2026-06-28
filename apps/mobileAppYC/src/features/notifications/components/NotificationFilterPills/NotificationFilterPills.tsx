@@ -15,6 +15,8 @@ interface NotificationFilterPillsProps {
   unreadCounts?: Partial<Record<NotificationCategory, number>>;
 }
 
+const EMPTY_UNREAD_COUNTS: Partial<Record<NotificationCategory, number>> = {};
+
 const FILTER_OPTIONS: Array<{id: NotificationCategory; label: string}> = [
   {id: 'all', label: 'All'},
   {id: 'appointments', label: 'Appointments'},
@@ -25,16 +27,16 @@ const FILTER_OPTIONS: Array<{id: NotificationCategory; label: string}> = [
   {id: 'documents', label: 'Documents'},
 ];
 
-export const NotificationFilterPills: React.FC<NotificationFilterPillsProps> = ({
-  selectedFilter,
-  onFilterChange,
-  unreadCounts = {},
-}) => {
+export const NotificationFilterPills: React.FC<
+  NotificationFilterPillsProps
+> = ({selectedFilter, onFilterChange, unreadCounts = EMPTY_UNREAD_COUNTS}) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const scrollRef = useRef<ScrollView>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const itemLayouts = useRef<Record<NotificationCategory, {x: number; width: number}>>({} as any);
+  const itemLayouts = useRef<
+    Record<NotificationCategory, {x: number; width: number}>
+  >({} as any);
   const currentScrollX = useRef(0);
   const mounted = useRef(false);
 
@@ -43,7 +45,10 @@ export const NotificationFilterPills: React.FC<NotificationFilterPillsProps> = (
     const layout = itemLayouts.current[selectedFilter];
     if (!layout || containerWidth === 0) return;
 
-    const targetX = Math.max(0, layout.x - (containerWidth / 2 - layout.width / 2));
+    const targetX = Math.max(
+      0,
+      layout.x - (containerWidth / 2 - layout.width / 2),
+    );
 
     // Defer to next frames to avoid initial jump; avoids deprecated InteractionManager signature
     requestAnimationFrame(() => {
@@ -104,7 +109,9 @@ export const NotificationFilterPills: React.FC<NotificationFilterPillsProps> = (
                   selectedFilter === option.id && styles.badgeActive,
                 ]}>
                 <Text style={styles.badgeText}>
-                  {unreadCounts[option.id]! > 9 ? '9+' : unreadCounts[option.id]}
+                  {unreadCounts[option.id]! > 9
+                    ? '9+'
+                    : unreadCounts[option.id]}
                 </Text>
               </View>
             ) : null}

@@ -1,5 +1,12 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import {Image, ScrollView, StyleSheet, Text, View, Platform} from 'react-native';
+import {
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  Platform,
+} from 'react-native';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RouteProp} from '@react-navigation/native';
@@ -20,7 +27,10 @@ import {
 import {formatDateForDisplay} from '@/shared/components/common/SimpleDatePicker/SimpleDatePicker';
 import {resolveObservationalToolLabel} from '@/features/tasks/utils/taskLabels';
 
-type Navigation = NativeStackNavigationProp<TaskStackParamList, 'ObservationalToolPreview'>;
+type Navigation = NativeStackNavigationProp<
+  TaskStackParamList,
+  'ObservationalToolPreview'
+>;
 type Route = RouteProp<TaskStackParamList, 'ObservationalToolPreview'>;
 
 export const ObservationalToolPreviewScreen: React.FC = () => {
@@ -33,13 +43,13 @@ export const ObservationalToolPreviewScreen: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submission, setSubmission] = useState<ObservationToolSubmission | null>(null);
-  const [definition, setDefinition] = useState<ObservationToolDefinitionRemote | null>(null);
+  const [submission, setSubmission] =
+    useState<ObservationToolSubmission | null>(null);
+  const [definition, setDefinition] =
+    useState<ObservationToolDefinitionRemote | null>(null);
 
   const normalizeToken = (value?: string | null) =>
-    (value ?? '')
-      .toLowerCase()
-      .replaceAll(/[^a-z0-9]/g, '');
+    (value ?? '').toLowerCase().replaceAll(/[^a-z0-9]/g, '');
 
   useEffect(() => {
     let isMounted = true;
@@ -76,7 +86,9 @@ export const ObservationalToolPreviewScreen: React.FC = () => {
         }
       } catch (err) {
         if (isMounted) {
-          setError(err instanceof Error ? err.message : 'Unable to load submission');
+          setError(
+            err instanceof Error ? err.message : 'Unable to load submission',
+          );
         }
       } finally {
         if (isMounted) {
@@ -93,16 +105,20 @@ export const ObservationalToolPreviewScreen: React.FC = () => {
 
   const staticDefinition = useMemo(() => {
     const lookupId = submission?.toolId ?? toolId ?? '';
-    if (lookupId && (observationalToolDefinitions as Record<string, any>)[lookupId]) {
+    if (
+      lookupId &&
+      (observationalToolDefinitions as Record<string, any>)[lookupId]
+    ) {
       return (observationalToolDefinitions as Record<string, any>)[lookupId];
     }
     const normalizedName = normalizeToken(
       submission?.toolName ?? definition?.name ?? '',
     );
     if (!normalizedName) return null;
-    return Object.values(observationalToolDefinitions).find(def =>
-      normalizeToken(def.name) === normalizedName ||
-      normalizeToken(def.shortName) === normalizedName,
+    return Object.values(observationalToolDefinitions).find(
+      def =>
+        normalizeToken(def.name) === normalizedName ||
+        normalizeToken(def.shortName) === normalizedName,
     );
   }, [definition?.name, submission?.toolId, submission?.toolName, toolId]);
 
@@ -142,20 +158,31 @@ export const ObservationalToolPreviewScreen: React.FC = () => {
   const toolLabel =
     definition?.name ??
     submission?.toolName ??
-    resolveObservationalToolLabel(toolId ?? submission?.toolId ?? 'Observational tool');
+    resolveObservationalToolLabel(
+      toolId ?? submission?.toolId ?? 'Observational tool',
+    );
   const overviewTitle = staticDefinition?.overviewTitle ?? toolLabel;
   const overviewParagraph = staticDefinition?.overviewParagraphs?.[0];
   const heroImage = staticDefinition?.heroImage ?? Images.otNoProviders;
 
   return (
     <LiquidGlassHeaderScreen
-      header={<Header title="OT Submission" showBackButton onBack={() => navigation.goBack()} glass={false} />}
+      header={
+        <Header
+          title="OT Submission"
+          showBackButton
+          onBack={() => navigation.goBack()}
+          glass={false}
+        />
+      }
       contentPadding={theme.spacing['4']}>
       {contentPaddingStyle => (
         <ScrollView
           contentContainerStyle={[styles.container, contentPaddingStyle]}
           showsVerticalScrollIndicator={false}>
-          {loading && <Text style={styles.statusText}>Loading submission...</Text>}
+          {loading && (
+            <Text style={styles.statusText}>Loading submission...</Text>
+          )}
           {!loading && error && <Text style={styles.errorText}>{error}</Text>}
           {!loading && !error && submission && (
             <>
@@ -171,7 +198,9 @@ export const ObservationalToolPreviewScreen: React.FC = () => {
                   <Text style={styles.overviewText}>{overviewParagraph}</Text>
                 ) : null}
                 {submissionDateLabel ? (
-                  <Text style={styles.subtitle}>Submitted on {submissionDateLabel}</Text>
+                  <Text style={styles.subtitle}>
+                    Submitted on {submissionDateLabel}
+                  </Text>
                 ) : null}
                 {submission.summary ? (
                   <Text style={styles.summary}>{submission.summary}</Text>
@@ -227,8 +256,7 @@ const createStyles = (theme: any) =>
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     heroImage: {
       width: theme.spacing['28'],

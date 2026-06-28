@@ -89,7 +89,10 @@ export type DocumentStackParamList = {
   DocumentsMain: undefined;
   AddDocument: undefined;
   EditDocument: {documentId: string};
-  DocumentPreview: {documentId: string};
+  DocumentPreview: {
+    documentId: string;
+    initialDocument?: import('@/features/documents/types').Document;
+  };
   CategoryDetail: {categoryId: string};
   DocumentSearch: undefined;
 };
@@ -99,10 +102,16 @@ export type AppointmentStackParamList = {
   MyAppointmentsEmpty: undefined;
   MyAppointments: {resetKey?: number} | undefined;
   BrowseBusinesses:
-    | {serviceName?: string; autoFocusSearch?: boolean}
+    | {
+        serviceName?: string;
+        autoFocusSearch?: boolean;
+        initialBusinessId?: string;
+        selectionToken?: number;
+      }
     | undefined;
   BusinessDetails: {
     businessId: string;
+    distanceMi?: number;
     returnTo?: {tab: keyof TabParamList; screen?: string};
   };
   BookingForm: {

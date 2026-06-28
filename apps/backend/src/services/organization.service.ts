@@ -1,8 +1,5 @@
-import { isValidObjectId, Types } from "mongoose";
-import OrganizationModel, {
-  type OrganizationDocument,
-  type OrganizationMongo,
-} from "../models/organization";
+import { isValidObjectId } from "mongoose";
+import type { OrganizationMongo } from "../models/organization";
 import {
   fromOrganizationRequestDTO,
   toOrganizationResponseDTO,
@@ -10,25 +7,16 @@ import {
   type OrganizationResponseDTO,
   type OrganizationDTOAttributes,
   type Organisation,
-  type ToFHIROrganizationOptions,
-  UserOrganization,
 } from "@yosemite-crew/types";
 import { UserOrganizationService } from "./user-organization.service";
 import { SpecialityService } from "./speciality.service";
 import { OrganisationRoomService } from "./organisation-room.service";
 import { buildS3Key, moveFile } from "src/middlewares/upload";
-import escapeStringRegexp from "escape-string-regexp";
-import SpecialityModel from "src/models/speciality";
-import ServiceModel from "src/models/service";
 import logger from "src/utils/logger";
-import UserProfileModel from "src/models/user-profile";
-import { OrgBilling } from "src/models/organization.billing";
-import { OrgUsageCounters } from "src/models/organisation.usage.counter";
 import { Prisma, OrganizationType } from "@prisma/client";
 import { prisma } from "src/config/prisma";
-import { handleDualWriteError, shouldDualWrite } from "src/utils/dual-write";
-import { isReadFromPostgres } from "src/config/read-switch";
 import { buildGeoPoint } from "src/utils/geojson";
+import { calculateDistanceMeters, toRadians } from "src/utils/geo";
 
 const TAX_ID_EXTENSION_URL =
   "http://example.org/fhir/StructureDefinition/taxId";
@@ -57,114 +45,6 @@ const PET_NAME_PREFERENCES = new Set<Organisation["petNamePreference"]>([
   "ANIMAL",
   "PATIENT",
 ]);
-
-const toPrismaOrganizationData = (doc: OrganizationDocument) => {
-  const obj = doc.toObject() as OrganizationMongo & {
-    _id: Types.ObjectId;
-    createdAt?: Date;
-    updatedAt?: Date;
-  };
-
-  return {
-    id: obj._id.toString(),
-    fhirId: obj.fhirId ?? undefined,
-    name: obj.name,
-    taxId: obj.taxId,
-    dunsNumber: obj.DUNSNumber ?? undefined,
-    imageUrl: obj.imageURL ?? undefined,
-    type: obj.type as OrganizationType,
-    petNamePreference: obj.petNamePreference ?? undefined,
-    phoneNo: obj.phoneNo,
-    website: obj.website ?? undefined,
-    documensoTeamId: obj.documensoTeamId ?? undefined,
-    documensoApiKey: obj.documensoApiKey ?? undefined,
-    isVerified: obj.isVerified ?? false,
-    isActive: obj.isActive ?? true,
-    typeCoding: (obj.typeCoding ??
-      undefined) as unknown as Prisma.InputJsonValue,
-    healthAndSafetyCertNo: obj.healthAndSafetyCertNo ?? undefined,
-    animalWelfareComplianceCertNo:
-      obj.animalWelfareComplianceCertNo ?? undefined,
-    fireAndEmergencyCertNo: obj.fireAndEmergencyCertNo ?? undefined,
-    googlePlacesId: obj.googlePlacesId ?? undefined,
-    stripeAccountId: obj.stripeAccountId ?? undefined,
-    averageRating: obj.averageRating ?? 0,
-    ratingCount: obj.ratingCount ?? 0,
-    appointmentCheckInBufferMinutes:
-      obj.appointmentCheckInBufferMinutes ??
-      DEFAULT_APPOINTMENT_CHECK_IN_BUFFER_MINUTES,
-    appointmentCheckInRadiusMeters:
-      obj.appointmentCheckInRadiusMeters ??
-      DEFAULT_APPOINTMENT_CHECK_IN_RADIUS_METERS,
-    createdAt: obj.createdAt ?? undefined,
-    updatedAt: obj.updatedAt ?? undefined,
-  };
-};
-
-const syncOrganizationAddressToPostgres = async (
-  organizationId: string,
-  address: OrganizationMongo["address"],
-) => {
-  if (!shouldDualWrite) return;
-
-  if (!address) {
-    try {
-      await prisma.organizationAddress.deleteMany({
-        where: { organizationId },
-      });
-    } catch (err) {
-      handleDualWriteError("OrganizationAddress delete", err);
-    }
-    return;
-  }
-
-  try {
-    await prisma.organizationAddress.upsert({
-      where: { organizationId },
-      create: {
-        organizationId,
-        addressLine: address.addressLine ?? undefined,
-        country: address.country ?? undefined,
-        city: address.city ?? undefined,
-        state: address.state ?? undefined,
-        postalCode: address.postalCode ?? undefined,
-        latitude: address.latitude ?? undefined,
-        longitude: address.longitude ?? undefined,
-        location: (address.location ??
-          undefined) as unknown as Prisma.InputJsonValue,
-      },
-      update: {
-        addressLine: address.addressLine ?? undefined,
-        country: address.country ?? undefined,
-        city: address.city ?? undefined,
-        state: address.state ?? undefined,
-        postalCode: address.postalCode ?? undefined,
-        latitude: address.latitude ?? undefined,
-        longitude: address.longitude ?? undefined,
-        location: (address.location ??
-          undefined) as unknown as Prisma.InputJsonValue,
-      },
-    });
-  } catch (err) {
-    handleDualWriteError("OrganizationAddress", err);
-  }
-};
-
-const syncOrganizationToPostgres = async (doc: OrganizationDocument) => {
-  if (!shouldDualWrite) return;
-  try {
-    const data = toPrismaOrganizationData(doc);
-    await prisma.organization.upsert({
-      where: { id: data.id },
-      create: data,
-      update: data,
-    });
-    const obj = doc.toObject() as OrganizationMongo & { _id: Types.ObjectId };
-    await syncOrganizationAddressToPostgres(data.id, obj.address);
-  } catch (err) {
-    handleDualWriteError("Organization", err);
-  }
-};
 
 type ExtensionLike = {
   url?: string;
@@ -249,8 +129,8 @@ const extractCertificateValue = (
 ): string | undefined => findExtensionValue(organization.extension, url);
 
 const sanitizeTypeCoding = (
-  typeCoding: ToFHIROrganizationOptions["typeCoding"] | undefined,
-): ToFHIROrganizationOptions["typeCoding"] | undefined => {
+  typeCoding: OrganizationDTOAttributes["typeCoding"] | undefined,
+): OrganizationDTOAttributes["typeCoding"] | undefined => {
   if (!typeCoding) {
     return undefined;
   }
@@ -464,6 +344,77 @@ const ensureSafeIdentifier = (value: unknown): string | undefined => {
   return identifier;
 };
 
+const resolveOrganisationByPlaceId = async (placeId: string) => {
+  const org = await prisma.organization.findFirst({
+    where: { googlePlacesId: placeId },
+    include: { address: true },
+  });
+
+  if (!org) return null;
+
+  return {
+    isPmsOrganisation: true as const,
+    organisation: buildFHIRResponseFromPrisma(org),
+  };
+};
+
+const resolveOrganisationByCoordinates = async (lat: number, lng: number) => {
+  const metersPerDegreeLat = 111000;
+  const latDelta = 120 / metersPerDegreeLat;
+  const lngDelta = 120 / (metersPerDegreeLat * Math.cos(toRadians(lat)));
+
+  const orgs = await prisma.organization.findMany({
+    where: {
+      address: {
+        is: {
+          latitude: { gte: lat - latDelta, lte: lat + latDelta },
+          longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
+        },
+      },
+    },
+    include: { address: true },
+  });
+
+  const closest = orgs.find((org) => {
+    if (org.address?.latitude == null || org.address?.longitude == null) {
+      return false;
+    }
+
+    return (
+      calculateDistanceMeters(
+        lat,
+        lng,
+        org.address.latitude,
+        org.address.longitude,
+      ) <= 120
+    );
+  });
+
+  if (!closest) return null;
+
+  return {
+    isPmsOrganisation: true as const,
+    organisation: buildFHIRResponseFromPrisma(closest),
+  };
+};
+
+const resolveOrganisationByName = async (name: string) => {
+  const safeName = name.trim();
+  if (!safeName) return null;
+
+  const org = await prisma.organization.findFirst({
+    where: { name: { contains: safeName, mode: "insensitive" } },
+    include: { address: true },
+  });
+
+  if (!org) return null;
+
+  return {
+    isPmsOrganisation: true as const,
+    organisation: buildFHIRResponseFromPrisma(org),
+  };
+};
+
 const requireOrganizationType = (value: unknown): Organisation["type"] => {
   if (typeof value !== "string") {
     throw new OrganizationServiceError(
@@ -574,6 +525,14 @@ const sanitizeBusinessAttributes = (
     dto.appointmentCheckInRadiusMeters,
     "Appointment check-in radius meters",
   );
+  const appointmentLockWindowOutpatientMinutes = optionalNonNegativeInteger(
+    dto.appointmentLockWindowOutpatientMinutes,
+    "Appointment lock window outpatient minutes",
+  );
+  const appointmentLockWindowInpatientMinutes = optionalNonNegativeInteger(
+    dto.appointmentLockWindowInpatientMinutes,
+    "Appointment lock window inpatient minutes",
+  );
   const checkInConfig = resolveCheckInConfig({
     appointmentCheckInBufferMinutes,
     appointmentCheckInRadiusMeters,
@@ -602,56 +561,9 @@ const sanitizeBusinessAttributes = (
       checkInConfig.appointmentCheckInBufferMinutes,
     appointmentCheckInRadiusMeters:
       checkInConfig.appointmentCheckInRadiusMeters,
+    appointmentLockWindowOutpatientMinutes,
+    appointmentLockWindowInpatientMinutes,
   };
-};
-
-const buildFHIRResponse = (
-  document: OrganizationDocument,
-  options?: ToFHIROrganizationOptions,
-): ReturnType<typeof toOrganizationResponseDTO> => {
-  const { typeCoding, ...rest } = document.toObject({
-    virtuals: false,
-  }) as OrganizationMongo & {
-    _id: Types.ObjectId;
-  };
-
-  const organisation: Organisation = {
-    ...resolveCheckInConfig({
-      appointmentCheckInBufferMinutes: rest.appointmentCheckInBufferMinutes,
-      appointmentCheckInRadiusMeters: rest.appointmentCheckInRadiusMeters,
-    }),
-    _id: rest.fhirId ?? document._id,
-    name: rest.name,
-    taxId: rest.taxId ?? "",
-    DUNSNumber: rest.DUNSNumber,
-    imageURL: rest.imageURL,
-    type: coerceOrganizationType(rest.type),
-    petNamePreference: rest.petNamePreference,
-    phoneNo: rest.phoneNo ?? "",
-    website: rest.website,
-    address: rest.address
-      ? {
-          addressLine: rest.address.addressLine,
-          country: rest.address.country,
-          city: rest.address.city,
-          state: rest.address.state,
-          postalCode: rest.address.postalCode,
-          latitude: rest.address.latitude,
-          longitude: rest.address.longitude,
-        }
-      : undefined,
-    isVerified: rest.isVerified,
-    isActive: rest.isActive,
-    healthAndSafetyCertNo: rest.healthAndSafetyCertNo,
-    animalWelfareComplianceCertNo: rest.animalWelfareComplianceCertNo,
-    fireAndEmergencyCertNo: rest.fireAndEmergencyCertNo,
-    googlePlacesId: rest.googlePlacesId,
-    stripeAccountId: rest.stripeAccountId,
-  };
-
-  const responseOptions = options ?? (typeCoding ? { typeCoding } : undefined);
-
-  return toOrganizationResponseDTO(organisation, responseOptions);
 };
 
 type PrismaOrganizationWithAddress = Prisma.OrganizationGetPayload<{
@@ -668,6 +580,10 @@ const buildFHIRResponseFromPrisma = (
       appointmentCheckInRadiusMeters:
         organisation.appointmentCheckInRadiusMeters,
     }),
+    appointmentLockWindowOutpatientMinutes:
+      organisation.appointmentLockWindowOutpatientMinutes ?? undefined,
+    appointmentLockWindowInpatientMinutes:
+      organisation.appointmentLockWindowInpatientMinutes ?? undefined,
     _id: organisation.fhirId ?? organisation.id,
     name: organisation.name,
     taxId: organisation.taxId ?? "",
@@ -708,42 +624,6 @@ const buildFHIRResponseFromPrisma = (
   return toOrganizationResponseDTO(response, responseOptions);
 };
 
-const toRadians = (value: number) => (value * Math.PI) / 180;
-
-const calculateDistanceMeters = (
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-) => {
-  const earthRadiusMeters = 6371000;
-  const dLat = toRadians(lat2 - lat1);
-  const dLng = toRadians(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) *
-      Math.cos(toRadians(lat2)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return earthRadiusMeters * c;
-};
-
-const resolveIdQuery = (id: unknown) => {
-  const identifier = ensureSafeIdentifier(id);
-
-  if (!identifier) {
-    throw new OrganizationServiceError(
-      "Organization identifier is required.",
-      400,
-    );
-  }
-
-  return Types.ObjectId.isValid(identifier)
-    ? { _id: identifier }
-    : { fhirId: identifier };
-};
-
 const createPersistableFromFHIR = (payload: OrganizationFHIRPayload) => {
   const attributes = fromOrganizationRequestDTO(payload);
 
@@ -775,253 +655,302 @@ const createPersistableFromFHIR = (payload: OrganizationFHIRPayload) => {
   });
   const persistable = pruneUndefined(sanitized);
 
-  return { persistable, typeCoding: sanitized.typeCoding, attributes };
+  return { persistable, attributes };
 };
 
 export const OrganizationService = {
   async upsert(payload: OrganizationFHIRPayload, userId?: string) {
-    const { persistable, typeCoding, attributes } =
-      createPersistableFromFHIR(payload);
+    const { persistable, attributes } = createPersistableFromFHIR(payload);
 
     const identifier =
       ensureSafeIdentifier(attributes.id) ?? ensureSafeIdentifier(payload.id);
-    let query: { _id?: string; fhirId?: string } | undefined = undefined;
+    const existing = identifier
+      ? await prisma.organization.findFirst({
+          where: { OR: [{ id: identifier }, { fhirId: identifier }] },
+          include: { address: true },
+        })
+      : null;
 
-    if (identifier) {
-      query = isValidObjectId(identifier)
-        ? { _id: identifier }
-        : { fhirId: identifier };
+    const data = {
+      fhirId: persistable.fhirId ?? undefined,
+      name: persistable.name,
+      taxId: persistable.taxId,
+      dunsNumber: persistable.DUNSNumber ?? undefined,
+      imageUrl: persistable.imageURL ?? undefined,
+      type: persistable.type as OrganizationType,
+      petNamePreference: persistable.petNamePreference ?? undefined,
+      phoneNo: persistable.phoneNo,
+      website: persistable.website ?? undefined,
+      documensoTeamId: persistable.documensoTeamId ?? undefined,
+      documensoApiKey: persistable.documensoApiKey ?? undefined,
+      isVerified: persistable.isVerified ?? false,
+      isActive: persistable.isActive ?? true,
+      typeCoding: (persistable.typeCoding ??
+        undefined) as unknown as Prisma.InputJsonValue,
+      healthAndSafetyCertNo: persistable.healthAndSafetyCertNo ?? undefined,
+      animalWelfareComplianceCertNo:
+        persistable.animalWelfareComplianceCertNo ?? undefined,
+      fireAndEmergencyCertNo: persistable.fireAndEmergencyCertNo ?? undefined,
+      googlePlacesId: persistable.googlePlacesId ?? undefined,
+      stripeAccountId: persistable.stripeAccountId ?? undefined,
+      averageRating: persistable.averageRating ?? 0,
+      ratingCount: persistable.ratingCount ?? 0,
+      appointmentCheckInBufferMinutes:
+        persistable.appointmentCheckInBufferMinutes ??
+        DEFAULT_APPOINTMENT_CHECK_IN_BUFFER_MINUTES,
+      appointmentCheckInRadiusMeters:
+        persistable.appointmentCheckInRadiusMeters ??
+        DEFAULT_APPOINTMENT_CHECK_IN_RADIUS_METERS,
+      appointmentLockWindowOutpatientMinutes:
+        persistable.appointmentLockWindowOutpatientMinutes ?? undefined,
+      appointmentLockWindowInpatientMinutes:
+        persistable.appointmentLockWindowInpatientMinutes ?? undefined,
+    };
+
+    const organisation = existing
+      ? await prisma.organization.update({
+          where: { id: existing.id },
+          data,
+          include: { address: true },
+        })
+      : await prisma.organization.create({
+          data,
+          include: { address: true },
+        });
+
+    const created = !existing;
+
+    const address = persistable.address ?? undefined;
+    if (address) {
+      await prisma.organizationAddress.upsert({
+        where: { organizationId: organisation.id },
+        create: {
+          organizationId: organisation.id,
+          addressLine: address.addressLine ?? undefined,
+          country: address.country ?? undefined,
+          city: address.city ?? undefined,
+          state: address.state ?? undefined,
+          postalCode: address.postalCode ?? undefined,
+          latitude: address.latitude ?? undefined,
+          longitude: address.longitude ?? undefined,
+          location: (address.location ?? undefined) as Prisma.InputJsonValue,
+        },
+        update: {
+          addressLine: address.addressLine ?? undefined,
+          country: address.country ?? undefined,
+          city: address.city ?? undefined,
+          state: address.state ?? undefined,
+          postalCode: address.postalCode ?? undefined,
+          latitude: address.latitude ?? undefined,
+          longitude: address.longitude ?? undefined,
+          location: (address.location ?? undefined) as Prisma.InputJsonValue,
+        },
+      });
     }
 
-    let document: OrganizationDocument | null = null;
-    let created = false;
+    if (created) {
+      await prisma.organizationBilling.create({
+        data: { orgId: organisation.id },
+      });
+      await prisma.organizationUsageCounter.create({
+        data: { orgId: organisation.id },
+      });
 
-    if (query) {
-      document = await OrganizationModel.findOneAndUpdate(
-        query,
-        { $set: persistable },
-        { new: true, sanitizeFilter: true },
-      );
-    }
-
-    if (!document) {
-      document = await OrganizationModel.create(persistable);
-      created = true;
-
-      const billingDoc = await OrgBilling.create({ orgId: document._id });
-      const usageDoc = await OrgUsageCounters.create({ orgId: document._id });
-
-      if (shouldDualWrite) {
-        try {
-          await prisma.organizationBilling.create({
-            data: {
-              id: billingDoc._id.toString(),
-              orgId: document._id.toString(),
-              createdAt: billingDoc.createdAt ?? undefined,
-              updatedAt: billingDoc.updatedAt ?? undefined,
-            },
-          });
-        } catch (err) {
-          handleDualWriteError("OrganizationBilling", err);
-        }
-
-        try {
-          await prisma.organizationUsageCounter.create({
-            data: {
-              id: usageDoc._id.toString(),
-              orgId: document._id.toString(),
-              appointmentsUsed: usageDoc.appointmentsUsed ?? 0,
-              toolsUsed: usageDoc.toolsUsed ?? 0,
-              usersActiveCount: usageDoc.usersActiveCount ?? 0,
-              usersBillableCount: usageDoc.usersBillableCount ?? 0,
-              freeAppointmentsLimit: usageDoc.freeAppointmentsLimit ?? 120,
-              freeToolsLimit: usageDoc.freeToolsLimit ?? 200,
-              freeUsersLimit: usageDoc.freeUsersLimit ?? 10,
-              freeLimitReachedAt: usageDoc.freeLimitReachedAt ?? undefined,
-              createdAt: usageDoc.createdAt ?? undefined,
-              updatedAt: usageDoc.updatedAt ?? undefined,
-            },
-          });
-        } catch (err) {
-          handleDualWriteError("OrganizationUsageCounter", err);
-        }
-      }
-
-      // Link organization to user if userId is provided
       if (userId) {
-        const userOrg: UserOrganization = {
+        await UserOrganizationService.createUserOrganizationMapping({
           practitionerReference: userId,
-          organizationReference: document._id.toString(),
+          organizationReference: organisation.id,
           roleCode: "OWNER",
           active: true,
-        };
-        await UserOrganizationService.createUserOrganizationMapping(userOrg);
+        });
 
-        // Ensure the owner has a minimal draft profile
-        const existingProfile = await UserProfileModel.findOne({
-          userId,
-          organizationId: document._id.toString(),
+        const existingProfile = await prisma.userProfile.findFirst({
+          where: { userId, organizationId: organisation.id },
         });
 
         if (!existingProfile) {
-          const profileDoc = await UserProfileModel.create({
-            userId,
-            organizationId: document._id.toString(),
-            personalDetails: {}, // empty
-            professionalDetails: {}, // empty
-            status: "DRAFT", // auto-set
+          await prisma.userProfile.create({
+            data: {
+              userId,
+              organizationId: organisation.id,
+              personalDetails: {} as Prisma.InputJsonValue,
+              professionalDetails: {} as Prisma.InputJsonValue,
+              status: "DRAFT",
+            },
           });
-
-          if (shouldDualWrite) {
-            try {
-              await prisma.userProfile.create({
-                data: {
-                  id: profileDoc._id.toString(),
-                  userId,
-                  organizationId: document._id.toString(),
-                  personalDetails: {} as Prisma.InputJsonValue,
-                  professionalDetails: {} as Prisma.InputJsonValue,
-                  status: "DRAFT",
-                  createdAt: profileDoc.createdAt ?? undefined,
-                  updatedAt: profileDoc.updatedAt ?? undefined,
-                },
-              });
-            } catch (err) {
-              handleDualWriteError("UserProfile", err);
-            }
-          }
         }
       }
 
-      // Update Profile photo url
-      if (
-        persistable.imageURL &&
-        document._id.toString() &&
-        !persistable.imageURL?.includes("https://")
-      ) {
-        const finalKey = buildS3Key(
-          "org",
-          document._id.toString(),
-          "image/jpg",
-        );
+      if (persistable.imageURL && !persistable.imageURL.includes("https://")) {
+        const finalKey = buildS3Key("org", organisation.id, "image/jpg");
         const profileUrl = await moveFile(persistable.imageURL, finalKey);
-
-        await this.updateProfilePhotoUrl(document._id.toString(), profileUrl);
+        await prisma.organization.update({
+          where: { id: organisation.id },
+          data: { imageUrl: profileUrl },
+        });
       }
     }
 
-    await syncOrganizationToPostgres(document);
-
-    const response = buildFHIRResponse(
-      document,
-      typeCoding ? { typeCoding } : undefined,
-    );
-
-    return { response, created };
+    return {
+      response: buildFHIRResponseFromPrisma(
+        await prisma.organization.findUniqueOrThrow({
+          where: { id: organisation.id },
+          include: { address: true },
+        }),
+      ),
+      created,
+    };
   },
 
   async getById(id: string) {
-    if (isReadFromPostgres()) {
-      const identifier = ensureSafeIdentifier(id);
-      if (!identifier) {
-        return null;
-      }
-      const organisation = await prisma.organization.findFirst({
-        where: {
-          OR: [{ id: identifier }, { fhirId: identifier }],
-        },
-        include: { address: true },
-      });
-
-      return organisation ? buildFHIRResponseFromPrisma(organisation) : null;
-    }
-
-    const document = await OrganizationModel.findOne(resolveIdQuery(id), null, {
-      sanitizeFilter: true,
-    });
-
-    if (!document) {
+    const identifier = ensureSafeIdentifier(id);
+    if (!identifier) {
       return null;
     }
+    const organisation = await prisma.organization.findFirst({
+      where: { OR: [{ id: identifier }, { fhirId: identifier }] },
+      include: { address: true },
+    });
 
-    return buildFHIRResponse(document);
+    return organisation ? buildFHIRResponseFromPrisma(organisation) : null;
   },
 
   async listAll() {
-    if (isReadFromPostgres()) {
-      const organisations = await prisma.organization.findMany({
-        include: { address: true },
-      });
-      return organisations.map((org) => buildFHIRResponseFromPrisma(org));
-    }
-
-    const documents = await OrganizationModel.find();
-    return documents.map((doc) => buildFHIRResponse(doc));
+    const organisations = await prisma.organization.findMany({
+      include: { address: true },
+    });
+    return organisations.map((org) => buildFHIRResponseFromPrisma(org));
   },
 
   async deleteById(id: string) {
-    const result = await OrganizationModel.findOneAndUpdate(
-      resolveIdQuery(id),
-      { $set: { isActive: false } },
-      { sanitizeFilter: true },
-    );
-    if (result) {
-      await UserOrganizationService.deleteAllByOrganizationId(id);
-      await SpecialityService.deleteAllByOrganizationId(id);
-      await OrganisationRoomService.deleteAllByOrganizationId(id);
-      await syncOrganizationToPostgres(result);
+    const identifier = ensureSafeIdentifier(id);
+    if (!identifier) {
+      return false;
     }
-    return Boolean(result);
+
+    const organisation = await prisma.organization.findFirst({
+      where: { OR: [{ id: identifier }, { fhirId: identifier }] },
+    });
+    if (!organisation) {
+      return false;
+    }
+
+    await prisma.organization.update({
+      where: { id: organisation.id },
+      data: { isActive: false },
+    });
+    await UserOrganizationService.deleteAllByOrganizationId(organisation.id);
+    await SpecialityService.deleteAllByOrganizationId(organisation.id);
+    await OrganisationRoomService.deleteAllByOrganizationId(organisation.id);
+    return true;
   },
 
   async update(id: string, payload: OrganizationFHIRPayload) {
-    const { persistable, typeCoding } = createPersistableFromFHIR(payload);
-
-    const document = await OrganizationModel.findOneAndUpdate(
-      resolveIdQuery(id),
-      { $set: persistable },
-      { new: true, sanitizeFilter: true },
-    );
-
-    if (!document) {
+    const { persistable } = createPersistableFromFHIR(payload);
+    const identifier = ensureSafeIdentifier(id);
+    if (!identifier) {
       return null;
     }
 
-    await syncOrganizationToPostgres(document);
+    const organisation = await prisma.organization.findFirst({
+      where: { OR: [{ id: identifier }, { fhirId: identifier }] },
+    });
 
-    return buildFHIRResponse(document, typeCoding ? { typeCoding } : undefined);
+    if (!organisation) {
+      return null;
+    }
+
+    await prisma.organization.update({
+      where: { id: organisation.id },
+      data: {
+        fhirId: persistable.fhirId ?? undefined,
+        name: persistable.name,
+        taxId: persistable.taxId,
+        dunsNumber: persistable.DUNSNumber ?? undefined,
+        imageUrl: persistable.imageURL ?? undefined,
+        type: persistable.type as OrganizationType,
+        petNamePreference: persistable.petNamePreference ?? undefined,
+        phoneNo: persistable.phoneNo,
+        website: persistable.website ?? undefined,
+        documensoTeamId: persistable.documensoTeamId ?? undefined,
+        documensoApiKey: persistable.documensoApiKey ?? undefined,
+        isVerified: persistable.isVerified ?? false,
+        isActive: persistable.isActive ?? true,
+        typeCoding: (persistable.typeCoding ??
+          undefined) as unknown as Prisma.InputJsonValue,
+        healthAndSafetyCertNo: persistable.healthAndSafetyCertNo ?? undefined,
+        animalWelfareComplianceCertNo:
+          persistable.animalWelfareComplianceCertNo ?? undefined,
+        fireAndEmergencyCertNo: persistable.fireAndEmergencyCertNo ?? undefined,
+        googlePlacesId: persistable.googlePlacesId ?? undefined,
+        stripeAccountId: persistable.stripeAccountId ?? undefined,
+        averageRating: persistable.averageRating ?? 0,
+        ratingCount: persistable.ratingCount ?? 0,
+        appointmentCheckInBufferMinutes:
+          persistable.appointmentCheckInBufferMinutes ??
+          DEFAULT_APPOINTMENT_CHECK_IN_BUFFER_MINUTES,
+        appointmentCheckInRadiusMeters:
+          persistable.appointmentCheckInRadiusMeters ??
+          DEFAULT_APPOINTMENT_CHECK_IN_RADIUS_METERS,
+        appointmentLockWindowOutpatientMinutes:
+          persistable.appointmentLockWindowOutpatientMinutes ?? undefined,
+        appointmentLockWindowInpatientMinutes:
+          persistable.appointmentLockWindowInpatientMinutes ?? undefined,
+      },
+    });
+
+    const updated = await prisma.organization.findUniqueOrThrow({
+      where: { id: organisation.id },
+      include: { address: true },
+    });
+
+    return buildFHIRResponseFromPrisma(updated);
   },
 
   async upadtePofileVerificationStatus(id: string, isVerified: boolean) {
-    const document = await OrganizationModel.findOneAndUpdate(
-      resolveIdQuery(id),
-      { $set: { isVerified } },
-      { new: true, sanitizeFilter: true },
-    );
-
-    if (!document) {
+    const identifier = ensureSafeIdentifier(id);
+    if (!identifier) {
       return null;
     }
 
-    await syncOrganizationToPostgres(document);
+    const organisation = await prisma.organization.findFirst({
+      where: { OR: [{ id: identifier }, { fhirId: identifier }] },
+      include: { address: true },
+    });
+    if (!organisation) {
+      return null;
+    }
 
-    return buildFHIRResponse(document);
+    const updated = await prisma.organization.update({
+      where: { id: organisation.id },
+      data: { isVerified },
+      include: { address: true },
+    });
+
+    return buildFHIRResponseFromPrisma(updated);
   },
 
   async updateProfilePhotoUrl(id: string, imageURL: string) {
-    const document = await OrganizationModel.findOneAndUpdate(
-      resolveIdQuery(id),
-      { $set: { imageURL } },
-      { new: true, sanitizeFilter: true },
-    );
-
-    if (!document) {
+    const identifier = ensureSafeIdentifier(id);
+    if (!identifier) {
       return null;
     }
 
-    await syncOrganizationToPostgres(document);
+    const organisation = await prisma.organization.findFirst({
+      where: { OR: [{ id: identifier }, { fhirId: identifier }] },
+      include: { address: true },
+    });
+    if (!organisation) {
+      return null;
+    }
 
-    return buildFHIRResponse(document);
+    const updated = await prisma.organization.update({
+      where: { id: organisation.id },
+      data: { imageUrl: imageURL },
+      include: { address: true },
+    });
+
+    return buildFHIRResponseFromPrisma(updated);
   },
 
   async resolveOrganisation(
@@ -1031,137 +960,22 @@ export const OrganizationService = {
       throw new OrganizationServiceError("Invalid search input.", 400);
     }
 
-    if (isReadFromPostgres()) {
-      if (input.placeId) {
-        const org = await prisma.organization.findFirst({
-          where: { googlePlacesId: input.placeId },
-          include: { address: true },
-        });
-        if (org) {
-          return {
-            isPmsOrganisation: true,
-            organisation: buildFHIRResponseFromPrisma(org),
-          };
-        }
-      }
-
-      if (input.lat != null && input.lng != null) {
-        const lat = input.lat;
-        const lng = input.lng;
-        const metersPerDegreeLat = 111000;
-        const latDelta = 120 / metersPerDegreeLat;
-        const lngDelta = 120 / (metersPerDegreeLat * Math.cos(toRadians(lat)));
-
-        const orgs = await prisma.organization.findMany({
-          where: {
-            address: {
-              is: {
-                latitude: {
-                  gte: lat - latDelta,
-                  lte: lat + latDelta,
-                },
-                longitude: {
-                  gte: lng - lngDelta,
-                  lte: lng + lngDelta,
-                },
-              },
-            },
-          },
-          include: { address: true },
-        });
-
-        const closest = orgs.find((org) => {
-          if (org.address?.latitude == null || org.address?.longitude == null) {
-            return false;
-          }
-          const distance = calculateDistanceMeters(
-            lat,
-            lng,
-            org.address.latitude,
-            org.address.longitude,
-          );
-          return distance <= 120;
-        });
-
-        if (closest) {
-          return {
-            isPmsOrganisation: true,
-            organisation: buildFHIRResponseFromPrisma(closest),
-          };
-        }
-      }
-
-      if (input.name) {
-        const safeName = input.name.trim();
-        if (safeName) {
-          const org = await prisma.organization.findFirst({
-            where: { name: { contains: safeName, mode: "insensitive" } },
-            include: { address: true },
-          });
-          if (org) {
-            return {
-              isPmsOrganisation: true,
-              organisation: buildFHIRResponseFromPrisma(org),
-            };
-          }
-        }
-      }
-
-      return {
-        isPmsOrganisation: false,
-      };
-    }
-
-    // Search using places Id
     if (input.placeId) {
-      const org = await OrganizationModel.findOne({
-        googlePlaceId: input.placeId,
-      });
-      if (org) {
-        return {
-          isPmsOrganisation: true,
-          organisation: buildFHIRResponse(org),
-        };
-      }
+      const byPlaceId = await resolveOrganisationByPlaceId(input.placeId);
+      if (byPlaceId) return byPlaceId;
     }
 
-    // Search using latitude and longitude
-    if (input.lat && input.lng) {
-      const org = await OrganizationModel.findOne({
-        "address.location": {
-          $near: {
-            $geometry: {
-              type: "Point",
-              coordinates: [input.lng, input.lat],
-            },
-            $maxDistance: 120,
-          },
-        },
-      });
-
-      if (org) {
-        return {
-          isPmsOrganisation: true,
-          organisation: buildFHIRResponse(org),
-        };
-      }
+    if (input.lat != null && input.lng != null) {
+      const byCoordinates = await resolveOrganisationByCoordinates(
+        input.lat,
+        input.lng,
+      );
+      if (byCoordinates) return byCoordinates;
     }
 
-    // Search for Name
     if (input.name) {
-      const safe = escapeStringRegexp(input.name.trim());
-      const nameRegex = new RegExp(safe, "i");
-
-      const org = await OrganizationModel.findOne({
-        name: nameRegex,
-      });
-
-      if (org) {
-        return {
-          isPmsOrganisation: true,
-          organisation: buildFHIRResponse(org),
-        };
-      }
+      const byName = await resolveOrganisationByName(input.name);
+      if (byName) return byName;
     }
 
     return {
@@ -1169,7 +983,6 @@ export const OrganizationService = {
     };
   },
 
-  // List nearby organisation
   async listNearbyForAppointmentsPaginated(
     lat: number,
     lng: number,
@@ -1177,88 +990,83 @@ export const OrganizationService = {
     page = 1,
     limit = 10,
   ) {
-    if (!lat || !lng) throw new Error("lat/lng are required");
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new Error("lat/lng are required");
+    }
 
     const skip = (page - 1) * limit;
+    const metersPerDegreeLat = 111000;
+    const latDelta = radius / metersPerDegreeLat;
+    const lngDelta = radius / (metersPerDegreeLat * Math.cos(toRadians(lat)));
 
-    if (isReadFromPostgres()) {
-      const metersPerDegreeLat = 111000;
-      const latDelta = radius / metersPerDegreeLat;
-      const lngDelta = radius / (metersPerDegreeLat * Math.cos(toRadians(lat)));
-
-      let organisations = await prisma.organization.findMany({
-        where: {
-          isVerified: true,
-          isActive: true,
-          address: {
-            is: {
-              latitude: { gte: lat - latDelta, lte: lat + latDelta },
-              longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
-            },
+    let organisations = await prisma.organization.findMany({
+      where: {
+        isVerified: true,
+        isActive: true,
+        address: {
+          is: {
+            latitude: { gte: lat - latDelta, lte: lat + latDelta },
+            longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
           },
         },
-        include: { address: true },
-      });
+      },
+      include: { address: true },
+    });
 
-      organisations = organisations.filter((org) => {
-        if (!org.address?.latitude || !org.address?.longitude) {
-          return false;
-        }
-        const distance = calculateDistanceMeters(
+    organisations = organisations.filter((org) => {
+      if (org.address?.latitude == null || org.address?.longitude == null) {
+        return false;
+      }
+      return (
+        calculateDistanceMeters(
           lat,
           lng,
           org.address.latitude,
           org.address.longitude,
-        );
-        return distance <= radius;
+        ) <= radius
+      );
+    });
+
+    if (organisations.length === 0) {
+      logger.warn("No nearby organisations found, returning all organisations");
+      organisations = await prisma.organization.findMany({
+        include: { address: true },
       });
+    }
 
-      if (organisations.length === 0) {
-        logger.warn(
-          "No nearby organisations found, returning all organisations",
-        );
-        organisations = await prisma.organization.findMany({
-          include: { address: true },
-        });
-      }
+    const total = organisations.length;
+    const pageOrgs = organisations.slice(skip, skip + limit);
+    const results = [];
 
-      const total = organisations.length;
-      const pageOrgs = organisations.slice(skip, skip + limit);
-      const results = [];
+    for (const org of pageOrgs) {
+      const [specialities, services] = await Promise.all([
+        prisma.speciality.findMany({
+          where: { organisationId: org.id },
+        }),
+        prisma.service.findMany({
+          where: { organisationId: org.id },
+        }),
+      ]);
 
-      for (const org of pageOrgs) {
-        const [specialities, services] = await Promise.all([
-          prisma.speciality.findMany({
-            where: { organisationId: org.id },
-          }),
-          prisma.service.findMany({
-            where: { organisationId: org.id },
-          }),
-        ]);
+      const specialitiesWithServices = specialities.map((spec) => ({
+        ...spec,
+        services: services.filter((srv) => srv.specialityId === spec.id),
+      }));
 
-        const specialitiesWithServices = specialities.map((spec) => {
-          const specServices = services.filter(
-            (srv) => srv.specialityId === spec.id,
-          );
-          return {
-            ...spec,
-            services: specServices,
-          };
-        });
+      const distanceInMeters =
+        org.address?.latitude != null && org.address?.longitude != null
+          ? Math.round(
+              calculateDistanceMeters(
+                lat,
+                lng,
+                org.address.latitude,
+                org.address.longitude,
+              ),
+            )
+          : null;
 
-        const distanceInMeters =
-          org.address?.latitude && org.address?.longitude
-            ? Math.round(
-                calculateDistanceMeters(
-                  lat,
-                  lng,
-                  org.address.latitude,
-                  org.address.longitude,
-                ),
-              )
-            : null;
-
-        const orgPayload = {
+      results.push({
+        org: {
           _id: org.id,
           name: org.name,
           imageURL: org.imageUrl ?? undefined,
@@ -1282,121 +1090,8 @@ export const OrganizationService = {
               }
             : undefined,
           googlePlacesId: org.googlePlacesId ?? undefined,
-        };
-
-        results.push({
-          org: orgPayload,
-          distanceInMeters,
-          rating: org.averageRating,
-          specialitiesWithServices,
-        });
-      }
-
-      return {
-        data: results,
-        meta: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
         },
-      };
-    }
-
-    let docs = await OrganizationModel.find(
-      {
-        "address.location": {
-          $near: {
-            $geometry: {
-              type: "Point",
-              coordinates: [lng, lat],
-            },
-            $maxDistance: radius,
-          },
-        },
-        isVerified: true,
-        isActive: true,
-      },
-      {
-        _id: 1,
-        name: 1,
-        imageURL: 1,
-        phoneNo: 1,
-        type: 1,
-        address: 1,
-        googlePlacesId: 1,
-        appointmentCheckInBufferMinutes: 1,
-        appointmentCheckInRadiusMeters: 1,
-      },
-    )
-      .skip(skip)
-      .limit(limit);
-
-    if (docs.length == 0) {
-      logger.warn("No nearby organisations found, returning all organisations");
-      docs = await OrganizationModel.find(
-        {},
-        {
-          _id: 1,
-          name: 1,
-          imageURL: 1,
-          phoneNo: 1,
-          type: 1,
-          address: 1,
-          googlePlacesId: 1,
-          appointmentCheckInBufferMinutes: 1,
-          appointmentCheckInRadiusMeters: 1,
-        },
-      )
-        .skip(skip)
-        .limit(limit);
-    }
-
-    const total = docs.length;
-    const results = [];
-
-    for (const org of docs) {
-      const specialities = await SpecialityModel.find(
-        { organisationId: org._id },
-        { name: 1 },
-      );
-
-      // fetch services of org
-      const services = await ServiceModel.find(
-        { organisationId: org._id },
-        { name: 1, cost: 1, specialityId: 1 },
-      );
-
-      // group services inside each speciality
-      const specialitiesWithServices = specialities.map((spec) => {
-        const specServices = services.filter(
-          (srv) => srv.specialityId?.toString() === spec._id.toString(),
-        );
-
-        return {
-          ...spec.toObject(),
-          services: specServices,
-        };
-      });
-
-      results.push({
-        org: {
-          ...org,
-          appointmentCheckInBufferMinutes:
-            org.appointmentCheckInBufferMinutes ??
-            DEFAULT_APPOINTMENT_CHECK_IN_BUFFER_MINUTES,
-          appointmentCheckInRadiusMeters:
-            org.appointmentCheckInRadiusMeters ??
-            DEFAULT_APPOINTMENT_CHECK_IN_RADIUS_METERS,
-        },
-        distanceInMeters: org.address?.location
-          ? Math.round(
-              Math.sqrt(
-                Math.pow(lat - org.address.location.coordinates[1], 2) +
-                  Math.pow(lng - org.address.location.coordinates[0], 2),
-              ) * 111000,
-            )
-          : null,
+        distanceInMeters,
         rating: org.averageRating,
         specialitiesWithServices,
       });

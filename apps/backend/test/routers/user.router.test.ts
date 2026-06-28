@@ -28,22 +28,14 @@ type Layer = {
   };
 };
 
-const findRoute = (
-  path: string,
-  method: "get" | "post" | "delete" | "patch",
-) => {
-  const layer = (
-    (userRouter as unknown as { stack: Layer[] }).stack ?? []
-  ).find(
+const findRoute = (path: string, method: "get" | "post" | "patch" | "delete") =>
+  ((userRouter as unknown as { stack: Layer[] }).stack ?? []).find(
     (entry) =>
       entry.route?.path === path && Boolean(entry.route?.methods?.[method]),
-  );
-
-  return layer?.route;
-};
+  )?.route;
 
 describe("user.router", () => {
-  it("protects user lookup with Cognito auth", () => {
+  it("protects user reads with Cognito auth", () => {
     const route = findRoute("/:id", "get");
 
     expect(route?.stack.map((layer) => layer.handle)).toEqual([
@@ -52,12 +44,16 @@ describe("user.router", () => {
     ]);
   });
 
-  it("protects user creation with Cognito auth", () => {
-    const route = findRoute("/", "post");
-
-    expect(route?.stack.map((layer) => layer.handle)).toEqual([
+  it("keeps the mutation routes authenticated", () => {
+    expect(findRoute("/", "post")?.stack.map((layer) => layer.handle)).toEqual([
       authorizeCognito,
       UserController.create,
     ]);
+    expect(
+      findRoute("/:id", "delete")?.stack.map((layer) => layer.handle),
+    ).toEqual([authorizeCognito, UserController.deleteById]);
+    expect(
+      findRoute("/update-name", "patch")?.stack.map((layer) => layer.handle),
+    ).toEqual([authorizeCognito, UserController.updateName]);
   });
 });

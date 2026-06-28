@@ -1,6 +1,18 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState, useContext } from 'react';
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type FC,
+  type ReactNode,
+} from 'react';
 import {
   Chat,
   Channel,
@@ -52,11 +64,11 @@ import Modal from '@/app/ui/overlays/Modal';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
 import Close from '@/app/ui/primitives/Icons/Close';
 
-const GroupModalContext = React.createContext<{
+const GroupModalContext = createContext<{
   openEdit?: (channel: StreamChannel) => void;
   openCreate?: () => void;
 }>({});
-const ChatSessionStatusContext = React.createContext<{
+const ChatSessionStatusContext = createContext<{
   statusByAppointmentId: Record<string, 'active' | 'ended'>;
   refreshStatuses: () => void;
 }>({
@@ -65,6 +77,9 @@ const ChatSessionStatusContext = React.createContext<{
 });
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
+
+const CHAT_PAGE_SKELETON = <PageSkeleton variant="list" />;
 
 interface ChatContainerProps {
   appointmentId?: string;
@@ -84,12 +99,12 @@ interface ChatLayoutProps {
   options: ChannelListProps['options'];
   isMobile: boolean;
   isChannelSelected: boolean;
-  previewComponent: React.ComponentType<ChannelPreviewUIComponentProps>;
+  previewComponent: ComponentType<ChannelPreviewUIComponentProps>;
   onBack: () => void;
   currentUserId?: string | null;
-  channelFilter?: ChannelListProps['channelRenderFilterFn'];
+  channelFilter?: NonNullable<ChannelListProps['channelRenderFilterFn']>;
   showEmpty?: boolean;
-  channelListHeader?: React.ReactNode;
+  channelListHeader?: ReactNode;
 }
 
 interface ChatMainPanelProps {
@@ -218,7 +233,7 @@ interface GroupModalProps {
   onDelete: () => Promise<void>;
 }
 
-const GroupModal: React.FC<GroupModalProps> = ({
+const GroupModal: FC<GroupModalProps> = ({
   open,
   mode,
   title,
@@ -241,14 +256,7 @@ const GroupModal: React.FC<GroupModalProps> = ({
   onRemoveMember,
   onDelete,
 }) => {
-  const [showModal, setShowModal] = useState(open);
-
-  useEffect(() => {
-    setShowModal(open);
-  }, [open]);
-
   const handleClose = () => {
-    setShowModal(false);
     onClose();
   };
 
@@ -281,17 +289,22 @@ const GroupModal: React.FC<GroupModalProps> = ({
   });
 
   type OrgUserOptionWithKey = OrgUserOption & { keyId: string };
-  const availableUsers = orgUsers
-    .map((u) => ({ ...u, keyId: u.userId ?? u.id }))
-    .filter((u): u is OrgUserOptionWithKey => Boolean(u.keyId))
-    .filter((u) => u.keyId !== currentUserId) // Exclude current user from add list
-    .filter(
-      (u) =>
-        !members.includes(u.keyId) &&
-        !members.includes(u.id) &&
-        (u.name + (u.email ?? '') + (u.role ?? '')).toLowerCase().includes(search.toLowerCase())
+  const searchLower = search.toLowerCase();
+  const membersSet = new Set(members);
+  const availableUsers: OrgUserOptionWithKey[] = [];
+  for (const u of orgUsers) {
+    const keyId = u.userId ?? u.id;
+    if (
+      !keyId ||
+      keyId === currentUserId ||
+      membersSet.has(keyId) ||
+      membersSet.has(u.id) ||
+      !(u.name + (u.email ?? '') + (u.role ?? '')).toLowerCase().includes(searchLower)
     )
-    .slice(0, 10);
+      continue;
+    availableUsers.push({ ...u, keyId });
+    if (availableUsers.length === 10) break;
+  }
 
   const handleCreate = async () => {
     if (!title.trim() || members.length === 0) {
@@ -323,7 +336,7 @@ const GroupModal: React.FC<GroupModalProps> = ({
   };
 
   return (
-    <Modal showModal={showModal} setShowModal={setShowModal} onClose={handleClose}>
+    <Modal showModal={open} setShowModal={() => undefined} onClose={handleClose}>
       <div className="flex flex-col h-full gap-6">
         <div className="flex justify-between items-center">
           <div className="opacity-0">
@@ -367,10 +380,10 @@ const GroupModal: React.FC<GroupModalProps> = ({
                   {memberDetails.map((m) => (
                     <div
                       key={m.id}
-                      className="flex justify-between items-center px-3 py-3 border border-grey-light rounded-2xl bg-white"
+                      className="flex justify-between items-center p-3 border border-grey-light rounded-2xl bg-white"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-card-hover flex items-center justify-center">
+                        <div className="size-8 rounded-full bg-card-hover flex items-center justify-center">
                           <span className="font-satoshi text-black-text text-sm font-medium">
                             {(m.name || '?')
                               .split(' ')
@@ -427,7 +440,7 @@ const GroupModal: React.FC<GroupModalProps> = ({
                   onChange={(e) => onSearchChange(e.target.value)}
                 />
 
-                <div className="min-h-[120px] max-h-[300px] overflow-y-auto flex flex-col gap-2 pr-1">
+                <div className="min-h-30 max-h-75 overflow-y-auto flex flex-col gap-2 pr-1">
                   {orgUsersLoading && (
                     <div className="flex items-center justify-center py-4">
                       <span className="text-caption-1 text-text-secondary">Loading teammates…</span>
@@ -449,10 +462,10 @@ const GroupModal: React.FC<GroupModalProps> = ({
                     availableUsers.map((u) => (
                       <div
                         key={u.keyId}
-                        className="flex justify-between items-center px-3 py-3 border border-grey-light rounded-2xl bg-white hover:border-input-border-active transition-all duration-200"
+                        className="flex justify-between items-center p-3 border border-grey-light rounded-2xl bg-white hover:border-input-border-active transition-all duration-200"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-card-hover flex items-center justify-center">
+                          <div className="size-8 rounded-full bg-card-hover flex items-center justify-center">
                             <span className="font-satoshi text-black-text text-sm font-medium">
                               {(u.name || u.email || '?')
                                 .split(' ')
@@ -659,12 +672,13 @@ const useChannelState = () => {
   return state;
 };
 
-const ChannelHeaderWithCounterpart: React.FC<{
+const ChannelHeaderWithCounterpart: FC<{
   currentUserId?: string | null;
 }> = ({ currentUserId }) => {
   const { channel } = useChannelStateContext();
-  const { statusByAppointmentId, refreshStatuses } = useContext(ChatSessionStatusContext);
-  const groupModalCtx = useContext(GroupModalContext);
+  const chatSessionStatusCtx = use(ChatSessionStatusContext);
+  const { statusByAppointmentId } = chatSessionStatusCtx;
+  const groupModalCtx = use(GroupModalContext);
   const [closingSession, setClosingSession] = useState(false);
   const [sessionClosed, setSessionClosed] = useState(false);
   const { title } = getChannelDisplayInfo(channel, currentUserId);
@@ -720,7 +734,7 @@ const ChannelHeaderWithCounterpart: React.FC<{
           throw new Error('Chat session not found for this appointment');
         }
         await endChatChannel(sessionId);
-        refreshStatuses();
+        chatSessionStatusCtx.refreshStatuses();
         setSessionClosed(true);
         alert('Chat session closed successfully');
       }
@@ -765,12 +779,12 @@ const ChannelHeaderWithCounterpart: React.FC<{
   );
 };
 
-const ChannelPreviewWrapper: React.FC<ChannelPreviewWrapperProps> = ({
+const ChannelPreviewWrapper: FC<ChannelPreviewWrapperProps> = ({
   onPreviewSelect,
   currentUserId,
   ...previewProps
 }) => {
-  const wasActiveRef = React.useRef(false);
+  const wasActiveRef = useRef(false);
 
   useEffect(() => {
     const isActive = Boolean(previewProps.active);
@@ -788,8 +802,8 @@ const ChannelPreviewWrapper: React.FC<ChannelPreviewWrapperProps> = ({
 const createPreviewComponent = (
   onPreviewSelect: (channel: StreamChannel | null) => void,
   currentUserId?: string | null
-): React.ComponentType<ChannelPreviewUIComponentProps> => {
-  const PreviewComponent: React.FC<ChannelPreviewUIComponentProps> = (props) => (
+): ComponentType<ChannelPreviewUIComponentProps> => {
+  const PreviewComponent: FC<ChannelPreviewUIComponentProps> = (props) => (
     <ChannelPreviewWrapper
       {...props}
       onPreviewSelect={onPreviewSelect}
@@ -801,25 +815,28 @@ const createPreviewComponent = (
   return PreviewComponent;
 };
 
-const ChatClosedFooter: React.FC<{ closedAt?: string }> = ({ closedAt }) => {
-  const formatClosedTime = (timestamp?: string) => {
-    if (!timestamp) return '';
+const CHAT_SORT = [{ last_message_at: -1 as const }];
+const CHAT_OPTIONS = { state: true, watch: true, presence: true };
 
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+const formatClosedTime = (timestamp?: string) => {
+  if (!timestamp) return '';
 
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
 
-    return formatDisplayDate(date);
-  };
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
 
+  return formatDisplayDate(date);
+};
+
+const ChatClosedFooter: FC<{ closedAt?: string }> = ({ closedAt }) => {
   const formattedClosedTime = formatClosedTime(closedAt);
 
   return (
@@ -864,15 +881,15 @@ const ChatClosedFooter: React.FC<{ closedAt?: string }> = ({ closedAt }) => {
 // Shared component for channel window content with different header components
 interface ChannelWindowContentProps {
   currentUserId?: string | null;
-  headerComponent: React.ComponentType<{ currentUserId?: string | null }>;
+  headerComponent: ComponentType<{ currentUserId?: string | null }>;
 }
 
-const ChannelWindowContent: React.FC<ChannelWindowContentProps> = ({
+const ChannelWindowContent: FC<ChannelWindowContentProps> = ({
   currentUserId,
   headerComponent: HeaderComponent,
 }) => {
   const { channel } = useChannelStateContext();
-  const { statusByAppointmentId } = useContext(ChatSessionStatusContext);
+  const { statusByAppointmentId } = use(ChatSessionStatusContext);
   const channelState = useChannelState();
   const HeaderComponentTyped = HeaderComponent;
   const appointmentId = (channel?.data as any)?.appointmentId;
@@ -896,14 +913,14 @@ const ChannelWindowContent: React.FC<ChannelWindowContentProps> = ({
 
 // Specialized components for different use cases with distinct implementations
 // Reuse ChannelWindowContent for both appointment and regular channels
-const RegularChannelWindow: React.FC<{ currentUserId?: string | null }> = ({ currentUserId }) => (
+const RegularChannelWindow: FC<{ currentUserId?: string | null }> = ({ currentUserId }) => (
   <ChannelWindowContent
     headerComponent={ChannelHeaderWithCounterpart}
     currentUserId={currentUserId}
   />
 );
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ showBackButton, onBack, currentUserId }) => {
+const ChatWindow: FC<ChatWindowProps> = ({ showBackButton, onBack, currentUserId }) => {
   const shouldShowBackButton = showBackButton;
 
   return (
@@ -921,7 +938,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ showBackButton, onBack, current
   );
 };
 
-const ChatMainPanel: React.FC<ChatMainPanelProps> = ({
+const ChatMainPanel: FC<ChatMainPanelProps> = ({
   isMobile,
   isChannelSelected,
   showBackButton,
@@ -941,19 +958,7 @@ const ChatMainPanel: React.FC<ChatMainPanelProps> = ({
       }}
     >
       {showEmpty ? (
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--color-chat-surface)',
-            color: 'var(--color-neutral-700)',
-            fontFamily: 'var(--font-satoshi)',
-            padding: '24px',
-            textAlign: 'center',
-          }}
-        >
+        <div className="flex flex-1 items-center justify-center bg-chat-surface text-neutral-700 font-satoshi p-6 text-center">
           <div>
             <p style={{ margin: 0, fontWeight: 600, fontSize: '16px' }}>
               Select a conversation to start chatting
@@ -974,7 +979,7 @@ const ChatMainPanel: React.FC<ChatMainPanelProps> = ({
   );
 };
 
-const ChatLayout: React.FC<ChatLayoutProps> = ({
+const ChatLayout: FC<ChatLayoutProps> = ({
   filters,
   sort,
   options,
@@ -1024,12 +1029,13 @@ const ChatLayout: React.FC<ChatLayoutProps> = ({
   );
 };
 
-const AppointmentChannelInitializer: React.FC<{
+const AppointmentChannelInitializer: FC<{
   appointmentId?: string;
   onActivated: (channel: StreamChannel) => void;
   onCleared: () => void;
 }> = ({ appointmentId, onActivated, onCleared }) => {
-  const { client, setActiveChannel } = useChatContext();
+  const chatContext = useChatContext();
+  const { client } = chatContext;
   const prevAppointmentIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -1050,7 +1056,7 @@ const AppointmentChannelInitializer: React.FC<{
       try {
         const channel = await getAppointmentChannel(appointmentId);
         if (cancelled) return;
-        setActiveChannel?.(channel);
+        chatContext.setActiveChannel?.(channel);
         onActivated(channel);
       } catch (err) {
         console.error('Failed to activate appointment channel', err);
@@ -1062,12 +1068,12 @@ const AppointmentChannelInitializer: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [appointmentId, client, setActiveChannel, onActivated, onCleared]);
+  }, [appointmentId, client, chatContext, onActivated, onCleared]);
 
   return null;
 };
 
-export const ChatContainer: React.FC<ChatContainerProps> = ({
+export const ChatContainer: FC<ChatContainerProps> = ({
   appointmentId,
   onChannelSelect,
   className = '',
@@ -1147,7 +1153,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     setOrgUsers([]);
   }, [primaryOrgId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!appointmentId) return;
     setIsChannelSelected(false);
     setShowEmptyPlaceholder(true);
@@ -1228,7 +1234,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     [primaryOrgId]
   );
 
-  // Detect mobile
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(globalThis.innerWidth <= 768);
@@ -1300,7 +1305,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     [onChannelSelect]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Reset selection when switching audience scopes so stale channels do not persist
     const hasInitialized = scopeInitialized.current;
     scopeInitialized.current = true;
@@ -1312,7 +1317,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }, [scope, onChannelSelect]);
 
   // Load org users for colleague/group creation flows
-  useEffect(() => {
+  useLayoutEffect(() => {
     const shouldLoadUsers = (scope === 'colleagues' || scope === 'groups') && primaryOrgId;
     if (!shouldLoadUsers) return;
     if (orgUsersLoaded || orgUsersLoading) return;
@@ -1322,17 +1327,21 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     fetchOrgUsers(primaryOrgId)
       .then((users) => {
         setOrgUsers(
-          users
-            .filter((u) => u?.id)
-            .map((u) => ({
-              id: u.id,
-              userId: u.userId,
-              practitionerId: u.practitionerId,
-              name: u.name || u.email || 'User',
-              email: u.email,
-              image: u.image,
-              role: u.role,
-            }))
+          users.flatMap((u) =>
+            u?.id
+              ? [
+                  {
+                    id: u.id,
+                    userId: u.userId,
+                    practitionerId: u.practitionerId,
+                    name: u.name || u.email || 'User',
+                    email: u.email,
+                    image: u.image,
+                    role: u.role,
+                  },
+                ]
+              : []
+          )
         );
         setOrgUsersLoaded(true);
       })
@@ -1464,7 +1473,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         if (existingSession?.channelId) {
           // Found existing session, try to load the channel
           const queried = await client.queryChannels(
-            { id: { $eq: existingSession.channelId } } as Record<string, unknown>,
+            { id: { $eq: existingSession.channelId } },
             [{ last_message_at: -1 }],
             { watch: true, state: true, presence: true, limit: 1 }
           );
@@ -1483,7 +1492,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           {
             type: 'team',
             members: { $in: [client.userID!] },
-          } as Record<string, unknown>,
+          },
           [{ last_message_at: -1 }],
           { watch: false, state: true, presence: false, limit: 100 }
         );
@@ -1827,19 +1836,11 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     members: { $in: [client.userID!] },
   };
 
-  const sort = [{ last_message_at: -1 as const }];
-
-  const options = {
-    state: true,
-    watch: true,
-    presence: true,
-  };
-
   const chatContent = (
     <ChatLayout
       filters={filters}
-      sort={sort}
-      options={options}
+      sort={CHAT_SORT}
+      options={CHAT_OPTIONS}
       isMobile={isMobile}
       isChannelSelected={isChannelSelected}
       previewComponent={previewComponent}
@@ -1889,66 +1890,65 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                   )}
                   {!orgUsersLoading &&
                     (searchFocused || directListHover) &&
-                    orgUsers
-                      .filter((u) =>
-                        (u.name + (u.email ?? '') + (u.role ?? ''))
-                          .toLowerCase()
-                          .includes(directSearch.toLowerCase())
-                      )
-                      .map((u) => ({
-                        ...u,
-                        keyId: u.userId ?? u.id,
-                      }))
-                      .filter((u) => u.keyId !== client.userID)
-                      .slice(0, 8)
-                      .map((u) => (
-                        <button
-                          key={u.keyId}
-                          type="button"
-                          onClick={() =>
-                            handleStartDirectChat({
-                              ...u,
-                              id: u.id,
-                              userId: u.userId,
-                              practitionerId: u.practitionerId,
-                            })
-                          }
-                          disabled={creatingChat}
-                          className="flex items-center gap-3 px-3 py-2.5 rounded-2xl! border border-grey-light bg-white cursor-pointer text-left hover:border-input-border-active transition-all duration-200 overflow-hidden"
-                        >
-                          <div className="w-8 h-8 rounded-full bg-card-hover flex items-center justify-center">
-                            <span className="font-satoshi text-black-text text-sm font-medium">
-                              {(u.name || u.email || '?')
-                                .split(' ')
-                                .map((p) => p[0])
-                                .join('')
-                                .slice(0, 2)
-                                .toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-body-4 text-text-primary font-medium">
-                              {u.name}
-                            </span>
-                            {u.email && (
-                              <span className="text-caption-2 text-text-secondary">{u.email}</span>
-                            )}
-                          </div>
-                        </button>
-                      ))}
+                    (() => {
+                      const dlower = directSearch.toLowerCase();
+                      const results: (OrgUserOption & { keyId: string | undefined })[] = [];
+                      for (const u of orgUsers) {
+                        if (
+                          !(u.name + (u.email ?? '') + (u.role ?? ''))
+                            .toLowerCase()
+                            .includes(dlower)
+                        )
+                          continue;
+                        const keyId = u.userId ?? u.id;
+                        if (keyId === client.userID) continue;
+                        results.push({ ...u, keyId });
+                        if (results.length === 8) break;
+                      }
+                      return results;
+                    })().map((u) => (
+                      <button
+                        key={u.keyId}
+                        type="button"
+                        onClick={() =>
+                          handleStartDirectChat({
+                            ...u,
+                            id: u.id,
+                            userId: u.userId,
+                            practitionerId: u.practitionerId,
+                          })
+                        }
+                        disabled={creatingChat}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-2xl! border border-grey-light bg-white cursor-pointer text-left hover:border-input-border-active transition-all duration-200 overflow-hidden"
+                      >
+                        <div className="size-8 rounded-full bg-card-hover flex items-center justify-center">
+                          <span className="font-satoshi text-black-text text-sm font-medium">
+                            {(u.name || u.email || '?')
+                              .split(' ')
+                              .map((p) => p[0])
+                              .join('')
+                              .slice(0, 2)
+                              .toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-body-4 text-text-primary font-medium">
+                            {u.name}
+                          </span>
+                          {u.email && (
+                            <span className="text-caption-2 text-text-secondary">{u.email}</span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
                   {!orgUsersLoading &&
                     searchFocused &&
                     directSearch.trim().length > 0 &&
-                    orgUsers
-                      .map((u) => ({
-                        ...u,
-                        keyId: u.userId ?? u.id,
-                      }))
-                      .filter((u) =>
-                        (u.name + (u.email ?? '') + (u.role ?? ''))
-                          .toLowerCase()
-                          .includes(directSearch.toLowerCase())
-                      ).length === 0 && (
+                    !orgUsers.some((u) =>
+                      (u.name + (u.email ?? '') + (u.role ?? ''))
+                        .toLowerCase()
+                        .includes(directSearch.toLowerCase())
+                    ) && (
                       <span className="text-caption-1 text-text-secondary">
                         No teammates found. Adjust your search.
                       </span>
@@ -2021,8 +2021,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
 
 const ProtectedChatContainer = () => {
   return (
-    <ProtectedRoute>
-      <OrgGuard>
+    <ProtectedRoute skeleton={CHAT_PAGE_SKELETON}>
+      <OrgGuard skeleton={CHAT_PAGE_SKELETON}>
         <ChatContainer />
       </OrgGuard>
     </ProtectedRoute>

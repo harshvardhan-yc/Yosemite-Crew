@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import GenericTable from '@/app/ui/tables/GenericTable/GenericTable';
 import { IoEye, IoOpenOutline } from 'react-icons/io5';
 import InvoiceCard from '@/app/ui/cards/InvoiceCard';
-import { Invoice, InvoiceItem } from '@yosemite-crew/types';
+import { Invoice } from '@yosemite-crew/types';
 import { formatDateLabel, formatTimeLabel } from '@/app/lib/forms';
 import { toTitle } from '@/app/lib/validators';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,7 @@ import {
   getParentNameFromAppointments,
 } from '@/app/lib/invoice';
 import { getInvoicePaymentMethodLabel } from '@/app/lib/invoicePaymentMethod';
+import { getInvoiceItemNames, getInvoiceStatusStyle } from '@/app/ui/tables/tableUtils';
 
 type Column<T> = {
   label: string;
@@ -29,50 +30,6 @@ type InvoiceTableProps = {
   filteredList: Invoice[];
   setActiveInvoice?: (inventory: Invoice) => void;
   setViewInvoice?: (open: boolean) => void;
-};
-
-export const getInvoiceItemNames = (items: InvoiceItem[]): string => {
-  return items
-    .map((item) => item.name?.trim())
-    .filter(Boolean)
-    .join(', ');
-};
-
-export const getStatusStyle = (status: string) => {
-  switch (status?.toLowerCase()) {
-    case 'awaiting_payment':
-      return {
-        color: 'var(--color-pill-info-text)',
-        backgroundColor: 'var(--color-pill-info-bg)',
-        borderColor: 'var(--color-pill-info-border)',
-      };
-    case 'paid':
-      return {
-        color: 'var(--color-pill-success-text)',
-        backgroundColor: 'var(--color-pill-success-bg)',
-        borderColor: 'var(--color-pill-success-border)',
-      };
-    case 'failed':
-    case 'cancelled':
-      return {
-        color: 'var(--color-pill-warning-text)',
-        backgroundColor: 'var(--color-pill-warning-bg)',
-        borderColor: 'var(--color-pill-warning-border)',
-      };
-    case 'refunded':
-      return {
-        color: 'var(--color-pill-progress-text)',
-        backgroundColor: 'var(--color-pill-progress-bg)',
-        borderColor: 'var(--color-pill-progress-border)',
-      };
-    case 'pending':
-    default:
-      return {
-        color: 'var(--color-pill-neutral-text)',
-        backgroundColor: 'var(--color-pill-neutral-bg)',
-        borderColor: 'var(--color-pill-neutral-border)',
-      };
-  }
 };
 
 const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: InvoiceTableProps) => {
@@ -151,12 +108,14 @@ const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: Invoic
       width: '150px',
       render: (item: Invoice) => {
         const appointment = getAppointmentByIdFromList(appointments, item.appointmentId);
+        const companionName = getCompanionName(item.appointmentId);
         return (
           <div className="appointment-profile-two">
             {appointment && (
               <button
                 type="button"
                 onClick={() => goToAppointmentFinance(item.appointmentId)}
+                aria-label={`Open finance details for ${companionName}`}
                 className="mt-1 w-full text-left rounded-xl! border border-card-border px-2 py-1.5 hover:bg-card-hover transition-colors"
                 title="Open appointment finance"
               >
@@ -218,7 +177,7 @@ const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: Invoic
       key: 'status',
       width: '110px',
       render: (item: Invoice) => (
-        <div className="appointment-status" style={getStatusStyle(item?.status)}>
+        <div className="appointment-status" style={getInvoiceStatusStyle(item?.status)}>
           {toTitle(item?.status)}
         </div>
       ),
@@ -238,8 +197,10 @@ const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: Invoic
       render: (item: Invoice) => (
         <div className="action-btn-col">
           <button
+            type="button"
             onClick={() => handleViewInvoice(item)}
-            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+            aria-label={`View invoice ${item.id ?? ''}`.trim()}
+            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
           >
             <IoEye size={20} color="var(--color-neutral-900)" />
           </button>
@@ -258,15 +219,19 @@ const InvoiceTable = ({ filteredList, setActiveInvoice, setViewInvoice }: Invoic
           pagination
           pageSize={10}
           tableClassName="invoice-table-fixed"
+          caption="Invoices with appointment details, totals, statuses, payment methods, and actions"
         />
       </div>
       <div className="card-list flex xl:hidden gap-4 sm:gap-6 flex-wrap">
         {(() => {
           if (filteredList.length === 0) {
             return (
-              <div className="w-full py-6 flex items-center justify-center text-body-4 text-text-primary">
-                No data available
-              </div>
+              <output
+                className="w-full py-6 flex items-center justify-center text-body-4 text-text-primary"
+                aria-live="polite"
+              >
+                No invoices match the current filters.
+              </output>
             );
           }
           return filteredList.map((item, i) => (

@@ -5,13 +5,15 @@ import {
   CompanionServiceError,
 } from "../../services/companion.service";
 import type { CompanionRequestDTO } from "@yosemite-crew/types";
-import { Types } from "mongoose";
-import { generatePresignedUrl } from "src/middlewares/upload";
 import { CompanionOrganisationService } from "src/services/companion-organisation.service";
 import OrganizationModel from "src/models/organization";
 import { prisma } from "src/config/prisma";
 import { isReadFromPostgres } from "src/config/read-switch";
-import { resolveUserIdFromRequest } from "src/utils/request";
+import {
+  resolveOrganisationIdFromRequest,
+  resolveUserIdFromRequest,
+} from "src/utils/request";
+import { getProfileUploadUrl } from "./profile-upload.handler";
 
 type CompanionRequestBody =
   | CompanionRequestDTO
@@ -109,7 +111,7 @@ export const CompanionController = {
       const { parentId } = (req.body ?? {}) as { parentId?: string };
       const orgId = (req.params as { orgId?: string } | undefined)?.orgId;
 
-      if (!parentId || !Types.ObjectId.isValid(parentId)) {
+      if (!parentId || typeof parentId !== "string" || !parentId.trim()) {
         return res.status(400).json({
           message:
             "Valid parentId is required to create companion through PMS.",
@@ -117,12 +119,13 @@ export const CompanionController = {
       }
 
       const { response } = await CompanionService.create(payload, {
-        parentMongoId: new Types.ObjectId(parentId),
+        parentId: parentId.trim(),
+        organisationId: orgId?.trim(),
       });
 
       // Establish link between PMS and Companion
       if (orgId) {
-        if (!isReadFromPostgres() && !Types.ObjectId.isValid(orgId)) {
+        if (!orgId.trim()) {
           return res.status(400).json({
             message: "Valid organisationId is required to create companion.",
           });
@@ -137,8 +140,8 @@ export const CompanionController = {
         }
 
         const organisation = isReadFromPostgres()
-          ? await prisma.organization.findFirst({ where: { id: orgId } })
-          : await OrganizationModel.findById(orgId);
+          ? await prisma.organization.findFirst({ where: { id: orgId.trim() } })
+          : await OrganizationModel.findById(orgId.trim());
         if (!organisation) {
           return res
             .status(404)
@@ -147,9 +150,9 @@ export const CompanionController = {
 
         await CompanionOrganisationService.linkByPmsUser({
           pmsUserId: authUser,
-          organisationId: orgId,
+          organisationId: orgId.trim(),
           organisationType: organisation.type,
-          companionId: response.id!,
+          patientId: response.id!,
         });
       }
 
@@ -197,7 +200,10 @@ export const CompanionController = {
       }
 
       const payload = extractFHIRPayload(req);
-      const result = await CompanionService.update(id, payload);
+      const result = await CompanionService.update(id, payload, {
+        organisationId: resolveOrganisationIdFromRequest(req),
+        authUserId: resolveUserIdFromRequest(req),
+      });
 
       if (!result) {
         return res.status(404).json({ message: "Companion not found." });
@@ -259,31 +265,7 @@ export const CompanionController = {
     }
   },
 
-  getProfileUploadUrl: async (req: Request, res: Response) => {
-    try {
-      const rawBody: unknown = req.body;
-      const mimeType =
-        typeof rawBody === "object" && rawBody !== null && "mimeType" in rawBody
-          ? (rawBody as { mimeType?: unknown }).mimeType
-          : undefined;
-
-      if (typeof mimeType !== "string" || !mimeType) {
-        res
-          .status(400)
-          .json({ message: "MIME type is required in the request body." });
-        return;
-      }
-
-      const { url, key } = await generatePresignedUrl(mimeType, "temp");
-
-      return res.status(200).json({ url, key });
-    } catch (error) {
-      logger.error("Failed to generate pre-signed URL", error);
-      return res
-        .status(500)
-        .json({ message: "Failed to generate upload URL." });
-    }
-  },
+  getProfileUploadUrl,
 
   getCompanionsByParentId: async (req: Request, res: Response) => {
     try {

@@ -2,6 +2,86 @@ import { StoredCompanion, StoredParent } from '@/app/features/companions/pages/C
 import countries from '@/app/lib/data/countryList';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
+export type AlertPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export type CompanionAlert = {
+  id: string;
+  label: string;
+  priority: AlertPriority;
+};
+
+export type CompanionFormData = Omit<StoredCompanion, 'alerts'> & {
+  alerts?: CompanionAlert[];
+};
+
+export const toStoredCompanionAlerts = (alerts?: CompanionAlert[]) =>
+  alerts?.map((alert) => ({
+    title: alert.label,
+    severity: alert.priority,
+  }));
+
+export const fromStoredCompanionAlerts = (
+  alerts?: Array<{ title?: string; severity?: string; label?: string; priority?: string }>
+): CompanionAlert[] =>
+  (alerts ?? []).flatMap((alert) => {
+    const label = alert.title ?? alert.label;
+    const priority = alert.severity ?? alert.priority;
+    if (!label || !priority) {
+      return [];
+    }
+    if (
+      priority !== 'low' &&
+      priority !== 'medium' &&
+      priority !== 'high' &&
+      priority !== 'critical'
+    ) {
+      return [
+        {
+          id: crypto.randomUUID(),
+          label,
+          priority: priority as AlertPriority,
+        },
+      ];
+    }
+    return [
+      {
+        id: crypto.randomUUID(),
+        label,
+        priority,
+      },
+    ];
+  });
+
+export const ALERT_PRIORITY_CONFIG: Record<
+  AlertPriority,
+  { label: string; bg: string; text: string; border: string }
+> = {
+  low: {
+    label: 'Low',
+    bg: 'var(--color-neutral-100)',
+    text: 'var(--color-neutral-700)',
+    border: 'var(--color-neutral-300)',
+  },
+  medium: {
+    label: 'Medium',
+    bg: 'var(--color-warning-100)',
+    text: 'var(--color-warning-700)',
+    border: 'var(--color-warning-300)',
+  },
+  high: {
+    label: 'High',
+    bg: 'var(--color-danger-100)',
+    text: 'var(--color-danger-700)',
+    border: 'var(--color-danger-300)',
+  },
+  critical: {
+    label: 'Critical',
+    bg: 'var(--color-neutral-900)',
+    text: 'var(--color-neutral-0)',
+    border: 'var(--color-neutral-900)',
+  },
+};
+
 export type Option = {
   value: string;
   label: string;
@@ -173,7 +253,7 @@ export const EMPTY_STORED_PARENT: StoredParent = {
   createdFrom: 'pms',
 };
 
-export const EMPTY_STORED_COMPANION: StoredCompanion = {
+export const EMPTY_STORED_COMPANION: CompanionFormData = {
   id: '',
   organisationId: '',
   parentId: '',
@@ -195,4 +275,5 @@ export const EMPTY_STORED_COMPANION: StoredCompanion = {
   insurance: undefined,
   countryOfOrigin: '',
   source: 'unknown',
+  alerts: [],
 };

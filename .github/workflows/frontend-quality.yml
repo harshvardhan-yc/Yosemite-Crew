@@ -1,0 +1,157 @@
+name: Frontend Quality
+
+on:
+  pull_request:
+    paths:
+      - 'apps/frontend/**'
+      - 'packages/types/**'
+      - 'packages/fhirtypes/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - '.github/workflows/dependency-review.yml'
+      - '.github/workflows/frontend-quality.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'apps/frontend/**'
+      - 'packages/types/**'
+      - 'packages/fhirtypes/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - '.github/workflows/dependency-review.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-headers:
+    name: Frontend security header regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Check frontend security headers
+        run: pnpm --filter frontend run test -- --testPathPattern='config/securityHeaders.test.ts'
+
+  type-check-and-test:
+    name: Frontend type-check and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Cache Jest transform cache
+        uses: actions/cache@v4
+        with:
+          path: apps/frontend/.jest-cache
+          key: jest-frontend-${{ runner.os }}-${{ hashFiles('apps/frontend/jest.config.ts', 'apps/frontend/package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            jest-frontend-${{ runner.os }}-
+
+      - name: Build shared packages
+        run: pnpm run build --filter "@yosemite-crew/types" --filter "@yosemite-crew/fhirtypes"
+
+      - name: Type-check
+        run: pnpm --filter frontend run type-check
+
+      - name: Lint
+        run: pnpm --filter frontend run lint
+
+      - name: Unit tests
+        run: pnpm --filter frontend run test -- --ci --maxWorkers=4 --cacheDirectory=.jest-cache
+
+  # React Doctor runs in its own workflow (.github/workflows/react-doctor.yml)
+  # via the millionco/react-doctor action — do not duplicate it here.
+
+  build-quality:
+    name: Frontend build, bundle budgets, Lighthouse
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Cache Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/frontend/.next/cache
+          key: next-build-${{ runner.os }}-${{ hashFiles('apps/frontend/package.json', 'apps/frontend/next.config.*', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            next-build-${{ runner.os }}-
+
+      - name: Build shared packages
+        run: pnpm run build --filter "@yosemite-crew/types" --filter "@yosemite-crew/fhirtypes"
+
+      - name: Build frontend
+        run: pnpm --filter frontend run build
+
+      - name: Check bundle budgets
+        working-directory: apps/frontend
+        run: pnpm run check:bundle-budgets
+
+      - name: Export route build report
+        working-directory: apps/frontend
+        run: pnpm run report:build-routes
+
+      - name: Upload route build report
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-route-report
+          path: |
+            apps/frontend/artifacts/build-route-report.json
+            apps/frontend/artifacts/build-route-report.md
+
+      - name: Start frontend server
+        run: |
+          nohup pnpm --filter frontend exec next start -H 127.0.0.1 -p 3001 > /tmp/frontend-lighthouse.log 2>&1 &
+          echo $! > /tmp/frontend-lighthouse.pid
+
+      - name: Wait for frontend server
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error http://127.0.0.1:3001/pet-businesses > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat /tmp/frontend-lighthouse.log
+          exit 1
+
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@3e7e23fb74242897f95c0ba9cabad3d0227b9b18 # v12
+        with:
+          configPath: apps/frontend/lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+          runs: 1
+
+      - name: Stop frontend server
+        if: always()
+        run: |
+          if [ -f /tmp/frontend-lighthouse.pid ]; then
+            kill "$(cat /tmp/frontend-lighthouse.pid)" || true
+          fi

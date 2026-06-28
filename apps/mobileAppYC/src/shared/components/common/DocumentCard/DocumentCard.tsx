@@ -84,19 +84,31 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
               />
             </View>
             <View style={styles.textContainer}>
-              <Text style={styles.infoRow} numberOfLines={1} ellipsizeMode="tail">
+              <Text
+                style={styles.infoRow}
+                numberOfLines={1}
+                ellipsizeMode="tail">
                 <Text style={styles.label}>Title: </Text>
                 <Text style={styles.value}>{resolvedTitle}</Text>
               </Text>
-              <Text style={styles.infoRow} numberOfLines={1} ellipsizeMode="tail">
+              <Text
+                style={styles.infoRow}
+                numberOfLines={1}
+                ellipsizeMode="tail">
                 <Text style={styles.label}>Business: </Text>
                 <Text style={styles.value}>{resolvedBusiness}</Text>
               </Text>
-              <Text style={styles.infoRow} numberOfLines={1} ellipsizeMode="tail">
+              <Text
+                style={styles.infoRow}
+                numberOfLines={1}
+                ellipsizeMode="tail">
                 <Text style={styles.label}>Visit type: </Text>
                 <Text style={styles.value}>{resolvedVisitType}</Text>
               </Text>
-              <Text style={styles.infoRow} numberOfLines={1} ellipsizeMode="tail">
+              <Text
+                style={styles.infoRow}
+                numberOfLines={1}
+                ellipsizeMode="tail">
                 <Text style={styles.label}>Issue Date: </Text>
                 <Text style={styles.value}>
                   {formatReadableDate(resolvedIssueDate)}
@@ -114,8 +126,7 @@ const createStyles = (theme: any) =>
   StyleSheet.create({
     shadowWrapper: {
       borderRadius: theme.borderRadius.lg,
-      ...theme.shadows.none,
-      shadowColor: 'transparent',
+      boxShadow: 'none',
       backgroundColor: 'transparent',
     },
     content: {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 
 import Slot from '@/app/features/appointments/components/Calendar/common/Slot';
 import { calcNearestAvailableMinute } from '@/app/features/appointments/components/Calendar/calendarDrop';
@@ -13,7 +14,11 @@ jest.useFakeTimers();
 
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ alt }: any) => <span data-testid="mock-next-image">{alt || ''}</span>,
+  default: ({ alt, width }: any) => (
+    <span data-testid="mock-next-image" data-width={width}>
+      {alt || ''}
+    </span>
+  ),
 }));
 
 jest.mock('@/app/ui/tables/Appointments', () => ({
@@ -33,6 +38,11 @@ jest.mock('@/app/lib/appointments', () => ({
   ),
   normalizeAppointmentStatus: (status: string) => (status === 'NO_PAYMENT' ? 'REQUESTED' : status),
   toStatusLabel: (status: string) => status,
+}));
+
+jest.mock('@/app/lib/appointmentWorkspace', () => ({
+  ...jest.requireActual('@/app/lib/appointmentWorkspace'),
+  canEnterAppointmentWorkspace: (status?: string) => status !== 'CANCELLED' && status !== 'NO_SHOW',
 }));
 
 jest.mock('@/app/features/appointments/components/Calendar/calendarDrop', () => ({
@@ -72,8 +82,12 @@ jest.mock('react-icons/md', () => ({
   MdOutlineAutorenew: () => <span>change-status</span>,
 }));
 
+expect.extend(toHaveNoViolations);
+
 describe('Slot (Appointments)', () => {
   const handleViewAppointment = jest.fn();
+  const handleDetailAppointment = jest.fn();
+  const handleOpenWorkspace = jest.fn();
   const handleRescheduleAppointment = jest.fn();
   const originalConsoleError = console.error;
 
@@ -106,6 +120,8 @@ describe('Slot (Appointments)', () => {
         slotEvents={[]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
+        handleOpenWorkspace={handleOpenWorkspace}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={0}
@@ -133,6 +149,8 @@ describe('Slot (Appointments)', () => {
         slotEvents={[event]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
+        handleOpenWorkspace={handleOpenWorkspace}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={1}
@@ -163,6 +181,8 @@ describe('Slot (Appointments)', () => {
         slotEvents={[event]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
+        handleOpenWorkspace={handleOpenWorkspace}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={1}
@@ -172,7 +192,41 @@ describe('Slot (Appointments)', () => {
 
     fireEvent.doubleClick(screen.getByRole('button', { name: /Rex/i }));
 
-    expect(handleViewAppointment).toHaveBeenCalledWith(event);
+    expect(handleOpenWorkspace).toHaveBeenCalledWith(event);
+    expect(handleDetailAppointment).not.toHaveBeenCalled();
+  });
+
+  it('does not open the workspace for cancelled appointments from the popover or double click', () => {
+    const cancelledEvent = { ...event, status: 'CANCELLED' };
+
+    render(
+      <Slot
+        slotEvents={[cancelledEvent]}
+        height={120}
+        handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
+        handleOpenWorkspace={handleOpenWorkspace}
+        handleRescheduleAppointment={handleRescheduleAppointment}
+        dayIndex={0}
+        length={1}
+        canEditAppointments
+      />
+    );
+
+    const marker = screen.getByRole('button', { name: /Rex/i });
+    fireEvent.click(marker);
+    act(() => {
+      jest.advanceTimersByTime(200);
+    });
+
+    expect(screen.queryByRole('button', { name: /view appointment/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /finance summary/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /lab tests/i })).not.toBeInTheDocument();
+
+    fireEvent.doubleClick(marker);
+
+    expect(handleOpenWorkspace).not.toHaveBeenCalled();
+    expect(handleDetailAppointment).toHaveBeenCalledWith(cancelledEvent);
   });
 
   it('shows only the service label for overlapping compact markers', () => {
@@ -190,6 +244,7 @@ describe('Slot (Appointments)', () => {
         slotEvents={[event, overlappingEvent]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={1}
@@ -205,6 +260,31 @@ describe('Slot (Appointments)', () => {
     expect(screen.queryByText('Checkup')).not.toBeInTheDocument();
   });
 
+  it('shows a compact companion avatar for short single-lane markers', () => {
+    const shortEvent = {
+      ...event,
+      startTime: new Date('2025-01-06T09:00:00Z'),
+      endTime: new Date('2025-01-06T09:05:00Z'),
+    };
+
+    render(
+      <Slot
+        slotEvents={[shortEvent]}
+        height={120}
+        handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
+        handleRescheduleAppointment={handleRescheduleAppointment}
+        dayIndex={0}
+        length={1}
+        canEditAppointments
+      />
+    );
+
+    const image = screen.getByTestId('mock-next-image');
+    expect(image).toBeInTheDocument();
+    expect(image).toHaveAttribute('data-width', '24');
+  });
+
   it('creates appointment when empty slot is clicked', () => {
     const onCreateAppointmentAt = jest.fn();
 
@@ -213,19 +293,18 @@ describe('Slot (Appointments)', () => {
         slotEvents={[]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={0}
         canEditAppointments
-        dropDate={new Date('2026-03-16T00:00:00.000Z')}
+        dropDate={new Date('2030-01-15T00:00:00.000Z')}
         dropHour={9}
         onCreateAppointmentAt={onCreateAppointmentAt}
       />
     );
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Create appointment in this calendar slot' })
-    );
+    fireEvent.click(screen.getByRole('button', { name: /Create appointment on/i }));
     expect(onCreateAppointmentAt).toHaveBeenCalled();
   });
 
@@ -238,6 +317,7 @@ describe('Slot (Appointments)', () => {
         slotEvents={[]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={0}
@@ -245,13 +325,13 @@ describe('Slot (Appointments)', () => {
         draggedAppointmentId="appt-1"
         draggedAppointmentLabel="Buddy"
         onAppointmentDropAt={onAppointmentDropAt}
-        dropDate={new Date('2026-03-16T00:00:00.000Z')}
+        dropDate={new Date('2030-01-15T00:00:00.000Z')}
         dropHour={9}
         dropAvailabilityIntervals={[{ startMinute: 540, endMinute: 599 }]}
       />
     );
 
-    const slot = screen.getByRole('application');
+    const slot = screen.getByRole('region', { name: /Appointments slot for/i });
     fireEvent.dragOver(slot, { clientX: 10, clientY: 20 });
     fireEvent.drop(slot, { clientX: 10, clientY: 20 });
 
@@ -267,6 +347,7 @@ describe('Slot (Appointments)', () => {
         slotEvents={[]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={0}
@@ -274,13 +355,13 @@ describe('Slot (Appointments)', () => {
         draggedAppointmentId="appt-1"
         draggedAppointmentLabel="Buddy"
         onAppointmentDropAt={onAppointmentDropAt}
-        dropDate={new Date('2026-03-16T00:00:00.000Z')}
+        dropDate={new Date('2030-01-15T00:00:00.000Z')}
         dropHour={9}
         dropAvailabilityIntervals={[{ startMinute: 540, endMinute: 599 }]}
       />
     );
 
-    const slot = screen.getByRole('application');
+    const slot = screen.getByRole('region', { name: /Appointments slot for/i });
     fireEvent.dragOver(slot, { clientX: 10, clientY: 20 });
     fireEvent.drop(slot, { clientX: 10, clientY: 20 });
 
@@ -295,19 +376,18 @@ describe('Slot (Appointments)', () => {
         slotEvents={[]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={0}
         canEditAppointments
-        dropDate={new Date('2026-03-16T00:00:00.000Z')}
+        dropDate={new Date('2030-01-15T00:00:00.000Z')}
         dropHour={9}
         onCreateAppointmentAt={onCreateAppointmentAt}
       />
     );
 
-    fireEvent.doubleClick(
-      screen.getByRole('button', { name: 'Create appointment in this calendar slot' })
-    );
+    fireEvent.doubleClick(screen.getByRole('button', { name: /Create appointment on/i }));
     expect(onCreateAppointmentAt).toHaveBeenCalled();
   });
 
@@ -317,6 +397,7 @@ describe('Slot (Appointments)', () => {
         slotEvents={[event]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={1}
@@ -347,12 +428,15 @@ describe('Slot (Appointments)', () => {
       endTime: new Date('2025-01-06T09:30:00Z'),
     } as any;
 
+    const handleAcceptAppointment = jest.fn();
     render(
       <Slot
         slotEvents={[requestedEvent]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
+        handleAcceptAppointment={handleAcceptAppointment}
         dayIndex={0}
         length={1}
         canEditAppointments
@@ -368,14 +452,20 @@ describe('Slot (Appointments)', () => {
     await act(async () => {
       fireEvent.click(screen.getByTitle('Accept request'));
     });
-    expect(acceptAppointment).toHaveBeenCalledWith(expect.objectContaining({ id: 'requested-1' }));
+    // Accept now routes through the change-status flow (assign lead/support) instead
+    // of calling the accept service directly.
+    expect(acceptAppointment).not.toHaveBeenCalled();
+    expect(handleAcceptAppointment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'requested-1' })
+    );
 
     fireEvent.click(eventButton);
     act(() => {
       jest.advanceTimersByTime(200);
     });
+    const declineButton = await screen.findByTitle('Decline request');
     await act(async () => {
-      fireEvent.click(screen.getByTitle('Decline request'));
+      fireEvent.click(declineButton);
     });
     expect(rejectAppointment).toHaveBeenCalledWith(expect.objectContaining({ id: 'requested-1' }));
   });
@@ -386,6 +476,7 @@ describe('Slot (Appointments)', () => {
         slotEvents={[event]}
         height={120}
         handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
         handleRescheduleAppointment={handleRescheduleAppointment}
         dayIndex={0}
         length={1}
@@ -397,5 +488,70 @@ describe('Slot (Appointments)', () => {
 
     expect(screen.getByRole('menu', { name: 'Appointment context actions' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Open companion overview' })).toBeInTheDocument();
+  });
+
+  it('has no axe accessibility violations when the appointment popover is open', async () => {
+    jest.useRealTimers();
+
+    try {
+      render(
+        <Slot
+          slotEvents={[event]}
+          height={120}
+          handleViewAppointment={handleViewAppointment}
+          handleRescheduleAppointment={handleRescheduleAppointment}
+          dayIndex={0}
+          length={1}
+          canEditAppointments
+        />
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Rex/i }));
+        await new Promise((resolve) => {
+          globalThis.setTimeout(resolve, 250);
+        });
+      });
+      expect(screen.getByTitle(/reschedule/i)).toBeInTheDocument();
+
+      const results = await axe(document.body);
+      expect(results).toHaveNoViolations();
+    } finally {
+      jest.useFakeTimers();
+    }
+  });
+
+  it('wires appointment markers to a non-modal dialog popover and closes on Escape', () => {
+    render(
+      <Slot
+        slotEvents={[event]}
+        height={120}
+        handleViewAppointment={handleViewAppointment}
+        handleDetailAppointment={handleDetailAppointment}
+        handleRescheduleAppointment={handleRescheduleAppointment}
+        dayIndex={0}
+        length={1}
+        canEditAppointments
+      />
+    );
+
+    const trigger = screen.getByRole('button', { name: /Rex/i });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(trigger);
+    act(() => {
+      jest.advanceTimersByTime(200);
+    });
+
+    const dialog = screen.getByRole('dialog', { name: 'Rex' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(trigger).toHaveAttribute('aria-controls', dialog.getAttribute('id'));
+    expect(dialog).toHaveAttribute('aria-modal', 'false');
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Rex' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 });

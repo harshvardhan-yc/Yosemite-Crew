@@ -1,5 +1,5 @@
 import React from 'react';
-import { getStatusStyle } from '@/app/ui/tables/Tasks';
+import { getTaskStatusStyle } from '@/app/ui/tables/tableUtils';
 import { getFormattedDate } from '@/app/features/appointments/components/Calendar/weekHelpers';
 import { Task } from '@/app/features/tasks/types/task';
 import { toTitleCase } from '@/app/lib/validators';
@@ -34,10 +34,10 @@ const TaskCard = ({
   canEditTasks = false,
 }: TaskCardProps) => {
   return (
-    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white px-3 py-3 flex flex-col justify-between gap-2 cursor-pointer">
+    <div className="sm:min-w-[280px] w-full sm:w-[calc(50%-12px)] rounded-2xl border border-card-border bg-white p-3 flex flex-col justify-between gap-2 cursor-pointer">
       <div className="flex items-start justify-between gap-2">
         <div className="text-body-3-emphasis text-text-primary">{item.name}</div>
-        <div className="appointment-status shrink-0" style={getStatusStyle(item.status)}>
+        <div className="appointment-status shrink-0" style={getTaskStatusStyle(item.status)}>
           {toTitleCase(item.status)}
         </div>
       </div>
@@ -68,8 +68,9 @@ const TaskCard = ({
       <div className="flex gap-2 w-full flex-wrap max-w-[184px]">
         <GlassTooltip content="View task" side="bottom">
           <button
+            type="button"
             onClick={() => handleViewTask(item)}
-            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+            className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
             title="View task"
           >
             <IoEyeOutline size={18} color="var(--color-neutral-900)" />
@@ -78,8 +79,9 @@ const TaskCard = ({
         {canEditTasks && canShowTaskStatusChangeAction(item.status) && (
           <GlassTooltip content="Change status" side="bottom">
             <button
+              type="button"
               onClick={() => handleChangeStatusTask?.(item)}
-              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
               title="Change status"
             >
               <MdOutlineAutorenew size={18} color="var(--color-neutral-900)" />
@@ -89,8 +91,9 @@ const TaskCard = ({
         {canEditTasks && canRescheduleTask(item.status) && (
           <GlassTooltip content="Reschedule" side="bottom">
             <button
+              type="button"
               onClick={() => handleRescheduleTask?.(item)}
-              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] h-10 w-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
+              className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
               title="Reschedule"
             >
               <IoIosCalendar size={18} color="var(--color-neutral-900)" />

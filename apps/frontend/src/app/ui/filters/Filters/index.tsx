@@ -60,7 +60,7 @@ const Filters = ({
 }: FiltersProps) => {
   const [open, setOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
-  const [isMounted, setIsMounted] = useState(false);
+  const isMounted = typeof document !== 'undefined';
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -69,10 +69,6 @@ const Filters = ({
     if (!setActiveFilter) return;
     setActiveFilter(activeFilter === filterKey ? 'all' : filterKey);
   };
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
 
   const positionPanel = useCallback(() => {
     if (!triggerRef.current) return;
@@ -150,7 +146,7 @@ const Filters = ({
               {isEmergency && hasEmergency && (
                 <span
                   aria-label="Emergency appointments present"
-                  className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full"
+                  className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full"
                   style={{
                     backgroundColor: 'var(--color-semantic-error-700)',
                     outline: '2px solid white',
@@ -222,7 +218,7 @@ const Filters = ({
                       >
                         {status.border && (
                           <span
-                            className="inline-block h-3 w-3 rounded-full shrink-0"
+                            className="inline-block size-3 rounded-full shrink-0"
                             style={{
                               backgroundColor: status.border,
                               borderWidth: '1px',

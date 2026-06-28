@@ -19,8 +19,7 @@ export const createLegalStyles = (theme: any) =>
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     withdrawalCard: {
       gap: theme.spacing['4'],
@@ -30,7 +29,9 @@ export const createLegalStyles = (theme: any) =>
     },
     formTitle: {
       // Subtitle Bold 14
-      fontFamily: theme.typography.subtitleBold14?.fontFamily || theme.typography.SATOSHI_BOLD,
+      fontFamily:
+        theme.typography.subtitleBold14?.fontFamily ||
+        theme.typography.SATOSHI_BOLD,
       fontSize: theme.typography.subtitleBold14?.fontSize || 14,
       lineHeight: theme.typography.subtitleBold14?.lineHeight || 14 * 1.2,
       fontWeight: theme.typography.subtitleBold14?.fontWeight || '700',
@@ -39,7 +40,9 @@ export const createLegalStyles = (theme: any) =>
     },
     formSubtitle: {
       // Subtitle Regular 14 with 2-line clamp equivalent (handled via numberOfLines in JSX)
-      fontFamily: theme.typography.subtitleRegular14?.fontFamily || theme.typography.SATOSHI_REGULAR,
+      fontFamily:
+        theme.typography.subtitleRegular14?.fontFamily ||
+        theme.typography.SATOSHI_REGULAR,
       fontSize: theme.typography.subtitleRegular14?.fontSize || 14,
       lineHeight: theme.typography.subtitleRegular14?.lineHeight || 14 * 1.2,
       fontWeight: theme.typography.subtitleRegular14?.fontWeight || '400',
@@ -47,7 +50,9 @@ export const createLegalStyles = (theme: any) =>
       overflow: 'hidden',
     },
     checkboxLabel: {
-      fontFamily: theme.typography.subtitleRegular14?.fontFamily || theme.typography.SATOSHI_REGULAR,
+      fontFamily:
+        theme.typography.subtitleRegular14?.fontFamily ||
+        theme.typography.SATOSHI_REGULAR,
       fontSize: theme.typography.subtitleRegular14?.fontSize || 14,
       lineHeight: theme.typography.subtitleRegular14?.lineHeight || 14 * 1.2,
       fontWeight: theme.typography.subtitleRegular14?.fontWeight || '400',
@@ -71,7 +76,9 @@ export const createLegalStyles = (theme: any) =>
       textAlign: 'center',
     },
     formFooterInline: {
-      fontFamily: theme.typography.subtitleRegular14?.fontFamily || theme.typography.SATOSHI_REGULAR,
+      fontFamily:
+        theme.typography.subtitleRegular14?.fontFamily ||
+        theme.typography.SATOSHI_REGULAR,
       fontSize: theme.typography.subtitleRegular14?.fontSize || 14,
       lineHeight: theme.typography.subtitleRegular14?.lineHeight || 14 * 1.2,
       fontWeight: theme.typography.subtitleRegular14?.fontWeight || '400',
@@ -79,7 +86,9 @@ export const createLegalStyles = (theme: any) =>
       textAlign: 'center',
     },
     formFooterInlineBold: {
-      fontFamily: theme.typography.subtitleRegular14?.fontFamily || theme.typography.SATOSHI_BOLD,
+      fontFamily:
+        theme.typography.subtitleRegular14?.fontFamily ||
+        theme.typography.SATOSHI_BOLD,
       fontSize: theme.typography.subtitleRegular14?.fontSize || 14,
       lineHeight: theme.typography.subtitleRegular14?.lineHeight || 14 * 1.2,
       fontWeight: '700',
@@ -87,7 +96,9 @@ export const createLegalStyles = (theme: any) =>
       textAlign: 'center',
     },
     formFooterEmail: {
-      fontFamily: theme.typography.subtitleRegular14?.fontFamily || theme.typography.SATOSHI_BOLD,
+      fontFamily:
+        theme.typography.subtitleRegular14?.fontFamily ||
+        theme.typography.SATOSHI_BOLD,
       fontSize: theme.typography.subtitleRegular14?.fontSize || 14,
       lineHeight: theme.typography.subtitleRegular14?.lineHeight || 14 * 1.2,
       color: theme.colors.text,

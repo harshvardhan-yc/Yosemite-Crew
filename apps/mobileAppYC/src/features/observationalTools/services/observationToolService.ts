@@ -1,5 +1,8 @@
 import apiClient, {withAuthHeaders} from '@/shared/services/apiClient';
-import {getFreshStoredTokens, isTokenExpired} from '@/features/auth/sessionManager';
+import {
+  getFreshStoredTokens,
+  isTokenExpired,
+} from '@/features/auth/sessionManager';
 import type {OTFieldType} from '@/features/tasks/types';
 import {observationalToolDefinitions} from '@/features/observationalTools/data';
 
@@ -7,9 +10,7 @@ const toolCache: Record<string, ObservationToolDefinitionRemote> = {};
 const mongoIdRegex = /^[a-f0-9]{24}$/i;
 
 const normalizeName = (value?: string | null) =>
-  (value ?? '')
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]/g, '');
+  (value ?? '').toLowerCase().replaceAll(/[^a-z0-9]/g, '');
 
 export interface ObservationToolField {
   key: string;
@@ -61,10 +62,14 @@ const cacheTools = (tools: ObservationToolDefinitionRemote[]) => {
   });
 };
 
-const getCachedToolByName = (name: string): ObservationToolDefinitionRemote | null => {
+const getCachedToolByName = (
+  name: string,
+): ObservationToolDefinitionRemote | null => {
   const normalized = normalizeName(name);
   if (!normalized) return null;
-  const cached = Object.values(toolCache).find(tool => normalizeName(tool.name) === normalized);
+  const cached = Object.values(toolCache).find(
+    tool => normalizeName(tool.name) === normalized,
+  );
   return cached ?? null;
 };
 
@@ -72,9 +77,10 @@ const resolveNameFromStatic = (value: string): string | null => {
   const direct = (observationalToolDefinitions as Record<string, any>)[value];
   if (direct?.name) return direct.name;
   const normalized = normalizeName(value);
-  const matched = Object.values(observationalToolDefinitions).find(def =>
-    normalizeName(def.name) === normalized ||
-    normalizeName(def.shortName) === normalized,
+  const matched = Object.values(observationalToolDefinitions).find(
+    def =>
+      normalizeName(def.name) === normalized ||
+      normalizeName(def.shortName) === normalized,
   );
   return matched?.name ?? null;
 };
@@ -103,14 +109,20 @@ const resolveObservationToolId = async (toolId: string): Promise<string> => {
     const normalizedInput = normalizeName(toolId);
     const match =
       list.find(tool => normalizeName(tool.name) === normalizedInput) ??
-      (staticName ? list.find(tool => normalizeName(tool.name) === normalizeName(staticName)) : null);
+      (staticName
+        ? list.find(
+            tool => normalizeName(tool.name) === normalizeName(staticName),
+          )
+        : null);
     return match?.id ?? toolId;
   } catch {
     return toolId;
   }
 };
 
-export const resolveObservationToolIdSync = (toolId?: string | null): string | null => {
+export const resolveObservationToolIdSync = (
+  toolId?: string | null,
+): string | null => {
   if (!toolId) return null;
   if (mongoIdRegex.test(toolId)) {
     return toolId;
@@ -132,12 +144,16 @@ export const resolveObservationToolIdSync = (toolId?: string | null): string | n
   return toolId;
 };
 
-export const getCachedObservationToolName = (toolId?: string | null): string | null => {
+export const getCachedObservationToolName = (
+  toolId?: string | null,
+): string | null => {
   if (!toolId) return null;
   return toolCache[toolId]?.name ?? getCachedToolByName(toolId)?.name ?? null;
 };
 
-export const getCachedObservationTool = (toolId?: string | null): ObservationToolDefinitionRemote | null => {
+export const getCachedObservationTool = (
+  toolId?: string | null,
+): ObservationToolDefinitionRemote | null => {
   if (!toolId) return null;
   const direct = toolCache[toolId];
   if (direct) return direct;
@@ -147,7 +163,10 @@ export const getCachedObservationTool = (toolId?: string | null): ObservationToo
   return staticName ? getCachedToolByName(staticName) : null;
 };
 
-const ensureAccessToken = async (): Promise<{accessToken: string; userId?: string}> => {
+const ensureAccessToken = async (): Promise<{
+  accessToken: string;
+  userId?: string;
+}> => {
   const tokens = await getFreshStoredTokens();
   const accessToken = tokens?.accessToken;
   const userId = tokens?.userId;
@@ -164,11 +183,8 @@ const ensureAccessToken = async (): Promise<{accessToken: string; userId?: strin
 };
 
 const createAuthHeaders = async () => {
-  const {accessToken, userId} = await ensureAccessToken();
-  return {
-    ...withAuthHeaders(accessToken),
-    ...(userId ? {'x-user-id': userId} : {}),
-  };
+  const {accessToken} = await ensureAccessToken();
+  return withAuthHeaders(accessToken);
 };
 
 export const observationToolApi = {
@@ -179,27 +195,34 @@ export const observationToolApi = {
       headers,
     });
     const data = Array.isArray(response.data) ? response.data : [];
-    const mapped = data.map((item: any): ObservationToolDefinitionRemote => ({
-      id: item._id ?? item.id ?? item.toolId ?? item.key ?? item.name,
-      name: item.name,
-      description: item.description,
-      category: item.category,
-      fields: item.fields ?? [],
-      scoringRules: item.scoringRules,
-      isActive: item.isActive,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-    }));
+    const mapped = data.map(
+      (item: any): ObservationToolDefinitionRemote => ({
+        id: item._id ?? item.id ?? item.toolId ?? item.key ?? item.name,
+        name: item.name,
+        description: item.description,
+        category: item.category,
+        fields: item.fields ?? [],
+        scoringRules: item.scoringRules,
+        isActive: item.isActive,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      }),
+    );
     cacheTools(mapped);
     return mapped;
   },
 
   async get(toolId: string) {
-    const headers = await createAuthHeaders();
-    const resolvedId = await resolveObservationToolId(toolId);
-    const response = await apiClient.get(`/v1/observation-tools/mobile/tools/${resolvedId}`, {
-      headers,
-    });
+    const [headers, resolvedId] = await Promise.all([
+      createAuthHeaders(),
+      resolveObservationToolId(toolId),
+    ]);
+    const response = await apiClient.get(
+      `/v1/observation-tools/mobile/tools/${resolvedId}`,
+      {
+        headers,
+      },
+    );
     const item = response.data;
     const definition = {
       id: item?._id ?? item?.id ?? resolvedId,
@@ -229,9 +252,11 @@ export const observationToolApi = {
     answers: Record<string, unknown>;
     summary?: string;
   }): Promise<ObservationToolSubmission> {
-    const headers = await createAuthHeaders();
-    const {userId} = await ensureAccessToken();
-    const resolvedId = await resolveObservationToolId(toolId);
+    const [headers, {userId}, resolvedId] = await Promise.all([
+      createAuthHeaders(),
+      ensureAccessToken(),
+      resolveObservationToolId(toolId),
+    ]);
     const response = await apiClient.post(
       `/v1/observation-tools/mobile/tools/${resolvedId}/submissions`,
       {companionId, taskId, answers, summary},
@@ -260,8 +285,10 @@ export const observationToolApi = {
     submissionId: string;
     appointmentId: string;
   }): Promise<ObservationToolSubmission> {
-    const headers = await createAuthHeaders();
-    const {userId} = await ensureAccessToken();
+    const [headers, {userId}] = await Promise.all([
+      createAuthHeaders(),
+      ensureAccessToken(),
+    ]);
     const response = await apiClient.post(
       `/v1/observation-tools/mobile/submissions/${submissionId}/link-appointment`,
       {appointmentId},
@@ -277,15 +304,20 @@ export const observationToolApi = {
       answers: payload?.answers ?? {},
       score: payload?.score,
       summary: payload?.summary,
-      evaluationAppointmentId: payload?.evaluationAppointmentId ?? appointmentId,
+      evaluationAppointmentId:
+        payload?.evaluationAppointmentId ?? appointmentId,
       createdAt: payload?.createdAt,
       updatedAt: payload?.updatedAt,
     };
   },
 
-  async getSubmission(submissionId: string): Promise<ObservationToolSubmission> {
-    const headers = await createAuthHeaders();
-    const {userId} = await ensureAccessToken();
+  async getSubmission(
+    submissionId: string,
+  ): Promise<ObservationToolSubmission> {
+    const [headers, {userId}] = await Promise.all([
+      createAuthHeaders(),
+      ensureAccessToken(),
+    ]);
     const response = await apiClient.get(
       `/v1/observation-tools/mobile/submissions/${submissionId}`,
       {headers},
@@ -306,9 +338,13 @@ export const observationToolApi = {
     };
   },
 
-  async listAppointmentSubmissions(appointmentId: string): Promise<ObservationToolSubmission[]> {
-    const headers = await createAuthHeaders();
-    const {userId} = await ensureAccessToken();
+  async listAppointmentSubmissions(
+    appointmentId: string,
+  ): Promise<ObservationToolSubmission[]> {
+    const [headers, {userId}] = await Promise.all([
+      createAuthHeaders(),
+      ensureAccessToken(),
+    ]);
     const response = await apiClient.get(
       `/v1/observation-tools/mobile/appointments/${appointmentId}/submissions`,
       {headers},
@@ -323,15 +359,20 @@ export const observationToolApi = {
       answers: payload?.answers ?? {},
       score: payload?.score,
       summary: payload?.summary,
-      evaluationAppointmentId: payload?.evaluationAppointmentId ?? appointmentId,
+      evaluationAppointmentId:
+        payload?.evaluationAppointmentId ?? appointmentId,
       createdAt: payload?.createdAt,
       updatedAt: payload?.updatedAt,
     }));
   },
 
-  async previewTaskSubmission(taskId: string): Promise<ObservationToolSubmission> {
-    const headers = await createAuthHeaders();
-    const {userId} = await ensureAccessToken();
+  async previewTaskSubmission(
+    taskId: string,
+  ): Promise<ObservationToolSubmission> {
+    const [headers, {userId}] = await Promise.all([
+      createAuthHeaders(),
+      ensureAccessToken(),
+    ]);
     const response = await apiClient.get(
       `/v1/observation-tools/mobile/tasks/${taskId}/preview`,
       {headers},

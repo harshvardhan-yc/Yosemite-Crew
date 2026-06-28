@@ -287,7 +287,6 @@ describe('authStore', () => {
     });
 
     it('returns null on session error', async () => {
-      const warnSpy = logger.warn as jest.Mock;
       mockPoolInstance.getCurrentUser.mockReturnValue(mockUserInstance);
       mockUserInstance.getSession.mockImplementation((cb: any) => cb(new Error('Fail'), null));
 
@@ -436,7 +435,7 @@ describe('authStore', () => {
       await useAuthStore.getState().signout();
 
       expect(warnSpy).toHaveBeenCalledWith(
-        'Failed to clear org store on signout',
+        'Failed to clear session-scoped stores on signout',
         expect.any(Error)
       );
     });

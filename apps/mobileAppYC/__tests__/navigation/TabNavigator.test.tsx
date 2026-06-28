@@ -78,10 +78,20 @@ jest.mock('../../src/navigation/FloatingTabBar', () => ({
 }));
 
 jest.mock('react-redux', () => ({
+  useDispatch: () => jest.fn(),
   useSelector: jest.fn(),
 }));
 
 jest.mock('../../src/hooks', () => ({
+  useTheme: () => ({
+    theme: {
+      colors: {background: 'white', secondary: 'black'},
+      typography: {screenTitle: {fontFamily: 'Arial', fontSize: 16}},
+    },
+  }),
+}));
+
+jest.mock('@/shared/hooks/useTheme', () => ({
   useTheme: () => ({
     theme: {
       colors: {background: 'white', secondary: 'black'},
@@ -215,7 +225,7 @@ describe('TabNavigator', () => {
       (useSelector as unknown as jest.Mock).mockImplementation(
         (selector: any) => {
           const state = {
-            companion: {companions: [{id: 'c1'}]},
+            companion: {companions: [{id: 'c1'}], selectedCompanionId: 'c1'},
             coParent: {
               accessByCompanionId: {
                 c1: {role, permissions},
@@ -232,7 +242,7 @@ describe('TabNavigator', () => {
 
           try {
             return selector(state);
-          } catch (error) {
+          } catch (_error) {
             return null;
           }
         },

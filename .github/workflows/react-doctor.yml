@@ -1,0 +1,78 @@
+name: React Doctor
+
+'on':
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run React Doctor
+        id: react-doctor
+        uses: millionco/react-doctor@547e1e4ecdb70315d81a91ec3605701d58616ee2 # v2.1.0
+        with:
+          directory: apps/frontend
+          blocking: error
+          node-version: '22'
+
+      - name: Enforce React Doctor score
+        env:
+          REACT_DOCTOR_SCORE: ${{ steps.react-doctor.outputs.score }}
+          REACT_DOCTOR_MIN_SCORE: '45'
+        run: |
+          if [ -z "$REACT_DOCTOR_SCORE" ]; then
+            echo "::warning::React Doctor did not return a score (scoring service unavailable); skipping the score gate. Blocking diagnostics are still enforced via 'blocking: error'."
+            exit 0
+          fi
+
+          echo "React Doctor score: $REACT_DOCTOR_SCORE"
+          if [ "$REACT_DOCTOR_SCORE" -lt "$REACT_DOCTOR_MIN_SCORE" ]; then
+            echo "React Doctor score must be at least $REACT_DOCTOR_MIN_SCORE."
+            exit 1
+          fi
+
+  react-doctor-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run React Doctor
+        id: react-doctor
+        uses: millionco/react-doctor@547e1e4ecdb70315d81a91ec3605701d58616ee2 # v2.1.0
+        with:
+          directory: apps/mobileAppYC
+          blocking: error
+          node-version: '22'
+
+      - name: Enforce React Doctor score
+        env:
+          REACT_DOCTOR_SCORE: ${{ steps.react-doctor.outputs.score }}
+          REACT_DOCTOR_MIN_SCORE: '70'
+        run: |
+          if [ -z "$REACT_DOCTOR_SCORE" ]; then
+            echo "::warning::React Doctor did not return a score (scoring service unavailable); skipping the score gate. Blocking diagnostics are still enforced via 'blocking: error'."
+            exit 0
+          fi
+
+          echo "React Doctor score: $REACT_DOCTOR_SCORE"
+          if [ "$REACT_DOCTOR_SCORE" -lt "$REACT_DOCTOR_MIN_SCORE" ]; then
+            echo "React Doctor score must be at least $REACT_DOCTOR_MIN_SCORE."
+            exit 1
+          fi

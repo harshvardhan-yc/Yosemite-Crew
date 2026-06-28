@@ -1,6 +1,9 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
+
+expect.extend(toHaveNoViolations);
 import ProtectedIntegrations from '@/app/features/integrations/pages/Integrations';
 
 const useIntegrationsForPrimaryOrgMock = jest.fn();
@@ -286,6 +289,113 @@ describe('Integrations settings', () => {
       expect(disableMerckMock).toHaveBeenCalledWith('org-1');
       expect(loadIntegrationsForPrimaryOrgMock).toHaveBeenCalledWith({ force: true, silent: true });
       expect(refreshMerckIntegrationMock).toHaveBeenCalled();
+    });
+  });
+
+  it('has no axe violations on initial render', async () => {
+    const { container } = render(<ProtectedIntegrations />);
+    await screen.findByRole('heading', { name: 'Integrations' });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('filter tabs expose aria-pressed state', async () => {
+    render(<ProtectedIntegrations />);
+    await screen.findByRole('heading', { name: 'Integrations' });
+    const allTab = screen.getByRole('button', { name: 'All' });
+    expect(allTab).toHaveAttribute('aria-pressed', 'true');
+    const connectedTab = screen.getByRole('button', { name: 'Connected' });
+    expect(connectedTab).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('shows "No connected integrations yet." when connected filter is active with no connections', async () => {
+    const disabledIntegration = {
+      _id: 'int-1',
+      organisationId: 'org-1',
+      provider: 'IDEXX',
+      status: 'disabled',
+      credentialsStatus: 'missing',
+      enabledAt: null,
+      lastValidatedAt: null,
+    };
+    useIntegrationsForPrimaryOrgMock.mockReturnValue([disabledIntegration]);
+    useIntegrationByProviderForPrimaryOrgMock.mockReturnValue(disabledIntegration);
+    // Override the merck integration hook to return disabled
+    const useMerckModule = jest.requireMock('@/app/hooks/useMerckIntegration');
+    (useMerckModule.useResolvedMerckIntegrationForPrimaryOrg as jest.Mock).mockReturnValue({
+      integration: null,
+      isEnabled: false,
+      refresh: refreshMerckIntegrationMock,
+    });
+
+    render(<ProtectedIntegrations />);
+    await screen.findByRole('heading', { name: 'Integrations' });
+    fireEvent.click(screen.getByRole('button', { name: 'Connected' }));
+    await screen.findByText('No connected integrations yet.');
+  });
+
+  it('clicking Available filter hides IDEXX card when IDEXX is enabled', async () => {
+    const enabledIntegration = {
+      _id: 'int-1',
+      organisationId: 'org-1',
+      provider: 'IDEXX',
+      status: 'enabled',
+      credentialsStatus: 'valid',
+      enabledAt: '2026-01-12T00:00:00.000Z',
+      lastValidatedAt: '2026-01-12T00:00:00.000Z',
+    };
+    useIntegrationsForPrimaryOrgMock.mockReturnValue([enabledIntegration]);
+    useIntegrationByProviderForPrimaryOrgMock.mockReturnValue(enabledIntegration);
+
+    render(<ProtectedIntegrations />);
+    await screen.findByRole('heading', { name: 'Integrations' });
+    // When IDEXX is enabled and Available filter active, the IDEXX card should be hidden
+    // (showIdexxCard = available && !idexxEnabled = false)
+    const availableBtn = screen.getByRole('button', { name: 'Available' });
+    fireEvent.click(availableBtn);
+    await waitFor(() => {
+      // Disable button should not appear as IDEXX card is hidden
+      expect(screen.queryByRole('button', { name: /Disable IDEXX/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows validated successfully message after validate click', async () => {
+    render(<ProtectedIntegrations />);
+    await screen.findByRole('button', { name: 'Settings' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Validate' }));
+    await screen.findByText('Credentials validated successfully.');
+  });
+
+  it('shows integration error from the store when integrationError is set', async () => {
+    // The integrationError propagates via useEffect into local error state.
+    // We simulate it by having the idexxService throw during IVLS load, which sets local error.
+    listIdexxIvlsDevicesMock.mockRejectedValue(new Error('Unable to load linked IDEXX devices.'));
+    render(<ProtectedIntegrations />);
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert')).toHaveTextContent('Unable to load linked IDEXX devices.');
+  });
+
+  it('shows the Vetnio integration card with "Coming soon" label', async () => {
+    render(<ProtectedIntegrations />);
+    await screen.findByRole('heading', { name: 'Integrations' });
+    expect(screen.getAllByText('Vetnio').length).toBeGreaterThanOrEqual(1);
+    const comingSoonLabels = screen.getAllByText('Coming soon');
+    expect(comingSoonLabels.length).toBeGreaterThan(0);
+  });
+
+  it('shows Laika integration card with "Coming soon" label', async () => {
+    render(<ProtectedIntegrations />);
+    await screen.findByRole('heading', { name: 'Integrations' });
+    expect(screen.getAllByText('Laika').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('hides coming-soon cards when Connected filter is active', async () => {
+    render(<ProtectedIntegrations />);
+    await screen.findByRole('heading', { name: 'Integrations' });
+    fireEvent.click(screen.getByRole('button', { name: 'Connected' }));
+    await waitFor(() => {
+      expect(screen.queryByText('RadAnalyzer')).not.toBeInTheDocument();
     });
   });
 });

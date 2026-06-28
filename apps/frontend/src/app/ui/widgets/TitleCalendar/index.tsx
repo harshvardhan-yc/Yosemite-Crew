@@ -21,7 +21,7 @@ const VIEW_OPTION_CONFIG = {
     label: 'Calendar',
     tooltip: 'Calendar view',
     Icon: MdOutlineCalendarMonth,
-    activeSlider: 'bg-blue-text',
+    activeSlider: 'bg-(--color-primary-700)',
     activeText: 'text-neutral-0',
   },
   board: {
@@ -67,33 +67,28 @@ const TitleCalendar = ({
   return (
     <div className="flex w-full flex-wrap items-center justify-between gap-x-6 gap-y-2">
       <div className="flex min-w-0 items-center gap-2">
-        <div className="flex min-w-0 items-center gap-2 text-heading-2 text-text-primary">
+        <h1 className="flex min-w-0 items-center gap-2 text-heading-2 text-text-primary">
           <span>
             {title}
-            <span className="text-body-2 text-text-tertiary">{` (${count})`}</span>
+            <span className="text-body-2 text-text-secondary">{` (${count})`}</span>
           </span>
           {description ? (
             <GlassTooltip content={description} side="bottom">
               <button
                 type="button"
                 aria-label={`${title} info`}
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none text-text-secondary transition-colors hover:text-text-primary"
+                className="inline-flex size-5 shrink-0 items-center justify-center leading-none text-text-secondary transition-colors hover:text-text-primary"
               >
                 <IoInformationCircleOutline size={20} />
               </button>
             </GlassTooltip>
           ) : null}
-        </div>
+        </h1>
       </div>
       <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
         {actionBeforeAdd}
         {showAdd && (
-          <Primary
-            href="#"
-            text="Add"
-            onClick={() => setAddPopup(true)}
-            className="h-12 px-7 py-0"
-          />
+          <Primary href="#" text="Add" onClick={() => setAddPopup(true)} className="px-7" />
         )}
         <fieldset
           aria-label={`${title} view`}
@@ -112,10 +107,14 @@ const TitleCalendar = ({
               <button
                 key={option}
                 type="button"
-                onClick={() => setActiveView(option)}
+                onClick={() => {
+                  setActiveView(option);
+                }}
                 aria-pressed={isActive}
-                className={`relative z-10 flex items-center justify-center gap-1.5 text-body-4 transition-colors duration-200 ${segW} ${
-                  isActive ? activeText : 'text-text-secondary hover:text-text-primary'
+                className={`relative z-10 flex items-center justify-center gap-1.5 text-body-4 transition-colors ${segW} ${
+                  isActive
+                    ? `${activeText} duration-150 delay-150`
+                    : 'text-text-secondary hover:text-text-primary duration-100 delay-0'
                 }`}
               >
                 <Icon size={15} aria-hidden="true" className="shrink-0" />

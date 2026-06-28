@@ -1,5 +1,6 @@
 // src/middlewares/rbac.ts
 import { NextFunction, Response, Request } from "express";
+import { Types } from "mongoose";
 import {
   Permission,
   ROLE_PERMISSIONS,
@@ -23,35 +24,60 @@ export interface OrgRequest extends AuthenticatedRequest {
  * Extract orgId from params, headers, or body.
  */
 function extractOrgId(req: Request): string | null {
-  const body = (req as { body?: unknown }).body;
-  const bodyOrgId =
-    typeof body === "object" && body !== null && !Array.isArray(body)
-      ? (body as Record<string, unknown>).organisationId
-      : undefined;
+  return (
+    extractOrgIdFromParams(req.params) ??
+    extractOrgIdFromHeader(req.headers["x-org-id"]) ??
+    extractOrgIdFromQuery((req as { query?: unknown }).query) ??
+    extractOrgIdFromBody((req as { body?: unknown }).body)
+  );
+}
 
+function extractOrgIdFromParams(params: Request["params"]) {
+  return params.orgId ?? params.organisationId ?? params.organizationId ?? null;
+}
+
+function extractOrgIdFromHeader(headerValue: unknown) {
+  return typeof headerValue === "string" && headerValue.trim()
+    ? headerValue.trim()
+    : null;
+}
+
+function extractOrgIdFromQuery(query: unknown): unknown {
+  if (typeof query !== "object" || query === null || Array.isArray(query)) {
+    return undefined;
+  }
+
+  const queryRecord = query as Record<string, unknown>;
+  return queryRecord.organisationId ?? queryRecord.organizationId;
+}
+
+function extractOrgIdFromBody(body: unknown): unknown {
   if (Array.isArray(body)) {
     const orgIds = new Set<string>();
+
     for (const entry of body) {
-      if (typeof entry === "object" && entry !== null) {
-        const oid = (entry as Record<string, unknown>).organisationId;
-        if (typeof oid === "string" && oid.trim()) {
-          orgIds.add(oid.trim());
-        }
+      if (typeof entry !== "object" || entry === null) {
+        continue;
+      }
+
+      const oid = (entry as Record<string, unknown>).organisationId;
+      if (typeof oid === "string" && oid.trim()) {
+        orgIds.add(oid.trim());
       }
     }
+
     if (orgIds.size === 1) {
       return Array.from(orgIds)[0] ?? null;
     }
+
+    return undefined;
   }
 
-  return (
-    req.params.orgId ||
-    req.params.organisationId ||
-    req.params.organizationId ||
-    (req.headers["x-org-id"] as string) ||
-    (typeof bodyOrgId === "string" ? bodyOrgId : null) ||
-    null
-  );
+  if (typeof body !== "object" || body === null) {
+    return undefined;
+  }
+
+  return (body as Record<string, unknown>).organisationId;
 }
 
 export function withOrgPermissions() {
@@ -146,9 +172,11 @@ export function withAppointmentOrgPermissions() {
           where: { id: appointmentId },
           select: { organisationId: true },
         })
-      : await AppointmentModel.findById(appointmentId, {
-          organisationId: 1,
-        }).lean();
+      : Types.ObjectId.isValid(appointmentId)
+        ? await AppointmentModel.findById(appointmentId, {
+            organisationId: 1,
+          }).lean()
+        : null;
 
     const organisationId = appointment?.organisationId ?? null;
     if (!organisationId) {
@@ -188,6 +216,29 @@ export function withInvoiceOrgPermissions() {
   };
 }
 
+export function withPaymentOrgPermissions() {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const paymentId = req.params.paymentId;
+    if (!paymentId) {
+      return res.status(400).json({ message: "Missing paymentId" });
+    }
+
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: { invoice: { select: { organisationId: true } } },
+    });
+
+    const organisationId = payment?.invoice?.organisationId ?? null;
+    if (!organisationId) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    req.params.organisationId = organisationId.toString();
+
+    return withOrgPermissions()(req, res, next);
+  };
+}
+
 export function withPaymentIntentOrgPermissions() {
   return async (req: Request, res: Response, next: NextFunction) => {
     const paymentIntentId = req.params.paymentIntentId;
@@ -195,17 +246,16 @@ export function withPaymentIntentOrgPermissions() {
       return res.status(400).json({ message: "Missing paymentIntentId" });
     }
 
-    const invoice = isReadFromPostgres()
-      ? await prisma.invoice.findFirst({
-          where: { stripePaymentIntentId: paymentIntentId },
+    const invoice = await prisma.paymentAttempt.findFirst({
+      where: { providerPaymentIntentId: paymentIntentId },
+      select: {
+        invoice: {
           select: { organisationId: true },
-        })
-      : await InvoiceModel.findOne(
-          { stripePaymentIntentId: paymentIntentId },
-          { organisationId: 1 },
-        ).lean();
+        },
+      },
+    });
 
-    const organisationId = invoice?.organisationId ?? null;
+    const organisationId = invoice?.invoice?.organisationId ?? null;
     if (!organisationId) {
       return res.status(404).json({ message: "Invoice not found" });
     }
@@ -228,9 +278,11 @@ export function withTaskOrgPermissions() {
           where: { id: taskId },
           select: { organisationId: true },
         })
-      : await TaskModel.findById(taskId, {
-          organisationId: 1,
-        }).lean();
+      : Types.ObjectId.isValid(taskId)
+        ? await TaskModel.findById(taskId, {
+            organisationId: 1,
+          }).lean()
+        : null;
 
     const organisationId = task?.organisationId ?? null;
     if (!organisationId) {

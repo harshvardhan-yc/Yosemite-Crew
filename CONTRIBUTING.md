@@ -27,7 +27,7 @@ Small improvements can go directly as PRs, but major feature work should start w
 - `apps/frontend` - web app
 - `apps/mobileAppYC` - React Native mobile app
 - `apps/dev-docs` - Docusaurus docs app
-- `packages/types` and `packages/fhirtypes` - shared packages
+- `packages/types` and `packages/fhir` - shared packages
 
 ## Development Setup
 
@@ -90,12 +90,16 @@ Allowed `scope` values:
 - `backend`
 - `frontend`
 - `mobile`
+- `desktop`
 - `dev-docs`
 - `types`
-- `fhirtypes`
+- `fhir`
 - `repo`
 - `ci`
 - `docs`
+- `lib`
+- `auth`
+- `database`
 
 Rules:
 
@@ -140,7 +144,7 @@ git branch -D your-branch-name
 ## Security and Secret Hygiene
 
 - Never commit `.env` files or credentials.
-- Staged changes are scanned locally with Secretlint in `pre-commit`.
+- Staged changes are scanned locally in `pre-commit` with Secretlint and the repo staged-secret scanner. If `gitleaks` is installed locally, the hook also runs `gitleaks protect --staged --redact`.
 - GitHub Actions also scans for secrets using Gitleaks.
 - If you accidentally commit a secret, rotate it immediately and open a security report per [SECURITY.md](./SECURITY.md).
 

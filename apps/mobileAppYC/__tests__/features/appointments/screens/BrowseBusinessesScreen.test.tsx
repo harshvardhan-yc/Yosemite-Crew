@@ -1,5 +1,6 @@
 import React from 'react';
 import {mockTheme} from '../setup/mockTheme';
+import {Alert} from 'react-native';
 import {render, fireEvent, waitFor} from '@testing-library/react-native';
 import BrowseBusinessesScreen from '@/features/appointments/screens/BrowseBusinessesScreen';
 import * as reactRedux from 'react-redux';
@@ -9,6 +10,8 @@ import {
   fetchBusinessDetails,
   fetchGooglePlacesImage,
 } from '@/features/linkedBusinesses';
+import {useClinicMapDiscovery} from '@/features/appointments/hooks/useClinicMapDiscovery';
+import {usePlacesBusinessSearch} from '@/features/linkedBusinesses/hooks/usePlacesBusinessSearch';
 
 // --- Mocks ---
 jest.mock('@react-navigation/native', () => ({
@@ -56,9 +59,86 @@ jest.mock(
   }),
 );
 
+jest.mock('react-native-gesture-handler', () => ({
+  GestureDetector: ({children}: any) => <>{children}</>,
+  Gesture: {Native: () => ({})},
+  NativeViewGestureHandler: ({children, ...props}: any) => {
+    const {View} = require('react-native');
+    return <View {...props}>{children}</View>;
+  },
+}));
+
+jest.mock('@gorhom/bottom-sheet', () => {
+  const {View} = require('react-native');
+  const {forwardRef, useImperativeHandle, createElement} = require('react');
+
+  const BottomSheet = forwardRef(({children, ...props}: any, ref: any) => {
+    useImperativeHandle(ref, () => ({
+      snapToIndex: jest.fn(),
+      snapToPosition: jest.fn(),
+      expand: jest.fn(),
+      collapse: jest.fn(),
+      close: jest.fn(),
+    }));
+    return createElement(View, props, children);
+  });
+
+  const BottomSheetFlatList = forwardRef(
+    (
+      {
+        data,
+        renderItem,
+        keyExtractor: _keyExtractor,
+        ListHeaderComponent,
+        ListEmptyComponent,
+        ...props
+      }: any,
+      ref: any,
+    ) => {
+      const items: any[] = data ?? [];
+      return createElement(
+        View,
+        {...props, ref},
+        ListHeaderComponent ?? null,
+        items.length === 0
+          ? (ListEmptyComponent ?? null)
+          : items.map((item: any, index: number) =>
+              renderItem ? renderItem({item, index}) : null,
+            ),
+      );
+    },
+  );
+
+  return {
+    __esModule: true,
+    default: BottomSheet,
+    BottomSheetView: ({children, ...props}: any) =>
+      createElement(View, props, children),
+    BottomSheetScrollView: ({children, ...props}: any) =>
+      createElement(View, props, children),
+    BottomSheetFlatList,
+    BottomSheetBackdrop: ({children, ...props}: any) =>
+      createElement(View, props, children),
+    BottomSheetHandle: ({...props}: any) => createElement(View, props),
+  };
+});
+
+// Mock the hook that controls which clinics are visible on the map/list
+jest.mock('@/features/appointments/hooks/useClinicMapDiscovery', () => ({
+  useClinicMapDiscovery: jest.fn(),
+}));
+
+jest.mock('@/features/linkedBusinesses/hooks/usePlacesBusinessSearch', () => ({
+  usePlacesBusinessSearch: jest.fn(),
+}));
+
 // Mock Actions
 jest.mock('@/features/appointments/businessesSlice', () => ({
   fetchBusinesses: jest.fn(),
+  upsertBusiness: jest.fn(payload => ({
+    type: 'businesses/upsertBusiness',
+    payload,
+  })),
 }));
 
 jest.mock('@/features/linkedBusinesses', () => ({
@@ -66,14 +146,40 @@ jest.mock('@/features/linkedBusinesses', () => ({
   fetchGooglePlacesImage: jest.fn(),
 }));
 
-const mockSelectBusinessesByCategory = jest.fn();
-jest.mock('@/features/appointments/selectors', () => ({
-  createSelectBusinessesByCategory: () => mockSelectBusinessesByCategory,
-}));
-
 jest.mock('@/features/appointments/utils/photoUtils', () => ({
   isDummyPhoto: jest.fn().mockImplementation(photo => photo === 'dummy'),
 }));
+
+const makeDiscoveryMock = (overrides: any = {}) => ({
+  visibleClinics: [],
+  selectedClinicId: null,
+  mapRegion: null,
+  category: undefined,
+  openNow: false,
+  setSelectedClinicId: jest.fn(),
+  setMapRegion: jest.fn(),
+  setCategory: jest.fn(),
+  setOpenNow: jest.fn(),
+  enrichWithDistance: jest.fn().mockReturnValue([]),
+  pinAndSelectClinic: jest.fn(),
+  ...overrides,
+});
+
+const makePlacesSearchMock = (overrides: any = {}) => ({
+  searchQuery: '',
+  setSearchQuery: jest.fn(),
+  searchResults: [],
+  searching: false,
+  handleSearchChange: jest.fn(),
+  handleSelectBusiness: jest.fn(),
+  clearResults: jest.fn(),
+  ...overrides,
+});
+
+const baseState = {
+  companion: {companions: [], selectedCompanionId: null},
+  businesses: {businesses: []},
+};
 
 describe('BrowseBusinessesScreen', () => {
   const dispatchMock = jest.fn();
@@ -89,14 +195,14 @@ describe('BrowseBusinessesScreen', () => {
     jest.spyOn(reactRedux, 'useDispatch').mockReturnValue(dispatchMock);
     dispatchMock.mockReturnValue({unwrap: jest.fn().mockResolvedValue({})});
 
-    const mockState = {
-      companion: {
-        companions: [],
-        selectedCompanionId: null,
-      },
-    };
-    jest.spyOn(reactRedux, 'useSelector').mockImplementation(cb => cb(mockState));
-    mockSelectBusinessesByCategory.mockReturnValue([]);
+    jest
+      .spyOn(reactRedux, 'useSelector')
+      .mockImplementation(cb => cb(baseState));
+
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(makeDiscoveryMock());
+    (usePlacesBusinessSearch as jest.Mock).mockReturnValue(
+      makePlacesSearchMock(),
+    );
 
     (useRoute as jest.Mock).mockReturnValue({params: {}});
 
@@ -117,18 +223,44 @@ describe('BrowseBusinessesScreen', () => {
     expect(getAllByText('Hospital').length).toBeGreaterThan(0);
   });
 
-  it('performs initial search if serviceName param is present', () => {
+  it('passes initialBusinessId and selectionToken to useClinicMapDiscovery', () => {
+    (useRoute as jest.Mock).mockReturnValue({
+      params: {initialBusinessId: 'org-123', selectionToken: 9999},
+    });
+
+    render(<BrowseBusinessesScreen />);
+
+    expect(useClinicMapDiscovery).toHaveBeenCalledWith(
+      expect.any(String),
+      'org-123',
+      9999,
+    );
+  });
+
+  it('passes undefined for both when params are absent', () => {
+    (useRoute as jest.Mock).mockReturnValue({params: {}});
+
+    render(<BrowseBusinessesScreen />);
+
+    expect(useClinicMapDiscovery).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      undefined,
+    );
+  });
+
+  it('performs initial search if serviceName param is present', async () => {
     (useRoute as jest.Mock).mockReturnValue({
       params: {serviceName: 'grooming'},
     });
 
     render(<BrowseBusinessesScreen />);
 
-    jest.runAllTimers();
-
-    expect(dispatchMock).toHaveBeenCalledWith(
-      fetchBusinesses({serviceName: 'grooming'}),
-    );
+    await waitFor(() => {
+      expect(dispatchMock).toHaveBeenCalledWith(
+        fetchBusinesses({serviceName: 'grooming'}),
+      );
+    });
   });
 
   it('updates search query and performs search on submit', () => {
@@ -196,74 +328,74 @@ describe('BrowseBusinessesScreen', () => {
   // --- Category Filtering & Rendering ---
 
   it('renders empty state when no businesses found', () => {
-    mockSelectBusinessesByCategory.mockReturnValue([]);
     const {getByText} = render(<BrowseBusinessesScreen />);
-    expect(getByText('No businesses found')).toBeTruthy();
+    expect(getByText('No veterinary businesses in this area')).toBeTruthy();
   });
 
-  it('renders "All" categories view correctly (grouped by category)', () => {
+  it('renders businesses when clinics are provided', () => {
     const mockData = [
       {id: 'b1', name: 'Vet 1', category: 'hospital'},
       {id: 'b2', name: 'Groomer 1', category: 'groomer'},
       {id: 'b3', name: 'Groomer 2', category: 'groomer'},
     ];
-    mockSelectBusinessesByCategory.mockReturnValue(mockData);
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({
+        visibleClinics: mockData,
+        enrichWithDistance: jest.fn().mockReturnValue(mockData),
+      }),
+    );
+
+    const {getByTestId} = render(<BrowseBusinessesScreen />);
+
+    expect(getByTestId('card-Vet 1')).toBeTruthy();
+    expect(getByTestId('card-Groomer 1')).toBeTruthy();
+    expect(getByTestId('card-Groomer 2')).toBeTruthy();
+  });
+
+  it('pressing a category filter pill updates the selected category', () => {
+    const mockSetCategory = jest.fn();
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({setCategory: mockSetCategory}),
+    );
 
     const {getAllByText} = render(<BrowseBusinessesScreen />);
 
-    expect(getAllByText('Hospital').length).toBeGreaterThanOrEqual(1);
-    expect(getAllByText('Groomer').length).toBeGreaterThanOrEqual(1);
-
-    expect(getAllByText('1 Near You')).toBeTruthy();
-    expect(getAllByText('2 Near You')).toBeTruthy();
-    expect(getAllByText('View more')).toBeTruthy();
-  });
-
-  it('navigates to BusinessesList on "View more" press', () => {
-    const mockData = [
-      {id: 'b1', name: 'G1', category: 'groomer'},
-      {id: 'b2', name: 'G2', category: 'groomer'},
-    ];
-    mockSelectBusinessesByCategory.mockReturnValue(mockData);
-
-    const {getByText} = render(<BrowseBusinessesScreen />);
-
-    fireEvent.press(getByText('View more'));
-
-    expect(navigateMock).toHaveBeenCalledWith('BusinessesList', {
-      category: 'groomer',
-    });
+    fireEvent.press(getAllByText('Groomer')[0]);
+    expect(mockSetCategory).toHaveBeenCalledWith('groomer');
   });
 
   it('filters businesses when a specific category is selected', () => {
-    const mockData = [
-      {id: 'b1', name: 'Vet 1', category: 'hospital'},
-      {id: 'b2', name: 'Groomer 1', category: 'groomer'},
-    ];
-    mockSelectBusinessesByCategory.mockReturnValue(mockData);
+    const mockSetCategory = jest.fn();
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({setCategory: mockSetCategory}),
+    );
 
-    const {queryByText, getAllByText} = render(<BrowseBusinessesScreen />);
+    const {getAllByText} = render(<BrowseBusinessesScreen />);
 
-    // Select "Hospital" pill (assuming pills are rendered before section headers)
-    const hospitalElements = getAllByText('Hospital');
-    fireEvent.press(hospitalElements[0]);
+    const hospitalPills = getAllByText('Hospital');
+    fireEvent.press(hospitalPills[0]);
 
-    // Should only show Vet 1. Headers should be gone.
-    expect(queryByText('1 Near You')).toBeNull();
+    expect(mockSetCategory).toHaveBeenCalledWith('hospital');
   });
 
   // --- Business Card Logic & Interaction ---
 
   it('navigates to BusinessDetails on card press', () => {
     const mockData = [{id: 'b1', name: 'Vet 1', category: 'hospital'}];
-    mockSelectBusinessesByCategory.mockReturnValue(mockData);
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({
+        visibleClinics: mockData,
+        enrichWithDistance: jest.fn().mockReturnValue(mockData),
+      }),
+    );
 
     const {getByTestId} = render(<BrowseBusinessesScreen />);
 
     fireEvent(getByTestId('card-Vet 1'), 'press');
-    expect(navigateMock).toHaveBeenCalledWith('BusinessDetails', {
-      businessId: 'b1',
-    });
+    expect(navigateMock).toHaveBeenCalledWith(
+      'BusinessDetails',
+      expect.objectContaining({businessId: 'b1'}),
+    );
   });
 
   it('resolves correct description text based on priority', () => {
@@ -281,8 +413,14 @@ describe('BrowseBusinessesScreen', () => {
       specialties: ['S1', 'S2'],
     };
     const biz4 = {id: '4', name: 'N4', category: 'hospital'};
+    const mockData = [biz1, biz2, biz3, biz4];
 
-    mockSelectBusinessesByCategory.mockReturnValue([biz1, biz2, biz3, biz4]);
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({
+        visibleClinics: mockData,
+        enrichWithDistance: jest.fn().mockReturnValue(mockData),
+      }),
+    );
 
     render(<BrowseBusinessesScreen />);
   });
@@ -302,9 +440,13 @@ describe('BrowseBusinessesScreen', () => {
       {id: 'b3', googlePlacesId: 'gp3', photo: 'dummy'},
       {id: 'b4', googlePlacesId: null},
     ];
-    mockSelectBusinessesByCategory.mockReturnValue(mockData);
 
-    // FIX: Renamed unused action to _action
+    jest
+      .spyOn(reactRedux, 'useSelector')
+      .mockImplementation(cb =>
+        cb({...baseState, businesses: {businesses: mockData}}),
+      );
+
     dispatchMock.mockImplementation((_action: any) => {
       return {
         unwrap: jest.fn().mockResolvedValue({
@@ -326,7 +468,12 @@ describe('BrowseBusinessesScreen', () => {
 
   it('falls back to fetching image if details fetch fails', async () => {
     const mockData = [{id: 'b1', googlePlacesId: 'gp1', photo: null}];
-    mockSelectBusinessesByCategory.mockReturnValue(mockData);
+
+    jest
+      .spyOn(reactRedux, 'useSelector')
+      .mockImplementation(cb =>
+        cb({...baseState, businesses: {businesses: mockData}}),
+      );
 
     const unwrapMock = jest
       .fn()
@@ -345,7 +492,12 @@ describe('BrowseBusinessesScreen', () => {
 
   it('swallows error if image fetch also fails', async () => {
     const mockData = [{id: 'b1', googlePlacesId: 'gp1', photo: null}];
-    mockSelectBusinessesByCategory.mockReturnValue(mockData);
+
+    jest
+      .spyOn(reactRedux, 'useSelector')
+      .mockImplementation(cb =>
+        cb({...baseState, businesses: {businesses: mockData}}),
+      );
 
     const unwrapMock = jest.fn().mockRejectedValue(new Error('All fail'));
     dispatchMock.mockReturnValue({unwrap: unwrapMock});
@@ -361,9 +513,183 @@ describe('BrowseBusinessesScreen', () => {
     const bizMi = {id: '1', category: 'hospital', distanceMi: 5.5, rating: 4.8};
     const bizMeters = {id: '2', category: 'hospital', distanceMeters: 3218};
     const bizNone = {id: '3', category: 'hospital'};
+    const mockData = [bizMi, bizMeters, bizNone];
 
-    mockSelectBusinessesByCategory.mockReturnValue([bizMi, bizMeters, bizNone]);
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({
+        visibleClinics: mockData,
+        enrichWithDistance: jest.fn().mockReturnValue(mockData),
+      }),
+    );
 
     render(<BrowseBusinessesScreen />);
+  });
+
+  it('PMS selection from map search calls pinAndSelectClinic and clears results, not navigate', async () => {
+    const pinAndSelectClinic = jest.fn();
+    const clearResults = jest.fn();
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({pinAndSelectClinic}),
+    );
+    (usePlacesBusinessSearch as jest.Mock).mockImplementation(
+      ({onSelectPms}: any) => {
+        // Expose onSelectPms so the test can invoke it
+        (usePlacesBusinessSearch as any)._capturedOnSelectPms = onSelectPms;
+        return makePlacesSearchMock({clearResults});
+      },
+    );
+
+    render(<BrowseBusinessesScreen />);
+
+    const pmsSelection = {
+      placeId: 'gp-1',
+      organisationId: 'org-1',
+      name: 'Test Vet',
+      address: '1 Main St',
+      isPmsOrganisation: true,
+      lat: 37.77,
+      lng: -122.42,
+    };
+
+    await (usePlacesBusinessSearch as any)._capturedOnSelectPms(pmsSelection);
+
+    expect(pinAndSelectClinic).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'org-1', name: 'Test Vet'}),
+    );
+    expect(clearResults).toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('selectedCompanion falls back to null when targetCompanionId has no match in companions', () => {
+    jest.spyOn(reactRedux, 'useSelector').mockImplementation(cb =>
+      cb({
+        ...baseState,
+        companion: {companions: [], selectedCompanionId: 'stale-id'},
+      }),
+    );
+    expect(() => render(<BrowseBusinessesScreen />)).not.toThrow();
+  });
+
+  it('ensureCompanion shows Alert when no companion is available', async () => {
+    jest.spyOn(Alert, 'alert');
+    let capturedOnSelectNonPms: any;
+    (usePlacesBusinessSearch as jest.Mock).mockImplementation(
+      ({onSelectNonPms}: any) => {
+        capturedOnSelectNonPms = onSelectNonPms;
+        return makePlacesSearchMock();
+      },
+    );
+    jest.spyOn(reactRedux, 'useSelector').mockImplementation(cb =>
+      cb({
+        ...baseState,
+        companion: {companions: [], selectedCompanionId: null},
+      }),
+    );
+
+    render(<BrowseBusinessesScreen />);
+
+    await capturedOnSelectNonPms({
+      placeId: 'gp-1',
+      name: 'Test Vet',
+      address: '1 Main',
+      isPmsOrganisation: false,
+    });
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Add a companion',
+      'Add a companion to notify a business.',
+    );
+  });
+
+  it('handleNonPmsSelection navigates to BusinessAdd when companion is available', async () => {
+    const mockParentNavigate = jest.fn();
+    (useNavigation as jest.Mock).mockReturnValue({
+      navigate: navigateMock,
+      goBack: goBackMock,
+      getParent: () => ({navigate: mockParentNavigate}),
+    });
+
+    let capturedOnSelectNonPms: any;
+    (usePlacesBusinessSearch as jest.Mock).mockImplementation(
+      ({onSelectNonPms}: any) => {
+        capturedOnSelectNonPms = onSelectNonPms;
+        return makePlacesSearchMock();
+      },
+    );
+    jest.spyOn(reactRedux, 'useSelector').mockImplementation(cb =>
+      cb({
+        ...baseState,
+        companion: {
+          companions: [
+            {
+              id: 'comp-1',
+              name: 'Buddy',
+              breed: {breedName: 'Labrador'},
+              profileImage: null,
+            },
+          ],
+          selectedCompanionId: 'comp-1',
+        },
+      }),
+    );
+
+    render(<BrowseBusinessesScreen />);
+
+    await capturedOnSelectNonPms({
+      placeId: 'gp-1',
+      name: 'Test Vet',
+      address: '1 Main',
+      isPmsOrganisation: false,
+    });
+
+    expect(mockParentNavigate).toHaveBeenCalledWith(
+      'HomeStack',
+      expect.objectContaining({screen: 'LinkedBusinesses'}),
+    );
+  });
+
+  it('handleSearchError logs error without throwing', () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    let capturedOnError: any;
+    (usePlacesBusinessSearch as jest.Mock).mockImplementation(
+      ({onError}: any) => {
+        capturedOnError = onError;
+        return makePlacesSearchMock();
+      },
+    );
+
+    render(<BrowseBusinessesScreen />);
+
+    expect(() => capturedOnError(new Error('search failed'))).not.toThrow();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[BrowseBusinesses] Places search error',
+      expect.any(Error),
+    );
+
+    consoleSpy.mockRestore();
+  });
+
+  it('handleRegionChange calls setMapRegion via map onRegionChangeComplete', () => {
+    const setMapRegion = jest.fn();
+    (useClinicMapDiscovery as jest.Mock).mockReturnValue(
+      makeDiscoveryMock({setMapRegion}),
+    );
+
+    const {getByTestId} = render(<BrowseBusinessesScreen />);
+    const region = {
+      latitude: 37.7,
+      longitude: -122.4,
+      latitudeDelta: 0.1,
+      longitudeDelta: 0.1,
+    };
+    fireEvent(getByTestId('map-view'), 'regionChangeComplete', region);
+
+    expect(setMapRegion).toHaveBeenCalledWith(region);
+  });
+
+  it('header onBack triggers navigation.goBack', () => {
+    const {getByTestId} = render(<BrowseBusinessesScreen />);
+    getByTestId('header').props.onBack();
+    expect(goBackMock).toHaveBeenCalled();
   });
 });

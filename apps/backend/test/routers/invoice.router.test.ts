@@ -2,6 +2,7 @@ import type { Router } from "express";
 
 const authorizeCognito = jest.fn((_req, _res, next) => next());
 const authorizeCognitoMobile = jest.fn((_req, _res, next) => next());
+const invoiceActionLimiter = jest.fn((_req, _res, next) => next());
 const withOrgPermissions = jest.fn(() => jest.fn((_req, _res, next) => next()));
 const withAppointmentOrgPermissions = jest.fn(() =>
   jest.fn((_req, _res, next) => next()),
@@ -24,12 +25,18 @@ const InvoiceController = {
   bootstrapInvoiceForAppointment: jest.fn(),
   markInvoicePaidManually: jest.fn(),
   updatePaymentCollectionMethod: jest.fn(),
+  issueCreditNote: jest.fn(),
+  voidCreditNote: jest.fn(),
 };
+
+const rateLimit = jest.fn(() => invoiceActionLimiter);
 
 jest.mock("../../src/middlewares/auth", () => ({
   authorizeCognito,
   authorizeCognitoMobile,
 }));
+
+jest.mock("express-rate-limit", () => rateLimit);
 
 jest.mock("../../src/middlewares/rbac", () => ({
   withOrgPermissions,
@@ -67,6 +74,10 @@ const findRoute = (path: string, method: string) => {
 
 describe("invoice.router", () => {
   it("protects PMS invoice appointment, payment-intent, and organisation routes with RBAC", () => {
+    const mobileAppointmentRoute = findRoute(
+      "/mobile/appointment/:appointmentId",
+      "post",
+    );
     const addChargesRoute = findRoute(
       "/appointment/:appointmentId/charges",
       "post",
@@ -83,23 +94,121 @@ describe("invoice.router", () => {
       "/organisation/:organisationId/list",
       "get",
     );
+    const checkoutSessionRoute = findRoute(
+      "/:invoiceId/checkout-session",
+      "post",
+    );
+    const markPaidRoute = findRoute("/:invoiceId/mark-paid", "post");
+    const paymentCollectionMethodRoute = findRoute(
+      "/:invoiceId/payment-collection-method",
+      "patch",
+    );
+    const getInvoiceRoute = findRoute("/:invoiceId", "get");
+    const creditNoteRoute = findRoute("/:invoiceId/credit-notes", "post");
+    const voidCreditNoteRoute = findRoute(
+      "/:invoiceId/credit-notes/:creditNoteId/void",
+      "post",
+    );
 
+    expect(
+      mobileAppointmentRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognitoMobile);
+    expect(
+      mobileAppointmentRoute?.stack.map((layer) => layer.handle),
+    ).toContain(invoiceActionLimiter);
+    const mobilePaymentIntentRoute = findRoute(
+      "/mobile/payment-intent/:paymentIntentId",
+      "get",
+    );
+    const mobileInvoiceRoute = findRoute("/mobile/:invoiceId", "get");
     expect(addChargesRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
+    );
+    expect(addChargesRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
     );
     expect(appointmentListRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
+    expect(appointmentListRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
+    expect(
+      mobilePaymentIntentRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognitoMobile);
+    expect(
+      mobilePaymentIntentRoute?.stack.map((layer) => layer.handle),
+    ).toContain(invoiceActionLimiter);
+    expect(mobileInvoiceRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognitoMobile,
+    );
+    expect(mobileInvoiceRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
     expect(paymentIntentRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
+    );
+    expect(paymentIntentRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
     );
     expect(organisationListRoute?.stack.map((layer) => layer.handle)).toContain(
       authorizeCognito,
     );
+    expect(organisationListRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
+    expect(checkoutSessionRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(checkoutSessionRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
+    expect(markPaidRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(markPaidRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
+    expect(
+      paymentCollectionMethodRoute?.stack.map((layer) => layer.handle),
+    ).toContain(authorizeCognito);
+    expect(
+      paymentCollectionMethodRoute?.stack.map((layer) => layer.handle),
+    ).toContain(invoiceActionLimiter);
+    const bootstrapRoute = findRoute(
+      "/pms/appointment/:appointmentId/bootstrap",
+      "post",
+    );
+    expect(bootstrapRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(bootstrapRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
+    expect(getInvoiceRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(getInvoiceRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
+    expect(creditNoteRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(creditNoteRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
+    expect(voidCreditNoteRoute?.stack.map((layer) => layer.handle)).toContain(
+      authorizeCognito,
+    );
+    expect(voidCreditNoteRoute?.stack.map((layer) => layer.handle)).toContain(
+      invoiceActionLimiter,
+    );
 
+    expect(rateLimit).toHaveBeenCalledTimes(1);
     expect(withAppointmentOrgPermissions).toHaveBeenCalledTimes(3);
     expect(withPaymentIntentOrgPermissions).toHaveBeenCalledTimes(1);
     expect(withOrgPermissions).toHaveBeenCalledTimes(1);
+    expect(withInvoiceOrgPermissions).toHaveBeenCalledTimes(4);
     expect(requirePermission).toHaveBeenCalledWith("billing:edit:any");
     expect(requirePermission).toHaveBeenCalledWith("billing:view:any");
   });

@@ -1,11 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {useDispatch, useSelector} from 'react-redux';
 import {BottomTabBarProps} from '@react-navigation/bottom-tabs';
-import {
-  getFocusedRouteNameFromRoute,
-  type NavigationState,
-  type PartialState,
-} from '@react-navigation/native';
+import {getFocusedRouteNameFromRoute} from '@react-navigation/native';
 import {
   Animated,
   Image,
@@ -51,11 +47,16 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
   const {theme} = useTheme();
   const dispatch = useDispatch<AppDispatch>();
   const companions = useSelector((s: RootState) => s.companion.companions);
-  const selectedCompanionIdFromState = useSelector((s: RootState) => s.companion.selectedCompanionId);
+  const selectedCompanionIdFromState = useSelector(
+    (s: RootState) => s.companion.selectedCompanionId,
+  );
   const companionId = selectedCompanionIdFromState ?? companions[0]?.id ?? null;
   const isIOS = Platform.OS === 'ios';
   const useGlass = isIOS && isLiquidGlassSupported;
-  const styles = React.useMemo(() => createStyles(theme, isIOS), [theme, isIOS]);
+  const styles = React.useMemo(
+    () => createStyles(theme, isIOS),
+    [theme, isIOS],
+  );
 
   const refreshTabData = React.useCallback(
     (routeName: string) => {
@@ -77,7 +78,9 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
   const pillWidth = useRef(new Animated.Value(0)).current;
   const pillScale = useRef(new Animated.Value(1)).current;
   const [tabLayouts, setTabLayouts] = useState<TabLayout[]>([]);
-  const [isReady, setIsReady] = useState(false);
+  const isReady =
+    tabLayouts.length > 0 && tabLayouts.length === state.routes.length;
+  const hasInitializedRef = useRef(false);
 
   // Calculate if tab bar should be hidden based on nested navigation
   const shouldHideTabBar = (() => {
@@ -91,10 +94,7 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
       return false;
     }
 
-    const nestedState = focusedRoute.state as
-      | NavigationState
-      | PartialState<NavigationState>
-      | undefined;
+    const nestedState = focusedRoute.state;
     const nestedStateIndex = nestedState?.index ?? 0;
     const nestedRouteName =
       getFocusedRouteNameFromRoute(focusedRoute) ??
@@ -127,7 +127,7 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
       return;
     }
 
-    if (isReady) {
+    if (hasInitializedRef.current) {
       // Bouncy spring animation with scale wiggle effect
       Animated.parallel([
         // Position and width with extra bounce
@@ -166,12 +166,11 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
       pillLeft.setValue(activeTabLayout.x);
       pillWidth.setValue(activeTabLayout.width);
       pillScale.setValue(1);
-      setIsReady(true);
+      hasInitializedRef.current = true;
     }
   }, [
     state.index,
     tabLayouts,
-    isReady,
     pillLeft,
     pillWidth,
     pillScale,
@@ -289,10 +288,7 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = props => {
             !useGlass && styles.shadowWrapperSolid,
           ]}>
           <BarComponent
-          style={[
-            styles.bar,
-            useGlass ? styles.barGlass : styles.barSolid,
-          ]}
+            style={[styles.bar, useGlass ? styles.barGlass : styles.barSolid]}
             {...(useGlass
               ? {
                   effect: 'clear' as const,
@@ -328,8 +324,7 @@ const createStyles = (theme: any, isIOS: boolean) =>
       borderRadius: theme.borderRadius.lg,
       backgroundColor: 'transparent',
       overflow: 'visible',
-      ...theme.shadows.sm,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 3px ${theme.colors.neutralShadow}`,
     },
     shadowWrapperSolid: {
       backgroundColor: 'transparent',
@@ -339,9 +334,7 @@ const createStyles = (theme: any, isIOS: boolean) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-around',
-      borderRadius: isIOS
-        ? theme.borderRadius.md
-        : theme.borderRadius.xl,
+      borderRadius: isIOS ? theme.borderRadius.md : theme.borderRadius.xl,
       backgroundColor: 'transparent',
       paddingVertical: theme.spacing['3.5'],
       paddingHorizontal: theme.spacing['4'],
@@ -369,9 +362,7 @@ const createStyles = (theme: any, isIOS: boolean) =>
     },
     pillGlass: {
       flex: 1,
-      borderRadius: isIOS
-        ? theme.borderRadius.lg
-        : theme.borderRadius['2xl'],
+      borderRadius: isIOS ? theme.borderRadius.lg : theme.borderRadius['2xl'],
       backgroundColor: 'transparent',
     },
     pillSolid: {

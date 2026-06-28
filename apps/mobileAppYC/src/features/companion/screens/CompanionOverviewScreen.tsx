@@ -82,20 +82,12 @@ import {CompanionProfileHeader} from '@/features/companion/components/CompanionP
 import type {ProfileImagePickerRef} from '@/shared/components/common/ProfileImagePicker/ProfileImagePicker';
 
 // Types
-import type {
-  CompanionGender,
-  NeuteredStatus,
-  InsuredStatus,
-  CompanionOrigin,
-  Breed,
-  Companion,
-} from '@/features/companion/types';
+import type {Breed, Companion} from '@/features/companion/types';
 import {
   setSelectedCompanion,
   updateCompanionProfile,
 } from '@/features/companion';
 import {usePreferences} from '@/features/preferences/PreferencesContext';
-import {convertWeight} from '@/shared/utils/measurementSystem';
 import {fetchBreedCodeEntries} from '@/features/companion/services/codeEntriesService';
 import {getFreshStoredTokens} from '@/features/auth/sessionManager';
 
@@ -296,13 +288,7 @@ export const CompanionOverviewScreen: React.FC<
       return '';
     }
 
-    // Weight is stored in kg, convert if user prefers lbs
-    let weight = safeCompanion.currentWeight;
-    if (weightUnit === 'lbs') {
-      weight = convertWeight(weight, 'kg', 'lbs');
-    }
-
-    return `${weight.toFixed(1)} ${weightUnit}`;
+    return `${safeCompanion.currentWeight.toFixed(1)} ${weightUnit}`;
   }, [safeCompanion, weightUnit]);
 
   const ageWhenNeuteredDisplay = useMemo(() => {
@@ -344,10 +330,10 @@ export const CompanionOverviewScreen: React.FC<
         );
         if (!mounted) return;
 
-        const mapped = entries.map(entry => ({
+        const mapped = entries.map((entry, index) => ({
           speciesId: 0,
           speciesName: speciesQuery,
-          breedId: -1,
+          breedId: index,
           breedName: entry.display ?? entry.code,
           speciesCode: entry.meta?.speciesCode,
           breedCode: entry.code,
@@ -480,14 +466,6 @@ export const CompanionOverviewScreen: React.FC<
                         let num = cleaned === '' ? null : Number(cleaned);
 
                         // Convert to kg if user entered in lbs
-                        if (
-                          num !== null &&
-                          !Number.isNaN(num) &&
-                          weightUnit === 'lbs'
-                        ) {
-                          num = convertWeight(num, 'lbs', 'kg');
-                        }
-
                         applyPatch({
                           currentWeight:
                             num === null || Number.isNaN(num) ? null : num,
@@ -704,7 +682,7 @@ export const CompanionOverviewScreen: React.FC<
 
       <GenderBottomSheet
         ref={genderSheetRef}
-        selected={safeCompanion.gender as CompanionGender | null}
+        selected={safeCompanion.gender}
         onSave={g => {
           applyPatch({gender: g});
           setOpenBottomSheet(null);
@@ -714,7 +692,7 @@ export const CompanionOverviewScreen: React.FC<
       <NeuteredStatusBottomSheet
         ref={neuteredSheetRef}
         gender={safeCompanion.gender}
-        selected={safeCompanion.neuteredStatus as NeuteredStatus | null}
+        selected={safeCompanion.neuteredStatus}
         onSave={n => {
           const patch: Partial<Companion> = {neuteredStatus: n};
           if (n !== 'neutered') patch.ageWhenNeutered = null; // reset dependent
@@ -725,7 +703,7 @@ export const CompanionOverviewScreen: React.FC<
 
       <InsuredStatusBottomSheet
         ref={insuredSheetRef}
-        selected={safeCompanion.insuredStatus as InsuredStatus | null}
+        selected={safeCompanion.insuredStatus}
         onSave={s => {
           const patch: Partial<Companion> = {insuredStatus: s};
           if (s !== 'insured') {
@@ -739,7 +717,7 @@ export const CompanionOverviewScreen: React.FC<
 
       <OriginBottomSheet
         ref={originSheetRef}
-        selected={safeCompanion.origin as CompanionOrigin | null}
+        selected={safeCompanion.origin}
         onSave={o => {
           applyPatch({origin: o});
           setOpenBottomSheet(null);

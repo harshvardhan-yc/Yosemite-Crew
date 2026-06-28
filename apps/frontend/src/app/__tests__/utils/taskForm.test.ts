@@ -4,9 +4,26 @@ import {
   applyTemplateToForm,
   toTemplateOptions,
 } from '@/app/lib/taskForm';
-import { Task, TaskTemplate, TaskLibrary } from '@/app/features/tasks/types/task';
+import { Task, TaskTemplate, TaskLibrary, TaskKindOptions } from '@/app/features/tasks/types/task';
 
 describe('taskForm utilities', () => {
+  it('exposes the production task category taxonomy', () => {
+    expect(TaskKindOptions.map((option) => option.value)).toEqual([
+      'MEDICATION',
+      'CARE',
+      'DIET',
+      'PROCEDURE',
+      'DIAGNOSTIC',
+      'COMMUNICATION',
+      'BILLING',
+      'RECORD',
+      'ADMIN',
+      'OBSERVATION_TOOL',
+      'HYGIENE',
+      'CUSTOM',
+    ]);
+  });
+
   describe('validateTaskForm', () => {
     const baseTask: Task = {
       _id: 'task-1',
@@ -141,6 +158,7 @@ describe('taskForm utilities', () => {
       expect(template.description).toBe('Test description');
       expect(template.defaultRole).toBe('EMPLOYEE');
       expect(template.isActive).toBe(true);
+      expect(template.kind).toBe('MEDICATION');
     });
 
     it('builds template from task with COMPANION_TASK audience', () => {
@@ -213,6 +231,7 @@ describe('taskForm utilities', () => {
       expect(result.name).toBe('Template Name');
       expect(result.description).toBe('Template description');
       expect(result.category).toBe('DIET');
+      expect(result.source).toBe('ORG_TEMPLATE');
       expect(result.assignedTo).toBe('user-1');
     });
 
@@ -233,6 +252,7 @@ describe('taskForm utilities', () => {
       expect(result.name).toBe('Library Task');
       expect(result.description).toBe('Library default description');
       expect(result.category).toBe('HYGIENE');
+      expect(result.source).toBe('YC_LIBRARY');
     });
 
     it('handles template with empty name', () => {

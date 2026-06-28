@@ -4,12 +4,12 @@ const authorizeCognito = jest.fn((_req, _res, next) => next());
 
 const UserOrganizationController = {
   upsertMapping: jest.fn(),
+  listMappingsForUser: jest.fn(),
+  listByOrganisationId: jest.fn(),
   getMappingById: jest.fn(),
   listMappings: jest.fn(),
   deleteMappingById: jest.fn(),
   updateMappingById: jest.fn(),
-  listMappingsForUser: jest.fn(),
-  listByOrganisationId: jest.fn(),
 };
 
 jest.mock("../../src/middlewares/auth", () => ({
@@ -32,52 +32,24 @@ type Layer = {
   };
 };
 
-const findRoute = (path: string, method: "get" | "post" | "delete" | "put") => {
-  const layer = (
-    (userOrganizationRouter as unknown as { stack: Layer[] }).stack ?? []
-  ).find(
+const findRoute = (path: string, method: "get" | "post" | "put" | "delete") =>
+  ((userOrganizationRouter as unknown as { stack: Layer[] }).stack ?? []).find(
     (entry) =>
       entry.route?.path === path && Boolean(entry.route?.methods?.[method]),
-  );
-
-  return layer?.route;
-};
+  )?.route;
 
 describe("user-organization.router", () => {
-  it("protects mapping create and list routes with Cognito auth", () => {
+  it("requires auth for all exposed routes", () => {
     expect(findRoute("/", "post")?.stack.map((layer) => layer.handle)).toEqual([
       authorizeCognito,
       UserOrganizationController.upsertMapping,
     ]);
-
-    expect(findRoute("/", "get")?.stack.map((layer) => layer.handle)).toEqual([
-      authorizeCognito,
-      UserOrganizationController.listMappings,
-    ]);
-  });
-
-  it("protects mapping lookup and mutation routes with Cognito auth", () => {
-    expect(
-      findRoute("/:id", "get")?.stack.map((layer) => layer.handle),
-    ).toEqual([authorizeCognito, UserOrganizationController.getMappingById]);
-
-    expect(
-      findRoute("/:id", "delete")?.stack.map((layer) => layer.handle),
-    ).toEqual([authorizeCognito, UserOrganizationController.deleteMappingById]);
-
-    expect(
-      findRoute("/:id", "put")?.stack.map((layer) => layer.handle),
-    ).toEqual([authorizeCognito, UserOrganizationController.updateMappingById]);
-  });
-
-  it("protects scoped list routes with Cognito auth", () => {
     expect(
       findRoute("/user/mapping", "get")?.stack.map((layer) => layer.handle),
     ).toEqual([
       authorizeCognito,
       UserOrganizationController.listMappingsForUser,
     ]);
-
     expect(
       findRoute("/org/mapping/:organisationId", "get")?.stack.map(
         (layer) => layer.handle,
@@ -86,5 +58,18 @@ describe("user-organization.router", () => {
       authorizeCognito,
       UserOrganizationController.listByOrganisationId,
     ]);
+    expect(
+      findRoute("/:id", "get")?.stack.map((layer) => layer.handle),
+    ).toEqual([authorizeCognito, UserOrganizationController.getMappingById]);
+    expect(findRoute("/", "get")?.stack.map((layer) => layer.handle)).toEqual([
+      authorizeCognito,
+      UserOrganizationController.listMappings,
+    ]);
+    expect(
+      findRoute("/:id", "delete")?.stack.map((layer) => layer.handle),
+    ).toEqual([authorizeCognito, UserOrganizationController.deleteMappingById]);
+    expect(
+      findRoute("/:id", "put")?.stack.map((layer) => layer.handle),
+    ).toEqual([authorizeCognito, UserOrganizationController.updateMappingById]);
   });
 });

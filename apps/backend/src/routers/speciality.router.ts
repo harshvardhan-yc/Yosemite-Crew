@@ -29,11 +29,19 @@ router.post(
 
 // List specialities by organisation
 router.get(
-  "/:organisationId",
+  "/",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("specialities:view:any"),
   SpecialityController.getAllByOrganizationId,
+);
+
+router.get(
+  "/:id",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("specialities:view:any"),
+  SpecialityController.getSpecialityById,
 );
 
 // Update speciality
@@ -52,6 +60,15 @@ router.delete(
   withOrgPermissions(),
   requirePermission("specialities:edit:any"),
   SpecialityController.deleteSpeciality,
+);
+
+// Legacy compatibility route
+router.get(
+  "/organization/:organisationId",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("specialities:view:any"),
+  SpecialityController.getAllByOrganizationId,
 );
 
 export default router;

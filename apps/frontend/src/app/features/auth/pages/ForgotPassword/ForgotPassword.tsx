@@ -1,7 +1,6 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { AxiosError } from 'axios';
-import { Form } from 'react-bootstrap';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@iconify/react/dist/iconify.js';
@@ -16,6 +15,12 @@ import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import { MEDIA_SOURCES } from '@/app/constants/mediaSources';
 import { getEmailValidationError, normalizeEmail } from '@/app/lib/validators';
 
+const scrollToTop = () => {
+  if (globalThis.window) {
+    globalThis.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
 const ForgotPassword = () => {
   const router = useRouter();
   const { showErrorTost, ErrorTostPopup } = useErrorTost();
@@ -26,8 +31,50 @@ const ForgotPassword = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [inputErrors, setInputErrors] = useState<{
+    email?: string;
+    otp?: string;
+    password?: string;
+    confirmPassword?: string;
+  }>({});
+  const otpHintId = useId();
+  const otpErrorId = inputErrors.otp ? `${otpHintId}-error` : undefined;
+  const otpDescribedBy = [otpHintId, otpErrorId].filter(Boolean).join(' ');
+
+  const clearOtpError = () => {
+    setInputErrors((prev) => ({ ...prev, otp: undefined }));
+  };
+
+  const clearPasswordErrors = () => {
+    setInputErrors((prev) => ({ ...prev, password: undefined, confirmPassword: undefined }));
+  };
+
+  const resetPasswordFormState = () => {
+    setShowNewPassword(false);
+    setPassword('');
+    setConfirmPassword('');
+    setOtp(['', '', '', '', '', '']);
+    setInputErrors({});
+  };
+
+  const getPasswordValidationErrors = () => {
+    if (!password || !confirmPassword) {
+      return {
+        password: password ? undefined : 'Enter a new password',
+        confirmPassword: confirmPassword ? undefined : 'Confirm your new password',
+      };
+    }
+
+    if (password !== confirmPassword) {
+      return {
+        password: undefined,
+        confirmPassword: 'Passwords do not match',
+      };
+    }
+
+    return null;
+  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -40,6 +87,7 @@ const ForgotPassword = () => {
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
+    clearOtpError();
 
     if (value && index < otp.length - 1) {
       const nextInput = document.getElementById(`otp-input-${index + 1}`);
@@ -67,6 +115,7 @@ const ForgotPassword = () => {
     );
 
     if (emailError) {
+      setInputErrors((prev) => ({ ...prev, email: emailError }));
       if (globalThis.window) {
         globalThis.scrollTo({ top: 0, behavior: 'smooth' });
       }
@@ -89,6 +138,7 @@ const ForgotPassword = () => {
     try {
       const data = await forgotPassword(normalizedEmail);
       if (data) {
+        setInputErrors({});
         if (globalThis.window) {
           globalThis.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -132,6 +182,7 @@ const ForgotPassword = () => {
     e.preventDefault();
 
     if (otp.includes('')) {
+      setInputErrors((prev) => ({ ...prev, otp: 'Enter the full 6-digit verification code' }));
       if (globalThis.window) {
         globalThis.scrollTo({ top: 0, behavior: 'smooth' });
       }
@@ -153,37 +204,21 @@ const ForgotPassword = () => {
 
     setShowNewPassword(true);
     setShowVerifyCode(false);
+    clearOtpError();
   };
 
   const handlePasswordChange = async (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
 
-    if (!password || !confirmPassword) {
-      if (globalThis.window) {
-        globalThis.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+    const passwordErrors = getPasswordValidationErrors();
+    if (passwordErrors) {
+      setInputErrors(passwordErrors);
+      scrollToTop();
       showErrorTost({
-        message: 'Both Passwords are required',
-        errortext: 'Error',
-        iconElement: (
-          <Icon
-            icon="solar:danger-triangle-bold"
-            width="20"
-            height="20"
-            color="var(--color-danger-600)"
-          />
-        ),
-        className: 'errofoundbg',
-      });
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      if (globalThis.window) {
-        globalThis.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-      showErrorTost({
-        message: 'Passwords do not match',
+        message:
+          passwordErrors.confirmPassword === 'Passwords do not match'
+            ? 'Passwords do not match'
+            : 'Both Passwords are required',
         errortext: 'Error',
         iconElement: (
           <Icon
@@ -199,6 +234,7 @@ const ForgotPassword = () => {
     }
 
     try {
+      clearPasswordErrors();
       const success = await resetPassword(email, otp.join(''), password);
       if (success) {
         showErrorTost({
@@ -218,17 +254,12 @@ const ForgotPassword = () => {
           router.push('/signin');
         }, 3000);
         setTimeout(() => {
-          setShowNewPassword(false);
           setShowVerifyCode(false);
-          setPassword('');
-          setConfirmPassword('');
-          setOtp(['', '', '', '', '', '']);
+          resetPasswordFormState();
         }, 5000);
       }
     } catch (error: any) {
-      if (globalThis.window) {
-        globalThis.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+      scrollToTop();
       if (error?.code === 'CodeMismatchException') {
         setShowVerifyCode(true);
         showErrorTost({
@@ -260,10 +291,7 @@ const ForgotPassword = () => {
           className: 'errofoundbg',
         });
       }
-      setShowNewPassword(false);
-      setPassword('');
-      setConfirmPassword('');
-      setOtp(['', '', '', '', '', '']);
+      resetPasswordFormState();
     }
   };
 
@@ -272,70 +300,94 @@ const ForgotPassword = () => {
       className={`
         relative flex w-full flex-1 items-center justify-center
         bg-cover bg-center bg-no-repeat
-        h-[calc(100vh-80px)]
+        min-h-[max(720px,100vh)]
+        pt-22
       `}
       style={{ backgroundImage: `url(${MEDIA_SOURCES.auth.background})` }}
     >
       {ErrorTostPopup}
       <div
         className={`
-          flex h-fit w-[450px] flex-col items-center justify-center gap-6
+          flex h-fit w-112.5 flex-col items-center justify-center gap-6
           rounded-3xl border border-card-border
           bg-(--whitebg)
-          p-[1.25rem]
+          p-5
           elevation-1
         `}
       >
         {!showVerifyCode && !showNewPassword && (
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-2">
-              <div className="text-display-2 text-text-primary text-center">Forgot password?</div>
+              <h1 className="text-display-2 text-text-primary text-center">Forgot password?</h1>
               <div className="text-body-4 text-text-primary text-center">
                 {' '}
                 Enter your registered email, and we’ll send you a code to reset it.
               </div>
             </div>
-            <Form className="flex flex-col gap-6">
+            <div className="flex flex-col gap-6">
               <FormInput
                 intype="email"
                 inname="email"
                 value={email}
                 inlabel="Email Address"
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setInputErrors((prev) => ({ ...prev, email: undefined }));
+                }}
+                error={inputErrors.email}
               />
               <div className="flex flex-col gap-2">
                 <Primary href="#" onClick={handleOtp} text="Send code" />
                 <Secondary href="/signin" text="Back" />
               </div>
-            </Form>
+            </div>
           </div>
         )}
 
         {showVerifyCode && (
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-2">
-              <div className="text-display-2 text-text-primary text-center">Verify code</div>
+              <h1 className="text-display-2 text-text-primary text-center">Verify code</h1>
               <div className="text-body-4 text-text-primary text-center">
                 {' '}
                 Enter the code we just sent to your email to proceed with resetting your password.
               </div>
             </div>
 
-            <Form style={{ marginBottom: '0px' }}>
-              <div className="verifyInput">
-                {otp.map((digit, index) => (
-                  <Form.Control
-                    key={`${digit}-${index}`}
-                    type="text"
-                    value={digit}
-                    id={`otp-input-${index}`}
-                    onChange={(e) => handleChange(e, index)}
-                    onKeyDown={(e) => handleKeyDown(e, index)} // Handle backspace
-                    maxLength={1}
-                  />
-                ))}
+            <fieldset
+              className="verifyInput"
+              aria-label="Verification code"
+              aria-describedby={otpDescribedBy}
+            >
+              {otp.map((digit, index) => (
+                <input
+                  key={`${digit}-${index}`}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={digit}
+                  id={`otp-input-${index}`}
+                  aria-label={`Digit ${index + 1} of 6`}
+                  onChange={(e) => handleChange(e, index)}
+                  onKeyDown={(e) => handleKeyDown(e, index)}
+                  maxLength={1}
+                  autoComplete={index === 0 ? 'one-time-code' : 'off'}
+                />
+              ))}
+            </fieldset>
+            <p id={otpHintId} className="text-caption-1 text-text-secondary text-center">
+              Enter the 6-digit code from your email.
+            </p>
+            {inputErrors.otp ? (
+              <div
+                id={otpErrorId}
+                role="alert"
+                className="flex items-center justify-center gap-1 text-caption-2 text-text-error"
+              >
+                <Icon icon="solar:danger-circle-bold" width="16" height="16" aria-hidden="true" />
+                <span>{inputErrors.otp}</span>
               </div>
-            </Form>
+            ) : null}
 
             <div className="flex flex-col gap-3 items-center w-full">
               <Primary
@@ -363,31 +415,37 @@ const ForgotPassword = () => {
 
         {showNewPassword && (
           <div className="flex flex-col gap-6 w-full">
-            <Form className="flex flex-col gap-6 w-full">
-              <div className="flex flex-col gap-6 w-full">
-                <div className="text-display-2 text-text-primary text-center">Set new password</div>
-                <div className="flex flex-col gap-3">
-                  <FormInputPass
-                    intype="password"
-                    inname="password"
-                    value={password}
-                    inlabel="Enter New Password"
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <FormInputPass
-                    intype="password"
-                    inname="confirmPassword"
-                    value={confirmPassword}
-                    inlabel="Confirm Password"
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
-                </div>
+            <div className="flex flex-col gap-6 w-full">
+              <h1 className="text-display-2 text-text-primary text-center">Set new password</h1>
+              <div className="flex flex-col gap-3">
+                <FormInputPass
+                  intype="password"
+                  inname="password"
+                  value={password}
+                  inlabel="Enter New Password"
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    clearPasswordErrors();
+                  }}
+                  error={inputErrors.password}
+                />
+                <FormInputPass
+                  intype="password"
+                  inname="confirmPassword"
+                  value={confirmPassword}
+                  inlabel="Confirm Password"
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    clearPasswordErrors();
+                  }}
+                  error={inputErrors.confirmPassword}
+                />
               </div>
-              <div className="flex flex-col gap-3 w-full">
-                <Primary href="#" onClick={handlePasswordChange} text="Reset password" />
-                <Secondary href="#" text="Back" onClick={() => setShowNewPassword(false)} />
-              </div>
-            </Form>
+            </div>
+            <div className="flex flex-col gap-3 w-full">
+              <Primary href="#" onClick={handlePasswordChange} text="Reset password" />
+              <Secondary href="#" text="Back" onClick={() => setShowNewPassword(false)} />
+            </div>
           </div>
         )}
       </div>

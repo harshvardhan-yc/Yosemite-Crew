@@ -1,7 +1,11 @@
 import { Router } from "express";
-import { AppointmentController } from "../controllers/web/appointment.controller";
+import { AppointmentController } from "../controllers/web/appointment.prisma.controller";
 import { authorizeCognito, authorizeCognitoMobile } from "src/middlewares/auth";
-import { withOrgPermissions, requirePermission } from "src/middlewares/rbac";
+import {
+  requirePermission,
+  withAppointmentOrgPermissions,
+  withOrgPermissions,
+} from "src/middlewares/rbac";
 
 const router = Router();
 
@@ -28,7 +32,7 @@ router.post(
 );
 
 router.get(
-  "/mobile/companion/:companionId",
+  "/mobile/companion/:patientId",
   authorizeCognitoMobile,
   AppointmentController.listByCompanion,
 );
@@ -81,7 +85,7 @@ router.get(
 
 // List appointments for a companion within an organisation
 router.get(
-  "/pms/organisation/:organisationId/companion/:companionId",
+  "/pms/organisation/:organisationId/companion/:patientId",
   authorizeCognito,
   withOrgPermissions(),
   requirePermission("appointments:view:any"),
@@ -124,6 +128,39 @@ router.patch(
   AppointmentController.checkInAppointmentForPMS,
 );
 
+router.post(
+  "/pms/:organisationId/:appointmentId/admit",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  AppointmentController.admitFromPMS,
+);
+
+// Mark appointment ready for billing
+router.patch(
+  "/pms/:organisationId/:appointmentId/ready-for-billing",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  AppointmentController.markReadyForBillingForPMS,
+);
+
+router.delete(
+  "/pms/:organisationId/:appointmentId/ready-for-billing",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  AppointmentController.reverseReadyForBillingForPMS,
+);
+
+router.post(
+  "/pms/:organisationId/:appointmentId/forms",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("appointments:edit:any"),
+  AppointmentController.attachFormsToAppointment,
+);
+
 // Update appointment
 router.patch(
   "/pms/:organisationId/:appointmentId",
@@ -134,19 +171,12 @@ router.patch(
 );
 
 // Attach forms to appointment
-router.post(
-  "/pms/:organisationId/:appointmentId/forms",
-  authorizeCognito,
-  withOrgPermissions(),
-  requirePermission("appointments:edit:any"),
-  AppointmentController.attachFormsToAppointment,
-);
 
 // Get appointment detail
 router.get(
   "/pms/:organisationId/:appointmentId",
   authorizeCognito,
-  withOrgPermissions(),
+  withAppointmentOrgPermissions(),
   requirePermission([
     "appointments:view:any",
     "appointments:view:own", // vets can see if assigned

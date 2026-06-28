@@ -119,6 +119,7 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
+            aria-label="Confirm deletion consent"
             placeholder="Demo"
             id="consent-checkbox"
             checked={consent}

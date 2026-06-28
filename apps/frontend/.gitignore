@@ -12,8 +12,10 @@
 
 # testing
 /coverage
+/.jest-cache
 /playwright-report
 /test-results
+/artifacts
 
 # next.js
 /.next/
@@ -48,3 +50,5 @@ chromatic-build-*.xml
 chromatic-diagnostics.json
 
 /storybook-static
+
+/backendGuidesIntegration

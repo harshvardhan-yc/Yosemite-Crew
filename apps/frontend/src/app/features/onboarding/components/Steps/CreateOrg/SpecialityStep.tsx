@@ -16,7 +16,6 @@ import {
   createSpecialitiesBulk,
   updateService,
   deleteSpeciality,
-  loadSpecialitiesForOrg,
 } from '@/app/features/organization/services/specialityService';
 import { deleteService } from '@/app/features/organization/services/serviceService';
 import { bindPendingCompanionTerminologyToOrg } from '@/app/lib/companionTerminology';
@@ -85,14 +84,13 @@ const buildServicePayload = (
   organisationId: string,
   specialityId: string,
   service: Service
-): Service =>
-  ({
-    ...service,
-    id: '',
-    isActive: true,
-    organisationId,
-    specialityId,
-  }) as Service;
+): Service => ({
+  ...service,
+  id: '',
+  isActive: true,
+  organisationId,
+  specialityId,
+});
 
 const areServicesEquivalent = (left: Service, right: Service) =>
   normalizeName(left.name) === normalizeName(right.name) &&
@@ -450,15 +448,14 @@ const SpecialityStep = ({
 
       let createdSpecialities: Speciality[] = [];
       try {
-        const specialitiesToCreate = nextSpecialities
-          .filter((speciality) => !speciality._id)
-          .map(
-            (speciality) =>
-              ({
-                ...speciality,
-                services: [],
-              }) as Speciality
-          );
+        const specialitiesToCreate = nextSpecialities.reduce<Speciality[]>((items, speciality) => {
+          if (speciality._id) return items;
+          items.push({
+            ...speciality,
+            services: [],
+          });
+          return items;
+        }, []);
         createdSpecialities =
           specialitiesToCreate.length > 0 ? await createSpecialitiesBulk(specialitiesToCreate) : [];
       } catch {
@@ -497,9 +494,12 @@ const SpecialityStep = ({
 
         const initialServices = initialServicesBySpecialityId.get(specialityId) ?? [];
 
-        return (speciality.services ?? [])
-          .filter((service) => !getServiceMatch(initialServices, service))
-          .map((service) => buildServicePayload(resolvedOrgId, specialityId, service));
+        return (speciality.services ?? []).reduce<Service[]>((services, service) => {
+          if (!getServiceMatch(initialServices, service)) {
+            services.push(buildServicePayload(resolvedOrgId, specialityId, service));
+          }
+          return services;
+        }, []);
       });
 
       const servicesToUpdate = nextSpecialities.flatMap((speciality) => {
@@ -524,7 +524,7 @@ const SpecialityStep = ({
               isActive: service.isActive ?? matchedService.isActive ?? true,
               organisationId: resolvedOrgId,
               specialityId,
-            } as Service,
+            },
           ];
         });
       });
@@ -555,7 +555,6 @@ const SpecialityStep = ({
         return;
       }
 
-      await loadSpecialitiesForOrg({ force: true, silent: true, orgId: resolvedOrgId });
       const nextRoute = await resolveOrgScopedRedirect({
         orgId: resolvedOrgId,
         fallbackRole: 'owner',
@@ -591,6 +590,7 @@ const SpecialityStep = ({
               <input
                 className="step-three-speciality-input"
                 name="speciality-search"
+                aria-label="Search or add a specialty"
                 placeholder="Search specialties or create a custom one"
                 value={specialityQuery}
                 onChange={(event) => {
@@ -605,6 +605,7 @@ const SpecialityStep = ({
                 {filteredCatalog.length > 0 ? (
                   filteredCatalog.slice(0, 8).map((item) => (
                     <button
+                      type="button"
                       key={item.name}
                       className="step-three-picker-option"
                       onClick={() => handleSelectSpeciality(item.name)}
@@ -635,6 +636,7 @@ const SpecialityStep = ({
                 const isSelected = selectedNames.has(normalizeName(item.name));
                 return (
                   <button
+                    type="button"
                     key={`${item.name}-${itemIndex}`}
                     className="step-three-recommendation-chip"
                     disabled={isSelected}
@@ -681,6 +683,7 @@ const SpecialityStep = ({
                       <div className="step-three-card-copy">{summary}</div>
                     </div>
                     <button
+                      type="button"
                       className="step-three-remove-button"
                       aria-label={`Delete ${speciality.name}`}
                       onClick={() => handleRemoveSpeciality(speciality.name)}
@@ -700,6 +703,7 @@ const SpecialityStep = ({
                             <div className="step-three-service-card-title">{service.name}</div>
                             <div className="step-three-service-card-icons">
                               <button
+                                type="button"
                                 className="step-three-service-icon"
                                 aria-label={`Edit ${service.name}`}
                                 onClick={() => openServiceEditor(speciality.name, service)}
@@ -707,6 +711,7 @@ const SpecialityStep = ({
                                 <IoPencil size={14} />
                               </button>
                               <button
+                                type="button"
                                 className="step-three-service-icon"
                                 aria-label={`Delete ${service.name}`}
                                 onClick={() => handleRemoveService(speciality.name, service.name)}
@@ -731,6 +736,7 @@ const SpecialityStep = ({
                   >
                     <div className="step-three-selected-actions">
                       <button
+                        type="button"
                         className="step-three-inline-action"
                         onClick={() =>
                           setActiveServiceSearchFor(isServiceSearchOpen ? null : speciality.name)
@@ -748,6 +754,7 @@ const SpecialityStep = ({
                           <input
                             className="step-three-speciality-input"
                             name={`${speciality.name}-service-search`}
+                            aria-label={`Search services for ${speciality.name}`}
                             placeholder={`Search services for ${speciality.name}`}
                             value={serviceQuery}
                             onChange={(event) =>
@@ -762,6 +769,7 @@ const SpecialityStep = ({
                           {availableServices.length > 0 ? (
                             availableServices.slice(0, 6).map((service, serviceIndex) => (
                               <button
+                                type="button"
                                 key={`${speciality.name}-${service.name}-${serviceIndex}`}
                                 className="step-three-picker-option"
                                 onClick={() => startServiceCreation(speciality.name, service)}

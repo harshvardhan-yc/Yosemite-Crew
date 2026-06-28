@@ -17,7 +17,9 @@ console.warn = (...args) => {
   const first = args[0];
   if (
     typeof first === 'string' &&
-    (first.includes('Unable to resolve ../../../lib/commonjs/spec/NativeDocumentPicker') ||
+    (first.includes(
+      'Unable to resolve ../../../lib/commonjs/spec/NativeDocumentPicker',
+    ) ||
       first.includes('ToastAndroid is not supported on this platform.'))
   ) {
     return;
@@ -36,7 +38,8 @@ try {
 try {
   const {Platform} = require('react-native');
   Platform.constants = Platform.constants || {};
-  Platform.constants.reactNativeVersion = Platform.constants.reactNativeVersion ?? {
+  Platform.constants.reactNativeVersion = Platform.constants
+    .reactNativeVersion ?? {
     major: 0,
     minor: 81,
     patch: 4,
@@ -124,6 +127,7 @@ jest.mock('react-native-reanimated', () => {
       addWhitelistedUIProps: () => {},
       createAnimatedComponent: c => c,
     },
+    createAnimatedComponent: c => c,
     View,
     useSharedValue: v => ({value: v}),
     useAnimatedStyle: () => ({}),
@@ -340,7 +344,7 @@ jest.mock('@react-native-community/netinfo', () => {
   const defaultState = {isConnected: true, isInternetReachable: true};
   return {
     __esModule: true,
-    addEventListener: jest.fn((handler) => {
+    addEventListener: jest.fn(handler => {
       listeners.add(handler);
       handler(defaultState);
       return () => listeners.delete(handler);
@@ -367,15 +371,17 @@ jest.mock('react-native-nitro-sound', () => {
   const recordListeners = new Set();
   const mockSoundInstance = {
     setSubscriptionDuration: jest.fn(),
-    addPlayBackListener: jest.fn((listener) => {
+    addPlayBackListener: jest.fn(listener => {
       playListeners.add(listener);
       return listener;
     }),
-    addRecordBackListener: jest.fn((listener) => {
+    addRecordBackListener: jest.fn(listener => {
       recordListeners.add(listener);
       return listener;
     }),
-    removeRecordBackListener: jest.fn((listener) => recordListeners.delete(listener)),
+    removeRecordBackListener: jest.fn(listener =>
+      recordListeners.delete(listener),
+    ),
     startRecorder: jest.fn(async () => '/tmp/mock-recording.m4a'),
     stopRecorder: jest.fn(async () => '/tmp/mock-recording.m4a'),
     startPlayer: jest.fn(async () => undefined),
@@ -596,7 +602,7 @@ jest.mock('@d11/react-native-fast-image', () => {
   const {Image} = require('react-native');
 
   const FastImage = React.forwardRef((props, ref) =>
-    React.createElement(Image, {...props, ref})
+    React.createElement(Image, {...props, ref}),
   );
   FastImage.displayName = 'FastImage';
 
@@ -633,7 +639,7 @@ jest.mock('@d11/react-native-fast-image', () => {
 try {
   const {Image} = require('react-native');
   if (!Image.resolveAssetSource) {
-    Image.resolveAssetSource = jest.fn((source) => {
+    Image.resolveAssetSource = jest.fn(source => {
       if (typeof source === 'number') {
         return {uri: `asset://image_${source}`, width: 100, height: 100};
       }

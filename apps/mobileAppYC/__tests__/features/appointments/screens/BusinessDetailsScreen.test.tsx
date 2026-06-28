@@ -1,6 +1,9 @@
 import React from 'react';
+import {Alert} from 'react-native';
 import {render, fireEvent, waitFor} from '@testing-library/react-native';
 import BusinessDetailsScreen from '../../../../src/features/appointments/screens/BusinessDetailsScreen';
+
+const mockAlertFn = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
 // --- 1. Core Mocks (Hooks & Navigation) ---
 
@@ -58,6 +61,11 @@ jest.mock('../../../../src/features/appointments/selectors', () => ({
       (s: any) => s.businessId === businessId,
     );
   },
+  createSelectPackagesForBusiness: () => (state: any, businessId: string) => {
+    return (state.businesses.packages ?? []).filter(
+      (p: any) => p.businessId === businessId,
+    );
+  },
 }));
 
 // --- 3. Component Mocks (Crucial for "Element type is invalid" fix) ---
@@ -85,7 +93,11 @@ jest.mock(
   () => {
     const {View, Text, TouchableOpacity} = require('react-native');
     return {
-      SpecialtyAccordion: ({specialties, onSelectService}: any) => (
+      SpecialtyAccordion: ({
+        specialties,
+        onSelectService,
+        onSelectPackage,
+      }: any) => (
         <View testID="specialty-accordion">
           {specialties.map((grp: any) => (
             <View key={grp.name}>
@@ -96,6 +108,14 @@ jest.mock(
                   testID={`service-${svc.id}`}
                   onPress={() => onSelectService(svc.id, grp.name)}>
                   <Text>{svc.name}</Text>
+                </TouchableOpacity>
+              ))}
+              {(grp.packages ?? []).map((pkg: any) => (
+                <TouchableOpacity
+                  key={pkg.id}
+                  testID={`package-${pkg.id}`}
+                  onPress={() => onSelectPackage(pkg.id, pkg.name)}>
+                  <Text>{pkg.name}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -187,6 +207,23 @@ const mockServices = [
   {id: 'svc-3', businessId: 'bus-123', name: 'Checkup'}, // Undefined specialty -> 'General'
 ];
 
+const mockServicesWithSpecies = [
+  {
+    id: 'svc-feline',
+    businessId: 'bus-123',
+    name: 'Feline Dental',
+    specialty: 'Feline',
+    specialityId: 'spec-feline',
+  },
+  {
+    id: 'svc-canine',
+    businessId: 'bus-123',
+    name: 'Canine Checkup',
+    specialty: 'Canine',
+    specialityId: 'spec-canine',
+  },
+];
+
 // --- Tests ---
 
 describe('BusinessDetailsScreen', () => {
@@ -200,6 +237,10 @@ describe('BusinessDetailsScreen', () => {
         businesses: {
           businesses: [mockBusiness],
           services: mockServices,
+        },
+        companion: {
+          companions: [],
+          selectedCompanionId: null,
         },
       });
     });
@@ -230,11 +271,12 @@ describe('BusinessDetailsScreen', () => {
           businesses: [], // Empty businesses
           services: mockServices,
         },
+        companion: {companions: [], selectedCompanionId: null},
       });
     });
 
     render(<BusinessDetailsScreen />);
-    expect(fetchBusinesses).toHaveBeenCalledWith({serviceName: undefined});
+    expect(fetchBusinesses).toHaveBeenCalledWith();
   });
 
   it('dispatches fetchBusinesses if totalServices is 0', () => {
@@ -244,6 +286,7 @@ describe('BusinessDetailsScreen', () => {
           businesses: [mockBusiness],
           services: [], // Empty services
         },
+        companion: {companions: [], selectedCompanionId: null},
       });
     });
 
@@ -258,6 +301,7 @@ describe('BusinessDetailsScreen', () => {
           businesses: [mockBusiness],
           services: [{id: 'svc-99', businessId: 'other-bus'}], // Mismatch ID
         },
+        companion: {companions: [], selectedCompanionId: null},
       });
     });
 
@@ -292,6 +336,7 @@ describe('BusinessDetailsScreen', () => {
       (useSelector as unknown as jest.Mock).mockImplementation(selectorFn =>
         selectorFn({
           businesses: {businesses: [noPlaceBus], services: mockServices},
+          companion: {companions: [], selectedCompanionId: null},
         }),
       );
 
@@ -416,6 +461,7 @@ describe('BusinessDetailsScreen', () => {
       (useSelector as unknown as jest.Mock).mockImplementation(selectorFn =>
         selectorFn({
           businesses: {businesses: [addressOnlyBus], services: mockServices},
+          companion: {companions: [], selectedCompanionId: null},
         }),
       );
 
@@ -433,6 +479,7 @@ describe('BusinessDetailsScreen', () => {
       (useSelector as unknown as jest.Mock).mockImplementation(selectorFn =>
         selectorFn({
           businesses: {businesses: [emptyBus], services: mockServices},
+          companion: {companions: [], selectedCompanionId: null},
         }),
       );
 
@@ -441,6 +488,87 @@ describe('BusinessDetailsScreen', () => {
 
       expect(openMapsToPlaceId).not.toHaveBeenCalled();
       expect(openMapsToAddress).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Species Mismatch', () => {
+    const companionStateWithDog = {
+      companions: [{id: 'c1', category: 'dog', name: 'Rex'}],
+      selectedCompanionId: 'c1',
+    };
+
+    beforeEach(() => {
+      mockAlertFn.mockClear();
+      (useSelector as unknown as jest.Mock).mockImplementation(selectorFn =>
+        selectorFn({
+          businesses: {
+            businesses: [mockBusiness],
+            services: mockServicesWithSpecies,
+          },
+          companion: companionStateWithDog,
+        }),
+      );
+    });
+
+    it('shows alert and does NOT navigate when companion species mismatches service species', () => {
+      const {getByTestId} = render(<BusinessDetailsScreen />);
+      fireEvent.press(getByTestId('service-svc-feline'));
+
+      expect(mockAlertFn).toHaveBeenCalledWith(
+        'Species Mismatch',
+        expect.stringContaining('cats'),
+        [{text: 'OK'}],
+      );
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    it('navigates normally when service species matches companion species', () => {
+      const {getByTestId} = render(<BusinessDetailsScreen />);
+      fireEvent.press(getByTestId('service-svc-canine'));
+
+      expect(mockAlertFn).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith(
+        'BookingForm',
+        expect.objectContaining({
+          serviceId: 'svc-canine',
+        }),
+      );
+    });
+
+    it('navigates normally when service has no species in its name', () => {
+      (useSelector as unknown as jest.Mock).mockImplementation(selectorFn =>
+        selectorFn({
+          businesses: {businesses: [mockBusiness], services: mockServices},
+          companion: companionStateWithDog,
+        }),
+      );
+      const {getByTestId} = render(<BusinessDetailsScreen />);
+      fireEvent.press(getByTestId('service-svc-1'));
+
+      expect(mockAlertFn).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith(
+        'BookingForm',
+        expect.objectContaining({
+          serviceId: 'svc-1',
+        }),
+      );
+    });
+
+    it('navigates normally when no companion is selected', () => {
+      (useSelector as unknown as jest.Mock).mockImplementation(selectorFn =>
+        selectorFn({
+          businesses: {
+            businesses: [mockBusiness],
+            services: mockServicesWithSpecies,
+          },
+          companion: {companions: [], selectedCompanionId: null},
+        }),
+      );
+      const {getByTestId} = render(<BusinessDetailsScreen />);
+      fireEvent.press(getByTestId('service-svc-feline'));
+
+      expect(mockAlertFn).not.toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalled();
     });
   });
 });

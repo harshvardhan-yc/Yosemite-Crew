@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
 import OrgGuard from '@/app/ui/layout/guards/OrgGuard';
+import PageSkeleton from '@/app/ui/layout/PageSkeleton';
+
+const MERCK_PAGE_SKELETON = <PageSkeleton variant="list" />;
 import Close from '@/app/ui/primitives/Icons/Close';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
 import { YosemiteLoader } from '@/app/ui/overlays/Loader';
@@ -27,9 +30,10 @@ import {
 import {
   MERCK_COPYRIGHT_NOTICE,
   getMerckSubtopicPillStyle,
-  sanitizeMerckHtml,
+  stripMerckHtml,
 } from '@/app/features/integrations/constants/merck';
 import { formatDateTimeLocal } from '@/app/lib/date';
+import { getJsonStorageItem, setJsonStorageItem } from '@/app/lib/browserStorage';
 import {
   IoCloseOutline,
   IoCopyOutline,
@@ -44,78 +48,22 @@ type MerckManualsPageProps = {
 
 const RECENT_SEARCHES_LIMIT = 8;
 
-const collapseWhitespace = (value: string) => {
-  let result = '';
-  let previousWasWhitespace = true;
-
-  for (const char of value) {
-    const isWhitespace =
-      char === ' ' || char === '\n' || char === '\r' || char === '\t' || char === '\f';
-    if (isWhitespace) {
-      if (!previousWasWhitespace) {
-        result += ' ';
-      }
-      previousWasWhitespace = true;
-      continue;
-    }
-    result += char;
-    previousWasWhitespace = false;
-  }
-
-  return result.trim();
-};
-
-const stripHtml = (value: string) => {
-  const input = String(value ?? '');
-  let result = '';
-  let insideTag = false;
-
-  for (const char of input) {
-    if (char === '<') {
-      insideTag = true;
-      result += ' ';
-      continue;
-    }
-    if (char === '>') {
-      insideTag = false;
-      result += ' ';
-      continue;
-    }
-    if (!insideTag) {
-      result += char;
-    }
-  }
-
-  return collapseWhitespace(result);
-};
-
 const getRecentSearchesKey = (orgId: string, audience: MerckAudience) =>
   `yc:merck:recent:${orgId}:${audience}`;
 
 const getRecentSearches = (orgId: string, audience: MerckAudience): string[] => {
-  if (globalThis.window === undefined) return [];
-  try {
-    const raw = globalThis.window.localStorage.getItem(getRecentSearchesKey(orgId, audience));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : [];
-  } catch {
-    return [];
-  }
+  const parsed = getJsonStorageItem<unknown>('local', getRecentSearchesKey(orgId, audience));
+  return Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : [];
 };
 
 const saveRecentSearch = (orgId: string, audience: MerckAudience, value: string) => {
-  if (globalThis.window === undefined) return;
   const query = value.trim();
   if (!query) return;
   const prev = getRecentSearches(orgId, audience).filter(
     (item) => item.toLowerCase() !== query.toLowerCase()
   );
   const next = [query, ...prev].slice(0, RECENT_SEARCHES_LIMIT);
-  globalThis.window.localStorage.setItem(
-    getRecentSearchesKey(orgId, audience),
-    JSON.stringify(next)
-  );
+  setJsonStorageItem('local', getRecentSearchesKey(orgId, audience), next);
 };
 
 const safeDate = (value?: string | null) => {
@@ -131,7 +79,7 @@ const getResultsContent = (
 ) => {
   if (entries.length === 0) {
     if (loading) {
-      return <div className="text-body-4 text-text-secondary">Searching manuals...</div>;
+      return <div className="text-body-4 text-text-secondary">Searching manuals…</div>;
     }
     if (hasSearched) {
       return (
@@ -214,11 +162,12 @@ const AudienceToggle = ({
   const consumerTextClass = isProfessional ? 'text-text-secondary' : 'text-neutral-0';
 
   return (
-    <div
+    <fieldset
       className={`relative inline-flex items-center h-11 w-full max-w-[320px] rounded-[999px]! border border-card-border bg-white overflow-hidden ${
         disabled ? 'opacity-70' : ''
       }`}
     >
+      <legend className="sr-only">Audience</legend>
       <div
         aria-hidden
         className={`absolute top-0 bottom-0 left-0 w-1/2 rounded-[999px]! border-0 transition-all duration-300 ease-in-out ${sliderClass}`}
@@ -227,6 +176,7 @@ const AudienceToggle = ({
         type="button"
         onClick={() => onChange('PROV')}
         disabled={disabled}
+        aria-pressed={isProfessional}
         className={`relative z-10 w-1/2 h-full text-body-3 transition-colors duration-200 ${
           disabled ? 'cursor-not-allowed' : 'cursor-pointer'
         } ${professionalTextClass}`}
@@ -237,13 +187,14 @@ const AudienceToggle = ({
         type="button"
         onClick={() => onChange('PAT')}
         disabled={disabled}
+        aria-pressed={!isProfessional}
         className={`relative z-10 w-1/2 h-full text-body-3 transition-colors duration-200 ${
           disabled ? 'cursor-not-allowed' : 'cursor-pointer'
         } ${consumerTextClass}`}
       >
         Consumer
       </button>
-    </div>
+    </fieldset>
   );
 };
 
@@ -259,6 +210,7 @@ const CompactFilterPill = ({
   <button
     type="button"
     onClick={onClick}
+    aria-pressed={active}
     className={`h-8 px-2.5 text-caption-1 rounded-2xl! border transition-all duration-200 ${
       active
         ? 'bg-blue-light text-blue-text! border-text-brand!'
@@ -278,15 +230,12 @@ const EntryCard = ({
   onOpenInFrame: (entry: MerckEntry, url: string) => void;
   onCopy: (url: string) => void;
 }) => {
-  const summary = stripHtml(entry.summaryText || '').slice(0, 280);
+  const summary = stripMerckHtml(entry.summaryText || '').slice(0, 280);
   return (
     <div className="rounded-2xl border border-card-border p-4 flex flex-col gap-3">
       <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 lg:justify-between">
         <div className="w-full min-w-0 lg:w-[48%] xl:w-[52%] flex flex-col gap-2">
-          <div
-            className="text-body-2 text-text-primary"
-            dangerouslySetInnerHTML={{ __html: sanitizeMerckHtml(entry.title) }}
-          />
+          <div className="text-body-2 text-text-primary">{stripMerckHtml(entry.title)}</div>
           <div className="text-body-4 text-text-secondary line-clamp-3">
             {summary || 'No summary available.'}
           </div>
@@ -323,7 +272,7 @@ const EntryCard = ({
             }}
             aria-label="Open in new tab"
             title="Open in new tab"
-            className="h-12 w-12 rounded-2xl! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover transition-colors cursor-pointer"
+            className="size-12 rounded-2xl! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover transition-colors cursor-pointer"
           >
             <IoOpenOutline size={18} />
           </button>
@@ -332,7 +281,7 @@ const EntryCard = ({
             onClick={() => onCopy(entry.primaryUrl)}
             aria-label="Copy manual URL"
             title="Copy URL"
-            className="h-12 w-12 rounded-2xl! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover transition-colors cursor-pointer"
+            className="size-12 rounded-2xl! border border-card-border flex items-center justify-center text-text-primary hover:bg-card-hover transition-colors cursor-pointer"
           >
             <IoCopyOutline size={18} />
           </button>
@@ -356,7 +305,7 @@ type ExecuteMerckSearchParams = {
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   setEntries: React.Dispatch<React.SetStateAction<MerckEntry[]>>;
-  setRecentSearches: React.Dispatch<React.SetStateAction<string[]>>;
+  onSearchSaved?: () => void;
   setHasSearched?: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
@@ -371,7 +320,7 @@ const executeMerckSearch = async ({
   setLoading,
   setError,
   setEntries,
-  setRecentSearches,
+  onSearchSaved,
   setHasSearched,
 }: ExecuteMerckSearchParams) => {
   const resolvedQuery = query.trim();
@@ -411,7 +360,7 @@ const executeMerckSearch = async ({
     setEntries(safe);
     setHasSearched?.(true);
     saveRecentSearch(organisationId, audience, resolvedQuery);
-    setRecentSearches(getRecentSearches(organisationId, audience));
+    onSearchSaved?.();
   } catch (e: unknown) {
     if (reqId !== requestIdRef.current) return;
     setEntries([]);
@@ -454,13 +403,7 @@ const MerckSearchPanel = ({
   recentSearches: string[];
 }) => (
   <div className="rounded-2xl border border-card-border p-4 flex flex-col gap-3">
-    <form
-      className="flex items-center gap-2 flex-nowrap"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void performSearch(undefined, true);
-      }}
-    >
+    <div className="flex items-center gap-2 flex-nowrap">
       <div className="flex-1 min-w-0">
         <FormInput
           intype="text"
@@ -483,7 +426,7 @@ const MerckSearchPanel = ({
           onClick={() => setAdvancedOpen((prev) => !prev)}
           aria-label={advancedOpen ? 'Hide filters' : 'Show filters'}
           title={advancedOpen ? 'Hide filters' : 'Show filters'}
-          className={`h-12 w-12 rounded-2xl! border border-card-border flex items-center justify-center transition-colors cursor-pointer ${
+          className={`size-12 rounded-2xl! border border-card-border flex items-center justify-center transition-colors cursor-pointer ${
             advancedOpen
               ? 'bg-card-hover text-text-primary'
               : 'text-text-secondary hover:bg-card-hover'
@@ -492,7 +435,7 @@ const MerckSearchPanel = ({
           <IoOptionsOutline size={18} />
         </button>
       </div>
-    </form>
+    </div>
 
     {advancedOpen ? (
       <div className="rounded-2xl border border-card-border bg-white p-3 flex flex-col gap-2">
@@ -501,7 +444,7 @@ const MerckSearchPanel = ({
           <button
             type="button"
             onClick={() => setAdvancedOpen(false)}
-            className="h-7 w-7 rounded-xl! border border-card-border flex items-center justify-center text-text-secondary hover:bg-card-hover transition-colors cursor-pointer"
+            className="size-7 rounded-xl! border border-card-border flex items-center justify-center text-text-secondary hover:bg-card-hover transition-colors cursor-pointer"
             aria-label="Close refine results"
             title="Close refine results"
           >
@@ -509,8 +452,10 @@ const MerckSearchPanel = ({
           </button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="text-caption-1 text-text-secondary">Language</div>
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="text-caption-1 text-text-secondary" id="merck-language-label">
+            Language
+          </div>
+          <fieldset className="flex gap-1.5 flex-wrap" aria-labelledby="merck-language-label">
             <CompactFilterPill
               active={language === 'en'}
               label="EN"
@@ -521,7 +466,7 @@ const MerckSearchPanel = ({
               label="ES"
               onClick={() => setLanguage('es')}
             />
-          </div>
+          </fieldset>
         </div>
       </div>
     ) : null}
@@ -567,10 +512,15 @@ const MerckReaderPortal = ({
   if (!readerOpen || !readerUrl || typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-5000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
+    <div
+      className="fixed inset-0 z-10000 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      data-merck-reader-overlay="true"
+    >
+      <div className="relative bg-white rounded-2xl shadow-2xl size-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
-          <div className="text-body-2 text-text-primary truncate pr-2">{readerTitle}</div>
+          <div id="merck-reader-title" className="text-body-2 text-text-primary truncate pr-2">
+            {readerTitle}
+          </div>
           <button
             type="button"
             onClick={() => setReaderOpen(false)}
@@ -589,8 +539,10 @@ const MerckReaderPortal = ({
           <iframe
             src={readerUrl}
             title={readerTitle}
-            className="flex-1 w-full h-full border-0"
+            className="flex-1 size-full border-0"
             loading="lazy"
+            referrerPolicy="strict-origin"
+            sandbox="allow-scripts allow-popups allow-forms allow-same-origin"
             onLoad={() => setReaderLoading(false)}
           />
         </div>
@@ -618,14 +570,13 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
 
   const [audience, setAudience] = useState<MerckAudience>('PROV');
   const [language, setLanguage] = useState<MerckLanguage>('en');
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => routeQuery || '');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [entries, setEntries] = useState<MerckEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
   const [readerOpen, setReaderOpen] = useState(false);
   const [readerTitle, setReaderTitle] = useState('Merck Manual');
@@ -633,20 +584,19 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
   const [readerLoading, setReaderLoading] = useState(false);
 
   const requestIdRef = useRef(0);
-  const resultCacheRef = useRef<Map<string, MerckEntry[]>>(new Map());
+  const resultCacheRef = useRef<Map<string, MerckEntry[]>>(null!);
+  resultCacheRef.current ??= new Map();
   const performSearchRef = useRef<((nextQuery?: string, fresh?: boolean) => Promise<void>) | null>(
     null
   );
 
-  useEffect(() => {
-    if (!primaryOrgId) return;
-    setRecentSearches(getRecentSearches(primaryOrgId, audience));
-  }, [primaryOrgId, audience]);
-
-  useEffect(() => {
-    if (!routeQuery) return;
-    setQuery(routeQuery);
-  }, [routeQuery]);
+  const [recentSearchesKey, setRecentSearchesKey] = useState(0);
+  // recentSearchesKey is a counter; incrementing it forces recentSearches to recompute on save
+  const recentSearches = useMemo(
+    () => (primaryOrgId ? getRecentSearches(primaryOrgId, audience) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [primaryOrgId, audience, recentSearchesKey]
+  );
 
   useEffect(() => {
     if (!copied) return;
@@ -668,7 +618,7 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
         setLoading,
         setError,
         setEntries,
-        setRecentSearches,
+        onSearchSaved: () => setRecentSearchesKey((k) => k + 1),
         setHasSearched,
       });
     },
@@ -714,13 +664,14 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
     <div className={containerClassName}>
       <div className="flex w-full items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2 shrink-0">
-          <div className="h-[88px] w-auto relative">
+          <div className="h-22 w-auto relative">
+            <h1 className="sr-only">MSD Veterinary Manual</h1>
             <Image
               src={MEDIA_SOURCES.futureAssets.merckLogoUrl}
               alt="MSD Veterinary Manual"
               width={352}
               height={88}
-              className="object-contain h-[88px] w-auto"
+              className="object-contain h-22 w-auto"
             />
           </div>
           <GlassTooltip
@@ -730,7 +681,7 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
             <button
               type="button"
               aria-label="MSD Veterinary Manual info"
-              className="relative pt-3 inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none text-text-secondary hover:text-text-primary transition-colors"
+              className="relative pt-3 inline-flex size-5 shrink-0 items-center justify-center leading-none text-text-secondary hover:text-text-primary transition-colors"
             >
               <IoInformationCircleOutline size={20} />
             </button>
@@ -754,7 +705,7 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
                   setLoading,
                   setError,
                   setEntries,
-                  setRecentSearches,
+                  onSearchSaved: () => setRecentSearchesKey((k) => k + 1),
                   setHasSearched,
                 });
               }
@@ -780,9 +731,13 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
           />
 
           <div className="min-h-0 flex flex-col gap-3">
-            {error ? <div className="text-body-4 text-text-error">{error}</div> : null}
+            {error ? (
+              <div role="alert" className="text-body-4 text-text-error">
+                {error}
+              </div>
+            ) : null}
             {copied ? (
-              <div className="text-body-4 text-green-700">Copied URL to clipboard.</div>
+              <output className="text-body-4 text-green-700">Copied URL to clipboard.</output>
             ) : null}
 
             <div className={resultsContainerClassName}>
@@ -820,17 +775,21 @@ const MerckManualsPage = ({ embedded = false }: MerckManualsPageProps) => {
 };
 
 const ProtectedMerckManuals = () => (
-  <ProtectedRoute>
-    <OrgGuard>
-      <MerckManualsPage />
+  <ProtectedRoute skeleton={MERCK_PAGE_SKELETON}>
+    <OrgGuard skeleton={MERCK_PAGE_SKELETON}>
+      <Suspense fallback={MERCK_PAGE_SKELETON}>
+        <MerckManualsPage />
+      </Suspense>
     </OrgGuard>
   </ProtectedRoute>
 );
 
 export const EmbeddedMerckManuals = () => (
-  <ProtectedRoute>
-    <OrgGuard>
-      <MerckManualsPage embedded />
+  <ProtectedRoute skeleton={MERCK_PAGE_SKELETON}>
+    <OrgGuard skeleton={MERCK_PAGE_SKELETON}>
+      <Suspense fallback={MERCK_PAGE_SKELETON}>
+        <MerckManualsPage embedded />
+      </Suspense>
     </OrgGuard>
   </ProtectedRoute>
 );

@@ -1,29 +1,29 @@
-import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
-import OrgCard from "@/app/ui/cards/OrgCard/OrgCard";
-import { OrgWithMembership } from "@/app/features/organization/types/org";
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import OrgCard from '@/app/ui/cards/OrgCard/OrgCard';
+import { OrgWithMembership } from '@/app/features/organization/types/org';
 
 // --- Mocks ---
 
-jest.mock("@/app/ui/tables/OrganizationList", () => ({
-  getStatusStyle: jest.fn(() => ({ color: "green" })),
+jest.mock('@/app/ui/tables/tableUtils', () => ({
+  getOrganizationStatusStyle: jest.fn(() => ({ color: 'green' })),
 }));
 
 // --- Test Data ---
 
 const mockOrg: OrgWithMembership = {
   org: {
-    _id: "org-1",
-    name: "Acme Corp",
-    type: "Business",
+    _id: 'org-1',
+    name: 'Acme Corp',
+    type: 'Business',
     isVerified: true,
   },
   membership: {
-    roleDisplay: "Admin",
+    roleDisplay: 'Admin',
   },
 } as any;
 
-describe("OrgCard Component", () => {
+describe('OrgCard Component', () => {
   const mockHandleClick = jest.fn();
 
   beforeEach(() => {
@@ -32,19 +32,19 @@ describe("OrgCard Component", () => {
 
   // --- 1. Rendering Details ---
 
-  it("renders organization details correctly", () => {
+  it('renders organization details correctly', () => {
     render(<OrgCard org={mockOrg} handleOrgClick={mockHandleClick} />);
 
     // Name (Title Button)
-    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    expect(screen.getByText('Acme Corp')).toBeInTheDocument();
 
     // Type
-    expect(screen.getByText("Type :")).toBeInTheDocument();
-    expect(screen.getByText("Business")).toBeInTheDocument();
+    expect(screen.getByText('Type :')).toBeInTheDocument();
+    expect(screen.getByText('Business')).toBeInTheDocument();
 
     // Role
-    expect(screen.getByText("Role :")).toBeInTheDocument();
-    expect(screen.getByText("Admin")).toBeInTheDocument();
+    expect(screen.getByText('Role :')).toBeInTheDocument();
+    expect(screen.getByText('Admin')).toBeInTheDocument();
   });
 
   // --- 2. Status Logic ---
@@ -57,10 +57,10 @@ describe("OrgCard Component", () => {
 
     render(<OrgCard org={verifiedOrg} handleOrgClick={mockHandleClick} />);
 
-    const statusBadge = screen.getByText("Active");
+    const statusBadge = screen.getByText('Active');
     expect(statusBadge).toBeInTheDocument();
     // JSDOM computes "green" to "rgb(0, 128, 0)"
-    expect(statusBadge).toHaveStyle({ color: "rgb(0, 128, 0)" });
+    expect(statusBadge).toHaveStyle({ color: 'rgb(0, 128, 0)' });
   });
 
   it("renders 'Pending' status when organization is not verified", () => {
@@ -71,16 +71,16 @@ describe("OrgCard Component", () => {
 
     render(<OrgCard org={pendingOrg} handleOrgClick={mockHandleClick} />);
 
-    const statusBadge = screen.getByText("Pending");
+    const statusBadge = screen.getByText('Pending');
     expect(statusBadge).toBeInTheDocument();
   });
 
   // --- 3. Interaction ---
 
-  it("calls handleOrgClick when the title button is clicked", () => {
+  it('calls handleOrgClick when the title button is clicked', () => {
     render(<OrgCard org={mockOrg} handleOrgClick={mockHandleClick} />);
 
-    const titleBtn = screen.getByText("Acme Corp");
+    const titleBtn = screen.getByText('Acme Corp');
     fireEvent.click(titleBtn);
 
     expect(mockHandleClick).toHaveBeenCalledTimes(1);
@@ -89,12 +89,12 @@ describe("OrgCard Component", () => {
 
   // --- 4. Edge Cases ---
 
-  it("handles missing membership role gracefully", () => {
+  it('handles missing membership role gracefully', () => {
     const orgNoRole = { ...mockOrg, membership: null } as any;
 
     render(<OrgCard org={orgNoRole} handleOrgClick={mockHandleClick} />);
 
     // Renders "Role :" label but value is empty
-    expect(screen.getByText("Role :")).toBeInTheDocument();
+    expect(screen.getByText('Role :')).toBeInTheDocument();
   });
 });

@@ -18,6 +18,15 @@ const router = Router();
    ITEMS
    ====================================================== */
 
+// Inventory item image upload URL
+router.post(
+  "/organisation/:organisationId/items/upload-url",
+  authorizeCognito,
+  withOrgPermissions(),
+  requirePermission("inventory:edit:any"),
+  InventoryController.getItemImageUploadUrl,
+);
+
 // Create item
 router.post(
   "/items",
@@ -61,6 +70,14 @@ router.post(
   InventoryController.activeItem,
 );
 
+router.patch(
+  "/items/:itemId/status",
+  authorizeCognito,
+  withInventoryItemOrgPermissions(),
+  requirePermission("inventory:edit:any"),
+  InventoryController.toggleItemStatus,
+);
+
 // List items
 router.get(
   "/organisation/:organisationId/items",
@@ -68,6 +85,13 @@ router.get(
   withOrgPermissions(),
   requirePermission("inventory:view:any"),
   InventoryController.listItems,
+);
+
+router.get(
+  "/categories",
+  authorizeCognito,
+  requirePermission("inventory:view:any"),
+  InventoryController.getCategories,
 );
 
 // Inventory turnover

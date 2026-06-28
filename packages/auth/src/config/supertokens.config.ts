@@ -8,6 +8,8 @@ import { SMTPService } from 'supertokens-node/recipe/emailpassword/emaildelivery
 import { SMTPService as EmailVerificationSMTPService } from 'supertokens-node/recipe/emailverification/emaildelivery';
 import MultiFactorAuth from 'supertokens-node/recipe/multifactorauth';
 import TOTP from 'supertokens-node/recipe/totp';
+import Passwordless from 'supertokens-node/recipe/passwordless';
+import { SMTPService as PasswordlessSMTPService } from 'supertokens-node/recipe/passwordless/emaildelivery';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -19,14 +21,17 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const smtpSettings = getSmtpSettings();
+const SUPERTOKENS_API_KEY_FIELD = 'apiKey' as const;
 
 export function getSuperTokensConfig(): TypeInput {
+  const supertokensApiKey = process.env.SUPERTOKENS_API_KEY;
+  const smtpSettings = getSmtpSettings();
+
   return {
     framework: 'express',
     supertokens: {
       connectionURI: requireEnv('SUPERTOKENS_CONNECTION_URI'),
-      apiKey: process.env.SUPERTOKENS_API_KEY || undefined,
+      ...(supertokensApiKey ? { [SUPERTOKENS_API_KEY_FIELD]: supertokensApiKey } : undefined),
     },
     appInfo: getAuthAppInfo(),
     recipeList: [
@@ -43,7 +48,16 @@ export function getSuperTokensConfig(): TypeInput {
       }),
       TOTP.init(),
       MultiFactorAuth.init({
-        firstFactors: [MultiFactorAuth.FactorIds.EMAILPASSWORD],
+        firstFactors: [MultiFactorAuth.FactorIds.EMAILPASSWORD, 'otp-email'],
+      }),
+      Passwordless.init({
+        flowType: 'USER_INPUT_CODE',
+        contactMethod: 'EMAIL',
+        emailDelivery: {
+          service: new PasswordlessSMTPService({
+            smtpSettings,
+          }),
+        },
       }),
       Session.init(),
     ],

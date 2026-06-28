@@ -6,17 +6,19 @@ This file is auto-loaded by Claude Code on every session. All rules here are **m
 
 Modular skills in `.claude/skills/` provide deep, app-specific guidance. Load the relevant one before starting any task:
 
-| Skill                             | When to use                                                  |
-| --------------------------------- | ------------------------------------------------------------ |
-| `.claude/skills/frontend-design`  | UI work, new components, styling in apps/frontend            |
-| `.claude/skills/frontend-sonar`   | SonarQube fixes or writing Sonar-clean code in apps/frontend |
-| `.claude/skills/frontend-testing` | Writing/fixing/running tests in apps/frontend                |
-| `.claude/skills/backend-patterns` | Any work in apps/backend                                     |
-| `.claude/skills/mobile-patterns`  | Any work in apps/mobileAppYC                                 |
-| `.claude/skills/monorepo-ops`     | Cross-app work, dependency changes, turbo, pnpm              |
-| `.claude/skills/code-review`      | Reviewing code or auditing a PR                              |
+| Skill                             | When to use                                                       |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `.claude/skills/frontend-design`  | UI work, new components, styling in apps/frontend                 |
+| `.claude/skills/frontend-sonar`   | SonarQube fixes or writing Sonar-clean code in apps/frontend      |
+| `.claude/skills/frontend-testing` | Writing/fixing/running tests in apps/frontend                     |
+| `.claude/skills/backend-patterns` | Any work in apps/backend                                          |
+| `.claude/skills/desktop-sonar`    | Sonar fixes or Sonar-clean code in apps/desktop                   |
+| `.claude/skills/mobile-patterns`  | Any work in apps/mobileAppYC                                      |
+| `.claude/skills/monorepo-ops`     | Cross-app work, dependency changes, turbo, pnpm                   |
+| `.claude/skills/code-review`      | Reviewing code or auditing a PR                                   |
+| `.claude/skills/react-doctor`     | After React changes or before committing: scan/triage diagnostics |
 
-Per-app `AGENTS.md` files (for Codex compatibility): `apps/frontend/AGENTS.md`, `apps/backend/AGENTS.md`, `apps/mobileAppYC/AGENTS.md`.
+Per-app `AGENTS.md` files (for Codex compatibility): `apps/frontend/AGENTS.md`, `apps/backend/AGENTS.md`, `apps/desktop/AGENTS.md`, `apps/mobileAppYC/AGENTS.md`.
 
 ---
 
@@ -26,12 +28,20 @@ Per-app `AGENTS.md` files (for Codex compatibility): `apps/frontend/AGENTS.md`, 
 apps/
   frontend/      — Next.js web app (primary)
   backend/       — API server (do not refactor unless explicitly asked)
+  desktop/       — Electron PIMS desktop shell (only on feat/desktop-pims-beta for now)
   mobileAppYC/   — React Native mobile app
   dev-docs/      — Internal documentation site
 packages/
-  types/         — Shared TypeScript types
+  auth/          — Shared auth helpers
+  database/      — Prisma schema, migrations, and database client
+  design-tokens/ — Shared design tokens
+  fhir/          — FHIR R4 generated types and compatibility helpers
   fhirtypes/     — FHIR type definitions
+  lib/           — Shared errors, types, and reusable utilities
+  types/         — Shared TypeScript types
 ```
+
+(`apps/anthropic` exists in the tree but is untracked/WIP — not a documented workspace.)
 
 Tooling: `pnpm` workspaces + `turbo`. Always use `--filter` to scope commands to the relevant workspace.
 
@@ -85,7 +95,7 @@ Additional commit rules:
 - Never skip pre-commit hooks (`--no-verify` is forbidden).
 - All pre-commit hooks must pass before the user commits — if lint/type/test checks fail, fix them first.
 - Before suggesting any commit message, validate the scope against `commitlint.config.cjs`.
-- Allowed scopes are exactly: `backend`, `frontend`, `mobile`, `dev-docs`, `types`, `fhirtypes`, `repo`, `ci`, `docs`.
+- Allowed scopes are exactly: `backend`, `frontend`, `mobile`, `desktop`, `dev-docs`, `types`, `fhir`, `repo`, `ci`, `docs`, `lib`, `auth`, `database`.
 - If changes span multiple workspaces, use `repo`.
 
 Issue + PR draft workflow (only on explicit user request):
@@ -109,6 +119,15 @@ All SonarQube rules, test writing rules, and frontend code quality patterns live
 - **Sonar issues:** load `.claude/skills/frontend-sonar` — contains the complete enforced rule set.
 - **Test patterns:** load `.claude/skills/frontend-testing` — covers Jest/RTL conventions, Zustand mocking, async state, common pitfalls.
 - Violations introduced in any change must be fixed before the change is considered done.
+
+### Pre-push Sonar gate — MANDATORY, never skip
+
+Identify and fix Sonar findings **locally before pushing** — never let issues or security hotspots first surface on the PR.
+
+- Before pushing ANY change, run the local Sonar pipeline (for `apps/desktop`: `./apps/desktop/sonar-local.sh`, which runs lint → type-check → tests+coverage → build → a SonarCloud branch scan).
+- Review **every** reported issue **and security hotspot** from `sonar-issues.json` (or the project results) — not just gate-failing ones — and fix all of them.
+- Re-run until the scan is clean (zero new issues, zero hotspots). Only then push / open the PR.
+- `sonar-local.sh`, `sonar-issues.json`, and `.sonar-token` are local-only and gitignored — never commit, print, echo, or `git add` them.
 
 ---
 
@@ -134,7 +153,7 @@ Conventional commits are enforced by `commitlint`:
 <type>(<scope>): <subject>
 
 Types: feat | fix | chore | refactor | test | docs | style | perf | ci
-Scope: backend | frontend | mobile | dev-docs | types | fhirtypes | repo | ci | docs
+Scope: backend | frontend | mobile | desktop | dev-docs | types | fhir | repo | ci | docs | lib | auth | database
 
 Examples:
   feat(frontend): add recurring appointment support

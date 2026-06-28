@@ -1,16 +1,12 @@
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { FaUser, FaCalendar } from 'react-icons/fa';
 import { IoDocument } from 'react-icons/io5';
 
 import ProtectedRoute from '@/app/ui/layout/guards/ProtectedRoute';
-import Progress from '@/app/features/onboarding/components/Steps/Progress/Progress';
 import { StepContent } from '@/app/features/onboarding/components/Steps/types';
-import PersonalStep, {
-  StepHandle,
-} from '@/app/features/onboarding/components/Steps/TeamOnboarding/PersonalStep';
-import ProfessionalStep from '@/app/features/onboarding/components/Steps/TeamOnboarding/ProfessionalStep';
-import AvailabilityStep from '@/app/features/onboarding/components/Steps/TeamOnboarding/AvailabilityStep';
+import type { StepHandle } from '@/app/features/onboarding/components/Steps/TeamOnboarding/PersonalStep';
 
 import './TeamOnboarding.css';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -38,6 +34,26 @@ const TeamSteps: StepContent[] = [
     logo: <FaCalendar color="var(--color-neutral-0)" size={18} />,
   },
 ];
+
+const OnboardingStepSkeleton = () => (
+  <div className="min-h-80 rounded-2xl bg-card-hover animate-pulse" aria-hidden="true" />
+);
+
+const Progress = dynamic(
+  () => import('@/app/features/onboarding/components/Steps/Progress/Progress')
+);
+const PersonalStep = dynamic(
+  () => import('@/app/features/onboarding/components/Steps/TeamOnboarding/PersonalStep'),
+  { loading: () => <OnboardingStepSkeleton /> }
+);
+const ProfessionalStep = dynamic(
+  () => import('@/app/features/onboarding/components/Steps/TeamOnboarding/ProfessionalStep'),
+  { loading: () => <OnboardingStepSkeleton /> }
+);
+const AvailabilityStep = dynamic(
+  () => import('@/app/features/onboarding/components/Steps/TeamOnboarding/AvailabilityStep'),
+  { loading: () => <OnboardingStepSkeleton /> }
+);
 
 const EMPTY_PROFILE: UserProfile = {
   _id: '',
@@ -88,7 +104,7 @@ const TeamOnboarding = () => {
   const [activeStep, setActiveStep] = useState(0);
   const [initialStepApplied, setInitialStepApplied] = useState(false);
   const [formData, setFormData] = useState<UserProfile>(EMPTY_PROFILE);
-  const [availability, setAvailability] = useState<AvailabilityState>(
+  const [availability, setAvailability] = useState<AvailabilityState>(() =>
     daysOfWeek.reduce<AvailabilityState>((acc, day) => {
       const isWeekday =
         day === 'Monday' ||
@@ -140,7 +156,6 @@ const TeamOnboarding = () => {
       router.replace('/dashboard');
       return;
     }
-    // Only set active step from store on very first load.
     if (!initialStepApplied) {
       setInitialStepApplied(true);
       if (computedStep >= 0 && computedStep <= 2) {
@@ -169,7 +184,7 @@ const TeamOnboarding = () => {
     return (
       <div className="create-profile-wrapper flex items-center justify-center min-h-[40vh]">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 rounded-full border-4 border-neutral-200 border-t-text-brand animate-spin" />
+          <div className="size-8 rounded-full border-4 border-neutral-200 border-t-text-brand animate-spin" />
           <div className="text-body-4 text-text-secondary">Loading your profile…</div>
         </div>
       </div>
@@ -217,7 +232,7 @@ const TeamOnboarding = () => {
         onStepSelect={handleStepSelect}
       />
       <div className="flex flex-col gap-6">
-        <div className="create-profile-title">Create organization profile</div>
+        <h1 className="create-profile-title">Create organization profile</h1>
         {activeStep === 0 && (
           <PersonalStep
             ref={personalRef}
@@ -261,7 +276,9 @@ const TeamOnboarding = () => {
 const ProtectedTeamOnboarding = () => {
   return (
     <ProtectedRoute>
-      <TeamOnboarding />
+      <Suspense>
+        <TeamOnboarding />
+      </Suspense>
     </ProtectedRoute>
   );
 };

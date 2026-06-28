@@ -3,18 +3,21 @@ import { loadProfiles } from '@/app/features/organization/services/profileServic
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useUserProfileStore } from '@/app/stores/profileStore';
 import { UserProfile } from '@/app/features/users/types/profile';
+import { useAuthStore } from '@/app/stores/authStore';
 
 export const useLoadProfiles = () => {
+  const authStatus = useAuthStore((s) => s.status);
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
-  const profilesByOrgId = useUserProfileStore((s) => s.profilesByOrgId);
+  const isAuthed = authStatus === 'authenticated' || authStatus === 'signin-authenticated';
 
   useEffect(() => {
+    if (!isAuthed) return;
     if (!primaryOrgId) return;
-    const isLoaded = Object.hasOwn(profilesByOrgId, primaryOrgId);
-    if (!isLoaded && useUserProfileStore.getState().status !== 'loading') {
-      void loadProfiles({ silent: true, orgId: primaryOrgId });
-    }
-  }, [primaryOrgId, profilesByOrgId]);
+    const state = useUserProfileStore.getState();
+    if (state.status === 'loading') return;
+    if (Object.hasOwn(state.profilesByOrgId ?? {}, primaryOrgId)) return;
+    void loadProfiles({ silent: true, orgId: primaryOrgId });
+  }, [isAuthed, primaryOrgId]);
 };
 
 export const usePrimaryOrgProfile = (): UserProfile | null => {

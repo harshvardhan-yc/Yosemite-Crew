@@ -2,9 +2,9 @@ import React from 'react';
 import {render, fireEvent, waitFor, act} from '@testing-library/react-native';
 import {BusinessSearchScreen} from '../../../../src/features/linkedBusinesses/screens/BusinessSearchScreen';
 import {useDispatch, useSelector} from 'react-redux';
-import LocationService from '../../../../src/shared/services/LocationService';
 import {Alert} from 'react-native';
-import * as LinkedBusinessActions from '../../../../src/features/linkedBusinesses/index';
+import * as LinkedBusinessActions from '../../../../src/features/linkedBusinesses/thunks';
+import {selectLinkedBusinesses} from '../../../../src/features/linkedBusinesses/selectors';
 
 // --- Mocks ---
 
@@ -30,9 +30,9 @@ jest.mock('@react-navigation/native', () => {
   };
 });
 
-// Mock Location Service
-jest.mock('../../../../src/shared/services/LocationService', () => ({
-  getCurrentPosition: jest.fn(),
+// Mock location store
+jest.mock('@/shared/stores/locationStore', () => ({
+  useLocationStore: jest.fn(),
 }));
 
 // Mock Navigation Props
@@ -60,41 +60,52 @@ jest.mock('../../../../src/hooks', () => ({
   }),
 }));
 
-// Mock Actions and Components
-jest.mock('../../../../src/features/linkedBusinesses/index', () => {
-  const ReactActual = jest.requireActual('react'); // Get React inside the factory
-  const {View: MockView} = require('react-native');
-  return {
-    searchBusinessesByLocation: jest.fn(() => ({
-      type: 'search/businesses',
-      payload: [],
-    })),
-    fetchLinkedBusinesses: jest.fn(() => ({
-      type: 'business/fetch',
-      payload: [],
-    })),
-    checkOrganisation: jest.fn(() => ({type: 'business/check', payload: {}})),
-    acceptBusinessInvite: jest.fn(() => ({type: 'business/accept'})),
-    declineBusinessInvite: jest.fn(() => ({type: 'business/decline'})),
-    fetchPlaceCoordinates: jest.fn(() => ({type: 'place/coords', payload: {}})),
-    selectLinkedBusinesses: jest.fn(),
-    deleteLinkedBusiness: jest.fn(() => ({type: 'business/delete'})),
+// Mock thunks (component imports from ../thunks after barrel-import fix)
+jest.mock('../../../../src/features/linkedBusinesses/thunks', () => ({
+  searchBusinessesByLocation: jest.fn(() => ({
+    type: 'search/businesses',
+    payload: [],
+  })),
+  fetchLinkedBusinesses: jest.fn(() => ({type: 'business/fetch', payload: []})),
+  checkOrganisation: jest.fn(() => ({type: 'business/check', payload: {}})),
+  acceptBusinessInvite: jest.fn(() => ({type: 'business/accept'})),
+  declineBusinessInvite: jest.fn(() => ({type: 'business/decline'})),
+  fetchPlaceCoordinates: jest.fn(() => ({type: 'place/coords', payload: {}})),
+  deleteLinkedBusiness: jest.fn(() => ({type: 'business/delete'})),
+}));
 
-    DeleteBusinessBottomSheet: ReactActual.forwardRef(
-      (props: any, ref: any) => {
-        ReactActual.useImperativeHandle(ref, () => ({
-          open: () => {},
-        }));
-        return (
-          <MockView testID="delete-sheet">
-            <MockView testID="confirm-delete-btn" onTouchEnd={props.onDelete} />
-            <MockView testID="cancel-delete-btn" onTouchEnd={props.onCancel} />
-          </MockView>
-        );
-      },
-    ),
-  };
-});
+// Mock selectors (component imports from ../selectors after barrel-import fix)
+jest.mock('../../../../src/features/linkedBusinesses/selectors', () => ({
+  selectLinkedBusinesses: jest.fn(),
+}));
+
+// Mock DeleteBusinessBottomSheet component
+jest.mock(
+  '../../../../src/features/linkedBusinesses/components/DeleteBusinessBottomSheet',
+  () => {
+    const ReactActual = jest.requireActual('react');
+    const {View: MockView} = require('react-native');
+    return {
+      DeleteBusinessBottomSheet: ReactActual.forwardRef(
+        (props: any, ref: any) => {
+          ReactActual.useImperativeHandle(ref, () => ({open: () => {}}));
+          return (
+            <MockView testID="delete-sheet">
+              <MockView
+                testID="confirm-delete-btn"
+                onTouchEnd={props.onDelete}
+              />
+              <MockView
+                testID="cancel-delete-btn"
+                onTouchEnd={props.onCancel}
+              />
+            </MockView>
+          );
+        },
+      ),
+    };
+  },
+);
 
 jest.spyOn(Alert, 'alert');
 
@@ -263,13 +274,14 @@ describe('BusinessSearchScreen', () => {
     });
 
     (useSelector as unknown as jest.Mock).mockReturnValue(linkedBusinessData);
-    (LocationService.getCurrentPosition as jest.Mock).mockResolvedValue({
+    const {useLocationStore} = require('@/shared/stores/locationStore');
+    (useLocationStore as jest.Mock).mockReturnValue({
       latitude: 10,
       longitude: 20,
     });
-    (
-      LinkedBusinessActions.selectLinkedBusinesses as unknown as jest.Mock
-    ).mockReturnValue(linkedBusinessData);
+    (selectLinkedBusinesses as unknown as jest.Mock).mockReturnValue(
+      linkedBusinessData,
+    );
   });
 
   afterEach(() => {
@@ -282,24 +294,20 @@ describe('BusinessSearchScreen', () => {
     );
 
   describe('Initialization & Rendering', () => {
-    it('fetches location and linked businesses on mount', async () => {
+    it('fetches linked businesses on mount', async () => {
       renderScreen();
       await waitFor(() => {
-        expect(LocationService.getCurrentPosition).toHaveBeenCalled();
         expect(mockDispatch).toHaveBeenCalledWith(
           expect.objectContaining({type: 'business/fetch'}),
         );
       });
     });
 
-    it('handles location fetch failure gracefully', async () => {
-      (LocationService.getCurrentPosition as jest.Mock).mockRejectedValue(
-        new Error('GPS off'),
-      );
-      renderScreen();
-      await waitFor(() =>
-        expect(LocationService.getCurrentPosition).toHaveBeenCalled(),
-      );
+    it('renders correctly when location store returns null', () => {
+      const {useLocationStore} = require('@/shared/stores/locationStore');
+      (useLocationStore as jest.Mock).mockReturnValue(null);
+      const {getByTestId} = renderScreen();
+      expect(getByTestId('liquid-layout')).toBeTruthy();
     });
 
     it('renders linked businesses and invites filtered by companionId', () => {

@@ -42,11 +42,12 @@ const DropdownRenderer: React.FC<{
           {options.map((opt) => (
             <label
               key={opt.value}
-              className="inline-flex items-center space-x-2 text-body-3 text-text-primary"
+              className="inline-flex items-center gap-x-2 text-body-3 text-text-primary"
             >
               <input
                 type="checkbox"
-                className="h-4 w-4 shrink-0 align-middle"
+                aria-label={`${field.label}: ${opt.label}`}
+                className="size-4 shrink-0 align-middle"
                 disabled={isReadOnly}
                 checked={selected.includes(opt.value)}
                 onChange={() => toggle(opt.value)}
@@ -68,11 +69,12 @@ const DropdownRenderer: React.FC<{
           {options.map((opt) => (
             <label
               key={opt.value}
-              className="inline-flex items-center space-x-2 text-body-3 text-text-primary"
+              className="inline-flex items-center gap-x-2 text-body-3 text-text-primary"
             >
               <input
                 type="radio"
-                className="h-4 w-4 shrink-0 align-middle"
+                aria-label={`${field.label}: ${opt.label}`}
+                className="size-4 shrink-0 align-middle"
                 name={field.id}
                 disabled={isReadOnly}
                 checked={selected === opt.value}

@@ -1,5 +1,12 @@
 import React, {useMemo} from 'react';
-import {View, Text, Image, StyleSheet, TouchableOpacity, ImageSourcePropType} from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  ImageSourcePropType,
+} from 'react-native';
 import {LiquidGlassButton} from '@/shared/components/common/LiquidGlassButton/LiquidGlassButton';
 import {SwipeableGlassCard} from '@/shared/components/common/SwipeableGlassCard/SwipeableGlassCard';
 import {useTheme} from '@/hooks';
@@ -57,10 +64,29 @@ export const AppointmentCard = ({
 }) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const isDummyPhoto = React.useCallback((src?: any) => isDummyPhotoUrl(src), []);
-  const [avatarSource, setAvatarSource] = React.useState<any>(avatar);
+  const isDummyPhoto = React.useCallback(
+    (src?: any) => isDummyPhotoUrl(src),
+    [],
+  );
+  const [avatarSource, setAvatarSource] = React.useState<any>(
+    fallbackAvatar && isDummyPhoto(avatar) ? fallbackAvatar : avatar,
+  );
+  const [prevAvatar, setPrevAvatar] = React.useState(avatar);
+  const [prevFallbackAvatar, setPrevFallbackAvatar] =
+    React.useState(fallbackAvatar);
+  if (avatar !== prevAvatar || fallbackAvatar !== prevFallbackAvatar) {
+    setPrevAvatar(avatar);
+    setPrevFallbackAvatar(fallbackAvatar);
+    setAvatarSource(
+      fallbackAvatar && isDummyPhoto(avatar) ? fallbackAvatar : avatar,
+    );
+  }
+
   const resolvedAvatar = useMemo(
-    () => resolveImageSource(avatarSource ?? avatar ?? fallbackAvatar ?? Images.cat),
+    () =>
+      resolveImageSource(
+        avatarSource ?? avatar ?? fallbackAvatar ?? Images.cat,
+      ),
     [avatar, avatarSource, fallbackAvatar],
   );
 
@@ -78,18 +104,6 @@ export const AppointmentCard = ({
       setAvatarSource(fallbackAvatar as any);
     }
   }, [avatarSource, fallbackAvatar, onAvatarError]);
-
-  React.useEffect(() => {
-    if (fallbackAvatar && isDummyPhoto(avatar)) {
-      setAvatarSource(fallbackAvatar as any);
-    }
-  }, [avatar, fallbackAvatar, isDummyPhoto]);
-
-  React.useEffect(() => {
-    if (avatar && avatarSource !== avatar && !(fallbackAvatar && isDummyPhoto(avatar))) {
-      setAvatarSource(avatar);
-    }
-  }, [avatar, avatarSource, fallbackAvatar, isDummyPhoto]);
 
   return (
     <SwipeableGlassCard
@@ -118,11 +132,14 @@ export const AppointmentCard = ({
         onPress={handlePress}
         disabled={!onPress}
         style={styles.touchWrapper}
-        testID={testIDs?.container}
-      >
+        testID={testIDs?.container}>
         {/* Top Row: Avatar and Text Block */}
         <View style={styles.topRow}>
-          <Image source={resolvedAvatar} style={styles.avatar} onError={handleAvatarError} />
+          <Image
+            source={resolvedAvatar}
+            style={styles.avatar}
+            onError={handleAvatarError}
+          />
           <View style={styles.textBlock}>
             <Text style={styles.name}>{doctorName}</Text>
             <Text style={styles.sub}>{specialization}</Text>
@@ -144,53 +161,55 @@ export const AppointmentCard = ({
         {/* Buttons */}
         {showActions && (
           <View style={styles.buttonContainer}>
-          <View testID={testIDs?.directions}>
-            <LiquidGlassButton
-              title="Get directions"
-              onPress={onGetDirections ?? (() => {})}
-              tintColor={theme.colors.secondary}
-              shadowIntensity="medium"
-              textStyle={styles.directionsButtonText}
-              height={theme.spacing['12']}
-              borderRadius={theme.borderRadius.md}
-            />
-          </View>
-          <View style={styles.inlineButtons}>
-            <View style={styles.actionButtonWrapper} testID={testIDs?.chat}>
+            <View testID={testIDs?.directions}>
               <LiquidGlassButton
-                title="Chat"
-                onPress={
-                  canChat
-                    ? onChat ?? (() => {})
-                    : onChatBlocked ?? (() => {})
-                }
-                style={styles.actionButton}
-                textStyle={styles.actionButtonText}
-                tintColor={theme.colors.white}
-                shadowIntensity="light"
-                forceBorder
-                borderColor={theme.colors.secondary}
+                title="Get directions"
+                onPress={onGetDirections ?? (() => {})}
+                tintColor={theme.colors.secondary}
+                shadowIntensity="medium"
+                textStyle={styles.directionsButtonText}
                 height={theme.spacing['12']}
-                borderRadius={theme.borderRadius.lg}
+                borderRadius={theme.borderRadius.md}
               />
             </View>
-            <View style={styles.actionButtonWrapper} testID={testIDs?.checkIn}>
-              <LiquidGlassButton
-                title={checkInLabel ?? 'Check in'}
-                onPress={onCheckIn ?? (() => {})}
-                style={styles.actionButton}
-                textStyle={styles.actionButtonText}
-                tintColor={theme.colors.white}
-                shadowIntensity="light"
-                forceBorder
-                borderColor={theme.colors.secondary}
-                height={theme.spacing['12']}
-                borderRadius={theme.borderRadius.lg}
-                disabled={checkInDisabled}
-              />
+            <View style={styles.inlineButtons}>
+              <View style={styles.actionButtonWrapper} testID={testIDs?.chat}>
+                <LiquidGlassButton
+                  title="Chat"
+                  onPress={
+                    canChat
+                      ? (onChat ?? (() => {}))
+                      : (onChatBlocked ?? (() => {}))
+                  }
+                  style={styles.actionButton}
+                  textStyle={styles.actionButtonText}
+                  tintColor={theme.colors.white}
+                  shadowIntensity="light"
+                  forceBorder
+                  borderColor={theme.colors.secondary}
+                  height={theme.spacing['12']}
+                  borderRadius={theme.borderRadius.lg}
+                />
+              </View>
+              <View
+                style={styles.actionButtonWrapper}
+                testID={testIDs?.checkIn}>
+                <LiquidGlassButton
+                  title={checkInLabel ?? 'Check in'}
+                  onPress={onCheckIn ?? (() => {})}
+                  style={styles.actionButton}
+                  textStyle={styles.actionButtonText}
+                  tintColor={theme.colors.white}
+                  shadowIntensity="light"
+                  forceBorder
+                  borderColor={theme.colors.secondary}
+                  height={theme.spacing['12']}
+                  borderRadius={theme.borderRadius.lg}
+                  disabled={checkInDisabled}
+                />
+              </View>
             </View>
           </View>
-        </View>
         )}
         {footer ? <View style={styles.footer}>{footer}</View> : null}
       </TouchableOpacity>
@@ -258,7 +277,10 @@ const createStyles = (theme: any) =>
       marginBottom: theme.spacing['4'], // Tighter spacing to the next section
     },
     note: {...theme.typography.labelSmall, color: theme.colors.placeholder},
-    noteLabel: {...theme.typography.labelSmallBold, color: theme.colors.primary},
+    noteLabel: {
+      ...theme.typography.labelSmallBold,
+      color: theme.colors.primary,
+    },
     buttonContainer: {gap: theme.spacing['4']}, // Reduced gap to bring sections closer
     inlineButtons: {
       flexDirection: 'row',

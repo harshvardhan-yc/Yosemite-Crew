@@ -245,7 +245,7 @@ describe('Companion Component', () => {
     fireEvent.click(screen.getByTestId('dropdown-Blood group (optional)'));
     expect(mockSetFormData).toHaveBeenCalled();
 
-    fireEvent.change(screen.getByTestId('input-Current weight (optional) (lbs)'), {
+    fireEvent.change(screen.getByTestId('input-Current weight (optional) (kg)'), {
       target: { value: '20' },
     });
     expect(mockSetFormData).toHaveBeenCalledWith(expect.objectContaining({ currentWeight: 20 }));
@@ -280,7 +280,7 @@ describe('Companion Component', () => {
 
     expect(screen.getByTestId('companion-color-blood-group-row')).toHaveClass('grid-cols-1');
     expect(screen.queryByTestId('dropdown-Blood group (optional)')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('input-Current weight (optional) (lbs)')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('input-Current weight (optional) (kg)')).not.toBeInTheDocument();
     expect(screen.queryByTestId('dropdown-Country of origin (optional)')).not.toBeInTheDocument();
     expect(screen.queryByTestId('select-My companion comes from:')).not.toBeInTheDocument();
     expect(screen.queryByTestId('input-Microchip number (optional)')).not.toBeInTheDocument();
@@ -550,5 +550,70 @@ describe('Companion Component', () => {
     fireEvent.click(screen.getByTestId('search-dropdown'));
 
     expect(mockSetFormData).not.toHaveBeenCalled();
+  });
+
+  it('calls onCompanionCreated when companion is successfully created', async () => {
+    const mockOnCompanionCreated = jest.fn();
+    const parent = { ...EMPTY_STORED_PARENT, id: 'p1' };
+    const companion = {
+      ...validFormData,
+      id: '',
+      name: 'Buddy',
+      type: 'Canine' as CompanionType,
+      breed: 'Pug',
+    };
+    const createdCompanion = {
+      ...companion,
+      id: 'new-companion-id',
+      parentId: 'p1',
+    } as unknown as StoredCompanion;
+    (companionService.createCompanion as jest.Mock).mockResolvedValue(createdCompanion);
+
+    await act(async () => {
+      render(
+        <Companion
+          {...defaultProps}
+          parentFormData={parent}
+          formData={companion}
+          onCompanionCreated={mockOnCompanionCreated}
+        />
+      );
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('primary-btn'));
+    });
+
+    expect(mockOnCompanionCreated).toHaveBeenCalledWith(createdCompanion);
+  });
+
+  it('does not call onCompanionCreated when createCompanion returns undefined', async () => {
+    const mockOnCompanionCreated = jest.fn();
+    const parent = { ...EMPTY_STORED_PARENT, id: 'p1' };
+    const companion = {
+      ...validFormData,
+      id: '',
+      name: 'Buddy',
+      type: 'Canine' as CompanionType,
+      breed: 'Pug',
+    };
+    (companionService.createCompanion as jest.Mock).mockResolvedValue(undefined);
+
+    await act(async () => {
+      render(
+        <Companion
+          {...defaultProps}
+          parentFormData={parent}
+          formData={companion}
+          onCompanionCreated={mockOnCompanionCreated}
+        />
+      );
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('primary-btn'));
+    });
+
+    expect(mockOnCompanionCreated).not.toHaveBeenCalled();
   });
 });

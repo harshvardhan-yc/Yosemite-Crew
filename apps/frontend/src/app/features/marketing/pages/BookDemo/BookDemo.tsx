@@ -1,24 +1,17 @@
-"use client";
-import React, { useEffect } from "react";
-import Cal, { getCalApi } from "@calcom/embed-react";
+'use client';
+import React from 'react';
+import CalEmbedFrame from '@/app/ui/overlays/CalEmbedFrame';
 
-import "./BookDemo.css";
+import './BookDemo.css';
 
 const BookDemo = () => {
-  useEffect(() => {
-    (async function () {
-      const cal = await getCalApi({ namespace: "30min" });
-      cal("ui", { hideEventTypeDetails: false, layout: "month_view" });
-    })();
-  }, []);
-
   return (
     <div className="App">
-      <Cal
-        namespace="30min"
+      <h1 className="sr-only">Book a demo</h1>
+      <CalEmbedFrame
         calLink="yosemitecrew/demo"
-        style={{ width: "100%", height: "100%", overflow: "scroll" }}
-        config={{ theme: "light", layout: "month_view" }}
+        title="Book a demo"
+        className="size-full border-0"
       />
     </div>
   );

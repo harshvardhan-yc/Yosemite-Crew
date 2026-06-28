@@ -141,7 +141,7 @@ describe("UserController", () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
       expect(mockRes.json).toHaveBeenCalledWith({
-        message: "You can only access your own user record.",
+        message: "You can only view your own user.",
       });
       expect(UserService.getById).not.toHaveBeenCalled();
     });
@@ -166,6 +166,31 @@ describe("UserController", () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(404);
       expect(mockRes.json).toHaveBeenCalledWith({ message: "User not found." });
+    });
+
+    it("should return 401 when auth context is missing userId", async () => {
+      const req = createMockReq({ params: { id: "123" }, userId: undefined });
+      await UserController.getById(req, mockRes as Response);
+
+      expect(mockRes.status).toHaveBeenCalledWith(401);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        message: "Missing user identity from token.",
+      });
+      expect(UserService.getById).not.toHaveBeenCalled();
+    });
+
+    it("should return 403 when requesting a different user", async () => {
+      const req = createMockReq({
+        params: { id: "target-user" },
+        userId: "123",
+      });
+      await UserController.getById(req, mockRes as Response);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        message: "You can only view your own user.",
+      });
+      expect(UserService.getById).not.toHaveBeenCalled();
     });
 
     it("should handle UserServiceError", async () => {

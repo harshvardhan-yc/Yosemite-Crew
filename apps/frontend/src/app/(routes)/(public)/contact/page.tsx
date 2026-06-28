@@ -1,8 +1,5 @@
-import React from "react";
-import ContactusPage from "@/app/features/marketing/pages/ContactusPage/ContactusPage";
+import { redirect } from 'next/navigation';
 
-function page() {
-  return <ContactusPage />;
+export default function page() {
+  redirect('/contact-us');
 }
-
-export default page;

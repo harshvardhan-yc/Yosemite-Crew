@@ -1,8 +1,5 @@
-import React from "react";
-import HomePage from "@/app/features/marketing/pages/HomePage/HomePage";
+import { redirect } from 'next/navigation';
 
-function page() {
-  return <HomePage />;
+export default function page() {
+  redirect('/pet-businesses');
 }
-
-export default page;

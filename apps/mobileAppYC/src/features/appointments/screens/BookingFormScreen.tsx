@@ -112,7 +112,7 @@ export const BookingFormScreen: React.FC = () => {
     [availability, todayISO],
   );
   const [date, setDate] = useState<string>(firstAvailableDate);
-  const [dateObj, setDateObj] = useState<Date>(
+  const [dateObj, setDateObj] = useState<Date>(() =>
     parseISODate(firstAvailableDate),
   );
   const [time, setTime] = useState<string | null>(null);
@@ -183,16 +183,26 @@ export const BookingFormScreen: React.FC = () => {
   });
 
   const typeLocked = Boolean(presetSpecialtyLabel);
-  React.useEffect(() => {
-    if (presetSpecialtyLabel && type !== presetSpecialtyLabel) {
+  const [prevPresetLabel, setPrevPresetLabel] = useState(presetSpecialtyLabel);
+  if (presetSpecialtyLabel !== prevPresetLabel) {
+    setPrevPresetLabel(presetSpecialtyLabel);
+    if (presetSpecialtyLabel && presetSpecialtyLabel !== type) {
       setType(presetSpecialtyLabel);
+      if (presetSpecialtyLabel !== 'Emergency' && emergency) {
+        setEmergency(false);
+      }
     }
-  }, [presetSpecialtyLabel, type]);
-  React.useEffect(() => {
-    if (type !== 'Emergency' && emergency) {
-      setEmergency(false);
-    }
-  }, [type, emergency]);
+  }
+
+  const handleTypeChange = React.useCallback(
+    (newType: string) => {
+      setType(newType);
+      if (newType !== 'Emergency' && emergency) {
+        setEmergency(false);
+      }
+    },
+    [emergency],
+  );
 
   React.useEffect(() => {
     if (!effectiveServiceId || !businessId || !date) {
@@ -303,6 +313,7 @@ export const BookingFormScreen: React.FC = () => {
           companionId: selectedCompanionId!,
           businessId,
           serviceId: resolvedServiceId,
+          productItemId: selectedService?.productItemId ?? null,
           serviceName: selectedServiceName!,
           specialityId:
             selectedService?.specialityId ?? serviceSpecialtyId ?? null,
@@ -317,6 +328,7 @@ export const BookingFormScreen: React.FC = () => {
           employeeName: assignedEmployeeName,
           concern,
           emergency,
+          appointmentKinds: selectedService?.appointmentKinds,
           attachments,
         }),
       );
@@ -444,7 +456,7 @@ export const BookingFormScreen: React.FC = () => {
               emptySlotsMessage="No future slots available. Please pick another date or contact the clinic."
               appointmentType={type}
               allowTypeEdit={!typeLocked}
-              onTypeChange={setType}
+              onTypeChange={handleTypeChange}
               concern={concern}
               onConcernChange={setConcern}
               showEmergency={type === 'Emergency'}

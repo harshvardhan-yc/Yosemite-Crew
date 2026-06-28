@@ -7,9 +7,11 @@ import {
   getAllowedAppointmentStatusTransitions,
   getClinicalNotesIntent,
   getClinicalNotesLabel,
+  isRequestedLikeStatus,
   toStatusLabel,
 } from '@/app/lib/appointments';
 import {
+  assignEncounterUnit,
   changeAppointmentStatus,
   updateAppointment,
 } from '@/app/features/appointments/services/appointmentService';
@@ -17,7 +19,13 @@ import { AppointmentStatus } from '@/app/features/appointments/types/appointment
 import { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 import { useOrgStore } from '@/app/stores/orgStore';
 import { buildAppointmentCompanionHistoryHref } from '@/app/lib/companionHistoryRoute';
+import {
+  buildWorkspaceHrefForIntent,
+  canEnterAppointmentWorkspace,
+} from '@/app/lib/appointmentWorkspace';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
+import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import { IoChevronForward } from 'react-icons/io5';
 
 type AppointmentContextMenuProps = {
@@ -40,8 +48,8 @@ type MenuAction = {
 
 type MenuSubmenu = 'status' | 'room' | null;
 
-const MENU_ESTIMATED_WIDTH = 188;
-const SUBMENU_ESTIMATED_WIDTH = 176;
+const MENU_ESTIMATED_WIDTH = 220;
+const SUBMENU_ESTIMATED_WIDTH = 200;
 const VIEWPORT_MARGIN = 12;
 const SUBMENU_HORIZONTAL_GAP = 10;
 const SUBMENU_ROW_OFFSET = 4;
@@ -54,7 +62,7 @@ type SubmenuPosition = {
 
 const getMenuItemClassName = (destructive = false, active = false) =>
   [
-    'flex w-full items-center justify-between gap-1 rounded-[12px] px-1.5 py-[2px] text-left font-satoshi text-[16px] font-normal leading-[1rem] tracking-[-0.32px] transition-colors',
+    'flex w-full items-center justify-between gap-2 rounded-[12px] px-2.5 py-1.5 text-left font-satoshi text-[16px] font-normal leading-5 tracking-[-0.32px] transition-colors',
     destructive ? 'text-text-error hover:bg-danger-100/72' : 'text-text-primary hover:bg-white/50',
     active ? 'bg-white/58' : 'bg-transparent',
   ].join(' ');
@@ -74,7 +82,16 @@ const getRoomStatusLabel = (selected: boolean, saving: boolean) => {
   return null;
 };
 
-const AppointmentContextMenu: React.FC<AppointmentContextMenuProps> = ({
+const getFirstUnitIdForRoom = (
+  roomId: string,
+  roomUnitsById: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitsById'],
+  roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId']
+) =>
+  (roomUnitIdsByRoomId[roomId] ?? [])
+    .map((unitId) => roomUnitsById[unitId])
+    .find((unit) => unit?.isActive !== false)?.id;
+
+const AppointmentContextMenuComponent: React.FC<AppointmentContextMenuProps> = ({
   appointment,
   canEditAppointments,
   menuRef,
@@ -86,6 +103,10 @@ const AppointmentContextMenu: React.FC<AppointmentContextMenuProps> = ({
   const router = useRouter();
   useLoadRoomsForPrimaryOrg();
   const rooms = useRoomsForPrimaryOrg();
+  const roomUnitsById = useOrganisationRoomStore((state) => state.roomUnitsById);
+  const roomUnitIdsByRoomId = useOrganisationRoomStore((state) => state.roomUnitIdsByRoomId);
+  const initEncounter = useAppointmentWorkspaceStore((state) => state.initEncounter);
+  const setRoomUnit = useAppointmentWorkspaceStore((state) => state.setRoomUnit);
   const orgsById = useOrgStore((state) => state.orgsById);
   const itemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const submenuRef = useRef<HTMLDivElement | null>(null);
@@ -100,10 +121,14 @@ const AppointmentContextMenu: React.FC<AppointmentContextMenuProps> = ({
 
   const orgType =
     (appointment.organisationId && orgsById[appointment.organisationId]?.type) || 'HOSPITAL';
+  const isInpatient = appointment.appointmentKind === 'INPATIENT';
   const clinicalNotesLabel = getClinicalNotesLabel(orgType);
   const clinicalNotesIntent = getClinicalNotesIntent(orgType);
   const statusOptions = useMemo(
-    () => getAllowedAppointmentStatusTransitions(appointment.status),
+    () =>
+      isRequestedLikeStatus(appointment.status)
+        ? []
+        : getAllowedAppointmentStatusTransitions(appointment.status),
     [appointment.status]
   );
 
@@ -115,6 +140,17 @@ const AppointmentContextMenu: React.FC<AppointmentContextMenuProps> = ({
         '/appointments'
       )
     );
+    onClose();
+  };
+
+  const openWorkspace = (intent?: AppointmentViewIntent) => {
+    if (!appointment.id) return;
+    if (!canEnterAppointmentWorkspace(appointment.status)) {
+      handleViewAppointment(appointment, intent);
+      onClose();
+      return;
+    }
+    router.push(buildWorkspaceHrefForIntent(appointment.id, intent));
     onClose();
   };
 
@@ -136,10 +172,28 @@ const AppointmentContextMenu: React.FC<AppointmentContextMenuProps> = ({
       const roomId = room?.id || 'none';
       setSavingKey(`room-${roomId}`);
       setMenuError(null);
+      const nextUnitId =
+        isInpatient && room
+          ? getFirstUnitIdForRoom(room.id, roomUnitsById, roomUnitIdsByRoomId)
+          : undefined;
       await updateAppointment({
         ...appointment,
         room: room ? { id: room.id, name: room.name } : undefined,
       });
+      if (isInpatient && appointment.id) {
+        initEncounter(appointment.id, 'INPATIENT', {
+          leadId: appointment.lead?.id,
+          leadName: appointment.lead?.name,
+        });
+        setRoomUnit(appointment.id, room?.id, nextUnitId);
+        if (appointment.encounterId && nextUnitId) {
+          await assignEncounterUnit({
+            encounterId: appointment.encounterId,
+            unitId: nextUnitId,
+            reason: 'Appointment quick action room assignment',
+          });
+        }
+      }
       onClose();
     } catch (error) {
       setMenuError(resolveMenuError(error, 'Unable to update room.'));
@@ -162,31 +216,33 @@ const AppointmentContextMenu: React.FC<AppointmentContextMenuProps> = ({
       label: 'Open companion overview',
       onSelect: openCompanionHistory,
     },
-    {
-      key: 'open-clinical-notes',
-      label: clinicalNotesLabel,
-      onSelect: () => {
-        handleViewAppointment(appointment, clinicalNotesIntent);
-        onClose();
-      },
-    },
-    {
-      key: 'open-finance-summary',
-      label: 'Finance summary',
-      onSelect: () => {
-        handleViewAppointment(appointment, { label: 'finance', subLabel: 'summary' });
-        onClose();
-      },
-    },
-    {
-      key: 'open-lab-tests',
-      label: 'Lab tests',
-      onSelect: () => {
-        handleViewAppointment(appointment, { label: 'labs', subLabel: 'idexx-labs' });
-        onClose();
-      },
-    },
   ];
+
+  if (canEnterAppointmentWorkspace(appointment.status)) {
+    actions.push(
+      {
+        key: 'open-clinical-notes',
+        label: clinicalNotesLabel,
+        onSelect: () => {
+          openWorkspace(clinicalNotesIntent);
+        },
+      },
+      {
+        key: 'open-finance-summary',
+        label: 'Finance summary',
+        onSelect: () => {
+          openWorkspace({ label: 'finance', subLabel: 'summary' });
+        },
+      },
+      {
+        key: 'open-lab-tests',
+        label: 'Lab tests',
+        onSelect: () => {
+          openWorkspace({ label: 'labs', subLabel: 'idexx-labs' });
+        },
+      }
+    );
+  }
 
   if (canEditAppointments && statusOptions.length > 0) {
     actions.push({
@@ -460,4 +516,5 @@ const AppointmentContextMenu: React.FC<AppointmentContextMenuProps> = ({
   );
 };
 
+const AppointmentContextMenu = React.memo(AppointmentContextMenuComponent);
 export default AppointmentContextMenu;

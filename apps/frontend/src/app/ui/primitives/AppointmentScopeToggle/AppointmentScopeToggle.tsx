@@ -31,7 +31,7 @@ const AppointmentScopeToggle = ({
         className="relative h-6 w-11 shrink-0 rounded-full bg-neutral-200 p-0.5"
       >
         <span
-          className={`block h-5 w-5 rounded-full transition-transform duration-200 ${sliderClass}`}
+          className={`block size-5 rounded-full transition-transform duration-200 ${sliderClass}`}
         />
       </span>
       <span className="min-w-7 text-left">Mine</span>

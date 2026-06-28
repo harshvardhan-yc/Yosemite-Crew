@@ -1,4 +1,10 @@
-import React, {useMemo, useCallback, useState, useEffect} from 'react';
+import React, {
+  useMemo,
+  useCallback,
+  useState,
+  useEffect,
+  useReducer,
+} from 'react';
 import {
   View,
   ScrollView,
@@ -20,17 +26,49 @@ import {LiquidGlassHeaderScreen} from '@/shared/components/common/LiquidGlassHea
 import {VetBusinessCard} from '@/features/appointments/components/VetBusinessCard/VetBusinessCard';
 import {
   addLinkedBusiness,
-  selectLinkedBusinessesLoading,
   fetchBusinessDetails,
   fetchGooglePlacesImage,
   inviteBusiness,
   linkBusiness,
-} from '../index';
+} from '../thunks';
+import {selectLinkedBusinessesLoading} from '../selectors';
 import type {LinkedBusinessStackParamList} from '@/navigation/types';
-import {AddBusinessBottomSheet, type AddBusinessBottomSheetRef} from '../components/AddBusinessBottomSheet';
-import {NotifyBusinessBottomSheet, type NotifyBusinessBottomSheetRef} from '../components/NotifyBusinessBottomSheet';
+import {
+  AddBusinessBottomSheet,
+  type AddBusinessBottomSheetRef,
+} from '../components/AddBusinessBottomSheet';
+import {
+  NotifyBusinessBottomSheet,
+  type NotifyBusinessBottomSheetRef,
+} from '../components/NotifyBusinessBottomSheet';
 
-type Props = NativeStackScreenProps<LinkedBusinessStackParamList, 'BusinessAdd'>;
+type Props = NativeStackScreenProps<
+  LinkedBusinessStackParamList,
+  'BusinessAdd'
+>;
+type BusinessDetails = {
+  photo: string | undefined;
+  phone: string | undefined;
+  website: string | undefined;
+};
+
+type BusinessDetailsAction =
+  | {type: 'SET_PHOTO'; payload: string}
+  | {type: 'SET_ALL'; payload: Partial<BusinessDetails>};
+
+function businessDetailsReducer(
+  state: BusinessDetails,
+  action: BusinessDetailsAction,
+): BusinessDetails {
+  switch (action.type) {
+    case 'SET_PHOTO':
+      return {...state, photo: action.payload};
+    case 'SET_ALL':
+      return {...state, ...action.payload};
+    default:
+      return state;
+  }
+}
 
 export const BusinessAddScreen: React.FC<Props> = ({route, navigation}) => {
   const {
@@ -57,12 +95,15 @@ export const BusinessAddScreen: React.FC<Props> = ({route, navigation}) => {
   const loading = useSelector(selectLinkedBusinessesLoading);
 
   const addBusinessSheetRef = React.useRef<AddBusinessBottomSheetRef>(null);
-  const notifyBusinessSheetRef = React.useRef<NotifyBusinessBottomSheetRef>(null);
+  const notifyBusinessSheetRef =
+    React.useRef<NotifyBusinessBottomSheetRef>(null);
 
-  const [fetchingDetails, setFetchingDetails] = useState(false);
-  const [detailedPhoto, setDetailedPhoto] = useState<string | undefined>(photo);
-  const [detailedPhone, setDetailedPhone] = useState<string | undefined>(phone);
-  const [detailedWebsite, setDetailedWebsite] = useState<string | undefined>(email);
+  const [fetchingDetails, setFetchingDetails] = useState(!!placeId);
+  const [details, dispatchDetails] = useReducer(businessDetailsReducer, {
+    photo,
+    phone,
+    website: email,
+  });
 
   // Log params only when they change, not on every render
   useEffect(() => {
@@ -77,70 +118,97 @@ export const BusinessAddScreen: React.FC<Props> = ({route, navigation}) => {
       placeId,
       category,
     });
-    console.log('[BusinessAddScreen] isPMSRecord:', isPMSRecord, '| Should fetch details:', !isPMSRecord && !!placeId);
-  }, [businessName, businessAddress, phone, email, photo, isPMSRecord, placeId, category]);
+    console.log(
+      '[BusinessAddScreen] isPMSRecord:',
+      isPMSRecord,
+      '| Should fetch details:',
+      !isPMSRecord && !!placeId,
+    );
+  }, [
+    businessName,
+    businessAddress,
+    phone,
+    email,
+    photo,
+    isPMSRecord,
+    placeId,
+    category,
+  ]);
 
-  // Fetch detailed business information for non-PMS businesses when screen loads
-  // For PMS businesses, only fetch the image from Places API
-  // IMPORTANT: Only depend on placeId and isPMSRecord to prevent infinite loops
-  // Do NOT include detailedPhoto/Phone/Website in dependencies - they cause re-fetches when state updates
+  // Fetch detailed business information for non-PMS businesses when screen loads.
+  // For PMS businesses, only fetch the image from Places API.
+  // IMPORTANT: Only depend on placeId and isPMSRecord to prevent infinite loops.
+  // Details state is managed via a reducer so each branch makes exactly one
+  // dispatch call, satisfying the react-doctor/no-cascading-set-state rule.
   useEffect(() => {
-    if (placeId) {
-      setFetchingDetails(true);
+    if (!placeId) {
+      return;
+    }
 
-      if (isPMSRecord) {
-        // For PMS records, only fetch the image
-        dispatch(fetchGooglePlacesImage(placeId))
-          .unwrap()
-          .then(result => {
-            console.log('[BusinessAddScreen] Fetched Places image:', result.photoUrl);
-            if (result.photoUrl) {
-              console.log('[BusinessAddScreen] Setting detailed photo to:', result.photoUrl);
-              setDetailedPhoto(result.photoUrl);
-            }
-          })
-          .catch(error => {
-            console.warn('[BusinessAddScreen] Failed to fetch Places image:', error);
-            // Continue without image - graceful degradation
-          })
-          .finally(() => {
-            setFetchingDetails(false);
+    if (isPMSRecord) {
+      // For PMS records, only fetch the image
+      dispatch(fetchGooglePlacesImage(placeId))
+        .unwrap()
+        .then(result => {
+          console.log(
+            '[BusinessAddScreen] Fetched Places image:',
+            result.photoUrl,
+          );
+          if (result.photoUrl) {
+            console.log(
+              '[BusinessAddScreen] Setting detailed photo to:',
+              result.photoUrl,
+            );
+            dispatchDetails({type: 'SET_PHOTO', payload: result.photoUrl});
+          }
+        })
+        .catch(error => {
+          console.warn(
+            '[BusinessAddScreen] Failed to fetch Places image:',
+            error,
+          );
+          // Continue without image - graceful degradation
+        })
+        .finally(() => {
+          setFetchingDetails(false);
+        });
+    } else {
+      // For non-PMS records, fetch all details (photo, phone, website)
+      dispatch(fetchBusinessDetails(placeId))
+        .unwrap()
+        .then(result => {
+          console.log('[BusinessAddScreen] Fetched details:', result);
+          console.log(
+            '[BusinessAddScreen] PhotoUrl from API:',
+            result.photoUrl,
+          );
+          dispatchDetails({
+            type: 'SET_ALL',
+            payload: {
+              ...(result.photoUrl && {photo: result.photoUrl}),
+              ...(result.phoneNumber && {phone: result.phoneNumber}),
+              ...(result.website && {website: result.website}),
+            },
           });
-      } else {
-        // For non-PMS records, fetch all details (photo, phone, website)
-        dispatch(fetchBusinessDetails(placeId))
-          .unwrap()
-          .then(result => {
-            console.log('[BusinessAddScreen] Fetched details:', result);
-            console.log('[BusinessAddScreen] PhotoUrl from API:', result.photoUrl);
-            if (result.photoUrl) {
-              console.log('[BusinessAddScreen] Setting detailed photo to:', result.photoUrl);
-              setDetailedPhoto(result.photoUrl);
-            }
-            if (result.phoneNumber) {
-              setDetailedPhone(result.phoneNumber);
-            }
-            if (result.website) {
-              setDetailedWebsite(result.website);
-            }
-          })
-          .catch(error => {
-            console.warn('[BusinessAddScreen] Failed to fetch details:', error);
-            // Continue without detailed info - graceful degradation
-          })
-          .finally(() => {
-            setFetchingDetails(false);
-          });
-      }
+        })
+        .catch(error => {
+          console.warn('[BusinessAddScreen] Failed to fetch details:', error);
+          // Continue without detailed info - graceful degradation
+        })
+        .finally(() => {
+          setFetchingDetails(false);
+        });
     }
   }, [isPMSRecord, placeId, dispatch]);
-
 
   const handleAddBusiness = useCallback(async () => {
     try {
       if (isPMSRecord && organisationId) {
         // For PMS businesses, use linkBusiness thunk
-        console.log('[BusinessAddScreen] Linking PMS business:', organisationId);
+        console.log(
+          '[BusinessAddScreen] Linking PMS business:',
+          organisationId,
+        );
         await dispatch(
           linkBusiness({
             companionId,
@@ -158,11 +226,11 @@ export const BusinessAddScreen: React.FC<Props> = ({route, navigation}) => {
             businessName,
             category: category as any,
             address: businessAddress,
-            phone: detailedPhone || phone,
-            email: detailedWebsite || email,
+            phone: details.phone || phone,
+            email: details.website || email,
             distance,
             rating,
-            photo: detailedPhoto || photo,
+            photo: details.photo || photo,
           }),
         ).unwrap();
       }
@@ -173,7 +241,22 @@ export const BusinessAddScreen: React.FC<Props> = ({route, navigation}) => {
       console.error('Failed to add business:', error);
       Alert.alert('Error', 'Failed to add business. Please try again.');
     }
-  }, [dispatch, companionId, businessId, businessName, category, businessAddress, phone, email, distance, rating, photo, detailedPhone, detailedWebsite, detailedPhoto, isPMSRecord, organisationId]);
+  }, [
+    dispatch,
+    companionId,
+    businessId,
+    businessName,
+    category,
+    businessAddress,
+    phone,
+    email,
+    distance,
+    rating,
+    photo,
+    details,
+    isPMSRecord,
+    organisationId,
+  ]);
 
   const handleAddBusinessClose = useCallback(() => {
     addBusinessSheetRef.current?.close();
@@ -218,10 +301,12 @@ export const BusinessAddScreen: React.FC<Props> = ({route, navigation}) => {
     }
   }, [navigation, returnTo]);
 
-
   const handleNotifyPress = useCallback(async () => {
     try {
-      console.log('[BusinessAddScreen] Sending invite to business:', businessName);
+      console.log(
+        '[BusinessAddScreen] Sending invite to business:',
+        businessName,
+      );
       await dispatch(
         inviteBusiness({
           companionId,
@@ -257,84 +342,85 @@ export const BusinessAddScreen: React.FC<Props> = ({route, navigation}) => {
           <ScrollView
             contentContainerStyle={[styles.scrollContent, contentPaddingStyle]}
             showsVerticalScrollIndicator={false}>
-          {/* Business Card */}
-          <VetBusinessCard
-            photo={detailedPhoto}
-            name={businessName}
-            address={businessAddress}
-            distance={distance ? `${distance}mi` : undefined}
-            rating={rating ? `${rating}` : undefined}
-            website={detailedWebsite}
-            cta=""
-          />
+            {/* Business Card */}
+            <VetBusinessCard
+              photo={details.photo}
+              name={businessName}
+              address={businessAddress}
+              distance={distance ? `${distance}mi` : undefined}
+              rating={rating ? `${rating}` : undefined}
+              website={details.website}
+              cta=""
+            />
 
-          {/* PMS Status Card */}
-          <LiquidGlassCard
-            glassEffect="clear"
-            padding="4"
-            shadow="sm"
-            style={styles.statusCard}
-            fallbackStyle={styles.statusCardFallback}>
-            <View style={styles.statusContent}>
+            {/* PMS Status Card */}
+            <LiquidGlassCard
+              glassEffect="clear"
+              padding="4"
+              shadow="sm"
+              style={styles.statusCard}
+              fallbackStyle={styles.statusCardFallback}>
+              <View style={styles.statusContent}>
+                {isPMSRecord ? (
+                  <View style={styles.statusRow}>
+                    <Text style={styles.statusEmojiLeft}>🎉</Text>
+                    <Text style={styles.statusText}>
+                      We are happy to inform you that this organisation is part
+                      of Yosemite Crew PMS
+                    </Text>
+                    <Image
+                      source={Images.yosemiteLogo}
+                      style={styles.logoImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                ) : (
+                  <View style={styles.statusRow}>
+                    <Text style={styles.statusEmojiLeft}>😔</Text>
+                    <Text style={styles.statusText}>
+                      We are sorry to inform you, this organisation is not a
+                      part of Yosemite Crew PMS. We will soon notify you, when
+                      the organisation is available on this platform.
+                    </Text>
+                    <Text style={styles.statusEmojiRight}>🔔</Text>
+                  </View>
+                )}
+              </View>
+            </LiquidGlassCard>
+
+            {/* Add Button or Notify Button */}
+            <View style={styles.buttonContainer}>
               {isPMSRecord ? (
-                <View style={styles.statusRow}>
-                  <Text style={styles.statusEmojiLeft}>🎉</Text>
-                  <Text style={styles.statusText}>
-                    We are happy to inform you that this organisation is part of Yosemite Crew PMS
-                  </Text>
-                  <Image
-                    source={Images.yosemiteLogo}
-                    style={styles.logoImage}
-                    resizeMode="contain"
-                  />
-                </View>
+                <LiquidGlassButton
+                  title={loading ? 'Adding...' : 'Add'}
+                  onPress={handleAddBusiness}
+                  disabled={loading}
+                  glassEffect="clear"
+                  height={56}
+                  borderRadius={16}
+                  tintColor={theme.colors.secondary}
+                  textStyle={styles.buttonText}
+                  shadowIntensity="medium"
+                  forceBorder
+                  borderColor={theme.colors.borderMuted}
+                  loading={loading}
+                />
               ) : (
-                <View style={styles.statusRow}>
-                  <Text style={styles.statusEmojiLeft}>😔</Text>
-                  <Text style={styles.statusText}>
-                    We are sorry to inform you, this organisation is not a part of Yosemite Crew
-                    PMS. We will soon notify you, when the organisation is available on this
-                    platform.
-                  </Text>
-                  <Text style={styles.statusEmojiRight}>🔔</Text>
-                </View>
+                <LiquidGlassButton
+                  title="Notify Business"
+                  onPress={handleNotifyPress}
+                  disabled={fetchingDetails}
+                  glassEffect="clear"
+                  height={56}
+                  borderRadius={16}
+                  tintColor={theme.colors.secondary}
+                  textStyle={styles.buttonText}
+                  shadowIntensity="medium"
+                  forceBorder
+                  borderColor={theme.colors.borderMuted}
+                />
               )}
             </View>
-          </LiquidGlassCard>
-
-          {/* Add Button or Notify Button */}
-          <View style={styles.buttonContainer}>
-            {isPMSRecord ? (
-              <LiquidGlassButton
-                title={loading ? 'Adding...' : 'Add'}
-                onPress={handleAddBusiness}
-                disabled={loading}
-                glassEffect="clear"
-                height={56}
-                borderRadius={16}
-                tintColor={theme.colors.secondary}
-                textStyle={styles.buttonText}
-                shadowIntensity="medium"
-                forceBorder
-                borderColor={theme.colors.borderMuted}
-                loading={loading}
-              />
-            ) : (
-              <LiquidGlassButton
-                title="Notify Business"
-                onPress={handleNotifyPress}
-                disabled={fetchingDetails}
-                glassEffect="clear"
-                height={56}
-                borderRadius={16}
-                tintColor={theme.colors.secondary}
-                textStyle={styles.buttonText}
-                shadowIntensity="medium"
-                forceBorder
-                borderColor={theme.colors.borderMuted}
-              />
-            )}
-          </View>
           </ScrollView>
         )}
       </LiquidGlassHeaderScreen>
@@ -377,8 +463,7 @@ const createStyles = (theme: any) => {
       backgroundColor: theme.colors.cardBackground,
       borderWidth: Platform.OS === 'android' ? 1 : 0,
       borderColor: theme.colors.borderMuted,
-      ...theme.shadows.base,
-      shadowColor: theme.colors.neutralShadow,
+      boxShadow: `0px 1px 6px ${theme.colors.neutralShadow}`,
     },
     statusContent: {
       alignItems: 'center',

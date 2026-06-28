@@ -37,7 +37,9 @@ import {
 import {selectAuthUser} from '@/features/auth/selectors';
 import type {HomeStackParamList} from '@/navigation/types';
 import type {CoParent, CoParentPermissions} from '../../types';
-import DeleteCoParentBottomSheet, {type DeleteCoParentBottomSheetRef} from '../../components/DeleteCoParentBottomSheet/DeleteCoParentBottomSheet';
+import DeleteCoParentBottomSheet, {
+  type DeleteCoParentBottomSheetRef,
+} from '../../components/DeleteCoParentBottomSheet/DeleteCoParentBottomSheet';
 import {createCommonCoParentStyles} from '../../styles/commonStyles';
 
 type Props = NativeStackScreenProps<HomeStackParamList, 'EditCoParent'>;
@@ -45,13 +47,19 @@ type Props = NativeStackScreenProps<HomeStackParamList, 'EditCoParent'>;
 export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
   const {coParentId} = route.params;
   const {theme} = useTheme();
-  const commonStyles = useMemo(() => createCommonCoParentStyles(theme), [theme]);
+  const commonStyles = useMemo(
+    () => createCommonCoParentStyles(theme),
+    [theme],
+  );
   const styles = useMemo(() => createStyles(theme), [theme]);
   const dispatch = useDispatch<AppDispatch>();
 
   const coParent = useSelector((state: any) => {
     const list: CoParent[] = state?.coParent?.coParents ?? [];
-    return list.find(cp => cp.id === coParentId || cp.parentId === coParentId) ?? null;
+    return (
+      list.find(cp => cp.id === coParentId || cp.parentId === coParentId) ??
+      null
+    );
   });
   const loading = useSelector(selectCoParentLoading);
   const authUser = useSelector(selectAuthUser);
@@ -60,8 +68,12 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
   const accessMap = useSelector(
     (state: RootState) => state.coParent?.accessByCompanionId ?? {},
   );
-  const defaultAccess = useSelector((state: RootState) => state.coParent?.defaultAccess ?? null);
-  const globalRole = useSelector((state: RootState) => state.coParent?.lastFetchedRole);
+  const defaultAccess = useSelector(
+    (state: RootState) => state.coParent?.defaultAccess ?? null,
+  );
+  const globalRole = useSelector(
+    (state: RootState) => state.coParent?.lastFetchedRole,
+  );
 
   const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(
     globalSelectedCompanionId ?? coParent?.companionId ?? null,
@@ -76,7 +88,9 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
     tasks: false,
     chatWithVet: false,
   };
-  const [permissions, setPermissions] = useState<CoParentPermissions>(defaultPermissions);
+  const [permissions, setPermissions] = useState<CoParentPermissions>(
+    coParent?.permissions ?? defaultPermissions,
+  );
   const deleteSheetRef = React.useRef<DeleteCoParentBottomSheetRef>(null);
   const [isPromoting, setIsPromoting] = useState(false);
 
@@ -92,32 +106,49 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
     () => (selectedCompanion ? [selectedCompanion] : companions),
     [companions, selectedCompanion],
   );
-  const companionAccessId = selectedCompanion?.id ?? selectedCompanionId ?? null;
+  const companionAccessId =
+    selectedCompanion?.id ?? selectedCompanionId ?? null;
   const userAccessEntry =
     companionAccessId && accessMap
-      ? accessMap[companionAccessId] ?? defaultAccess ?? null
+      ? (accessMap[companionAccessId] ?? defaultAccess ?? null)
       : defaultAccess;
-  const userRole = (userAccessEntry?.role ?? defaultAccess?.role ?? globalRole ?? '').toUpperCase();
+  const userRole = (
+    userAccessEntry?.role ??
+    defaultAccess?.role ??
+    globalRole ??
+    ''
+  ).toUpperCase();
   const canEditPermissions = userRole.includes('PRIMARY');
 
+  const candidateCompanionId =
+    coParent?.companionId ?? selectedCompanion?.id ?? null;
+  const [prevCandidateId, setPrevCandidateId] = useState<string | null>(
+    candidateCompanionId,
+  );
+  if (!selectedCompanionId && candidateCompanionId !== prevCandidateId) {
+    setPrevCandidateId(candidateCompanionId);
+    setSelectedCompanionId(candidateCompanionId);
+  }
+
+  const companionDispatchedRef = React.useRef(false);
   useEffect(() => {
-    if (!selectedCompanionId && coParent?.companionId) {
-      setSelectedCompanionId(coParent.companionId);
-      dispatch(setSelectedCompanion(coParent.companionId));
+    if (
+      !companionDispatchedRef.current &&
+      selectedCompanionId &&
+      selectedCompanionId === coParent?.companionId
+    ) {
+      companionDispatchedRef.current = true;
+      dispatch(setSelectedCompanion(selectedCompanionId));
     }
   }, [coParent?.companionId, dispatch, selectedCompanionId]);
 
-  useEffect(() => {
+  const [prevCoParent, setPrevCoParent] = useState<CoParent | null>(coParent);
+  if (coParent !== prevCoParent) {
+    setPrevCoParent(coParent);
     if (coParent?.permissions) {
       setPermissions(coParent.permissions);
     }
-  }, [coParent]);
-
-  useEffect(() => {
-    if (!selectedCompanionId && selectedCompanion?.id) {
-      setSelectedCompanionId(selectedCompanion.id);
-    }
-  }, [selectedCompanion, selectedCompanionId]);
+  }
 
   useEffect(() => {
     if (!coParent && selectedCompanion?.id) {
@@ -138,27 +169,45 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
       (currentCoParent?.role ?? '').toUpperCase().includes('PRIMARY') &&
       currentCoParent?.parentId === authUser?.parentId;
     if (isSelfPrimary) {
-      Alert.alert('Not available', 'Primary parents cannot edit their own permissions.');
+      Alert.alert(
+        'Not available',
+        'Primary parents cannot edit their own permissions.',
+      );
       navigation.goBack();
     }
-  }, [authUser?.parentId, currentCoParent?.parentId, currentCoParent?.role, navigation]);
+  }, [
+    authUser?.parentId,
+    currentCoParent?.parentId,
+    currentCoParent?.role,
+    navigation,
+  ]);
 
-  if (!currentCoParent || !permissions) {
-    if (!loading) {
-      return (
-        <SafeAreaView style={commonStyles.container} edges={['top']}>
-          <Header title="Co-Parent Permissions" showBackButton onBack={() => navigation.goBack()} />
-          <View style={commonStyles.centerContent}>
-            <Text style={styles.profileEmail}>Unable to load co-parent details.</Text>
-          </View>
-        </SafeAreaView>
-      );
-    }
+  if (loading && !currentCoParent) {
     return (
       <SafeAreaView style={commonStyles.container} edges={['top']}>
-        <Header title="Co-Parent Permissions" showBackButton onBack={() => navigation.goBack()} />
+        <Header
+          title="Co-Parent Permissions"
+          showBackButton
+          onBack={() => navigation.goBack()}
+        />
         <View style={commonStyles.centerContent}>
           <GifLoader />
+        </View>
+      </SafeAreaView>
+    );
+  }
+  if (!currentCoParent) {
+    return (
+      <SafeAreaView style={commonStyles.container} edges={['top']}>
+        <Header
+          title="Co-Parent Permissions"
+          showBackButton
+          onBack={() => navigation.goBack()}
+        />
+        <View style={commonStyles.centerContent}>
+          <Text style={styles.profileEmail}>
+            Unable to load co-parent details.
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -169,16 +218,23 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
       return;
     }
     if (!canEditPermissions) {
-      Alert.alert('Not allowed', 'Only the primary parent can transfer ownership.');
+      Alert.alert(
+        'Not allowed',
+        'Only the primary parent can transfer ownership.',
+      );
       return;
     }
     if (!selectedCompanionId || !currentCoParent) {
       Alert.alert('Select companion', 'Please select a companion first.');
       return;
     }
-    const targetCoParentId = currentCoParent.parentId || currentCoParent.id || coParentId;
+    const targetCoParentId =
+      currentCoParent.parentId || currentCoParent.id || coParentId;
     if (!targetCoParentId) {
-      Alert.alert('Error', 'Unable to determine co-parent details. Please try again.');
+      Alert.alert(
+        'Error',
+        'Unable to determine co-parent details. Please try again.',
+      );
       return;
     }
 
@@ -197,9 +253,7 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
         } catch (err) {
           console.warn('Failed to refresh companions after promotion', err);
         }
-        const companionIds = companions
-          .map(c => c.id)
-          .filter(Boolean);
+        const companionIds = companions.flatMap(c => (c.id ? [c.id] : []));
         try {
           await dispatch(
             fetchParentAccess({
@@ -226,7 +280,10 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
 
   const requestOwnershipTransfer = () => {
     if (!canEditPermissions) {
-      Alert.alert('Not allowed', 'Only the primary parent can transfer ownership.');
+      Alert.alert(
+        'Not allowed',
+        'Only the primary parent can transfer ownership.',
+      );
       return;
     }
     if (!selectedCompanionId) {
@@ -273,7 +330,10 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
 
   const handleSavePermissions = async () => {
     if (!canEditPermissions) {
-      Alert.alert('Not allowed', 'Only the primary parent can update permissions.');
+      Alert.alert(
+        'Not allowed',
+        'Only the primary parent can update permissions.',
+      );
       return;
     }
     try {
@@ -282,7 +342,8 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
         return;
       }
 
-      const targetCoParentId = currentCoParent.parentId || currentCoParent.id || coParentId;
+      const targetCoParentId =
+        currentCoParent.parentId || currentCoParent.id || coParentId;
       await dispatch(
         updateCoParentPermissions({
           coParentId: targetCoParentId,
@@ -307,9 +368,13 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
         Alert.alert('Error', 'Please select a companion and try again');
         return;
       }
-      const targetCoParentId = currentCoParent?.parentId || currentCoParent?.id || coParentId;
+      const targetCoParentId =
+        currentCoParent?.parentId || currentCoParent?.id || coParentId;
       await dispatch(
-        deleteCoParent({companionId: selectedCompanionId, coParentId: targetCoParentId}),
+        deleteCoParent({
+          companionId: selectedCompanionId,
+          coParentId: targetCoParentId,
+        }),
       ).unwrap();
       navigation.goBack();
     } catch (error) {
@@ -319,7 +384,8 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
   };
 
   const displayName =
-    `${currentCoParent.firstName ?? ''} ${currentCoParent.lastName ?? ''}`.trim() || 'Co-parent';
+    `${currentCoParent.firstName ?? ''} ${currentCoParent.lastName ?? ''}`.trim() ||
+    'Co-parent';
 
   const disableControls = !canEditPermissions || isPromoting;
   let saveButtonTitle = 'Save Permissions';
@@ -357,10 +423,12 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
             ) : (
               <View style={styles.profileAvatarInitials}>
                 <Text style={styles.profileAvatarText}>
-                  {(currentCoParent.firstName ||
+                  {(
+                    currentCoParent.firstName ||
                     currentCoParent.lastName ||
                     currentCoParent.email ||
-                    'C')
+                    'C'
+                  )
                     .trim()
                     .charAt(0)
                     .toUpperCase()}
@@ -378,19 +446,22 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
               {currentCoParent.phoneNumber && (
                 <View style={styles.contactRow}>
                   <RNImage source={Images.phone} style={styles.contactIcon} />
-                  <Text style={styles.profilePhone}>{currentCoParent.phoneNumber}</Text>
+                  <Text style={styles.profilePhone}>
+                    {currentCoParent.phoneNumber}
+                  </Text>
                 </View>
               )}
             </View>
           </View>
         </LiquidGlassCard>
-        
-  {/* First Note - About turning on permissions */}
+
+        {/* First Note - About turning on permissions */}
         <View style={styles.noteContainer}>
           <Text style={styles.noteText}>
             <Text style={styles.noteLabel}>Note: </Text>
             <Text style={styles.noteMessage}>
-              By turning these on, you're giving this co-parent permission to view and edit the selected areas for your companion
+              By turning these on, you're giving this co-parent permission to
+              view and edit the selected areas for your companion
             </Text>
           </Text>
         </View>
@@ -399,8 +470,6 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
         <View style={styles.selectCompanionHeader}>
           <Text style={styles.selectCompanionTitle}>Selected companion</Text>
         </View>
-
-      
 
         {/* Companion Selector */}
         {companionsToShow.length > 0 && (
@@ -417,26 +486,35 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
           <Text style={styles.noteText}>
             <Text style={styles.noteLabel}>Note: </Text>
             <Text style={styles.noteMessage}>
-              Selecting this option changes the primary parent, giving them ownership of your companion's documents. If you delete the app, your companion's documents stay intact unless the new primary parent deletes the app.
+              Selecting this option changes the primary parent, giving them
+              ownership of your companion's documents. If you delete the app,
+              your companion's documents stay intact unless the new primary
+              parent deletes the app.
             </Text>
           </Text>
         </View>
 
         {/* Permissions Section - No heading, just permissions */}
         <View style={styles.sectionContainer}>
-
-        <LiquidGlassCard
-          glassEffect="clear"
-          interactive
-          style={styles.card}
-          fallbackStyle={styles.cardFallback}>
+          <LiquidGlassCard
+            glassEffect="clear"
+            interactive
+            style={styles.card}
+            fallbackStyle={styles.cardFallback}>
             {/* Assign as primary parent */}
             <View style={styles.permissionRow}>
-              <Text style={styles.permissionLabel}>Assign as primary parent</Text>
+              <Text style={styles.permissionLabel}>
+                Assign as primary parent
+              </Text>
               <Switch
                 value={permissions.assignAsPrimaryParent}
-                onValueChange={() => handlePermissionChange('assignAsPrimaryParent')}
-                trackColor={{false: theme.colors.border, true: theme.colors.primary}}
+                onValueChange={() =>
+                  handlePermissionChange('assignAsPrimaryParent')
+                }
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
                 thumbColor={theme.colors.white}
                 disabled={disableControls}
               />
@@ -445,11 +523,18 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
 
             {/* Emergency based permissions */}
             <View style={styles.permissionRow}>
-              <Text style={styles.permissionLabel}>Emergency based Permissions</Text>
+              <Text style={styles.permissionLabel}>
+                Emergency based Permissions
+              </Text>
               <Switch
                 value={permissions.emergencyBasedPermissions}
-                onValueChange={() => handlePermissionChange('emergencyBasedPermissions')}
-                trackColor={{false: theme.colors.border, true: theme.colors.primary}}
+                onValueChange={() =>
+                  handlePermissionChange('emergencyBasedPermissions')
+                }
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
                 thumbColor={theme.colors.white}
                 disabled={disableControls}
               />
@@ -462,7 +547,10 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
               <Switch
                 value={permissions.appointments}
                 onValueChange={() => handlePermissionChange('appointments')}
-                trackColor={{false: theme.colors.border, true: theme.colors.primary}}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
                 thumbColor={theme.colors.white}
                 disabled={disableControls}
               />
@@ -475,7 +563,10 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
               <Switch
                 value={permissions.companionProfile}
                 onValueChange={() => handlePermissionChange('companionProfile')}
-                trackColor={{false: theme.colors.border, true: theme.colors.primary}}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
                 thumbColor={theme.colors.white}
                 disabled={disableControls}
               />
@@ -488,7 +579,10 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
               <Switch
                 value={permissions.documents}
                 onValueChange={() => handlePermissionChange('documents')}
-                trackColor={{false: theme.colors.border, true: theme.colors.primary}}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
                 thumbColor={theme.colors.white}
                 disabled={disableControls}
               />
@@ -501,7 +595,10 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
               <Switch
                 value={permissions.expenses}
                 onValueChange={() => handlePermissionChange('expenses')}
-                trackColor={{false: theme.colors.border, true: theme.colors.primary}}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
                 thumbColor={theme.colors.white}
                 disabled={disableControls}
               />
@@ -514,7 +611,10 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
               <Switch
                 value={permissions.tasks}
                 onValueChange={() => handlePermissionChange('tasks')}
-                trackColor={{false: theme.colors.border, true: theme.colors.primary}}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
                 thumbColor={theme.colors.white}
                 disabled={disableControls}
               />
@@ -527,7 +627,10 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
               <Switch
                 value={permissions.chatWithVet}
                 onValueChange={() => handlePermissionChange('chatWithVet')}
-                trackColor={{false: theme.colors.border, true: theme.colors.primary}}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: theme.colors.primary,
+                }}
                 thumbColor={theme.colors.white}
                 disabled={disableControls}
               />
@@ -537,7 +640,8 @@ export const EditCoParentScreen: React.FC<Props> = ({route, navigation}) => {
 
         {!canEditPermissions && (
           <Text style={styles.readOnlyNote}>
-            You can view these permissions, but only the primary parent can make changes.
+            You can view these permissions, but only the primary parent can make
+            changes.
           </Text>
         )}
 
@@ -648,11 +752,11 @@ const createStyles = (theme: any) =>
     selectCompanionTitle: {
       ...theme.typography.titleLarge,
       color: theme.colors.secondary,
-            paddingHorizontal: theme.spacing['4'],
+      paddingHorizontal: theme.spacing['4'],
     },
     noteContainer: {
       marginTop: theme.spacing['6'],
-           paddingHorizontal: theme.spacing['4'],
+      paddingHorizontal: theme.spacing['4'],
     },
     noteText: {
       ...theme.typography.labelXxsBold,
@@ -674,7 +778,6 @@ const createStyles = (theme: any) =>
     },
     permissionsHeader: {
       gap: theme.spacing['2'],
-
     },
     permissionRow: {
       flexDirection: 'row',

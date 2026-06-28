@@ -23,6 +23,7 @@ import {
 import { FaPaw, FaCaretDown } from 'react-icons/fa6';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSignOut } from '@/app/hooks/useAuth';
+import { removeStorageItem } from '@/app/lib/browserStorage';
 
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useOrgList, usePrimaryOrg } from '@/app/hooks/useOrgSelectors';
@@ -83,18 +84,69 @@ const DEV_MOBILE_ROUTE_GROUPS = [
   { label: 'Account', routeNames: ['Settings', 'Sign out'] },
 ] as const;
 
+const buildMobileRoutes = (
+  routes: typeof headerAppRoutes,
+  merckEnabled: boolean
+): typeof headerAppRoutes => {
+  const next = [...routes];
+  const signOutIndex = next.findIndex((route) => route.name === 'Sign out');
+  const insertIndex = signOutIndex === -1 ? next.length : signOutIndex;
+  if (merckEnabled) {
+    next.splice(insertIndex, 0, {
+      name: 'MSD Veterinary Manual',
+      href: '/integrations/merck-manuals',
+      verify: true,
+    });
+  }
+  next.splice(insertIndex, 0, { name: 'Guides', href: '/guides', verify: false });
+  return next;
+};
+
 const groupRoutesByName = (
   routes: typeof headerAppRoutes,
   groups: readonly { label: string; routeNames: readonly string[] }[]
 ) =>
-  groups
-    .map((group) => ({
-      label: group.label,
-      routes: group.routeNames
-        .map((routeName) => routes.find((route) => route.name === routeName))
-        .filter((route): route is (typeof routes)[number] => Boolean(route)),
-    }))
-    .filter((group) => group.routes.length > 0);
+  groups.reduce<Array<{ label: string; routes: Array<(typeof routes)[number]> }>>(
+    (visibleGroups, group) => {
+      const groupRoutes = group.routeNames.reduce<Array<(typeof routes)[number]>>(
+        (items, routeName) => {
+          const route = routes.find((item) => item.name === routeName);
+          if (route) items.push(route);
+          return items;
+        },
+        []
+      );
+      if (groupRoutes.length > 0) visibleGroups.push({ label: group.label, routes: groupRoutes });
+      return visibleGroups;
+    },
+    []
+  );
+
+const shouldHideSearch = (pathname: string): boolean =>
+  pathname.startsWith('/chat') ||
+  pathname.startsWith('/settings') ||
+  (pathname.startsWith('/organization') && !pathname.startsWith('/organization/specialities')) ||
+  pathname.startsWith('/organizations') ||
+  pathname.startsWith('/dashboard') ||
+  pathname.startsWith('/guides') ||
+  (pathname.startsWith('/integrations') && !pathname.startsWith('/integrations/idexx-workspace'));
+
+const getSearchPlaceholder = (
+  pathname: string,
+  _terminologyText: (s: string) => string
+): string => {
+  if (pathname.startsWith('/appointments/idexx-workspace')) return 'Search result / order';
+  if (pathname.startsWith('/appointments')) return 'Search appointments';
+  if (pathname.startsWith('/inventory')) return 'Search inventory';
+  if (pathname.startsWith('/integrations/idexx-workspace')) return 'Search result / order';
+  if (pathname.startsWith('/integrations')) return 'Search integrations';
+  if (pathname.startsWith('/forms')) return 'Search forms';
+  if (pathname.startsWith('/companions')) return 'Search companions';
+  if (pathname.startsWith('/tasks')) return 'Search tasks';
+  if (pathname.startsWith('/finance')) return 'Search invoices';
+  if (pathname.startsWith('/organization/specialities')) return 'Search specialities';
+  return 'Search';
+};
 
 const UserHeader = () => {
   const terminologyText = useCompanionTerminologyText();
@@ -107,22 +159,7 @@ const UserHeader = () => {
   const isDev = pathname.startsWith('/developers');
   const { isEnabled: merckEnabled } = useResolvedMerckIntegrationForPrimaryOrg();
   const routes = isDev ? headerDevRoutes : headerAppRoutes;
-  const mobileRoutes = isDev
-    ? routes
-    : (() => {
-        const next = [...routes];
-        const signOutIndex = next.findIndex((route) => route.name === 'Sign out');
-        const insertIndex = signOutIndex === -1 ? next.length : signOutIndex;
-        if (merckEnabled) {
-          next.splice(insertIndex, 0, {
-            name: 'MSD Veterinary Manual',
-            href: '/integrations/merck-manuals',
-            verify: true,
-          });
-        }
-        next.splice(insertIndex, 0, { name: 'Guides', href: '/guides', verify: false });
-        return next;
-      })();
+  const mobileRoutes = isDev ? routes : buildMobileRoutes(routes, merckEnabled);
   const mobileRouteGroups = groupRoutesByName(
     mobileRoutes,
     isDev ? DEV_MOBILE_ROUTE_GROUPS : APP_MOBILE_ROUTE_GROUPS
@@ -139,20 +176,26 @@ const UserHeader = () => {
   const openUniversalSearch = useUniversalSearchStore((s) => s.open);
   const orgDropdownRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const mobileMenuId = 'user-mobile-menu';
+  const orgMenuId = 'user-header-org-menu';
+  const profileMenuId = 'user-header-profile-menu';
 
   const toggleMenu = () => setMenuOpen((prev) => !prev);
 
   const logoutRedirect = pathname.startsWith('/developers') ? '/developers/signin' : '/signin';
 
-  useEffect(() => {
-    clear();
-  }, [pathname, clear]);
+  const prevPathnameRef = useRef(pathname);
+  if (prevPathnameRef.current !== pathname) {
+    prevPathnameRef.current = pathname;
+    handlePathnameChange();
+  }
 
-  useEffect(() => {
-    setMenuOpen(false);
-    setSelectOrg(false);
-    setSelectProfile(false);
-  }, [pathname]);
+  function handlePathnameChange() {
+    clear();
+    if (menuOpen) setMenuOpen(false);
+    if (selectOrg) setSelectOrg(false);
+    if (selectProfile) setSelectProfile(false);
+  }
 
   useEffect(() => {
     const closeMenuOnDesktop = () => {
@@ -172,9 +215,7 @@ const UserHeader = () => {
     startRouteLoader();
     try {
       await signOut();
-      if (globalThis.window !== undefined) {
-        globalThis.localStorage.removeItem('yc_dashboard_videos_hidden');
-      }
+      removeStorageItem('local', 'yc_dashboard_videos_hidden');
       router.replace(logoutRedirect);
     } catch (error) {
       console.error('⚠️ Cognito signout error:', error);
@@ -204,18 +245,20 @@ const UserHeader = () => {
     setMenuOpen(false);
     const { show, hide } = useFullscreenLoaderStore.getState();
     show('org-switch');
-    setTimeout(() => {
-      startRouteLoader();
-      const role = membershipsByOrgId[orgId]?.roleDisplay ?? membershipsByOrgId[orgId]?.roleCode;
-      void resolveOrgScopedRedirect({ orgId, fallbackRole: role })
-        .then((nextRoute) => {
-          router.push(nextRoute);
-        })
-        .catch(() => {
-          hide('org-switch');
-          stopRouteLoader();
-        });
-    }, 300);
+    setTimeout(() => navigateToOrg(orgId, hide), 300);
+  };
+
+  const navigateToOrg = (orgId: string, hide: (key: string) => void) => {
+    startRouteLoader();
+    const role = membershipsByOrgId[orgId]?.roleDisplay ?? membershipsByOrgId[orgId]?.roleCode;
+    void resolveOrgScopedRedirect({ orgId, fallbackRole: role })
+      .then((nextRoute) => {
+        router.push(nextRoute);
+      })
+      .catch(() => {
+        hide('org-switch');
+        stopRouteLoader();
+      });
   };
 
   const handleClick = (item: any) => {
@@ -260,27 +303,9 @@ const UserHeader = () => {
   const orgMissing = !primaryOrg;
   const orgVerified = !!primaryOrg?.isVerified;
 
-  const getSearchPlaceholder = () => {
-    if (pathname.startsWith('/appointments/idexx-workspace')) return 'Search result / order';
-    if (pathname.startsWith('/appointments')) return 'Search appointments';
-    if (pathname.startsWith('/inventory')) return 'Search inventory';
-    if (pathname.startsWith('/integrations/idexx-workspace')) return 'Search result / order';
-    if (pathname.startsWith('/integrations')) return 'Search integrations';
-    if (pathname.startsWith('/forms')) return 'Search forms';
-    if (pathname.startsWith('/companions')) return terminologyText('Search companions');
-    if (pathname.startsWith('/tasks')) return 'Search tasks';
-    if (pathname.startsWith('/finance')) return 'Search invoices';
-    return 'Search';
-  };
+  const searchPlaceholder = getSearchPlaceholder(pathname, terminologyText);
 
-  const hideSearch =
-    pathname.startsWith('/chat') ||
-    pathname.startsWith('/settings') ||
-    pathname.startsWith('/organization') ||
-    pathname.startsWith('/organizations') ||
-    pathname.startsWith('/dashboard') ||
-    pathname.startsWith('/guides') ||
-    (pathname.startsWith('/integrations') && !pathname.startsWith('/integrations/idexx-workspace'));
+  const hideSearch = shouldHideSearch(pathname);
   const primaryOrgId = primaryOrg?._id?.toString();
   const currentMembership = primaryOrgId ? membershipsByOrgId[primaryOrgId] : null;
   const currentRole = currentMembership?.roleDisplay ?? currentMembership?.roleCode;
@@ -305,7 +330,14 @@ const UserHeader = () => {
 
   return (
     <div className="yc-user-header">
-      <MobileMenu isOpen={menuOpen}>
+      <MobileMenu
+        isOpen={menuOpen}
+        id={mobileMenuId}
+        onClose={() => {
+          setMenuOpen(false);
+          setSelectOrg(false);
+        }}
+      >
         <div className="yc-mobile-menu-shell">
           {primaryOrg && !isDev && (
             <div className="yc-mobile-org-card" ref={orgDropdownRef}>
@@ -313,6 +345,9 @@ const UserHeader = () => {
                 type="button"
                 className="yc-mobile-org-trigger"
                 onClick={() => setSelectOrg((e) => !e)}
+                aria-expanded={selectOrg}
+                aria-controls={orgMenuId}
+                aria-haspopup="menu"
               >
                 <Image
                   src={getSafeImageUrl(primaryOrg.imageURL, 'business')}
@@ -328,13 +363,14 @@ const UserHeader = () => {
                 <FaCaretDown className={selectOrg ? 'yc-chevron-open' : ''} size={16} />
               </button>
               {selectOrg && (
-                <div className="yc-mobile-dropdown-list">
+                <div id={orgMenuId} className="yc-mobile-dropdown-list" role="menu">
                   {orgs.slice(0, 4).map((org) => (
                     <button
                       key={org._id?.toString() || org.name}
                       type="button"
                       className="yc-menu-row"
                       onClick={() => handleMobileOrgClick(org._id?.toString() || org.name)}
+                      role="menuitem"
                     >
                       {org.name}
                     </button>
@@ -346,6 +382,7 @@ const UserHeader = () => {
                       setMenuOpen(false);
                     }}
                     className="yc-menu-row yc-menu-row-accent"
+                    role="menuitem"
                   >
                     View all organizations
                   </Link>
@@ -395,7 +432,15 @@ const UserHeader = () => {
 
       <div className="yc-header-mobile-brand">
         <Link href={authenticatedLogoHref} className="yc-header-logo-link">
-          <Image src={MEDIA_SOURCES.logo} alt="Logo" width={86} height={56} priority />
+          <Image
+            src={MEDIA_SOURCES.logo}
+            alt="Logo"
+            width={112}
+            height={72}
+            priority
+            fetchPriority="high"
+            style={{ width: 'auto' }}
+          />
         </Link>
       </div>
       <div className="yc-header-left">
@@ -405,6 +450,9 @@ const UserHeader = () => {
               type="button"
               className={`yc-header-org-trigger ${selectOrg ? 'yc-header-trigger-open' : ''}`}
               onClick={() => setSelectOrg((e) => !e)}
+              aria-expanded={selectOrg}
+              aria-controls={orgMenuId}
+              aria-haspopup="menu"
             >
               <Image
                 src={getSafeImageUrl(primaryOrg.imageURL, 'business')}
@@ -420,7 +468,17 @@ const UserHeader = () => {
               <FaCaretDown className={selectOrg ? 'yc-chevron-open' : ''} size={15} />
             </button>
             {selectOrg && (
-              <div className="yc-header-dropdown-panel">
+              <div
+                id={orgMenuId}
+                className="yc-header-dropdown-panel"
+                role="menu"
+                tabIndex={-1}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setSelectOrg(false);
+                  }
+                }}
+              >
                 <div className="yc-header-dropdown-title">Switch organization</div>
                 {orgs.slice(0, 4).map((org) => (
                   <button
@@ -428,6 +486,7 @@ const UserHeader = () => {
                     type="button"
                     className="yc-menu-row"
                     onClick={() => handleOrgClick(org._id?.toString() || org.name)}
+                    role="menuitem"
                   >
                     {org.name}
                   </button>
@@ -436,6 +495,7 @@ const UserHeader = () => {
                   href="/organizations"
                   onClick={() => setSelectOrg(false)}
                   className="yc-menu-row yc-menu-row-accent"
+                  role="menuitem"
                 >
                   View all organizations
                 </Link>
@@ -451,7 +511,7 @@ const UserHeader = () => {
             value={query}
             setSearch={setQuery}
             className="yc-header-search"
-            placeholder={getSearchPlaceholder()}
+            placeholder={searchPlaceholder}
           />
         )}
         <button
@@ -476,6 +536,9 @@ const UserHeader = () => {
             type="button"
             className={`yc-profile-trigger ${selectProfile ? 'yc-header-trigger-open' : ''}`}
             onClick={() => setSelectProfile((e) => !e)}
+            aria-expanded={selectProfile}
+            aria-controls={profileMenuId}
+            aria-haspopup="menu"
           >
             <Image
               src={getSafeImageUrl(profile?.personalDetails?.profilePictureUrl, 'person')}
@@ -488,12 +551,23 @@ const UserHeader = () => {
             <FaCaretDown className={selectProfile ? 'yc-chevron-open' : ''} size={15} />
           </button>
           {selectProfile && (
-            <div className="yc-header-dropdown-panel yc-profile-panel">
+            <div
+              id={profileMenuId}
+              className="yc-header-dropdown-panel yc-profile-panel"
+              role="menu"
+              tabIndex={-1}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSelectProfile(false);
+                }
+              }}
+            >
               <div className="yc-header-dropdown-title">Account</div>
               <Link
                 href={isDev ? '/developers/settings' : '/settings'}
                 onClick={() => setSelectProfile(false)}
                 className="yc-menu-row"
+                role="menuitem"
               >
                 <IoSettingsOutline size={16} className="yc-menu-row-icon" aria-hidden />
                 Settings
@@ -503,6 +577,7 @@ const UserHeader = () => {
                   href="/integrations/merck-manuals"
                   onClick={() => setSelectProfile(false)}
                   className="yc-menu-row"
+                  role="menuitem"
                 >
                   <IoBookOutline size={16} className="yc-menu-row-icon" aria-hidden />
                   MSD Veterinary Manual
@@ -513,6 +588,7 @@ const UserHeader = () => {
                   href="/guides"
                   onClick={() => setSelectProfile(false)}
                   className="yc-menu-row"
+                  role="menuitem"
                 >
                   <IoHelpCircleOutline size={16} className="yc-menu-row-icon" aria-hidden />
                   Guides
@@ -522,6 +598,7 @@ const UserHeader = () => {
                 type="button"
                 onClick={handleLogout}
                 className="yc-menu-row yc-menu-row-danger"
+                role="menuitem"
               >
                 <IoLogOutOutline size={16} className="yc-menu-row-icon" aria-hidden />
                 Sign out
@@ -530,7 +607,7 @@ const UserHeader = () => {
           )}
         </div>
 
-        <HamburgerMenuButton menuOpen={menuOpen} onClick={toggleMenu} />
+        <HamburgerMenuButton menuOpen={menuOpen} onClick={toggleMenu} controlsId={mobileMenuId} />
       </div>
     </div>
   );

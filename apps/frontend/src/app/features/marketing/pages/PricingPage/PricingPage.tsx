@@ -14,17 +14,17 @@ import { getEmailValidationError, normalizeEmail } from '@/app/lib/validators';
 
 import './PricingPage.css';
 
-const renderCell = (text: string) => {
+const PricingCell = ({ text }: { text: string }) => {
   if (text === 'yes') {
     return <IoIosCheckmark size={20} color="var(--color-neutral-700)" />;
   } else if (text === 'no') {
-    return '-';
+    return <>-</>;
   } else {
-    return text;
+    return <>{text}</>;
   }
 };
 
-const renderFeatureName = (name: string) => {
+const FeatureName = ({ name }: { name: string }) => {
   if (name === 'IDEXX integration') {
     return (
       <div className="pricingFeatureWithBrand">
@@ -91,7 +91,22 @@ const renderFeatureName = (name: string) => {
     );
   }
 
-  return name;
+  if (name === 'Laika integration') {
+    return (
+      <div className="pricingFeatureWithBrand">
+        <Image
+          src={MEDIA_SOURCES.futureAssets.laikaLogoUrl}
+          alt="Laika"
+          width={116}
+          height={34}
+          className="pricingFeatureBrandLogo ml-2"
+          unoptimized
+        />
+      </div>
+    );
+  }
+
+  return <>{name}</>;
 };
 
 const PricingPage = () => {
@@ -139,9 +154,9 @@ const PricingPage = () => {
           <div className="PricingPage-header">
             <div className="PriceBackdiv">
               <div className="PricinhHeadquote">
-                <div className="text-display-1 text-text-primary">
+                <h1 className="text-display-1 text-text-primary">
                   Transparent pricing, no hidden fees
-                </div>
+                </h1>
                 <div className="text-body-3 text-text-primary">
                   Choose a plan that fits your pet-care practice. Upgrade anytime as you grow.
                 </div>
@@ -151,12 +166,14 @@ const PricingPage = () => {
               <div className="w-full flex items-center justify-between gap-3 flex-col sm:flex-row">
                 <div className="flex items-center gap-1">
                   <button
+                    type="button"
                     onClick={() => setActiveCycle('monthly')}
                     className={`${activeCycle === 'monthly' ? 'border-blue-text! bg-blue-light text-blue-text shadow-[0_0_8px_0_rgba(0,0,0,0.16)]' : 'border-black-text!'} hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] px-3 h-9 flex items-center justify-center border! rounded-2xl! cursor-pointer font-satoshi! text-[15px]! font-medium text-black-text`}
                   >
                     Pay monthly
                   </button>
                   <button
+                    type="button"
                     onClick={() => setActiveCycle('yearly')}
                     className={`${activeCycle === 'yearly' ? 'border-blue-text! bg-blue-light text-blue-text shadow-[0_0_8px_0_rgba(0,0,0,0.16)]' : 'border-black-text!'} hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] px-3 h-9 flex items-center justify-center border! rounded-2xl! cursor-pointer font-satoshi! text-[15px]! font-medium text-black-text`}
                   >
@@ -238,13 +255,13 @@ const PricingPage = () => {
           {notify && (
             <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] sm:w-[500px] z-10 bg-white py-6! sm:py-8! px-4! sm:px-5! flex flex-col gap-3 sm:gap-6 rounded-3xl shadow-[0_0_32px_0_rgba(0,0,0,0.32)]">
               <div className="flex w-full items-center justify-between">
-                <button className="opacity-0">
+                <button type="button" className="opacity-0">
                   <IoIosCloseCircleOutline size={28} color="var(--color-neutral-900)" />
                 </button>
                 <div className="font-satoshi font-medium text-[1.375rem] text-black-text">
                   Get notified
                 </div>
-                <button onClick={() => setNotify(false)}>
+                <button type="button" onClick={() => setNotify(false)}>
                   <IoIosCloseCircleOutline size={28} color="var(--color-neutral-900)" />
                 </button>
               </div>
@@ -286,9 +303,9 @@ const PricingPage = () => {
           )}
 
           <div className="flex flex-col gap-3 md:gap-9">
-            <div className="text-display-1 text-text-primary text-center plansFeaturesHeading">
+            <h2 className="text-display-1 text-text-primary text-center plansFeaturesHeading">
               Plans and features
-            </div>
+            </h2>
             <div className="flex gap-3">
               <div className="w-[calc(33%-10px)]"></div>
               {PricingPlans.slice(0, 2).map((plan: any) => (
@@ -302,7 +319,7 @@ const PricingPage = () => {
                     </div>
                   </div>
                   <Link
-                    className="w-full rounded-2xl! hover:border-text-brand! hover:text-text-brand! hover:scale-105! text-black-text! border-black-text! border! transition duration-300 ease-in-out h-8 md:h-12 flex items-center justify-center font-satoshi text-[0.875rem] md:text-[1.125rem] font-medium"
+                    className="w-full rounded-2xl! hover:border-text-brand! hover:text-text-brand! hover:scale-105! text-black-text! border-black-text! border! transition duration-300 ease-in-out h-12 flex items-center justify-center font-satoshi text-[1rem] font-medium"
                     href={plan.buttonSrc}
                   >
                     {plan.buttonText}
@@ -334,17 +351,17 @@ const PricingPage = () => {
                                 <td
                                   className={`w-1/3 ${cellPaddingClass} pl-4! md:pl-6! border-t! border-grey-light! font-satoshi font-semibold text-[15px] text-grey-noti`}
                                 >
-                                  {renderFeatureName(row.name)}
+                                  <FeatureName name={row.name} />
                                 </td>
                                 <td
                                   className={`w-1/3 ${cellPaddingClass} pl-4! md:pl-6! border-t! border-grey-light! font-satoshi font-semibold text-[15px] text-grey-noti`}
                                 >
-                                  {renderCell(row.free)}
+                                  <PricingCell text={row.free} />
                                 </td>
                                 <td
                                   className={`w-1/3 ${cellPaddingClass} pl-4! md:pl-6! border-t! border-grey-light! font-satoshi font-semibold text-[15px] text-grey-noti`}
                                 >
-                                  {renderCell(row.business)}
+                                  <PricingCell text={row.business} />
                                 </td>
                               </>
                             );
@@ -374,11 +391,11 @@ const NeedHealp = () => {
     <div className="NeedHelpDiv">
       <div className="Needhelpitem">
         <div className="helpText">
-          <h3>Need Help? We&rsquo;re All Ears!</h3>
+          <h3>Need help? We&rsquo;re all ears!</h3>
           <p>Got questions or need assistance? Just reach out! Our team is here to help.</p>
         </div>
         <div className="helpbtn">
-          <Link href="/contact">Contact support</Link>
+          <Link href="/contact-us">Contact support</Link>
         </div>
       </div>
     </div>

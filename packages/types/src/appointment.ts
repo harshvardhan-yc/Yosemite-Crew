@@ -1,11 +1,13 @@
-import {
+import type {
   Appointment as FHIRAppointment,
   AppointmentParticipant,
   CodeableConcept,
   Extension,
-} from '@yosemite-crew/fhirtypes';
+} from '@yosemite-crew/fhir';
 import dayjs from 'dayjs';
 import { SPECIES_SYSTEM_URL } from './companion';
+import type { AppointmentKind } from './catalog';
+import { normalizeTemplateKind, type TemplateKind } from './template';
 
 export type AppointmentStatus =
   | 'REQUESTED'
@@ -18,9 +20,18 @@ export type AppointmentStatus =
 
 export type AppointmentPaymentStatus = 'PAID' | 'UNPAID';
 
+export type AppointmentTemplateDefault = {
+  templateKind: TemplateKind;
+  templateId: string | undefined;
+  templateVersion: number | undefined;
+  source: 'CATALOG_BINDING' | 'CATALOG_KIND' | 'ORGANISATION_DEFAULT' | 'LIBRARY_DEFAULT';
+};
+
 export type Appointment = {
   id?: string;
-  companion: {
+  caseId?: string;
+  encounterId?: string;
+  patient: {
     id: string;
     name: string;
     species: string;
@@ -30,6 +41,7 @@ export type Appointment = {
       name: string;
     };
   };
+  companion?: Appointment['patient'];
   lead?: {
     id: string;
     name: string;
@@ -43,6 +55,16 @@ export type Appointment = {
     // Clinic room being booked
     id: string;
     name: string;
+    // Inpatient ward/unit the room is assigned to (surfaced on the appointments
+    // list so the room's unit is visible without opening the workspace).
+    unitId?: string;
+    unitName?: string;
+    unit?: {
+      id: string;
+      name: string;
+      displayName?: string;
+      code?: string;
+    };
   };
   appointmentType?: {
     id: string;
@@ -52,6 +74,7 @@ export type Appointment = {
       name: string;
     };
   };
+  appointmentKind?: AppointmentKind;
   organisationId: string; // Org / clinic
   appointmentDate: Date; // Date of the appointment
   startTime: Date; // Booking start timestamp
@@ -70,6 +93,7 @@ export type Appointment = {
     contentType?: string;
   }[];
   formIds?: string[]; // IDs of any forms associated with the appointment
+  templateDefaults?: AppointmentTemplateDefault[];
 };
 
 const BREED_SYSTEM_URL = 'http://hl7.org/fhir/animal-breed';
@@ -77,35 +101,53 @@ const EXT_EMERGENCY = 'https://yosemitecrew.com/fhir/StructureDefinition/appoint
 const EXT_APPOINTMENT_ATTACHMENTS =
   'https://yosemitecrew.com/fhir/StructureDefinition/appointment-attachments';
 const EXT_LEAD_PROFILE_URL = 'https://yosemitecrew.com/fhir/StructureDefinition/lead-profile-url';
+const EXT_ROOM_UNIT_ID = 'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-id';
+const EXT_ROOM_UNIT_NAME = 'https://yosemitecrew.com/fhir/StructureDefinition/room-unit-name';
 const EXT_APPOINTMENT_FORM_IDS =
   'https://yosemitecrew.com/fhir/StructureDefinition/appointment-form-id';
 const EXT_APPOINTMENT_PAYMENT_STATUS =
   'https://yosemitecrew.com/fhir/StructureDefinition/appointment-payment-status';
+const EXT_APPOINTMENT_KIND = 'https://yosemitecrew.com/fhir/StructureDefinition/appointment-kind';
+const EXT_APPOINTMENT_CASE_ID =
+  'https://yosemitecrew.com/fhir/StructureDefinition/appointment-case-id';
+const EXT_APPOINTMENT_ENCOUNTER_ID =
+  'https://yosemitecrew.com/fhir/StructureDefinition/appointment-encounter-id';
+const EXT_APPOINTMENT_TEMPLATE_DEFAULTS =
+  'https://yosemitecrew.com/fhir/StructureDefinition/appointment-template-defaults';
+
+const EXT_TEMPLATE_DEFAULT_KIND = 'templateKind';
+const EXT_TEMPLATE_DEFAULT_ID = 'templateId';
+const EXT_TEMPLATE_DEFAULT_VERSION = 'templateVersion';
+const EXT_TEMPLATE_DEFAULT_SOURCE = 'source';
 
 export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
   const participants: AppointmentParticipant[] = [];
   const normalizedLeadId = appointment.lead?.id?.trim();
   const hasValidLeadId =
     Boolean(normalizedLeadId) && normalizedLeadId !== 'undefined' && normalizedLeadId !== 'null';
+  const patient = appointment.patient ?? appointment.companion;
 
   // Companion participant
   participants.push(
     {
       actor: {
-        reference: `Patient/${appointment.companion.id}`,
-        display: appointment.companion.name,
+        reference: `Patient/${patient?.id ?? ''}`,
+        display: patient?.name,
       },
+      status: 'accepted',
     },
     {
       actor: {
-        reference: `RelatedPerson/${appointment.companion.parent.id}`,
-        display: appointment.companion.parent.name,
+        reference: `RelatedPerson/${patient?.parent.id ?? ''}`,
+        display: patient?.parent.name,
       },
+      status: 'accepted',
     },
     {
       actor: {
         reference: `Organization/${appointment.organisationId}`,
       },
+      status: 'accepted',
     }
   );
 
@@ -115,7 +157,7 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
         reference: `Practitioner/${normalizedLeadId}`,
         display: appointment.lead?.name,
       },
-      status: appointment.status,
+      status: 'accepted',
       type: [
         {
           coding: [
@@ -159,6 +201,11 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
 
   // Room participant
   if (appointment.room) {
+    const roomUnitId = appointment.room.unitId ?? appointment.room.unit?.id;
+    const roomUnitName =
+      appointment.room.unitName ??
+      appointment.room.unit?.displayName ??
+      appointment.room.unit?.name;
     participants.push({
       actor: {
         reference: `Location/${appointment.room.id}`,
@@ -176,6 +223,12 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
           ],
         },
       ],
+      extension: roomUnitId
+        ? [
+            { url: EXT_ROOM_UNIT_ID, valueString: roomUnitId },
+            { url: EXT_ROOM_UNIT_NAME, valueString: roomUnitName ?? '' },
+          ]
+        : undefined,
     });
   }
 
@@ -196,7 +249,7 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
     : [];
 
   // Appointment speciality links to Speciality
-  const speciality: CodeableConcept[] = appointment.appointmentType?.speciality
+  const specialty: CodeableConcept[] = appointment.appointmentType?.speciality
     ? [
         {
           coding: [
@@ -218,12 +271,12 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
     {
       id: 'species',
       url: SPECIES_SYSTEM_URL,
-      valueString: appointment.companion.species,
+      valueString: patient?.species,
     },
     {
       id: 'breed',
       url: BREED_SYSTEM_URL,
-      valueString: appointment.companion.breed,
+      valueString: patient?.breed,
     }
   );
 
@@ -264,13 +317,68 @@ export function toFHIRAppointment(appointment: Appointment): FHIRAppointment {
     });
   }
 
+  if (appointment.appointmentKind) {
+    extension.push({
+      url: EXT_APPOINTMENT_KIND,
+      valueString: appointment.appointmentKind,
+    });
+  }
+
+  if (appointment.caseId) {
+    extension.push({
+      url: EXT_APPOINTMENT_CASE_ID,
+      valueString: appointment.caseId,
+    });
+  }
+
+  if (appointment.encounterId) {
+    extension.push({
+      url: EXT_APPOINTMENT_ENCOUNTER_ID,
+      valueString: appointment.encounterId,
+    });
+  }
+
+  if (appointment.templateDefaults?.length) {
+    appointment.templateDefaults.forEach((templateDefault) => {
+      extension.push({
+        url: EXT_APPOINTMENT_TEMPLATE_DEFAULTS,
+        extension: [
+          {
+            url: EXT_TEMPLATE_DEFAULT_KIND,
+            valueString: templateDefault.templateKind,
+          },
+          ...(templateDefault.templateId
+            ? [
+                {
+                  url: EXT_TEMPLATE_DEFAULT_ID,
+                  valueString: templateDefault.templateId,
+                } as Extension,
+              ]
+            : []),
+          ...(templateDefault.templateVersion != null
+            ? [
+                {
+                  url: EXT_TEMPLATE_DEFAULT_VERSION,
+                  valueInteger: templateDefault.templateVersion,
+                } as Extension,
+              ]
+            : []),
+          {
+            url: EXT_TEMPLATE_DEFAULT_SOURCE,
+            valueString: templateDefault.source,
+          },
+        ],
+      });
+    });
+  }
+
   const fhirAppointment: FHIRAppointment = {
     resourceType: 'Appointment',
     id: appointment.id,
     status: fhirStatus,
     participant: participants,
     serviceType,
-    speciality,
+    specialty,
     start: dayjs(appointment.startTime).toISOString(),
     end: dayjs(appointment.endTime).toISOString(),
     minutesDuration: appointment.durationMinutes,
@@ -308,7 +416,11 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
 
   const appointmentTypeCoding = FHIRappointment.serviceType?.[0]?.coding?.[0] || undefined;
 
-  const specialityCoding = FHIRappointment.speciality?.[0]?.coding?.[0] || undefined;
+  const specialityCoding =
+    (FHIRappointment.specialty?.[0]?.coding?.[0] ||
+      (FHIRappointment as FHIRAppointment & { speciality?: CodeableConcept[] }).speciality?.[0]
+        ?.coding?.[0]) ??
+    undefined;
 
   const speciesExtesnion = FHIRappointment.extension?.find((p) => p.id?.includes('species'));
   const breedExtension = FHIRappointment.extension?.find((p) => p.id?.includes('breed'));
@@ -316,6 +428,13 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
   const leadProfileExtension = leadParticipant?.extension?.find(
     (ext) => ext.url === EXT_LEAD_PROFILE_URL
   );
+  const roomUnitId =
+    roomParticipant?.extension?.find((ext) => ext.url === EXT_ROOM_UNIT_ID)?.valueString?.trim() ||
+    '';
+  const roomUnitName =
+    roomParticipant?.extension
+      ?.find((ext) => ext.url === EXT_ROOM_UNIT_NAME)
+      ?.valueString?.trim() || '';
 
   const pmsStatus = FHIRappointment.status; // fallback if unknown status
   const normalizedStatus = pmsStatus === 'NO_PAYMENT' ? 'REQUESTED' : pmsStatus;
@@ -340,6 +459,42 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
   const paymentStatus = FHIRappointment.extension?.find(
     (ext) => ext.url === EXT_APPOINTMENT_PAYMENT_STATUS
   )?.valueString as AppointmentPaymentStatus | undefined;
+  const appointmentKind = FHIRappointment.extension?.find((ext) => ext.url === EXT_APPOINTMENT_KIND)
+    ?.valueString as AppointmentKind | undefined;
+  const caseId = FHIRappointment.extension?.find(
+    (ext) => ext.url === EXT_APPOINTMENT_CASE_ID
+  )?.valueString;
+  const encounterId = FHIRappointment.extension?.find(
+    (ext) => ext.url === EXT_APPOINTMENT_ENCOUNTER_ID
+  )?.valueString;
+
+  const templateDefaults =
+    FHIRappointment.extension
+      ?.filter((ext) => ext.url === EXT_APPOINTMENT_TEMPLATE_DEFAULTS)
+      .map((ext) => {
+        const templateKind = ext.extension?.find((item) => item.url === EXT_TEMPLATE_DEFAULT_KIND)
+          ?.valueString as TemplateKind | undefined;
+        const templateId = ext.extension?.find(
+          (item) => item.url === EXT_TEMPLATE_DEFAULT_ID
+        )?.valueString;
+        const templateVersion = ext.extension?.find(
+          (item) => item.url === EXT_TEMPLATE_DEFAULT_VERSION
+        )?.valueInteger;
+        const source = ext.extension?.find((item) => item.url === EXT_TEMPLATE_DEFAULT_SOURCE)
+          ?.valueString as AppointmentTemplateDefault['source'] | undefined;
+
+        if (!templateKind || !source) {
+          return null;
+        }
+
+        return {
+          templateKind: normalizeTemplateKind(templateKind),
+          templateId,
+          templateVersion,
+          source,
+        };
+      })
+      .filter((value): value is AppointmentTemplateDefault => value !== null) || [];
 
   // Construct internal Appointment object
   const leadId = leadParticipant?.actor?.reference?.split('/')[1] ?? '';
@@ -350,8 +505,10 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
 
   const appointment: Appointment = {
     id: FHIRappointment.id ?? '',
+    caseId: caseId || undefined,
+    encounterId: encounterId || undefined,
     organisationId: orgParticipant?.actor?.reference?.split('/')[1] ?? 'unknown-org',
-    companion: {
+    patient: {
       id: companionParticipant?.actor?.reference?.split('/')[1] ?? 'unknown-pet',
       name: companionParticipant?.actor?.display ?? '',
       species: speciesExtesnion?.valueString || '',
@@ -376,6 +533,17 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
       ? {
           id: roomParticipant.actor?.reference?.split('/')[1] ?? '',
           name: roomParticipant.actor?.display ?? '',
+          ...(roomUnitId
+            ? {
+                unitId: roomUnitId,
+                unitName: roomUnitName || undefined,
+                unit: {
+                  id: roomUnitId,
+                  name: roomUnitName ?? '',
+                  displayName: roomUnitName ?? '',
+                },
+              }
+            : {}),
         }
       : undefined,
     appointmentDate: FHIRappointment.start ? new Date(FHIRappointment.start) : new Date(),
@@ -396,9 +564,11 @@ export function fromFHIRAppointment(FHIRappointment: FHIRAppointment): Appointme
         name: specialityCoding?.display || '',
       },
     },
+    appointmentKind: appointmentKind ?? 'OUTPATIENT',
     isEmergency: emergencyExtension?.valueBoolean,
     attachments,
     formIds,
+    templateDefaults,
   };
 
   return appointment;

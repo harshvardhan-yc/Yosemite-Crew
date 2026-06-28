@@ -20,6 +20,19 @@ type PdfDocUploaderProps = {
   error?: string;
 };
 
+const uploadPdfToS3 = async (uploadUrl: string, file: File) => {
+  await axios.put(uploadUrl, file, {
+    headers: { 'Content-Type': file?.type },
+    withCredentials: false,
+  });
+};
+
+const validatePdfFile = (f: File) => {
+  if (!allowedTypes.has(f.type)) return false;
+  if (f.size > 20 * 1024 * 1024) return false;
+  return true;
+};
+
 const PdfDocUploader = ({
   onChange,
   placeholder,
@@ -29,27 +42,14 @@ const PdfDocUploader = ({
 }: Readonly<PdfDocUploaderProps>) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const uploadToS3 = async (uploadUrl: string, file: File) => {
-    await axios.put(uploadUrl, file, {
-      headers: { 'Content-Type': file?.type },
-      withCredentials: false,
-    });
-  };
-
-  const validate = (f: File) => {
-    if (!allowedTypes.has(f.type)) return false;
-    if (f.size > 20 * 1024 * 1024) return false;
-    return true;
-  };
-
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList) return;
     const picked = Array.from(fileList)[0];
-    if (!picked || !validate(picked)) return;
+    if (!picked || !validatePdfFile(picked)) return;
     setFile(picked);
     try {
       const signed = await getSignedUrl(picked);
-      await uploadToS3(signed.uploadUrl, picked);
+      await uploadPdfToS3(signed.uploadUrl, picked);
       onChange(signed.s3Key, picked.type, picked.size);
     } catch (err: any) {
       console.log(err);
@@ -68,10 +68,12 @@ const PdfDocUploader = ({
   return (
     <>
       <button
+        type="button"
         className="UploadAreaData"
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
+        aria-label={placeholder}
       >
         <div className="upldCont">
           <FaCloudUploadAlt className="upload-cloud" />
@@ -86,6 +88,7 @@ const PdfDocUploader = ({
             type="file"
             accept=".pdf"
             style={{ display: 'none' }}
+            aria-label={placeholder}
             onChange={(e) => handleFiles(e.target.files)}
           />
         </div>
@@ -102,11 +105,14 @@ const PdfDocUploader = ({
               {file.name}
             </span>
           </div>
-          <FaTrashAlt
+          <button
+            type="button"
             className="absolute top-3 right-3 cursor-pointer"
             onClick={handleRemove}
-            color="#ff3b30"
-          />
+            aria-label={`Remove ${file.name}`}
+          >
+            <FaTrashAlt color="#ff3b30" />
+          </button>
         </div>
       )}
     </>

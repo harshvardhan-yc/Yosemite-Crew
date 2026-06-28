@@ -75,14 +75,15 @@ const groupRoutes = (
   routes: RouteItem[],
   groups: readonly { label: string; routeNames: readonly string[] }[]
 ) =>
-  groups
-    .map((group) => ({
-      label: group.label,
-      routes: group.routeNames
-        .map((routeName) => routes.find((route) => route.name === routeName))
-        .filter((route): route is RouteItem => Boolean(route)),
-    }))
-    .filter((group) => group.routes.length > 0);
+  groups.reduce<Array<{ label: string; routes: RouteItem[] }>>((visibleGroups, group) => {
+    const groupRoutes = group.routeNames.reduce<RouteItem[]>((items, routeName) => {
+      const route = routes.find((item) => item.name === routeName);
+      if (route) items.push(route);
+      return items;
+    }, []);
+    if (groupRoutes.length > 0) visibleGroups.push({ label: group.label, routes: groupRoutes });
+    return visibleGroups;
+  }, []);
 
 const Sidebar = () => {
   useLoadSpecialitiesForPrimaryOrg();
@@ -150,13 +151,15 @@ const Sidebar = () => {
         <Link
           href={authenticatedLogoHref}
           className={`logo ${isCollapsed ? 'logo-collapsed' : ''}`}
+          aria-label="Yosemite Crew dashboard"
         >
           <Image
             src={MEDIA_SOURCES.logo}
-            alt="Logo"
-            width={isCollapsed ? 68 : 90}
-            height={isCollapsed ? 64 : 83}
+            alt="Yosemite Crew"
+            width={112}
+            height={72}
             priority
+            style={{ width: 'auto' }}
           />
         </Link>
       </div>
@@ -202,7 +205,13 @@ const Sidebar = () => {
                       side="right"
                       className="sidebar-route-tooltip"
                     >
-                      <Link className={routeClassName} href={route.href} onClick={onClick}>
+                      <Link
+                        className={routeClassName}
+                        href={route.href}
+                        onClick={onClick}
+                        aria-current={isActive ? 'page' : undefined}
+                      >
+                        <span className="sr-only">{route.name}</span>
                         <span className="route-collapsed-icon-wrap">{routeIcon}</span>
                       </Link>
                     </GlassTooltip>
@@ -215,6 +224,7 @@ const Sidebar = () => {
                     className={routeClassName}
                     href={route.href}
                     onClick={onClick}
+                    aria-current={isActive ? 'page' : undefined}
                   >
                     {routeIcon}
                     <span className="route-label">{route.name}</span>

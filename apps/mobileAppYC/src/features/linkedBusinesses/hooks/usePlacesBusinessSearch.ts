@@ -1,12 +1,12 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {useDispatch} from 'react-redux';
 import type {AppDispatch} from '@/app/store';
-import LocationService from '@/shared/services/LocationService';
+import {useLocationStore} from '@/shared/stores/locationStore';
 import {
   checkOrganisation,
   fetchPlaceCoordinates,
   searchBusinessesByLocation,
-} from '../index';
+} from '../thunks';
 import type {BusinessSearchResult} from '../types';
 
 export interface ResolvedBusinessSelection extends BusinessSearchResult {
@@ -20,7 +20,9 @@ export interface ResolvedBusinessSelection extends BusinessSearchResult {
 
 interface UsePlacesBusinessSearchParams {
   onSelectPms: (selection: ResolvedBusinessSelection) => void | Promise<void>;
-  onSelectNonPms: (selection: ResolvedBusinessSelection) => void | Promise<void>;
+  onSelectNonPms: (
+    selection: ResolvedBusinessSelection,
+  ) => void | Promise<void>;
   onError?: (error: unknown) => void;
   minCharacters?: number;
   debounceMs?: number;
@@ -38,34 +40,24 @@ export const usePlacesBusinessSearch = ({
 }: UsePlacesBusinessSearchParams) => {
   const dispatch = useDispatch<AppDispatch>();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<BusinessSearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<BusinessSearchResult[]>(
+    [],
+  );
   const [searching, setSearching] = useState(false);
-  const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
+  const userLocation = useLocationStore();
+  const userLocationRef = useRef(userLocation);
+  userLocationRef.current = userLocation;
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSearchQueryRef = useRef('');
 
-  useEffect(() => {
-    const getUserLocation = async () => {
-      try {
-        const location = await LocationService.getCurrentPosition();
-        setUserLocation({
-          latitude: location.latitude,
-          longitude: location.longitude,
-        });
-      } catch (error) {
-        // Location is optional - proceed without it
-        console.log('[usePlacesBusinessSearch] Location unavailable:', error);
-      }
-    };
-
-    getUserLocation();
-
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
+  const clearDebounceTimer = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
   }, []);
+
+  useEffect(() => clearDebounceTimer, [clearDebounceTimer]);
 
   const clearResults = useCallback(() => {
     setSearchResults([]);
@@ -103,7 +95,7 @@ export const usePlacesBusinessSearch = ({
           const result = await dispatch(
             searchBusinessesByLocation({
               query,
-              location: userLocation,
+              location: userLocationRef.current,
             }),
           ).unwrap();
           setSearchResults(result);
@@ -115,7 +107,7 @@ export const usePlacesBusinessSearch = ({
         }
       }, debounceMs);
     },
-    [debounceMs, dispatch, minCharacters, onError, userLocation],
+    [debounceMs, dispatch, minCharacters, onError],
   );
 
   const handleSelectBusiness = useCallback(
@@ -128,11 +120,16 @@ export const usePlacesBusinessSearch = ({
 
       if (!hasCoordinates(lat, lng)) {
         try {
-          const coords = await dispatch(fetchPlaceCoordinates(business.id)).unwrap();
+          const coords = await dispatch(
+            fetchPlaceCoordinates(business.id),
+          ).unwrap();
           lat = coords.latitude;
           lng = coords.longitude;
         } catch (coordError) {
-          console.log('[usePlacesBusinessSearch] Failed to fetch coordinates, skipping PMS check:', coordError);
+          console.log(
+            '[usePlacesBusinessSearch] Failed to fetch coordinates, skipping PMS check:',
+            coordError,
+          );
           onError?.(coordError);
           await onSelectNonPms({
             ...business,
@@ -159,13 +156,15 @@ export const usePlacesBusinessSearch = ({
         const selection: ResolvedBusinessSelection = {
           ...business,
           placeId: business.id,
-          lat: lat as number,
-          lng: lng as number,
+          lat,
+          lng,
           organisationId: checkResult.organisationId,
           phone: checkResult.phone || business.phone,
           email: checkResult.website || business.email,
           website: checkResult.website,
-          isPmsOrganisation: Boolean(checkResult.isPmsOrganisation && checkResult.organisationId),
+          isPmsOrganisation: Boolean(
+            checkResult.isPmsOrganisation && checkResult.organisationId,
+          ),
         };
 
         if (selection.isPmsOrganisation) {
@@ -174,13 +173,16 @@ export const usePlacesBusinessSearch = ({
           await onSelectNonPms(selection);
         }
       } catch (error) {
-        console.log('[usePlacesBusinessSearch] Organisation check failed, treating as non-PMS:', error);
+        console.log(
+          '[usePlacesBusinessSearch] Organisation check failed, treating as non-PMS:',
+          error,
+        );
         onError?.(error);
         await onSelectNonPms({
           ...business,
           placeId: business.id,
-          lat: lat as number,
-          lng: lng as number,
+          lat,
+          lng,
           isPmsOrganisation: false,
         });
       }
@@ -199,4 +201,6 @@ export const usePlacesBusinessSearch = ({
   };
 };
 
-export type UsePlacesBusinessSearchReturn = ReturnType<typeof usePlacesBusinessSearch>;
+export type UsePlacesBusinessSearchReturn = ReturnType<
+  typeof usePlacesBusinessSearch
+>;

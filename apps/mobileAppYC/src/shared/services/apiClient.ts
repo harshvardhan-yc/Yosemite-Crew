@@ -65,6 +65,7 @@ client.interceptors.response.use(
         method: response.config?.method,
         url: buildAbsoluteUrl(response.config ?? {}),
         status: response.status,
+        data: response.data,
       });
     }
     return response;
@@ -77,6 +78,7 @@ client.interceptors.response.use(
           url: buildAbsoluteUrl(error.config ?? {}),
           status: error.response.status,
           message: error.message,
+          data: error.response.data,
         });
       } else {
         console.log('[API] Error', {
