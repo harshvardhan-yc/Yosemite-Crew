@@ -77,7 +77,7 @@ overrides:
   undici@7.24.0: 7.28.0
   uuid@9.0.1: 11.1.1
   vite@7.3.3: 7.3.5
-  webpack-dev-server@5.2.3: 5.2.4
+  webpack-dev-server@5.2.3: 5.2.5
   ws@6.2.3: 6.2.4
   ws@7.5.10: 7.5.11
   ws@8.18.3: 8.21.0
@@ -10594,7 +10594,7 @@ packages:
       update-notifier: 6.0.2
       webpack: 5.105.0
       webpack-bundle-analyzer: 4.10.2
-      webpack-dev-server: 5.2.4(debug@4.4.3)(tslib@2.8.1)(webpack@5.105.0)
+      webpack-dev-server: 5.2.5(debug@4.4.3)(tslib@2.8.1)(webpack@5.105.0)
       webpack-merge: 6.0.1
     transitivePeerDependencies:
       - '@docusaurus/faster'
@@ -31432,7 +31432,7 @@ packages:
     engines: {node: '>=20.19.4'}
     dependencies:
       '@babel/traverse': 7.29.0
-      '@babel/traverse--for-generate-function-map': /@babel/traverse@7.29.0
+      '@babel/traverse--for-generate-function-map': /@babel/traverse@7.29.7
       '@babel/types': 7.29.0
       flow-enums-runtime: 0.0.6
       invariant: 2.2.4
@@ -39979,8 +39979,8 @@ packages:
       - tslib
     dev: false
 
-  /webpack-dev-server@5.2.4(debug@4.4.3)(tslib@2.8.1)(webpack@5.105.0):
-    resolution: {integrity: sha512-GqDPGZN9bRqKBTkp4aWkobDDHMsrXKoGSdOH56smIri8qR0JG8gfL8/v/f/OZR3/OKXjG8uwJbFVhKm/FNU/UA==}
+  /webpack-dev-server@5.2.5(debug@4.4.3)(tslib@2.8.1)(webpack@5.105.0):
+    resolution: {integrity: sha512-4wZtCquSuv9CKX8oybo+mqxtxZqWz47uM1Ch94lxowBztOhWCbhqvRbfC/mODOwxgV2brY+JGZpHq58/SuVFYg==}
     engines: {node: '>= 18.12.0'}
     hasBin: true
     peerDependencies:
