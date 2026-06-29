@@ -169,7 +169,7 @@ describe('WorkspaceHeader', () => {
     expect(trigger).not.toBeNull();
     fireEvent.mouseEnter(trigger as Element);
 
-    expect(await screen.findByText('Add alerts for patient')).toBeInTheDocument();
+    expect(await screen.findByText('Add alerts for companion')).toBeInTheDocument();
   });
 
   it('omits the add-alert button when no handler is provided', () => {

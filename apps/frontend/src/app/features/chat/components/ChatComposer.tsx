@@ -49,7 +49,7 @@ function ComposerIconButton({
       aria-label={label}
       onClick={onClick}
       className={clsx(
-        'inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-active',
+        'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-active',
         active
           ? 'bg-chat-panel text-primary-600'
           : 'text-neutral-500 hover:bg-chat-panel hover:text-neutral-900'
@@ -102,7 +102,7 @@ export function ChatComposer() {
   };
 
   return (
-    <div className="border-t border-chat-divider bg-neutral-0 px-3 py-3">
+    <div className="border-t border-chat-divider bg-neutral-0 px-2 py-2.5 sm:px-3 sm:py-3">
       <AttachmentPreviewList />
       {uploadError && (
         <div role="alert" className="mb-2">
@@ -117,7 +117,7 @@ export function ChatComposer() {
             key={t.label}
             type="button"
             onClick={() => composer.textComposer.setText(t.text)}
-            className="shrink-0 whitespace-nowrap rounded-full border border-chat-divider bg-chat-surface px-3 py-1 text-xs font-medium text-neutral-600 transition-colors hover:border-primary-300 hover:bg-chat-panel hover:text-primary-700"
+            className="shrink-0 whitespace-nowrap rounded-full border border-chat-divider bg-chat-surface px-3 py-1.5 font-satoshi text-xs font-semibold text-neutral-600 transition-colors hover:border-primary-300 hover:bg-chat-panel hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-active"
           >
             {t.label}
           </button>
@@ -149,7 +149,7 @@ export function ChatComposer() {
                   onClick={() => imageInputRef.current?.click()}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-chat-surface-soft"
                 >
-                  <LuImage className="h-4 w-4 text-primary-600" />
+                  <LuImage className="h-4 w-4 shrink-0 text-primary-600" />
                   <Text as="span" variant="body-4" className="text-neutral-900">
                     Photo
                   </Text>
@@ -159,7 +159,7 @@ export function ChatComposer() {
                   onClick={() => fileInputRef.current?.click()}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-chat-surface-soft"
                 >
-                  <LuFileText className="h-4 w-4 text-primary-600" />
+                  <LuFileText className="h-4 w-4 shrink-0 text-primary-600" />
                   <Text as="span" variant="body-4" className="text-neutral-900">
                     Document
                   </Text>
@@ -172,7 +172,7 @@ export function ChatComposer() {
                   }}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-chat-surface-soft"
                 >
-                  <LuShare2 className="h-4 w-4 text-primary-600" />
+                  <LuShare2 className="h-4 w-4 shrink-0 text-primary-600" />
                   <Text as="span" variant="body-4" className="text-neutral-900">
                     Share from PIMS
                   </Text>
@@ -182,12 +182,12 @@ export function ChatComposer() {
           )}
         </div>
 
-        <div className="flex flex-1 items-center rounded-3xl border border-input-border bg-chat-surface px-4 py-1.5 focus-within:border-input-border-active">
+        <div className="flex min-h-10 flex-1 items-center rounded-2xl border border-input-border-default bg-(--whitebg) px-4 py-2 transition-colors focus-within:border-input-border-active">
           <TextareaComposer
             placeholder="Write a message…"
             minRows={1}
             maxRows={6}
-            className="w-full resize-none bg-transparent font-satoshi text-sm leading-relaxed text-neutral-900 outline-none placeholder:text-neutral-400"
+            className="block w-full resize-none self-center bg-transparent font-satoshi text-body-4 leading-6 text-text-primary outline-none placeholder:text-input-text-placeholder"
             containerClassName="flex-1"
           />
         </div>

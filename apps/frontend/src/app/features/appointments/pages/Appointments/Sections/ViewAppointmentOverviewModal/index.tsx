@@ -33,6 +33,7 @@ import AppointmentAvatar from '@/app/features/appointments/components/Appointmen
 import AppointmentStatusPill from '@/app/features/appointments/components/AppointmentStatusPill';
 import { Primary } from '@/app/ui/primitives/Buttons';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
+import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import { IoArrowForward } from 'react-icons/io5';
 
@@ -176,6 +177,7 @@ const ViewAppointmentOverviewModal = ({
   canEditAppointments = false,
   onOpenDetails,
 }: ViewAppointmentOverviewModalProps) => {
+  const terminologyText = useCompanionTerminologyText();
   const { notify } = useNotify();
   const rooms = useRoomsForPrimaryOrg();
   const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
@@ -381,7 +383,7 @@ const ViewAppointmentOverviewModal = ({
               photoUrl={(companion as Appointment['patient'] & { photoUrl?: string }).photoUrl}
             />
             <div className="min-w-0">
-              <div className="text-sm text-text-extra">Patient</div>
+              <div className="text-sm text-text-extra">{terminologyText('Patient')}</div>
               <div className="font-satoshi text-base text-text-primary truncate">
                 {companion.name || '-'}
               </div>

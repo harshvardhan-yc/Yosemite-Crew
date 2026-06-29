@@ -22,6 +22,10 @@ jest.mock('@/app/hooks/useAppointments', () => ({
   useAppointmentsForPrimaryOrg: () => useAppointmentsForPrimaryOrgMock(),
 }));
 
+jest.mock('@/app/hooks/useCompanionTerminologyText', () => ({
+  useCompanionTerminologyText: () => (text: string) => text,
+}));
+
 jest.mock('@/app/lib/date', () => ({
   getAgeInYears: jest.fn(() => '2y'),
 }));

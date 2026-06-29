@@ -79,19 +79,19 @@ export function MessageSearch() {
             onClick={() => setOpen(false)}
           />
           <div className="absolute right-0 top-11 z-20 w-80 rounded-2xl border border-chat-divider bg-neutral-0 p-2 shadow-lg">
-            <div className="flex items-center gap-2 rounded-full border border-input-border bg-chat-surface px-3 py-2 focus-within:border-input-border-active">
-              <LuSearch className="h-4 w-4 shrink-0 text-neutral-400" />
+            <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-input-border-default bg-(--whitebg) px-4 py-2.5 transition-colors focus-within:border-input-border-active">
+              <LuSearch className="h-4 w-4 shrink-0 text-input-text-placeholder" />
               <input
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search in conversation…"
                 aria-label="Search in conversation"
-                className="w-full bg-transparent font-satoshi text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                className="w-full bg-transparent font-satoshi text-body-4 text-text-primary outline-none placeholder:text-input-text-placeholder"
               />
               {hasQuery && (
                 <button type="button" aria-label="Clear search" onClick={() => setQuery('')}>
-                  <LuX className="h-4 w-4 text-neutral-400" />
+                  <LuX className="h-4 w-4 text-input-text-placeholder" />
                 </button>
               )}
             </div>
