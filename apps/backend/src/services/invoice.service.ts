@@ -1545,7 +1545,6 @@ export const InvoiceService = {
     }
 
     if (
-      invoice.billingCollectionMode === "PREPAY_AT_BOOKING" ||
       invoice.visitBillingStage === "READY_FOR_BILLING" ||
       invoice.visitBillingStage === "SETTLED"
     ) {
