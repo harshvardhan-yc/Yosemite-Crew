@@ -1306,7 +1306,7 @@ const InvoiceStep = ({
         const hasMax = line.maxDiscountPercent != null || line.maxDiscountCents != null;
         if (hasMax) return line;
         const fallback = discountByName.get(normalizeLineName(line.name));
-        if (!fallback || fallback.maxDiscountPercent == null) return line;
+        if (fallback?.maxDiscountPercent == null) return line;
         return {
           ...line,
           maxDiscountPercent: fallback.maxDiscountPercent,

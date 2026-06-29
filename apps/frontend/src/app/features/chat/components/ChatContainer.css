@@ -249,7 +249,6 @@
 
 .str-chat__main-panel .str-chat__list :where(p, span, a) {
   overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 /* Attachments / images must never exceed the bubble width */
