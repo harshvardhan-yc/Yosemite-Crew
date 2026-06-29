@@ -150,23 +150,28 @@ const flattenFormFields = (fields: FormField[] = []): FormField[] =>
     field.type === 'group' ? flattenFormFields(field.fields ?? []) : [field]
   );
 
-const getFieldUnit = (key: keyof DraftVitals, unit: unknown): string => {
+const getUnitFromRecord = (value: unknown): string | undefined => {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const unit = (value as { unit?: unknown }).unit;
+  return typeof unit === 'string' ? unit : undefined;
+};
+
+const resolveVitalFieldUnit = (key: keyof DraftVitals, configuredUnit: string | undefined) => {
   if (key === 'mucousMembrane') return '';
-  return typeof unit === 'string' ? unit : FIELD_FALLBACKS[key].unit;
+  return configuredUnit ?? FIELD_FALLBACKS[key].unit;
 };
 
 const defaultVitalFieldsFromFormsSchema = (): Field[] => {
   const fields = flattenFormFields(getCategoryTemplate('Vitals'));
   const mapped = fields.flatMap((field) => {
     const key = resolveDraftKey({ id: field.id, label: field.label });
-    const unit =
-      typeof field.meta === 'object' && field.meta !== null ? field.meta.unit : undefined;
     if (!key) return [];
+    const unit = resolveVitalFieldUnit(key, getUnitFromRecord(field.meta));
     return [
       {
         ...FIELD_FALLBACKS[key],
         label: field.label || FIELD_FALLBACKS[key].label,
-        unit: getFieldUnit(key, unit),
+        unit,
       },
     ];
   });
@@ -178,14 +183,13 @@ const templateToVitalFields = (template: TemplateLike): Field[] => {
     getTemplateSchemaSnapshot(template)?.sections.flatMap((section) => section.fields) ?? [];
   const mapped = fields.flatMap((field: TemplateFieldDefinition) => {
     const key = resolveDraftKey(field);
-    const unit =
-      typeof field.rules === 'object' && field.rules !== null ? field.rules.unit : undefined;
     if (!key) return [];
+    const unit = resolveVitalFieldUnit(key, getUnitFromRecord(field.rules));
     return [
       {
         ...FIELD_FALLBACKS[key],
         label: field.label || FIELD_FALLBACKS[key].label,
-        unit: getFieldUnit(key, unit),
+        unit,
       },
     ];
   });
