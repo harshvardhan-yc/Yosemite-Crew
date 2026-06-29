@@ -59,7 +59,7 @@ export function ChatHeaderContext({
         </div>
       )}
       {appointment && (
-        <div className="flex flex-col gap-3 border-b border-chat-divider bg-chat-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2.5 border-b border-chat-divider bg-chat-surface px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 sm:py-3">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-0 text-primary-600">
               <LuCalendar className="h-5 w-5" />
@@ -73,9 +73,9 @@ export function ChatHeaderContext({
               </Text>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:flex-wrap sm:justify-end sm:overflow-visible sm:px-0">
             {APPT_ACTIONS.map((a) => (
-              <Secondary key={a} text={a} onClick={() => onAction(a)} />
+              <Secondary key={a} text={a} onClick={() => onAction(a)} className="shrink-0" />
             ))}
           </div>
         </div>

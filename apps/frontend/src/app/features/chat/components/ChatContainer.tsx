@@ -11,6 +11,7 @@ import {
   useState,
   type ComponentType,
   type FC,
+  type PropsWithChildren,
   type ReactNode,
 } from 'react';
 import {
@@ -534,7 +535,7 @@ const ChannelHeaderWithCounterpart: FC<{
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-3 border-b border-chat-divider bg-neutral-0 px-4 py-3">
+      <header className="flex shrink-0 items-center gap-2 border-b border-chat-divider bg-neutral-0 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
         <ChatAvatar
           name={title}
           online={!isGroupChat && !hasSessionClosed && online}
@@ -542,19 +543,27 @@ const ChannelHeaderWithCounterpart: FC<{
           size="sm"
         />
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="flex items-center gap-2">
-            <Text as="span" variant="body-3-emphasis" className="min-w-0 truncate text-neutral-900">
+          <span className="flex min-w-0 items-center gap-2">
+            <Text
+              as="span"
+              variant="body-3-emphasis"
+              className="min-w-0 flex-1 truncate text-neutral-900"
+            >
               {title}
             </Text>
             {/* "Pet parent" is the fixed owner term and is NOT subject to the animal-terminology rewrite. */}
-            {isClientChat && <Badge tone="warning">Pet parent</Badge>}
+            {isClientChat && (
+              <span className="hidden shrink-0 sm:inline-flex">
+                <Badge tone="warning">Pet parent</Badge>
+              </span>
+            )}
           </span>
           <Text as="span" variant="caption-2" className="truncate text-neutral-500">
             {statusText}
           </Text>
         </div>
         {/* No phone/video calling in chat. */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <MessageSearch />
           {isGroupChat && (
             <Primary
@@ -704,6 +713,25 @@ const createPreviewComponent = (
   return PreviewComponent;
 };
 
+// Channel-list pagination using our reusable Primary button instead of
+// Stream's full-width default. Rendered by ChannelList at the foot of the list.
+const ChatChannelListPaginator: FC<
+  PropsWithChildren<{ loadNextPage: () => void; hasNextPage?: boolean; isLoading?: boolean }>
+> = ({ children, loadNextPage, hasNextPage, isLoading }) => (
+  <>
+    {children}
+    {hasNextPage && (
+      <div className="flex justify-center px-3 py-3">
+        <Primary
+          text={isLoading ? 'Loading…' : 'Load more'}
+          onClick={loadNextPage}
+          isDisabled={isLoading}
+        />
+      </div>
+    )}
+  </>
+);
+
 const CHAT_SORT = [{ last_message_at: -1 as const }];
 const CHAT_OPTIONS = { state: true, watch: true, presence: true };
 
@@ -729,39 +757,14 @@ const ChatClosedFooter: FC<{ closedAt?: string }> = ({ closedAt }) => {
   const formattedClosedTime = formatClosedTime(closedAt);
 
   return (
-    <div
-      style={{
-        padding: '16px',
-        backgroundColor: 'var(--grey-light)',
-        borderTop: '1px solid var(--grey-border)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '8px',
-      }}
-    >
-      <p
-        className="font-satoshi"
-        style={{
-          fontSize: '14px',
-          fontWeight: 500,
-          color: 'var(--grey-text)',
-          margin: 0,
-        }}
-      >
+    <div className="flex shrink-0 flex-col items-center gap-1.5 border-t border-chat-divider bg-chat-surface-soft px-4 py-4">
+      <Text as="p" variant="body-4-emphasis" className="text-neutral-700">
         Chat session closed
-      </p>
+      </Text>
       {formattedClosedTime && (
-        <p
-          className="font-satoshi"
-          style={{
-            fontSize: '12px',
-            color: 'var(--grey-noti)',
-            margin: 0,
-          }}
-        >
+        <Text as="p" variant="caption-2" className="text-neutral-500">
           {formattedClosedTime}
-        </p>
+        </Text>
       )}
     </div>
   );
@@ -859,8 +862,9 @@ const ChatMainPanel: FC<ChatMainPanelProps> = ({
       className="str-chat__main-panel"
       style={{
         display: shouldShowChat ? 'flex' : 'none',
-        flex: 1,
+        flex: '1 1 0%',
         minHeight: 0,
+        minWidth: 0,
       }}
     >
       {showEmpty ? (
@@ -928,6 +932,7 @@ const ChatLayout: FC<ChatLayoutProps> = ({
             sort={sort}
             options={options}
             Preview={previewComponent}
+            Paginator={ChatChannelListPaginator}
             channelRenderFilterFn={channelFilter}
             setActiveChannelOnMount={false}
           />
@@ -986,6 +991,28 @@ const AppointmentChannelInitializer: FC<{
       cancelled = true;
     };
   }, [appointmentId, client, chatContext, onActivated, onCleared]);
+
+  return null;
+};
+
+/**
+ * Clears Stream's active channel whenever the audience scope changes. Without
+ * this the previously opened conversation stays "active" on the chat context,
+ * so on mobile its preview re-mounts with active=true after the list re-filters
+ * and auto-reopens the chat instead of showing the conversation list. Lives
+ * inside <Chat> so it can reach the chat context's setActiveChannel.
+ */
+const ScopeChangeChannelReset: FC<{ scope?: ChatScope }> = ({ scope }) => {
+  const { setActiveChannel } = useChatContext();
+  const initialized = useRef(false);
+
+  useEffect(() => {
+    if (!initialized.current) {
+      initialized.current = true;
+      return;
+    }
+    setActiveChannel?.(undefined);
+  }, [scope, setActiveChannel]);
 
   return null;
 };
@@ -1852,14 +1879,14 @@ export const ChatContainer: FC<ChatContainerProps> = ({
               <ChatScopeSwitcher scope={scope} onScopeChange={onScopeChange} />
             </div>
             <div className="border-b border-chat-divider p-3">
-              <div className="flex items-center gap-2 rounded-full border border-input-border bg-chat-surface px-3 py-2 focus-within:border-input-border-active">
-                <LuSearch className="h-4 w-4 shrink-0 text-neutral-400" />
+              <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-input-border-default bg-(--whitebg) px-4 py-2.5 transition-colors focus-within:border-input-border-active">
+                <LuSearch className="h-4 w-4 shrink-0 text-input-text-placeholder" />
                 <input
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search conversations…"
                   aria-label="Search conversations"
-                  className="w-full bg-transparent font-satoshi text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                  className="w-full bg-transparent font-satoshi text-body-4 text-text-primary outline-none placeholder:text-input-text-placeholder"
                 />
                 <span className="hidden shrink-0 items-center gap-0.5 rounded-md border border-chat-divider px-1.5 py-0.5 text-xs font-semibold text-neutral-400 sm:flex">
                   <LuCommand className="h-3 w-3" />K
@@ -1867,19 +1894,19 @@ export const ChatContainer: FC<ChatContainerProps> = ({
               </div>
             </div>
             {(scope === 'colleagues' || scope === 'groups') && (
-              <div className="p-3 border-b border-grey-light flex flex-col gap-3">
+              <div className="flex flex-col gap-3 border-b border-chat-divider p-3">
                 {scope === 'colleagues' && (
                   <div className="flex flex-col gap-2">
                     {crossOrgEnabled && (
                       <button
                         type="button"
                         onClick={() => setNetworkModalOpen(true)}
-                        className="flex items-center gap-2 px-3 py-2.5 rounded-2xl! border border-grey-light bg-white cursor-pointer text-left hover:border-input-border-active transition-all duration-200"
+                        className="flex cursor-pointer items-center gap-2 rounded-2xl border border-chat-divider bg-neutral-0 px-3 py-2.5 text-left transition-colors duration-200 hover:border-input-border-active hover:bg-chat-surface-soft"
                       >
                         <LuGlobe className="size-4 shrink-0 text-primary-600" />
-                        <span className="font-satoshi text-sm text-text-primary">
+                        <Text as="span" variant="body-4" className="text-neutral-900">
                           Message a colleague at another clinic
-                        </span>
+                        </Text>
                       </button>
                     )}
                     <FormInput
@@ -1947,28 +1974,27 @@ export const ChatContainer: FC<ChatContainerProps> = ({
                               })
                             }
                             disabled={creatingChat}
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-2xl! border border-grey-light bg-white cursor-pointer text-left hover:border-input-border-active transition-all duration-200 overflow-hidden"
+                            className="flex min-h-14 cursor-pointer items-center gap-3 overflow-hidden rounded-2xl border border-chat-divider bg-neutral-0 px-3 py-3 text-left transition-colors duration-200 hover:border-input-border-active hover:bg-chat-surface-soft disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            <div className="size-8 rounded-full bg-card-hover flex items-center justify-center">
-                              <span className="font-satoshi text-black-text text-sm font-medium">
-                                {(u.name || u.email || '?')
-                                  .split(' ')
-                                  .map((p) => p[0])
-                                  .join('')
-                                  .slice(0, 2)
-                                  .toUpperCase()}
-                              </span>
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-body-4 text-text-primary font-medium">
+                            <ChatAvatar name={u.name || u.email || '?'} />
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <Text
+                                as="span"
+                                variant="body-4-emphasis"
+                                className="truncate text-neutral-900"
+                              >
                                 {u.name}
-                              </span>
+                              </Text>
                               {u.email && (
-                                <span className="text-caption-2 text-text-secondary">
+                                <Text
+                                  as="span"
+                                  variant="caption-2"
+                                  className="truncate text-neutral-500"
+                                >
                                   {u.email}
-                                </span>
+                                </Text>
                               )}
-                            </div>
+                            </span>
                           </button>
                         ))}
                       {!orgUsersLoading &&
@@ -2009,6 +2035,7 @@ export const ChatContainer: FC<ChatContainerProps> = ({
               client={client}
               theme="str-chat__theme-light"
             >
+              <ScopeChangeChannelReset scope={scope} />
               <AppointmentChannelInitializer
                 appointmentId={appointmentId}
                 onActivated={(channel) => {
