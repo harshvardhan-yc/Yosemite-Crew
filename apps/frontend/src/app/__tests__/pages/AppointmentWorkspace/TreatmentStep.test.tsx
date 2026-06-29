@@ -7,7 +7,10 @@ import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceS
 import { useInventoryStore } from '@/app/stores/inventoryStore';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
 import type { InventoryItem } from '@/app/features/inventory/pages/Inventory/types';
-import { savePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
+import {
+  deletePrescriptionArtifact,
+  savePrescriptionArtifact,
+} from '@/app/features/appointments/services/workspaceClinicalService';
 import { finalizePrescription } from '@/app/features/appointments/services/prescriptionWorkflowService';
 import { fetchPrescriptionLabelPdf } from '@/app/features/inventory/services/dispensaryService';
 import {
@@ -35,10 +38,12 @@ jest.mock('@/app/features/appointments/services/workspaceAggregateService', () =
   persistTreatmentItems: jest.fn().mockResolvedValue(undefined),
   getAppointmentWorkspaceBootstrap: jest.fn().mockResolvedValue({}),
   normalizeWorkspaceBootstrapForEncounter: jest.fn().mockReturnValue({}),
+  deletePrescriptionTreatmentItem: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@/app/features/appointments/services/workspaceClinicalService', () => ({
   savePrescriptionArtifact: jest.fn().mockResolvedValue({ resourceType: 'MedicationRequest' }),
+  deletePrescriptionArtifact: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@/app/features/appointments/services/prescriptionWorkflowService', () => ({
@@ -244,11 +249,15 @@ const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
           {
             id: 'rx-1',
             medicineName: 'Amoxicillin - 625',
-            dosage: '1 tab',
+            strength: '625',
+            strengthUnit: 'mg',
+            dosageForm: 'Tablet',
             route: 'Oral',
-            frequency: 'BID',
-            durationDays: '5 days',
-            refill: 'x 2',
+            frequency: 'BID (twice daily)',
+            durationDays: '5',
+            durationUnit: 'days',
+            qty: '10',
+            refill: '2',
             instructions: 'Do not skip dosage',
             fulfillment: 'IN_HOUSE',
             priceCents: 16500,
@@ -257,11 +266,15 @@ const seedAndGet = (mode: 'OUTPATIENT' | 'INPATIENT' = 'OUTPATIENT') => {
           {
             id: 'rx-2',
             medicineName: 'Prednisone',
-            dosage: '10mg',
+            strength: '10',
+            strengthUnit: 'mg',
+            dosageForm: 'Tablet',
             route: 'Oral',
-            frequency: 'QD',
-            durationDays: '5 days',
-            refill: 'x 1',
+            frequency: 'SID (once daily)',
+            durationDays: '5',
+            durationUnit: 'days',
+            qty: '5',
+            refill: '1',
             instructions: 'Morning with food',
             fulfillment: 'IN_HOUSE',
             priceCents: 9000,
@@ -305,9 +318,11 @@ describe('TreatmentStep', () => {
     resetCatalog();
     seedPrescriptionInventory();
     (savePrescriptionArtifact as jest.Mock).mockClear();
-    (savePrescriptionArtifact as jest.Mock).mockResolvedValue({
-      resourceType: 'MedicationRequest',
-    });
+    // Echo back the saved artifact id (mirrors the create/update response) so finalize targets
+    // the real id and the save handler does not append a duplicate local row.
+    (savePrescriptionArtifact as jest.Mock).mockImplementation((_ctx, rx) =>
+      Promise.resolve({ resourceType: 'MedicationRequest', id: rx.id })
+    );
     (finalizePrescription as jest.Mock).mockClear();
     (finalizePrescription as jest.Mock).mockResolvedValue({});
     (applyInpatientScheduleTemplate as jest.Mock).mockClear();
@@ -371,7 +386,7 @@ describe('TreatmentStep', () => {
     expect(screen.getByText('Low stock')).toBeInTheDocument();
     // Each row shows the line price at the right end and a Refill field.
     expect(screen.getByText('$165')).toBeInTheDocument();
-    expect(screen.getAllByLabelText('Refill').length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText('Refills').length).toBeGreaterThan(0);
     // Fulfillment is a pill dropdown (not checkboxes), defaulting to the value.
     expect(screen.getAllByRole('combobox', { name: /fulfillment/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByText('In-house fulfilled').length).toBeGreaterThan(0);
@@ -528,6 +543,67 @@ describe('TreatmentStep', () => {
     ).toBeUndefined();
   });
 
+  it('deletes a persisted unbilled prescription via the artifact DELETE endpoint', async () => {
+    (deletePrescriptionArtifact as jest.Mock).mockClear();
+    (deletePrescriptionArtifact as jest.Mock).mockResolvedValue(true);
+    const seeded = seedAndGet();
+    const enc = { ...seeded, prescription: seeded.prescription.filter((p) => !p.billed) };
+    useAppointmentWorkspaceStore.setState((s) => ({
+      encountersById: { ...s.encountersById, [APPT]: enc },
+    }));
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /remove amoxicillin/i }));
+
+    await waitFor(() => expect(deletePrescriptionArtifact).toHaveBeenCalledWith(ORG, 'rx-1'));
+    expect(
+      useAppointmentWorkspaceStore
+        .getState()
+        .getEncounter(APPT)
+        ?.prescription.some((p) => p.id === 'rx-1')
+    ).toBe(false);
+  });
+
+  it('restores the row and warns when deleting a finalized/billed prescription returns 409', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (deletePrescriptionArtifact as jest.Mock).mockClear();
+    (deletePrescriptionArtifact as jest.Mock).mockRejectedValue({ response: { status: 409 } });
+    const seeded = seedAndGet();
+    const enc = { ...seeded, prescription: seeded.prescription.filter((p) => !p.billed) };
+    useAppointmentWorkspaceStore.setState((s) => ({
+      encountersById: { ...s.encountersById, [APPT]: enc },
+    }));
+    render(
+      <TreatmentStep
+        appointmentId={APPT}
+        organisationId={ORG}
+        encounter={enc}
+        onOpenInvoice={jest.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /remove amoxicillin/i }));
+
+    expect(
+      await screen.findByText(/finalized or billed and can no longer be removed/i)
+    ).toBeInTheDocument();
+    // The row is restored after the conflict.
+    expect(
+      useAppointmentWorkspaceStore
+        .getState()
+        .getEncounter(APPT)
+        ?.prescription.some((p) => p.id === 'rx-1')
+    ).toBe(true);
+    errorSpy.mockRestore();
+  });
+
   it('renders empty editable inputs for incomplete medication rows', () => {
     const enc = {
       ...seedAndGet(),
@@ -538,22 +614,50 @@ describe('TreatmentStep', () => {
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
 
     expect(screen.getByText(/Minimal med/)).toBeInTheDocument();
-    // The editable cells (dose/route/freq/duration/refill/instructions) render as
-    // empty floating-label input boxes for a row that has no values yet.
-    expect((screen.getByLabelText('Strength') as HTMLInputElement).value).toBe('');
+    // The editable cells (qty/refills/duration/instructions) render as empty floating-label
+    // input boxes for a row that has no values yet. Form/Route render as dropdown triggers
+    // because inventory did not supply them.
+    expect((screen.getByLabelText('Qty') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Refills') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Duration') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Instructions') as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('button', { name: /^Form$/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Route$/ })).toBeInTheDocument();
   });
 
-  it('edits a prescription field through the floating-label input', () => {
+  it('edits prescription fields through the line controls', () => {
     const enc = seedAndGet();
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
 
-    const dosageInputs = screen.getAllByLabelText('Strength');
-    fireEvent.change(dosageInputs[0], { target: { value: '250mg' } });
-    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.prescription[0].dosage).toBe(
-      '250mg'
+    // Qty is a plain input; Frequency is the shared (room/unit-style) LabelDropdown.
+    fireEvent.change(screen.getAllByLabelText('Qty')[0], { target: { value: '20' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Frequency/ })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Every 12 hours' }));
+    expect(useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.prescription[0].qty).toBe(
+      '20'
     );
+    expect(
+      useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.prescription[0].frequency
+    ).toBe('Every 12 hours');
+  });
+
+  it('shows a persisted frequency value on the frequency dropdown trigger', () => {
+    const enc = {
+      ...seedAndGet(),
+      prescription: [
+        {
+          id: 'rx-custom-frequency',
+          medicineName: 'Custom frequency med',
+          frequency: 'BID (twice daily)',
+          fulfillment: 'IN_HOUSE' as const,
+        },
+      ],
+    };
+    render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
+
+    expect(
+      screen.getByRole('button', { name: /Frequency: BID \(twice daily\)/ })
+    ).toBeInTheDocument();
   });
 
   it('prints a label PDF for each saved prescription', async () => {
@@ -691,7 +795,7 @@ describe('TreatmentStep', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /save treatment/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to save treatment items');
+    expect(await screen.findByText(/Unable to save treatment items/)).toBeInTheDocument();
     expect(onOpenInvoice).not.toHaveBeenCalled();
     expect(
       useAppointmentWorkspaceStore.getState().getEncounter(APPT)?.stepStatus.TREATMENT
@@ -1039,10 +1143,9 @@ describe('TreatmentStep', () => {
     // The "click to search and add" dashed containers are hidden in view-only mode.
     expect(screen.queryByText(/click to search and add service/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/click to search and add medication/i)).not.toBeInTheDocument();
-    // Prescription fields keep the floating-label input style but are read-only.
-    const dosage = screen.getAllByLabelText('Strength')[0] as HTMLInputElement;
-    expect(dosage).toHaveAttribute('readonly');
-    expect(dosage.value).toBe('1 tab');
+    // Prescription editable fields keep the floating-label input style but are read-only.
+    const refills = screen.getAllByLabelText('Refills')[0] as HTMLInputElement;
+    expect(refills).toHaveAttribute('readonly');
     // Schedule Add control and the breakdown Record button are disabled.
     expect(screen.getByRole('button', { name: /add schedule task/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^Record$/i })).toBeDisabled();

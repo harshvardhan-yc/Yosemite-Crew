@@ -66,10 +66,20 @@ const recalcInvoiceLine = (item: InvoiceLineItem): InvoiceLineItem => {
   const grossCents = item.unitPriceCents * item.qty;
   // Discount is bounded by the gross and, when the catalog sets one, the per-line
   // max-discount ceiling — so a manual edit can never exceed the allowed discount.
-  const ceiling =
-    item.maxDiscountCents == null ? grossCents : Math.min(item.maxDiscountCents, grossCents);
+  const percentCeiling =
+    item.maxDiscountPercent == null
+      ? undefined
+      : Math.round((grossCents * item.maxDiscountPercent) / 100);
+  const explicitCeiling = item.maxDiscountCents;
+  const ceiling = Math.min(percentCeiling ?? explicitCeiling ?? grossCents, grossCents);
   const discountCents = Math.min(Math.max(0, item.discountCents), ceiling);
-  return { ...item, grossCents, discountCents, amountCents: grossCents - discountCents };
+  return {
+    ...item,
+    grossCents,
+    discountCents,
+    maxDiscountCents: percentCeiling ?? explicitCeiling,
+    amountCents: grossCents - discountCents,
+  };
 };
 
 /** Bill totals shared by the Total Bill view and the payment-recording action. */
@@ -195,6 +205,14 @@ type AppointmentWorkspaceState = {
     persistedId?: string
   ) => void;
   updatePrescription: (appointmentId: string, id: string, patch: Partial<PrescriptionItem>) => void;
+  /**
+   * Reconcile a staged prescription after it persists: replace the row identified by `localId`
+   * in place with `item` (carrying the backend id). Keeps the list at one entry — no duplicate
+   * local + persisted rows — and drops any other row that already has the persisted id.
+   */
+  replacePrescription: (appointmentId: string, localId: string, item: PrescriptionItem) => void;
+  /** Authoritatively replace the whole prescription list (used after a successful save). */
+  setPrescriptions: (appointmentId: string, items: PrescriptionItem[]) => void;
   removePrescription: (appointmentId: string, id: string) => void;
 
   addScheduleTask: (appointmentId: string, task: Omit<ScheduleTask, 'id'>) => void;
@@ -677,6 +695,28 @@ export const useAppointmentWorkspaceStore = create<AppointmentWorkspaceState>((s
       ...enc,
       prescription: enc.prescription.map((p) => (p.id === id ? { ...p, ...patch } : p)),
     })),
+
+  setPrescriptions: (appointmentId, items) =>
+    patchEnc(set, appointmentId, (enc) => ({ ...enc, prescription: items })),
+
+  replacePrescription: (appointmentId, localId, item) =>
+    patchEnc(set, appointmentId, (enc) => {
+      let replaced = false;
+      const prescription = enc.prescription.flatMap((p) => {
+        if (p.id === localId) {
+          replaced = true;
+          return [item];
+        }
+        // Drop any pre-existing row that already carries the persisted id (e.g. a prior
+        // bootstrap-hydrated copy) so the reconciled row is unique.
+        if (p.id === item.id) return [];
+        return [p];
+      });
+      return {
+        ...enc,
+        prescription: replaced ? prescription : [...prescription, item],
+      };
+    }),
 
   removePrescription: (appointmentId, id) =>
     patchEnc(set, appointmentId, (enc) => ({

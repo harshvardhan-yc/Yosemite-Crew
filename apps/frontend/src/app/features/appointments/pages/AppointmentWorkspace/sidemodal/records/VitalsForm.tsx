@@ -149,23 +149,23 @@ const flattenFormFields = (fields: FormField[] = []): FormField[] =>
     field.type === 'group' ? flattenFormFields(field.fields ?? []) : [field]
   );
 
+const getFieldUnit = (key: keyof DraftVitals, unit: unknown): string => {
+  if (key === 'mucousMembrane') return '';
+  return typeof unit === 'string' ? unit : FIELD_FALLBACKS[key].unit;
+};
+
 const defaultVitalFieldsFromFormsSchema = (): Field[] => {
   const fields = flattenFormFields(getCategoryTemplate('Vitals'));
   const mapped = fields.flatMap((field) => {
     const key = resolveDraftKey({ id: field.id, label: field.label });
+    const unit =
+      typeof field.meta === 'object' && field.meta !== null ? field.meta.unit : undefined;
     if (!key) return [];
     return [
       {
         ...FIELD_FALLBACKS[key],
         label: field.label || FIELD_FALLBACKS[key].label,
-        unit:
-          key === 'mucousMembrane'
-            ? ''
-            : typeof field.meta === 'object' &&
-                field.meta !== null &&
-                typeof (field.meta as { unit?: unknown }).unit === 'string'
-              ? (field.meta as { unit: string }).unit
-              : FIELD_FALLBACKS[key].unit,
+        unit: getFieldUnit(key, unit),
       },
     ];
   });
@@ -177,19 +177,14 @@ const templateToVitalFields = (template: TemplateLike): Field[] => {
     getTemplateSchemaSnapshot(template)?.sections.flatMap((section) => section.fields) ?? [];
   const mapped = fields.flatMap((field: TemplateFieldDefinition) => {
     const key = resolveDraftKey(field);
+    const unit =
+      typeof field.rules === 'object' && field.rules !== null ? field.rules.unit : undefined;
     if (!key) return [];
     return [
       {
         ...FIELD_FALLBACKS[key],
         label: field.label || FIELD_FALLBACKS[key].label,
-        unit:
-          key === 'mucousMembrane'
-            ? ''
-            : typeof field.rules === 'object' &&
-                field.rules !== null &&
-                typeof (field.rules as { unit?: unknown }).unit === 'string'
-              ? (field.rules as { unit: string }).unit
-              : FIELD_FALLBACKS[key].unit,
+        unit: getFieldUnit(key, unit),
       },
     ];
   });
