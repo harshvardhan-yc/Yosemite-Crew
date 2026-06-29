@@ -203,13 +203,29 @@ const normalizeOptionalCode = (value: unknown) => {
   return normalized;
 };
 
-const slugifyRoomCode = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
+const slugifyRoomCode = (value: string) => {
+  const lower = value.trim().toLowerCase();
+  let slug = "";
+  let pendingDash = false;
+
+  for (const char of lower) {
+    const isAlphaNumeric =
+      (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
+
+    if (isAlphaNumeric) {
+      if (pendingDash && slug.length > 0) {
+        slug += "-";
+      }
+      slug += char;
+      pendingDash = false;
+      continue;
+    }
+
+    pendingDash = true;
+  }
+
+  return slug;
+};
 
 const buildGeneratedRoomCode = (name: string) => {
   const slug = slugifyRoomCode(name);
@@ -901,42 +917,23 @@ export const OrganisationRoomService = {
             ? existing.description
             : input.description,
         type: input.type ?? existing.type,
-        occupancyStatus:
-          input.occupancyStatus === undefined
-            ? existing.occupancyStatus
-            : input.occupancyStatus,
+        occupancyStatus: input.occupancyStatus ?? existing.occupancyStatus,
         assignedSpecialiteis:
-          input.assignedSpecialiteis === undefined
-            ? (currentLinks.specialitiesByRoom.get(existing.id) ?? [])
-            : input.assignedSpecialiteis,
+          input.assignedSpecialiteis ??
+          currentLinks.specialitiesByRoom.get(existing.id) ??
+          [],
         assignedStaffs:
-          input.assignedStaffs === undefined
-            ? (currentLinks.staffByRoom.get(existing.id) ?? [])
-            : input.assignedStaffs,
-        availableNow:
-          input.availableNow === undefined
-            ? existing.availableNow
-            : input.availableNow,
-        availabilityMode:
-          input.availabilityMode === undefined
-            ? existing.availabilityMode
-            : input.availabilityMode,
-        availabilityDays:
-          input.availabilityDays === undefined
-            ? existing.availabilityDays
-            : input.availabilityDays,
+          input.assignedStaffs ??
+          currentLinks.staffByRoom.get(existing.id) ??
+          [],
+        availableNow: input.availableNow ?? existing.availableNow,
+        availabilityMode: input.availabilityMode ?? existing.availabilityMode,
+        availabilityDays: input.availabilityDays ?? existing.availabilityDays,
         availabilityStartTime:
-          input.availabilityStartTime === undefined
-            ? existing.availabilityStartTime
-            : input.availabilityStartTime,
+          input.availabilityStartTime ?? existing.availabilityStartTime,
         availabilityEndTime:
-          input.availabilityEndTime === undefined
-            ? existing.availabilityEndTime
-            : input.availabilityEndTime,
-        capabilities:
-          input.capabilities === undefined
-            ? existing.capabilities
-            : input.capabilities,
+          input.availabilityEndTime ?? existing.availabilityEndTime,
+        capabilities: input.capabilities ?? existing.capabilities,
       },
       existing.id,
     );
