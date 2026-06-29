@@ -269,13 +269,12 @@ const PrescriptionRow = ({
       </div>
 
       {/* Inventory-owned facts (read-only chips) — only rendered when present. */}
-      {(item.genericName || strengthLabel || hasForm || hasRoute || item.sku) && (
+      {(item.genericName || strengthLabel || hasForm || hasRoute) && (
         <div className="flex flex-wrap items-center gap-2">
           <FactChip label="Generic" value={item.genericName} />
           <FactChip label="Strength" value={strengthLabel} />
           {hasForm && <FactChip label="Form" value={item.dosageForm} />}
           {hasRoute && <FactChip label="Route" value={item.route} />}
-          <FactChip label="SKU" value={item.sku} />
         </div>
       )}
 

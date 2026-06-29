@@ -89,7 +89,7 @@ type ObservationSubmissionListFilters = {
   toDate?: string | Date;
 };
 
-type ClinicalArtifactAction = '$finalize' | '$reopen' | '$amend';
+type ClinicalArtifactAction = '$finalize' | '$reopen' | '$amend' | '$cancel';
 type DischargeSummaryHydration = Pick<
   WorkspaceClinicalHydration,
   | 'dischargeSummary'
@@ -914,26 +914,50 @@ export const listPrescriptionsForAppointment = async (
 };
 
 /**
- * Delete (void) an unbilled DRAFT prescription artifact via the clinical-artifact REST DELETE
- * (`DELETE …/prescription/:prescriptionId`). The backend soft-deletes (marks VOID), cascades the
- * linked workspace treatment-item row, and excludes voided prescriptions from list/bootstrap reads.
- * Contract: `204 No Content` on success; `409 Conflict` when finalized/billed (re-thrown for the
- * caller to surface). Returns true on success, or false only if the route is unavailable
- * (405/501) so the caller can fall back to the legacy treatment-item delete.
+ * Cancel (void) a FINALIZED but unbilled prescription. A finalized prescription is a clinical
+ * record and cannot be hard-deleted, so the backend reverses the in-house dispense/stock
+ * reservation and marks it CANCELLED. Contract: `200/204` on success; `409 Conflict` when the
+ * prescription is already billed/paid (re-thrown for the caller to surface).
+ */
+export const cancelPrescriptionArtifact = (organisationId: string, prescriptionId: string) =>
+  clinicalArtifactAction<MedicationRequest>(
+    organisationId,
+    'prescription',
+    prescriptionId,
+    '$cancel'
+  );
+
+/**
+ * Remove a prescription end-to-end. DRAFT prescriptions are hard-deleted via the clinical-artifact
+ * REST DELETE (`DELETE …/prescription/:id`). A finalized-but-unbilled prescription returns
+ * `409` from DELETE ("Only draft prescriptions can be deleted") — the correct PIMS rule — so we
+ * fall back to `$cancel`, which voids it and reverses the dispense. Either way the backend cascades
+ * the linked treatment-item and excludes the record from list/bootstrap reads. Re-throws a `409`
+ * only when the prescription is genuinely billed/paid (cancel also rejects). Returns true on
+ * success, or false when the DELETE route is unavailable (405/501) so the caller can fall back to
+ * the legacy treatment-item delete.
  */
 export const deletePrescriptionArtifact = async (
   organisationId: string,
   prescriptionId: string
 ): Promise<boolean> => {
+  const statusOf = (error: unknown) =>
+    (error as { response?: { status?: number } })?.response?.status;
   try {
     await deleteData(
       `/fhir/v1/clinical-artifact/organisation/${organisationId}/prescription/${prescriptionId}`
     );
     return true;
   } catch (error) {
-    const status = (error as { response?: { status?: number } })?.response?.status;
-    // Route not implemented yet → let the caller fall back. Re-throw missing records and failures.
+    const status = statusOf(error);
+    // Route not implemented yet → let the caller fall back.
     if (status === 405 || status === 501) return false;
+    // Non-draft (finalized) → cancel/void instead of delete. A 409 from cancel means it is
+    // billed/paid and genuinely cannot be removed; surface that to the caller.
+    if (status === 409) {
+      await cancelPrescriptionArtifact(organisationId, prescriptionId);
+      return true;
+    }
     throw error;
   }
 };
