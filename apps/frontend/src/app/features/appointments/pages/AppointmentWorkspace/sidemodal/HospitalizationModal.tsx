@@ -11,6 +11,7 @@ import Timepicker from '@/app/ui/inputs/Timepicker';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
 import type { DropdownOption } from '@/app/hooks/useDropdown';
+import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 import '@/app/ui/primitives/Buttons/ButtonEffects.css';
 
 const FONT = 'var(--font-satoshi), sans-serif';
@@ -92,6 +93,7 @@ const HospitalizationModal = ({
   defaultUnitId,
   onConvert,
 }: HospitalizationModalProps) => {
+  const terminologyText = useCompanionTerminologyText();
   const today = useMemo(() => new Date(), []);
   const [admissionDate, setAdmissionDate] = useState<Date | null>(today);
   const [admissionTime, setAdmissionTime] = useState(() => {
@@ -216,7 +218,7 @@ const HospitalizationModal = ({
     <AppointmentCentralModalShell
       showModal={showModal}
       setShowModal={setShowModal}
-      title="Hospitalizing Patient"
+      title={terminologyText('Hospitalizing Patient')}
     >
       <div className="flex flex-col gap-6">
         <div className="grid gap-5 lg:grid-cols-2">

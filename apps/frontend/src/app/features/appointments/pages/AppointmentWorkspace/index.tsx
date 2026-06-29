@@ -26,6 +26,7 @@ import { getAppointmentCompanion, normalizeAppointmentStatus } from '@/app/lib/a
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
 import { useLoadCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
+import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 import { useCompanionStore } from '@/app/stores/companionStore';
 import { useParentStore } from '@/app/stores/parentStore';
 import { updateCompanion } from '@/app/features/companions/services/companionService';
@@ -303,6 +304,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { notify } = useNotify();
+  const terminologyText = useCompanionTerminologyText();
   const attributes = useAuthStore((s) => s.attributes);
   useLoadRoomsForPrimaryOrg();
   useLoadCompanionsForPrimaryOrg();
@@ -507,9 +509,10 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           species: companion.species,
           breed: companion.breed,
         },
-        companionRecord
+        companionRecord,
+        terminologyText
       ),
-    [companion, companionRecord]
+    [companion, companionRecord, terminologyText]
   );
   // Clinical encounter — the time-based "Appointment lock window" freezes the
   // legal record (SOAP + Discharge/Summary). This is what the lock exists for.
@@ -682,7 +685,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       if (!canAdmitAppointmentStatus) {
         notify('error', {
           title: 'Check in required',
-          text: 'Check in the appointment before admitting the patient.',
+          text: terminologyText('Check in the appointment before admitting the patient.'),
         });
         return false;
       }
@@ -747,7 +750,10 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         refreshWorkspaceEncounterId().catch((error) => {
           console.error('Unable to refresh workspace after admission:', error);
         });
-        notify('success', { title: 'Patient admitted', text: 'Admission has been created.' });
+        notify('success', {
+          title: terminologyText('Patient admitted'),
+          text: 'Admission has been created.',
+        });
         return true;
       } catch (error) {
         notify('error', {
@@ -782,6 +788,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       refreshWorkspaceEncounterId,
       rooms,
       setRoomUnit,
+      terminologyText,
     ]
   );
 
@@ -1020,7 +1027,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       if (!companionRecord) {
         notify('error', {
           title: 'Unable to update alerts',
-          text: 'Patient details are still loading. Please try again.',
+          text: terminologyText('Patient details are still loading. Please try again.'),
         });
         return;
       }
@@ -1029,7 +1036,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         alerts: companionAlertsToStoredAlerts(nextAlerts),
       });
     },
-    [companionRecord, notify]
+    [companionRecord, notify, terminologyText]
   );
 
   const handleAddPatientAlert = useCallback(
@@ -1040,12 +1047,15 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       ];
       try {
         await persistPatientAlerts(nextAlerts);
-        notify('success', { title: 'Alert added', text: 'Patient alert has been saved.' });
+        notify('success', {
+          title: 'Alert added',
+          text: terminologyText('Patient alert has been saved.'),
+        });
       } catch {
         notify('error', { title: 'Failed to add alert', text: 'Please try again.' });
       }
     },
-    [persistPatientAlerts, persistedPatientAlerts, notify]
+    [persistPatientAlerts, persistedPatientAlerts, notify, terminologyText]
   );
 
   const handleRemovePatientAlert = useCallback(
@@ -1053,12 +1063,15 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       const nextAlerts = persistedPatientAlerts.filter((alert) => alert.id !== id);
       try {
         await persistPatientAlerts(nextAlerts);
-        notify('success', { title: 'Alert removed', text: 'Patient alert has been removed.' });
+        notify('success', {
+          title: 'Alert removed',
+          text: terminologyText('Patient alert has been removed.'),
+        });
       } catch {
         notify('error', { title: 'Failed to remove alert', text: 'Please try again.' });
       }
     },
-    [persistPatientAlerts, persistedPatientAlerts, notify]
+    [persistPatientAlerts, persistedPatientAlerts, notify, terminologyText]
   );
 
   useEffect(() => {
@@ -1120,7 +1133,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         await completeAppointmentStatus();
         markDischarged(appointmentId, dischargedAt);
         notify('success', {
-          title: 'Patient discharged',
+          title: terminologyText('Patient discharged'),
           text: 'The inpatient stay has been closed.',
         });
       } catch (error) {
@@ -1139,6 +1152,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       isFinalizing,
       markDischarged,
       notify,
+      terminologyText,
     ]
   );
 
@@ -1220,7 +1234,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
             if (!canAdmitAppointmentStatus) {
               notify('error', {
                 title: 'Check in required',
-                text: 'Check in the appointment before admitting the patient.',
+                text: terminologyText('Check in the appointment before admitting the patient.'),
               });
               return;
             }
