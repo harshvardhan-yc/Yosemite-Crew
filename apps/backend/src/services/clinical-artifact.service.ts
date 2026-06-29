@@ -985,7 +985,10 @@ const loadSoapNoteOrThrow = async (soapNoteId: string) => {
   return note;
 };
 
-const loadPrescriptionOrThrow = async (prescriptionId: string) => {
+const loadPrescriptionOrThrow = async (
+  prescriptionId: string,
+  options: { includeVoid?: boolean } = {},
+) => {
   const identifier = ensureId(prescriptionId, "prescriptionId");
   const prescription = await clinicalPrisma.prescription.findFirst({
     where: {
@@ -1000,7 +1003,7 @@ const loadPrescriptionOrThrow = async (prescriptionId: string) => {
 
   assertArtifactKind(prescription.artifact, "PRESCRIPTION", "prescription");
 
-  if (prescription.artifact.status === "VOID") {
+  if (prescription.artifact.status === "VOID" && !options.includeVoid) {
     throw new ClinicalArtifactServiceError("Prescription not found", 404);
   }
 
@@ -1601,6 +1604,104 @@ export const ClinicalArtifactService = {
         data: { status: "VOID" },
       });
     });
+  },
+
+  async cancelPrescription(
+    prescriptionId: string,
+    organisationId?: string,
+  ): Promise<PrescriptionRecord> {
+    const record = await loadPrescriptionOrThrow(prescriptionId, {
+      includeVoid: true,
+    });
+    assertArtifactKind(
+      record.artifact,
+      "PRESCRIPTION",
+      "prescription",
+      organisationId,
+    );
+
+    if (record.artifact.status === "VOID") {
+      return toPrescriptionRecord(record);
+    }
+
+    if (
+      record.artifact.status !== "COMPLETED" &&
+      record.artifact.status !== "SIGNED"
+    ) {
+      throw new ClinicalArtifactServiceError(
+        "Only finalized prescriptions can be cancelled.",
+        409,
+      );
+    }
+
+    const treatmentItem = await clinicalPrisma.workspaceTreatmentItem.findFirst(
+      {
+        where: {
+          organisationId: record.artifact.organisationId,
+          prescriptionId: record.id,
+        },
+        select: {
+          id: true,
+          billingStatus: true,
+          invoiceRowId: true,
+        },
+      },
+    );
+
+    if (
+      treatmentItem &&
+      (treatmentItem.billingStatus !== "UNBILLED" ||
+        treatmentItem.invoiceRowId != null)
+    ) {
+      throw new ClinicalArtifactServiceError(
+        "Prescription has already been billed or paid.",
+        409,
+      );
+    }
+
+    const dispenseRequest =
+      await clinicalPrisma.prescriptionDispenseRequest.findFirst({
+        where: {
+          organisationId: record.artifact.organisationId,
+          prescriptionId: record.id,
+          status: { in: ["PENDING", "DISPENSED"] },
+        },
+        orderBy: { requestedAt: "desc" },
+      });
+
+    if (dispenseRequest?.status === "DISPENSED") {
+      await InventoryConsumptionService.voidDispensePrescription({
+        organisationId: record.artifact.organisationId,
+        prescriptionId: record.id,
+        medications: record.medications,
+        metadata: record.metadata as Prisma.InputJsonValue | undefined,
+      });
+    } else if (dispenseRequest?.status === "PENDING") {
+      await InventoryConsumptionService.markPrescriptionDispenseRequestNotDispensed(
+        {
+          organisationId: record.artifact.organisationId,
+          prescriptionId: record.id,
+          metadata: record.metadata as Prisma.InputJsonValue | undefined,
+        },
+      );
+    }
+
+    const artifact = await prisma.$transaction(async (tx) => {
+      const txPrisma = tx as ClinicalPrisma;
+      await txPrisma.workspaceTreatmentItem.deleteMany({
+        where: {
+          organisationId: record.artifact.organisationId,
+          prescriptionId: record.id,
+        },
+      });
+
+      return txPrisma.clinicalArtifact.update({
+        where: { id: record.artifact.id },
+        data: { status: "VOID" },
+      });
+    });
+
+    return buildPrescriptionRecord(artifact, record);
   },
 
   async getPrescription(
