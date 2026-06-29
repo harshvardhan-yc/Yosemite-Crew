@@ -184,7 +184,7 @@ const WorkspaceMetaBar = ({
   return (
     <div className="flex flex-col gap-x-6 gap-y-5 lg:flex-row lg:items-start lg:justify-between">
       <div className="flex min-w-0 flex-1 flex-wrap items-start gap-x-3 gap-y-5">{staffFields}</div>
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-5 lg:justify-end">
+      <div className="flex shrink-0 flex-wrap items-start gap-x-3 gap-y-5 lg:justify-end">
         {readyToggles}
         {saveButton}
       </div>

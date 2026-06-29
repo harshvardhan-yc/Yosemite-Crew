@@ -341,6 +341,35 @@ describe('RecordPanel', () => {
     expect(screen.getByText('VT-001')).toBeInTheDocument();
   });
 
+  it('records the logged-in clinician as the recorder (no manual selection)', async () => {
+    render(
+      <RecordPanel
+        appointmentId={APPT}
+        organisationId="org-1"
+        encounterId="enc-1"
+        authorId="usr-logged-in"
+        authorName="Dr Logged In"
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /new vital/i }));
+    // There is no "Recorded by" dropdown any more.
+    expect(screen.queryByLabelText(/recorded by/i)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Weight'), { target: { value: '55' } });
+    fireEvent.change(screen.getByLabelText('Temperature'), { target: { value: '101' } });
+    fireEvent.change(screen.getByLabelText('Heart rate'), { target: { value: '88' } });
+    fireEvent.change(screen.getByLabelText('Respiratory rate'), { target: { value: '22' } });
+    fireEvent.change(screen.getByLabelText('Pain score'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('BCS'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /save vitals/i }));
+
+    await waitFor(() => expect(saveVitalRecord).toHaveBeenCalled());
+    // Context carries the logged-in id; the recorder name/id are the logged-in clinician.
+    const [context, vital] = (saveVitalRecord as jest.Mock).mock.calls[0];
+    expect(context.authorId).toBe('usr-logged-in');
+    expect(vital.recordedByName).toBe('Dr Logged In');
+    expect(vital.recordedById).toBe('usr-logged-in');
+  });
+
   it('blocks save when numeric vitals are out of range or invalid', () => {
     render(<RecordPanel appointmentId={APPT} organisationId="org-1" encounterId="enc-1" />);
     fireEvent.click(screen.getByRole('button', { name: /new vital/i }));

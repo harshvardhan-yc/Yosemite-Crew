@@ -115,9 +115,13 @@ const getRoomUnits = (
   roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId']
 ) => {
   if (!roomId) return [];
-  return (roomUnitIdsByRoomId[roomId] ?? [])
+  const indexedUnits = (roomUnitIdsByRoomId[roomId] ?? [])
     .map((unitId) => roomUnitsById[unitId])
     .filter((unit) => unit?.isActive !== false);
+  if (indexedUnits.length) return indexedUnits;
+  return Object.values(roomUnitsById).filter(
+    (unit) => unit.roomId === roomId && unit.isActive !== false
+  );
 };
 
 const isValidStep = (value: string | null): value is WorkspaceStep =>
@@ -578,6 +582,17 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       ? [{ label: effectiveEncounter.unitId, value: effectiveEncounter.unitId }]
       : [];
   }, [effectiveEncounter?.unitId, selectedRoomUnits]);
+  const unitOptionsByRoomId = useMemo(() => {
+    const optionsByRoom: Record<string, { label: string; value: string }[]> = {};
+    for (const room of rooms) {
+      const options = getRoomUnits(room.id, roomUnitsById, roomUnitIdsByRoomId).map((unit) => ({
+        label: unit.displayName || unit.code,
+        value: unit.id,
+      }));
+      if (options.length) optionsByRoom[room.id] = options;
+    }
+    return optionsByRoom;
+  }, [roomUnitIdsByRoomId, roomUnitsById, rooms]);
   const hasAdmission = Boolean(
     effectiveEncounter?.admittedAt && !isBareCheckInAdmission(effectiveEncounter, appointment)
   );
@@ -912,23 +927,35 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
 
   const handleReadyForDischargeToggle = useCallback(async () => {
     const nextReady = !(encounter?.readyForDischarge.value ?? false);
-    // The encounter id is hydrated asynchronously from the workspace bootstrap.
-    // If it hasn't resolved yet, fetch it now so the toggle actually persists
-    // instead of silently flipping only in local state.
-    if (!(lifecycleEncounterIdRef.current ?? appointment.encounterId)) {
-      await refreshWorkspaceEncounterId();
-    }
-    if (lifecycleEncounterIdRef.current ?? appointment.encounterId) {
-      await runEncounterLifecycleOperation(
-        nextReady ? markEncounterReadyForDischarge : undoEncounterReadyForDischarge
-      );
-    }
+    // Optimistic: flip the checkbox immediately for instant feedback, then persist in the
+    // background. If the write fails, roll the toggle back and surface an alert.
     toggleReadyForDischarge(appointmentId, actor);
+    try {
+      if (!(lifecycleEncounterIdRef.current ?? appointment.encounterId)) {
+        await refreshWorkspaceEncounterId();
+      }
+      if (lifecycleEncounterIdRef.current ?? appointment.encounterId) {
+        await runEncounterLifecycleOperation(
+          nextReady ? markEncounterReadyForDischarge : undoEncounterReadyForDischarge
+        );
+      }
+    } catch (error) {
+      console.error('Failed to update ready for discharge:', error);
+      // Revert the optimistic flip back to its previous state.
+      toggleReadyForDischarge(appointmentId, actor);
+      notify('error', {
+        title: nextReady
+          ? 'Couldn’t mark ready for discharge'
+          : 'Couldn’t unmark ready for discharge',
+        text: 'The change wasn’t saved. Please try again.',
+      });
+    }
   }, [
     actor,
     appointment.encounterId,
     appointmentId,
     encounter?.readyForDischarge.value,
+    notify,
     refreshWorkspaceEncounterId,
     runEncounterLifecycleOperation,
     toggleReadyForDischarge,
@@ -947,6 +974,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       });
       return;
     }
+    // Optimistic: check the box immediately for instant feedback, then persist in the background.
+    toggleReadyForBilling(appointmentId, actor);
     try {
       await markAppointmentReadyForBilling(appointmentId, {
         organisationId: appointment.organisationId,
@@ -956,25 +985,22 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         notes: 'Ready for billing from appointment workspace',
       });
     } catch (error) {
-      // Do NOT flip local state if the write failed — otherwise the UI shows
-      // "ready" but a refresh reverts it, which reads as "not persisting".
+      // Roll the optimistic flip back so the UI doesn't show "ready" for an unsaved change.
       console.error('Failed to mark appointment ready for billing:', error);
+      toggleReadyForBilling(appointmentId, actor);
       notify('error', {
         title: 'Couldn’t mark ready for billing',
         text: 'The change wasn’t saved. Please try again.',
       });
       return;
     }
-    // Re-hydrate from the workspace bootstrap so the checkbox reflects confirmed
-    // server state (invoice visitBillingStage). This is what persists across a
-    // page refresh, so binding the UI to it — rather than only flipping local
-    // state — guarantees the checkbox stays checked after reload.
+    // Re-hydrate from the workspace bootstrap so the checkbox reflects confirmed server state
+    // (invoice visitBillingStage) across a refresh. Best-effort: the optimistic flip already
+    // shows the action, so a failed refresh is non-fatal.
     try {
       await refreshWorkspaceEncounterId();
     } catch (error) {
       console.error('Failed to refresh billing state after marking ready:', error);
-      // Fall back to an optimistic flip so the user still sees their action.
-      toggleReadyForBilling(appointmentId, actor);
     }
   }, [
     actor,
@@ -1342,6 +1368,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         supportOptions={supportOptions}
         roomOptions={roomOptions}
         unitOptions={unitOptions}
+        unitOptionsByRoomId={unitOptionsByRoomId}
         servicePackages={hospitalizationServicePackages}
         defaultRoomId={effectiveEncounter.roomId}
         defaultUnitId={effectiveEncounter.unitId}
@@ -1363,10 +1390,10 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
             allowModeConversion: true,
           });
           if (!converted) return false;
-          const selectedServicePackage = hospitalizationServicePackages.find(
-            (item) => item.id === payload.servicePackageId
+          const selectedServicePackages = hospitalizationServicePackages.filter((item) =>
+            payload.servicePackageIds.includes(item.id)
           );
-          if (selectedServicePackage) {
+          for (const selectedServicePackage of selectedServicePackages) {
             const amountCents = Math.max(0, Math.round(selectedServicePackage.cost * 100));
             addLineItem(appointmentId, {
               refId: selectedServicePackage.id,

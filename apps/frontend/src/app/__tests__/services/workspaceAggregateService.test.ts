@@ -233,6 +233,7 @@ describe('workspaceAggregateService', () => {
         readyForDischargeByName: 'Dr Discharge',
         readyForDischargeAt: '2026-06-18T10:05:00.000Z',
         admission: {
+          room: { id: 'room-1' },
           unitId: 'unit-1',
           admittedAt: '2026-06-18T08:30:00.000Z',
         },
@@ -276,6 +277,7 @@ describe('workspaceAggregateService', () => {
     });
 
     expect(patch.mode).toBe('INPATIENT');
+    expect(patch.roomId).toBe('room-1');
     expect(patch.unitId).toBe('unit-1');
     expect(patch.admittedAt).toBe('2026-06-18T08:30:00.000Z');
     expect(patch.readyForDischarge?.value).toBe(true);
