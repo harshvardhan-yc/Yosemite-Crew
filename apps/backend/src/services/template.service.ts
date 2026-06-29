@@ -112,6 +112,34 @@ const templateKindSchema = z.union([
   templateContractKindSchema,
 ]);
 
+const EMPTY_JSON_OBJECT = {} as Record<string, unknown>;
+
+const buildTemplateSearchFilter = (
+  search?: string,
+): Prisma.TemplateWhereInput => {
+  const trimmedSearch = search?.trim();
+  if (!trimmedSearch) {
+    return {};
+  }
+
+  return {
+    OR: [
+      {
+        name: {
+          contains: trimmedSearch,
+          mode: "insensitive",
+        },
+      },
+      {
+        description: {
+          contains: trimmedSearch,
+          mode: "insensitive",
+        },
+      },
+    ],
+  };
+};
+
 export const createTemplateSchema = z
   .object({
     organisationId: z.string().trim().min(1).optional(),
@@ -248,8 +276,8 @@ const mergeJsonObject = (
 ): Record<string, unknown> => ({
   ...(typeof base === "object" && base && !Array.isArray(base)
     ? (base as Record<string, unknown>)
-    : {}),
-  ...(patch ?? {}),
+    : EMPTY_JSON_OBJECT),
+  ...(patch ?? EMPTY_JSON_OBJECT),
 });
 
 const toJsonInput = (
@@ -834,17 +862,9 @@ export const TemplateService = {
 
     const nextOwnership = parsed.ownership ?? template.ownership;
     const nextOrganisationId =
-      nextOwnership === "YC_LIBRARY"
-        ? null
-        : parsed.ownership === "ORG_TEMPLATE"
-          ? template.organisationId
-          : template.organisationId;
+      nextOwnership === "YC_LIBRARY" ? null : template.organisationId;
     const nextOwnerUserId =
-      nextOwnership === "YC_LIBRARY"
-        ? null
-        : nextOwnership === "USER_TEMPLATE"
-          ? template.ownerUserId
-          : template.ownerUserId;
+      nextOwnership === "YC_LIBRARY" ? null : template.ownerUserId;
     const nextUpdatedBy = parsed.updatedBy ?? template.updatedBy;
     const nextName = parsed.name ?? template.name;
     const nextDescription =
@@ -1032,15 +1052,17 @@ export const TemplateService = {
       return TemplateService.getById(template.id, organisationId);
     }
 
-    const organisationFilter =
-      template.organisationId != null
-        ? { organisationId: template.organisationId }
-        : {};
+    const catalogItemWhere: Prisma.ProductItemWhereInput =
+      template.organisationId === null
+        ? {
+            id: { in: uniqueCatalogItemIds },
+          }
+        : {
+            id: { in: uniqueCatalogItemIds },
+            organisationId: template.organisationId,
+          };
     const catalogItems = await prisma.productItem.findMany({
-      where: {
-        id: { in: uniqueCatalogItemIds },
-        ...organisationFilter,
-      },
+      where: catalogItemWhere,
       select: {
         id: true,
       },
@@ -1103,7 +1125,6 @@ export const TemplateService = {
       search?: string;
     },
   ) {
-    const search = filters?.search?.trim();
     const items = await prisma.template.findMany({
       where: {
         organisationId: ensureId(organisationId, "organisationId"),
@@ -1111,24 +1132,7 @@ export const TemplateService = {
         kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
-        ...(search
-          ? {
-              OR: [
-                {
-                  name: {
-                    contains: search,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  description: {
-                    contains: search,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            }
-          : {}),
+        ...buildTemplateSearchFilter(filters?.search),
       },
       orderBy: [{ updatedAt: "desc" }],
       include: templateInclude,
@@ -1143,31 +1147,13 @@ export const TemplateService = {
     scope?: TemplateScope;
     search?: string;
   }) {
-    const search = filters?.search?.trim();
     const items = await prisma.template.findMany({
       where: {
         ownership: "YC_LIBRARY",
         kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
-        ...(search
-          ? {
-              OR: [
-                {
-                  name: {
-                    contains: search,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  description: {
-                    contains: search,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            }
-          : {}),
+        ...buildTemplateSearchFilter(filters?.search),
       },
       orderBy: [{ updatedAt: "desc" }],
       include: templateInclude,
@@ -1186,7 +1172,6 @@ export const TemplateService = {
       search?: string;
     },
   ) {
-    const search = filters?.search?.trim();
     const items = await prisma.template.findMany({
       where: {
         organisationId: ensureId(organisationId, "organisationId"),
@@ -1195,24 +1180,7 @@ export const TemplateService = {
         kind: filters?.kind ? toStorageTemplateKind(filters.kind) : undefined,
         status: filters?.status,
         scope: filters?.scope,
-        ...(search
-          ? {
-              OR: [
-                {
-                  name: {
-                    contains: search,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  description: {
-                    contains: search,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            }
-          : {}),
+        ...buildTemplateSearchFilter(filters?.search),
       },
       orderBy: [{ updatedAt: "desc" }],
       include: templateInclude,
@@ -1494,7 +1462,7 @@ export const TemplateService = {
           title:
             normalizedTemplateKind === "FORM"
               ? "Form submission"
-              : normalizedTemplateKind.split("_").join(" "),
+              : normalizedTemplateKind.replaceAll("_", " "),
           source: {
             sourceKind: "TEMPLATE_INSTANCE",
             sourceId: instance.id,

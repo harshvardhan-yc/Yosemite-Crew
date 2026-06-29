@@ -37,10 +37,12 @@ jest.mock("src/services/chat.service", () => ({
   },
 }));
 
-import { SharedChatEntityService } from "src/services/sharedChatEntity.service";
+import {
+  SharedChatEntityService,
+  SharedChatEntityType,
+} from "src/services/sharedChatEntity.service";
 import { ChatServiceError } from "src/services/chat.service";
 import { prisma } from "src/config/prisma";
-import { SharedChatEntityType } from "@prisma/client";
 
 const mockedPrisma = prisma as unknown as {
   chatSession: { findFirst: jest.Mock };

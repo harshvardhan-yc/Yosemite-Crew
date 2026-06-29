@@ -1,6 +1,6 @@
 // src/services/sharedChatEntity.service.ts
 import { StreamChat } from "stream-chat";
-import { Prisma, SharedChatEntityType } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import { ChatServiceError } from "src/services/chat.service";
 import logger from "src/utils/logger";
@@ -18,6 +18,18 @@ const streamServer = StreamChat.getInstance(STREAM_KEY, STREAM_SECRET);
 // channels as "messaging" (see chat.service.ts channel creation).
 const channelTypeForSession = (type: string): "team" | "messaging" =>
   type === "ORG_GROUP" ? "team" : "messaging";
+
+export const SharedChatEntityType = {
+  COMPANION: "COMPANION",
+  APPOINTMENT: "APPOINTMENT",
+  INVOICE: "INVOICE",
+  FORM: "FORM",
+  PRESCRIPTION: "PRESCRIPTION",
+  DOCUMENT: "DOCUMENT",
+} as const;
+
+export type SharedChatEntityType =
+  (typeof SharedChatEntityType)[keyof typeof SharedChatEntityType];
 
 export type ShareEntityInput = {
   channelId: string;
