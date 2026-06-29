@@ -54,6 +54,12 @@ export function createApp() {
   );
 
   app.post(
+    "/v1/stripe/connect/webhook",
+    express.raw({ type: "application/json" }),
+    (req, res) => StripeController.connectWebhook(req, res),
+  );
+
+  app.post(
     "/v1/documenso/webhook",
     express.raw({ type: "application/json" }),
     (req, res) => DocumensoWebhookController.handle(req, res),

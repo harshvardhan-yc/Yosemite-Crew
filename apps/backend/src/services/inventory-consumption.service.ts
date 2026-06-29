@@ -106,7 +106,7 @@ const readPositiveInteger = (value: unknown): number | undefined => {
   }
 
   if (typeof value === "string" && value.trim()) {
-    const match = value.trim().match(/(\d+(?:\.\d+)?)/);
+    const match = /(\d+(?:\.\d+)?)/.exec(value.trim());
     if (match) {
       const parsed = Number(match[1]);
       if (Number.isFinite(parsed)) {
@@ -125,7 +125,7 @@ const readPositiveNumber = (value: unknown): number | undefined => {
   }
 
   if (typeof value === "string" && value.trim()) {
-    const match = value.trim().match(/(\d+(?:\.\d+)?)/);
+    const match = /(\d+(?:\.\d+)?)/.exec(value.trim());
     if (match) {
       const parsed = Number(match[1]);
       return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
@@ -150,15 +150,42 @@ const readDoseParts = (
     return {};
   }
 
-  const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
-  if (!match) {
+  let index = 0;
+  while (
+    index < trimmed.length &&
+    trimmed[index] >= "0" &&
+    trimmed[index] <= "9"
+  ) {
+    index += 1;
+  }
+
+  if (index === 0) {
     return { doseUnit: trimmed };
   }
 
-  const doseQty = Number(match[1]);
+  if (trimmed[index] === ".") {
+    const decimalStart = index + 1;
+    let decimalEnd = decimalStart;
+
+    while (
+      decimalEnd < trimmed.length &&
+      trimmed[decimalEnd] >= "0" &&
+      trimmed[decimalEnd] <= "9"
+    ) {
+      decimalEnd += 1;
+    }
+
+    if (decimalEnd === decimalStart) {
+      return { doseUnit: trimmed };
+    }
+
+    index = decimalEnd;
+  }
+
+  const doseQty = Number(trimmed.slice(0, index));
   return {
     doseQty: Number.isFinite(doseQty) && doseQty > 0 ? doseQty : undefined,
-    doseUnit: match[2].trim() || undefined,
+    doseUnit: trimmed.slice(index).trim() || undefined,
   };
 };
 
@@ -180,11 +207,11 @@ const resolveFrequencyPerDay = (frequency?: string | null) => {
     Q8H: 3,
     Q12H: 2,
   };
-  if (directMap[normalized] !== undefined) {
+  if (Object.prototype.hasOwnProperty.call(directMap, normalized)) {
     return directMap[normalized];
   }
 
-  const everyNhours = normalized.match(/^Q(\d+)H$/);
+  const everyNhours = /^Q(\d+)H$/.exec(normalized);
   if (everyNhours) {
     const hours = Number(everyNhours[1]);
     if (Number.isFinite(hours) && hours > 0) {
@@ -192,7 +219,7 @@ const resolveFrequencyPerDay = (frequency?: string | null) => {
     }
   }
 
-  const timesPerDay = normalized.match(/^(\d+)\s*X(?:\s*DAILY)?$/);
+  const timesPerDay = /^(\d+)\s*X(?:\s*DAILY)?$/.exec(normalized);
   if (timesPerDay) {
     const count = Number(timesPerDay[1]);
     if (Number.isFinite(count) && count > 0) {

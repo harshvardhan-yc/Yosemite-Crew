@@ -17,6 +17,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "src/config/prisma";
 import ServiceModel from "src/models/service";
 import { InvoiceService } from "./invoice.service";
+import { roundMoney } from "./finance/pricing";
 import { StripeService } from "./stripe.service";
 import { OccupancyModel } from "src/models/occupancy";
 import OrganizationModel from "src/models/organization";
@@ -200,13 +201,9 @@ export const resolvePaymentStatusByAppointmentIds = async (
 export const resolvePaymentStatusByAppointmentIdsFromPostgres = async (
   appointmentIds: string[],
 ): Promise<Map<string, AppointmentPaymentStatus>> => {
-  const statusMap = new Map<string, AppointmentPaymentStatus>();
   const invoices = await prisma.invoice.findMany({
     where: {
       appointmentId: { in: appointmentIds },
-      status: {
-        in: ["PAID", "PENDING", "AWAITING_PAYMENT", "FAILED", "REFUNDED"],
-      },
     },
     select: {
       appointmentId: true,
@@ -214,34 +211,7 @@ export const resolvePaymentStatusByAppointmentIdsFromPostgres = async (
     },
   });
 
-  const tracker = new Map<string, { hasPaid: boolean; hasUnpaid: boolean }>();
-
-  for (const invoice of invoices) {
-    if (!invoice.appointmentId) continue;
-    const entry = tracker.get(invoice.appointmentId) ?? {
-      hasPaid: false,
-      hasUnpaid: false,
-    };
-
-    if (invoice.status === "PAID") {
-      entry.hasPaid = true;
-    } else if (
-      ["PENDING", "AWAITING_PAYMENT", "FAILED", "REFUNDED"].includes(
-        invoice.status,
-      )
-    ) {
-      entry.hasUnpaid = true;
-    }
-
-    tracker.set(invoice.appointmentId, entry);
-  }
-
-  for (const [appointmentId, entry] of tracker) {
-    const paid = entry.hasPaid && !entry.hasUnpaid;
-    statusMap.set(appointmentId, paid ? "PAID" : "UNPAID");
-  }
-
-  return statusMap;
+  return buildAppointmentPaymentStatusMap(invoices);
 };
 
 export const resolvePaymentStatusByAppointmentIdsFromMongo = async (
@@ -288,6 +258,46 @@ export const resolvePaymentStatusByAppointmentIdsFromMongo = async (
   return statusMap;
 };
 
+const buildAppointmentPaymentStatusMap = (
+  invoices: Array<{
+    appointmentId: string | null;
+    status: string;
+  }>,
+) => {
+  const statusMap = new Map<string, AppointmentPaymentStatus>();
+  const tracker = new Map<string, { hasPaid: boolean; hasUnpaid: boolean }>();
+
+  for (const invoice of invoices) {
+    if (!invoice.appointmentId) continue;
+    const entry = tracker.get(invoice.appointmentId) ?? {
+      hasPaid: false,
+      hasUnpaid: false,
+    };
+
+    if (invoice.status === "PAID") {
+      entry.hasPaid = true;
+    }
+    if (
+      ["PENDING", "AWAITING_PAYMENT", "FAILED", "REFUNDED"].includes(
+        invoice.status,
+      )
+    ) {
+      entry.hasUnpaid = true;
+    }
+
+    tracker.set(invoice.appointmentId, entry);
+  }
+
+  for (const [appointmentId, entry] of tracker) {
+    statusMap.set(
+      appointmentId,
+      entry.hasPaid && !entry.hasUnpaid ? "PAID" : "UNPAID",
+    );
+  }
+
+  return statusMap;
+};
+
 type AppointmentRequestInput = ReturnType<typeof fromAppointmentRequestDTO>;
 
 type DraftInvoiceItemInput = {
@@ -295,6 +305,7 @@ type DraftInvoiceItemInput = {
   quantity: number;
   unitPrice: number;
   discountPercent?: number;
+  total?: number;
 };
 
 type LegacyServiceBridge = {
@@ -306,19 +317,31 @@ type LegacyServiceBridge = {
 };
 
 const mapCatalogSelectionToDraftItems = (selection: {
+  productKind: string;
+  name: string;
   billingItems: Array<{
     name: string;
     quantity: number;
     unitPrice: number;
     defaultDiscountPercent?: number | null;
   }>;
+  finalAmount: number;
 }): DraftInvoiceItemInput[] =>
-  selection.billingItems.map((item) => ({
-    description: item.name,
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    discountPercent: item.defaultDiscountPercent ?? undefined,
-  }));
+  selection.productKind === "PACKAGE"
+    ? [
+        {
+          description: selection.name,
+          quantity: 1,
+          unitPrice: roundMoney(selection.finalAmount),
+          total: roundMoney(selection.finalAmount),
+        },
+      ]
+    : selection.billingItems.map((item) => ({
+        description: item.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discountPercent: item.defaultDiscountPercent ?? undefined,
+      }));
 
 const mapLegacyServiceToDraftItems = (
   service: Pick<LegacyServiceBridge, "name" | "cost" | "maxDiscount">,
