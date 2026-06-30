@@ -56,115 +56,87 @@ type EditableAccordionProps = {
   ) => void;
 };
 
+type FormValues = Record<string, any>;
+
+type BaseFieldProps = {
+  field: FieldConfig;
+  value: any;
+  error: string | undefined;
+  onChange: (value: any) => void;
+};
+
+type EditableFieldProps = BaseFieldProps & {
+  onMultiChange?: (values: Record<string, any>) => void;
+};
+
+type FieldValueProps = {
+  field: FieldConfig;
+  formValues: FormValues;
+};
+
 const isFieldEditable = (field: FieldConfig) => field.editable !== false;
 
-const FieldComponents: Record<
-  string,
-  React.FC<{
-    field: any;
-    value: any;
-    error: any;
-    onChange: (v: any) => void;
-    onMultiChange?: (values: Record<string, any>) => void;
-  }>
-> = {
-  text: ({ field, value, onChange, error }) => {
-    const isCurrency = isCurrencyField(field.key);
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const raw = e.target.value;
-      const val =
-        field.numeric || isCurrency ? raw.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1') : raw;
-      onChange(val);
-    };
-    return isCurrency ? (
-      <div className="relative">
-        <div className="absolute left-6 top-1/2 -translate-y-1/2 text-body-4 text-text-primary font-satoshi font-semibold z-10">
-          $
-        </div>
-        <FormInput
-          intype={field.type || 'text'}
-          inname={field.key}
-          value={value}
-          inlabel={field.label}
-          error={error}
-          onChange={handleChange}
-          className="min-h-12! pl-10!"
-        />
+const sanitizeDecimalInput = (value: string) =>
+  value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+
+const TextInputField = ({
+  field,
+  value,
+  onChange,
+  error,
+  numericOnly = false,
+}: EditableFieldProps & { numericOnly?: boolean }) => {
+  const isCurrency = isCurrencyField(field.key);
+  const shouldSanitize = numericOnly || field.numeric || isCurrency;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    onChange(shouldSanitize ? sanitizeDecimalInput(raw) : raw);
+  };
+
+  const input = (
+    <FormInput
+      intype={field.type || 'text'}
+      inname={field.key}
+      value={value}
+      inlabel={field.label}
+      error={error}
+      onChange={handleChange}
+      className={isCurrency ? 'min-h-12! pl-10!' : 'min-h-12!'}
+    />
+  );
+
+  if (!isCurrency) {
+    return input;
+  }
+
+  return (
+    <div className="relative">
+      <div className="absolute left-6 top-1/2 -translate-y-1/2 text-body-4 text-text-primary font-satoshi font-semibold z-10">
+        $
       </div>
-    ) : (
-      <FormInput
-        intype={field.type || 'text'}
-        inname={field.key}
-        value={value}
-        inlabel={field.label}
-        error={error}
-        onChange={handleChange}
-        className="min-h-12!"
-      />
-    );
-  },
-  number: ({ field, value, onChange, error }) => {
-    const isCurrency = isCurrencyField(field.key);
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const raw = e.target.value;
-      const val = raw.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
-      onChange(val);
-    };
-    return isCurrency ? (
-      <div className="relative">
-        <div className="absolute left-6 top-1/2 -translate-y-1/2 text-body-4 text-text-primary font-satoshi font-semibold z-10">
-          $
-        </div>
-        <FormInput
-          intype={field.type || 'text'}
-          inname={field.key}
-          value={value}
-          inlabel={field.label}
-          error={error}
-          onChange={handleChange}
-          className="min-h-12! pl-10!"
-        />
-      </div>
-    ) : (
-      <FormInput
-        intype={field.type || 'text'}
-        inname={field.key}
-        value={value}
-        inlabel={field.label}
-        error={error}
-        onChange={handleChange}
-        className="min-h-12!"
-      />
-    );
-  },
-  select: ({ field, value, onChange, error }) => {
-    const normalizedOptions = (field.options || []).map((opt: any) =>
-      typeof opt === 'string' ? { label: opt, value: opt } : opt
-    );
-    return (
-      <LabelDropdown
-        placeholder={field.label}
-        onSelect={(option: { value: string }) => onChange(option.value)}
-        defaultOption={value}
-        options={normalizedOptions}
-        error={error}
-      />
-    );
-  },
-  dropdown: ({ field, value, onChange, error }) => {
-    const normalizedOptions = (field.options || []).map((opt: any) =>
-      typeof opt === 'string' ? { label: opt, value: opt } : opt
-    );
-    return (
-      <LabelDropdown
-        placeholder={field.label}
-        onSelect={(option: { value: string }) => onChange(option.value)}
-        defaultOption={value}
-        options={normalizedOptions}
-        error={error}
-      />
-    );
-  },
+      {input}
+    </div>
+  );
+};
+
+const SelectField = ({ field, value, onChange, error }: EditableFieldProps) => {
+  const normalizedOptions = normalizeOptions(field.options);
+  return (
+    <LabelDropdown
+      placeholder={field.label}
+      onSelect={(option: { value: string }) => onChange(option.value)}
+      defaultOption={value}
+      options={normalizedOptions}
+      error={error}
+    />
+  );
+};
+
+const FieldComponents: Record<string, React.FC<EditableFieldProps>> = {
+  text: (props) => <TextInputField {...props} />,
+  number: (props) => <TextInputField {...props} numericOnly />,
+  select: (props) => <SelectField {...props} />,
+  dropdown: (props) => <SelectField {...props} />,
   multiSelect: ({ field, value, onChange, error }) => (
     <MultiSelectDropdown
       placeholder={field.label}
@@ -286,7 +258,7 @@ const resolveLabel = (options: Array<{ label: string; value: string }>, value: s
   options.find((o) => o.value === value)?.label ?? value;
 
 const RenderField = (
-  field: any,
+  field: FieldConfig,
   value: any,
   error: string | undefined,
   onChange: (value: any) => void,
@@ -305,19 +277,8 @@ const RenderField = (
   );
 };
 
-const EditableField = ({
-  field,
-  value,
-  error,
-  onChange,
-  onMultiChange,
-}: {
-  field: any;
-  value: any;
-  error: string | undefined;
-  onChange: (value: any) => void;
-  onMultiChange?: (values: Record<string, any>) => void;
-}) => RenderField(field, value, error, onChange, onMultiChange);
+const EditableField = ({ field, value, error, onChange, onMultiChange }: EditableFieldProps) =>
+  RenderField(field, value, error, onChange, onMultiChange);
 
 const isCurrencyField = (fieldKey: string) => {
   return fieldKey === 'purchaseCost' || fieldKey === 'selling';
@@ -337,157 +298,95 @@ const formatDisplayValue = (value: unknown): string => {
   return '-';
 };
 
-const FieldValueComponents: Record<
-  string,
-  React.FC<{
-    field: any;
-    formValues: FormValues;
-  }>
-> = {
-  text: ({ field, formValues }) => (
-    <div className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}>
-      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-      <div className="text-body-4 text-text-primary text-right">
-        {formatDisplayValue(formValues[field.key])}
-      </div>
-    </div>
-  ),
+const FieldValueRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="py-2.5! flex items-center gap-2 justify-between border-t border-card-border">
+    <div className="text-body-4-emphasis text-text-secondary">{label}</div>
+    <div className="text-body-4 text-text-primary text-right">{children}</div>
+  </div>
+);
+
+const getOptionDisplayValue = (field: FieldConfig, value: any) => {
+  const options = normalizeOptions(field.options);
+  if (options.length) return resolveLabel(options, value);
+  return formatDisplayValue(value);
+};
+
+const getMultiSelectDisplayValue = (field: FieldConfig, value: any) => {
+  const options = normalizeOptions(field.options);
+  if (Array.isArray(value)) {
+    if (!value.length) return '-';
+    if (options.length) {
+      return value.map((v: string) => resolveLabel(options, v)).join(', ');
+    }
+    return value.join(', ');
+  }
+  if (options.length) {
+    return resolveLabel(options, value);
+  }
+  return value || '-';
+};
+
+const DefaultFieldValue = ({ field, formValues }: FieldValueProps) => (
+  <FieldValueRow label={field.label}>{formatDisplayValue(formValues[field.key])}</FieldValueRow>
+);
+
+const OptionFieldValue = ({ field, formValues }: FieldValueProps) => (
+  <FieldValueRow label={field.label}>
+    {getOptionDisplayValue(field, formValues[field.key])}
+  </FieldValueRow>
+);
+
+const FieldValueComponents: Record<string, React.FC<FieldValueProps>> = {
+  text: DefaultFieldValue,
   status: ({ field, formValues }) => (
-    <div className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}>
-      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-      <div className="text-body-4 text-text-primary text-right">
-        {toTitleCase(formValues[field.key])}
-      </div>
-    </div>
+    <FieldValueRow label={field.label}>{toTitleCase(formValues[field.key])}</FieldValueRow>
   ),
-  number: ({ field, formValues }) => (
-    <div className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}>
-      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-      <div className="text-body-4 text-text-primary text-right">
-        {formatDisplayValue(formValues[field.key])}
-      </div>
-    </div>
-  ),
-  select: ({ field, formValues }) => (
-    <div className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}>
-      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-      <div className="text-body-4 text-text-primary text-right">
-        {(() => {
-          const value = formValues[field.key];
-          const options = normalizeOptions(field.options);
-          if (options.length) return resolveLabel(options, value);
-          return formatDisplayValue(value);
-        })()}
-      </div>
-    </div>
-  ),
-  dropdown: ({ field, formValues }) => (
-    <div className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}>
-      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-      <div className="text-body-4 text-text-primary text-right">
-        {(() => {
-          const value = formValues[field.key];
-          const options = normalizeOptions(field.options);
-          if (options.length) return resolveLabel(options, value);
-          return formatDisplayValue(value);
-        })()}
-      </div>
-    </div>
-  ),
+  number: DefaultFieldValue,
+  select: OptionFieldValue,
+  dropdown: OptionFieldValue,
   multiSelect: ({ field, formValues }) => (
-    <div className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}>
-      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-      <div className="text-body-4 text-text-primary text-right">
-        {(() => {
-          const value = formValues[field.key];
-          const options = normalizeOptions(field.options);
-          if (Array.isArray(value)) {
-            if (!value.length) return '-';
-            if (options.length) {
-              return value.map((v: string) => resolveLabel(options, v)).join(', ');
-            }
-            return value.join(', ');
-          }
-          if (options.length) {
-            return resolveLabel(options, value);
-          }
-          return value || '-';
-        })()}
-      </div>
-    </div>
+    <FieldValueRow label={field.label}>
+      {getMultiSelectDisplayValue(field, formValues[field.key])}
+    </FieldValueRow>
   ),
   checkbox: ({ field, formValues }) => {
     const value = formValues[field.key];
     const checked = value === true || value === 'true' || value === 'Yes';
-    return (
-      <div
-        className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}
-      >
-        <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-        <div className="text-body-4 text-text-primary text-right">{checked ? 'Yes' : 'No'}</div>
-      </div>
-    );
+    return <FieldValueRow label={field.label}>{checked ? 'Yes' : 'No'}</FieldValueRow>;
   },
   country: ({ field, formValues }) => (
-    <div className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}>
-      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-      <div className="text-body-4 text-text-primary text-right">{formValues[field.key] || '-'}</div>
-    </div>
+    <FieldValueRow label={field.label}>{formValues[field.key] || '-'}</FieldValueRow>
   ),
   date: ({ field, formValues }) => {
     const value = formValues[field.key];
     return (
-      <div
-        className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}
-      >
-        <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-        <div className="text-body-4 text-text-primary text-right">
-          {typeof value === 'string'
-            ? formatDisplayDate(value) || '-'
-            : getFormattedDate(formValues[field.key])}
-        </div>
-      </div>
+      <FieldValueRow label={field.label}>
+        {typeof value === 'string'
+          ? formatDisplayDate(value) || '-'
+          : getFormattedDate(formValues[field.key])}
+      </FieldValueRow>
     );
   },
   time: ({ field, formValues }) => {
     const value = formValues[field.key];
-    return (
-      <div
-        className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}
-      >
-        <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-        <div className="text-body-4 text-text-primary text-right">{formatTimeLabel(value)}</div>
-      </div>
-    );
+    return <FieldValueRow label={field.label}>{formatTimeLabel(value)}</FieldValueRow>;
   },
   timeInput: ({ field, formValues }) => {
     const value = formValues[field.key];
     return (
-      <div
-        className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}
-      >
-        <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-        <div className="text-body-4 text-text-primary text-right">
-          {value ? formatTimeLabel(value) : '-'}
-        </div>
-      </div>
+      <FieldValueRow label={field.label}>{value ? formatTimeLabel(value) : '-'}</FieldValueRow>
     );
   },
   googleAddress: ({ field, formValues }) => (
-    <div className={`py-2.5! flex items-center gap-2 justify-between border-t border-card-border`}>
-      <div className="text-body-4-emphasis text-text-secondary">{field.label}</div>
-      <div className="text-body-4 text-text-primary text-right">{formValues[field.key] || '-'}</div>
-    </div>
+    <FieldValueRow label={field.label}>{formValues[field.key] || '-'}</FieldValueRow>
   ),
 };
 
-const RenderValue = (field: any, formValues: FormValues) => {
+const RenderValue = (field: FieldConfig, formValues: FormValues) => {
   const type = field.type || 'text';
   const Component = FieldValueComponents[type] || FieldValueComponents['text'];
   return <Component field={field} formValues={formValues} />;
 };
-
-type FormValues = Record<string, any>;
 
 const buildInitialValues = (fields: FieldConfig[], data: Record<string, any>): FormValues =>
   fields.reduce((acc, field) => {
