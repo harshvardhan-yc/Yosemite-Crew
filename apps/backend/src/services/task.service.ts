@@ -1604,75 +1604,95 @@ export const TaskService = {
     });
 
     const master = seriesRows.find((row) => row.id === seriesMasterId) ?? task;
-    const editableTaskIds =
-      normalizedScope === "ALL"
-        ? seriesRows.map((row) => row.id)
-        : seriesRows
-            .filter((row) => row.dueAt >= task.dueAt)
-            .map((row) => row.id);
-
-    const newDueAt = updates.dueAt ?? task.dueAt;
-    const dueAtByTaskId = new Map<string, Date>();
-
-    for (const row of seriesRows) {
-      if (!editableTaskIds.includes(row.id)) continue;
-      dueAtByTaskId.set(row.id, toOccurrenceDueAt(row.dueAt, newDueAt));
-    }
+    const seriesType =
+      (
+        master.recurrence as {
+          type?: "ONCE" | "DAILY" | "WEEKLY" | "CUSTOM";
+        } | null
+      )?.type ?? "ONCE";
+    const seriesCronExpression =
+      (master.recurrence as { cronExpression?: string | null } | null)
+        ?.cronExpression ?? null;
+    const splitDueAt = updates.dueAt ?? task.dueAt;
+    const shiftDueAt = (row: TaskRow) =>
+      toOccurrenceDueAt(row.dueAt, splitDueAt);
+    const futureRows = seriesRows.filter(
+      (row) => row.id !== task.id && row.dueAt >= task.dueAt,
+    );
 
     const updatedRows = await prisma.$transaction(async (tx) => {
-      const rows: TaskRow[] = [];
+      if (normalizedScope === "ALL") {
+        const rows: TaskRow[] = [];
+        for (const row of seriesRows) {
+          const updated = await tx.task.update({
+            where: { id: row.id },
+            data: {
+              ...buildSeriesUpdateData(row, updates),
+              dueAt: shiftDueAt(row),
+            },
+          });
+          rows.push(updated);
+        }
+        return rows;
+      }
+
+      const currentUpdated = await tx.task.update({
+        where: { id: task.id },
+        data: {
+          ...buildSeriesUpdateData(task, updates),
+          dueAt: splitDueAt,
+          recurrence: {
+            ...((task.recurrence as Record<string, unknown>) ?? {}),
+            type: seriesType,
+            isMaster: true,
+            masterTaskId: undefined,
+            cronExpression:
+              updates.recurrence?.cronExpression === undefined
+                ? (seriesCronExpression ?? undefined)
+                : (updates.recurrence?.cronExpression ?? undefined),
+            endDate:
+              updates.recurrence?.endDate === undefined
+                ? ((task.recurrence as { endDate?: Date | null } | null)
+                    ?.endDate ?? undefined)
+                : (updates.recurrence?.endDate ?? undefined),
+          } as Prisma.InputJsonValue,
+        },
+      });
 
       if (normalizedScope === "THIS_AND_FOLLOWING") {
         await tx.task.update({
           where: { id: master.id },
           data: {
-            recurrence: mergeRecurrence(master.recurrence, {
-              type:
-                (
-                  master.recurrence as {
-                    type?: "ONCE" | "DAILY" | "WEEKLY" | "CUSTOM";
-                  } | null
-                )?.type ?? "ONCE",
-              endDate: new Date(newDueAt.getTime() - 1),
-              cronExpression:
-                (master.recurrence as { cronExpression?: string | null } | null)
-                  ?.cronExpression ?? null,
-            }),
+            recurrence: {
+              ...((master.recurrence as Record<string, unknown>) ?? {}),
+              type: seriesType,
+              isMaster: true,
+              masterTaskId: undefined,
+              cronExpression: seriesCronExpression ?? undefined,
+              endDate: new Date(splitDueAt.getTime() - 1),
+            } as Prisma.InputJsonValue,
           },
         });
+
+        for (const row of futureRows) {
+          await tx.task.update({
+            where: { id: row.id },
+            data: {
+              ...buildSeriesUpdateData(row, updates),
+              dueAt: shiftDueAt(row),
+              recurrence: {
+                ...((row.recurrence as Record<string, unknown>) ?? {}),
+                masterTaskId: task.id,
+              } as Prisma.InputJsonValue,
+            },
+          });
+        }
       }
 
-      for (const row of seriesRows) {
-        if (!editableTaskIds.includes(row.id)) continue;
-        const baseUpdate = buildSeriesUpdateData(row, updates);
-        const updated = await tx.task.update({
-          where: { id: row.id },
-          data: {
-            ...baseUpdate,
-            dueAt: dueAtByTaskId.get(row.id) ?? row.dueAt,
-            recurrence:
-              normalizedScope === "THIS_AND_FOLLOWING" && row.id === task.id
-                ? {
-                    ...(row.recurrence as Record<string, unknown>),
-                    isMaster: true,
-                    masterTaskId: undefined,
-                    endDate:
-                      updates.recurrence?.endDate ??
-                      (row.recurrence as { endDate?: Date | null } | null)
-                        ?.endDate ??
-                      undefined,
-                  }
-                : baseUpdate.recurrence,
-          },
-        });
-        rows.push(updated);
-      }
-
-      return rows;
+      return [currentUpdated];
     });
 
-    const updated =
-      updatedRows.find((row) => row.id === task.id) ?? updatedRows[0];
+    const updated = updatedRows[0];
 
     const mapped = toTaskLike(updated);
 
