@@ -1,5 +1,6 @@
-import { Task, TaskKind, TaskLibrary, TaskTemplate } from '@/app/features/tasks/types/task';
+import { Task, TaskLibrary, TaskTemplate } from '@/app/features/tasks/types/task';
 import { Option } from '@/app/features/companions/types/companion';
+import { categoryToKind } from '@/app/features/tasks/constants/taskTaxonomy';
 
 export type TaskFormErrors = {
   name?: string;
@@ -28,12 +29,6 @@ export const validateTaskForm = (formData: Task): TaskFormErrors => {
       errors.reminder = 'Reminder minutes must be greater than 0';
     }
   }
-  if (formData.source === 'ORG_TEMPLATE' && !formData.templateId) {
-    errors.templateId = 'Template is required';
-  }
-  if (formData.source === 'YC_LIBRARY' && !formData.libraryTaskId) {
-    errors.libraryTaskId = 'Library task is required';
-  }
   return errors;
 };
 
@@ -47,20 +42,44 @@ export const buildTaskTemplate = (formData: Task): TaskTemplate => ({
   isActive: true,
   organisationId: '',
   createdBy: '',
-  kind: formData.category as TaskKind,
+  kind: categoryToKind(formData.category),
 });
 
-export const applyTemplateToForm = (
-  formData: Task,
-  template: TaskTemplate | TaskLibrary
-): Task => ({
-  ...formData,
-  source: template.source,
-  category: template.kind,
-  name: template.name || '',
-  description:
-    (template as TaskTemplate).description || (template as TaskLibrary).defaultDescription || '',
-});
+/**
+ * Prefill the task form from a selected template. "Load from template" copies the
+ * template's defaults into the editable form, so the resulting task is created as
+ * a normal CUSTOM task (the values now live on the form) — we deliberately do NOT
+ * flip `source` to ORG_TEMPLATE/YC_LIBRARY, which would route createTask through
+ * the backend's single-task template endpoint and mismatch multi-task YC-default
+ * templates that have no `TaskTemplate` row.
+ */
+export const applyTemplateToForm = (formData: Task, template: TaskTemplate | TaskLibrary): Task => {
+  const orgTemplate = template.source === 'ORG_TEMPLATE' ? (template as TaskTemplate) : undefined;
+  const reminderOffset = orgTemplate?.defaultReminderOffsetMinutes;
+  const recurrenceType = orgTemplate?.defaultRecurrence?.type;
+  return {
+    ...formData,
+    source: 'CUSTOM',
+    templateId: undefined,
+    libraryTaskId: undefined,
+    category: template.category || template.kind,
+    name: template.name || '',
+    description:
+      (template as TaskTemplate).description || (template as TaskLibrary).defaultDescription || '',
+    // Carry the template's default reminder/recurrence so the picker reflects them.
+    reminder:
+      typeof reminderOffset === 'number' && reminderOffset > 0
+        ? { enabled: true, offsetMinutes: reminderOffset }
+        : formData.reminder,
+    recurrence: recurrenceType
+      ? {
+          ...formData.recurrence,
+          type: recurrenceType,
+          isMaster: recurrenceType !== 'ONCE',
+        }
+      : formData.recurrence,
+  };
+};
 
 export const toTemplateOptions = (list: Array<TaskTemplate | TaskLibrary>): Option[] =>
   (list || []).map((t: any) => ({

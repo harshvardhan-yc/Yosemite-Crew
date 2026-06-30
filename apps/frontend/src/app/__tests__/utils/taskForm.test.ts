@@ -18,8 +18,6 @@ describe('taskForm utilities', () => {
       'BILLING',
       'RECORD',
       'ADMIN',
-      'OBSERVATION_TOOL',
-      'HYGIENE',
       'CUSTOM',
     ]);
   });
@@ -84,41 +82,9 @@ describe('taskForm utilities', () => {
       expect(errors.reminder).toBe('Reminder minutes must be greater than 0');
     });
 
-    it('returns error when source is ORG_TEMPLATE but templateId is missing', () => {
-      const task = { ...baseTask, source: 'ORG_TEMPLATE' as const, templateId: '' };
-      const errors = validateTaskForm(task);
-      expect(errors.templateId).toBe('Template is required');
-    });
-
-    it('returns no templateId error when source is ORG_TEMPLATE with templateId', () => {
-      const task = {
-        ...baseTask,
-        source: 'ORG_TEMPLATE' as const,
-        templateId: 'template-123',
-      };
-      const errors = validateTaskForm(task);
-      expect(errors.templateId).toBeUndefined();
-    });
-
-    it('returns error when source is YC_LIBRARY but libraryTaskId is missing', () => {
-      const task = {
-        ...baseTask,
-        source: 'YC_LIBRARY' as const,
-        libraryTaskId: '',
-      };
-      const errors = validateTaskForm(task);
-      expect(errors.libraryTaskId).toBe('Library task is required');
-    });
-
-    it('returns no libraryTaskId error when source is YC_LIBRARY with libraryTaskId', () => {
-      const task = {
-        ...baseTask,
-        source: 'YC_LIBRARY' as const,
-        libraryTaskId: 'lib-123',
-      };
-      const errors = validateTaskForm(task);
-      expect(errors.libraryTaskId).toBeUndefined();
-    });
+    // Source/template are no longer user-selected fields — "Load from template"
+    // prefills an editable CUSTOM task, so there is no templateId/libraryTaskId
+    // required-validation. (See applyTemplateToForm.)
 
     it('returns multiple errors when multiple fields are invalid', () => {
       const task = {
@@ -231,7 +197,8 @@ describe('taskForm utilities', () => {
       expect(result.name).toBe('Template Name');
       expect(result.description).toBe('Template description');
       expect(result.category).toBe('DIET');
-      expect(result.source).toBe('ORG_TEMPLATE');
+      // Prefill keeps the task CUSTOM (values copied into the editable form).
+      expect(result.source).toBe('CUSTOM');
       expect(result.assignedTo).toBe('user-1');
     });
 
@@ -252,7 +219,8 @@ describe('taskForm utilities', () => {
       expect(result.name).toBe('Library Task');
       expect(result.description).toBe('Library default description');
       expect(result.category).toBe('HYGIENE');
-      expect(result.source).toBe('YC_LIBRARY');
+      // Prefill keeps the task CUSTOM (values copied into the editable form).
+      expect(result.source).toBe('CUSTOM');
     });
 
     it('handles template with empty name', () => {

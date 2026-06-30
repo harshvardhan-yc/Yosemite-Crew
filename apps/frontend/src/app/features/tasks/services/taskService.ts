@@ -265,21 +265,62 @@ export const getTaskTemplatesForPrimaryOrg = async (): Promise<TaskTemplate[]> =
   }
 };
 
-const templateToTaskTemplate = (template: TemplateLike): TaskTemplate => ({
-  _id: template.id,
-  source: 'ORG_TEMPLATE',
-  organisationId: template.organisationId ?? '',
-  category: resolveTemplateTaskCategory(template),
-  name: template.name,
-  description: template.description ?? undefined,
-  kind: resolveTemplateTaskKind(template),
-  defaultRole: resolveTemplateDefaultRole(template),
-  defaultReminderOffsetMinutes: resolveTemplateReminderOffset(template),
-  isActive: template.status === 'PUBLISHED',
-  createdBy: template.createdBy,
-  createdAt: template.createdAt,
-  updatedAt: template.updatedAt,
-});
+/**
+ * The first authored task block of a YC-default Task Template (multi-task
+ * builder), read from the `schedule.taskBlocks` snapshot field. Used to give the
+ * single-task Add-task "Load from template" prefill something meaningful.
+ */
+type TaskBlockSeed = {
+  name?: string;
+  category?: string;
+  additionalNotes?: string;
+  reminderOffsetMinutes?: number;
+  recurrence?: { type?: string };
+};
+
+const firstTaskBlock = (template: TemplateLike): TaskBlockSeed | undefined => {
+  const snapshot =
+    (template as TemplateLike & { schemaSnapshot?: { sections?: unknown[] } }).schemaSnapshot ??
+    template.versions?.find(
+      (item) =>
+        item.version === template.publishedVersion || item.version === template.latestVersion
+    )?.schemaSnapshot;
+  const sections = (snapshot as { sections?: Array<{ fields?: Array<Record<string, unknown>> }> })
+    ?.sections;
+  if (!Array.isArray(sections)) return undefined;
+  for (const section of sections) {
+    for (const field of section.fields ?? []) {
+      if (field.key === 'taskBlocks' && Array.isArray(field.defaultValue)) {
+        return (field.defaultValue as TaskBlockSeed[])[0];
+      }
+    }
+  }
+  return undefined;
+};
+
+const templateToTaskTemplate = (template: TemplateLike): TaskTemplate => {
+  const block = firstTaskBlock(template);
+  const category = block?.category || resolveTemplateTaskCategory(template);
+  return {
+    _id: template.id,
+    source: 'ORG_TEMPLATE',
+    organisationId: template.organisationId ?? '',
+    category,
+    name: block?.name || template.name,
+    description: block?.additionalNotes || template.description || undefined,
+    kind: resolveTemplateTaskKind(template),
+    defaultRole: resolveTemplateDefaultRole(template),
+    defaultReminderOffsetMinutes:
+      block?.reminderOffsetMinutes ?? resolveTemplateReminderOffset(template),
+    defaultRecurrence: block?.recurrence?.type
+      ? { type: block.recurrence.type as NonNullable<TaskTemplate['defaultRecurrence']>['type'] }
+      : undefined,
+    isActive: template.status === 'PUBLISHED',
+    createdBy: template.createdBy,
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
+  };
+};
 
 const resolveTemplateTaskCategory = (template: TemplateLike) => {
   const rules = template.rules;
