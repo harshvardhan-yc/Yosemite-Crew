@@ -1151,14 +1151,15 @@ describe('TreatmentStep', () => {
     expect(screen.getByRole('button', { name: /^Record$/i })).toBeDisabled();
   });
 
-  it('locks destructive treatment removal once ready for billing', () => {
+  it('locks service removal once ready for billing but keeps prescriptions deletable', () => {
     const enc = { ...seedAndGet(), readyForBilling: { value: true } };
     render(<TreatmentStep appointmentId={APPT} encounter={enc} onOpenInvoice={jest.fn()} />);
 
-    // Un-billed items keep their delete control but it is disabled once ready for
-    // billing (billed items have no delete control at all).
+    // Services lock their delete once ready for billing (billed items have no delete at all).
     expect(screen.getByLabelText(/remove acupuncture/i)).toBeDisabled();
-    expect(screen.getByLabelText(/remove prednisone/i)).toBeDisabled();
+    // Prescriptions are NOT locked by ready-for-billing — only an actually billed/paid
+    // prescription is read-only. An unbilled prescription stays deletable.
+    expect(screen.getByLabelText(/remove prednisone/i)).not.toBeDisabled();
     expect(screen.getByLabelText(/search for services and packages/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/search medicines/i)).toBeInTheDocument();
   });

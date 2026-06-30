@@ -103,6 +103,7 @@ const ProfileDetail = ({
 );
 
 const CompanionProfilePanel = ({ record }: { record: CompanionParent }) => {
+  const replaceCompanionText = useCompanionTerminologyText();
   const details = buildCompanionDetails(
     {
       id: record.companion.id,
@@ -110,11 +111,13 @@ const CompanionProfilePanel = ({ record }: { record: CompanionParent }) => {
       species: record.companion.type,
       breed: record.companion.breed,
     },
-    record.companion
+    record.companion,
+    replaceCompanionText
   );
+  const idLabel = replaceCompanionText('Patient ID');
   const selectedDetails = [
     details.find((detail) => detail.label === 'Name'),
-    details.find((detail) => detail.label === 'Patient ID'),
+    details.find((detail) => detail.label === idLabel),
     details.find((detail) => detail.label === 'Breed/Species'),
     details.find((detail) => detail.label === 'Age / DOB'),
     details.find((detail) => detail.label === 'Sex'),
@@ -335,12 +338,15 @@ const CompanionHistoryPageInner = () => {
     async (id: string) => {
       try {
         await persistCompanionAlerts(companionAlerts.filter((alert) => alert.id !== id));
-        notify('success', { title: 'Alert removed', text: 'Patient alert has been removed.' });
+        notify('success', {
+          title: 'Alert removed',
+          text: replaceCompanionText('Patient alert has been removed.'),
+        });
       } catch {
         notify('error', { title: 'Failed to remove alert', text: 'Please try again.' });
       }
     },
-    [companionAlerts, notify, persistCompanionAlerts]
+    [companionAlerts, notify, persistCompanionAlerts, replaceCompanionText]
   );
 
   const handleRemoveClientAlert = useCallback(
@@ -393,10 +399,13 @@ const CompanionHistoryPageInner = () => {
                     />
                   ))}
                   {activeCompanion ? (
-                    <GlassTooltip content="Add alerts for patient" side="bottom">
+                    <GlassTooltip
+                      content={replaceCompanionText('Add alerts for patient')}
+                      side="bottom"
+                    >
                       <button
                         type="button"
-                        aria-label="Add companion alert"
+                        aria-label={replaceCompanionText('Add companion alert')}
                         onClick={() => setAlertTarget('companion')}
                         className="flex size-6 items-center justify-center rounded-full border border-neutral-500 text-neutral-700 transition-colors hover:border-text-brand hover:text-text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
                       >

@@ -41,6 +41,7 @@ import {
   findOpenAppointmentInvoice,
 } from '@/app/features/billing/services/invoiceService';
 import { useRevampCatalogStore } from '@/app/stores/revampCatalogStore';
+import { deletePrescriptionArtifact } from '@/app/features/appointments/services/workspaceClinicalService';
 import {
   computePackageBreakdownItem,
   computePackageTotals,
@@ -434,6 +435,9 @@ const prescriptionToInvoiceLine = (rx: PrescriptionItem): Omit<InvoiceLineItem, 
     grossCents: amountCents,
     discountCents: 0,
     amountCents,
+    // Link back to the source prescription so removing this bill line deletes it end-to-end.
+    sourcePrescriptionId: rx.id,
+    sourceInventoryItemId: rx.inventoryItemId,
   };
 };
 
@@ -1177,12 +1181,14 @@ const InvoiceStep = ({
   const addPrescription = useAppointmentWorkspaceStore((s) => s.addPrescription);
   const updateInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.updateInvoiceLineItem);
   const removeInvoiceLineItem = useAppointmentWorkspaceStore((s) => s.removeInvoiceLineItem);
+  const removePrescription = useAppointmentWorkspaceStore((s) => s.removePrescription);
   const recordInvoicePayment = useAppointmentWorkspaceStore((s) => s.recordInvoicePayment);
   const recordDepositCollection = useAppointmentWorkspaceStore((s) => s.recordDepositCollection);
   const hydrateInvoiceBilling = useAppointmentWorkspaceStore((s) => s.hydrateInvoiceBilling);
   const setStepStatus = useAppointmentWorkspaceStore((s) => s.setStepStatus);
   const catalogServices = useRevampCatalogStore((s) => s.services);
   const catalogPackages = useRevampCatalogStore((s) => s.packages);
+  const loadOrganisationCatalog = useRevampCatalogStore((s) => s.loadOrganisationCatalog);
   const hydratePackageDetail = useRevampCatalogStore((s) => s.hydratePackageDetail);
   const itemIdsByOrgId = useInventoryStore((s) => s.itemIdsByOrgId);
   const inventoryById = useInventoryStore((s) => s.itemsById);
@@ -1265,6 +1271,53 @@ const InvoiceStep = ({
     [catalogPackages, catalogServices, encounter, inventoryItems, organisationId]
   );
 
+  // Discount lookup by line name from the org catalog. Lines prefilled from the backend
+  // (encounter.invoiceLineItems) don't carry their max-discount ceiling — the backend persists
+  // only price — so we recover it here from the catalog (services + packages), keyed by name.
+  const discountByName = useMemo(() => {
+    const map = new Map<
+      string,
+      Pick<InvoiceLineItem, 'maxDiscountPercent' | 'packageDefaultDiscountPercent'>
+    >();
+    if (!organisationId) return map;
+    catalogServices
+      .filter((service) => service.organisationId === organisationId)
+      .forEach((service) => {
+        map.set(normalizeLineName(service.name), {
+          maxDiscountPercent: service.maxDiscount ?? 0,
+        });
+      });
+    catalogPackages
+      .filter((pkg) => pkg.organisationId === organisationId)
+      .forEach((pkg) => {
+        map.set(normalizeLineName(pkg.name), {
+          maxDiscountPercent: pkg.additionalDiscount ?? 0,
+          packageDefaultDiscountPercent: pkg.additionalDiscount ?? 0,
+        });
+      });
+    return map;
+  }, [catalogPackages, catalogServices, organisationId]);
+
+  // Bill lines enriched with their max-discount ceiling: a line that lost it on a backend prefill
+  // recovers the percent (and resulting cents) from the catalog by name. Saved values win.
+  const enrichedInvoiceLineItems = useMemo(
+    () =>
+      encounter.invoiceLineItems.map((line) => {
+        const hasMax = line.maxDiscountPercent != null || line.maxDiscountCents != null;
+        if (hasMax) return line;
+        const fallback = discountByName.get(normalizeLineName(line.name));
+        if (fallback?.maxDiscountPercent == null) return line;
+        return {
+          ...line,
+          maxDiscountPercent: fallback.maxDiscountPercent,
+          maxDiscountCents: discountCentsFromPercent(line.grossCents, fallback.maxDiscountPercent),
+          packageDefaultDiscountPercent:
+            line.packageDefaultDiscountPercent ?? fallback.packageDefaultDiscountPercent,
+        };
+      }),
+    [discountByName, encounter.invoiceLineItems]
+  );
+
   // Saved (persisted) Service/Package + in-house prescription lines for this visit
   // that are not yet billed, mapped into Total Bill lines. These are auto-added to
   // the bill (below) so a clinician doesn't have to re-add each saved item by search.
@@ -1282,6 +1335,15 @@ const InvoiceStep = ({
     ],
     [catalogPackages, catalogServices, encounter.services, encounter.prescription]
   );
+
+  // Load the org catalog so saved service/package lines can recover their max-discount ceiling
+  // (and unit price) when the user lands on Invoice directly without passing through Treatment.
+  useEffect(() => {
+    if (!organisationId || catalogServices.length > 0 || catalogPackages.length > 0) return;
+    loadOrganisationCatalog(organisationId).catch((error) => {
+      console.error('Failed to load invoice catalog:', error);
+    });
+  }, [organisationId, catalogServices.length, catalogPackages.length, loadOrganisationCatalog]);
 
   // Load inventory so drugs/consumables are searchable in the bill builder.
   useEffect(() => {
@@ -1536,6 +1598,61 @@ const InvoiceStep = ({
     return invoice;
   };
 
+  // Auto-sync only the AUTO-SEEDED (saved) bill lines — persisted services/packages and in-house
+  // prescriptions for this visit — onto an existing OPEN (unpaid) invoice, so its breakdown reflects
+  // the full set of saved items without waiting for payment/finalize. Manually-added search lines are
+  // deliberately NOT synced (they stay local and vanish on refresh, as expected). The backend
+  // de-dupes, and a ref guard + name-set signature prevent loops with the reload.
+  const autoSeedNameSet = useMemo(
+    () => new Set(autoSeedCandidates.map((line) => normalizeLineName(line.name))),
+    [autoSeedCandidates]
+  );
+  // Keep the unstable reload/lookup callbacks in a ref so the sync effect can depend only on the
+  // data that changes the un-synced set (avoids an effect-loop and the exhaustive-deps churn).
+  const billingOpsRef = useRef({ reloadBilling, findServerOpenInvoiceId });
+  billingOpsRef.current = { reloadBilling, findServerOpenInvoiceId };
+  const autoSyncedRef = useRef<string>('');
+  useEffect(() => {
+    if (!canBuildBill || !billingHydrated || !organisationId) return;
+    if (!billingOpsRef.current.findServerOpenInvoiceId()) return;
+    const invoicedNames = new Set(
+      encounter.pastInvoices
+        .flatMap((invoice) => invoice.items)
+        .map((item) => normalizeLineName(item.name))
+    );
+    // Only saved (auto-seeded) lines that aren't already on the invoice — manual search lines stay
+    // local and are excluded here on purpose.
+    const unsynced = encounter.invoiceLineItems.filter((line) => {
+      const key = normalizeLineName(line.name);
+      return autoSeedNameSet.has(key) && !invoicedNames.has(key);
+    });
+    if (unsynced.length === 0) return;
+    const signature = unsynced
+      .map((line) => normalizeLineName(line.name))
+      .sort((a, b) => a.localeCompare(b))
+      .join('|');
+    if (autoSyncedRef.current === signature) return;
+    autoSyncedRef.current = signature;
+    void (async () => {
+      try {
+        // Push ONLY the auto-seeded subset (not the whole bill) to the open invoice.
+        await addLineItemsToAppointments(toFinanceLineItems(unsynced), appointmentId, currency);
+        await billingOpsRef.current.reloadBilling();
+      } catch (error) {
+        console.error('Failed to auto-sync bill to the open invoice:', error);
+      }
+    })();
+  }, [
+    appointmentId,
+    currency,
+    autoSeedNameSet,
+    billingHydrated,
+    canBuildBill,
+    encounter.invoiceLineItems,
+    encounter.pastInvoices,
+    organisationId,
+  ]);
+
   const handleCollect = async (method: PaymentMethod) => {
     if (method === 'DEPOSIT') {
       setDepositPaymentLink(null);
@@ -1721,6 +1838,45 @@ const InvoiceStep = ({
     }
   };
 
+  // Remove a bill line. When the line was seeded from an in-house prescription, deleting it also
+  // deletes the underlying (unbilled) prescription end-to-end so it does not re-seed on refresh.
+  // The backend only deletes DRAFT prescriptions (409 once finalized/dispensed) — surface that.
+  const handleRemoveBillLine = useCallback(
+    async (id: string) => {
+      const line = encounter.invoiceLineItems.find((item) => item.id === id);
+      removeInvoiceLineItem(appointmentId, id);
+      const prescriptionId = line?.sourcePrescriptionId;
+      if (!prescriptionId || !organisationId) return;
+      // Drop the source prescription locally and remember the dismissal so auto-seed doesn't
+      // re-add it this session.
+      if (line?.name) seededBillNamesRef.current.add(line.name.trim().toLowerCase());
+      removePrescription(appointmentId, prescriptionId);
+      const isPersisted = !prescriptionId.startsWith('local-');
+      if (!isPersisted) return;
+      try {
+        await deletePrescriptionArtifact(organisationId, prescriptionId);
+      } catch (error) {
+        console.error('Failed to delete prescription from invoice:', error);
+        const status = (error as { response?: { status?: number } })?.response?.status;
+        notify('error', {
+          title: 'Couldn’t remove the prescription',
+          text:
+            status === 409
+              ? 'This prescription is finalized or dispensed and can no longer be removed.'
+              : 'The change wasn’t saved. Please try again.',
+        });
+      }
+    },
+    [
+      appointmentId,
+      encounter.invoiceLineItems,
+      notify,
+      organisationId,
+      removeInvoiceLineItem,
+      removePrescription,
+    ]
+  );
+
   return (
     <div className="flex flex-col gap-5">
       {/* The bill builder + payment controls only show while the encounter is
@@ -1728,7 +1884,7 @@ const InvoiceStep = ({
       {canBuildBill && (
         <>
           <TotalBillContainer
-            items={encounter.invoiceLineItems}
+            items={enrichedInvoiceLineItems}
             billableItems={billableItems}
             incompleteItemNames={incompleteMedicationNames}
             currency={currency}
@@ -1740,7 +1896,7 @@ const InvoiceStep = ({
             onChangeOverallDiscount={(percent) => setOverallDiscountPercent(appointmentId, percent)}
             onAddItem={handleAddItem}
             onUpdateItem={(id, patch) => updateInvoiceLineItem(appointmentId, id, patch)}
-            onRemoveItem={(id) => removeInvoiceLineItem(appointmentId, id)}
+            onRemoveItem={(id) => void handleRemoveBillLine(id)}
           />
 
           <PaymentActions

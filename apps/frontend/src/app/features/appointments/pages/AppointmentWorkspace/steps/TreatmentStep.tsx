@@ -841,7 +841,10 @@ const TreatmentStep = ({
         items={prescriptionItems}
         catalogItems={prescriptionCatalogItems}
         readOnly={readOnly}
-        deleteLocked={billedTreatmentLocked}
+        // A prescription can be removed unless it is actually billed/paid (handled per-row via the
+        // `billed` flag) or the encounter is view-only. Being "ready for billing" is NOT a lock —
+        // an un-dispensed, unbilled prescription must stay deletable.
+        deleteLocked={readOnly}
         onAddItem={handleAddPrescription}
         onUpdateItem={(id, patch) => updatePrescription(appointmentId, id, patch)}
         onRemoveItem={(id) => void handleRemovePrescription(id)}

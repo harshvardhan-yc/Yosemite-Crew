@@ -801,6 +801,19 @@ describe('appointmentWorkspaceStore', () => {
     expect(enc?.readyForBilling.byName).toBeUndefined();
   });
 
+  it('keeps the ready-for-billing actor name when a bootstrap merge omits it', () => {
+    seed();
+    // Clinician marks it (optimistic) with their name + timestamp.
+    getStore().toggleReadyForBilling(APPT, { id: 'u1', name: 'Dr Tim' });
+    // A subsequent bootstrap refresh reports the flag but without an actor name/time.
+    getStore().mergeEncounterData(APPT, { readyForBilling: { value: true } });
+    const enc = getStore().getEncounter(APPT);
+    expect(enc?.readyForBilling.value).toBe(true);
+    // The locally-known name/time survive — the stamp does not degrade to "Clinical team".
+    expect(enc?.readyForBilling.byName).toBe('Dr Tim');
+    expect(enc?.readyForBilling.at).toBeTruthy();
+  });
+
   it('toggles ready-for-discharge with a stamp', () => {
     seed();
     getStore().toggleReadyForDischarge(APPT, { id: 'u2', name: 'Sarah' });

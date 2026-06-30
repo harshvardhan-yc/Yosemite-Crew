@@ -20,6 +20,7 @@ import { formatDateLabel, formatTimeLabel } from '@/app/lib/forms';
 import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import { formatCompanionNameWithOwnerLastName } from '@/app/lib/companionName';
 import { buildCompanionOverviewHref } from '@/app/lib/companionHistoryRoute';
+import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 
 import { getCompanionStatusStyle } from '@/app/ui/tables/tableUtils';
 
@@ -76,6 +77,7 @@ const CompanionsTable = ({
   canEditTasks,
   canEditCompanions,
 }: CompanionsTableProps) => {
+  const terminologyText = useCompanionTerminologyText();
   const router = useRouter();
   const appointments = useAppointmentsForPrimaryOrg();
 
@@ -187,7 +189,7 @@ const CompanionsTable = ({
               type="button"
               onClick={() => handleOpenCompanionHistoryPage(item)}
               className="appointment-profile-title cursor-pointer hover:underline underline-offset-2 text-left"
-              title="Open companion history"
+              title={terminologyText('Open companion history')}
             >
               {formatCompanionNameWithOwnerLastName(item.companion.name, item.parent)}
             </button>
@@ -297,12 +299,16 @@ const CompanionsTable = ({
       render: (item: CompanionParent) => (
         <div className="action-btn-col">
           <div className="action-btn-grid action-btn-grid-capped">
-            <GlassTooltip content="View companion" side="bottom" className="table-action-tooltip">
+            <GlassTooltip
+              content={terminologyText('View companion')}
+              side="bottom"
+              className="table-action-tooltip"
+            >
               <button
                 type="button"
                 onClick={() => handleViewCompanion(item)}
                 className="hover:shadow-[0_0_8px_0_rgba(0,0,0,0.16)] size-10 rounded-full! border border-black-text! flex items-center justify-center cursor-pointer"
-                title="View companion"
+                title={terminologyText('View companion')}
               >
                 <IoEye size={20} color="var(--color-neutral-900)" />
               </button>

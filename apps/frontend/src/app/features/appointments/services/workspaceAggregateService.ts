@@ -82,6 +82,12 @@ const readFirstString = (source: Record<string, unknown>, keys: string[]): strin
   return undefined;
 };
 
+const readNestedString = (source: Record<string, unknown>, parentKey: string, childKey: string) => {
+  const parent = source[parentKey];
+  if (!isRecord(parent)) return undefined;
+  return asString(parent[childKey]);
+};
+
 const readFirstIso = (source: Record<string, unknown>, keys: string[]): string | undefined => {
   for (const key of keys) {
     const value = asOptionalIso(source[key]);
@@ -581,6 +587,10 @@ export const normalizeWorkspaceBootstrapForEncounter = (
 
   const encounter = isRecord(bootstrap.encounter) ? bootstrap.encounter : {};
   if (isRecord(encounter.admission)) {
+    patch.roomId =
+      readFirstString(encounter.admission, ['roomId', 'locationId']) ??
+      readNestedString(encounter.admission, 'room', 'id') ??
+      readNestedString(encounter.admission, 'location', 'id');
     patch.unitId = asString(encounter.admission.unitId);
     patch.admittedAt =
       asOptionalIso(encounter.admission.admittedAt) ??

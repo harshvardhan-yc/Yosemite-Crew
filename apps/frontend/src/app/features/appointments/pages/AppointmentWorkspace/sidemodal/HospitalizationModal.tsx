@@ -1,5 +1,5 @@
 'use client';
-import React, { useMemo, useState, type CSSProperties } from 'react';
+import React, { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { LuCheck } from 'react-icons/lu';
 import { TiPlus } from 'react-icons/ti';
 import { HiUser } from 'react-icons/hi2';
@@ -9,7 +9,9 @@ import StaffField from '@/app/features/appointments/pages/AppointmentWorkspace/c
 import Datepicker from '@/app/ui/inputs/Datepicker';
 import Timepicker from '@/app/ui/inputs/Timepicker';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
+import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
 import type { DropdownOption } from '@/app/hooks/useDropdown';
+import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 import '@/app/ui/primitives/Buttons/ButtonEffects.css';
 
 const FONT = 'var(--font-satoshi), sans-serif';
@@ -41,6 +43,7 @@ type HospitalizationModalProps = {
   supportOptions: DropdownItem[];
   roomOptions: DropdownItem[];
   unitOptions: DropdownItem[];
+  unitOptionsByRoomId?: Record<string, DropdownItem[]>;
   servicePackages: ServicePackage[];
   defaultRoomId?: string;
   defaultUnitId?: string;
@@ -51,7 +54,7 @@ type HospitalizationModalProps = {
     roomId?: string;
     unitId?: string;
     supportStaffId?: string;
-    servicePackageId?: string;
+    servicePackageIds: string[];
     notifyChannels: string[];
   }) => boolean | Promise<boolean>;
 };
@@ -84,26 +87,97 @@ const HospitalizationModal = ({
   supportOptions,
   roomOptions,
   unitOptions,
+  unitOptionsByRoomId,
   servicePackages,
   defaultRoomId,
   defaultUnitId,
   onConvert,
 }: HospitalizationModalProps) => {
+  const terminologyText = useCompanionTerminologyText();
   const today = useMemo(() => new Date(), []);
   const [admissionDate, setAdmissionDate] = useState<Date | null>(today);
-  const [admissionTime, setAdmissionTime] = useState('');
+  const [admissionTime, setAdmissionTime] = useState(() => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(
+      2,
+      '0'
+    )}`;
+  });
   const [dischargeDate, setDischargeDate] = useState<Date | null>(addDays(today, 2));
   const [roomId, setRoomId] = useState<string | undefined>(defaultRoomId);
   const [unitId, setUnitId] = useState<string | undefined>(defaultUnitId);
   const defaultSupportId = supportOptions.find((option) => option.label === supportName)?.value;
   const [supportStaffId, setSupportStaffId] = useState<string | undefined>(defaultSupportId);
-  const [servicePackageId, setServicePackageId] = useState<string | undefined>(
-    servicePackages[0]?.id
-  );
+  const [servicePackageIds, setServicePackageIds] = useState<string[]>([]);
   const [notifyChannels, setNotifyChannels] = useState<Set<NotifyChannel>>(new Set(['app']));
   const [isConverting, setIsConverting] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
-  const selectedPackage = servicePackages.find((pkg) => pkg.id === servicePackageId);
+  const selectedPackageSet = useMemo(() => new Set(servicePackageIds), [servicePackageIds]);
+  const selectedPackages = useMemo(
+    () => servicePackages.filter((pkg) => selectedPackageSet.has(pkg.id)),
+    [selectedPackageSet, servicePackages]
+  );
+  const selectedEstimate = useMemo(
+    () =>
+      selectedPackages.reduce(
+        (total, pkg) => ({
+          cost: total.cost + (Number(pkg.cost) || 0),
+          maxDiscount: total.maxDiscount + (Number(pkg.maxDiscount) || 0),
+        }),
+        { cost: 0, maxDiscount: 0 }
+      ),
+    [selectedPackages]
+  );
+  const servicePackageOptions = useMemo(
+    () =>
+      servicePackages.map((pkg) => ({
+        label: pkg.name,
+        value: pkg.id,
+        badge: pkg.kind === 'PACKAGE' ? 'Package' : 'Service',
+      })),
+    [servicePackages]
+  );
+  const activeUnitOptions = useMemo(() => {
+    if (!roomId) return unitOptions;
+    return unitOptionsByRoomId?.[roomId] ?? unitOptions;
+  }, [roomId, unitOptions, unitOptionsByRoomId]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    setRoomId(defaultRoomId);
+    setUnitId(defaultUnitId);
+    setSupportStaffId(defaultSupportId);
+    setServicePackageIds([]);
+    setHasSubmitted(false);
+  }, [defaultRoomId, defaultSupportId, defaultUnitId, showModal]);
+
+  useEffect(() => {
+    if (!roomId || !unitOptionsByRoomId) return;
+    const optionsForRoom = unitOptionsByRoomId[roomId] ?? [];
+    if (!optionsForRoom.length) {
+      setUnitId(undefined);
+      return;
+    }
+    setUnitId((current) =>
+      current && optionsForRoom.some((option) => option.value === current)
+        ? current
+        : optionsForRoom[0].value
+    );
+  }, [roomId, unitOptionsByRoomId]);
+
+  const validationErrors = useMemo(() => {
+    const errors: Record<string, string> = {};
+    if (!admissionDate) errors.admissionDate = 'Admission date is required.';
+    if (!admissionTime.trim()) errors.admissionTime = 'Admission time is required.';
+    if (!roomId) errors.roomId = 'Room is required.';
+    if (!unitId) errors.unitId = 'Unit is required.';
+    if (admissionDate && dischargeDate && dischargeDate.getTime() < admissionDate.getTime()) {
+      errors.dischargeDate = 'Tentative discharge cannot be before admission.';
+    }
+    return errors;
+  }, [admissionDate, admissionTime, dischargeDate, roomId, unitId]);
+  const hasValidationErrors = Object.keys(validationErrors).length > 0;
 
   // Only mount the modal's fields while open so they don't duplicate other
   // workspace controls (e.g. the meta-bar Room dropdown) in the DOM.
@@ -120,6 +194,8 @@ const HospitalizationModal = ({
 
   const handleConvert = async () => {
     if (isConverting) return;
+    setHasSubmitted(true);
+    if (hasValidationErrors) return;
     setIsConverting(true);
     try {
       const converted = await onConvert({
@@ -129,7 +205,7 @@ const HospitalizationModal = ({
         roomId,
         unitId,
         supportStaffId,
-        servicePackageId,
+        servicePackageIds,
         notifyChannels: [...notifyChannels],
       });
       if (converted) setShowModal(false);
@@ -142,7 +218,7 @@ const HospitalizationModal = ({
     <AppointmentCentralModalShell
       showModal={showModal}
       setShowModal={setShowModal}
-      title="Hospitalizing Patient"
+      title={terminologyText('Hospitalizing Patient')}
     >
       <div className="flex flex-col gap-6">
         <div className="grid gap-5 lg:grid-cols-2">
@@ -179,11 +255,18 @@ const HospitalizationModal = ({
               />
               <LabelDropdown
                 placeholder="Unit"
-                options={unitOptions}
+                options={activeUnitOptions}
                 defaultOption={unitId}
                 onSelect={(option: DropdownOption) => setUnitId(option.value)}
               />
             </div>
+            {hasSubmitted && hasValidationErrors && (
+              <div className="flex flex-col gap-1 text-caption-2 text-danger-700">
+                {Object.values(validationErrors).map((error) => (
+                  <span key={error}>{error}</span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right column: lead/support + service package + estimate */}
@@ -196,16 +279,18 @@ const HospitalizationModal = ({
               icon={<HiUser size={13} style={{ color: NEUTRAL_900 }} aria-hidden="true" />}
               onSelect={(option: DropdownOption) => setSupportStaffId(option.value)}
             />
-            <LabelDropdown
+            <MultiSelectDropdown
               placeholder="Additional Service / Package"
-              options={servicePackages.map((pkg) => ({ label: pkg.name, value: pkg.id }))}
-              defaultOption={servicePackageId}
+              options={servicePackageOptions}
+              value={servicePackageIds}
               icon={<TiPlus size={13} style={{ color: NEUTRAL_900 }} aria-hidden="true" />}
-              onSelect={(option: DropdownOption) => setServicePackageId(option.value)}
+              onChange={setServicePackageIds}
+              searchable
+              portal
             />
             <AppointmentEstimatePanel
-              cost={selectedPackage?.cost}
-              maxDiscount={selectedPackage?.maxDiscount}
+              cost={selectedEstimate.cost}
+              maxDiscount={selectedEstimate.maxDiscount}
             />
           </div>
         </div>

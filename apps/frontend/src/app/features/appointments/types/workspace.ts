@@ -347,6 +347,13 @@ export type InvoiceLineItem = {
   maxDiscountCents?: number;
   /** Component lines included in a package, shown as read-only package detail in the bill. */
   breakdown?: LineItemBreakdown[];
+  /**
+   * Source in-house prescription this bill line was seeded from. When set, removing the line from
+   * the bill deletes the underlying (unbilled) prescription end-to-end so it does not re-seed.
+   */
+  sourcePrescriptionId?: string;
+  /** Inventory item of the source prescription, used to resolve the linked treatment-item delete. */
+  sourceInventoryItemId?: string;
 };
 
 export type PastInvoice = {

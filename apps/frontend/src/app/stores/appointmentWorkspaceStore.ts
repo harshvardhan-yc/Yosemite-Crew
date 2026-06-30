@@ -7,6 +7,7 @@ import type {
   LineItem,
   ObservationRecord,
   PrescriptionItem,
+  ReadyState as WorkspaceReadyState,
   ScheduleTask,
   ScheduleTaskStatus,
   SideAction,
@@ -291,6 +292,24 @@ const patchEnc = (
 const preferNonEmpty = <T>(next: T[] | undefined, current: T[]): T[] =>
   next && next.length > 0 ? next : current;
 
+/**
+ * Merge a backend ready-state patch with the current one. The bootstrap frequently returns the
+ * `value` flag without the actor name/timestamp; keep the locally-known `byName`/`byUserId`/`at`
+ * in that case so the stamp doesn't degrade to a generic fallback after refresh.
+ */
+const mergeReadyState = (
+  patch: WorkspaceReadyState | undefined,
+  current: WorkspaceReadyState
+): WorkspaceReadyState => {
+  if (!patch) return current;
+  return {
+    value: patch.value,
+    byName: patch.byName ?? current.byName,
+    byUserId: patch.byUserId ?? current.byUserId,
+    at: patch.at ?? current.at,
+  };
+};
+
 const mergeEncounterDataPatch = (
   enc: AppointmentEncounter,
   patch: Partial<
@@ -347,8 +366,12 @@ const mergeEncounterDataPatch = (
   dischargeSummaryId: patch.dischargeSummaryId ?? enc.dischargeSummaryId,
   documents: preferNonEmpty(patch.documents, enc.documents),
   soapTemplates: preferNonEmpty(patch.soapTemplates, enc.soapTemplates),
-  readyForBilling: patch.readyForBilling ?? enc.readyForBilling,
-  readyForDischarge: patch.readyForDischarge ?? enc.readyForDischarge,
+  // Merge the ready-state stamps: the backend bootstrap often returns the flag without the actor
+  // name/timestamp, so keep the locally-known `byName`/`byUserId`/`at` (set when the clinician
+  // toggled it) rather than clobbering them with empties — otherwise the stamp degrades to the
+  // generic "Clinical team" after a refresh.
+  readyForBilling: mergeReadyState(patch.readyForBilling, enc.readyForBilling),
+  readyForDischarge: mergeReadyState(patch.readyForDischarge, enc.readyForDischarge),
   roomId: patch.roomId ?? enc.roomId,
   unitId: patch.unitId ?? enc.unitId,
   admittedAt: patch.admittedAt ?? enc.admittedAt,
