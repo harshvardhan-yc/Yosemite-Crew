@@ -18,6 +18,7 @@ import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
 import {
   DURATION_UNIT_OPTIONS,
   FREQUENCY_OPTIONS,
+  inventoryToPrescriptionItem,
 } from '@/app/features/appointments/lib/inventoryPrescription';
 import React, { useEffect, useRef, useState } from 'react';
 import { IoIosAddCircleOutline, IoIosWarning } from 'react-icons/io';
@@ -35,7 +36,6 @@ import { useOrgStore } from '@/app/stores/orgStore';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import { InventoryApiItem } from '@/app/features/inventory/pages/Inventory/types';
 import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
-import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
 import { ensureSingleSignatureAtEnd, hasSignatureField } from '@/app/lib/forms';
 
 // Builds a nested-field updater for a group field. Shared by the service/medication/task
@@ -595,7 +595,6 @@ const GroupBuilder: React.FC<GroupBuilderProps> = ({
                 <MedicationGroupBuilder
                   field={nested}
                   onChange={(updated) => updateNestedField(nested.id, updated)}
-                  createField={createField}
                 />
               </BuilderWrapper>
             );
@@ -782,7 +781,6 @@ const MedicineCard: React.FC<{
 type MedicationGroupBuilderProps = {
   field: FormField & { type: 'group'; fields?: FormField[] };
   onChange: (f: FormField) => void;
-  createField: (t: OptionKey) => FormField;
 };
 
 const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({ field, onChange }) => {
@@ -1502,7 +1500,6 @@ const Build = ({
                   <MedicationGroupBuilder
                     field={field}
                     onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                    createField={createField}
                   />
                 );
               } else if (isTaskGroup(field)) {

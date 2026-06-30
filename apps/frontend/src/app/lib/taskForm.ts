@@ -13,6 +13,28 @@ export type TaskFormErrors = {
   libraryTaskId?: string;
 };
 
+/** Reminder is invalid when enabled with a non-positive offset. */
+const getReminderError = (reminder?: Task['reminder']): string | undefined => {
+  if (!reminder?.enabled) return undefined;
+  const minutes = Number(reminder.offsetMinutes);
+  return Number.isFinite(minutes) && minutes > 0
+    ? undefined
+    : 'Reminder minutes must be greater than 0';
+};
+
+/** A repeating task needs an end date that is on/after the due date. */
+const getEndDateError = (recurrence?: Task['recurrence'], dueAt?: Date): string | undefined => {
+  if (!recurrence || recurrence.type === 'ONCE') return undefined;
+  const endDate = recurrence.endDate ? new Date(recurrence.endDate) : undefined;
+  if (!endDate || Number.isNaN(endDate.getTime())) {
+    return 'End date is required for a repeating task';
+  }
+  if (dueAt && endDate < new Date(dueAt)) {
+    return 'End date must be on or after the due date';
+  }
+  return undefined;
+};
+
 export const validateTaskForm = (formData: Task): TaskFormErrors => {
   const errors: TaskFormErrors = {};
   if (!formData.assignedTo?.trim()) errors.assignedTo = 'Please select a companion or staff';
@@ -24,21 +46,10 @@ export const validateTaskForm = (formData: Task): TaskFormErrors => {
   if (formData.audience === 'PARENT_TASK' && !formData.companionId) {
     errors.assignedTo = 'Please select a valid companion';
   }
-  if (formData.reminder?.enabled) {
-    const reminderMinutes = Number(formData.reminder.offsetMinutes);
-    if (!Number.isFinite(reminderMinutes) || reminderMinutes <= 0) {
-      errors.reminder = 'Reminder minutes must be greater than 0';
-    }
-  }
-  // A recurring task needs an end boundary, and it cannot precede the due date.
-  if (formData.recurrence && formData.recurrence.type !== 'ONCE') {
-    const endDate = formData.recurrence.endDate ? new Date(formData.recurrence.endDate) : undefined;
-    if (!endDate || Number.isNaN(endDate.getTime())) {
-      errors.endDate = 'End date is required for a repeating task';
-    } else if (formData.dueAt && endDate < new Date(formData.dueAt)) {
-      errors.endDate = 'End date must be on or after the due date';
-    }
-  }
+  const reminderError = getReminderError(formData.reminder);
+  if (reminderError) errors.reminder = reminderError;
+  const endDateError = getEndDateError(formData.recurrence, formData.dueAt);
+  if (endDateError) errors.endDate = endDateError;
   return errors;
 };
 

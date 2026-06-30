@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
 import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
@@ -33,11 +33,9 @@ const RecurrenceScopeModal: React.FC<RecurrenceScopeModalProps> = ({
   onConfirm,
   busy = false,
 }) => {
+  // The modal is mounted fresh each time it opens (consumers gate it on open),
+  // so the initial 'THIS' already resets the choice — no effect needed.
   const [scope, setScope] = useState<RecurrenceScope>('THIS');
-
-  useEffect(() => {
-    if (showModal) setScope('THIS');
-  }, [showModal]);
 
   const isDelete = action === 'delete';
   const title = isDelete ? 'Delete recurring task' : 'Edit recurring task';
