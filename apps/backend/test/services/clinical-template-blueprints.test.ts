@@ -40,9 +40,14 @@ describe("clinical template blueprints", () => {
 
     expect(blueprint.sections.map((section) => section.id)).toEqual([
       "medications",
+      "instructions",
+      "notes",
     ]);
     expect(blueprint.sections[0].fields[0].type).toBe("medicationLine");
     expect(blueprint.sections[0].fields[0].key).toBe("medicationLine");
+    expect(blueprint.sections[0].fields[0].rules).toEqual(
+      expect.objectContaining({ inventoryItemKind: "MEDICAL" }),
+    );
     expect(blueprint.sections[0].fields[0].rules?.columns).toEqual(
       CANONICAL_PRESCRIPTION_ROW_KEYS,
     );

@@ -178,6 +178,7 @@ const PRESCRIPTION_BLUEPRINT: ClinicalTemplateSchemaSnapshot = {
           required: true,
           order: 1,
           rules: {
+            inventoryItemKind: "MEDICAL",
             columns: [...PRESCRIPTION_ROW_KEYS],
             rowKeys: [...PRESCRIPTION_ROW_KEYS],
             editableInWorkspace: [
@@ -193,6 +194,25 @@ const PRESCRIPTION_BLUEPRINT: ClinicalTemplateSchemaSnapshot = {
           },
         },
       ],
+    },
+    {
+      id: "instructions",
+      title: "Instructions",
+      order: 2,
+      fields: [
+        {
+          key: "instructions",
+          label: "Instructions",
+          type: "richText",
+          order: 1,
+        },
+      ],
+    },
+    {
+      id: "notes",
+      title: "Notes",
+      order: 3,
+      fields: [{ key: "notes", label: "Notes", type: "richText", order: 1 }],
     },
   ],
 };
