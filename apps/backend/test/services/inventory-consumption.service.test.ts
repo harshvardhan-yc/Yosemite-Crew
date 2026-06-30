@@ -912,7 +912,7 @@ describe("InventoryConsumptionService", () => {
         artifact: {
           id: "artifact-1",
           organisationId: "org-1",
-          appointmentId: null,
+          appointmentId: "appt-1",
           caseId: null,
           encounterId: null,
           kind: "PRESCRIPTION",
@@ -929,6 +929,17 @@ describe("InventoryConsumptionService", () => {
         },
       },
     });
+    mockedPrisma.appointment.findFirst.mockResolvedValueOnce({
+      patient: {
+        name: "Milo",
+      },
+      lead: {
+        name: "Dr. Patel",
+      },
+      room: {
+        name: "Room 2",
+      },
+    });
 
     const result =
       await InventoryConsumptionService.getPrescriptionDispenseRequest({
@@ -936,7 +947,15 @@ describe("InventoryConsumptionService", () => {
         dispenseRequestId: "request-get-1",
       });
 
-    expect(result.id).toBe("request-get-1");
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe("request-get-1");
+    expect(result).toEqual(
+      expect.objectContaining({
+        patientName: "Milo",
+        leadName: "Dr. Patel",
+        location: "Room 2",
+      }),
+    );
     expect(
       mockedPrisma.prescriptionDispenseRequest.findFirst,
     ).toHaveBeenCalledWith(

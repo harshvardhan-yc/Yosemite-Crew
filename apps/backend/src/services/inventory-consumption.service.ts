@@ -78,6 +78,12 @@ type PrescriptionDispenseRequestMetadata = Record<string, unknown> & {
   petParentName?: string;
 };
 
+type PrescriptionDispenseRequestDisplayFields = {
+  patientName?: string | null;
+  leadName?: string | null;
+  location?: string | null;
+};
+
 const asNonEmptyString = (value: unknown): string | undefined => {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -1421,6 +1427,78 @@ const buildPrescriptionDispenseRequestInclude = () =>
     },
   }) as const;
 
+const resolveDispenseRequestDisplayFields = async (
+  db: Pick<typeof prisma, "appointment">,
+  request: {
+    prescription: {
+      artifact: {
+        appointmentId?: string | null;
+      };
+    };
+  },
+): Promise<PrescriptionDispenseRequestDisplayFields> => {
+  const appointmentId = asNonEmptyString(
+    request.prescription.artifact.appointmentId,
+  );
+  if (!appointmentId) {
+    return {};
+  }
+
+  const appointment = await db.appointment.findFirst({
+    where: { id: appointmentId },
+    select: {
+      patient: true,
+      lead: true,
+      room: true,
+    },
+  });
+
+  if (!appointment) {
+    return {};
+  }
+
+  const appointmentRecord = toRecord(appointment);
+  const patient = toRecord(appointmentRecord.patient);
+  const lead = toRecord(appointmentRecord.lead);
+  const room = toRecord(appointmentRecord.room);
+
+  const location =
+    asNonEmptyString(room?.name) ??
+    asNonEmptyString(room?.unitName) ??
+    (() => {
+      const unit = toRecord(room.unit);
+      return asNonEmptyString(unit.displayName) ?? asNonEmptyString(unit.name);
+    })();
+
+  return {
+    patientName:
+      asNonEmptyString(patient.name) ??
+      asNonEmptyString(patient.companionName) ??
+      asNonEmptyString(patient.displayName) ??
+      null,
+    leadName: asNonEmptyString(lead.name) ?? null,
+    location: location ?? null,
+  };
+};
+
+const hydrateDispenseRequest = async (
+  db: Pick<typeof prisma, "appointment">,
+  request: Awaited<
+    ReturnType<typeof prisma.prescriptionDispenseRequest.findFirst>
+  >,
+) => {
+  if (!request) return request;
+
+  const displayFields = await resolveDispenseRequestDisplayFields(
+    db,
+    request as never,
+  );
+  return {
+    ...request,
+    ...displayFields,
+  };
+};
+
 export const InventoryConsumptionService = {
   async upsertRule(input: InventoryConsumptionRuleInput) {
     const organisationId = asNonEmptyString(input.organisationId);
@@ -1487,7 +1565,7 @@ export const InventoryConsumptionService = {
       );
     }
 
-    return prisma.prescriptionDispenseRequest.findMany({
+    const requests = await prisma.prescriptionDispenseRequest.findMany({
       where: {
         organisationId,
         ...(params.status ? { status: params.status } : {}),
@@ -1498,6 +1576,10 @@ export const InventoryConsumptionService = {
       include: buildPrescriptionDispenseRequestInclude(),
       orderBy: [{ requestedAt: "desc" }, { createdAt: "desc" }],
     });
+
+    return Promise.all(
+      requests.map((request) => hydrateDispenseRequest(prisma, request)),
+    );
   },
 
   async getPrescriptionDispenseRequest(params: {
@@ -1528,7 +1610,7 @@ export const InventoryConsumptionService = {
       );
     }
 
-    return request;
+    return hydrateDispenseRequest(prisma, request);
   },
 
   async createPrescriptionDispenseRequest(params: {
