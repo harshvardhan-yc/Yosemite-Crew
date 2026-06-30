@@ -187,6 +187,7 @@ const QuickActionsModal = ({
               companionId={companion.id}
               organisationId={organisationId}
               encounterId={encounterId}
+              appointmentStatus={appointment.status}
             />
           )}
           {activeAction === 'CHAT' && <ChatPanel appointment={appointment} />}

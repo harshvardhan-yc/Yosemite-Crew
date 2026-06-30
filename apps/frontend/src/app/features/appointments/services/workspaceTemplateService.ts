@@ -77,7 +77,7 @@ const hasSchemaSnapshot = (value: unknown): value is TemplateSchemaSnapshot =>
     value && typeof value === 'object' && Array.isArray((value as { sections?: unknown }).sections)
   );
 
-const soapSchemaSnapshot = (template: TemplateLike): TemplateSchemaSnapshot | undefined => {
+const templateSchemaSnapshot = (template: TemplateLike): TemplateSchemaSnapshot | undefined => {
   const root = (template as TemplateLike & { schemaSnapshot?: unknown }).schemaSnapshot;
   if (hasSchemaSnapshot(root)) return root;
   const version = template.versions?.find(
@@ -181,7 +181,7 @@ const soapCustomSchema = (snapshot: TemplateSchemaSnapshot | undefined): FormFie
   snapshot && isCustomSoapSnapshot(snapshot) ? templateSchemaToFormFields(snapshot) : undefined;
 
 export const templateToSoapTemplate = (template: TemplateLike): SoapTemplate => {
-  const snapshot = soapSchemaSnapshot(template);
+  const snapshot = templateSchemaSnapshot(template);
   const customSchema = soapCustomSchema(snapshot);
   return {
     id: template.id,
@@ -264,6 +264,13 @@ export const listDischargeSummaryTemplates = async (organisationId: string) =>
     status: 'PUBLISHED',
   });
 
+export type PrescriptionTemplateOption = {
+  id: string;
+  name: string;
+  source?: string;
+  items: Array<Omit<PrescriptionItem, 'id'>>;
+};
+
 export type TemplateResolveContext = {
   organisationId: string;
   appointmentId?: string;
@@ -308,12 +315,11 @@ export const resolveDischargeTemplate = async (
 };
 
 /**
- * Map a resolved PRESCRIPTION template snapshot to workspace prescription rows. Each medication is
- * authored in the builder as a group of fields tagged with the same `rules.inventoryItemId`; the
- * field role is identified by its key suffix (`_name`/`_dosage`/`_route`/`_frequency`/`_duration`).
- * Inventory-sourced values and author-typed defaults both arrive on each field's `defaultValue`, so
- * applying a template preloads the section with the medicine + its predefined dose/route/freq/
- * duration. Rows without an inventory id are ignored (a prescription must be inventory-backed).
+ * Map a resolved PRESCRIPTION template snapshot to workspace prescription rows. Current templates
+ * store a `medicationLine.defaultValue` array with full inventory and dosing metadata; legacy
+ * templates authored as grouped fields are still supported via `rules.inventoryItemId` and
+ * key-suffix fallbacks. Rows without an inventory id are ignored because dispensing/billing need an
+ * inventory-backed medication.
  */
 export const schemaSnapshotToPrescriptionItems = (
   snapshot: TemplateSchemaSnapshot | undefined
@@ -330,15 +336,25 @@ export const schemaSnapshotToPrescriptionItems = (
     if (!inventoryItemId) return;
     const baseRow =
       byInventoryId.get(inventoryItemId) ?? getFallbackPrescriptionItem(inventoryItemId);
-    let row = baseRow;
-    row = getUpdatedPrescriptionItem(row, '_name', stringDefault(rowData.medicineName));
-    row = getUpdatedPrescriptionItem(row, '_dosage', stringDefault(rowData.dosage));
-    row = getUpdatedPrescriptionItem(row, '_route', stringDefault(rowData.route));
-    row = getUpdatedPrescriptionItem(row, '_frequency', stringDefault(rowData.frequency));
-    row = getUpdatedPrescriptionItem(row, '_duration', stringDefault(rowData.durationDays));
-    row = getUpdatedPrescriptionItem(row, '_qty', stringDefault(rowData.qty));
-    row = getUpdatedPrescriptionItem(row, '_remark', stringDefault(rowData.instructions));
-    byInventoryId.set(inventoryItemId, row);
+    const row = PRESCRIPTION_TEMPLATE_ROW_KEYS.reduce(
+      (next, key) => getUpdatedPrescriptionItem(next, key, stringDefault(rowData[key])),
+      baseRow
+    );
+    byInventoryId.set(inventoryItemId, {
+      ...row,
+      inventoryItemId,
+      inventoryBatchId: stringDefault(rowData.inventoryBatchId) ?? row.inventoryBatchId,
+      fulfillment:
+        rowData.fulfillment === 'PRESCRIPTION_ONLY' || rowData.fulfillment === 'IN_HOUSE'
+          ? rowData.fulfillment
+          : row.fulfillment,
+      controlledSubstance: booleanDefault(rowData.controlledSubstance) ?? row.controlledSubstance,
+      prescriptionRequired:
+        booleanDefault(rowData.prescriptionRequired) ?? row.prescriptionRequired,
+      priceCents: numberDefault(rowData.priceCents ?? rowData.price) ?? row.priceCents,
+      stockQty: numberDefault(rowData.stockQty) ?? row.stockQty,
+      lowStock: booleanDefault(rowData.lowStock) ?? row.lowStock,
+    });
   };
   const walkFields = (fields: any[]) => {
     for (const field of fields ?? []) {
@@ -358,7 +374,12 @@ export const schemaSnapshotToPrescriptionItems = (
       const row =
         byInventoryId.get(inventoryItemId) ?? getFallbackPrescriptionItem(inventoryItemId);
       const value = stringDefault(field.defaultValue);
-      byInventoryId.set(inventoryItemId, getUpdatedPrescriptionItem(row, field.key, value));
+      const prescriptionField = (field.rules as { prescriptionField?: string } | undefined)
+        ?.prescriptionField;
+      byInventoryId.set(
+        inventoryItemId,
+        getUpdatedPrescriptionItem(row, prescriptionField ?? field.key, value)
+      );
     }
   };
   for (const section of snapshot.sections ?? []) {
@@ -374,21 +395,96 @@ const getFallbackPrescriptionItem = (inventoryItemId: string): Omit<Prescription
   inventoryItemId,
 });
 
+const PRESCRIPTION_TEMPLATE_ROW_KEYS = [
+  'medicineName',
+  'brand',
+  'genericName',
+  'sku',
+  'strength',
+  'strengthUnit',
+  'dosageForm',
+  'dosage',
+  'dose',
+  'doseUnit',
+  'route',
+  'frequency',
+  'durationDays',
+  'durationUnit',
+  'qty',
+  'refill',
+  'instructions',
+  'drugSchedule',
+] as const;
+
+const booleanDefault = (value: unknown): boolean | undefined => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['true', 'yes', '1'].includes(normalized)) return true;
+  if (['false', 'no', '0'].includes(normalized)) return false;
+  return undefined;
+};
+
+const numberDefault = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const getUpdatedPrescriptionItem = (
   row: Omit<PrescriptionItem, 'id'>,
   key: string,
   value: string | undefined
 ): Omit<PrescriptionItem, 'id'> => {
-  if (key.endsWith('_name')) return { ...row, medicineName: value ?? row.medicineName };
+  if (key === 'medicineName' || key.endsWith('_name')) {
+    return { ...row, medicineName: value ?? row.medicineName };
+  }
+  if (key === 'brand') return { ...row, brand: value ?? row.brand };
+  if (key === 'genericName') return { ...row, genericName: value ?? row.genericName };
+  if (key === 'sku') return { ...row, sku: value ?? row.sku };
+  if (key === 'strength') return { ...row, strength: value ?? row.strength };
+  if (key === 'strengthUnit') return { ...row, strengthUnit: value ?? row.strengthUnit };
+  if (key === 'dosageForm') return { ...row, dosageForm: value ?? row.dosageForm };
+  if (key === 'dose') return { ...row, dose: value ?? row.dose };
+  if (key === 'doseUnit') return { ...row, doseUnit: value ?? row.doseUnit };
+  if (key === 'durationUnit') return { ...row, durationUnit: value ?? row.durationUnit };
+  if (key === 'refill') return { ...row, refill: value ?? row.refill };
+  if (key === 'drugSchedule') return { ...row, drugSchedule: value ?? row.drugSchedule };
   if (key.endsWith('_dosage')) return { ...row, dosage: value ?? row.dosage };
-  if (key.endsWith('_route')) return { ...row, route: value ?? row.route };
-  if (key.endsWith('_frequency')) return { ...row, frequency: value ?? row.frequency };
-  if (key.endsWith('_duration')) return { ...row, durationDays: value ?? row.durationDays };
-  if (key.endsWith('_qty')) return { ...row, qty: value ?? row.qty };
+  if (key === 'dosage') return { ...row, dosage: value ?? row.dosage };
+  if (key === 'route' || key.endsWith('_route')) return { ...row, route: value ?? row.route };
+  if (key === 'frequency' || key.endsWith('_frequency')) {
+    return { ...row, frequency: value ?? row.frequency };
+  }
+  if (key === 'durationDays' || key.endsWith('_duration')) {
+    return { ...row, durationDays: value ?? row.durationDays };
+  }
+  if (key === 'qty' || key.endsWith('_qty')) return { ...row, qty: value ?? row.qty };
   if (key.endsWith('_remark') || key.endsWith('_instructions')) {
     return { ...row, instructions: value ?? row.instructions };
   }
+  if (key === 'instructions') return { ...row, instructions: value ?? row.instructions };
   return row;
+};
+
+export const templateToPrescriptionTemplate = (
+  template: TemplateLike
+): PrescriptionTemplateOption => ({
+  id: template.id,
+  name: template.name,
+  source: template.ownership ?? template.source,
+  items: schemaSnapshotToPrescriptionItems(templateSchemaSnapshot(template)),
+});
+
+export const listPrescriptionTemplatesForWorkspace = async (
+  organisationId: string
+): Promise<PrescriptionTemplateOption[]> => {
+  const templates = await listWorkspaceTemplates(organisationId, {
+    kind: 'PRESCRIPTION',
+    status: 'PUBLISHED',
+  });
+  return templates.map(templateToPrescriptionTemplate).filter((template) => template.items.length);
 };
 
 /**

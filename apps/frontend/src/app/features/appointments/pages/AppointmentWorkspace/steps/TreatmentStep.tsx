@@ -48,11 +48,13 @@ import {
   createWorkspaceTemplateInstance,
   getInpatientScheduleForEncounter,
   listInpatientScheduleTemplates,
+  listPrescriptionTemplatesForWorkspace,
   pauseInpatientScheduleTemplate,
   regenerateInpatientScheduleTemplate,
   resolvePrescriptionTemplate,
   resumeInpatientScheduleTemplate,
 } from '@/app/features/appointments/services/workspaceTemplateService';
+import type { PrescriptionTemplateOption } from '@/app/features/appointments/services/workspaceTemplateService';
 import type { TemplateLike } from '@yosemite-crew/types';
 import type {
   PackageBreakdownItem,
@@ -70,6 +72,8 @@ type TreatmentStepProps = {
   encounterId?: string;
   authorId?: string;
   encounter: AppointmentEncounter;
+  /** Resolve (creating via check-in if needed) the encounter id for clinical persistence. */
+  ensureEncounterId?: () => Promise<string | undefined>;
   onOpenInvoice: () => void;
 };
 
@@ -194,6 +198,7 @@ const TreatmentStep = ({
   encounterId,
   authorId,
   encounter,
+  ensureEncounterId,
   onOpenInvoice,
 }: TreatmentStepProps) => {
   const addLineItem = useAppointmentWorkspaceStore((s) => s.addLineItem);
@@ -224,6 +229,9 @@ const TreatmentStep = ({
   const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
   const [printingLabels, setPrintingLabels] = useState(false);
   const [scheduleTemplates, setScheduleTemplates] = useState<TemplateLike[]>([]);
+  const [prescriptionTemplates, setPrescriptionTemplates] = useState<PrescriptionTemplateOption[]>(
+    []
+  );
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [treatmentSaveError, setTreatmentSaveError] = useState<string | null>(null);
   const [isSavingTreatment, setIsSavingTreatment] = useState(false);
@@ -292,58 +300,6 @@ const TreatmentStep = ({
     });
   }, [loadOrganisationCatalog, organisationId]);
 
-  // Auto-load the PRESCRIPTION template linked to the encounter's service/package the first time the
-  // section is empty, so the medication rows (inventory item + authored default dose/route/freq/
-  // duration/instructions) preload. Runs once; the clinician can still add/edit rows afterwards.
-  const autoResolvedRxRef = React.useRef(false);
-  const prescriptionCount = encounter.prescription.length;
-  const encounterServicesForRx = encounter.services;
-  const encounterModeForRx = encounter.mode;
-  useEffect(() => {
-    if (!organisationId || readOnly || autoResolvedRxRef.current) return;
-    if (prescriptionCount > 0) return;
-    autoResolvedRxRef.current = true;
-    let cancelled = false;
-    const serviceLine = encounterServicesForRx?.find((item) => item.kind === 'SERVICE');
-    const packageLine = encounterServicesForRx?.find((item) => item.kind === 'PACKAGE');
-    resolvePrescriptionTemplate({
-      organisationId,
-      appointmentId,
-      encounterId,
-      serviceId: serviceLine?.refId,
-      packageId: packageLine?.refId,
-      mode: encounterModeForRx,
-    })
-      .then((rows) => {
-        if (cancelled) return;
-        // Guard against re-adding template rows that already exist (e.g. after navigating back to
-        // this step post-save): skip any row whose inventory item is already on a prescription.
-        const existing = useAppointmentWorkspaceStore
-          .getState()
-          .getEncounter(appointmentId)?.prescription;
-        if (existing && existing.length > 0) return;
-        const seenInventoryIds = new Set<string>();
-        rows.forEach((row) => {
-          if (row.inventoryItemId && seenInventoryIds.has(row.inventoryItemId)) return;
-          if (row.inventoryItemId) seenInventoryIds.add(row.inventoryItemId);
-          addPrescription(appointmentId, row);
-        });
-      })
-      .catch((error) => console.error('Unable to resolve prescription template:', error));
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    addPrescription,
-    appointmentId,
-    encounterId,
-    encounterModeForRx,
-    encounterServicesForRx,
-    organisationId,
-    prescriptionCount,
-    readOnly,
-  ]);
-
   useEffect(() => {
     if (!organisationId || catalogSpecialityIds.length === 0) return;
     Promise.all(
@@ -390,6 +346,17 @@ const TreatmentStep = ({
         console.error('Failed to load inpatient schedule templates:', error);
       });
   }, [isInpatient, organisationId]);
+
+  useEffect(() => {
+    if (!organisationId) return;
+    listPrescriptionTemplatesForWorkspace(organisationId)
+      .then((templates) => {
+        if (templates.length > 0) setPrescriptionTemplates(templates);
+      })
+      .catch((error) => {
+        console.error('Failed to load prescription templates:', error);
+      });
+  }, [organisationId]);
 
   // Hydrate the inpatient schedule on load: confirm the encounter's schedules
   // exist on the backend, then pull the generated tasks into the task store so
@@ -515,6 +482,82 @@ const TreatmentStep = ({
     [encounter.prescription, inventoryById, inventoryBySku]
   );
 
+  const addPrescriptionRowsFromTemplate = React.useCallback(
+    (rows: Array<Omit<AppointmentEncounter['prescription'][number], 'id'>>) => {
+      const clinicalKey = (row: Omit<AppointmentEncounter['prescription'][number], 'id'>) =>
+        row.medicineName.trim()
+          ? [row.medicineName, row.strength, row.strengthUnit, row.dosageForm, row.route]
+              .map((value) => value?.trim().toLowerCase() ?? '')
+              .join('|')
+          : '';
+      const existingRows =
+        useAppointmentWorkspaceStore.getState().getEncounter(appointmentId)?.prescription ?? [];
+      const seenInventoryIds = new Set(
+        existingRows
+          .map((item) => item.inventoryItemId)
+          .filter((value): value is string => Boolean(value))
+      );
+      const seenClinicalKeys = new Set(existingRows.map(clinicalKey).filter(Boolean));
+      rows.forEach((row) => {
+        const inventoryKey = row.inventoryItemId?.trim();
+        const rowClinicalKey = clinicalKey(row);
+        if (inventoryKey && seenInventoryIds.has(inventoryKey)) return;
+        if (rowClinicalKey && seenClinicalKeys.has(rowClinicalKey)) return;
+        if (inventoryKey) seenInventoryIds.add(inventoryKey);
+        if (rowClinicalKey) seenClinicalKeys.add(rowClinicalKey);
+        addPrescription(appointmentId, row);
+      });
+    },
+    [addPrescription, appointmentId]
+  );
+
+  // Auto-load the PRESCRIPTION template linked to the encounter's service/package once that
+  // service/package context is known and the prescription section is still empty. Track attempts by
+  // service/package key so an initial blank encounter cannot block the later linked-template load.
+  const autoResolvedRxKeysRef = React.useRef<Set<string>>(new Set());
+  const prescriptionCount = encounter.prescription.length;
+  const encounterServicesForRx = encounter.services;
+  const encounterModeForRx = encounter.mode;
+  useEffect(() => {
+    if (!organisationId || readOnly || prescriptionCount > 0) return;
+    const serviceLine = encounterServicesForRx.find((item) => item.kind === 'SERVICE');
+    const packageLine = encounterServicesForRx.find((item) => item.kind === 'PACKAGE');
+    if (!serviceLine && !packageLine) return;
+    const contextKey = `${serviceLine?.refId ?? ''}|${packageLine?.refId ?? ''}|${encounterModeForRx}`;
+    if (autoResolvedRxKeysRef.current.has(contextKey)) return;
+    autoResolvedRxKeysRef.current.add(contextKey);
+    let cancelled = false;
+    resolvePrescriptionTemplate({
+      organisationId,
+      appointmentId,
+      encounterId,
+      serviceId: serviceLine?.refId,
+      packageId: packageLine?.refId,
+      mode: encounterModeForRx,
+    })
+      .then((rows) => {
+        if (cancelled) return;
+        const existing = useAppointmentWorkspaceStore
+          .getState()
+          .getEncounter(appointmentId)?.prescription;
+        if (existing && existing.length > 0) return;
+        addPrescriptionRowsFromTemplate(rows);
+      })
+      .catch((error) => console.error('Unable to resolve prescription template:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    addPrescriptionRowsFromTemplate,
+    appointmentId,
+    encounterId,
+    encounterModeForRx,
+    encounterServicesForRx,
+    organisationId,
+    prescriptionCount,
+    readOnly,
+  ]);
+
   const servicePackageCatalogItems = useMemo(() => {
     if (!organisationId) return [];
     const serviceItems = catalogServices
@@ -533,6 +576,11 @@ const TreatmentStep = ({
   const handleAddPrescription = (item: Parameters<typeof addPrescription>[1]) => {
     setPrescriptionError(null);
     addPrescription(appointmentId, item);
+  };
+
+  const handleApplyPrescriptionTemplate = (template: PrescriptionTemplateOption) => {
+    setPrescriptionError(null);
+    addPrescriptionRowsFromTemplate(template.items);
   };
 
   // Remove a prescription. Billed/paid rows have no delete control, so anything reaching here is
@@ -693,22 +741,17 @@ const TreatmentStep = ({
   const handleSaveTreatment = async () => {
     if (isSavingTreatment) return;
     setTreatmentSaveError(null);
-    // Without an org/encounter we cannot persist; keep the legacy local-only
-    // behaviour (prescriptions already persist per-add; services stay staged).
-    if (!organisationId || !encounterId) {
-      setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
-      onOpenInvoice();
-      return;
-    }
     // Normalize before validating/saving: the duration unit defaults to "days" (the value shown
     // on the card), so a row the clinician left at the default is complete and persists correctly.
     const normalizedPrescriptions = prescriptionItems.map((rx) => ({
       ...rx,
       durationUnit: rx.durationUnit?.trim() || DEFAULT_DURATION_UNIT,
     }));
-    // Save-time validation gate: never persist an incomplete prescription. Each row must carry
-    // the required clinical instructions (frequency, duration, quantity, route, form) and pass
-    // every number-format rule before anything is sent to the backend.
+    // Save-time validation gate: never advance with an incomplete prescription. This runs
+    // BEFORE the persist/no-persist branch so it blocks even when org/encounter haven't hydrated
+    // (otherwise the step would silently advance without validating). Each row must carry the
+    // required clinical instructions (frequency, duration, quantity, route, form) and pass every
+    // number-format rule.
     const prescriptionErrors = normalizedPrescriptions.flatMap((rx) =>
       getPrescriptionSaveErrors(rx)
     );
@@ -720,13 +763,31 @@ const TreatmentStep = ({
     setPrescriptionError(null);
 
     setIsSavingTreatment(true);
+    // Resolve the encounter id, creating one (via check-in) when the appointment hasn't started —
+    // an outpatient appointment has no encounter until then, so without this treatment/prescriptions
+    // would only ever live locally and vanish on refresh.
+    let activeEncounterId = encounterId;
+    if (organisationId && !activeEncounterId && ensureEncounterId) {
+      try {
+        activeEncounterId = await ensureEncounterId();
+      } catch (error) {
+        console.error('Failed to resolve an encounter for treatment:', error);
+      }
+    }
+    // Still no org/encounter (e.g. check-in unavailable) → keep the legacy local-only behaviour.
+    if (!organisationId || !activeEncounterId) {
+      setStepStatus(appointmentId, 'TREATMENT', 'COMPLETED');
+      setIsSavingTreatment(false);
+      onOpenInvoice();
+      return;
+    }
     // Saved prescription ids captured from the create/update responses, so finalize targets the
     // real artifact id (not the local `local-rx-…` id) and the post-save bootstrap merge — not a
     // local append — becomes the single source of truth for the list (avoids duplicate rows).
     const savedInHouseIds: string[] = [];
     try {
       // Persist any staged service/package rows.
-      await persistTreatmentItems(organisationId, encounterId, encounter.services);
+      await persistTreatmentItems(organisationId, activeEncounterId, encounter.services);
       // Persist prescription rows with their fully-entered clinical values (strength / route /
       // frequency / duration / quantity / refills). We save the inventory-BACKFILLED rows
       // (`prescriptionItems`), not the raw store rows, so inventory-owned fields the clinician
@@ -736,7 +797,7 @@ const TreatmentStep = ({
       const reconciledPrescriptions = await Promise.all(
         normalizedPrescriptions.map(async (rx) => {
           const savedRx = await savePrescriptionArtifact(
-            { organisationId, appointmentId, encounterId, authorId },
+            { organisationId, appointmentId, encounterId: activeEncounterId, authorId },
             rx
           );
           const savedId = (savedRx as { id?: string } | undefined)?.id ?? rx.id;
@@ -840,12 +901,14 @@ const TreatmentStep = ({
       <PrescriptionEditor
         items={prescriptionItems}
         catalogItems={prescriptionCatalogItems}
+        templateItems={prescriptionTemplates}
         readOnly={readOnly}
         // A prescription can be removed unless it is actually billed/paid (handled per-row via the
         // `billed` flag) or the encounter is view-only. Being "ready for billing" is NOT a lock —
         // an un-dispensed, unbilled prescription must stay deletable.
         deleteLocked={readOnly}
         onAddItem={handleAddPrescription}
+        onApplyTemplate={handleApplyPrescriptionTemplate}
         onUpdateItem={(id, patch) => updatePrescription(appointmentId, id, patch)}
         onRemoveItem={(id) => void handleRemovePrescription(id)}
         onPrint={() => void handlePrintPrescriptionLabels()}

@@ -853,6 +853,7 @@ describe('DocumentsPanel', () => {
         companionId="comp-9"
         organisationId="org-1"
         encounterId="enc-1"
+        appointmentStatus="IN_PROGRESS"
       />
     );
     await waitFor(() =>
@@ -887,6 +888,7 @@ describe('DocumentsPanel', () => {
         companionId="comp-9"
         organisationId="org-1"
         encounterId="enc-1"
+        appointmentStatus="IN_PROGRESS"
       />
     );
     await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalledTimes(1));
@@ -910,12 +912,72 @@ describe('DocumentsPanel', () => {
         companionId="comp-9"
         organisationId="org-1"
         encounterId="enc-1"
+        appointmentStatus="IN_PROGRESS"
       />
     );
     await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
     expect(await screen.findByText('Draft')).toBeInTheDocument();
     expect(screen.getByText('Not started')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^sign$/i })).not.toBeDisabled();
+  });
+
+  it('disables Sign with a tooltip when the appointment is not in progress', async () => {
+    render(
+      <DocumentsPanel
+        appointmentId={APPT}
+        companionId="comp-9"
+        organisationId="org-1"
+        encounterId="enc-1"
+        appointmentStatus="CHECKED_IN"
+      />
+    );
+    await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
+    const signButton = screen.getByRole('button', { name: /^sign$/i });
+    expect(signButton).toBeDisabled();
+    // The GlassTooltip bubble is portalled in on hover of the trigger wrapper.
+    fireEvent.mouseEnter(signButton.parentElement as HTMLElement);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      /signing is available only while the appointment is in progress/i
+    );
+  });
+
+  it('shows Download Signed and downloads the signed packet for a SIGNED packet', async () => {
+    (createEncounterDocumentPacket as jest.Mock).mockResolvedValue({
+      packetId: 'packet-1',
+      status: 'FINAL',
+      signing: { status: 'SIGNED' },
+    });
+    const createObjectURL = jest.fn().mockReturnValue('blob:signed-packet');
+    const revokeObjectURL = jest.fn();
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectURL,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectURL,
+      writable: true,
+      configurable: true,
+    });
+    (getEncounterDocumentPacketPdfUrl as jest.Mock).mockResolvedValue('blob:signed-packet');
+
+    render(
+      <DocumentsPanel
+        appointmentId={APPT}
+        companionId="comp-9"
+        organisationId="org-1"
+        encounterId="enc-1"
+        appointmentStatus="IN_PROGRESS"
+      />
+    );
+    await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
+    const downloadButton = await screen.findByRole('button', { name: /download signed/i });
+    expect(screen.queryByRole('button', { name: /^sign$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(downloadButton);
+    await waitFor(() =>
+      expect(getEncounterDocumentPacketPdfUrl).toHaveBeenCalledWith('org-1', 'enc-1')
+    );
   });
 
   it('shows "Signing in progress" and disables Sign for an IN_PROGRESS packet', async () => {
@@ -938,7 +1000,7 @@ describe('DocumentsPanel', () => {
     expect(screen.getByRole('button', { name: /signing in progress/i })).toBeDisabled();
   });
 
-  it('marks a SIGNED packet as Final/Signed and disables the Sign action', async () => {
+  it('marks a SIGNED packet as Final and swaps Sign for Download Signed', async () => {
     (createEncounterDocumentPacket as jest.Mock).mockResolvedValue({
       packetId: 'packet-1',
       status: 'FINAL',
@@ -954,9 +1016,10 @@ describe('DocumentsPanel', () => {
     );
     await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
     expect(await screen.findByText('Final')).toBeInTheDocument();
-    // The status badge and the collapsed Sign button both read "Signed".
-    expect(screen.getAllByText('Signed').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: /signed/i })).toBeDisabled();
+    // The signing-status badge still reads "Signed"; the action is Download Signed.
+    expect(screen.getByText('Signed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /download signed/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^sign$/i })).not.toBeInTheDocument();
   });
 
   it('surfaces an error and closes the overlay when packet signing fails', async () => {
@@ -968,6 +1031,7 @@ describe('DocumentsPanel', () => {
         companionId="comp-9"
         organisationId="org-1"
         encounterId="enc-1"
+        appointmentStatus="IN_PROGRESS"
       />
     );
     await waitFor(() => expect(createEncounterDocumentPacket).toHaveBeenCalled());
