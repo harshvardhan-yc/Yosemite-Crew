@@ -46,6 +46,8 @@ export type InventoryApiItem = {
   storageInstructions?: string;
   unitOfMeasure?: string;
   packageQuantity?: number;
+  unitQuantity?: number;
+  stockUnitType?: string;
   storageLocation?: string;
   minimumStock?: number;
   attributes?: Record<string, any>;
@@ -96,6 +98,8 @@ export type InventoryRequestPayload = {
   storageInstructions?: string;
   unitOfMeasure?: string;
   packageQuantity?: number;
+  unitQuantity?: number;
+  stockUnitType?: string;
   storageLocation?: string;
   minimumStock?: number;
   attributes?: Record<string, any>;
@@ -714,6 +718,7 @@ export interface DispensaryItem {
   frequency?: string;
   frequencyPerDay?: number;
   durationDays?: number;
+  durationUnit?: string;
   refillsRemaining?: number;
   stockUnitQty?: number;
   stockUnitType?: string;
@@ -742,6 +747,7 @@ export interface DispensaryRecord {
   amountCents: number;
   currency?: string;
   lead: string;
+  petParentName?: string;
   location: string;
   timeDispensed?: string;
   requestType: 'PATIENT' | 'IN_HOUSE';

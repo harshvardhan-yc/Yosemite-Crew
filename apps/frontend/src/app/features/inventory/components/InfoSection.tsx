@@ -154,6 +154,7 @@ const InfoSection: React.FC<InfoSectionProps> = ({
           ? resolvedOptions
           : undefined,
       ...(field.readonly ? { editable: false } : {}),
+      ...(field.numeric ? { numeric: true } : {}),
     };
   };
 
@@ -188,6 +189,7 @@ const InfoSection: React.FC<InfoSectionProps> = ({
           hideInlineActions
           onEditingChange={onEditingChange}
           fieldFilter={inventoryFieldFilter}
+          fieldResets={sectionKey === 'basicInfo' ? { category: ['subCategory'] } : undefined}
           optionsResolver={
             sectionKey === 'basicInfo'
               ? (key, formValues) => {

@@ -404,7 +404,11 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
         inname={name}
         value={value}
         inlabel={placeholder || ''}
-        onChange={(e) => onChangeHandler(batchIndex, typedName, e.target.value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          const val = field.numeric ? raw.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1') : raw;
+          onChangeHandler(batchIndex, typedName, val);
+        }}
         className="min-h-12!"
       />
     );
@@ -640,7 +644,7 @@ const PricingCurrencySummary = ({ inventory }: { inventory: InventoryItem }) => 
           {formatCurrencyValue(getGrossProfitPerUnit(inventory), currency)}
         </span>
       </div>
-      <div>
+      <div className="mb-4">
         <span>Margin : </span>
         <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
           {formatPercentValue(getMarginPercent(inventory))}
@@ -729,7 +733,7 @@ const InventoryInfo = ({
       await onUpdate({
         ...activeInventory,
         attributes: {
-          ...(activeInventory.attributes ?? {}),
+          ...activeInventory.attributes,
           ...batchAttributeValues,
         },
         batch: {
