@@ -513,7 +513,7 @@ describe('Build form step', () => {
         })
       );
 
-      fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
+      fireEvent.click(screen.getByRole('button', { name: /Add task block/i }));
 
       const schema = readSchema();
       const updatedTaskGroup = schema[0] as FormField & { fields?: FormField[] };
@@ -521,10 +521,11 @@ describe('Build form step', () => {
       expect(taskBlock.meta?.taskBlock).toBe(true);
       expect(taskBlock.fields?.map((field) => field.meta?.taskBlockKey)).toEqual([
         'name',
-        'dayOffset',
-        'timeOfDay',
-        'reminderOffsetMinutes',
+        'category',
         'additionalNotes',
+        'recurrence.type',
+        'reminderOffsetMinutes',
+        'durationDays',
       ]);
     });
   });

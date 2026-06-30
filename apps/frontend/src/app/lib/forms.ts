@@ -27,6 +27,11 @@ import {
   FormsUsage,
 } from '@/app/features/forms/types/forms';
 import { formatDisplayDate, formatTimeInPreferredTimeZone } from '@/app/lib/date';
+import {
+  categoryToKind,
+  reminderValueToOffset,
+  repeatValueToRecurrence,
+} from '@/app/features/tasks/constants/taskTaxonomy';
 
 const statusToLabelMap: Record<Form['status'], FormsStatus> = {
   draft: 'Draft',
@@ -533,6 +538,33 @@ const workflowBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> 
           },
         ],
       },
+      {
+        // A YC-default Task Template is authored as a set of task blocks (the
+        // "Building a template" UI). They serialize into this repeater (mirrors
+        // the INPATIENT_SCHEDULE schedule section) so the workspace schedule can
+        // preload them via resolveScheduleTasksFromTemplate.
+        id: 'schedule',
+        title: 'Schedule',
+        order: 4,
+        fields: [
+          {
+            key: 'taskBlocks',
+            label: 'Task blocks',
+            type: 'repeater',
+            repeatable: true,
+            rules: {
+              columns: [
+                'name',
+                'category',
+                'recurrence',
+                'reminderOffsetMinutes',
+                'durationDays',
+                'additionalNotes',
+              ],
+            },
+          },
+        ],
+      },
     ],
   },
   INPATIENT_SCHEDULE: {
@@ -644,9 +676,11 @@ type TaskBlockValue = {
   audience: string;
   assignedRole?: string;
   reminderOffsetMinutes?: number;
+  durationDays?: number;
   additionalNotes?: string;
   recurrence?: {
     type: string;
+    cronExpression?: string;
   };
 };
 
@@ -669,12 +703,17 @@ const assignTaskBlockValue = (
   if (!key || value === undefined || value === '') return;
   if (key === 'dayOffset') {
     block.dayOffset = coerceNumberValue(value, 0);
+  } else if (key === 'durationDays') {
+    block.durationDays = coerceNumberValue(value, 0);
   } else if (key === 'reminderOffsetMinutes') {
-    block.reminderOffsetMinutes = coerceNumberValue(value, 0);
+    // The reminder dropdown carries the canonical "NONE" sentinel for no reminder.
+    const offset = reminderValueToOffset(String(value));
+    if (offset) block.reminderOffsetMinutes = offset;
   } else if (key === 'recurrence.type') {
-    if (typeof value === 'string' || typeof value === 'number') {
-      block.recurrence = { type: String(value) };
-    }
+    // The repeat dropdown carries canonical values (EVERY_6_HOURS, …); resolve to
+    // the backend recurrence type + cron so interval repeats materialize correctly.
+    const { type, cronExpression } = repeatValueToRecurrence(String(value));
+    block.recurrence = { type, cronExpression };
   } else if (key in block) {
     (block as Record<string, unknown>)[key] = value;
   }
@@ -697,6 +736,10 @@ const taskBlockFromGroup = (group: FormField & { fields?: FormField[] }): TaskBl
     const key = (field.meta as { taskBlockKey?: string } | undefined)?.taskBlockKey;
     assignTaskBlockValue(block, key, fieldAuthoredValue(field));
   }
+
+  // Derive the constrained Prisma kind from the authored category so the
+  // template rules carry a valid `taskKind` (falls back to CUSTOM pre-migration).
+  block.taskKind = categoryToKind(block.category);
 
   return block;
 };
@@ -881,7 +924,10 @@ export const buildTemplateSchemaSnapshot = (
   if (blueprint) {
     const mergedBlueprint = mergeFieldDefaults(blueprint, form.schema ?? []);
     const customFields = filterCustomFields(getBlueprintFieldKeys(blueprint), form.schema ?? []);
-    if (kind === 'INPATIENT_SCHEDULE') {
+    // Both inpatient-schedule and task-assignment templates carry authored task
+    // blocks in a `schedule.taskBlocks` field; serialize them for either kind so
+    // the YC-default task builder (TASK_ASSIGNMENT) persists its tasks.
+    if (kind === 'INPATIENT_SCHEDULE' || kind === 'TASK_ASSIGNMENT') {
       const taskBlocks = taskBlocksFromForm(form);
       return {
         sections: [...withTaskBlocks(mergedBlueprint, taskBlocks).sections],

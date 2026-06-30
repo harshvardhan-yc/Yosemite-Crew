@@ -381,6 +381,84 @@ describe('buildTemplateSchemaSnapshot canonical blueprint merge', () => {
       expect.objectContaining({ name: 'Vitals', category: 'CARE' }),
     ]);
   });
+
+  it('serializes YC-default Task Template (TASK_ASSIGNMENT) task blocks into schedule.taskBlocks', () => {
+    // No explicit kind override: category 'Task Template' must resolve to
+    // TASK_ASSIGNMENT and still serialize its authored task blocks.
+    const snapshot = buildTemplateSchemaSnapshot({
+      name: 'Care pathway',
+      category: 'Task Template',
+      usage: 'Internal',
+      updatedBy: 'user-1',
+      lastUpdated: '',
+      schema: [
+        {
+          id: 'task_blocks',
+          type: 'group',
+          label: 'Schedule tasks',
+          meta: { taskGroup: true },
+          fields: [
+            {
+              id: 'task-1',
+              type: 'group',
+              label: 'Record vitals',
+              meta: { taskBlock: true },
+              fields: [
+                {
+                  id: 'task-1_name',
+                  type: 'input',
+                  label: 'Task title',
+                  defaultValue: 'Record vitals',
+                },
+                {
+                  id: 'task-1_category',
+                  type: 'dropdown',
+                  label: 'Category',
+                  defaultValue: 'CARE',
+                  meta: { taskBlockKey: 'category' },
+                },
+                {
+                  id: 'task-1_recurrence',
+                  type: 'dropdown',
+                  label: 'Repeat',
+                  defaultValue: 'EVERY_6_HOURS',
+                  meta: { taskBlockKey: 'recurrence.type' },
+                },
+                {
+                  id: 'task-1_reminderOffsetMinutes',
+                  type: 'dropdown',
+                  label: 'Reminder',
+                  defaultValue: '5',
+                  meta: { taskBlockKey: 'reminderOffsetMinutes' },
+                },
+                {
+                  id: 'task-1_durationDays',
+                  type: 'number',
+                  label: 'Duration',
+                  defaultValue: '3',
+                  meta: { taskBlockKey: 'durationDays' },
+                },
+              ] as unknown as FormField[],
+            },
+          ] as unknown as FormField[],
+        },
+      ] as unknown as FormField[],
+    });
+
+    const scheduleSection = snapshot.sections.find((section) => section.id === 'schedule');
+    const taskBlocks = scheduleSection?.fields.find((field) => field.key === 'taskBlocks');
+    expect(taskBlocks?.defaultValue).toEqual([
+      expect.objectContaining({
+        name: 'Record vitals',
+        category: 'CARE',
+        taskKind: 'CARE',
+        reminderOffsetMinutes: 5,
+        durationDays: 3,
+        // EVERY_6_HOURS resolves to a CUSTOM recurrence with a cron.
+        recurrence: { type: 'CUSTOM', cronExpression: '0 */6 * * *' },
+      }),
+    ]);
+  });
 });
 
 describe('mapTemplateToUI', () => {

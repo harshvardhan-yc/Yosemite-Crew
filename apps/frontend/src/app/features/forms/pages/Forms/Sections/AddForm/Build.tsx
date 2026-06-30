@@ -1,10 +1,16 @@
 import { Primary } from '@/app/ui/primitives/Buttons';
 import FormInput from '@/app/ui/inputs/FormInput/FormInput';
+import FormDesc from '@/app/ui/inputs/FormDesc/FormDesc';
+import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
+import { LuCopy, LuPlus, LuTrash2 } from 'react-icons/lu';
 import {
   FormField,
   FormFieldType,
   FormsProps,
   buildMedicationFields,
+  TASK_CATEGORY_FIELD_OPTIONS,
+  TASK_RECURRENCE_FIELD_OPTIONS,
+  TASK_REMINDER_FIELD_OPTIONS,
 } from '@/app/features/forms/types/forms';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
 import Dropdown from '@/app/ui/inputs/Dropdown/Dropdown';
@@ -175,44 +181,58 @@ const buildMedicationTemplateGroup = (id: string): FormField => {
   };
 };
 
-const defaultTaskBlockFields = (prefix: string, taskNumber: number): FormField[] => [
+// Default field set for one task block in a YC-default Task Template. Each field
+// carries a `taskBlockKey` so lib/forms.ts serializes the block into the
+// TASK_ASSIGNMENT template rules (and the inpatient schedule preloads from it).
+// The values are authored via the dedicated TaskBlockCard (not generic builder
+// rows), so labels/placeholders here are the card's field captions.
+const defaultTaskBlockFields = (prefix: string): FormField[] => [
   {
     id: `${prefix}_name`,
     type: 'input',
-    label: 'Task name',
-    placeholder: 'e.g. Check vitals',
+    label: 'Task title',
+    placeholder: 'Eg.: Record vitals',
     defaultValue: '',
     meta: { taskBlockKey: 'name' },
   },
   {
-    id: `${prefix}_dayOffset`,
-    type: 'number',
-    label: 'Day after start',
-    placeholder: '0',
-    defaultValue: String(taskNumber - 1),
-    meta: { taskBlockKey: 'dayOffset' },
-  },
-  {
-    id: `${prefix}_timeOfDay`,
-    type: 'input',
-    label: 'Time',
-    placeholder: '09:00',
-    defaultValue: '09:00',
-    meta: { taskBlockKey: 'timeOfDay' },
-  },
-  {
-    id: `${prefix}_reminderOffsetMinutes`,
-    type: 'number',
-    label: 'Reminder before (minutes)',
-    placeholder: '15',
-    meta: { taskBlockKey: 'reminderOffsetMinutes' },
+    id: `${prefix}_category`,
+    type: 'dropdown',
+    label: 'Category',
+    options: TASK_CATEGORY_FIELD_OPTIONS,
+    defaultValue: 'CARE',
+    meta: { taskBlockKey: 'category' },
   },
   {
     id: `${prefix}_additionalNotes`,
     type: 'textarea',
-    label: 'Instructions',
-    placeholder: 'What should be done for this task',
+    label: 'Instructions (optional)',
+    placeholder: 'Add default instructions for this task',
     meta: { taskBlockKey: 'additionalNotes' },
+  },
+  {
+    id: `${prefix}_recurrence`,
+    type: 'dropdown',
+    label: 'Repeat',
+    options: TASK_RECURRENCE_FIELD_OPTIONS,
+    defaultValue: 'EVERY_6_HOURS',
+    meta: { taskBlockKey: 'recurrence.type' },
+  },
+  {
+    id: `${prefix}_reminderOffsetMinutes`,
+    type: 'dropdown',
+    label: 'Reminder (optional)',
+    options: TASK_REMINDER_FIELD_OPTIONS,
+    defaultValue: '5',
+    meta: { taskBlockKey: 'reminderOffsetMinutes' },
+  },
+  {
+    id: `${prefix}_durationDays`,
+    type: 'number',
+    label: 'Duration (days)',
+    placeholder: '3',
+    defaultValue: '3',
+    meta: { taskBlockKey: 'durationDays' },
   },
 ];
 
@@ -916,51 +936,214 @@ type TaskGroupBuilderProps = {
   createField: (t: OptionKey) => FormField;
 };
 
-const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange, createField }) => {
-  const structureLocked = React.useContext(StructureLockContext);
-  const addTaskBlock = () => {
-    const taskNumber = (field.fields ?? []).length + 1;
+/** Read the authored value of a task-block leaf field (defaultValue, else placeholder). */
+const taskBlockFieldValue = (field?: FormField): string => {
+  if (!field) return '';
+  const value = (field as FormField & { defaultValue?: unknown }).defaultValue;
+  if (value !== undefined && value !== '') return String(value);
+  return field.placeholder ?? '';
+};
+
+/**
+ * One task block in the "Building a template" task builder, rendered as the
+ * mockup card: Task title, Category, Instructions, Repeat, Reminder, Duration —
+ * with duplicate/delete header actions. Each control writes back into the
+ * matching `taskBlockKey` leaf field's `defaultValue`, which lib/forms.ts reads
+ * when serializing the block into the TASK_ASSIGNMENT template rules.
+ */
+const TaskBlockCard: React.FC<{
+  block: FormField & { type: 'group'; fields?: FormField[] };
+  index: number;
+  onChange: (next: FormField) => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}> = ({ block, index, onChange, onDuplicate, onRemove }) => {
+  const fieldByKey = (key: string) =>
+    (block.fields ?? []).find((f) => (f.meta as { taskBlockKey?: string })?.taskBlockKey === key);
+
+  const fieldOptions = (f?: FormField): { label: string; value: string }[] =>
+    ((f as { options?: { label: string; value: string }[] } | undefined)?.options ?? []) as {
+      label: string;
+      value: string;
+    }[];
+
+  const setKeyValue = (key: string, value: string) => {
+    onChange({
+      ...block,
+      fields: (block.fields ?? []).map((f) =>
+        (f.meta as { taskBlockKey?: string })?.taskBlockKey === key
+          ? { ...f, defaultValue: value }
+          : f
+      ),
+    });
+  };
+
+  const titleField = fieldByKey('name');
+  const categoryField = fieldByKey('category');
+  const instructionsField = fieldByKey('additionalNotes');
+  const repeatField = fieldByKey('recurrence.type');
+  const reminderField = fieldByKey('reminderOffsetMinutes');
+  const durationField = fieldByKey('durationDays');
+
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border border-card-border bg-neutral-0 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-body-3-emphasis text-text-primary">Task {index + 1}</p>
+        <div className="flex items-center gap-2">
+          <CircleIconButton
+            icon={<LuCopy size={16} aria-hidden="true" />}
+            label={`Duplicate task ${index + 1}`}
+            onClick={onDuplicate}
+          />
+          <CircleIconButton
+            icon={<LuTrash2 size={16} aria-hidden="true" />}
+            label={`Remove task ${index + 1}`}
+            onClick={onRemove}
+          />
+        </div>
+      </div>
+
+      <FormInput
+        intype="text"
+        inname={`${block.id}-title`}
+        value={taskBlockFieldValue(titleField)}
+        inlabel={titleField?.label || 'Task title'}
+        onChange={(e) => setKeyValue('name', e.target.value)}
+      />
+
+      <Dropdown
+        placeholder={categoryField?.label || 'Category'}
+        value={taskBlockFieldValue(categoryField)}
+        options={
+          fieldOptions(categoryField).length
+            ? fieldOptions(categoryField)
+            : TASK_CATEGORY_FIELD_OPTIONS
+        }
+        onChange={(value: string) => setKeyValue('category', value)}
+      />
+
+      <FormDesc
+        intype="text"
+        inname={`${block.id}-instructions`}
+        value={taskBlockFieldValue(instructionsField)}
+        inlabel={instructionsField?.label || 'Instructions (optional)'}
+        onChange={(e) => setKeyValue('additionalNotes', e.target.value)}
+        className="min-h-24!"
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Dropdown
+          placeholder={repeatField?.label || 'Repeat'}
+          value={taskBlockFieldValue(repeatField)}
+          options={
+            fieldOptions(repeatField).length
+              ? fieldOptions(repeatField)
+              : TASK_RECURRENCE_FIELD_OPTIONS
+          }
+          onChange={(value: string) => setKeyValue('recurrence.type', value)}
+        />
+        <Dropdown
+          placeholder={reminderField?.label || 'Reminder (optional)'}
+          value={taskBlockFieldValue(reminderField)}
+          options={
+            fieldOptions(reminderField).length
+              ? fieldOptions(reminderField)
+              : TASK_REMINDER_FIELD_OPTIONS
+          }
+          onChange={(value: string) => setKeyValue('reminderOffsetMinutes', value)}
+        />
+      </div>
+
+      <FormInput
+        intype="number"
+        inname={`${block.id}-duration`}
+        value={taskBlockFieldValue(durationField)}
+        inlabel={durationField?.label || 'Duration (days)'}
+        onChange={(e) => setKeyValue('durationDays', e.target.value)}
+      />
+    </div>
+  );
+};
+
+const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange }) => {
+  const buildTaskBlock = (): FormField => {
     const id = `${field.id}_task_${crypto.randomUUID()}`;
-    const taskField: FormField = {
+    return {
       id,
       type: 'group',
-      label: `Task ${taskNumber}`,
+      label: `Task ${(field.fields ?? []).length + 1}`,
       meta: { taskBlock: true, taskBlockId: id } as any,
-      fields: defaultTaskBlockFields(id, taskNumber),
+      fields: defaultTaskBlockFields(id),
     };
-    onChange({ ...field, fields: [...(field.fields ?? []), taskField] });
+  };
+
+  const addTaskBlock = () => {
+    onChange({ ...field, fields: [...(field.fields ?? []), buildTaskBlock()] });
+  };
+
+  // Duplicate a block with fresh field ids so the new block is independently editable.
+  const duplicateTaskBlock = (source: FormField & { type: 'group'; fields?: FormField[] }) => {
+    const id = `${field.id}_task_${crypto.randomUUID()}`;
+    const clone: FormField = {
+      ...source,
+      id,
+      label: `Task ${(field.fields ?? []).length + 1}`,
+      meta: { taskBlock: true, taskBlockId: id } as any,
+      fields: (source.fields ?? []).map((f) => ({ ...f, id: `${id}_${f.id.split('_').pop()}` })),
+    };
+    onChange({ ...field, fields: [...(field.fields ?? []), clone] });
   };
 
   const removeTask = (taskFieldId: string) =>
     onChange({ ...field, fields: (field.fields ?? []).filter((f) => f.id !== taskFieldId) });
 
-  const updateNestedField = makeNestedFieldUpdater(field, onChange);
+  const updateBlock = (id: string, updated: FormField) =>
+    onChange({
+      ...field,
+      fields: (field.fields ?? []).map((f) => (f.id === id ? updated : f)),
+    });
+
+  const blocks = (field.fields ?? []).filter(
+    (f): f is FormField & { type: 'group'; fields?: FormField[] } => f.type === 'group'
+  );
 
   return (
     <div className="flex flex-col gap-4">
-      {!structureLocked && (
-        <FormInput
-          intype="text"
-          inname={`group-${field.id}-label`}
-          value={field.label || ''}
-          inlabel="Group name"
-          onChange={(e) => onChange({ ...field, label: e.target.value })}
-          className="min-h-12!"
-        />
+      {blocks.length === 0 ? (
+        <button
+          type="button"
+          onClick={addTaskBlock}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-card-border bg-neutral-0 p-6 text-body-3-emphasis text-text-primary"
+        >
+          <span className="flex size-6 items-center justify-center rounded-full bg-neutral-900 text-neutral-0">
+            <LuPlus size={14} aria-hidden="true" />
+          </span>
+          Add task block
+        </button>
+      ) : (
+        blocks.map((block, index) => (
+          <TaskBlockCard
+            key={block.id}
+            block={block}
+            index={index}
+            onChange={(updated) => updateBlock(block.id, updated)}
+            onDuplicate={() => duplicateTaskBlock(block)}
+            onRemove={() => removeTask(block.id)}
+          />
+        ))
       )}
 
-      <div className="flex items-center justify-between gap-3 rounded-2xl border border-card-border bg-neutral-0 p-3">
-        <div>
-          <p className="text-body-3-emphasis text-text-primary">Task blocks</p>
-          <p className="text-caption-2 text-text-secondary">
-            These tasks preload into the inpatient schedule when the template is applied.
-          </p>
-        </div>
-        <Primary text="Add task" onClick={addTaskBlock} />
-      </div>
-
-      {(field.fields ?? []).map((nested) =>
-        renderNestedField(nested, updateNestedField, removeTask, createField)
+      {blocks.length > 0 && (
+        <button
+          type="button"
+          onClick={addTaskBlock}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-card-border bg-neutral-0 p-4 text-body-3-emphasis text-text-primary"
+        >
+          <span className="flex size-6 items-center justify-center rounded-full bg-neutral-900 text-neutral-0">
+            <LuPlus size={14} aria-hidden="true" />
+          </span>
+          Add another task
+        </button>
       )}
     </div>
   );
