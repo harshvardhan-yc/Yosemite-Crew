@@ -1750,7 +1750,7 @@ export const InventoryConsumptionService = {
       );
     }
 
-    return prisma.$transaction(async (tx) => {
+    const updatedId = await prisma.$transaction(async (tx) => {
       const request = await tx.prescriptionDispenseRequest.findFirst({
         where: {
           organisationId,
@@ -1764,7 +1764,7 @@ export const InventoryConsumptionService = {
         return null;
       }
 
-      const updatedRequest = await tx.prescriptionDispenseRequest.update({
+      await tx.prescriptionDispenseRequest.update({
         where: { id: request.id },
         data: {
           status: "NOT_DISPENSED",
@@ -1773,30 +1773,24 @@ export const InventoryConsumptionService = {
           reviewedAt: new Date(),
         },
       });
-
-      return hydrateDispenseRequest(prisma, {
-        ...updatedRequest,
-        prescription: {
-          artifact: (
-            request as unknown as {
-              prescription: {
-                artifact: {
-                  appointmentId?: string | null;
-                };
-              };
-            }
-          ).prescription.artifact,
-        },
-      } as NonNullable<
-        Awaited<ReturnType<typeof prisma.prescriptionDispenseRequest.findFirst>>
-      > & {
-        prescription: {
-          artifact: {
-            appointmentId?: string | null;
-          };
-        };
-      });
+      return request.id;
     });
+
+    if (!updatedId) {
+      return null;
+    }
+
+    const refreshedRequest = await prisma.prescriptionDispenseRequest.findFirst(
+      {
+        where: {
+          id: updatedId,
+          organisationId,
+        },
+        include: buildPrescriptionDispenseRequestInclude(),
+      },
+    );
+
+    return hydrateDispenseRequest(prisma, refreshedRequest);
   },
 
   async consume(request: InventoryConsumptionRequest) {

@@ -100,7 +100,7 @@ describe("InventoryConsumptionService", () => {
   const mockedPrisma = prisma as unknown as MockedPrisma;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     mockedPrisma.$transaction.mockImplementation(async (callback: unknown) => {
       if (typeof callback === "function") {
         return callback(prisma);
@@ -806,6 +806,27 @@ describe("InventoryConsumptionService", () => {
       status: "NOT_DISPENSED",
       reviewedBy: "user-1",
       reviewedAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+    mockedPrisma.prescriptionDispenseRequest.findFirst.mockResolvedValueOnce({
+      id: "request-not-dispensed-1",
+      prescriptionId: "rx-not-dispensed-1",
+      organisationId: "org-1",
+      status: "NOT_DISPENSED",
+      medications: [],
+      metadata: null,
+      requestedBy: null,
+      reviewedBy: "user-1",
+      requestedAt: new Date("2026-01-01T00:00:00.000Z"),
+      reviewedAt: new Date("2026-01-02T00:00:00.000Z"),
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+      prescription: {
+        id: "rx-not-dispensed-1",
+        artifactId: "artifact-not-dispensed-1",
+        artifact: {
+          appointmentId: "appt-not-dispensed-1",
+        },
+      },
     });
     mockedPrisma.appointment.findFirst.mockResolvedValueOnce({
       patient: {
