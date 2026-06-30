@@ -122,8 +122,6 @@ export const categoryToKind = (category?: string): TaskKind => {
   const value = (category ?? '').trim().toUpperCase();
   if (!value) return 'CUSTOM';
   if (NATIVE_KINDS.has(value)) return value as TaskKind;
-  // Valid category but not yet a native kind → safe fallback pre-migration.
-  if (TASK_CATEGORY_LABELS[value]) return value as TaskKind;
   return 'CUSTOM';
 };
 

@@ -25,7 +25,10 @@ jest.mock('@/app/ui/primitives/Buttons', () => ({
 describe('StripeSettingsButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseSubscriptionForPrimaryOrg.mockReturnValue({ orgId: 'org-1' });
+    mockUseSubscriptionForPrimaryOrg.mockReturnValue({
+      orgId: 'org-1',
+      connectChargesEnabled: false,
+    });
     mockCan.mockReturnValue(true);
   });
 
@@ -51,6 +54,17 @@ describe('StripeSettingsButton', () => {
 
   it('hides when no subscription org id is available', () => {
     mockUseSubscriptionForPrimaryOrg.mockReturnValue(null);
+
+    const { container } = render(<StripeSettingsButton />);
+
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('hides when the Stripe account is already connected', () => {
+    mockUseSubscriptionForPrimaryOrg.mockReturnValue({
+      orgId: 'org-1',
+      connectChargesEnabled: true,
+    });
 
     const { container } = render(<StripeSettingsButton />);
 

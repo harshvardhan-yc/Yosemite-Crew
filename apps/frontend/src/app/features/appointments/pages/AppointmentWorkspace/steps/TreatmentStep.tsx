@@ -45,6 +45,10 @@ import { categoryFromLabel } from '@/app/features/tasks/constants/taskTaxonomy';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
   getInpatientScheduleForEncounter,
+  pauseInpatientScheduleTemplate,
+  cancelInpatientScheduleTemplate,
+  regenerateInpatientScheduleTemplate,
+  resumeInpatientScheduleTemplate,
   listPrescriptionTemplatesForWorkspace,
   listScheduleTaskTemplates,
   resolvePrescriptionTemplate,
@@ -229,6 +233,10 @@ const TreatmentStep = ({
     []
   );
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleLifecycleTask, setScheduleLifecycleTask] = useState<{
+    instanceId: string | null;
+    paused: boolean;
+  } | null>(null);
   const [treatmentSaveError, setTreatmentSaveError] = useState<string | null>(null);
   const [isSavingTreatment, setIsSavingTreatment] = useState(false);
   const readOnly = encounter.viewOnly;
@@ -262,6 +270,31 @@ const TreatmentStep = ({
     () => [...encounter.schedule, ...appointmentEmployeeTasks],
     [appointmentEmployeeTasks, encounter.schedule]
   );
+  const scheduleLifecycle = useMemo(() => {
+    const instanceId = scheduleLifecycleTask?.instanceId;
+    if (!instanceId) return undefined;
+    return {
+      instanceId,
+      paused: scheduleLifecycleTask.paused,
+      busy: false,
+      onPause: () => {
+        if (!organisationId) return;
+        void pauseInpatientScheduleTemplate(organisationId, instanceId);
+      },
+      onResume: () => {
+        if (!organisationId) return;
+        void resumeInpatientScheduleTemplate(organisationId, instanceId);
+      },
+      onCancel: () => {
+        if (!organisationId) return;
+        void cancelInpatientScheduleTemplate(organisationId, instanceId);
+      },
+      onRegenerate: () => {
+        if (!organisationId) return;
+        void regenerateInpatientScheduleTemplate(organisationId, instanceId);
+      },
+    };
+  }, [organisationId, scheduleLifecycleTask]);
 
   // Real staff available to own a schedule task: active org team members, plus
   // the encounter's own lead/support so they are always selectable even if the
@@ -357,7 +390,14 @@ const TreatmentStep = ({
     const loadSchedule = async () => {
       if (encounterId) {
         try {
-          await getInpatientScheduleForEncounter(organisationId, encounterId);
+          const schedule = await getInpatientScheduleForEncounter(organisationId, encounterId);
+          const instanceRef = schedule?.basedOn?.[0]?.reference ?? '';
+          const instanceId = instanceRef.startsWith('Task/')
+            ? instanceRef.slice('Task/'.length)
+            : null;
+          setScheduleLifecycleTask(
+            instanceId ? { instanceId, paused: schedule?.status === 'on-hold' } : null
+          );
         } catch (error) {
           console.error('Failed to load encounter schedule:', error);
         }
@@ -823,6 +863,7 @@ const TreatmentStep = ({
           onUpdateTask={handleUpdateScheduleTask}
           onRecordTask={handleRecordScheduleTask}
           onApplyTemplate={handleApplyScheduleTemplate}
+          scheduleLifecycle={scheduleLifecycle}
         />
       )}
       {scheduleError && <p className="text-caption-1 text-red-600">{scheduleError}</p>}

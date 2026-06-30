@@ -65,9 +65,9 @@ describe('taskTaxonomy', () => {
       expect(categoryToKind('CUSTOM')).toBe('CUSTOM');
     });
 
-    it('passes through valid categories (kind == category post-migration)', () => {
-      expect(categoryToKind('BILLING')).toBe('BILLING');
-      expect(categoryToKind('care')).toBe('CARE');
+    it('falls back to CUSTOM for categories that are not native kinds yet', () => {
+      expect(categoryToKind('BILLING')).toBe('CUSTOM');
+      expect(categoryToKind('care')).toBe('CUSTOM');
     });
 
     it('falls back to CUSTOM for empty/unknown values', () => {

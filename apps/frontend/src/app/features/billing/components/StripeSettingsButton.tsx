@@ -15,7 +15,7 @@ const StripeSettingsButton = ({ className }: StripeSettingsButtonProps) => {
     allOf: [PERMISSIONS.ORG_EDIT, PERMISSIONS.SUBSCRIPTION_EDIT_ANY],
   });
 
-  if (!subscription?.orgId || !canManageStripe) return null;
+  if (!subscription?.orgId || !canManageStripe || subscription.connectChargesEnabled) return null;
 
   return (
     <Secondary
