@@ -61,6 +61,34 @@ export type ClinicalTemplateBlueprintValidation = {
   invalidFieldPaths: string[];
 };
 
+const PRESCRIPTION_ROW_KEYS = [
+  "inventoryItemId",
+  "medicineId",
+  "medicineName",
+  "brand",
+  "genericName",
+  "sku",
+  "strength",
+  "strengthUnit",
+  "dosageForm",
+  "dosage",
+  "dose",
+  "doseUnit",
+  "route",
+  "frequency",
+  "durationDays",
+  "durationUnit",
+  "qty",
+  "refill",
+  "instructions",
+  "fulfillment",
+  "inventoryBatchId",
+  "priceCents",
+  "controlledSubstance",
+  "prescriptionRequired",
+  "drugSchedule",
+] as const;
+
 type SnapshotField = {
   key?: string;
   type?: BlueprintFieldType;
@@ -150,13 +178,17 @@ const PRESCRIPTION_BLUEPRINT: ClinicalTemplateSchemaSnapshot = {
           required: true,
           order: 1,
           rules: {
-            columns: [
-              "inventoryItemId",
-              "dosage",
+            columns: [...PRESCRIPTION_ROW_KEYS],
+            rowKeys: [...PRESCRIPTION_ROW_KEYS],
+            editableInWorkspace: [
+              "dosageForm",
+              "route",
+              "qty",
+              "refill",
               "frequency",
               "durationDays",
+              "durationUnit",
               "instructions",
-              "qty",
             ],
           },
         },
