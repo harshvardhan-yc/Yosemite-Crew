@@ -2102,20 +2102,27 @@ export const InventoryConsumptionService = {
 
     const lines: InventoryConsumptionLineInput[] = [];
     for (const item of product.package.items) {
+      const sourceId = item.childProductItemId ?? item.inventoryItemId;
+      if (!sourceId) {
+        throw new InventoryConsumptionServiceError(
+          "Package component is missing a source reference",
+          400,
+        );
+      }
       const rule = await resolveInventoryItemFromRule(
         prisma,
         organisationId,
         "PACKAGE",
-        item.childProductItemId,
+        sourceId,
       );
       if (!rule) {
         throw new InventoryConsumptionServiceError(
-          `Missing inventory mapping for package component ${item.childProductItemId}.`,
+          `Missing inventory mapping for package component ${sourceId}.`,
           400,
         );
       }
       lines.push({
-        sourceLineKey: item.childProductItemId,
+        sourceLineKey: sourceId,
         inventoryItemId: rule.inventoryItemId,
         quantity: Math.max(
           1,

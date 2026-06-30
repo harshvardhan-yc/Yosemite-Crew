@@ -2273,7 +2273,8 @@ model ProductPackage {
 model ProductPackageItem {
   id                 String                 @id @default(uuid())
   packageId          String
-  childProductItemId String
+  childProductItemId String?
+  inventoryItemId    String?
   quantity           Int                    @default(1)
   pricingMode        PackageItemPricingMode @default(INCLUDED)
   overridePrice      Float?
@@ -2283,10 +2284,12 @@ model ProductPackageItem {
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   package            ProductPackage         @relation(fields: [packageId], references: [id], onDelete: Cascade)
-  childProductItem   ProductItem            @relation("ProductPackageComponent", fields: [childProductItemId], references: [id], onDelete: Restrict)
+  childProductItem   ProductItem?           @relation("ProductPackageComponent", fields: [childProductItemId], references: [id], onDelete: Restrict)
+  inventoryItem      InventoryItem?         @relation("ProductPackageInventoryComponent", fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   @@index([packageId, sortOrder])
   @@index([childProductItemId])
+  @@index([inventoryItemId])
 }
 
 model Task {
@@ -2512,6 +2515,7 @@ model InventoryItem {
   status                    InventoryItemStatus   @default(ACTIVE)
   createdAt                 DateTime             @default(now())
   updatedAt                 DateTime             @updatedAt
+  packageItemsAsInventory    ProductPackageItem[]  @relation("ProductPackageInventoryComponent")
 
   @@unique([organisationId, sku])
   @@index([organisationId, name])
