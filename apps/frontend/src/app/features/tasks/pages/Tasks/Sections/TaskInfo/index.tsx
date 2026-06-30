@@ -6,12 +6,15 @@ import { usePermissions } from '@/app/hooks/usePermissions';
 import { useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import { useCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
 import { changeTaskStatus, updateTask } from '@/app/features/tasks/services/taskService';
+import { Task, TaskKindOptions, TaskStatusOptions } from '@/app/features/tasks/types/task';
 import {
-  Task,
-  TaskKindOptions,
-  TaskRecurrenceOptions,
-  TaskStatusOptions,
-} from '@/app/features/tasks/types/task';
+  offsetToReminderValue,
+  recurrenceToRepeatValue,
+  reminderValueToOffset,
+  repeatValueToRecurrence,
+  TASK_REMINDER_OPTIONS,
+  TASK_REPEAT_OPTIONS,
+} from '@/app/features/tasks/constants/taskTaxonomy';
 import { PERMISSIONS } from '@/app/lib/permissions';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useMemberMap } from '@/app/hooks/useMemberMap';
@@ -179,14 +182,6 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
     return [...TaskKindOptions, { label: activeTask.category, value: activeTask.category }];
   }, [activeTask.category]);
 
-  const reminderEnabledOptions = useMemo(
-    () => [
-      { label: 'Enabled', value: 'true' },
-      { label: 'Disabled', value: 'false' },
-    ],
-    []
-  );
-
   const syncOptions = useMemo(
     () => [
       { label: 'Yes', value: 'true' },
@@ -255,22 +250,16 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
       },
       {
         label: 'Reminder',
-        key: 'reminderEnabled',
+        key: 'reminder',
         type: 'select',
-        options: reminderEnabledOptions,
+        options: TASK_REMINDER_OPTIONS,
         editable: canEditDetails,
       },
       {
-        label: 'Reminder offset (minutes)',
-        key: 'reminderOffsetMinutes',
-        type: 'number',
-        editable: canEditDetails,
-      },
-      {
-        label: 'Recurrence',
-        key: 'recurrenceType',
+        label: 'Repeat',
+        key: 'repeat',
         type: 'select',
-        options: TaskRecurrenceOptions,
+        options: TASK_REPEAT_OPTIONS,
         editable: canEditDetails,
       },
       {
@@ -281,14 +270,7 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
         editable: canEditDetails,
       },
     ],
-    [
-      assigneeOptions,
-      canEditDetails,
-      canRescheduleCurrentTask,
-      categoryOptions,
-      reminderEnabledOptions,
-      syncOptions,
-    ]
+    [assigneeOptions, canEditDetails, canRescheduleCurrentTask, categoryOptions, syncOptions]
   );
 
   const statusFields = useMemo(
@@ -320,12 +302,8 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
         2,
         '0'
       )}`,
-      reminderEnabled: activeTask.reminder?.enabled ? 'true' : 'false',
-      reminderOffsetMinutes:
-        typeof activeTask.reminder?.offsetMinutes === 'number'
-          ? String(activeTask.reminder.offsetMinutes)
-          : '',
-      recurrenceType: activeTask.recurrence?.type || 'ONCE',
+      reminder: offsetToReminderValue(activeTask.reminder?.offsetMinutes),
+      repeat: recurrenceToRepeatValue(activeTask.recurrence),
       syncWithCalendar: activeTask.syncWithCalendar ? 'true' : 'false',
     };
   }, [activeTask, resolveMemberDisplay]);
@@ -379,20 +357,14 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
         return;
       }
 
-      const reminderEnabled = String(values.reminderEnabled ?? taskData.reminderEnabled) === 'true';
-      const reminderOffsetRaw = String(
-        values.reminderOffsetMinutes ?? taskData.reminderOffsetMinutes ?? ''
-      ).trim();
-      const reminderOffset = reminderOffsetRaw
-        ? Number.parseInt(reminderOffsetRaw, 10)
-        : Number.NaN;
-      const reminder =
-        reminderEnabled && Number.isFinite(reminderOffset) && reminderOffset > 0
-          ? {
-              enabled: true,
-              offsetMinutes: reminderOffset,
-            }
-          : undefined;
+      const reminderOffset = reminderValueToOffset(String(values.reminder ?? taskData.reminder));
+      const reminder = reminderOffset
+        ? {
+            enabled: true,
+            offsetMinutes: reminderOffset,
+          }
+        : undefined;
+      const nextRecurrence = repeatValueToRecurrence(String(values.repeat ?? taskData.repeat));
       const dueDateValue = values.dueAt || activeTask.dueAt;
       let dueDate = new Date(dueDateValue);
       if (typeof dueDateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dueDateValue)) {
@@ -436,7 +408,9 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
         timezone: activeTask.timezone || getPreferredTimeZone(),
         recurrence: {
           ...(activeTask.recurrence || { isMaster: false }),
-          type: values.recurrenceType || activeTask.recurrence?.type || 'ONCE',
+          type: nextRecurrence.type,
+          cronExpression: nextRecurrence.cronExpression,
+          isMaster: nextRecurrence.type !== 'ONCE',
         },
         reminder,
         syncWithCalendar: String(values.syncWithCalendar ?? taskData.syncWithCalendar) === 'true',
@@ -518,7 +492,7 @@ const TaskInfo = ({ showModal, setShowModal, activeTask, onReuseTask }: TaskInfo
             <Primary
               href="#"
               text={isReusing ? 'Reusing...' : 'Reuse task'}
-              className="w-auto min-w-[140px]"
+              className="w-auto min-w-35"
               onClick={handleReuseTask}
             />
           </div>
