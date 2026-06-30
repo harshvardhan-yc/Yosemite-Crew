@@ -92,6 +92,9 @@ jest.mock('@/app/features/tasks/services/taskService', () => ({
   loadTasksForPrimaryOrg: jest.fn().mockResolvedValue(undefined),
   changeTaskStatus: jest.fn().mockResolvedValue(undefined),
   updateTask: jest.fn().mockResolvedValue(undefined),
+  // The shared task form (useTaskForm) loads these on mount.
+  getTaskTemplatesForPrimaryOrg: jest.fn().mockResolvedValue([]),
+  getTaskLibrary: jest.fn().mockResolvedValue([]),
 }));
 
 const APPT = 'appt-quick';
@@ -551,10 +554,16 @@ describe('TasksPanel', () => {
   });
 
   it('creates a new employee task through the task API only (no duplicate schedule row)', async () => {
+    (useTeamForPrimaryOrg as jest.Mock).mockReturnValue([
+      { practionerId: 'usr-tim', name: 'Dr. Tim Apple' },
+    ]);
     render(<TasksPanel appointmentId={APPT} />);
     const countBefore = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!.schedule.length;
     fireEvent.click(screen.getByRole('button', { name: /new task/i }));
-    fireEvent.change(screen.getByLabelText(/task description/i), {
+    // Shared task form: pick an assignee, set the title, save.
+    fireEvent.click(screen.getAllByRole('button', { name: /assigned to/i })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Dr. Tim Apple' }));
+    fireEvent.change(screen.getByLabelText('Task title'), {
       target: { value: 'Recheck incision' },
     });
     fireEvent.click(screen.getByRole('button', { name: /save task/i }));
@@ -567,11 +576,19 @@ describe('TasksPanel', () => {
   });
 
   it('switches to the parent tab and creates a parent task through the task API only', async () => {
-    render(<TasksPanel appointmentId={APPT} />);
+    render(
+      <TasksPanel
+        appointmentId={APPT}
+        companionId="comp-1"
+        parentOptions={[{ label: 'Yasmin Hadid', value: 'parent-yasmin' }]}
+      />
+    );
     fireEvent.click(screen.getByRole('tab', { name: /parent task/i }));
     expect(screen.getByText(/no tasks yet/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /new task/i }));
-    fireEvent.change(screen.getByLabelText(/task description/i), {
+    fireEvent.click(screen.getAllByRole('button', { name: /assigned to/i })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Yasmin Hadid' }));
+    fireEvent.change(screen.getByLabelText('Task title'), {
       target: { value: 'Give meds at 8pm' },
     });
     fireEvent.click(screen.getByRole('button', { name: /save task/i }));
@@ -586,19 +603,29 @@ describe('TasksPanel', () => {
     ).toBe(false);
   });
 
-  it('edits an existing employee task', () => {
+  it('edits an existing employee task', async () => {
     reset();
     seedInpatient();
+    (useTeamForPrimaryOrg as jest.Mock).mockReturnValue([
+      { practionerId: 'usr-tim', name: 'Dr. Tim Apple' },
+    ]);
     render(<TasksPanel appointmentId={APPT} />);
     const target = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!.schedule[0];
     fireEvent.click(
       screen.getByRole('button', { name: new RegExp(`edit ${target.description}`, 'i') })
     );
-    const desc = screen.getByLabelText(/task description/i);
-    fireEvent.change(desc, { target: { value: 'Edited task body' } });
+    // Editing a locally-staged schedule row seeds a draft Task into the shared
+    // form; saving an unpersisted row goes through createTask (CUSTOM employee task).
+    const title = screen.getByLabelText('Task title');
+    fireEvent.change(title, { target: { value: 'Edited task body' } });
+    // The staged row has no assignee id; pick one so the form validates.
+    fireEvent.click(screen.getAllByRole('button', { name: /assigned to/i })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Dr. Tim Apple' }));
     fireEvent.click(screen.getByRole('button', { name: /save task/i }));
-    const updated = useAppointmentWorkspaceStore.getState().getEncounter(APPT)!.schedule;
-    expect(updated.some((t) => t.description === 'Edited task body')).toBe(true);
+    await waitFor(() => expect(createTask).toHaveBeenCalled());
+    expect((createTask as jest.Mock).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ name: 'Edited task body', audience: 'EMPLOYEE_TASK' })
+    );
   });
 
   it('reschedules an employee task by opening the edit form with date pickers', () => {

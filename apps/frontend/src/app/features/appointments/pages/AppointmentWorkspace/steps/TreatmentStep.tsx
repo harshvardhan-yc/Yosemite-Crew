@@ -41,18 +41,14 @@ import {
   updateTask,
 } from '@/app/features/tasks/services/taskService';
 import type { Task } from '@/app/features/tasks/types/task';
+import { categoryFromLabel } from '@/app/features/tasks/constants/taskTaxonomy';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
 import {
-  applyInpatientScheduleTemplate,
-  cancelInpatientScheduleTemplate,
-  createWorkspaceTemplateInstance,
   getInpatientScheduleForEncounter,
-  listInpatientScheduleTemplates,
   listPrescriptionTemplatesForWorkspace,
-  pauseInpatientScheduleTemplate,
-  regenerateInpatientScheduleTemplate,
+  listScheduleTaskTemplates,
   resolvePrescriptionTemplate,
-  resumeInpatientScheduleTemplate,
+  resolveScheduleTasksFromTemplate,
 } from '@/app/features/appointments/services/workspaceTemplateService';
 import type { PrescriptionTemplateOption } from '@/app/features/appointments/services/workspaceTemplateService';
 import type { TemplateLike } from '@yosemite-crew/types';
@@ -235,11 +231,6 @@ const TreatmentStep = ({
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [treatmentSaveError, setTreatmentSaveError] = useState<string | null>(null);
   const [isSavingTreatment, setIsSavingTreatment] = useState(false);
-  // Applied schedule instance lifecycle (pause/resume/cancel/regenerate). The
-  // instance id is captured when a template is applied this session.
-  const [scheduleInstanceId, setScheduleInstanceId] = useState<string | null>(null);
-  const [schedulePaused, setSchedulePaused] = useState(false);
-  const [scheduleBusy, setScheduleBusy] = useState(false);
   const readOnly = encounter.viewOnly;
   // Once the encounter is ready for billing, destructive removal of un-billed
   // items is locked. Already-billed items lock per-row inside each editor (read
@@ -340,10 +331,10 @@ const TreatmentStep = ({
 
   useEffect(() => {
     if (!organisationId || !isInpatient) return;
-    listInpatientScheduleTemplates(organisationId)
+    listScheduleTaskTemplates(organisationId)
       .then(setScheduleTemplates)
       .catch((error) => {
-        console.error('Failed to load inpatient schedule templates:', error);
+        console.error('Failed to load schedule task templates:', error);
       });
   }, [isInpatient, organisationId]);
 
@@ -378,70 +369,25 @@ const TreatmentStep = ({
     void loadSchedule();
   }, [encounterId, isInpatient, organisationId]);
 
+  // Load a schedule/task template by staging its task blocks as editable, unsaved
+  // schedule rows. The clinician sets the concrete date/time + assignee per row,
+  // then "Record" persists each as a real employee task (handleRecordScheduleTask).
+  // Nothing hits the backend on template selection — no duplicate/cleanup risk.
   const handleApplyScheduleTemplate = async (templateId: string) => {
     if (!organisationId) return;
     setScheduleError(null);
     try {
-      const instance = await createWorkspaceTemplateInstance(organisationId, templateId, {
-        appointmentId,
-        encounterId,
-        authorId,
-        data: {},
-        status: 'DRAFT',
-      });
-      await applyInpatientScheduleTemplate(organisationId, instance.id, {
-        force: true,
-        notify: false,
-      });
-      // Track the applied instance so its lifecycle controls (pause/resume/
-      // cancel/regenerate) become available.
-      setScheduleInstanceId(instance.id);
-      setSchedulePaused(false);
-      await loadTasksForPrimaryOrg({ force: true, silent: true });
+      const rows = await resolveScheduleTasksFromTemplate(organisationId, templateId);
+      if (rows.length === 0) {
+        setScheduleError('This template has no tasks to load.');
+        return;
+      }
+      rows.forEach((row) => addScheduleTask(appointmentId, row));
     } catch (error) {
-      console.error('Failed to apply inpatient schedule template:', error);
+      console.error('Failed to load schedule template:', error);
       setScheduleError('Unable to load schedule template. Please try again.');
     }
   };
-
-  // Run a schedule lifecycle action against the backend, then refresh tasks so the
-  // timeline reflects the new state. Errors surface and do not flip local state.
-  const runScheduleAction = async (
-    action: (org: string, instanceId: string) => Promise<unknown>,
-    onSuccess?: () => void
-  ) => {
-    if (!organisationId || !scheduleInstanceId || scheduleBusy) return;
-    setScheduleError(null);
-    setScheduleBusy(true);
-    try {
-      await action(organisationId, scheduleInstanceId);
-      onSuccess?.();
-      await loadTasksForPrimaryOrg({ force: true, silent: true });
-    } catch (error) {
-      console.error('Failed to update inpatient schedule:', error);
-      setScheduleError('Unable to update the schedule. Please try again.');
-    } finally {
-      setScheduleBusy(false);
-    }
-  };
-
-  const handlePauseSchedule = () =>
-    runScheduleAction(
-      (org, id) => pauseInpatientScheduleTemplate(org, id, { notify: false }),
-      () => setSchedulePaused(true)
-    );
-  const handleResumeSchedule = () =>
-    runScheduleAction(
-      (org, id) => resumeInpatientScheduleTemplate(org, id, { notify: false }),
-      () => setSchedulePaused(false)
-    );
-  const handleCancelSchedule = () =>
-    runScheduleAction(
-      (org, id) => cancelInpatientScheduleTemplate(org, id, { notify: false }),
-      () => setScheduleInstanceId(null)
-    );
-  const handleRegenerateSchedule = () =>
-    runScheduleAction((org, id) => regenerateInpatientScheduleTemplate(org, id, { notify: false }));
 
   const prescriptionCatalogItems = useMemo(
     () =>
@@ -722,7 +668,9 @@ const TreatmentStep = ({
           assignedTo,
           audience: 'EMPLOYEE_TASK',
           source: 'CUSTOM',
-          category: scheduleTask.category ?? 'Care',
+          // Schedule rows carry a display label ("Care"); persist the canonical
+          // code ("CARE") so it matches tasks created elsewhere in the system.
+          category: categoryFromLabel(scheduleTask.category),
           name: scheduleTask.description || 'Treatment task',
           description: scheduleTask.description,
           dueAt,
@@ -875,15 +823,6 @@ const TreatmentStep = ({
           onUpdateTask={handleUpdateScheduleTask}
           onRecordTask={handleRecordScheduleTask}
           onApplyTemplate={handleApplyScheduleTemplate}
-          scheduleLifecycle={{
-            instanceId: scheduleInstanceId,
-            paused: schedulePaused,
-            busy: scheduleBusy,
-            onPause: handlePauseSchedule,
-            onResume: handleResumeSchedule,
-            onCancel: handleCancelSchedule,
-            onRegenerate: handleRegenerateSchedule,
-          }}
         />
       )}
       {scheduleError && <p className="text-caption-1 text-red-600">{scheduleError}</p>}
