@@ -791,6 +791,13 @@ describe("InventoryConsumptionService", () => {
       prescriptionId: "rx-not-dispensed-1",
       organisationId: "org-1",
       status: "PENDING",
+      prescription: {
+        id: "rx-not-dispensed-1",
+        artifactId: "artifact-not-dispensed-1",
+        artifact: {
+          appointmentId: "appt-not-dispensed-1",
+        },
+      },
     });
     mockedPrisma.prescriptionDispenseRequest.update.mockResolvedValueOnce({
       id: "request-not-dispensed-1",
@@ -799,6 +806,17 @@ describe("InventoryConsumptionService", () => {
       status: "NOT_DISPENSED",
       reviewedBy: "user-1",
       reviewedAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+    mockedPrisma.appointment.findFirst.mockResolvedValueOnce({
+      patient: {
+        name: "Bella",
+      },
+      lead: {
+        name: "Dr. Rao",
+      },
+      room: {
+        name: "Ward A",
+      },
     });
 
     const result =
@@ -814,6 +832,9 @@ describe("InventoryConsumptionService", () => {
     expect(result).toMatchObject({
       status: "NOT_DISPENSED",
       reviewedBy: "user-1",
+      patientName: "Bella",
+      leadName: "Dr. Rao",
+      location: "Ward A",
     });
     expect(
       mockedPrisma.prescriptionDispenseRequest.update,

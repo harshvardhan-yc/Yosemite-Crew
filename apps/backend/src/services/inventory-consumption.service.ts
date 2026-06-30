@@ -1483,9 +1483,17 @@ const resolveDispenseRequestDisplayFields = async (
 
 const hydrateDispenseRequest = async (
   db: Pick<typeof prisma, "appointment">,
-  request: Awaited<
-    ReturnType<typeof prisma.prescriptionDispenseRequest.findFirst>
-  >,
+  request:
+    | (NonNullable<
+        Awaited<ReturnType<typeof prisma.prescriptionDispenseRequest.findFirst>>
+      > & {
+        prescription: {
+          artifact: {
+            appointmentId?: string | null;
+          };
+        };
+      })
+    | null,
 ) => {
   if (!request) return request;
 
@@ -1756,7 +1764,7 @@ export const InventoryConsumptionService = {
         return null;
       }
 
-      return tx.prescriptionDispenseRequest.update({
+      const updatedRequest = await tx.prescriptionDispenseRequest.update({
         where: { id: request.id },
         data: {
           status: "NOT_DISPENSED",
@@ -1765,6 +1773,29 @@ export const InventoryConsumptionService = {
           reviewedAt: new Date(),
         },
       });
+
+      const hydratedRequest = {
+        ...updatedRequest,
+        prescription: (
+          request as unknown as {
+            prescription: {
+              artifact: {
+                appointmentId?: string | null;
+              };
+            };
+          }
+        ).prescription,
+      } as NonNullable<
+        Awaited<ReturnType<typeof prisma.prescriptionDispenseRequest.findFirst>>
+      > & {
+        prescription: {
+          artifact: {
+            appointmentId?: string | null;
+          };
+        };
+      };
+
+      return hydrateDispenseRequest(prisma, hydratedRequest);
     });
   },
 
