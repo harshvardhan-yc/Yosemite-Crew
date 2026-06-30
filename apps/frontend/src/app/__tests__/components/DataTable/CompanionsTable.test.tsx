@@ -147,7 +147,7 @@ describe('CompanionsTable', () => {
     expect(setAddTask).toHaveBeenCalledWith(true);
     expect(pushMock).toHaveBeenCalledWith('/appointments?appointmentId=appt-1');
     expect(pushMock).toHaveBeenCalledWith(
-      '/companions/history?companionId=c1&source=companions&backTo=%2Fcompanions%3FcompanionId%3Dc1'
+      '/companions/history?companionId=c1&source=companions&backTo=%2Fcompanions'
     );
   });
 
