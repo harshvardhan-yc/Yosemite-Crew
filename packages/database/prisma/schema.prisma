@@ -1543,6 +1543,13 @@ enum TaskKind {
   HYGIENE
   DIET
   CUSTOM
+  CARE
+  PROCEDURE
+  DIAGNOSTIC
+  COMMUNICATION
+  BILLING
+  RECORD
+  ADMIN
 }
 
 enum TaskTemplateRole {
