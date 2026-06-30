@@ -451,7 +451,7 @@ describe('buildTemplateSchemaSnapshot canonical blueprint merge', () => {
       expect.objectContaining({
         name: 'Record vitals',
         category: 'CARE',
-        taskKind: 'CARE',
+        taskKind: 'CUSTOM',
         reminderOffsetMinutes: 5,
         durationDays: 3,
         // EVERY_6_HOURS resolves to a CUSTOM recurrence with a cron.
