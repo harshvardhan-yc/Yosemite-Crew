@@ -61,6 +61,17 @@ const resolveUnitQuantity = (
   packageQuantity?: number | null,
 ) => unitQuantity ?? packageQuantity;
 
+const readPositiveNumber = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 0 ? value : undefined;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }
+  return undefined;
+};
+
 type InventoryItemMongo = PrismaInventoryItem;
 type InventoryBatchMongo = PrismaInventoryBatch;
 type InventoryVendorMongo = Prisma.InventoryVendorGetPayload<
@@ -950,9 +961,17 @@ const createInventoryItemInPostgres = async (
     unitCost,
     attachments,
   } = validated;
-  const stockUnitType = input.stockUnitType;
+  const attributes = (input.attributes ?? {}) as Record<string, unknown>;
+  const stockUnitType =
+    asNonEmptyString(input.stockUnitType) ??
+    asNonEmptyString(attributes.stockType) ??
+    asNonEmptyString(attributes.stockUnitType);
   const unitOfMeasure = input.unitOfMeasure;
   const itemAllocated = input.allocated ?? input.initialAllocated ?? 0;
+  const packageQuantity =
+    resolveUnitQuantity(input.unitQuantity, input.packageQuantity) ??
+    readPositiveNumber(attributes.unitQnt) ??
+    readPositiveNumber(attributes.unitQuantity);
 
   const item = await prisma.inventoryItem.create({
     data: {
@@ -978,9 +997,7 @@ const createInventoryItemInPostgres = async (
       expiryTrackingRequired: input.expiryTrackingRequired ?? false,
       unitOfMeasure: unitOfMeasure ?? undefined,
       stockUnitType: stockUnitType ?? undefined,
-      packageQuantity:
-        resolveUnitQuantity(input.unitQuantity, input.packageQuantity) ??
-        undefined,
+      packageQuantity: packageQuantity ?? undefined,
       storageLocation: input.storageLocation ?? undefined,
       unitCost,
       sellingPrice: input.sellingPrice ?? undefined,
@@ -1193,8 +1210,16 @@ export const InventoryService = {
     if (input.expiryTrackingRequired !== undefined) {
       data.expiryTrackingRequired = input.expiryTrackingRequired ?? false;
     }
-    const stockUnitType = input.stockUnitType;
+    const attributes = (input.attributes ?? {}) as Record<string, unknown>;
+    const stockUnitType =
+      asNonEmptyString(input.stockUnitType) ??
+      asNonEmptyString(attributes.stockType) ??
+      asNonEmptyString(attributes.stockUnitType);
     const unitOfMeasure = input.unitOfMeasure;
+    const packageQuantity =
+      resolveUnitQuantity(input.unitQuantity, input.packageQuantity) ??
+      readPositiveNumber(attributes.unitQnt) ??
+      readPositiveNumber(attributes.unitQuantity);
     if (stockUnitType !== undefined) {
       data.stockUnitType = stockUnitType ?? null;
     }
@@ -1203,10 +1228,11 @@ export const InventoryService = {
     }
     if (
       input.unitQuantity !== undefined ||
-      input.packageQuantity !== undefined
+      input.packageQuantity !== undefined ||
+      attributes.unitQnt !== undefined ||
+      attributes.unitQuantity !== undefined
     ) {
-      data.packageQuantity =
-        resolveUnitQuantity(input.unitQuantity, input.packageQuantity) ?? null;
+      data.packageQuantity = packageQuantity ?? null;
     }
     if (input.storageLocation !== undefined) {
       data.storageLocation = input.storageLocation ?? null;

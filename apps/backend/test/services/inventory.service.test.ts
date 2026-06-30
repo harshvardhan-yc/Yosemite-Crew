@@ -152,6 +152,39 @@ describe("Inventory service", () => {
     );
   });
 
+  it("derives stock unit fields from legacy attributes when top-level fields are absent", async () => {
+    (prisma.inventoryItem.create as jest.Mock).mockResolvedValue({
+      id: "item-legacy",
+      organisationId: "org-1",
+      name: "Paracetamol",
+      category: "Medicine",
+      businessType: "HOSPITAL",
+      status: "ACTIVE",
+      onHand: 0,
+      allocated: 0,
+    });
+
+    await InventoryService.createItem({
+      organisationId: "org-1",
+      name: "Paracetamol",
+      category: "Medicine",
+      businessType: "HOSPITAL",
+      attributes: {
+        stockType: "strip",
+        unitQnt: "10",
+      },
+    });
+
+    expect(prisma.inventoryItem.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stockUnitType: "strip",
+          packageQuantity: 10,
+        }),
+      }),
+    );
+  });
+
   it("rejects duplicate sku", async () => {
     (prisma.inventoryItem.findFirst as jest.Mock).mockResolvedValueOnce({
       id: "item-dup",
@@ -190,6 +223,10 @@ describe("Inventory service", () => {
       "item-1",
       {
         name: "Updated",
+        genericName: "Paracetamol",
+        strength: "650 mg",
+        dosageForm: "Tablet",
+        routeOfAdministration: "Oral",
         stockUnitType: "bottle",
         unitOfMeasure: "mg",
         allocated: 7,
@@ -209,6 +246,49 @@ describe("Inventory service", () => {
     );
     expect(result.item.name).toBe("Updated");
     expect(result.item.allocated).toBe(7);
+  });
+
+  it("prefers legacy attribute stock fields during updates when top-level fields are absent", async () => {
+    (prisma.inventoryItem.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: "item-2",
+      organisationId: "org-1",
+      category: "Medicine",
+      businessType: "HOSPITAL",
+      itemType: "MEDICAL",
+      genericName: "Paracetamol",
+      strength: "650 mg",
+      dosageForm: "Tablet",
+      routeOfAdministration: "Oral",
+      allocated: 0,
+    });
+    (prisma.inventoryItem.update as jest.Mock).mockResolvedValueOnce({
+      id: "item-2",
+      organisationId: "org-1",
+      name: "Updated",
+      category: "Medicine",
+      businessType: "HOSPITAL",
+      allocated: 0,
+    });
+
+    await InventoryService.updateItem(
+      "item-2",
+      {
+        attributes: {
+          stockType: "bottle",
+          unitQnt: "12",
+        },
+      },
+      "org-1",
+    );
+
+    expect(prisma.inventoryItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stockUnitType: "bottle",
+          packageQuantity: 12,
+        }),
+      }),
+    );
   });
 
   it("hides, archives, and re-activates items", async () => {
