@@ -58,111 +58,141 @@ const TaskFormFields = ({
   assigneeOptions = DEFAULT_ASSIGNEE_OPTIONS,
   onAssigneeSelect,
   hideTemplatePicker = false,
-}: TaskFormFieldsProps) => (
-  <div className="flex flex-col gap-3">
-    {showAudienceSelect && (
+}: TaskFormFieldsProps) => {
+  const isRecurring = (formData.recurrence?.type ?? 'ONCE') !== 'ONCE';
+  const endDate = formData.recurrence?.endDate ? new Date(formData.recurrence.endDate) : null;
+  const setEndDate = (next: Date | null) =>
+    setFormData((prev) => ({
+      ...prev,
+      recurrence: {
+        ...(prev.recurrence ?? { type: 'ONCE', isMaster: false }),
+        endDate: next ?? undefined,
+      },
+    }));
+
+  return (
+    <div className="flex flex-col gap-3">
+      {showAudienceSelect && (
+        <LabelDropdown
+          placeholder="Type"
+          onSelect={(option) => onAudienceSelect?.(option)}
+          defaultOption={formData.audience}
+          options={audienceOptions}
+          searchable={false}
+        />
+      )}
+      {showAssigneeSelect && (
+        <LabelDropdown
+          placeholder="Assigned to"
+          onSelect={(option) => onAssigneeSelect?.(option)}
+          defaultOption={formData.assignedTo}
+          error={formDataErrors.assignedTo}
+          options={assigneeOptions}
+        />
+      )}
+      {!hideTemplatePicker && templateOptions.length > 0 && (
+        <LabelDropdown
+          placeholder="Load from template (optional)"
+          onSelect={(option) => onSelectTemplate(option.value)}
+          defaultOption={formData.templateId || formData.libraryTaskId}
+          options={templateOptions}
+          noOptionsMessage="No templates available"
+        />
+      )}
       <LabelDropdown
-        placeholder="Type"
-        onSelect={(option) => onAudienceSelect?.(option)}
-        defaultOption={formData.audience}
-        options={audienceOptions}
+        placeholder="Category"
+        onSelect={(option) =>
+          setFormData({
+            ...formData,
+            category: option.value,
+          })
+        }
+        defaultOption={formData.category}
+        options={TaskKindOptions}
+        error={formDataErrors.category}
         searchable={false}
       />
-    )}
-    {showAssigneeSelect && (
-      <LabelDropdown
-        placeholder="Assigned to"
-        onSelect={(option) => onAssigneeSelect?.(option)}
-        defaultOption={formData.assignedTo}
-        error={formDataErrors.assignedTo}
-        options={assigneeOptions}
+      <FormInput
+        intype="text"
+        inname="task"
+        value={formData.name}
+        inlabel="Task title"
+        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+        error={formDataErrors.name}
       />
-    )}
-    {!hideTemplatePicker && templateOptions.length > 0 && (
-      <LabelDropdown
-        placeholder="Load from template (optional)"
-        onSelect={(option) => onSelectTemplate(option.value)}
-        defaultOption={formData.templateId || formData.libraryTaskId}
-        options={templateOptions}
-        noOptionsMessage="No templates available"
+      <FormDesc
+        intype="text"
+        inname="description"
+        value={formData.description || ''}
+        inlabel="Instructions (optional)"
+        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+        className="min-h-30!"
       />
-    )}
-    <LabelDropdown
-      placeholder="Category"
-      onSelect={(option) =>
-        setFormData({
-          ...formData,
-          category: option.value,
-        })
-      }
-      defaultOption={formData.category}
-      options={TaskKindOptions}
-      error={formDataErrors.category}
-      searchable={false}
-    />
-    <FormInput
-      intype="text"
-      inname="task"
-      value={formData.name}
-      inlabel="Task title"
-      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-      error={formDataErrors.name}
-    />
-    <FormDesc
-      intype="text"
-      inname="description"
-      value={formData.description || ''}
-      inlabel="Instructions (optional)"
-      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-      className="min-h-30!"
-    />
-    <Datepicker
-      currentDate={due}
-      setCurrentDate={setDue}
-      placeholder="Due date"
-      type="input"
-      error={formDataErrors.dueAt}
-    />
-    <Timepicker
-      value={dueTimeValue}
-      label="Due time"
-      name="dueTime"
-      onChange={setDueTimeValue}
-      error={formDataErrors.dueAt}
-    />
-    <LabelDropdown
-      placeholder="Reminder (optional)"
-      onSelect={(option) => {
-        const offsetMinutes = reminderValueToOffset(option.value);
-        setFormData({
-          ...formData,
-          reminder: offsetMinutes ? { enabled: true, offsetMinutes } : undefined,
-        });
-      }}
-      defaultOption={offsetToReminderValue(formData.reminder?.offsetMinutes)}
-      options={TASK_REMINDER_OPTIONS}
-      error={formDataErrors.reminder}
-      searchable={false}
-    />
-    <LabelDropdown
-      placeholder="Repeat"
-      onSelect={(option) => {
-        const { type, cronExpression } = repeatValueToRecurrence(option.value);
-        setFormData({
-          ...formData,
-          recurrence: {
-            ...formData.recurrence,
-            type,
-            cronExpression,
-            isMaster: type !== 'ONCE',
-          },
-        });
-      }}
-      defaultOption={recurrenceToRepeatValue(formData.recurrence)}
-      options={TASK_REPEAT_OPTIONS}
-      searchable={false}
-    />
-  </div>
-);
+      <Datepicker
+        currentDate={due}
+        setCurrentDate={setDue}
+        placeholder="Due date"
+        type="input"
+        error={formDataErrors.dueAt}
+      />
+      <Timepicker
+        value={dueTimeValue}
+        label="Due time"
+        name="dueTime"
+        onChange={setDueTimeValue}
+        error={formDataErrors.dueAt}
+      />
+      <LabelDropdown
+        placeholder="Reminder (optional)"
+        onSelect={(option) => {
+          const offsetMinutes = reminderValueToOffset(option.value);
+          setFormData({
+            ...formData,
+            reminder: offsetMinutes ? { enabled: true, offsetMinutes } : undefined,
+          });
+        }}
+        defaultOption={offsetToReminderValue(formData.reminder?.offsetMinutes)}
+        options={TASK_REMINDER_OPTIONS}
+        error={formDataErrors.reminder}
+        searchable={false}
+      />
+      <LabelDropdown
+        placeholder="Repeat"
+        onSelect={(option) => {
+          const { type, cronExpression } = repeatValueToRecurrence(option.value);
+          setFormData({
+            ...formData,
+            recurrence: {
+              ...formData.recurrence,
+              type,
+              cronExpression,
+              isMaster: type !== 'ONCE',
+              // A one-off task has no end boundary; clear any prior end date.
+              endDate: type === 'ONCE' ? undefined : formData.recurrence?.endDate,
+            },
+          });
+        }}
+        defaultOption={recurrenceToRepeatValue(formData.recurrence)}
+        options={TASK_REPEAT_OPTIONS}
+        searchable={false}
+      />
+      {/* Recurring tasks need an end boundary; a one-off task only has the due date. */}
+      {isRecurring && (
+        <Datepicker
+          currentDate={endDate}
+          setCurrentDate={
+            ((next: Date | null) => setEndDate(next)) as React.Dispatch<
+              React.SetStateAction<Date | null>
+            >
+          }
+          placeholder="End date"
+          type="input"
+          minDate={due ?? undefined}
+          error={formDataErrors.endDate}
+        />
+      )}
+    </div>
+  );
+};
 
 export default TaskFormFields;

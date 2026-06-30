@@ -1,6 +1,7 @@
 import { useOrgStore } from '@/app/stores/orgStore';
 import { useTaskStore } from '@/app/stores/taskStore';
 import { Task, TaskKind, TaskLibrary, TaskTemplate } from '@/app/features/tasks/types/task';
+import type { RecurrenceScope } from '@/app/features/tasks/constants/taskTaxonomy';
 import { deleteData, getData, patchData, postData, putData } from '@/app/services/axios';
 import { loadTemplateForms } from '@/app/features/forms/services/templateFormsService';
 import type { TemplateLike } from '@yosemite-crew/types';
@@ -178,7 +179,14 @@ export const archiveTaskTemplate = async (templateId: string): Promise<void> => 
   await deleteData('/v1/task/pms/templates/' + templateId);
 };
 
-export const updateTask = async (payload: Task) => {
+/**
+ * Update a task. For a task in a recurring series, an optional `scope` selects
+ * which occurrences the edit applies to (THIS / THIS_AND_FOLLOWING / ALL); it is
+ * sent as a `scope` query param. The backend ignores it until the series-scoped
+ * contract ships (handoff), so a scoped edit safely degrades to a single-task
+ * update — never an error.
+ */
+export const updateTask = async (payload: Task, scope?: RecurrenceScope) => {
   const { upsertTask } = useTaskStore.getState();
   const { primaryOrgId } = useOrgStore.getState();
   if (!primaryOrgId) {
@@ -190,13 +198,38 @@ export const updateTask = async (payload: Task) => {
     return;
   }
   try {
-    const res = await patchData<Task>('/v1/task/pms/' + payload._id, payload);
+    const res = await patchData<Task>(
+      '/v1/task/pms/' + payload._id,
+      payload,
+      scope ? { params: { scope } } : undefined
+    );
     const normalTask = res.data;
     upsertTask(normalTask);
   } catch (err) {
     console.error('Failed to update task:', err);
     throw err;
   }
+};
+
+/**
+ * Delete a task. For a recurring series, `scope` selects which occurrences to
+ * remove (sent as a `scope` query param). NOTE: the backend task-delete endpoint
+ * does not exist yet (handoff) — this call will fail until it ships; callers
+ * should surface the error rather than assume success.
+ */
+export const deleteTask = async (taskId: string, scope?: RecurrenceScope) => {
+  const { removeTask } = useTaskStore.getState();
+  const { primaryOrgId } = useOrgStore.getState();
+  if (!primaryOrgId) {
+    console.warn('No primary organization selected. Cannot delete task.');
+    return;
+  }
+  if (!taskId) {
+    console.warn('deleteTask: missing id');
+    return;
+  }
+  await deleteData('/v1/task/pms/' + taskId, scope ? { scope } : {});
+  removeTask(taskId);
 };
 
 export const changeTaskStatus = async (task: Task) => {

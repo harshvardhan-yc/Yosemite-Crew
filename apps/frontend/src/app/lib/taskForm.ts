@@ -7,6 +7,7 @@ export type TaskFormErrors = {
   assignedTo?: string;
   category?: string;
   dueAt?: string;
+  endDate?: string;
   reminder?: string;
   templateId?: string;
   libraryTaskId?: string;
@@ -27,6 +28,15 @@ export const validateTaskForm = (formData: Task): TaskFormErrors => {
     const reminderMinutes = Number(formData.reminder.offsetMinutes);
     if (!Number.isFinite(reminderMinutes) || reminderMinutes <= 0) {
       errors.reminder = 'Reminder minutes must be greater than 0';
+    }
+  }
+  // A recurring task needs an end boundary, and it cannot precede the due date.
+  if (formData.recurrence && formData.recurrence.type !== 'ONCE') {
+    const endDate = formData.recurrence.endDate ? new Date(formData.recurrence.endDate) : undefined;
+    if (!endDate || Number.isNaN(endDate.getTime())) {
+      errors.endDate = 'End date is required for a repeating task';
+    } else if (formData.dueAt && endDate < new Date(formData.dueAt)) {
+      errors.endDate = 'End date must be on or after the due date';
     }
   }
   return errors;

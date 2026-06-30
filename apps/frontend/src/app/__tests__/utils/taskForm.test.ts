@@ -86,6 +86,35 @@ describe('taskForm utilities', () => {
     // prefills an editable CUSTOM task, so there is no templateId/libraryTaskId
     // required-validation. (See applyTemplateToForm.)
 
+    it('requires an end date for a repeating task', () => {
+      const task = {
+        ...baseTask,
+        recurrence: { type: 'DAILY' as const, isMaster: true },
+      };
+      const errors = validateTaskForm(task);
+      expect(errors.endDate).toBe('End date is required for a repeating task');
+    });
+
+    it('rejects an end date before the due date for a repeating task', () => {
+      const task = {
+        ...baseTask,
+        dueAt: new Date('2026-05-10T09:00:00Z'),
+        recurrence: {
+          type: 'WEEKLY' as const,
+          isMaster: true,
+          endDate: new Date('2026-05-01T09:00:00Z'),
+        },
+      };
+      const errors = validateTaskForm(task);
+      expect(errors.endDate).toBe('End date must be on or after the due date');
+    });
+
+    it('accepts a one-off task without an end date', () => {
+      const task = { ...baseTask, recurrence: { type: 'ONCE' as const, isMaster: false } };
+      const errors = validateTaskForm(task);
+      expect(errors.endDate).toBeUndefined();
+    });
+
     it('returns multiple errors when multiple fields are invalid', () => {
       const task = {
         ...baseTask,

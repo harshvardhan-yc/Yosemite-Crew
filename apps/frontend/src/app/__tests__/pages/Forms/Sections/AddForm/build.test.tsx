@@ -42,21 +42,31 @@ jest.mock('@/app/ui/inputs/MultiSelectDropdown', () => ({
   ),
 }));
 
-jest.mock('@/app/ui/inputs/Dropdown/Dropdown', () => ({
+// The builder now uses the reusable searchable LabelDropdown (defaultOption +
+// onSelect(option)) for the medicine picker and the task/medicine card option
+// dropdowns. The mock renders each option with role="option" (always visible) and
+// tags the medicine picker wrapper with a testid for the existing assertions.
+jest.mock('@/app/ui/inputs/Dropdown/LabelDropdown', () => ({
   __esModule: true,
-  default: ({ options, onChange }: any) => (
-    <select
-      data-testid="medicine-dropdown"
-      defaultValue=""
-      onChange={(e) => onChange(e.target.value)}
+  default: ({ options, onSelect, placeholder }: any) => (
+    <div
+      data-testid={
+        String(placeholder).toLowerCase().includes('medicine') ? 'medicine-dropdown' : undefined
+      }
     >
-      <option value="">Select</option>
+      <div>{placeholder}</div>
       {(options || []).map((opt: any) => (
-        <option key={opt.value} value={opt.value}>
+        <button
+          key={opt.value}
+          type="button"
+          role="option"
+          aria-selected={false}
+          onClick={() => onSelect(opt)}
+        >
           {opt.label}
-        </option>
+        </button>
       ))}
-    </select>
+    </div>
   ),
 }));
 
@@ -391,13 +401,10 @@ describe('Build form step', () => {
       expect(fetchInventoryItems).toHaveBeenCalledWith('org-1');
     });
 
-    await waitFor(() => {
-      expect(
-        screen.getByRole('option', { name: 'Amoxicillin (250 mg • Oral)' })
-      ).toBeInTheDocument();
+    const medicineOption = await screen.findByRole('option', {
+      name: 'Amoxicillin (250 mg • Oral)',
     });
-
-    fireEvent.change(screen.getByTestId('medicine-dropdown'), { target: { value: 'med-1' } });
+    fireEvent.click(medicineOption);
 
     await waitFor(() => {
       const schema = readSchema();

@@ -8,12 +8,17 @@ import {
   FormFieldType,
   FormsProps,
   buildMedicationFields,
+  medicationRouteOptions,
   TASK_CATEGORY_FIELD_OPTIONS,
   TASK_RECURRENCE_FIELD_OPTIONS,
   TASK_REMINDER_FIELD_OPTIONS,
 } from '@/app/features/forms/types/forms';
 import MultiSelectDropdown from '@/app/ui/inputs/MultiSelectDropdown';
-import Dropdown from '@/app/ui/inputs/Dropdown/Dropdown';
+import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
+import {
+  DURATION_UNIT_OPTIONS,
+  FREQUENCY_OPTIONS,
+} from '@/app/features/appointments/lib/inventoryPrescription';
 import React, { useEffect, useRef, useState } from 'react';
 import { IoIosAddCircleOutline, IoIosWarning } from 'react-icons/io';
 import TextBuilder from '@/app/features/forms/pages/Forms/Sections/AddForm/components/Text/TextBuilder';
@@ -644,86 +649,133 @@ const GroupBuilder: React.FC<GroupBuilderProps> = ({
   );
 };
 
-const renderMedicineField = (
-  medField: FormField,
-  nested: FormField & { fields?: FormField[] },
-  updateNestedField: (id: string, updated: FormField) => void,
-  createField: (t: OptionKey) => FormField
-) => {
-  const Component = builderComponentMap[medField.type];
-  if (!Component) return null;
+/** Adapt a plain string vocabulary (e.g. FREQUENCY_OPTIONS) into LabelDropdown options. */
+const toLabelOptions = (values: string[]): { label: string; value: string }[] =>
+  values.map((value) => ({ label: value, value }));
 
-  return (
-    <div key={medField.id} className="relative">
-      <Component
-        field={medField}
-        onChange={(updated) => {
-          const updatedNested = {
-            ...nested,
-            fields: (nested.fields ?? []).map((f: FormField) =>
-              f.id === medField.id ? updated : f
-            ),
-          };
-          updateNestedField(nested.id, updatedNested);
-        }}
-        createField={createField}
-      />
-      {medField.meta?.readonly && (
-        <div className="absolute top-2 right-2 text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-          Read-only
-        </div>
-      )}
-    </div>
+/** Read a medicine field's authored value by its `prescriptionField` meta key. */
+const medicineFieldValue = (group: FormField & { fields?: FormField[] }, key: string): string => {
+  const field = (group.fields ?? []).find(
+    (f) => (f.meta as { prescriptionField?: string })?.prescriptionField === key
   );
+  if (!field) return '';
+  const value = (field as FormField & { defaultValue?: unknown }).defaultValue;
+  return value === undefined || value === null ? '' : String(value);
 };
 
-const renderNestedField = (
-  nested: FormField,
-  updateNestedField: (id: string, updated: FormField) => void,
-  removeMedicine: (id: string) => void,
-  createField: (t: OptionKey) => FormField
-) => {
-  // Medicine groups and task fields are content the author added to the template, so they can be
-  // removed even when the structure is locked (YC-default).
-  const isContentItem = Boolean(
-    (
-      nested.meta as
-        | { inventoryItemId?: string; medicineId?: string; taskId?: string; taskBlock?: boolean }
-        | undefined
-    )?.inventoryItemId ||
-    (nested.meta as { medicineId?: string } | undefined)?.medicineId ||
-    (nested.meta as { taskId?: string } | undefined)?.taskId ||
-    (nested.meta as { taskBlock?: boolean } | undefined)?.taskBlock
-  );
-  if (nested.type === 'group') {
-    const groupField = nested as FormField & { fields?: FormField[] };
-    return (
-      <BuilderWrapper
-        key={nested.id}
-        field={nested}
-        onDelete={() => removeMedicine(nested.id)}
-        contentDeletable={isContentItem}
-        compact
-      >
-        <div className="flex flex-col gap-3">
-          <div className="font-satoshi text-black-text text-[16px] font-medium">{nested.label}</div>
-          {(groupField.fields ?? []).map((medField) =>
-            renderMedicineField(medField, groupField, updateNestedField, createField)
-          )}
-        </div>
-      </BuilderWrapper>
-    );
-  }
+/**
+ * One medicine in a YC-default Prescription Template, rendered as a clean card
+ * mirroring the task-template card and the workspace prescription line item:
+ * a read-only inventory summary header plus editable Route / Frequency / Duration
+ * / Quantity / Refills / Instructions using the reusable searchable LabelDropdown.
+ * Each control writes back into the matching `prescriptionField` leaf field.
+ */
+const MedicineCard: React.FC<{
+  group: FormField & { type: 'group'; fields?: FormField[] };
+  onChange: (next: FormField) => void;
+  onRemove: () => void;
+}> = ({ group, onChange, onRemove }) => {
+  const setKeyValue = (key: string, value: string) => {
+    onChange({
+      ...group,
+      fields: (group.fields ?? []).map((f) =>
+        (f.meta as { prescriptionField?: string })?.prescriptionField === key
+          ? { ...f, defaultValue: value }
+          : f
+      ),
+    });
+  };
+
+  const name = medicineFieldValue(group, 'medicineName') || group.label || 'Medicine';
+  const brand = medicineFieldValue(group, 'brand');
+  const sku = medicineFieldValue(group, 'sku');
+  const strength = medicineFieldValue(group, 'strength');
+  const strengthUnit = medicineFieldValue(group, 'strengthUnit');
+  const dosageForm = medicineFieldValue(group, 'dosageForm');
+  const drugSchedule = medicineFieldValue(group, 'drugSchedule');
+
+  const summary = [
+    brand,
+    [strength, strengthUnit].filter(Boolean).join(' '),
+    dosageForm,
+    sku && `SKU ${sku}`,
+    drugSchedule,
+  ]
+    .filter(Boolean)
+    .join(' • ');
 
   return (
-    <FieldBuilder
-      key={nested.id}
-      field={nested}
-      onChange={(updated) => updateNestedField(nested.id, updated)}
-      onDelete={() => removeMedicine(nested.id)}
-      contentDeletable={isContentItem}
-      createField={createField}
-    />
+    <div className="flex flex-col gap-4 rounded-2xl border border-card-border bg-neutral-0 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col">
+          <span className="text-body-3-emphasis text-text-primary">{name}</span>
+          {summary && <span className="text-caption-2 text-text-secondary">{summary}</span>}
+        </div>
+        <CircleIconButton
+          icon={<LuTrash2 size={16} aria-hidden="true" />}
+          label={`Remove ${name}`}
+          onClick={onRemove}
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <LabelDropdown
+          placeholder="Route"
+          options={medicationRouteOptions}
+          defaultOption={medicineFieldValue(group, 'route')}
+          onSelect={(option) => setKeyValue('route', option.value)}
+        />
+        <LabelDropdown
+          placeholder="Frequency"
+          options={toLabelOptions(FREQUENCY_OPTIONS)}
+          defaultOption={medicineFieldValue(group, 'frequency')}
+          onSelect={(option) => setKeyValue('frequency', option.value)}
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormInput
+          intype="number"
+          inname={`${group.id}-duration`}
+          value={medicineFieldValue(group, 'durationDays')}
+          inlabel="Duration"
+          onChange={(e) => setKeyValue('durationDays', e.target.value)}
+        />
+        <LabelDropdown
+          placeholder="Duration unit"
+          options={toLabelOptions(DURATION_UNIT_OPTIONS)}
+          defaultOption={medicineFieldValue(group, 'durationUnit') || 'days'}
+          searchable={false}
+          onSelect={(option) => setKeyValue('durationUnit', option.value)}
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormInput
+          intype="number"
+          inname={`${group.id}-qty`}
+          value={medicineFieldValue(group, 'qty')}
+          inlabel="Quantity"
+          onChange={(e) => setKeyValue('qty', e.target.value)}
+        />
+        <FormInput
+          intype="number"
+          inname={`${group.id}-refill`}
+          value={medicineFieldValue(group, 'refill')}
+          inlabel="Refills"
+          onChange={(e) => setKeyValue('refill', e.target.value)}
+        />
+      </div>
+
+      <FormDesc
+        intype="text"
+        inname={`${group.id}-instructions`}
+        value={medicineFieldValue(group, 'instructions')}
+        inlabel="Instructions (optional)"
+        onChange={(e) => setKeyValue('instructions', e.target.value)}
+        className="min-h-24!"
+      />
+    </div>
   );
 };
 
@@ -733,11 +785,7 @@ type MedicationGroupBuilderProps = {
   createField: (t: OptionKey) => FormField;
 };
 
-const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
-  field,
-  onChange,
-  createField,
-}) => {
+const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({ field, onChange }) => {
   const structureLocked = React.useContext(StructureLockContext);
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const [medicines, setMedicines] = useState<InventoryApiItem[]>([]);
@@ -911,20 +959,27 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
         />
       )}
 
-      <Dropdown
-        placeholder="Select medicine from inventory"
-        value=""
-        onChange={handleMedicineSelect}
+      {/* Adding a medicine is content (not structure), so the picker stays available
+          even on YC-default (structure-locked) templates. */}
+      <LabelDropdown
+        placeholder={loadingMedicines ? 'Loading medicines…' : 'Add medicine from inventory'}
         options={medicineOptions.filter((opt) => !selectedMedicines.includes(opt.value))}
-        search={true}
-        className="min-h-12!"
-        dropdownClassName="!h-fit max-h-[300px] overflow-y-auto"
-        disabled={loadingMedicines}
+        onSelect={(option) => handleMedicineSelect(option.value)}
+        noOptionsMessage={loadingMedicines ? 'Loading medicines…' : 'No medicines available'}
       />
 
-      {(field.fields ?? []).map((nested) =>
-        renderNestedField(nested, updateNestedField, removeMedicine, createField)
-      )}
+      {(field.fields ?? []).map((nested) => {
+        const medicineGroup = nested as FormField & { type: 'group'; fields?: FormField[] };
+        if (medicineGroup.type !== 'group') return null;
+        return (
+          <MedicineCard
+            key={medicineGroup.id}
+            group={medicineGroup}
+            onChange={(updated) => updateNestedField(medicineGroup.id, updated)}
+            onRemove={() => removeMedicine(medicineGroup.id)}
+          />
+        );
+      })}
     </div>
   );
 };
@@ -938,8 +993,10 @@ type TaskGroupBuilderProps = {
 const taskBlockFieldValue = (field?: FormField): string => {
   if (!field) return '';
   const value = (field as FormField & { defaultValue?: unknown }).defaultValue;
-  if (value !== undefined && value !== '') return String(value);
-  return field.placeholder ?? '';
+  // Only the authored value — never the placeholder. Falling back to the
+  // placeholder made it render as the input's value (so it reappeared on
+  // backspace) instead of acting as a real placeholder hint.
+  return value === undefined || value === null ? '' : String(value);
 };
 
 /**
@@ -1009,15 +1066,16 @@ const TaskBlockCard: React.FC<{
         onChange={(e) => setKeyValue('name', e.target.value)}
       />
 
-      <Dropdown
+      <LabelDropdown
         placeholder={categoryField?.label || 'Category'}
-        value={taskBlockFieldValue(categoryField)}
+        defaultOption={taskBlockFieldValue(categoryField)}
         options={
           fieldOptions(categoryField).length
             ? fieldOptions(categoryField)
             : TASK_CATEGORY_FIELD_OPTIONS
         }
-        onChange={(value: string) => setKeyValue('category', value)}
+        searchable={false}
+        onSelect={(option) => setKeyValue('category', option.value)}
       />
 
       <FormDesc
@@ -1030,25 +1088,27 @@ const TaskBlockCard: React.FC<{
       />
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Dropdown
+        <LabelDropdown
           placeholder={repeatField?.label || 'Repeat'}
-          value={taskBlockFieldValue(repeatField)}
+          defaultOption={taskBlockFieldValue(repeatField)}
           options={
             fieldOptions(repeatField).length
               ? fieldOptions(repeatField)
               : TASK_RECURRENCE_FIELD_OPTIONS
           }
-          onChange={(value: string) => setKeyValue('recurrence.type', value)}
+          searchable={false}
+          onSelect={(option) => setKeyValue('recurrence.type', option.value)}
         />
-        <Dropdown
+        <LabelDropdown
           placeholder={reminderField?.label || 'Reminder (optional)'}
-          value={taskBlockFieldValue(reminderField)}
+          defaultOption={taskBlockFieldValue(reminderField)}
           options={
             fieldOptions(reminderField).length
               ? fieldOptions(reminderField)
               : TASK_REMINDER_FIELD_OPTIONS
           }
-          onChange={(value: string) => setKeyValue('reminderOffsetMinutes', value)}
+          searchable={false}
+          onSelect={(option) => setKeyValue('reminderOffsetMinutes', option.value)}
         />
       </div>
 

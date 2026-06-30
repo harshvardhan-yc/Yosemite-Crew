@@ -2,6 +2,7 @@ import {
   categoryFromLabel,
   categoryToKind,
   getTaskCategoryLabel,
+  isSeriesTask,
   NO_REMINDER_VALUE,
   offsetToReminderValue,
   recurrenceToRepeatValue,
@@ -41,6 +42,19 @@ describe('taskTaxonomy', () => {
       expect(categoryFromLabel('CARE')).toBe('CARE'); // already a code
       expect(categoryFromLabel('')).toBe('CARE'); // default
       expect(categoryFromLabel('Mystery')).toBe('Mystery'); // unknown passes through
+    });
+  });
+
+  describe('isSeriesTask', () => {
+    it('is true for a recurring master and for a materialized child', () => {
+      expect(isSeriesTask({ type: 'DAILY', isMaster: true })).toBe(true);
+      expect(isSeriesTask({ type: 'DAILY', isMaster: false, masterTaskId: 'm1' })).toBe(true);
+    });
+
+    it('is false for a one-off task or missing recurrence', () => {
+      expect(isSeriesTask({ type: 'ONCE', isMaster: false })).toBe(false);
+      expect(isSeriesTask({ type: 'ONCE', isMaster: true })).toBe(false); // ONCE master is not a series
+      expect(isSeriesTask(undefined)).toBe(false);
     });
   });
 

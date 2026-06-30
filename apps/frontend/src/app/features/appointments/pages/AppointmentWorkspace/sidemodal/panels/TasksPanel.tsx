@@ -22,7 +22,12 @@ import type {
   ScheduleTask,
   ScheduleTaskStatus,
 } from '@/app/features/appointments/types/workspace';
-import { getTaskCategoryLabel } from '@/app/features/tasks/constants/taskTaxonomy';
+import {
+  getTaskCategoryLabel,
+  isSeriesTask,
+  type RecurrenceScope,
+} from '@/app/features/tasks/constants/taskTaxonomy';
+import RecurrenceScopeModal from '@/app/features/tasks/components/RecurrenceScopeModal';
 import { formatStampDate } from '@/app/lib/appointmentWorkspace';
 
 type TasksPanelProps = {
@@ -225,18 +230,40 @@ const PanelTaskForm = ({
   // New tasks go through handleCreate (validates + persists + resets). Editing an
   // existing task PATCHes it directly, preserving the appointment + audience.
   const [editError, setEditError] = useState<string | null>(null);
+  const [scopeModalOpen, setScopeModalOpen] = useState(false);
+  const [scopeBusy, setScopeBusy] = useState(false);
+
+  const saveEdit = async (scope?: RecurrenceScope) => {
+    setEditError(null);
+    try {
+      await updateTask({ ...formData, _id: editingTask!._id, appointmentId, audience }, scope);
+      onSaved();
+    } catch (err) {
+      console.error('Failed to update task:', err);
+      setEditError('Unable to update task. Please try again.');
+    }
+  };
+
   const persistScopedTask = async () => {
     if (!editingTask?._id) {
       await handleCreate();
       return;
     }
-    setEditError(null);
+    // A task in a recurring series asks which occurrences the edit applies to.
+    if (isSeriesTask(editingTask.recurrence)) {
+      setScopeModalOpen(true);
+      return;
+    }
+    await saveEdit();
+  };
+
+  const handleScopeConfirm = async (scope: RecurrenceScope) => {
+    setScopeBusy(true);
     try {
-      await updateTask({ ...formData, _id: editingTask._id, appointmentId, audience });
-      onSaved();
-    } catch (err) {
-      console.error('Failed to update task:', err);
-      setEditError('Unable to update task. Please try again.');
+      await saveEdit(scope);
+      setScopeModalOpen(false);
+    } finally {
+      setScopeBusy(false);
     }
   };
 
@@ -275,6 +302,16 @@ const PanelTaskForm = ({
           isDisabled={isLoading}
         />
       </div>
+      {scopeModalOpen && (
+        <RecurrenceScopeModal
+          showModal={scopeModalOpen}
+          setShowModal={setScopeModalOpen}
+          action="edit"
+          taskName={editingTask?.name}
+          busy={scopeBusy}
+          onConfirm={handleScopeConfirm}
+        />
+      )}
     </div>
   );
 };

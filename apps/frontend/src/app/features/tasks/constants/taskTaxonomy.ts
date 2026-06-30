@@ -33,6 +33,34 @@ export type TaskKind =
 
 export type TaskAudience = 'EMPLOYEE_TASK' | 'PARENT_TASK';
 
+/**
+ * Scope for editing/deleting a task that belongs to a recurring series. Mirrors the
+ * Google-Calendar 3-way choice. Sent to the backend as a `scope` query/body param;
+ * the backend resolves it against the master/child task relationship (handoff).
+ */
+export type RecurrenceScope = 'THIS' | 'THIS_AND_FOLLOWING' | 'ALL';
+
+export const RECURRENCE_SCOPE_OPTIONS: { label: string; value: RecurrenceScope }[] = [
+  { label: 'This task only', value: 'THIS' },
+  { label: 'This and following tasks', value: 'THIS_AND_FOLLOWING' },
+  { label: 'All tasks in the series', value: 'ALL' },
+];
+
+/**
+ * True when a task participates in a recurring series — either the master
+ * (`recurrence.isMaster`) or a materialized child (`recurrence.masterTaskId`).
+ * One-off tasks (type ONCE, no master link) return false.
+ */
+export const isSeriesTask = (recurrence?: {
+  type?: string;
+  isMaster?: boolean;
+  masterTaskId?: string;
+}): boolean => {
+  if (!recurrence) return false;
+  if (recurrence.masterTaskId) return true;
+  return Boolean(recurrence.isMaster) && (recurrence.type ?? 'ONCE') !== 'ONCE';
+};
+
 export type TaskRecurrenceType = 'ONCE' | 'DAILY' | 'WEEKLY' | 'CUSTOM';
 
 /** Canonical, user-facing category list (label + value). Value === category. */
