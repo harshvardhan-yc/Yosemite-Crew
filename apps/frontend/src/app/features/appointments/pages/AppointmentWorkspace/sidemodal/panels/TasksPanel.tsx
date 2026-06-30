@@ -3,29 +3,37 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { LuArrowLeft, LuCalendarClock, LuPencil, LuPlus } from 'react-icons/lu';
 import TabToggle from '@/app/ui/primitives/TabToggle/TabToggle';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
-import Datepicker from '@/app/ui/inputs/Datepicker';
-import Timepicker from '@/app/ui/inputs/Timepicker';
-import { Primary, Secondary } from '@/app/ui/primitives/Buttons';
+import { Primary } from '@/app/ui/primitives/Buttons';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useTaskStore } from '@/app/stores/taskStore';
 import { useLoadTeam, useTeamForPrimaryOrg } from '@/app/hooks/useTeam';
+import TaskFormFields from '@/app/features/tasks/components/TaskFormFields';
+import { useTaskForm } from '@/app/hooks/useTaskForm';
+import { getPreferredTimeZone } from '@/app/lib/timezone';
 import {
   changeTaskStatus,
-  createTask,
   loadTasksForPrimaryOrg,
   updateTask,
 } from '@/app/features/tasks/services/taskService';
-import type { RecurrenceType, Task, TaskStatus } from '@/app/features/tasks/types/task';
+import type { Task, TaskStatus } from '@/app/features/tasks/types/task';
 import type {
   EmployeeTaskCategory,
   ScheduleTask,
   ScheduleTaskStatus,
 } from '@/app/features/appointments/types/workspace';
+import {
+  getTaskCategoryLabel,
+  isSeriesTask,
+  type RecurrenceScope,
+} from '@/app/features/tasks/constants/taskTaxonomy';
+import RecurrenceScopeModal from '@/app/features/tasks/components/RecurrenceScopeModal';
 import { formatStampDate } from '@/app/lib/appointmentWorkspace';
 
 type TasksPanelProps = {
   appointmentId: string;
+  /** The appointment's companion id — required to create parent (companion) tasks. */
+  companionId?: string;
   /** Real parent/co-parent assignees for the appointment's companion. */
   parentOptions?: AssigneeOption[];
 };
@@ -51,33 +59,7 @@ const STATUS_OPTIONS: { label: string; value: ScheduleTaskStatus }[] = [
   { label: 'Pending', value: 'PENDING' },
 ];
 
-const EMPLOYEE_CATEGORIES: { label: string; value: EmployeeTaskCategory }[] = [
-  'Consultation (billable)',
-  'Medication',
-  'Care',
-  'Treatment',
-  'Diagnostic',
-  'Communication',
-  'Billing',
-  'Record',
-  'SOAP',
-  'Admin',
-  'Custom',
-].map((c) => ({ label: c, value: c as EmployeeTaskCategory }));
-
-const PARENT_CATEGORIES: { label: string; value: EmployeeTaskCategory }[] = [
-  'Medication',
-  'Care',
-  'Diet',
-  'Communication',
-  'Billing',
-  'Record',
-  'Custom reminders',
-].map((c) => ({ label: c, value: c as EmployeeTaskCategory }));
-
 type AssigneeOption = { label: string; value: string };
-
-const REPEAT_OPTIONS = ['None', 'Daily', 'Weekly', 'Monthly'].map((r) => ({ label: r, value: r }));
 
 const taskStatusToScheduleStatus = (status: Task['status']): ScheduleTaskStatus => {
   if (status === 'COMPLETED') return 'COMPLETED';
@@ -94,35 +76,9 @@ const scheduleStatusToTaskStatus = (status: ScheduleTaskStatus): TaskStatus => {
   return 'PENDING';
 };
 
-const repeatToRecurrenceType = (repeat: string): RecurrenceType => {
-  if (repeat === 'Daily') return 'DAILY';
-  if (repeat === 'Weekly') return 'WEEKLY';
-  return 'ONCE';
-};
-
-/** "YYYY-MM-DD" (draft storage) ⇄ the Datepicker's `Date | null` value. */
-const parseDraftDate = (value?: string): Date | null => {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-const formatDraftDate = (date: Date | null): string => {
-  if (!date) return '';
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const buildDueAt = (dateValue: string, timeValue: string) => {
-  const date = dateValue || new Date().toISOString().slice(0, 10);
-  const time = timeValue || '09:00';
-  return new Date(`${date}T${time}:00`);
-};
-
 const scheduleTaskFromTask = (task: Task): ScheduleTask => ({
   id: task._id,
-  category: task.category as EmployeeTaskCategory,
+  category: getTaskCategoryLabel(task.category) as EmployeeTaskCategory,
   description: task.description || task.name,
   assignedToId: task.assignedTo,
   status: taskStatusToScheduleStatus(task.status),
@@ -220,151 +176,151 @@ const TaskRow = ({
   </li>
 );
 
-type TaskDraft = {
-  assignedTo: string;
-  templateSource: string;
-  category: EmployeeTaskCategory;
-  description: string;
-  setTime: string;
-  reminder: string;
-  repeat: string;
-  starts: string;
-  ends: string;
-};
-
-const EMPTY_DRAFT: TaskDraft = {
-  assignedTo: '',
-  templateSource: 'YC Library',
-  category: 'Care',
-  description: '',
-  setTime: '',
-  reminder: '',
-  repeat: 'None',
-  starts: '',
-  ends: '',
-};
-
-const TaskForm = ({
+/**
+ * Add/edit task form for the Quick Actions panel — the SAME shared TaskFormFields
+ * + useTaskForm used by the main /tasks module, scoped to this appointment and the
+ * active audience (Employee/Parent). Editing an existing task seeds the form.
+ */
+const PanelTaskForm = ({
+  appointmentId,
+  companionId,
   isParent,
-  draft,
-  onChange,
-  onSave,
-  onDiscard,
-  editing,
   assignees,
+  editingTask,
+  onBack,
+  onSaved,
 }: {
+  appointmentId: string;
+  companionId?: string;
   isParent: boolean;
-  draft: TaskDraft;
-  onChange: (patch: Partial<TaskDraft>) => void;
-  onSave: () => void;
-  onDiscard: () => void;
-  editing: boolean;
   assignees: AssigneeOption[];
+  editingTask: Task | null;
+  onBack: () => void;
+  onSaved: () => void;
 }) => {
-  const categories = isParent ? PARENT_CATEGORIES : EMPLOYEE_CATEGORIES;
+  const audience = isParent ? 'PARENT_TASK' : 'EMPLOYEE_TASK';
+  const {
+    formData,
+    setFormData,
+    due,
+    setDue,
+    dueTimeValue,
+    setDueTimeValue,
+    formDataErrors,
+    error,
+    isLoading,
+    templateOptions,
+    selectTemplate,
+    handleCreate,
+  } = useTaskForm({
+    isCompanionTask: isParent,
+    initialTask: editingTask
+      ? { ...editingTask, companionId: editingTask.companionId ?? companionId }
+      : {
+          appointmentId,
+          audience,
+          source: 'CUSTOM',
+          dueAt: new Date(),
+          // Parent (companion) tasks require the appointment's companion id.
+          ...(isParent && companionId ? { companionId } : {}),
+        },
+    onSuccess: onSaved,
+  });
+
+  // New tasks go through handleCreate (validates + persists + resets). Editing an
+  // existing task PATCHes it directly, preserving the appointment + audience.
+  const [editError, setEditError] = useState<string | null>(null);
+  const [scopeModalOpen, setScopeModalOpen] = useState(false);
+  const [scopeBusy, setScopeBusy] = useState(false);
+
+  const saveEdit = async (scope?: RecurrenceScope) => {
+    setEditError(null);
+    try {
+      await updateTask({ ...formData, _id: editingTask!._id, appointmentId, audience }, scope);
+      onSaved();
+    } catch (err) {
+      console.error('Failed to update task:', err);
+      setEditError('Unable to update task. Please try again.');
+    }
+  };
+
+  const persistScopedTask = async () => {
+    if (!editingTask?._id) {
+      await handleCreate();
+      return;
+    }
+    // A task in a recurring series asks which occurrences the edit applies to.
+    if (isSeriesTask(editingTask.recurrence)) {
+      setScopeModalOpen(true);
+      return;
+    }
+    await saveEdit();
+  };
+
+  const handleScopeConfirm = async (scope: RecurrenceScope) => {
+    setScopeBusy(true);
+    try {
+      await saveEdit(scope);
+      setScopeModalOpen(false);
+    } finally {
+      setScopeBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <CircleIconButton
           icon={<LuArrowLeft size={16} aria-hidden="true" />}
           label="Back to tasks"
-          onClick={onDiscard}
+          onClick={onBack}
         />
         <h3 className="text-body-2 font-bold text-text-primary">
-          {editing ? 'Edit Task' : 'New Task'}
+          {editingTask ? 'Edit task' : 'New task'}
         </h3>
       </div>
-      <LabelDropdown
-        placeholder="Assigned to"
-        options={assignees}
-        defaultOption={draft.assignedTo}
-        searchable={false}
-        onSelect={(o) => onChange({ assignedTo: o.value })}
+      <TaskFormFields
+        formData={formData}
+        setFormData={setFormData}
+        formDataErrors={formDataErrors}
+        templateOptions={templateOptions}
+        due={due}
+        setDue={setDue}
+        dueTimeValue={dueTimeValue}
+        setDueTimeValue={setDueTimeValue}
+        onSelectTemplate={selectTemplate}
+        hideTemplatePicker={Boolean(editingTask)}
+        showAssigneeSelect
+        assigneeOptions={assignees}
+        onAssigneeSelect={(option) => setFormData({ ...formData, assignedTo: option.value })}
       />
-      <div className="grid grid-cols-2 gap-3">
-        <LabelDropdown
-          placeholder="Template source"
-          options={[
-            { label: 'YC Library', value: 'YC Library' },
-            { label: 'Custom', value: 'Custom' },
-          ]}
-          defaultOption={draft.templateSource}
-          searchable={false}
-          onSelect={(o) => onChange({ templateSource: o.value })}
-        />
-        <LabelDropdown
-          placeholder="Category"
-          options={categories}
-          defaultOption={draft.category}
-          searchable={false}
-          onSelect={(o) => onChange({ category: o.value as EmployeeTaskCategory })}
-        />
-      </div>
-      <textarea
-        value={draft.description}
-        onChange={(e) => onChange({ description: e.target.value })}
-        aria-label="Task description"
-        rows={3}
-        placeholder="Describe the task"
-        className="rounded-2xl border border-input-border-default px-4 py-2.5 text-body-4 text-text-primary outline-none focus:border-input-border-active"
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <Timepicker
-          label="Set time"
-          value={draft.setTime}
-          onChange={(value) => onChange({ setTime: value })}
-        />
-        <input
-          value={draft.reminder}
-          onChange={(e) => onChange({ reminder: e.target.value })}
-          aria-label="Reminder before"
-          placeholder="Reminder before"
-          className="rounded-2xl border border-input-border-default px-4 py-2.5 text-body-4 text-text-primary outline-none focus:border-input-border-active"
-        />
-      </div>
-      <LabelDropdown
-        placeholder="Repeat"
-        options={REPEAT_OPTIONS}
-        defaultOption={draft.repeat}
-        searchable={false}
-        onSelect={(o) => onChange({ repeat: o.value })}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <Datepicker
-          type="input"
-          placeholder="Starts"
-          currentDate={parseDraftDate(draft.starts)}
-          setCurrentDate={
-            ((next: Date | null) => onChange({ starts: formatDraftDate(next) })) as React.Dispatch<
-              React.SetStateAction<Date | null>
-            >
-          }
-        />
-        <Datepicker
-          type="input"
-          placeholder="Ends"
-          currentDate={parseDraftDate(draft.ends)}
-          setCurrentDate={
-            ((next: Date | null) => onChange({ ends: formatDraftDate(next) })) as React.Dispatch<
-              React.SetStateAction<Date | null>
-            >
-          }
-        />
-      </div>
+      {(error || editError) && <p className="text-caption-1 text-red-600">{error || editError}</p>}
       <div className="flex items-center gap-3">
-        <Primary text="Save task" onClick={onSave} />
-        <Secondary text="Discard" onClick={onDiscard} />
+        <Primary
+          text={isLoading ? 'Saving…' : 'Save task'}
+          onClick={() => void persistScopedTask()}
+          isDisabled={isLoading}
+        />
       </div>
+      {scopeModalOpen && (
+        <RecurrenceScopeModal
+          showModal={scopeModalOpen}
+          setShowModal={setScopeModalOpen}
+          action="edit"
+          taskName={editingTask?.name}
+          busy={scopeBusy}
+          onConfirm={handleScopeConfirm}
+        />
+      )}
     </div>
   );
 };
 
 /** Tasks panel: Employee (workspace schedule) + Parent task sub-tabs with a New/Edit form. */
-const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
+const TasksPanel = ({ appointmentId, companionId, parentOptions = [] }: TasksPanelProps) => {
   const [tab, setTab] = useState<TaskTab>('EMPLOYEE');
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const [draft, setDraft] = useState<TaskDraft>(EMPTY_DRAFT);
 
   useLoadTeam();
   const team = useTeamForPrimaryOrg();
@@ -388,8 +344,7 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
 
   useEffect(() => {
     // Force a fresh pull when the panel opens so newly-created/updated tasks for
-    // this appointment always show (the non-forced load short-circuits once the
-    // store is "loaded", which would hide tasks added elsewhere this session).
+    // this appointment always show.
     loadTasksForPrimaryOrg({ force: true, silent: true }).catch((error) => {
       console.error('Failed to load workspace tasks:', error);
     });
@@ -418,88 +373,43 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
   if (!encounter) return null;
 
   const openNew = () => {
-    setDraft(EMPTY_DRAFT);
-    setEditingId(null);
+    setEditingTask(null);
     setFormOpen(true);
   };
 
-  const openEdit = (task: ScheduleTask) => {
-    setDraft({
-      assignedTo: task.assignedToId ?? '',
-      templateSource: 'YC Library',
-      category: task.category,
-      description: task.description,
-      setTime: '',
-      reminder: '',
-      repeat: 'None',
-      starts: task.startDate ?? '',
-      ends: task.endDate ?? '',
-    });
-    setEditingId(task.id);
+  const openEdit = (scheduleTask: ScheduleTask) => {
+    const backing = tasksById[scheduleTask.id];
+    if (backing) {
+      setEditingTask(backing);
+    } else {
+      // Locally-generated schedule row not yet persisted — seed a draft Task.
+      setEditingTask({
+        _id: '',
+        appointmentId,
+        assignedTo: scheduleTask.assignedToId ?? '',
+        audience: isParent ? 'PARENT_TASK' : 'EMPLOYEE_TASK',
+        source: 'CUSTOM',
+        category: scheduleTask.category,
+        name: scheduleTask.description,
+        description: scheduleTask.description,
+        dueAt: scheduleTask.startDate ? new Date(scheduleTask.startDate) : new Date(),
+        timezone: getPreferredTimeZone(),
+        status: 'PENDING',
+      });
+    }
     setFormOpen(true);
   };
 
   const closeForm = () => {
     setFormOpen(false);
-    setEditingId(null);
+    setEditingTask(null);
   };
 
   const assigneeOptions = isParent ? parentOptions : employeeOptions;
 
-  const handleSave = async () => {
-    const assignee = assigneeOptions.find((a) => a.value === draft.assignedTo);
-    const base: Omit<ScheduleTask, 'id'> = {
-      description: draft.description,
-      category: draft.category,
-      assignedToId: draft.assignedTo || undefined,
-      assignedToName: assignee?.label,
-      status: 'UPCOMING',
-      startDate: draft.starts || undefined,
-      endDate: draft.ends || undefined,
-      autoGenerated: false,
-    };
-    const taskPayload: Task = {
-      _id: '',
-      appointmentId,
-      assignedTo: draft.assignedTo,
-      audience: isParent ? 'PARENT_TASK' : 'EMPLOYEE_TASK',
-      source: 'CUSTOM',
-      category: draft.category,
-      name: draft.description || draft.category,
-      description: draft.description,
-      dueAt: buildDueAt(draft.starts, draft.setTime),
-      recurrence: {
-        type: repeatToRecurrenceType(draft.repeat),
-        isMaster: draft.repeat !== 'None',
-        endDate: draft.ends ? new Date(`${draft.ends}T23:59:59`) : undefined,
-      },
-      reminder: draft.reminder
-        ? { enabled: true, offsetMinutes: Number.parseInt(draft.reminder, 10) || 0 }
-        : undefined,
-      status: 'PENDING',
-    };
-    if (editingId) {
-      if (!isParent) updateScheduleTask(appointmentId, editingId, base);
-    } else {
-      setSaveError(null);
-      try {
-        // createTask persists to the backend and (for EMPLOYEE_TASK) upserts into
-        // the task store, which the employee list already renders. Do NOT also add
-        // it to encounter.schedule — that would render the same task twice.
-        await createTask(taskPayload);
-      } catch (error) {
-        console.error('Failed to create workspace task:', error);
-        setSaveError('Unable to save task. Please try again.');
-        return;
-      }
-    }
-    closeForm();
-  };
-
   // Persist an employee task change to the backend when the row is a real,
-  // backend-issued task (its id is a key in tasksById). Locally-generated
-  // schedule rows (e.g. inpatient template tasks not yet persisted) only update
-  // the optimistic store. Backend failures roll the optimistic update back.
+  // backend-issued task. Locally-generated schedule rows only update the
+  // optimistic store. Backend failures roll the optimistic update back.
   const syncTaskToBackend = async (
     taskId: string,
     apply: (task: Task) => Task,
@@ -513,7 +423,6 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
     } catch (error) {
       console.error('Failed to sync task change:', error);
       setSaveError('Unable to update task. Please try again.');
-      // Re-pull authoritative state so the optimistic row does not drift.
       loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
     }
   };
@@ -537,14 +446,17 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
 
   if (formOpen) {
     return (
-      <TaskForm
+      <PanelTaskForm
+        appointmentId={appointmentId}
+        companionId={companionId}
         isParent={isParent}
-        draft={draft}
-        editing={editingId != null}
         assignees={assigneeOptions}
-        onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
-        onSave={handleSave}
-        onDiscard={closeForm}
+        editingTask={editingTask}
+        onBack={closeForm}
+        onSaved={() => {
+          closeForm();
+          loadTasksForPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+        }}
       />
     );
   }
@@ -578,8 +490,6 @@ const TasksPanel = ({ appointmentId, parentOptions = [] }: TasksPanelProps) => {
               onAssign={(option) => handleEmployeeAssign(task.id, option)}
               onStatus={(status) => handleEmployeeStatus(task.id, status)}
               onEdit={() => openEdit(task)}
-              // Reschedule opens the edit form (real date/time pickers); saving
-              // persists via the task API — no more hardcoded placeholder date.
               onReschedule={() => openEdit(task)}
             />
           ))}

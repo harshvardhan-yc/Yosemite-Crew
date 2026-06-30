@@ -354,6 +354,11 @@ export type InvoiceLineItem = {
   sourcePrescriptionId?: string;
   /** Inventory item of the source prescription, used to resolve the linked treatment-item delete. */
   sourceInventoryItemId?: string;
+  /**
+   * False for lines that must not be removed from the bill — e.g. the appointment's booked
+   * service/consultation. Undefined/true means the line can be removed. Display-only.
+   */
+  removable?: boolean;
 };
 
 export type PastInvoice = {

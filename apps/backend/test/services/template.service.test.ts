@@ -211,6 +211,38 @@ describe("TemplateService ownership persistence", () => {
     expect(getByIdSpy).toHaveBeenCalledWith("tpl-1", "org-1");
   });
 
+  it("resolves only published templates for workspace preload flows", async () => {
+    const listForOrganisationSpy = jest
+      .spyOn(TemplateService, "listForOrganisation")
+      .mockResolvedValue([]);
+    const listLibrarySpy = jest
+      .spyOn(TemplateService, "listLibrary")
+      .mockResolvedValue([]);
+
+    await expect(
+      TemplateService.resolve({
+        organisationId: "org-1",
+        kind: "PRESCRIPTION",
+        serviceId: "svc-1",
+        mode: "OUTPATIENT",
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    expect(listForOrganisationSpy).toHaveBeenCalledWith("org-1", {
+      kind: "PRESCRIPTION",
+      status: "PUBLISHED",
+      scope: undefined,
+    });
+    expect(listLibrarySpy).toHaveBeenCalledWith({
+      kind: "PRESCRIPTION",
+      status: "PUBLISHED",
+      scope: undefined,
+    });
+
+    listForOrganisationSpy.mockRestore();
+    listLibrarySpy.mockRestore();
+  });
+
   it("updates catalog links without an organisation filter when the template is global", async () => {
     (prisma.template.findUnique as jest.Mock).mockResolvedValue({
       id: "tpl-2",

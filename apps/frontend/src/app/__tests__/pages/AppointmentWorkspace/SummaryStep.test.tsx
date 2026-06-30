@@ -132,6 +132,7 @@ const appointment = {
   id: APPT,
   organisationId: 'org-1',
   encounterId: 'enc-1',
+  status: 'IN_PROGRESS',
 } as any;
 
 const reset = () => {
@@ -754,6 +755,7 @@ describe('SummaryStep', () => {
     const appointmentWithoutEncounter = {
       id: APPT,
       organisationId: 'org-1',
+      status: 'IN_PROGRESS',
     } as any;
     const enc = { ...seedAndGet(), dischargeSavedAt: '2026-04-20T10:00:00Z' };
     await act(async () => {

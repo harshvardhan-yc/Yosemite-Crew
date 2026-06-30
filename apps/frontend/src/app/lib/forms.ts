@@ -27,6 +27,11 @@ import {
   FormsUsage,
 } from '@/app/features/forms/types/forms';
 import { formatDisplayDate, formatTimeInPreferredTimeZone } from '@/app/lib/date';
+import {
+  categoryToKind,
+  reminderValueToOffset,
+  repeatValueToRecurrence,
+} from '@/app/features/tasks/constants/taskTaxonomy';
 
 const statusToLabelMap: Record<Form['status'], FormsStatus> = {
   draft: 'Draft',
@@ -447,44 +452,7 @@ const clinicalBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> 
   // Single-sourced from @yosemite-crew/types so the builder, workspace editors, and the
   // backend resolver/validation blueprint all agree on keys + rich-text field types.
   SOAP_NOTE: CANONICAL_SOAP_STRUCTURE,
-  PRESCRIPTION: {
-    sections: [
-      {
-        id: 'medications',
-        title: 'Medications',
-        order: 1,
-        fields: [
-          {
-            key: 'prescribedItems',
-            label: 'Prescribed items',
-            type: 'medicationLine',
-            repeatable: true,
-            order: 1,
-            rules: { columns: ['drug', 'dose', 'frequency', 'duration'] },
-          },
-        ],
-      },
-      {
-        id: 'instructions',
-        title: 'Instructions',
-        order: 2,
-        fields: [
-          {
-            key: 'usageInstructions',
-            label: 'Usage instructions',
-            type: 'instructionBlock',
-            order: 1,
-          },
-        ],
-      },
-      {
-        id: 'notes',
-        title: 'Notes',
-        order: 3,
-        fields: [{ key: 'clinicalNotes', label: 'Clinical notes', type: 'richText', order: 1 }],
-      },
-    ],
-  },
+  PRESCRIPTION: CANONICAL_PRESCRIPTION_STRUCTURE,
   DISCHARGE_SUMMARY: CANONICAL_DISCHARGE_STRUCTURE,
   VITAL_RECORD: CANONICAL_VITALS_STRUCTURE,
 };
@@ -567,6 +535,33 @@ const workflowBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> 
               { label: 'Custom', value: 'CUSTOM' },
             ],
             rules: { allowCustom: false },
+          },
+        ],
+      },
+      {
+        // A YC-default Task Template is authored as a set of task blocks (the
+        // "Building a template" UI). They serialize into this repeater (mirrors
+        // the INPATIENT_SCHEDULE schedule section) so the workspace schedule can
+        // preload them via resolveScheduleTasksFromTemplate.
+        id: 'schedule',
+        title: 'Schedule',
+        order: 4,
+        fields: [
+          {
+            key: 'taskBlocks',
+            label: 'Task blocks',
+            type: 'repeater',
+            repeatable: true,
+            rules: {
+              columns: [
+                'name',
+                'category',
+                'recurrence',
+                'reminderOffsetMinutes',
+                'durationDays',
+                'additionalNotes',
+              ],
+            },
           },
         ],
       },
@@ -681,9 +676,11 @@ type TaskBlockValue = {
   audience: string;
   assignedRole?: string;
   reminderOffsetMinutes?: number;
+  durationDays?: number;
   additionalNotes?: string;
   recurrence?: {
     type: string;
+    cronExpression?: string;
   };
 };
 
@@ -704,14 +701,23 @@ const assignTaskBlockValue = (
   value: unknown
 ): void => {
   if (!key || value === undefined || value === '') return;
+  const stringValue =
+    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+      ? String(value)
+      : '';
   if (key === 'dayOffset') {
     block.dayOffset = coerceNumberValue(value, 0);
+  } else if (key === 'durationDays') {
+    block.durationDays = coerceNumberValue(value, 0);
   } else if (key === 'reminderOffsetMinutes') {
-    block.reminderOffsetMinutes = coerceNumberValue(value, 0);
+    // The reminder dropdown carries the canonical "NONE" sentinel for no reminder.
+    const offset = reminderValueToOffset(stringValue);
+    if (offset) block.reminderOffsetMinutes = offset;
   } else if (key === 'recurrence.type') {
-    if (typeof value === 'string' || typeof value === 'number') {
-      block.recurrence = { type: String(value) };
-    }
+    // The repeat dropdown carries canonical values (EVERY_6_HOURS, …); resolve to
+    // the backend recurrence type + cron so interval repeats materialize correctly.
+    const { type, cronExpression } = repeatValueToRecurrence(stringValue);
+    block.recurrence = { type, cronExpression };
   } else if (key in block) {
     (block as Record<string, unknown>)[key] = value;
   }
@@ -734,6 +740,10 @@ const taskBlockFromGroup = (group: FormField & { fields?: FormField[] }): TaskBl
     const key = (field.meta as { taskBlockKey?: string } | undefined)?.taskBlockKey;
     assignTaskBlockValue(block, key, fieldAuthoredValue(field));
   }
+
+  // Derive the constrained Prisma kind from the authored category so the
+  // template rules carry a valid `taskKind` (falls back to CUSTOM pre-migration).
+  block.taskKind = categoryToKind(block.category);
 
   return block;
 };
@@ -787,19 +797,36 @@ type MedicationRow = {
   inventoryItemId?: string;
   medicineId?: string;
   medicineName?: string;
+  brand?: string;
+  genericName?: string;
+  sku?: string;
+  strength?: string;
+  strengthUnit?: string;
+  dosageForm?: string;
   dosage?: string;
+  dose?: string;
+  doseUnit?: string;
   route?: string;
   frequency?: string;
   durationDays?: string;
+  durationUnit?: string;
   instructions?: string;
   qty?: string;
+  refill?: string;
+  fulfillment?: string;
+  inventoryBatchId?: string;
   price?: string | number;
+  priceCents?: string | number;
+  controlledSubstance?: string | boolean;
+  prescriptionRequired?: string | boolean;
+  drugSchedule?: string;
 };
 
-const medicationFieldValue = (field: FormField): string | number | undefined => {
+const medicationFieldValue = (field: FormField): string | number | boolean | undefined => {
   const defaultValue = (field as FormField & { defaultValue?: unknown }).defaultValue;
   if (typeof defaultValue === 'string' && defaultValue.trim().length > 0) return defaultValue;
   if (typeof defaultValue === 'number') return defaultValue;
+  if (typeof defaultValue === 'boolean') return defaultValue;
   if (typeof field.placeholder === 'string' && field.placeholder.trim().length > 0) {
     return field.placeholder;
   }
@@ -816,19 +843,58 @@ const medicationRowFromGroup = (group: FormField & { fields?: FormField[] }): Me
   for (const field of group.fields ?? []) {
     const value = medicationFieldValue(field);
     if (value === undefined) continue;
-    if (field.id.endsWith('_name')) row.medicineName = String(value);
-    else if (field.id.endsWith('_dosage')) row.dosage = String(value);
-    else if (field.id.endsWith('_route')) row.route = String(value);
-    else if (field.id.endsWith('_frequency')) row.frequency = String(value);
-    else if (field.id.endsWith('_duration')) row.durationDays = String(value);
-    else if (field.id.endsWith('_qty')) row.qty = String(value);
-    else if (field.id.endsWith('_price')) row.price = value;
-    else if (field.id.endsWith('_remark') || field.id.endsWith('_instructions')) {
-      row.instructions = String(value);
-    }
+    assignMedicationRowField(row, field, value);
   }
 
   return row;
+};
+
+/** Field-id suffix → the MedicationRow string key it maps to. */
+const MEDICATION_STRING_FIELD_BY_SUFFIX: Record<string, keyof MedicationRow> = {
+  _name: 'medicineName',
+  _brand: 'brand',
+  _genericName: 'genericName',
+  _sku: 'sku',
+  _strength: 'strength',
+  _strengthUnit: 'strengthUnit',
+  _form: 'dosageForm',
+  _dosage: 'dosage',
+  _route: 'route',
+  _frequency: 'frequency',
+  _duration: 'durationDays',
+  _durationUnit: 'durationUnit',
+  _qty: 'qty',
+  _refill: 'refill',
+  _remark: 'instructions',
+  _instructions: 'instructions',
+};
+
+const assignMedicationRowField = (
+  row: MedicationRow,
+  field: FormField,
+  value: string | number | boolean
+): void => {
+  const prescriptionField = (field.meta as { prescriptionField?: keyof MedicationRow } | undefined)
+    ?.prescriptionField;
+  if (prescriptionField) {
+    row[prescriptionField] = value as never;
+    return;
+  }
+  const numericOrString = typeof value === 'boolean' ? String(value) : value;
+  if (field.id.endsWith('_price')) {
+    row.price = numericOrString;
+    return;
+  }
+  if (field.id.endsWith('_priceCents')) {
+    row.priceCents = numericOrString;
+    return;
+  }
+  const suffix = Object.keys(MEDICATION_STRING_FIELD_BY_SUFFIX).find((key) =>
+    field.id.endsWith(key)
+  );
+  if (suffix) {
+    row[MEDICATION_STRING_FIELD_BY_SUFFIX[suffix]] = String(value) as never;
+  }
 };
 
 const collectMedicationRows = (fields: FormField[] = []): MedicationRow[] => {
@@ -876,7 +942,10 @@ export const buildTemplateSchemaSnapshot = (
   if (blueprint) {
     const mergedBlueprint = mergeFieldDefaults(blueprint, form.schema ?? []);
     const customFields = filterCustomFields(getBlueprintFieldKeys(blueprint), form.schema ?? []);
-    if (kind === 'INPATIENT_SCHEDULE') {
+    // Both inpatient-schedule and task-assignment templates carry authored task
+    // blocks in a `schedule.taskBlocks` field; serialize them for either kind so
+    // the YC-default task builder (TASK_ASSIGNMENT) persists its tasks.
+    if (kind === 'INPATIENT_SCHEDULE' || kind === 'TASK_ASSIGNMENT') {
       const taskBlocks = taskBlocksFromForm(form);
       return {
         sections: [...withTaskBlocks(mergedBlueprint, taskBlocks).sections],
