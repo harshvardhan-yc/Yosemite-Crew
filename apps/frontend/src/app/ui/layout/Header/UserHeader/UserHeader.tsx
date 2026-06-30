@@ -129,6 +129,7 @@ const shouldHideSearch = (pathname: string): boolean =>
   pathname.startsWith('/organizations') ||
   pathname.startsWith('/dashboard') ||
   pathname.startsWith('/guides') ||
+  pathname.startsWith('/inventory') ||
   (pathname.startsWith('/integrations') && !pathname.startsWith('/integrations/idexx-workspace'));
 
 const getSearchPlaceholder = (pathname: string, terminologyText: (s: string) => string): string => {

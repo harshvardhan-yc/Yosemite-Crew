@@ -21,6 +21,7 @@ export type FieldConfig = {
   required?: boolean;
   options?: Array<string | { label: string; value: string }>;
   editable?: boolean;
+  numeric?: boolean;
 };
 
 type EditableAccordionProps = {
@@ -40,6 +41,7 @@ type EditableAccordionProps = {
   footer?: React.ReactNode;
   fieldFilter?: (key: string, formValues: FormValues) => boolean;
   dynamicFooter?: (formValues: FormValues) => React.ReactNode;
+  fieldResets?: Record<string, string[]>;
   optionsResolver?: (
     key: string,
     formValues: FormValues
@@ -68,6 +70,12 @@ const FieldComponents: Record<
 > = {
   text: ({ field, value, onChange, error }) => {
     const isCurrency = isCurrencyField(field.key);
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      const val =
+        field.numeric || isCurrency ? raw.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1') : raw;
+      onChange(val);
+    };
     return isCurrency ? (
       <div className="relative">
         <div className="absolute left-6 top-1/2 -translate-y-1/2 text-body-4 text-text-primary font-satoshi font-semibold z-10">
@@ -79,7 +87,7 @@ const FieldComponents: Record<
           value={value}
           inlabel={field.label}
           error={error}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+          onChange={handleChange}
           className="min-h-12! pl-10!"
         />
       </div>
@@ -90,13 +98,18 @@ const FieldComponents: Record<
         value={value}
         inlabel={field.label}
         error={error}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+        onChange={handleChange}
         className="min-h-12!"
       />
     );
   },
   number: ({ field, value, onChange, error }) => {
     const isCurrency = isCurrencyField(field.key);
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      const val = raw.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+      onChange(val);
+    };
     return isCurrency ? (
       <div className="relative">
         <div className="absolute left-6 top-1/2 -translate-y-1/2 text-body-4 text-text-primary font-satoshi font-semibold z-10">
@@ -108,7 +121,7 @@ const FieldComponents: Record<
           value={value}
           inlabel={field.label}
           error={error}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+          onChange={handleChange}
           className="min-h-12! pl-10!"
         />
       </div>
@@ -119,7 +132,7 @@ const FieldComponents: Record<
         value={value}
         inlabel={field.label}
         error={error}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+        onChange={handleChange}
         className="min-h-12!"
       />
     );
@@ -537,6 +550,7 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
   footer,
   fieldFilter,
   dynamicFooter,
+  fieldResets,
   optionsResolver,
   onRegisterActions,
 }) => {
@@ -556,8 +570,17 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
   }
 
   const handleChange = (key: string, value: string | string[]) => {
-    setFormValues((prev) => ({ ...prev, [key]: value }));
-    setFormValuesErrors((prev) => ({ ...prev, [key]: undefined }));
+    const resets = fieldResets?.[key] ?? [];
+    const resetValues = resets.reduce<Record<string, string>>(
+      (acc, k) => ({ ...acc, [k]: '' }),
+      {}
+    );
+    const resetErrors = resets.reduce<Record<string, undefined>>(
+      (acc, k) => ({ ...acc, [k]: undefined }),
+      {}
+    );
+    setFormValues((prev) => ({ ...prev, [key]: value, ...resetValues }));
+    setFormValuesErrors((prev) => ({ ...prev, [key]: undefined, ...resetErrors }));
   };
 
   const handleMultiChange = (values: Record<string, any>) => {
