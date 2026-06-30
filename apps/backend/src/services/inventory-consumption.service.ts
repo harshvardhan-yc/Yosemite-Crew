@@ -80,6 +80,7 @@ type PrescriptionDispenseRequestMetadata = Record<string, unknown> & {
 
 type PrescriptionDispenseRequestDisplayFields = {
   patientName?: string | null;
+  parentName?: string | null;
   leadName?: string | null;
   location?: string | null;
 };
@@ -1476,6 +1477,7 @@ const resolveDispenseRequestDisplayFields = async (
       asNonEmptyString(patient.companionName) ??
       asNonEmptyString(patient.displayName) ??
       null,
+    parentName: resolvePetParentName(patient) ?? null,
     leadName: asNonEmptyString(lead.name) ?? null,
     location: location ?? null,
   };

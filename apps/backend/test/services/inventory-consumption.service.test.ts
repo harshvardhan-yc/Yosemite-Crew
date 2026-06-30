@@ -831,6 +831,9 @@ describe("InventoryConsumptionService", () => {
     mockedPrisma.appointment.findFirst.mockResolvedValueOnce({
       patient: {
         name: "Bella",
+        parent: {
+          name: "Sarah Bella",
+        },
       },
       lead: {
         name: "Dr. Rao",
@@ -854,6 +857,7 @@ describe("InventoryConsumptionService", () => {
       status: "NOT_DISPENSED",
       reviewedBy: "user-1",
       patientName: "Bella",
+      parentName: "Sarah Bella",
       leadName: "Dr. Rao",
       location: "Ward A",
     });
