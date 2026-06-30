@@ -1774,17 +1774,19 @@ export const InventoryConsumptionService = {
         },
       });
 
-      const hydratedRequest = {
+      return hydrateDispenseRequest(prisma, {
         ...updatedRequest,
-        prescription: (
-          request as unknown as {
-            prescription: {
-              artifact: {
-                appointmentId?: string | null;
+        prescription: {
+          artifact: (
+            request as unknown as {
+              prescription: {
+                artifact: {
+                  appointmentId?: string | null;
+                };
               };
-            };
-          }
-        ).prescription,
+            }
+          ).prescription.artifact,
+        },
       } as NonNullable<
         Awaited<ReturnType<typeof prisma.prescriptionDispenseRequest.findFirst>>
       > & {
@@ -1793,9 +1795,7 @@ export const InventoryConsumptionService = {
             appointmentId?: string | null;
           };
         };
-      };
-
-      return hydrateDispenseRequest(prisma, hydratedRequest);
+      });
     });
   },
 
