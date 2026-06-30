@@ -85,7 +85,7 @@ const TextInputField = ({
   onChange,
   error,
   numericOnly = false,
-}: EditableFieldProps & { numericOnly?: boolean }) => {
+}: BaseFieldProps & { numericOnly?: boolean }) => {
   const isCurrency = isCurrencyField(field.key);
   const shouldSanitize = numericOnly || field.numeric || isCurrency;
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,7 +119,7 @@ const TextInputField = ({
   );
 };
 
-const SelectField = ({ field, value, onChange, error }: EditableFieldProps) => {
+const SelectField = ({ field, value, onChange, error }: BaseFieldProps) => {
   const normalizedOptions = normalizeOptions(field.options);
   return (
     <LabelDropdown
