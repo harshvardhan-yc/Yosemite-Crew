@@ -1,4 +1,5 @@
 import { TemplateKind } from "@prisma/client";
+import { CANONICAL_PRESCRIPTION_ROW_KEYS } from "@yosemite-crew/types";
 import {
   buildClinicalTemplateSchemaSnapshot,
   getClinicalTemplateBlueprint,
@@ -34,7 +35,7 @@ describe("clinical template blueprints", () => {
     expect(result.invalidFieldPaths).toHaveLength(0);
   });
 
-  it("returns the prescription blueprint with medication and instruction sections", () => {
+  it("returns the prescription blueprint with the canonical medication line", () => {
     const blueprint = getClinicalTemplateBlueprint("PRESCRIPTION");
 
     expect(blueprint.sections.map((section) => section.id)).toEqual([
@@ -42,16 +43,9 @@ describe("clinical template blueprints", () => {
     ]);
     expect(blueprint.sections[0].fields[0].type).toBe("medicationLine");
     expect(blueprint.sections[0].fields[0].key).toBe("medicationLine");
-    expect(blueprint.sections[0].fields[0].rules).toEqual({
-      columns: [
-        "inventoryItemId",
-        "dosage",
-        "frequency",
-        "durationDays",
-        "instructions",
-        "qty",
-      ],
-    });
+    expect(blueprint.sections[0].fields[0].rules?.columns).toEqual(
+      CANONICAL_PRESCRIPTION_ROW_KEYS,
+    );
     expect(blueprint.sections[0].fields[0]).toEqual(
       expect.objectContaining({
         key: "medicationLine",
@@ -133,6 +127,57 @@ describe("clinical template blueprints", () => {
     expect(result.invalidFieldPaths).toContain(
       "PRESCRIPTION.medications.medicationLine.type",
     );
+  });
+
+  it("keeps prescription medication line rules aligned with the shared row contract", () => {
+    const snapshot = buildClinicalTemplateSchemaSnapshot("PRESCRIPTION");
+    const medicationLine = snapshot.sections
+      .find((section) => section.id === "medications")
+      ?.fields.find((field) => field.key === "medicationLine");
+
+    expect(medicationLine?.rules?.columns).toEqual(
+      CANONICAL_PRESCRIPTION_ROW_KEYS,
+    );
+    expect(medicationLine?.rules?.rowKeys).toEqual(
+      CANONICAL_PRESCRIPTION_ROW_KEYS,
+    );
+
+    const validation = validateClinicalTemplateBlueprint(
+      TemplateKind.PRESCRIPTION,
+      {
+        sections: [
+          {
+            id: "medications",
+            title: "Medications",
+            fields: [
+              {
+                ...medicationLine,
+                defaultValue: [
+                  {
+                    inventoryItemId: "inv-1",
+                    medicineName: "Carprofen",
+                    dosageForm: "Tablet",
+                    route: "Oral",
+                    frequency: "SID (once daily)",
+                    durationDays: "5",
+                    durationUnit: "days",
+                    qty: "5",
+                    refill: "0",
+                    instructions: "Give with food",
+                    fulfillment: "IN_HOUSE",
+                    controlledSubstance: false,
+                    prescriptionRequired: true,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(validation.invalidFieldPaths).toHaveLength(0);
+    expect(validation.missingFieldPaths).toHaveLength(0);
   });
 
   it("detects invalid field rules for unit configurations", () => {

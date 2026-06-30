@@ -381,6 +381,84 @@ describe('buildTemplateSchemaSnapshot canonical blueprint merge', () => {
       expect.objectContaining({ name: 'Vitals', category: 'CARE' }),
     ]);
   });
+
+  it('serializes YC-default Task Template (TASK_ASSIGNMENT) task blocks into schedule.taskBlocks', () => {
+    // No explicit kind override: category 'Task Template' must resolve to
+    // TASK_ASSIGNMENT and still serialize its authored task blocks.
+    const snapshot = buildTemplateSchemaSnapshot({
+      name: 'Care pathway',
+      category: 'Task Template',
+      usage: 'Internal',
+      updatedBy: 'user-1',
+      lastUpdated: '',
+      schema: [
+        {
+          id: 'task_blocks',
+          type: 'group',
+          label: 'Schedule tasks',
+          meta: { taskGroup: true },
+          fields: [
+            {
+              id: 'task-1',
+              type: 'group',
+              label: 'Record vitals',
+              meta: { taskBlock: true },
+              fields: [
+                {
+                  id: 'task-1_name',
+                  type: 'input',
+                  label: 'Task title',
+                  defaultValue: 'Record vitals',
+                },
+                {
+                  id: 'task-1_category',
+                  type: 'dropdown',
+                  label: 'Category',
+                  defaultValue: 'CARE',
+                  meta: { taskBlockKey: 'category' },
+                },
+                {
+                  id: 'task-1_recurrence',
+                  type: 'dropdown',
+                  label: 'Repeat',
+                  defaultValue: 'EVERY_6_HOURS',
+                  meta: { taskBlockKey: 'recurrence.type' },
+                },
+                {
+                  id: 'task-1_reminderOffsetMinutes',
+                  type: 'dropdown',
+                  label: 'Reminder',
+                  defaultValue: '5',
+                  meta: { taskBlockKey: 'reminderOffsetMinutes' },
+                },
+                {
+                  id: 'task-1_durationDays',
+                  type: 'number',
+                  label: 'Duration',
+                  defaultValue: '3',
+                  meta: { taskBlockKey: 'durationDays' },
+                },
+              ] as unknown as FormField[],
+            },
+          ] as unknown as FormField[],
+        },
+      ] as unknown as FormField[],
+    });
+
+    const scheduleSection = snapshot.sections.find((section) => section.id === 'schedule');
+    const taskBlocks = scheduleSection?.fields.find((field) => field.key === 'taskBlocks');
+    expect(taskBlocks?.defaultValue).toEqual([
+      expect.objectContaining({
+        name: 'Record vitals',
+        category: 'CARE',
+        taskKind: 'CUSTOM',
+        reminderOffsetMinutes: 5,
+        durationDays: 3,
+        // EVERY_6_HOURS resolves to a CUSTOM recurrence with a cron.
+        recurrence: { type: 'CUSTOM', cronExpression: '0 */6 * * *' },
+      }),
+    ]);
+  });
 });
 
 describe('mapTemplateToUI', () => {
@@ -450,6 +528,189 @@ describe('buildTemplatePayload appliesTo linking', () => {
     expect(payload.ownership).toBe('YC_LIBRARY');
     expect(payload.organisationId).toBeUndefined();
     expect(payload.kind).toBe('PRESCRIPTION');
+  });
+
+  it('serializes every prescription medication default into medicationLine rows', () => {
+    const payload = buildTemplatePayload(
+      form({
+        category: 'Prescription',
+        schema: [
+          {
+            id: 'medications',
+            type: 'group',
+            label: 'Medications',
+            meta: { medicationGroup: true },
+            fields: [
+              {
+                id: 'inv-1_group',
+                type: 'group',
+                label: 'Carprofen',
+                meta: {
+                  medicineId: 'inv-1',
+                  inventoryItemId: 'inv-1',
+                  medicineName: 'Carprofen',
+                },
+                fields: [
+                  {
+                    id: 'inv-1_name',
+                    type: 'input',
+                    label: 'Name',
+                    defaultValue: 'Carprofen',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'medicineName' },
+                  },
+                  {
+                    id: 'inv-1_brand',
+                    type: 'input',
+                    label: 'Brand',
+                    defaultValue: 'Rimadyl',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'brand' },
+                  },
+                  {
+                    id: 'inv-1_genericName',
+                    type: 'input',
+                    label: 'Generic name',
+                    defaultValue: 'Carprofen',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'genericName' },
+                  },
+                  {
+                    id: 'inv-1_sku',
+                    type: 'input',
+                    label: 'SKU',
+                    defaultValue: 'SKU-CARP',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'sku' },
+                  },
+                  {
+                    id: 'inv-1_strength',
+                    type: 'input',
+                    label: 'Strength',
+                    defaultValue: '25',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'strength' },
+                  },
+                  {
+                    id: 'inv-1_strengthUnit',
+                    type: 'input',
+                    label: 'Strength unit',
+                    defaultValue: 'mg',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'strengthUnit' },
+                  },
+                  {
+                    id: 'inv-1_form',
+                    type: 'input',
+                    label: 'Form',
+                    defaultValue: 'Tablet',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'dosageForm' },
+                  },
+                  {
+                    id: 'inv-1_route',
+                    type: 'input',
+                    label: 'Route',
+                    defaultValue: 'Oral',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'route' },
+                  },
+                  {
+                    id: 'inv-1_frequency',
+                    type: 'input',
+                    label: 'Frequency',
+                    defaultValue: 'BID (twice daily)',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'frequency' },
+                  },
+                  {
+                    id: 'inv-1_duration',
+                    type: 'input',
+                    label: 'Duration',
+                    defaultValue: '7',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'durationDays' },
+                  },
+                  {
+                    id: 'inv-1_durationUnit',
+                    type: 'input',
+                    label: 'Duration unit',
+                    defaultValue: 'days',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'durationUnit' },
+                  },
+                  {
+                    id: 'inv-1_qty',
+                    type: 'number',
+                    label: 'Quantity',
+                    defaultValue: '14',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'qty' },
+                  },
+                  {
+                    id: 'inv-1_refill',
+                    type: 'number',
+                    label: 'Refills',
+                    defaultValue: '1',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'refill' },
+                  },
+                  {
+                    id: 'inv-1_remark',
+                    type: 'textarea',
+                    label: 'Instructions',
+                    defaultValue: 'Give with food',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'instructions' },
+                  },
+                  {
+                    id: 'inv-1_fulfillment',
+                    type: 'input',
+                    label: 'Fulfillment',
+                    defaultValue: 'IN_HOUSE',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'fulfillment' },
+                  },
+                  {
+                    id: 'inv-1_priceCents',
+                    type: 'number',
+                    label: 'Price (cents)',
+                    defaultValue: 1800,
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'priceCents' },
+                  },
+                  {
+                    id: 'inv-1_controlledSubstance',
+                    type: 'input',
+                    label: 'Controlled substance',
+                    defaultValue: 'false',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'controlledSubstance' },
+                  },
+                  {
+                    id: 'inv-1_prescriptionRequired',
+                    type: 'input',
+                    label: 'Prescription required',
+                    defaultValue: 'true',
+                    meta: { inventoryItemId: 'inv-1', prescriptionField: 'prescriptionRequired' },
+                  },
+                ],
+              },
+            ],
+          },
+        ] as unknown as FormField[],
+      }),
+      'org-1'
+    );
+
+    const medicationLine = payload.schemaSnapshot.sections[0].fields[0] as {
+      defaultValue?: Array<Record<string, unknown>>;
+    };
+    expect(medicationLine.defaultValue?.[0]).toMatchObject({
+      inventoryItemId: 'inv-1',
+      medicineId: 'inv-1',
+      medicineName: 'Carprofen',
+      brand: 'Rimadyl',
+      genericName: 'Carprofen',
+      sku: 'SKU-CARP',
+      strength: '25',
+      strengthUnit: 'mg',
+      dosageForm: 'Tablet',
+      route: 'Oral',
+      frequency: 'BID (twice daily)',
+      durationDays: '7',
+      durationUnit: 'days',
+      qty: '14',
+      refill: '1',
+      instructions: 'Give with food',
+      fulfillment: 'IN_HOUSE',
+      priceCents: 1800,
+      controlledSubstance: 'false',
+      prescriptionRequired: 'true',
+    });
   });
 
   it('drops empty legacy prescription instructions and notes sections when mapping to UI', () => {

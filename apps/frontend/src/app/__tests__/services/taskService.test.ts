@@ -4,6 +4,7 @@ import {
   createTaskLibrary,
   createTask,
   createTaskTemplate,
+  deleteTask,
   getTaskLibrary,
   getTaskLibraryById,
   getTaskTemplateById,
@@ -28,6 +29,7 @@ const taskStoreState: any = {
   status: 'idle',
   setTasksForOrg: jest.fn(),
   upsertTask: jest.fn(),
+  removeTask: jest.fn(),
   tasksById: {},
 };
 
@@ -137,8 +139,30 @@ describe('taskService', () => {
 
     await updateTask({ _id: 't1' } as any);
 
-    expect(patchDataMock).toHaveBeenCalledWith('/v1/task/pms/t1', expect.any(Object));
+    // No scope → no third (config) arg with params.
+    expect(patchDataMock).toHaveBeenCalledWith('/v1/task/pms/t1', expect.any(Object), undefined);
     expect(taskStoreState.upsertTask).toHaveBeenCalled();
+  });
+
+  it('passes a recurrence scope to the update as a query param', async () => {
+    patchDataMock.mockResolvedValue({ data: { _id: 't1' } });
+
+    await updateTask({ _id: 't1' } as any, 'ALL');
+
+    expect(patchDataMock).toHaveBeenCalledWith('/v1/task/pms/t1', expect.any(Object), {
+      params: { scope: 'ALL' },
+    });
+  });
+
+  it('deletes a task (with optional recurrence scope) and removes it from the store', async () => {
+    deleteDataMock.mockResolvedValueOnce({ data: undefined });
+
+    await deleteTask('t1', 'THIS_AND_FOLLOWING');
+
+    expect(deleteDataMock).toHaveBeenCalledWith('/v1/task/pms/t1', {
+      scope: 'THIS_AND_FOLLOWING',
+    });
+    expect(taskStoreState.removeTask).toHaveBeenCalledWith('t1');
   });
 
   it('changes task status', async () => {

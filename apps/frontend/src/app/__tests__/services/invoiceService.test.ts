@@ -6,11 +6,12 @@ import {
   loadInvoicesForOrgPrimaryOrg,
   markAppointmentReadyForBilling,
   markInvoicePaid,
+  reverseAppointmentReadyForBilling,
   updateInvoicePaymentCollectionMethod,
 } from '@/app/features/billing/services/invoiceService';
 import { useInvoiceStore } from '@/app/stores/invoiceStore';
 import { useOrgStore } from '@/app/stores/orgStore';
-import { getData, patchData, postData } from '@/app/services/axios';
+import { deleteData, getData, patchData, postData } from '@/app/services/axios';
 
 type InvoiceState = {
   startLoading: jest.Mock;
@@ -36,6 +37,7 @@ jest.mock('@/app/services/axios', () => ({
   getData: jest.fn(),
   patchData: jest.fn(),
   postData: jest.fn(),
+  deleteData: jest.fn(),
 }));
 
 jest.mock('@yosemite-crew/types', () => ({
@@ -768,6 +770,57 @@ describe('invoiceService', () => {
     );
   });
 
+  it('reverses ready for billing through finance endpoint', async () => {
+    (deleteData as jest.Mock).mockResolvedValueOnce({
+      data: {
+        data: { appointmentId: 'appt-1', billingState: 'DRAFT' },
+        meta: null,
+        error: null,
+      },
+    });
+
+    await reverseAppointmentReadyForBilling('appt-1', {
+      organisationId: 'org-1',
+      visitId: 'enc-1',
+    });
+
+    expect(deleteData).toHaveBeenCalledWith('/v1/finance/appointments/appt-1/ready-for-billing');
+  });
+
+  it('falls back to appointment route when reverse finance route is not deployed', async () => {
+    (deleteData as jest.Mock)
+      .mockRejectedValueOnce({
+        response: { status: 404, data: { message: 'Finance route not found' } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: { appointmentId: 'appt-1', billingState: 'DRAFT' },
+          meta: null,
+          error: null,
+        },
+      });
+
+    await reverseAppointmentReadyForBilling('appt-1', {
+      organisationId: 'org-1',
+      visitId: 'enc-1',
+    });
+
+    expect(deleteData).toHaveBeenNthCalledWith(
+      2,
+      '/fhir/v1/appointment/pms/org-1/appt-1/ready-for-billing'
+    );
+  });
+
+  it('propagates a 409 when reversing ready for billing with payments applied', async () => {
+    (deleteData as jest.Mock).mockRejectedValueOnce({
+      response: { status: 409, data: { message: 'Invoice already has payments applied' } },
+    });
+
+    await expect(
+      reverseAppointmentReadyForBilling('appt-1', { organisationId: 'org-1' })
+    ).rejects.toMatchObject({ response: { status: 409 } });
+  });
+
   it('falls back to appointment ready-for-billing route when finance route is not deployed', async () => {
     (postData as jest.Mock).mockRejectedValueOnce({
       response: { status: 404, data: { message: 'Finance route not found' } },
@@ -843,6 +896,57 @@ describe('invoiceService', () => {
         notes: 'Ready',
       }
     );
+  });
+
+  it('reverses appointment ready for billing through finance endpoint', async () => {
+    (deleteData as jest.Mock).mockResolvedValueOnce({
+      data: {
+        data: { appointmentId: 'appt-1', billingState: 'DRAFT' },
+        meta: null,
+        error: null,
+      },
+    });
+
+    await reverseAppointmentReadyForBilling('appt-1', { organisationId: 'org-1' });
+
+    expect(deleteData).toHaveBeenCalledWith('/v1/finance/appointments/appt-1/ready-for-billing');
+  });
+
+  it('falls back to appointment route when finance reverse route is not deployed', async () => {
+    (deleteData as jest.Mock)
+      .mockRejectedValueOnce({
+        response: { status: 404, data: { message: 'Finance route not found' } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: { appointmentId: 'appt-1', billingState: 'DRAFT' },
+          meta: null,
+          error: null,
+        },
+      });
+
+    await reverseAppointmentReadyForBilling('appt-1', { organisationId: 'org-1' });
+
+    expect(deleteData).toHaveBeenNthCalledWith(
+      2,
+      '/fhir/v1/appointment/pms/org-1/appt-1/ready-for-billing'
+    );
+  });
+
+  it('propagates non-404 errors when reversing ready for billing (e.g. 409 paid invoice)', async () => {
+    (deleteData as jest.Mock).mockRejectedValueOnce({
+      response: { status: 409, data: { message: 'payments applied' } },
+    });
+
+    await expect(
+      reverseAppointmentReadyForBilling('appt-1', { organisationId: 'org-1' })
+    ).rejects.toMatchObject({ response: { status: 409 } });
+  });
+
+  it('throws when reversing ready for billing without an appointment id', async () => {
+    await expect(
+      reverseAppointmentReadyForBilling('', { organisationId: 'org-1' })
+    ).rejects.toThrow('Appointment ID missing');
   });
 
   it('extracts appointmentId from account reference with query string (normalizeReferenceTail)', async () => {

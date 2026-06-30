@@ -19,7 +19,10 @@ import {
 import { loadWorkspaceClinicalArtifacts } from '@/app/features/appointments/services/workspaceClinicalService';
 import { listSoapTemplatesForWorkspace } from '@/app/features/appointments/services/workspaceTemplateService';
 import { getAppointmentWorkspaceBootstrap } from '@/app/features/appointments/services/workspaceAggregateService';
-import { markAppointmentReadyForBilling } from '@/app/features/billing/services/invoiceService';
+import {
+  markAppointmentReadyForBilling,
+  reverseAppointmentReadyForBilling,
+} from '@/app/features/billing/services/invoiceService';
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
@@ -172,6 +175,7 @@ jest.mock('@/app/features/appointments/services/workspaceAggregateService', () =
 
 jest.mock('@/app/features/billing/services/invoiceService', () => ({
   markAppointmentReadyForBilling: jest.fn().mockResolvedValue({}),
+  reverseAppointmentReadyForBilling: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('@/app/stores/revampCatalogStore', () => ({
@@ -567,6 +571,8 @@ describe('AppointmentWorkspace container', () => {
           organisationId: 'org-1',
           status: 'ACTIVE',
           isBookable: true,
+          // Only inpatient-bookable items appear in the hospitalization picker.
+          isInpatientPreferred: true,
           name: 'Hospitalization monitoring',
           grossAmount: 50,
           maxDiscount: 5,
@@ -578,6 +584,7 @@ describe('AppointmentWorkspace container', () => {
           organisationId: 'org-1',
           status: 'ACTIVE',
           isBookable: true,
+          isInpatientPreferred: true,
           name: 'Inpatient care package',
           serverFinalAmount: 120,
           additionalDiscount: 12,
@@ -1104,6 +1111,100 @@ describe('AppointmentWorkspace container', () => {
           .value
       ).toBe(true);
     });
+  });
+
+  it('reverses ready for billing on the server when the toggle is un-ticked', async () => {
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(new Date(), true),
+            encounterId: 'enc-1',
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    // Tick ready first, then un-tick it so the second click drives the reverse call.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+
+    await waitFor(() => {
+      expect(reverseAppointmentReadyForBilling).toHaveBeenCalledWith(
+        'appt-workspace',
+        expect.objectContaining({
+          organisationId: 'org-1',
+          patientId: 'comp-1',
+          parentId: 'parent-1',
+          visitId: 'enc-1',
+        })
+      );
+    });
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(false);
+    });
+  });
+
+  it('keeps the toggle marked and warns when reversal is rejected with a 409 (paid invoice)', async () => {
+    (reverseAppointmentReadyForBilling as jest.Mock).mockRejectedValueOnce({
+      response: { status: 409, data: { message: 'payments applied' } },
+    });
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(new Date(), true),
+            encounterId: 'enc-1',
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    // Tick ready first so the next click attempts a reverse the server rejects with 409.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+
+    await waitFor(() => {
+      expect(reverseAppointmentReadyForBilling).toHaveBeenCalled();
+    });
+    // The optimistic flip is rolled back, so it stays marked after the 409.
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(true);
+    });
+    expect(mockNotify).toHaveBeenCalledWith(
+      'warning',
+      expect.objectContaining({ title: 'Can’t unmark ready for billing' })
+    );
   });
 
   it('wires active step callbacks from Diagnostics through Invoice', async () => {

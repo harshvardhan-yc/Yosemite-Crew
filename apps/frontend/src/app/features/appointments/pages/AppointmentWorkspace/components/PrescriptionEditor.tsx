@@ -23,13 +23,16 @@ import type {
   PrescriptionFulfillment,
   PrescriptionItem,
 } from '@/app/features/appointments/types/workspace';
+import type { PrescriptionTemplateOption } from '@/app/features/appointments/services/workspaceTemplateService';
 
 type PrescriptionEditorProps = {
   items: PrescriptionItem[];
   catalogItems?: Omit<PrescriptionItem, 'id'>[];
+  templateItems?: PrescriptionTemplateOption[];
   readOnly: boolean;
   deleteLocked?: boolean;
   onAddItem: (item: Omit<PrescriptionItem, 'id'>) => void;
+  onApplyTemplate?: (template: PrescriptionTemplateOption) => void;
   onUpdateItem: (id: string, patch: Partial<PrescriptionItem>) => void;
   onRemoveItem: (id: string) => void;
   onPrint: () => void;
@@ -42,6 +45,7 @@ const FULFILLMENT_LABELS: Record<PrescriptionFulfillment, string> = {
 
 const FULFILLMENT_OPTIONS = Object.keys(FULFILLMENT_LABELS) as PrescriptionFulfillment[];
 const EMPTY_CATALOG_ITEMS: Omit<PrescriptionItem, 'id'>[] = [];
+const EMPTY_TEMPLATE_ITEMS: PrescriptionTemplateOption[] = [];
 
 const formatCents = (cents: number): string => formatMoney(cents / 100, 'USD');
 
@@ -368,9 +372,11 @@ const PrescriptionRow = ({
 const PrescriptionEditor = ({
   items,
   catalogItems = EMPTY_CATALOG_ITEMS,
+  templateItems = EMPTY_TEMPLATE_ITEMS,
   readOnly,
   deleteLocked = readOnly,
   onAddItem,
+  onApplyTemplate,
   onUpdateItem,
   onRemoveItem,
   onPrint,
@@ -390,6 +396,14 @@ const PrescriptionEditor = ({
     });
   }, [catalogItems, search]);
 
+  const templateMatches = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (query === '') return [];
+    return templateItems.filter((template) => template.name.toLowerCase().includes(query));
+  }, [search, templateItems]);
+
+  const hasSearchMatches = matches.length > 0 || templateMatches.length > 0;
+
   return (
     <div className="flex flex-col gap-3">
       {/* Search + print row sits above the floating container (matches the other
@@ -400,41 +414,59 @@ const PrescriptionEditor = ({
           label="Print Labels"
           onClick={onPrint}
         />
-        <div ref={searchRef} className="relative w-full sm:max-w-90">
-          <Search
-            value={search}
-            setSearch={setSearch}
-            placeholder="Search by medicine, brand or composition..."
-            label="Search medicines"
-            className="w-full!"
-          />
-          <SearchResultsDropdown
-            anchorRef={searchRef}
-            open={matches.length > 0}
-            onClose={() => setSearch('')}
-          >
-            <ul>
-              {matches.map((item) => (
-                <WorkspaceSearchResultRow
-                  key={`${item.medicineName}-${item.sku ?? ''}`}
-                  name={
-                    joinValue(item.medicineName, item.brand ? `(${item.brand})` : undefined) ??
-                    item.medicineName
-                  }
-                  badge={
-                    <span className="rounded-2xl bg-primary-100 px-2 py-0.5 text-caption-2 font-medium text-text-brand">
-                      Medication
-                    </span>
-                  }
-                  onSelect={() => {
-                    onAddItem(item);
-                    setSearch('');
-                  }}
-                />
-              ))}
-            </ul>
-          </SearchResultsDropdown>
-        </div>
+        {!readOnly && (
+          <div ref={searchRef} className="relative w-full sm:max-w-90">
+            <Search
+              value={search}
+              setSearch={setSearch}
+              placeholder="Search medicines or prescription templates..."
+              label="Search medicines or prescription templates"
+              className="w-full!"
+            />
+            <SearchResultsDropdown
+              anchorRef={searchRef}
+              open={hasSearchMatches}
+              onClose={() => setSearch('')}
+            >
+              <ul>
+                {templateMatches.map((template) => (
+                  <WorkspaceSearchResultRow
+                    key={template.id}
+                    name={template.name}
+                    badge={
+                      <span className="rounded-2xl bg-neutral-100 px-2 py-0.5 text-caption-2 font-medium text-text-secondary">
+                        Template
+                      </span>
+                    }
+                    origin={`${template.items.length} medication${template.items.length === 1 ? '' : 's'}`}
+                    onSelect={() => {
+                      onApplyTemplate?.(template);
+                      setSearch('');
+                    }}
+                  />
+                ))}
+                {matches.map((item) => (
+                  <WorkspaceSearchResultRow
+                    key={`${item.medicineName}-${item.sku ?? ''}`}
+                    name={
+                      joinValue(item.medicineName, item.brand ? `(${item.brand})` : undefined) ??
+                      item.medicineName
+                    }
+                    badge={
+                      <span className="rounded-2xl bg-primary-100 px-2 py-0.5 text-caption-2 font-medium text-text-brand">
+                        Medication
+                      </span>
+                    }
+                    onSelect={() => {
+                      onAddItem(item);
+                      setSearch('');
+                    }}
+                  />
+                ))}
+              </ul>
+            </SearchResultsDropdown>
+          </div>
+        )}
       </div>
 
       <SectionContainer

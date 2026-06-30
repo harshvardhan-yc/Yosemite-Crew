@@ -53,12 +53,22 @@ const SPECIES_IMAGE_TYPES = new Set<ImageType>(['dog', 'cat', 'horse', 'other'])
 
 const resolveSafeBackPath = (candidate: string | null, source: string | null): string => {
   if (candidate?.startsWith('/') && !candidate.startsWith('//')) {
-    return candidate;
+    return source === 'companions' ? removeCompanionDeepLinkParam(candidate) : candidate;
   }
   if (source === 'appointments') {
     return APPOINTMENTS_BACK_PATH;
   }
   return FALLBACK_BACK_PATH;
+};
+
+const removeCompanionDeepLinkParam = (path: string): string => {
+  const url = new URL(path, 'https://yosemite.local');
+  if (url.pathname !== FALLBACK_BACK_PATH) return path;
+
+  url.searchParams.delete('companionId');
+  const search = url.searchParams.toString();
+  const query = search ? `?${search}` : '';
+  return `${url.pathname}${query}${url.hash}`;
 };
 
 const resolveCompanionImageType = (type?: string): ImageType => {

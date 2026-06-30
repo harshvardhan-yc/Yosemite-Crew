@@ -7,7 +7,7 @@ import {
 } from '@yosemite-crew/types';
 import { useInvoiceStore } from '@/app/stores/invoiceStore';
 import { useOrgStore } from '@/app/stores/orgStore';
-import { getData, patchData, postData } from '@/app/services/axios';
+import { deleteData, getData, patchData, postData } from '@/app/services/axios';
 import type {
   InvoiceLineItem as WorkspaceInvoiceLine,
   InvoiceStatus as WorkspaceInvoiceStatus,
@@ -174,6 +174,17 @@ const markAppointmentReadyForBillingViaAppointmentRoute = async (
   const res = await patchData<FinanceResponse>(
     `/fhir/v1/appointment/pms/${input.organisationId}/${appointmentId}/ready-for-billing`,
     input
+  );
+  return unwrapFinanceData(res.data);
+};
+
+const reverseAppointmentReadyForBillingViaAppointmentRoute = async (
+  appointmentId: string,
+  input: ReadyForBillingInput
+): Promise<unknown> => {
+  if (!input.organisationId) throw new Error('Organisation ID missing');
+  const res = await deleteData<FinanceResponse>(
+    `/fhir/v1/appointment/pms/${input.organisationId}/${appointmentId}/ready-for-billing`
   );
   return unwrapFinanceData(res.data);
 };
@@ -739,6 +750,25 @@ export const markAppointmentReadyForBilling = async (
       }
       throw retryError;
     }
+  }
+};
+
+export const reverseAppointmentReadyForBilling = async (
+  appointmentId: string,
+  input: ReadyForBillingInput
+): Promise<unknown> => {
+  if (!appointmentId) throw new Error('Appointment ID missing');
+  const endpoint = `${FINANCE_BASE_PATH}/appointments/${appointmentId}/ready-for-billing`;
+  try {
+    const res = await deleteData<FinanceResponse>(endpoint);
+    return unwrapFinanceData(res.data);
+  } catch (error) {
+    // The finance route isn't deployed on every backend fork — fall back to the
+    // appointment PMS route on a 404, mirroring the forward (mark) direction.
+    if (getErrorStatus(error) === 404) {
+      return reverseAppointmentReadyForBillingViaAppointmentRoute(appointmentId, input);
+    }
+    throw error;
   }
 };
 

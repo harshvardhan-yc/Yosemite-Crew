@@ -85,6 +85,16 @@ describe('TotalBillContainer', () => {
     expect(onUpdateItem).toHaveBeenCalledWith('line-1', { discountCents: 2000 });
   });
 
+  it('hides the remove control for a non-removable (booked) line, shows it otherwise', () => {
+    renderBill({ ...baseItem, removable: false });
+    expect(
+      screen.queryByRole('button', { name: /remove arthritis care package/i })
+    ).not.toBeInTheDocument();
+
+    renderBill({ ...baseItem, id: 'line-2', name: 'Bandage', removable: true });
+    expect(screen.getByRole('button', { name: /remove bandage/i })).toBeInTheDocument();
+  });
+
   it('shows package breakdown and prescription warnings in glass tooltip content', () => {
     renderBill(baseItem, { incompleteItemNames: new Set(['arthritis care package']) });
 

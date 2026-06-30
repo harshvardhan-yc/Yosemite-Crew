@@ -132,14 +132,20 @@ const shouldHideSearch = (pathname: string): boolean =>
   pathname.startsWith('/inventory') ||
   (pathname.startsWith('/integrations') && !pathname.startsWith('/integrations/idexx-workspace'));
 
-const getSearchPlaceholder = (pathname: string, terminologyText: (s: string) => string): string => {
+const getSearchPlaceholder = (
+  pathname: string,
+  terminologyText: (s: string) => string,
+  useOrgTerminology: boolean
+): string => {
   if (pathname.startsWith('/appointments/idexx-workspace')) return 'Search result / order';
   if (pathname.startsWith('/appointments')) return 'Search appointments';
   if (pathname.startsWith('/inventory')) return 'Search inventory';
   if (pathname.startsWith('/integrations/idexx-workspace')) return 'Search result / order';
   if (pathname.startsWith('/integrations')) return 'Search integrations';
   if (pathname.startsWith('/forms')) return 'Search forms';
-  if (pathname.startsWith('/companions')) return terminologyText('Search companions');
+  if (pathname.startsWith('/companions')) {
+    return useOrgTerminology ? terminologyText('Search companions') : 'Search companions';
+  }
   if (pathname.startsWith('/tasks')) return 'Search tasks';
   if (pathname.startsWith('/finance')) return 'Search invoices';
   if (pathname.startsWith('/organization/specialities')) return 'Search specialities';
@@ -154,6 +160,7 @@ const UserHeader = () => {
   const attributes = useAuthStore((s) => s.attributes);
   const profile = usePrimaryOrgProfile();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const isDev = pathname.startsWith('/developers');
   const { isEnabled: merckEnabled } = useResolvedMerckIntegrationForPrimaryOrg();
   const routes = isDev ? headerDevRoutes : headerAppRoutes;
@@ -194,6 +201,10 @@ const UserHeader = () => {
     if (selectOrg) setSelectOrg(false);
     if (selectProfile) setSelectProfile(false);
   }
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const closeMenuOnDesktop = () => {
@@ -301,7 +312,7 @@ const UserHeader = () => {
   const orgMissing = !primaryOrg;
   const orgVerified = !!primaryOrg?.isVerified;
 
-  const searchPlaceholder = getSearchPlaceholder(pathname, terminologyText);
+  const searchPlaceholder = getSearchPlaceholder(pathname, terminologyText, mounted);
 
   const hideSearch = shouldHideSearch(pathname);
   const primaryOrgId = primaryOrg?._id?.toString();

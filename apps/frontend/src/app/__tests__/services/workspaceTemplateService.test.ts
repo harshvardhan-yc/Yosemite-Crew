@@ -8,6 +8,7 @@ import {
   getWorkspaceTemplateById,
   getInpatientScheduleForEncounter,
   listDischargeSummaryTemplates,
+  listPrescriptionTemplatesForWorkspace,
   listSoapTemplatesForWorkspace,
   listVitalsTemplates,
   listWorkspaceTemplates,
@@ -17,6 +18,7 @@ import {
   resumeInpatientScheduleTemplate,
   submitWorkspaceTemplateInstance,
   templateToSoapTemplate,
+  templateToPrescriptionTemplate,
   updateWorkspaceTemplateCatalogLinks,
   updateWorkspaceTemplateInstance,
 } from '@/app/features/appointments/services/workspaceTemplateService';
@@ -135,6 +137,97 @@ describe('workspaceTemplateService', () => {
     });
   });
 
+  it('loads published prescription templates with authored medication rows', async () => {
+    getDataMock
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            ...template('tpl-rx', 'Otitis prescription'),
+            kind: 'PRESCRIPTION',
+            versions: [
+              {
+                id: 'ver-rx',
+                templateId: 'tpl-rx',
+                version: 1,
+                schemaSnapshot: {
+                  sections: [
+                    {
+                      id: 'medications',
+                      title: 'Medications',
+                      fields: [
+                        {
+                          key: 'medicationLine',
+                          label: 'Medication lines',
+                          type: 'medicationLine',
+                          defaultValue: [
+                            {
+                              inventoryItemId: 'inv-ear',
+                              medicineName: 'Ear drops',
+                              brand: 'OtiCalm',
+                              genericName: 'Ofloxacin',
+                              sku: 'SKU-OTI',
+                              strength: '0.3',
+                              strengthUnit: '%',
+                              dosageForm: 'Drops',
+                              route: 'Otic',
+                              frequency: 'BID (twice daily)',
+                              durationDays: '7',
+                              durationUnit: 'days',
+                              qty: '1',
+                              refill: '0',
+                              instructions: 'Apply after cleaning',
+                              fulfillment: 'IN_HOUSE',
+                              priceCents: 2500,
+                              controlledSubstance: false,
+                              prescriptionRequired: true,
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                renderConfigSnapshot: null,
+                validationSnapshot: null,
+                createdBy: 'user-1',
+                createdAt: new Date('2026-04-20T09:00:00.000Z'),
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ data: [] });
+
+    const templates = await listPrescriptionTemplatesForWorkspace('org-1');
+
+    expect(getDataMock).toHaveBeenNthCalledWith(1, '/v1/templates/pms/templates/library', {
+      kind: 'PRESCRIPTION',
+      status: 'PUBLISHED',
+    });
+    expect(templates).toHaveLength(1);
+    expect(templates[0].items[0]).toMatchObject({
+      medicineName: 'Ear drops',
+      brand: 'OtiCalm',
+      genericName: 'Ofloxacin',
+      sku: 'SKU-OTI',
+      strength: '0.3',
+      strengthUnit: '%',
+      dosageForm: 'Drops',
+      route: 'Otic',
+      frequency: 'BID (twice daily)',
+      durationDays: '7',
+      durationUnit: 'days',
+      qty: '1',
+      refill: '0',
+      instructions: 'Apply after cleaning',
+      fulfillment: 'IN_HOUSE',
+      priceCents: 2500,
+      controlledSubstance: false,
+      prescriptionRequired: true,
+    });
+  });
+
   it('maps backend templates to SOAP template options', () => {
     expect(templateToSoapTemplate({ ...template('tpl-yc'), ownership: 'YC_LIBRARY' })).toEqual({
       id: 'tpl-yc',
@@ -143,6 +236,55 @@ describe('workspaceTemplateService', () => {
       isDefault: true,
       version: 1,
       content: undefined,
+    });
+  });
+
+  it('maps a prescription template snapshot to a reusable search option', () => {
+    const mapped = templateToPrescriptionTemplate({
+      ...template('tpl-rx', 'Post-op meds'),
+      kind: 'PRESCRIPTION',
+      schemaSnapshot: {
+        sections: [
+          {
+            id: 'medications',
+            title: 'Medications',
+            fields: [
+              {
+                key: 'medicationLine',
+                label: 'Medication lines',
+                type: 'medicationLine',
+                defaultValue: [
+                  {
+                    inventoryItemId: 'inv-pain',
+                    medicineName: 'Carprofen',
+                    dosageForm: 'Tablet',
+                    route: 'Oral',
+                    frequency: 'SID (once daily)',
+                    durationDays: '5',
+                    qty: '5',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    } as unknown as TemplateLike);
+
+    expect(mapped).toMatchObject({
+      id: 'tpl-rx',
+      name: 'Post-op meds',
+      items: [
+        {
+          inventoryItemId: 'inv-pain',
+          medicineName: 'Carprofen',
+          dosageForm: 'Tablet',
+          route: 'Oral',
+          frequency: 'SID (once daily)',
+          durationDays: '5',
+          qty: '5',
+        },
+      ],
     });
   });
 
