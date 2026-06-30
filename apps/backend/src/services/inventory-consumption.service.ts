@@ -56,6 +56,7 @@ type PrescriptionDispenseRequestContext = {
 
 type PrescriptionDispenseRequestMedication = Record<string, unknown> & {
   inventoryItemName?: string | null;
+  inventoryItemCode?: string | null;
   frequency?: string | null;
   frequencyPerDay?: number | null;
   durationDays?: number | null;
@@ -537,10 +538,22 @@ const enrichDispenseRequestMedications = async (
     .map((item) => asNonEmptyString(item.inventoryItemId))
     .filter((value): value is string => Boolean(value));
   const skus = normalized
-    .map((item) => asNonEmptyString(item.inventoryItemSku))
+    .map(
+      (item) =>
+        asNonEmptyString(item.inventoryItemSku) ?? asNonEmptyString(item.sku),
+    )
     .filter((value): value is string => Boolean(value));
+  const codes = normalized.flatMap((item) =>
+    [
+      asNonEmptyString(item.inventoryItemCode),
+      asNonEmptyString(item.medicationCode),
+      asNonEmptyString(item.drugCode),
+      asNonEmptyString(item.code),
+      asNonEmptyString(item.name),
+    ].filter((value): value is string => Boolean(value)),
+  );
 
-  if (!ids.length && !skus.length) {
+  if (!ids.length && !skus.length && !codes.length) {
     return params.medications;
   }
 
@@ -550,6 +563,7 @@ const enrichDispenseRequestMedications = async (
       OR: [
         ...(ids.length ? [{ id: { in: ids } }] : []),
         ...(skus.length ? [{ sku: { in: skus } }] : []),
+        ...(codes.length ? [{ name: { in: codes } }] : []),
       ],
     },
     select: {
@@ -575,10 +589,24 @@ const enrichDispenseRequestMedications = async (
           Boolean(entry[0]),
       ),
   );
+  const byCode = new Map(
+    inventoryItems
+      .map((item) => [normalizeKey(item.name), item] as const)
+      .filter(
+        (entry): entry is readonly [string, (typeof inventoryItems)[number]] =>
+          Boolean(entry[0]),
+      ),
+  );
 
   return normalized.map<PrescriptionDispenseRequestMedication>((item) => {
     const itemId = asNonEmptyString(item.inventoryItemId);
     const itemSku = asNonEmptyString(item.inventoryItemSku);
+    const itemCode =
+      asNonEmptyString(item.inventoryItemCode) ??
+      asNonEmptyString(item.medicationCode) ??
+      asNonEmptyString(item.drugCode) ??
+      asNonEmptyString(item.code) ??
+      asNonEmptyString(item.name);
     const frequency = asNonEmptyString(item.frequency ?? item.freq);
     const doseParts = readDoseParts(item.dosage ?? item.dose);
     const durationDays =
@@ -590,7 +618,8 @@ const enrichDispenseRequestMedications = async (
     const doseQty = readPositiveNumber(item.doseQty) ?? doseParts.doseQty;
     const inventoryItem =
       (itemId ? byId.get(itemId) : undefined) ??
-      (itemSku ? bySku.get(itemSku) : undefined);
+      (itemSku ? bySku.get(itemSku) : undefined) ??
+      (itemCode ? byCode.get(normalizeKey(itemCode)) : undefined);
     const stockUnitQty =
       readPositiveInteger(item.stockUnitQty ?? item.stockUnitQuantity) ??
       inventoryItem?.packageQuantity ??
@@ -615,6 +644,7 @@ const enrichDispenseRequestMedications = async (
         asNonEmptyString(item.inventoryItemName) ??
         asNonEmptyString(item.medication) ??
         null,
+      inventoryItemCode: itemCode ?? null,
       frequency,
       frequencyPerDay,
       durationDays,

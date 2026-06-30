@@ -468,6 +468,89 @@ describe("InventoryConsumptionService", () => {
     );
   });
 
+  it("enriches dispense requests by medication name when ids are missing", async () => {
+    mockedPrisma.inventoryItem.findMany.mockResolvedValueOnce([
+      {
+        id: "item-name-1",
+        sku: "calpol-strip-10",
+        name: "Calpol",
+        stockUnitType: "strip",
+        unitOfMeasure: "mg",
+        packageQuantity: 10,
+        sellingPrice: 12.34,
+        unitCost: 8.5,
+        prescriptionRequired: true,
+        controlledItem: false,
+      },
+    ]);
+    mockedPrisma.prescriptionDispenseRequest.findFirst.mockResolvedValueOnce(
+      null,
+    );
+    mockedPrisma.prescriptionDispenseRequest.create.mockResolvedValueOnce({
+      id: "request-name-1",
+      prescriptionId: "rx-name-1",
+      organisationId: "org-1",
+      status: "PENDING",
+      medications: [],
+      metadata: null,
+      requestedBy: "user-1",
+      reviewedBy: null,
+      reviewedAt: null,
+      requestedAt: new Date("2026-01-01T00:00:00.000Z"),
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    await InventoryConsumptionService.createPrescriptionDispenseRequest({
+      organisationId: "org-1",
+      prescriptionId: "rx-name-1",
+      medications: [
+        {
+          name: "Calpol",
+          quantity: 24,
+          frequency: "BID",
+          duration: "12 days",
+          dosage: "1 Tablet",
+          sourceLineKey: "line-name-1",
+        },
+      ],
+      requestedBy: "user-1",
+    });
+
+    expect(mockedPrisma.inventoryItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({
+              name: expect.objectContaining({
+                in: ["Calpol"],
+              }),
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(
+      mockedPrisma.prescriptionDispenseRequest.create,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          medications: [
+            expect.objectContaining({
+              inventoryItemName: "Calpol",
+              inventoryItemCode: "Calpol",
+              stockUnitType: "strip",
+              packageQuantity: 10,
+              unitQuantity: 10,
+              stockUnitQty: 10,
+              stockUnitQuantity: 10,
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it("parses compact dosage strings without whitespace", async () => {
     mockedPrisma.inventoryItem.findMany.mockResolvedValueOnce([
       {
