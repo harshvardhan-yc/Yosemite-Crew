@@ -66,6 +66,8 @@ type InvoiceStepProps = {
   parentId?: string;
   encounter: AppointmentEncounter;
   hideBillBuilder?: boolean;
+  /** Name of the appointment's booked service/consultation — its bill line can't be removed. */
+  bookedItemName?: string;
   onOpenSummary: () => void;
 };
 
@@ -1171,6 +1173,7 @@ const InvoiceStep = ({
   parentId,
   encounter,
   hideBillBuilder = false,
+  bookedItemName,
   onOpenSummary,
 }: InvoiceStepProps) => {
   const setWithdrawDeposit = useAppointmentWorkspaceStore((s) => s.setWithdrawDeposit);
@@ -1298,24 +1301,28 @@ const InvoiceStep = ({
     return map;
   }, [catalogPackages, catalogServices, organisationId]);
 
-  // Bill lines enriched with their max-discount ceiling: a line that lost it on a backend prefill
-  // recovers the percent (and resulting cents) from the catalog by name. Saved values win.
+  // Bill lines enriched with: (1) their max-discount ceiling — a line that lost it on a backend
+  // prefill recovers the percent (and cents) from the catalog by name (saved values win); and
+  // (2) a `removable` flag — the appointment's booked service/consultation can't be removed.
+  const bookedLineKey = bookedItemName ? normalizeLineName(bookedItemName) : undefined;
   const enrichedInvoiceLineItems = useMemo(
     () =>
       encounter.invoiceLineItems.map((line) => {
+        const removable = bookedLineKey ? normalizeLineName(line.name) !== bookedLineKey : true;
         const hasMax = line.maxDiscountPercent != null || line.maxDiscountCents != null;
-        if (hasMax) return line;
+        if (hasMax) return { ...line, removable };
         const fallback = discountByName.get(normalizeLineName(line.name));
-        if (fallback?.maxDiscountPercent == null) return line;
+        if (fallback?.maxDiscountPercent == null) return { ...line, removable };
         return {
           ...line,
+          removable,
           maxDiscountPercent: fallback.maxDiscountPercent,
           maxDiscountCents: discountCentsFromPercent(line.grossCents, fallback.maxDiscountPercent),
           packageDefaultDiscountPercent:
             line.packageDefaultDiscountPercent ?? fallback.packageDefaultDiscountPercent,
         };
       }),
-    [discountByName, encounter.invoiceLineItems]
+    [bookedLineKey, discountByName, encounter.invoiceLineItems]
   );
 
   // Saved (persisted) Service/Package + in-house prescription lines for this visit
@@ -1598,60 +1605,10 @@ const InvoiceStep = ({
     return invoice;
   };
 
-  // Auto-sync only the AUTO-SEEDED (saved) bill lines — persisted services/packages and in-house
-  // prescriptions for this visit — onto an existing OPEN (unpaid) invoice, so its breakdown reflects
-  // the full set of saved items without waiting for payment/finalize. Manually-added search lines are
-  // deliberately NOT synced (they stay local and vanish on refresh, as expected). The backend
-  // de-dupes, and a ref guard + name-set signature prevent loops with the reload.
-  const autoSeedNameSet = useMemo(
-    () => new Set(autoSeedCandidates.map((line) => normalizeLineName(line.name))),
-    [autoSeedCandidates]
-  );
-  // Keep the unstable reload/lookup callbacks in a ref so the sync effect can depend only on the
-  // data that changes the un-synced set (avoids an effect-loop and the exhaustive-deps churn).
-  const billingOpsRef = useRef({ reloadBilling, findServerOpenInvoiceId });
-  billingOpsRef.current = { reloadBilling, findServerOpenInvoiceId };
-  const autoSyncedRef = useRef<string>('');
-  useEffect(() => {
-    if (!canBuildBill || !billingHydrated || !organisationId) return;
-    if (!billingOpsRef.current.findServerOpenInvoiceId()) return;
-    const invoicedNames = new Set(
-      encounter.pastInvoices
-        .flatMap((invoice) => invoice.items)
-        .map((item) => normalizeLineName(item.name))
-    );
-    // Only saved (auto-seeded) lines that aren't already on the invoice — manual search lines stay
-    // local and are excluded here on purpose.
-    const unsynced = encounter.invoiceLineItems.filter((line) => {
-      const key = normalizeLineName(line.name);
-      return autoSeedNameSet.has(key) && !invoicedNames.has(key);
-    });
-    if (unsynced.length === 0) return;
-    const signature = unsynced
-      .map((line) => normalizeLineName(line.name))
-      .sort((a, b) => a.localeCompare(b))
-      .join('|');
-    if (autoSyncedRef.current === signature) return;
-    autoSyncedRef.current = signature;
-    void (async () => {
-      try {
-        // Push ONLY the auto-seeded subset (not the whole bill) to the open invoice.
-        await addLineItemsToAppointments(toFinanceLineItems(unsynced), appointmentId, currency);
-        await billingOpsRef.current.reloadBilling();
-      } catch (error) {
-        console.error('Failed to auto-sync bill to the open invoice:', error);
-      }
-    })();
-  }, [
-    appointmentId,
-    currency,
-    autoSeedNameSet,
-    billingHydrated,
-    canBuildBill,
-    encounter.invoiceLineItems,
-    encounter.pastInvoices,
-    organisationId,
-  ]);
+  // NOTE: the Total Bill is a local DRAFT. Lines (and their linked prescriptions) are persisted to
+  // the finance invoice only on an explicit Save / payment (persistCurrentInvoice), NOT on add —
+  // there is no backend endpoint to remove an invoice line, so pushing lines eagerly made a removed
+  // line reappear on refresh. Keeping the bill local until save keeps add/remove fully reversible.
 
   const handleCollect = async (method: PaymentMethod) => {
     if (method === 'DEPOSIT') {

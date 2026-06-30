@@ -422,9 +422,11 @@ const applyEncounterReadiness = (
     asString(bootstrap.visitBillingStage) ??
     asString(invoice.visitBillingStage) ??
     asString(encounter.visitBillingStage);
+  // "Ready for billing" must reflect an EXPLICIT clinician action (the READY_FOR_BILLING stage or
+  // the readyForBilling field) — NOT a SETTLED/paid invoice. Treating SETTLED as ready conflated
+  // "paid" with "ready" and made the checkbox auto-tick after check-in / payment.
   const readyForBillingFlag =
     billingStage === 'READY_FOR_BILLING' ||
-    billingStage === 'SETTLED' ||
     bootstrap.readyForBilling === true ||
     encounter.readyForBilling === true ||
     (isRecord(bootstrap.readyForBilling) && asBoolean(bootstrap.readyForBilling.value) === true) ||
@@ -842,6 +844,22 @@ const lineItemToTreatmentDTO = (item: LineItem): TreatmentItemDTO => ({
  */
 const lineItemToTreatmentUpdateDTO = (item: LineItem): Partial<TreatmentItemDTO> =>
   lineItemToTreatmentDTO(item);
+
+/**
+ * Persist a single service/package line item onto an encounter as a treatment item. Used when a
+ * line is added outside the Treatment step's batch save (e.g. services/packages chosen during
+ * hospitalization) so it survives a refresh instead of living only in local state.
+ */
+export const persistEncounterTreatmentLine = (
+  organisationId: string,
+  encounterId: string,
+  item: Omit<LineItem, 'id'> & { id?: string }
+) =>
+  createEncounterTreatmentItem(
+    organisationId,
+    encounterId,
+    lineItemToTreatmentDTO({ id: '', ...item } as LineItem)
+  );
 
 /** A backend treatment row that is an editable, unbilled service/package line. */
 const isEditableServiceRow = (row: Record<string, unknown>): boolean =>

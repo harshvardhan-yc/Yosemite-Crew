@@ -17,6 +17,7 @@ import {
   LuSearch,
 } from 'react-icons/lu';
 import SectionContainer from '@/app/ui/primitives/SectionContainer/SectionContainer';
+import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import Search from '@/app/ui/inputs/Search';
 import Datepicker from '@/app/ui/inputs/Datepicker';
 import RichTextEditor from '@/app/ui/primitives/RichTextEditor/RichTextEditor';
@@ -660,6 +661,43 @@ const SummaryStep = ({
   const followUpDate = toFollowUpDate(encounter.followUpAt);
   const showDocumentActions = dischargeSaved;
 
+  // The packet is considered signed once any document in the encounter read-model
+  // reports a SIGNED signing status — Documenso marks the bundled documents signed
+  // against the one signed packet PDF. Drives the Sign→Download Signed swap and the
+  // "print the signed copy" behaviour.
+  const isPacketSigned = useMemo(
+    () => documents.some((document) => document.signingStatus?.toUpperCase() === 'SIGNED'),
+    [documents]
+  );
+
+  // Signing may only begin while the appointment is actively in progress; before
+  // that (e.g. checked-in/upcoming) or after completion the action is disabled and
+  // a tooltip explains why.
+  const appointmentInProgress = appointment?.status === 'IN_PROGRESS';
+  const signDisabled = encounter.viewOnly || isSigning || !appointmentInProgress;
+  const signDisabledReason = appointmentInProgress
+    ? undefined
+    : 'Signing is available only while the appointment is In progress.';
+
+  // Download the signed packet PDF (the packet endpoint returns the signed copy
+  // server-side once signing has completed).
+  const handleDownloadSigned = async () => {
+    if (isPrinting) return;
+    if (!organisationId || !encounterId) return;
+    setIsPrinting(true);
+    try {
+      const url = await getEncounterDocumentPacketPdfUrl(organisationId, encounterId);
+      downloadDocumentUrl(url);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setSignError(
+        error instanceof Error ? error.message : 'Unable to download the signed document.'
+      );
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-5">
       <SigningOverlay />
@@ -811,12 +849,30 @@ const SummaryStep = ({
               isDisabled={encounter.viewOnly || isSaving}
             />
           )}
-          {showDocumentActions && (
+          {showDocumentActions && isPacketSigned && (
+            <Secondary
+              text="Download Signed"
+              icon={<LuDownload aria-hidden="true" />}
+              onClick={handleDownloadSigned}
+              isDisabled={isPrinting}
+            />
+          )}
+          {showDocumentActions && !isPacketSigned && signDisabledReason && (
+            <GlassTooltip content={signDisabledReason} side="top">
+              <Secondary
+                text={isSigning ? 'Signing…' : 'Sign'}
+                icon={<LuFileSignature aria-hidden="true" />}
+                onClick={handleSign}
+                isDisabled={signDisabled}
+              />
+            </GlassTooltip>
+          )}
+          {showDocumentActions && !isPacketSigned && !signDisabledReason && (
             <Secondary
               text={isSigning ? 'Signing…' : 'Sign'}
               icon={<LuFileSignature aria-hidden="true" />}
               onClick={handleSign}
-              isDisabled={encounter.viewOnly || isSigning}
+              isDisabled={signDisabled}
             />
           )}
         </div>

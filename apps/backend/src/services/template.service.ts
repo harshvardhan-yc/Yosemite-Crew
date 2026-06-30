@@ -1214,7 +1214,7 @@ export const TemplateService = {
     const prismaKinds = normalizeResolverKind(parsed.kind);
     const filters = {
       kind: prismaKinds[0],
-      status: undefined as TemplateStatus | undefined,
+      status: TemplateStatus.PUBLISHED,
       scope: undefined as TemplateScope | undefined,
     };
 

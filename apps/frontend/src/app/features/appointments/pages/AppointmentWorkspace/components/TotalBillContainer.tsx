@@ -297,12 +297,18 @@ const BillRow = ({
       <GrossAmountCell item={item} currency={currency} />
       <DiscountInput item={item} onUpdateItem={onUpdateItem} />
       <AmountCell item={item} currency={currency} />
-      <CircleIconButton
-        icon={<LuTrash2 aria-hidden="true" />}
-        label={`Remove ${item.name}`}
-        variant="danger"
-        onClick={() => onRemoveItem(item.id)}
-      />
+      {item.removable === false ? (
+        // The booked appointment service/consultation can't be removed from the bill — keep the
+        // trash column's width with an empty placeholder so the grid stays aligned.
+        <span aria-hidden="true" className="inline-block size-9" />
+      ) : (
+        <CircleIconButton
+          icon={<LuTrash2 aria-hidden="true" />}
+          label={`Remove ${item.name}`}
+          variant="danger"
+          onClick={() => onRemoveItem(item.id)}
+        />
+      )}
     </li>
   );
 };

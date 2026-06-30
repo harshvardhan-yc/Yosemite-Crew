@@ -8,10 +8,13 @@ import {
   LuFileSignature,
   LuPrinter,
 } from 'react-icons/lu';
-import type { Form } from '@yosemite-crew/types';
+import type { Appointment, Form } from '@yosemite-crew/types';
+
+type AppointmentStatus = Appointment['status'];
 import TabToggle from '@/app/ui/primitives/TabToggle/TabToggle';
 import Search from '@/app/ui/inputs/Search';
 import { Secondary } from '@/app/ui/primitives/Buttons';
+import GlassTooltip from '@/app/ui/primitives/GlassTooltip/GlassTooltip';
 import CircleIconButton from '@/app/features/appointments/pages/AppointmentWorkspace/components/CircleIconButton';
 import PdfPreviewOverlay from '@/app/ui/overlays/PdfPreviewOverlay';
 import SigningOverlay from '@/app/ui/overlays/SigningOverlay';
@@ -31,6 +34,7 @@ type DocumentsPanelProps = {
   companionId?: string;
   organisationId?: string;
   encounterId?: string;
+  appointmentStatus?: AppointmentStatus;
 };
 
 type DocsTab = 'FORMS' | 'RECORDS';
@@ -144,12 +148,29 @@ type PacketState = {
  * the existing SigningOverlay. The packet/signing state matrix is rendered as
  * plain-label badges and gates the Sign action.
  */
+const resolveSignLabel = ({
+  isSigned,
+  isInProgress,
+  isSigning,
+}: {
+  isSigned: boolean;
+  isInProgress: boolean;
+  isSigning: boolean;
+}): string => {
+  if (isSigned) return 'Signed';
+  if (isInProgress) return 'Signing in progress';
+  if (isSigning) return 'Signing…';
+  return 'Sign';
+};
+
 const ClinicalPacketSection = ({
   organisationId,
   encounterId,
+  appointmentStatus,
 }: {
   organisationId?: string;
   encounterId?: string;
+  appointmentStatus?: AppointmentStatus;
 }) => {
   const openSigningOverlay = useSigningOverlayStore((s) => s.openOverlay);
   const setSigningUrl = useSigningOverlayStore((s) => s.setUrl);
@@ -197,6 +218,14 @@ const ClinicalPacketSection = ({
 
   const isSigned = packet?.signingStatus === 'SIGNED';
   const isInProgress = packet?.signingStatus === 'IN_PROGRESS';
+  // Signing may only begin while the appointment is actively in progress; before
+  // that (e.g. checked-in/upcoming) or after completion the action is disabled and
+  // a tooltip explains why (mirrors SummaryStep).
+  const appointmentInProgress = appointmentStatus === 'IN_PROGRESS';
+  const signGateReason =
+    appointmentInProgress || isSigned || isInProgress
+      ? undefined
+      : 'Signing is available only while the appointment is In progress.';
   const statusLabel = packet?.status ? (PACKET_STATUS_LABEL[packet.status] ?? null) : null;
   const signingLabel = packet?.signingStatus
     ? (SIGNING_STATUS_LABEL[packet.signingStatus] ?? null)
@@ -210,6 +239,22 @@ const ClinicalPacketSection = ({
       setPacketPreviewUrl(url);
     } catch (error) {
       console.error('Unable to open the clinical packet:', error);
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const handleDownloadSigned = async () => {
+    if (!organisationId || !encounterId || isPrinting) return;
+    setIsPrinting(true);
+    try {
+      const url = await getEncounterDocumentPacketPdfUrl(organisationId, encounterId);
+      downloadPacket(url);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setSignError(
+        error instanceof Error ? error.message : 'Unable to download the signed document.'
+      );
     } finally {
       setIsPrinting(false);
     }
@@ -263,10 +308,7 @@ const ClinicalPacketSection = ({
     link.remove();
   };
 
-  let signLabel = 'Sign';
-  if (isSigned) signLabel = 'Signed';
-  else if (isInProgress) signLabel = 'Signing in progress';
-  else if (isSigning) signLabel = 'Signing…';
+  const signLabel = resolveSignLabel({ isSigned, isInProgress, isSigning });
 
   return (
     <section
@@ -315,12 +357,32 @@ const ClinicalPacketSection = ({
           onClick={() => void handlePrint()}
           isDisabled={!hasContext || isPrinting}
         />
-        <Secondary
-          text={signLabel}
-          icon={<LuFileSignature aria-hidden="true" />}
-          onClick={() => void handleSign()}
-          isDisabled={!hasContext || isSigning || isSigned || isInProgress}
-        />
+        {isSigned && (
+          <Secondary
+            text="Download Signed"
+            icon={<LuDownload aria-hidden="true" />}
+            onClick={() => void handleDownloadSigned()}
+            isDisabled={!hasContext || isPrinting}
+          />
+        )}
+        {!isSigned &&
+          (signGateReason ? (
+            <GlassTooltip content={signGateReason} side="top">
+              <Secondary
+                text={signLabel}
+                icon={<LuFileSignature aria-hidden="true" />}
+                onClick={() => void handleSign()}
+                isDisabled
+              />
+            </GlassTooltip>
+          ) : (
+            <Secondary
+              text={signLabel}
+              icon={<LuFileSignature aria-hidden="true" />}
+              onClick={() => void handleSign()}
+              isDisabled={!hasContext || isSigning || isInProgress}
+            />
+          ))}
       </div>
     </section>
   );
@@ -435,10 +497,12 @@ const AppointmentFormsPanel = ({
   appointmentId,
   organisationId,
   encounterId,
+  appointmentStatus,
 }: {
   appointmentId: string;
   organisationId?: string;
   encounterId?: string;
+  appointmentStatus?: AppointmentStatus;
 }) => {
   const initialAppointmentId = useRef(appointmentId);
   const [query, setQuery] = useState('');
@@ -492,7 +556,11 @@ const AppointmentFormsPanel = ({
       aria-labelledby="tab-FORMS"
       className="flex flex-col gap-3"
     >
-      <ClinicalPacketSection organisationId={organisationId} encounterId={encounterId} />
+      <ClinicalPacketSection
+        organisationId={organisationId}
+        encounterId={encounterId}
+        appointmentStatus={appointmentStatus}
+      />
       <Search
         value={query}
         setSearch={setQuery}
@@ -512,6 +580,7 @@ const DocumentsPanel = ({
   companionId,
   organisationId,
   encounterId,
+  appointmentStatus,
 }: DocumentsPanelProps) => {
   const [tab, setTab] = useState<DocsTab>('FORMS');
 
@@ -529,6 +598,7 @@ const DocumentsPanel = ({
           appointmentId={appointmentId}
           organisationId={organisationId}
           encounterId={encounterId}
+          appointmentStatus={appointmentStatus}
         />
       ) : (
         <div id="docs-panel-RECORDS" role="tabpanel" aria-labelledby="tab-RECORDS">
