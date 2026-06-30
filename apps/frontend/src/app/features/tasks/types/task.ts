@@ -4,21 +4,17 @@ import {
   status,
   StatusOption,
 } from '@/app/features/companions/pages/Companions/types';
-import {
-  TASK_CATEGORY_OPTIONS,
-  TASK_REPEAT_OPTIONS,
-  type TaskKind as CanonicalTaskKind,
-} from '@/app/features/tasks/constants/taskTaxonomy';
+import { type TaskKind as CanonicalTaskKind } from '@/app/features/tasks/constants/taskTaxonomy';
 
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type RecurrenceType = 'ONCE' | 'DAILY' | 'WEEKLY' | 'CUSTOM';
 export type TaskKind = CanonicalTaskKind;
 
 /** Repeat options shown in task pickers (single-sourced from the taxonomy). */
-export const TaskRecurrenceOptions = TASK_REPEAT_OPTIONS;
+export { TASK_REPEAT_OPTIONS as TaskRecurrenceOptions } from '@/app/features/tasks/constants/taskTaxonomy';
 
 /** Category options shown in task pickers (single-sourced from the taxonomy). */
-export const TaskKindOptions = TASK_CATEGORY_OPTIONS;
+export { TASK_CATEGORY_OPTIONS as TaskKindOptions } from '@/app/features/tasks/constants/taskTaxonomy';
 
 export const TaskStatusOptions = [
   { label: 'Pending', value: 'PENDING' },

@@ -122,8 +122,6 @@ export const TASK_REMINDER_OPTIONS: Option[] = [
   { label: '1 day before', value: '1440' },
 ];
 
-const REMINDER_OFFSETS = new Set([5, 15, 30, 60, 1440]);
-
 /** Dropdown value → reminder offset minutes (undefined when "No reminder"). */
 export const reminderValueToOffset = (value?: string): number | undefined => {
   if (!value || value === NO_REMINDER_VALUE) return undefined;
@@ -134,7 +132,7 @@ export const reminderValueToOffset = (value?: string): number | undefined => {
 /** Reminder offset minutes → the dropdown value to preselect. */
 export const offsetToReminderValue = (offsetMinutes?: number): string => {
   if (typeof offsetMinutes !== 'number' || offsetMinutes <= 0) return NO_REMINDER_VALUE;
-  return REMINDER_OFFSETS.has(offsetMinutes) ? String(offsetMinutes) : String(offsetMinutes);
+  return String(offsetMinutes);
 };
 
 /* ───────────────────────────── Repeat ───────────────────────────── */

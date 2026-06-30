@@ -513,40 +513,56 @@ const numberDefault = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+type PrescriptionRowField = keyof Omit<PrescriptionItem, 'id'>;
+
+/** Exact field-key → PrescriptionItem property. */
+const PRESCRIPTION_FIELD_BY_KEY: Record<string, PrescriptionRowField> = {
+  medicineName: 'medicineName',
+  brand: 'brand',
+  genericName: 'genericName',
+  sku: 'sku',
+  strength: 'strength',
+  strengthUnit: 'strengthUnit',
+  dosageForm: 'dosageForm',
+  dose: 'dose',
+  doseUnit: 'doseUnit',
+  durationUnit: 'durationUnit',
+  refill: 'refill',
+  drugSchedule: 'drugSchedule',
+  dosage: 'dosage',
+  route: 'route',
+  frequency: 'frequency',
+  durationDays: 'durationDays',
+  qty: 'qty',
+  instructions: 'instructions',
+};
+
+/** Field-key suffix → PrescriptionItem property (for builder-generated ids). */
+const PRESCRIPTION_FIELD_BY_SUFFIX: Array<[string, PrescriptionRowField]> = [
+  ['_name', 'medicineName'],
+  ['_dosage', 'dosage'],
+  ['_route', 'route'],
+  ['_frequency', 'frequency'],
+  ['_duration', 'durationDays'],
+  ['_qty', 'qty'],
+  ['_remark', 'instructions'],
+  ['_instructions', 'instructions'],
+];
+
+const resolvePrescriptionField = (key: string): PrescriptionRowField | undefined => {
+  const exact = PRESCRIPTION_FIELD_BY_KEY[key];
+  if (exact) return exact;
+  return PRESCRIPTION_FIELD_BY_SUFFIX.find(([suffix]) => key.endsWith(suffix))?.[1];
+};
+
 const getUpdatedPrescriptionItem = (
   row: Omit<PrescriptionItem, 'id'>,
   key: string,
   value: string | undefined
 ): Omit<PrescriptionItem, 'id'> => {
-  if (key === 'medicineName' || key.endsWith('_name')) {
-    return { ...row, medicineName: value ?? row.medicineName };
-  }
-  if (key === 'brand') return { ...row, brand: value ?? row.brand };
-  if (key === 'genericName') return { ...row, genericName: value ?? row.genericName };
-  if (key === 'sku') return { ...row, sku: value ?? row.sku };
-  if (key === 'strength') return { ...row, strength: value ?? row.strength };
-  if (key === 'strengthUnit') return { ...row, strengthUnit: value ?? row.strengthUnit };
-  if (key === 'dosageForm') return { ...row, dosageForm: value ?? row.dosageForm };
-  if (key === 'dose') return { ...row, dose: value ?? row.dose };
-  if (key === 'doseUnit') return { ...row, doseUnit: value ?? row.doseUnit };
-  if (key === 'durationUnit') return { ...row, durationUnit: value ?? row.durationUnit };
-  if (key === 'refill') return { ...row, refill: value ?? row.refill };
-  if (key === 'drugSchedule') return { ...row, drugSchedule: value ?? row.drugSchedule };
-  if (key.endsWith('_dosage')) return { ...row, dosage: value ?? row.dosage };
-  if (key === 'dosage') return { ...row, dosage: value ?? row.dosage };
-  if (key === 'route' || key.endsWith('_route')) return { ...row, route: value ?? row.route };
-  if (key === 'frequency' || key.endsWith('_frequency')) {
-    return { ...row, frequency: value ?? row.frequency };
-  }
-  if (key === 'durationDays' || key.endsWith('_duration')) {
-    return { ...row, durationDays: value ?? row.durationDays };
-  }
-  if (key === 'qty' || key.endsWith('_qty')) return { ...row, qty: value ?? row.qty };
-  if (key.endsWith('_remark') || key.endsWith('_instructions')) {
-    return { ...row, instructions: value ?? row.instructions };
-  }
-  if (key === 'instructions') return { ...row, instructions: value ?? row.instructions };
-  return row;
+  const field = resolvePrescriptionField(key);
+  if (!field) return row;
+  return { ...row, [field]: value ?? row[field] };
 };
 
 export const templateToPrescriptionTemplate = (

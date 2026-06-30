@@ -607,7 +607,6 @@ const GroupBuilder: React.FC<GroupBuilderProps> = ({
                 <TaskGroupBuilder
                   field={nested}
                   onChange={(updated) => updateNestedField(nested.id, updated)}
-                  createField={createField}
                 />
               </BuilderWrapper>
             );
@@ -933,7 +932,6 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
 type TaskGroupBuilderProps = {
   field: FormField & { type: 'group'; fields?: FormField[] };
   onChange: (f: FormField) => void;
-  createField: (t: OptionKey) => FormField;
 };
 
 /** Read the authored value of a task-block leaf field (defaultValue, else placeholder). */
@@ -1118,7 +1116,7 @@ const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange }) 
           <span className="flex size-6 items-center justify-center rounded-full bg-neutral-900 text-neutral-0">
             <LuPlus size={14} aria-hidden="true" />
           </span>
-          Add task block
+          <span>Add task block</span>
         </button>
       ) : (
         blocks.map((block, index) => (
@@ -1142,7 +1140,7 @@ const TaskGroupBuilder: React.FC<TaskGroupBuilderProps> = ({ field, onChange }) 
           <span className="flex size-6 items-center justify-center rounded-full bg-neutral-900 text-neutral-0">
             <LuPlus size={14} aria-hidden="true" />
           </span>
-          Add another task
+          <span>Add another task</span>
         </button>
       )}
     </div>
@@ -1452,7 +1450,6 @@ const Build = ({
                   <TaskGroupBuilder
                     field={field}
                     onChange={(updatedField) => handleFieldChange(fieldId, updatedField)}
-                    createField={createField}
                   />
                 );
               } else {

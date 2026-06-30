@@ -148,6 +148,21 @@ type PacketState = {
  * the existing SigningOverlay. The packet/signing state matrix is rendered as
  * plain-label badges and gates the Sign action.
  */
+const resolveSignLabel = ({
+  isSigned,
+  isInProgress,
+  isSigning,
+}: {
+  isSigned: boolean;
+  isInProgress: boolean;
+  isSigning: boolean;
+}): string => {
+  if (isSigned) return 'Signed';
+  if (isInProgress) return 'Signing in progress';
+  if (isSigning) return 'Signing…';
+  return 'Sign';
+};
+
 const ClinicalPacketSection = ({
   organisationId,
   encounterId,
@@ -293,10 +308,7 @@ const ClinicalPacketSection = ({
     link.remove();
   };
 
-  let signLabel = 'Sign';
-  if (isSigned) signLabel = 'Signed';
-  else if (isInProgress) signLabel = 'Signing in progress';
-  else if (isSigning) signLabel = 'Signing…';
+  const signLabel = resolveSignLabel({ isSigned, isInProgress, isSigning });
 
   return (
     <section

@@ -17,7 +17,8 @@ const removeCompanionDeepLinkParam = (path: string): string => {
 
   url.searchParams.delete('companionId');
   const search = url.searchParams.toString();
-  return `${url.pathname}${search ? `?${search}` : ''}${url.hash}`;
+  const query = search ? `?${search}` : '';
+  return `${url.pathname}${query}${url.hash}`;
 };
 
 export const buildCompanionHistoryHref = ({

@@ -701,18 +701,22 @@ const assignTaskBlockValue = (
   value: unknown
 ): void => {
   if (!key || value === undefined || value === '') return;
+  const stringValue =
+    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+      ? String(value)
+      : '';
   if (key === 'dayOffset') {
     block.dayOffset = coerceNumberValue(value, 0);
   } else if (key === 'durationDays') {
     block.durationDays = coerceNumberValue(value, 0);
   } else if (key === 'reminderOffsetMinutes') {
     // The reminder dropdown carries the canonical "NONE" sentinel for no reminder.
-    const offset = reminderValueToOffset(String(value));
+    const offset = reminderValueToOffset(stringValue);
     if (offset) block.reminderOffsetMinutes = offset;
   } else if (key === 'recurrence.type') {
     // The repeat dropdown carries canonical values (EVERY_6_HOURS, …); resolve to
     // the backend recurrence type + cron so interval repeats materialize correctly.
-    const { type, cronExpression } = repeatValueToRecurrence(String(value));
+    const { type, cronExpression } = repeatValueToRecurrence(stringValue);
     block.recurrence = { type, cronExpression };
   } else if (key in block) {
     (block as Record<string, unknown>)[key] = value;
@@ -845,6 +849,26 @@ const medicationRowFromGroup = (group: FormField & { fields?: FormField[] }): Me
   return row;
 };
 
+/** Field-id suffix → the MedicationRow string key it maps to. */
+const MEDICATION_STRING_FIELD_BY_SUFFIX: Record<string, keyof MedicationRow> = {
+  _name: 'medicineName',
+  _brand: 'brand',
+  _genericName: 'genericName',
+  _sku: 'sku',
+  _strength: 'strength',
+  _strengthUnit: 'strengthUnit',
+  _form: 'dosageForm',
+  _dosage: 'dosage',
+  _route: 'route',
+  _frequency: 'frequency',
+  _duration: 'durationDays',
+  _durationUnit: 'durationUnit',
+  _qty: 'qty',
+  _refill: 'refill',
+  _remark: 'instructions',
+  _instructions: 'instructions',
+};
+
 const assignMedicationRowField = (
   row: MedicationRow,
   field: FormField,
@@ -856,26 +880,20 @@ const assignMedicationRowField = (
     row[prescriptionField] = value as never;
     return;
   }
-  if (field.id.endsWith('_name')) row.medicineName = String(value);
-  else if (field.id.endsWith('_brand')) row.brand = String(value);
-  else if (field.id.endsWith('_genericName')) row.genericName = String(value);
-  else if (field.id.endsWith('_sku')) row.sku = String(value);
-  else if (field.id.endsWith('_strength')) row.strength = String(value);
-  else if (field.id.endsWith('_strengthUnit')) row.strengthUnit = String(value);
-  else if (field.id.endsWith('_form')) row.dosageForm = String(value);
-  else if (field.id.endsWith('_dosage')) row.dosage = String(value);
-  else if (field.id.endsWith('_route')) row.route = String(value);
-  else if (field.id.endsWith('_frequency')) row.frequency = String(value);
-  else if (field.id.endsWith('_duration')) row.durationDays = String(value);
-  else if (field.id.endsWith('_durationUnit')) row.durationUnit = String(value);
-  else if (field.id.endsWith('_qty')) row.qty = String(value);
-  else if (field.id.endsWith('_refill')) row.refill = String(value);
-  else if (field.id.endsWith('_price'))
-    row.price = typeof value === 'boolean' ? String(value) : value;
-  else if (field.id.endsWith('_priceCents')) {
-    row.priceCents = typeof value === 'boolean' ? String(value) : value;
-  } else if (field.id.endsWith('_remark') || field.id.endsWith('_instructions')) {
-    row.instructions = String(value);
+  const numericOrString = typeof value === 'boolean' ? String(value) : value;
+  if (field.id.endsWith('_price')) {
+    row.price = numericOrString;
+    return;
+  }
+  if (field.id.endsWith('_priceCents')) {
+    row.priceCents = numericOrString;
+    return;
+  }
+  const suffix = Object.keys(MEDICATION_STRING_FIELD_BY_SUFFIX).find((key) =>
+    field.id.endsWith(key)
+  );
+  if (suffix) {
+    row[MEDICATION_STRING_FIELD_BY_SUFFIX[suffix]] = String(value) as never;
   }
 };
 
