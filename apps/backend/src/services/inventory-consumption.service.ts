@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import {
   InventoryConsumptionAction,
   InventoryConsumptionSourceType,
@@ -59,6 +59,7 @@ type PrescriptionDispenseRequestMedication = Record<string, unknown> & {
   frequency?: string | null;
   frequencyPerDay?: number | null;
   durationDays?: number | null;
+  durationUnit?: string | null;
   doseQty?: number | null;
   doseUnit?: string | null;
   refillsRemaining?: number | null;
@@ -143,6 +144,34 @@ const readPositiveNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const resolveDurationDays = (params: {
+  durationDays?: unknown;
+  duration?: unknown;
+  days?: unknown;
+  durationUnit?: unknown;
+  metadata?: unknown;
+}) => {
+  const rawDurationDays =
+    readPositiveNumber(params.durationDays) ??
+    readPositiveNumber(params.duration) ??
+    readPositiveNumber(params.days);
+  if (rawDurationDays === undefined) return undefined;
+
+  const metadata = toRecord(params.metadata);
+  const durationUnit =
+    asNonEmptyString(params.durationUnit) ??
+    asNonEmptyString(metadata.durationUnit);
+  const normalized = durationUnit?.toLowerCase();
+  if (normalized === "weeks" || normalized === "week") {
+    return Math.max(1, Math.ceil(rawDurationDays * 7));
+  }
+  if (normalized === "months" || normalized === "month") {
+    return Math.max(1, Math.ceil(rawDurationDays * 30));
+  }
+
+  return rawDurationDays;
+};
+
 const readDoseParts = (
   value: unknown,
 ): {
@@ -198,8 +227,50 @@ const readDoseParts = (
 };
 
 const resolveFrequencyPerDay = (frequency?: string | null) => {
-  const normalized = frequency?.trim().toUpperCase();
+  const normalized = frequency?.trim().toLowerCase();
   if (!normalized) return undefined;
+
+  if (normalized.includes("prn")) return undefined;
+  if (normalized.includes("once weekly") || normalized.includes("weekly")) {
+    return 1 / 7;
+  }
+  if (
+    normalized.includes("before meals") ||
+    normalized.includes("after meals")
+  ) {
+    return 3;
+  }
+  if (
+    normalized.includes("sid") ||
+    (normalized.includes("once") && !normalized.includes("weekly"))
+  ) {
+    return 1;
+  }
+  if (normalized.includes("bid") || normalized.includes("twice")) {
+    return 2;
+  }
+  if (
+    normalized.includes("tid") ||
+    normalized.includes("three times") ||
+    normalized.includes("thrice")
+  ) {
+    return 3;
+  }
+  if (normalized.includes("qid") || normalized.includes("four times")) {
+    return 4;
+  }
+  if (normalized.includes("every 4 hour")) {
+    return 6;
+  }
+  if (normalized.includes("every 6 hour") || normalized.includes("q6h")) {
+    return 4;
+  }
+  if (normalized.includes("every 8 hour") || normalized.includes("q8h")) {
+    return 3;
+  }
+  if (normalized.includes("every 12 hour") || normalized.includes("q12h")) {
+    return 2;
+  }
 
   const directMap: Record<string, number> = {
     OD: 1,
@@ -215,11 +286,12 @@ const resolveFrequencyPerDay = (frequency?: string | null) => {
     Q8H: 3,
     Q12H: 2,
   };
-  if (Object.prototype.hasOwnProperty.call(directMap, normalized)) {
-    return directMap[normalized];
+  const upper = normalized.toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(directMap, upper)) {
+    return directMap[upper];
   }
 
-  const everyNhours = /^Q(\d+)H$/.exec(normalized);
+  const everyNhours = /^q(\d+)h$/.exec(normalized);
   if (everyNhours) {
     const hours = Number(everyNhours[1]);
     if (Number.isFinite(hours) && hours > 0) {
@@ -227,7 +299,7 @@ const resolveFrequencyPerDay = (frequency?: string | null) => {
     }
   }
 
-  const timesPerDay = /^(\d+)\s*X(?:\s*DAILY)?$/.exec(normalized);
+  const timesPerDay = /^(\d+)\s*x(?:\s*daily)?$/.exec(normalized);
   if (timesPerDay) {
     const count = Number(timesPerDay[1]);
     if (Number.isFinite(count) && count > 0) {
@@ -256,6 +328,27 @@ const resolvePackQuantity = (
       medication.unitQuantity ??
       medication.packageQuantity,
   );
+
+const resolvePrescriptionDoseQuantity = (params: {
+  quantity?: number | null;
+  doseQty?: number | null;
+  frequencyPerDay?: number | null;
+  durationDays?: number | null;
+}) => {
+  const { quantity, doseQty, frequencyPerDay, durationDays } = params;
+  if (
+    doseQty !== undefined &&
+    doseQty !== null &&
+    frequencyPerDay !== undefined &&
+    frequencyPerDay !== null &&
+    durationDays !== undefined &&
+    durationDays !== null
+  ) {
+    return Math.max(1, Math.ceil(doseQty * frequencyPerDay * durationDays));
+  }
+
+  return asPositiveInteger(quantity);
+};
 
 const toDispenseUnits = (quantity: number, packSize?: number) => {
   if (!packSize || packSize <= 1) {
@@ -581,9 +674,13 @@ const enrichDispenseRequestMedications = async (
     const itemSku = asNonEmptyString(item.inventoryItemSku);
     const frequency = asNonEmptyString(item.frequency ?? item.freq);
     const doseParts = readDoseParts(item.dosage ?? item.dose);
-    const durationDays =
-      readPositiveInteger(item.durationDays) ??
-      readPositiveInteger(item.duration ?? item.days);
+    const durationDays = resolveDurationDays({
+      durationDays: item.durationDays,
+      duration: item.duration,
+      days: item.days,
+      durationUnit: item.durationUnit,
+      metadata: item.metadata,
+    });
     const refillsRemaining =
       readPositiveInteger(item.refillsRemaining) ??
       readPositiveInteger(item.refill);
@@ -598,15 +695,14 @@ const enrichDispenseRequestMedications = async (
     const frequencyPerDay =
       readPositiveInteger(item.frequencyPerDay) ??
       resolveFrequencyPerDay(frequency);
-    const baseQuantity =
-      readPositiveInteger(
+    const baseQuantity = resolvePrescriptionDoseQuantity({
+      quantity: readPositiveInteger(
         item.quantity ?? item.units ?? item.count ?? item.dispenseQuantity,
-      ) ??
-      (doseQty !== undefined &&
-      frequencyPerDay !== undefined &&
-      durationDays !== undefined
-        ? Math.max(1, Math.ceil(doseQty * frequencyPerDay * durationDays))
-        : undefined);
+      ),
+      doseQty,
+      frequencyPerDay,
+      durationDays,
+    });
 
     return {
       ...item,
@@ -1172,14 +1268,31 @@ const normalizePrescriptionLines = (medications: unknown) => {
   return medications.flatMap((entry, index) => {
     if (!entry || typeof entry !== "object") return [];
     const record = entry as Record<string, unknown>;
-    const quantity = asPositiveInteger(
-      record.quantity ??
-        record.units ??
-        record.count ??
-        record.dispenseQuantity,
-    );
-    if (!quantity) return [];
     const stockUnitQuantity = resolvePackQuantity(record);
+    const dosageParts = readDoseParts(record.dosage);
+    const doseQty = readPositiveNumber(record.doseQty) ?? dosageParts.doseQty;
+    const frequencyPerDay =
+      readPositiveInteger(record.frequencyPerDay) ??
+      resolveFrequencyPerDay(asNonEmptyString(record.frequency));
+    const durationDays = resolveDurationDays({
+      durationDays: record.durationDays,
+      duration: record.duration,
+      days: record.days,
+      durationUnit: record.durationUnit,
+      metadata: record.metadata,
+    });
+    const quantity = resolvePrescriptionDoseQuantity({
+      quantity: readPositiveInteger(
+        record.quantity ??
+          record.units ??
+          record.count ??
+          record.dispenseQuantity,
+      ),
+      doseQty,
+      frequencyPerDay,
+      durationDays,
+    });
+    if (!quantity) return [];
 
     const sourceLineKey =
       asNonEmptyString(record.sourceLineKey) ??

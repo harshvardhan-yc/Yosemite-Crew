@@ -468,6 +468,72 @@ describe("InventoryConsumptionService", () => {
     );
   });
 
+  it("prefers dosage math over a prefilled quantity when computing dispense stock", async () => {
+    mockedPrisma.inventoryItem.findMany.mockResolvedValueOnce([
+      {
+        id: "item-qty-override-1",
+        sku: "qty-override-1",
+        name: "Paracetamol",
+        stockUnitType: "strip",
+        unitOfMeasure: "tablet",
+        packageQuantity: 10,
+        sellingPrice: 5.5,
+        unitCost: 4.5,
+        prescriptionRequired: true,
+        controlledItem: false,
+      },
+    ]);
+    mockedPrisma.prescriptionDispenseRequest.findFirst.mockResolvedValueOnce(
+      null,
+    );
+    mockedPrisma.prescriptionDispenseRequest.create.mockResolvedValueOnce({
+      id: "request-qty-override-1",
+      prescriptionId: "rx-qty-override-1",
+      organisationId: "org-1",
+      status: "PENDING",
+      medications: [],
+      metadata: null,
+      requestedBy: "user-1",
+      reviewedBy: null,
+      reviewedAt: null,
+      requestedAt: new Date("2026-01-01T00:00:00.000Z"),
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    await InventoryConsumptionService.createPrescriptionDispenseRequest({
+      organisationId: "org-1",
+      prescriptionId: "rx-qty-override-1",
+      medications: [
+        {
+          inventoryItemId: "item-qty-override-1",
+          quantity: 1,
+          frequency: "BID",
+          duration: "12 days",
+          dosage: "1 Tablet",
+          sourceLineKey: "line-qty-override-1",
+        },
+      ],
+      requestedBy: "user-1",
+    });
+
+    expect(
+      mockedPrisma.prescriptionDispenseRequest.create,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          medications: [
+            expect.objectContaining({
+              quantity: 24,
+              stockUnitQuantity: 10,
+              stockUnitQty: 10,
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it("parses compact dosage strings without whitespace", async () => {
     mockedPrisma.inventoryItem.findMany.mockResolvedValueOnce([
       {
@@ -616,6 +682,100 @@ describe("InventoryConsumptionService", () => {
               frequencyPerDay: 3,
             }),
           ]),
+        }),
+      }),
+    );
+  });
+
+  it("supports substring-based frequencies and duration units", async () => {
+    mockedPrisma.inventoryItem.findMany.mockResolvedValue([
+      {
+        id: "item-freq-1",
+        sku: "freq-1",
+        name: "Frequency Medicine",
+        stockUnitType: "strip",
+        unitOfMeasure: "tablet",
+        packageQuantity: 10,
+        sellingPrice: 2,
+        unitCost: 2,
+        prescriptionRequired: true,
+        controlledItem: false,
+      },
+    ]);
+    mockedPrisma.prescriptionDispenseRequest.findFirst.mockResolvedValueOnce(
+      null,
+    );
+    mockedPrisma.prescriptionDispenseRequest.create.mockResolvedValueOnce({
+      id: "request-freq-1",
+      prescriptionId: "rx-freq-1",
+      organisationId: "org-1",
+      status: "PENDING",
+      medications: [],
+      metadata: null,
+      requestedBy: "user-1",
+      reviewedBy: null,
+      reviewedAt: null,
+      requestedAt: new Date("2026-01-01T00:00:00.000Z"),
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    await InventoryConsumptionService.createPrescriptionDispenseRequest({
+      organisationId: "org-1",
+      prescriptionId: "rx-freq-1",
+      medications: [
+        {
+          inventoryItemId: "item-freq-1",
+          frequency: "Once weekly",
+          duration: 2,
+          durationUnit: "weeks",
+          dosage: "1 Tablet",
+          sourceLineKey: "line-weekly",
+        },
+        {
+          inventoryItemId: "item-freq-1",
+          frequency: "Before meals",
+          duration: 1,
+          durationUnit: "months",
+          dosage: "1 Tablet",
+          sourceLineKey: "line-meals",
+        },
+        {
+          inventoryItemId: "item-freq-1",
+          frequency: "PRN",
+          quantity: 5,
+          duration: 1,
+          dosage: "1 Tablet",
+          sourceLineKey: "line-prn",
+        },
+      ],
+      requestedBy: "user-1",
+    });
+
+    expect(
+      mockedPrisma.prescriptionDispenseRequest.create,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          medications: [
+            expect.objectContaining({
+              sourceLineKey: "line-weekly",
+              frequencyPerDay: 1 / 7,
+              durationDays: 14,
+              quantity: 2,
+            }),
+            expect.objectContaining({
+              sourceLineKey: "line-meals",
+              frequencyPerDay: 3,
+              durationDays: 30,
+              quantity: 90,
+            }),
+            expect.objectContaining({
+              sourceLineKey: "line-prn",
+              frequencyPerDay: undefined,
+              quantity: 5,
+            }),
+          ],
         }),
       }),
     );
