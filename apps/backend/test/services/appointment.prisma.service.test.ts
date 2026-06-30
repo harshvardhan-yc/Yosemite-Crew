@@ -684,6 +684,9 @@ describe("AppointmentPrismaService", () => {
       }),
     );
     expect(mockedPrisma.admission.upsert).not.toHaveBeenCalled();
+    expect(
+      mockedInvoiceService.markAppointmentReadyForBilling,
+    ).not.toHaveBeenCalled();
     expect((result as any).encounterId).toBe("enc_1");
   });
 
@@ -740,6 +743,9 @@ describe("AppointmentPrismaService", () => {
         encounterId: "enc_out_1",
       },
     });
+    expect(
+      mockedInvoiceService.markAppointmentReadyForBilling,
+    ).not.toHaveBeenCalled();
     expect((result as any).caseId).toBe("case_out_1");
     expect((result as any).encounterId).toBe("enc_out_1");
   });

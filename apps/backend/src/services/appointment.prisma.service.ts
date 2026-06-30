@@ -1772,8 +1772,6 @@ export const AppointmentPrismaService = {
       });
     });
 
-    await InvoiceService.markAppointmentReadyForBilling(appointmentId);
-
     return toResponse(updated as AppointmentRow);
   },
 
