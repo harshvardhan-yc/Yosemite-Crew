@@ -447,44 +447,7 @@ const clinicalBlueprints: Partial<Record<TemplateKind, TemplateSchemaSnapshot>> 
   // Single-sourced from @yosemite-crew/types so the builder, workspace editors, and the
   // backend resolver/validation blueprint all agree on keys + rich-text field types.
   SOAP_NOTE: CANONICAL_SOAP_STRUCTURE,
-  PRESCRIPTION: {
-    sections: [
-      {
-        id: 'medications',
-        title: 'Medications',
-        order: 1,
-        fields: [
-          {
-            key: 'prescribedItems',
-            label: 'Prescribed items',
-            type: 'medicationLine',
-            repeatable: true,
-            order: 1,
-            rules: { columns: ['drug', 'dose', 'frequency', 'duration'] },
-          },
-        ],
-      },
-      {
-        id: 'instructions',
-        title: 'Instructions',
-        order: 2,
-        fields: [
-          {
-            key: 'usageInstructions',
-            label: 'Usage instructions',
-            type: 'instructionBlock',
-            order: 1,
-          },
-        ],
-      },
-      {
-        id: 'notes',
-        title: 'Notes',
-        order: 3,
-        fields: [{ key: 'clinicalNotes', label: 'Clinical notes', type: 'richText', order: 1 }],
-      },
-    ],
-  },
+  PRESCRIPTION: CANONICAL_PRESCRIPTION_STRUCTURE,
   DISCHARGE_SUMMARY: CANONICAL_DISCHARGE_STRUCTURE,
   VITAL_RECORD: CANONICAL_VITALS_STRUCTURE,
 };
@@ -787,19 +750,36 @@ type MedicationRow = {
   inventoryItemId?: string;
   medicineId?: string;
   medicineName?: string;
+  brand?: string;
+  genericName?: string;
+  sku?: string;
+  strength?: string;
+  strengthUnit?: string;
+  dosageForm?: string;
   dosage?: string;
+  dose?: string;
+  doseUnit?: string;
   route?: string;
   frequency?: string;
   durationDays?: string;
+  durationUnit?: string;
   instructions?: string;
   qty?: string;
+  refill?: string;
+  fulfillment?: string;
+  inventoryBatchId?: string;
   price?: string | number;
+  priceCents?: string | number;
+  controlledSubstance?: string | boolean;
+  prescriptionRequired?: string | boolean;
+  drugSchedule?: string;
 };
 
-const medicationFieldValue = (field: FormField): string | number | undefined => {
+const medicationFieldValue = (field: FormField): string | number | boolean | undefined => {
   const defaultValue = (field as FormField & { defaultValue?: unknown }).defaultValue;
   if (typeof defaultValue === 'string' && defaultValue.trim().length > 0) return defaultValue;
   if (typeof defaultValue === 'number') return defaultValue;
+  if (typeof defaultValue === 'boolean') return defaultValue;
   if (typeof field.placeholder === 'string' && field.placeholder.trim().length > 0) {
     return field.placeholder;
   }
@@ -816,19 +796,44 @@ const medicationRowFromGroup = (group: FormField & { fields?: FormField[] }): Me
   for (const field of group.fields ?? []) {
     const value = medicationFieldValue(field);
     if (value === undefined) continue;
-    if (field.id.endsWith('_name')) row.medicineName = String(value);
-    else if (field.id.endsWith('_dosage')) row.dosage = String(value);
-    else if (field.id.endsWith('_route')) row.route = String(value);
-    else if (field.id.endsWith('_frequency')) row.frequency = String(value);
-    else if (field.id.endsWith('_duration')) row.durationDays = String(value);
-    else if (field.id.endsWith('_qty')) row.qty = String(value);
-    else if (field.id.endsWith('_price')) row.price = value;
-    else if (field.id.endsWith('_remark') || field.id.endsWith('_instructions')) {
-      row.instructions = String(value);
-    }
+    assignMedicationRowField(row, field, value);
   }
 
   return row;
+};
+
+const assignMedicationRowField = (
+  row: MedicationRow,
+  field: FormField,
+  value: string | number | boolean
+): void => {
+  const prescriptionField = (field.meta as { prescriptionField?: keyof MedicationRow } | undefined)
+    ?.prescriptionField;
+  if (prescriptionField) {
+    row[prescriptionField] = value as never;
+    return;
+  }
+  if (field.id.endsWith('_name')) row.medicineName = String(value);
+  else if (field.id.endsWith('_brand')) row.brand = String(value);
+  else if (field.id.endsWith('_genericName')) row.genericName = String(value);
+  else if (field.id.endsWith('_sku')) row.sku = String(value);
+  else if (field.id.endsWith('_strength')) row.strength = String(value);
+  else if (field.id.endsWith('_strengthUnit')) row.strengthUnit = String(value);
+  else if (field.id.endsWith('_form')) row.dosageForm = String(value);
+  else if (field.id.endsWith('_dosage')) row.dosage = String(value);
+  else if (field.id.endsWith('_route')) row.route = String(value);
+  else if (field.id.endsWith('_frequency')) row.frequency = String(value);
+  else if (field.id.endsWith('_duration')) row.durationDays = String(value);
+  else if (field.id.endsWith('_durationUnit')) row.durationUnit = String(value);
+  else if (field.id.endsWith('_qty')) row.qty = String(value);
+  else if (field.id.endsWith('_refill')) row.refill = String(value);
+  else if (field.id.endsWith('_price'))
+    row.price = typeof value === 'boolean' ? String(value) : value;
+  else if (field.id.endsWith('_priceCents')) {
+    row.priceCents = typeof value === 'boolean' ? String(value) : value;
+  } else if (field.id.endsWith('_remark') || field.id.endsWith('_instructions')) {
+    row.instructions = String(value);
+  }
 };
 
 const collectMedicationRows = (fields: FormField[] = []): MedicationRow[] => {

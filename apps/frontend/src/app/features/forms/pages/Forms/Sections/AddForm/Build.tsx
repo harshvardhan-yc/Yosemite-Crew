@@ -24,6 +24,7 @@ import { useOrgStore } from '@/app/stores/orgStore';
 import { fetchInventoryItems } from '@/app/features/inventory/services/inventoryService';
 import { InventoryApiItem } from '@/app/features/inventory/pages/Inventory/types';
 import { mapApiItemToInventoryItem } from '@/app/features/inventory/pages/Inventory/utils';
+import { inventoryToPrescriptionItem } from '@/app/features/appointments/lib/inventoryPrescription';
 import { ensureSingleSignatureAtEnd, hasSignatureField } from '@/app/lib/forms';
 
 // Builds a nested-field updater for a group field. Shared by the service/medication/task
@@ -721,8 +722,14 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
   const structureLocked = React.useContext(StructureLockContext);
   const primaryOrgId = useOrgStore((s) => s.primaryOrgId);
   const [medicines, setMedicines] = useState<InventoryApiItem[]>([]);
-  const [selectedMedicines, setSelectedMedicines] = useState<string[]>([]);
   const [loadingMedicines, setLoadingMedicines] = useState(false);
+  const selectedMedicines = React.useMemo(
+    () =>
+      (field.fields ?? [])
+        .map((item) => (item.meta as { medicineId?: string } | undefined)?.medicineId)
+        .filter((value): value is string => Boolean(value)),
+    [field.fields]
+  );
 
   useEffect(() => {
     if (!primaryOrgId) return;
@@ -755,85 +762,87 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
     const normalizedMedicine = mapApiItemToInventoryItem(medicine);
     const inventoryItemId = medicine._id;
 
-    // Create individual medication fields directly (not a nested group)
     const medicineCount = (field.fields ?? []).length + 1;
     const fieldPrefix = `${field.id}_med_${medicineCount}`;
 
-    // Read inventory-sourced values from the canonical API fields (top-level), falling back to the
-    // legacy `attributes` bag. These prefill the read-only name/strength/route/price; the author
-    // fills frequency/duration/qty/remark defaults which preload the workspace prescription section.
-    const strength =
-      normalizedMedicine.classification.strength ||
-      normalizedMedicine.classification.dosageForm ||
-      '';
-    const route = normalizedMedicine.classification.administration || '';
-    const price = normalizedMedicine.pricing.selling || '';
-    const displayName =
-      normalizedMedicine.basicInfo.name ||
-      normalizedMedicine.classification.genericName ||
-      medicine.name ||
-      'Medicine';
+    // Read inventory-sourced values through the same mapper used by the Treatment step so the
+    // template author sees/persists the same prescription row shape the workspace consumes.
+    const prescriptionDefaults = inventoryToPrescriptionItem(normalizedMedicine);
+    const displayName = prescriptionDefaults.medicineName || medicine.name || 'Medicine';
+    const readonlyField = (
+      suffix: string,
+      prescriptionField: string,
+      label: string,
+      value?: string | number | boolean
+    ): FormField => ({
+      id: `${fieldPrefix}_${suffix}`,
+      type: typeof value === 'number' ? 'number' : 'input',
+      label,
+      placeholder: value === undefined ? '' : String(value),
+      defaultValue: typeof value === 'boolean' ? String(value) : value,
+      meta: { readonly: true, inventoryItemId, prescriptionField },
+    });
+    const templateField = (
+      suffix: string,
+      prescriptionField: string,
+      label: string,
+      type: 'input' | 'number' | 'textarea' = 'input',
+      defaultValue?: string
+    ): FormField => ({
+      id: `${fieldPrefix}_${suffix}`,
+      type,
+      label,
+      placeholder: '',
+      defaultValue,
+      meta: { inventoryItemId, prescriptionField },
+    });
     const medicationFields: FormField[] = [
-      {
-        id: `${fieldPrefix}_name`,
-        type: 'input',
-        label: 'Name',
-        placeholder: displayName,
-        defaultValue: displayName,
-        meta: { readonly: true, inventoryItemId },
-      },
-      {
-        id: `${fieldPrefix}_dosage`,
-        type: 'input',
-        label: 'Strength',
-        placeholder: strength || 'Strength from inventory',
-        defaultValue: strength,
-        meta: { readonly: true, inventoryItemId },
-      },
-      {
-        id: `${fieldPrefix}_route`,
-        type: 'input',
-        label: 'Route',
-        placeholder: route || 'Route from inventory',
-        defaultValue: route,
-        meta: { readonly: true, inventoryItemId },
-      },
-      {
-        id: `${fieldPrefix}_frequency`,
-        type: 'input',
-        label: 'Frequency',
-        placeholder: 'Enter frequency',
-        meta: { inventoryItemId },
-      },
-      {
-        id: `${fieldPrefix}_duration`,
-        type: 'input',
-        label: 'Duration',
-        placeholder: 'Enter duration',
-        meta: { inventoryItemId },
-      },
-      {
-        id: `${fieldPrefix}_qty`,
-        type: 'number',
-        label: 'Quantity',
-        placeholder: 'Units to dispense',
-        meta: { inventoryItemId },
-      },
-      {
-        id: `${fieldPrefix}_price`,
-        type: 'number',
-        label: 'Price',
-        placeholder: price,
-        defaultValue: price,
-        meta: { readonly: true, inventoryItemId },
-      },
-      {
-        id: `${fieldPrefix}_remark`,
-        type: 'textarea',
-        label: 'Instructions',
-        placeholder: 'Add instructions',
-        meta: { inventoryItemId },
-      },
+      readonlyField('name', 'medicineName', 'Name', displayName),
+      readonlyField('brand', 'brand', 'Brand', prescriptionDefaults.brand),
+      readonlyField('genericName', 'genericName', 'Generic name', prescriptionDefaults.genericName),
+      readonlyField('sku', 'sku', 'SKU', prescriptionDefaults.sku),
+      readonlyField('strength', 'strength', 'Strength', prescriptionDefaults.strength),
+      readonlyField(
+        'strengthUnit',
+        'strengthUnit',
+        'Strength unit',
+        prescriptionDefaults.strengthUnit
+      ),
+      templateField('form', 'dosageForm', 'Form', 'input', prescriptionDefaults.dosageForm),
+      readonlyField('dosage', 'dosage', 'Dose label', prescriptionDefaults.dosage),
+      templateField('route', 'route', 'Route', 'input', prescriptionDefaults.route),
+      templateField('frequency', 'frequency', 'Frequency'),
+      templateField('duration', 'durationDays', 'Duration'),
+      templateField('durationUnit', 'durationUnit', 'Duration unit', 'input', 'days'),
+      templateField('qty', 'qty', 'Quantity', 'number'),
+      templateField('refill', 'refill', 'Refills', 'number'),
+      templateField('remark', 'instructions', 'Instructions', 'textarea'),
+      readonlyField('fulfillment', 'fulfillment', 'Fulfillment', prescriptionDefaults.fulfillment),
+      readonlyField(
+        'inventoryBatchId',
+        'inventoryBatchId',
+        'Batch',
+        prescriptionDefaults.inventoryBatchId
+      ),
+      readonlyField('priceCents', 'priceCents', 'Price (cents)', prescriptionDefaults.priceCents),
+      readonlyField(
+        'controlledSubstance',
+        'controlledSubstance',
+        'Controlled substance',
+        prescriptionDefaults.controlledSubstance
+      ),
+      readonlyField(
+        'prescriptionRequired',
+        'prescriptionRequired',
+        'Prescription required',
+        prescriptionDefaults.prescriptionRequired
+      ),
+      readonlyField(
+        'drugSchedule',
+        'drugSchedule',
+        'Drug schedule',
+        prescriptionDefaults.drugSchedule
+      ),
     ];
 
     // Create a group for this specific medicine
@@ -849,7 +858,6 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
       },
     };
 
-    setSelectedMedicines([...selectedMedicines, medicineId]);
     onChange({
       ...field,
       fields: [...(field.fields ?? []), newMedicineGroup],
@@ -857,13 +865,6 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
   };
 
   const removeMedicine = (medFieldId: string) => {
-    const medField = (field.fields ?? []).find((f) => f.id === medFieldId);
-    if (medField) {
-      const medicineId = (medField as any).meta?.medicineId;
-      if (medicineId) {
-        setSelectedMedicines(selectedMedicines.filter((id) => id !== medicineId));
-      }
-    }
     onChange({
       ...field,
       fields: (field.fields ?? []).filter((f) => f.id !== medFieldId),
@@ -891,8 +892,6 @@ const MedicationGroupBuilder: React.FC<MedicationGroupBuilderProps> = ({
         />
       )}
 
-      {/* Picking which medicines the template prefills is content, not structure, so the inventory
-          picker stays available even for YC-default (structure-locked) prescription templates. */}
       <Dropdown
         placeholder="Select medicine from inventory"
         value=""

@@ -404,11 +404,15 @@ describe('Build form step', () => {
       const updated = schema[0] as any;
       expect(updated.fields).toHaveLength(1);
       expect(updated.fields[0].label).toBe('Amoxicillin');
-      // name, dosage, route, frequency, duration, qty, price, remark
-      expect(updated.fields[0].fields).toHaveLength(8);
+      // Full prescription row shape sourced from inventoryToPrescriptionItem:
+      // name, brand, genericName, sku, strength, strengthUnit, form, dosage,
+      // route, frequency, duration, durationUnit, qty, refill, remark,
+      // fulfillment, inventoryBatchId, priceCents, controlledSubstance,
+      // prescriptionRequired, drugSchedule
+      expect(updated.fields[0].fields).toHaveLength(21);
       expect(updated.fields[0].fields[0].defaultValue).toBe('Amoxicillin');
-      expect(updated.fields[0].fields[1].defaultValue).toBe('250 mg');
-      expect(updated.fields[0].fields[2].defaultValue).toBe('Oral');
+      expect(updated.fields[0].fields[4].defaultValue).toBe('250 mg');
+      expect(updated.fields[0].fields[8].defaultValue).toBe('Oral');
     });
   });
 
