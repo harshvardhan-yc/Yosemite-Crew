@@ -1072,12 +1072,12 @@ const resolvePackageItemPersistenceData = async (params: {
   });
 };
 
-const getPackageItemSourceId = (
-  item: Pick<
-    ProductPackageItemRecord,
-    "childProductItemId" | "inventoryItemId"
-  >,
-) => item.childProductItemId ?? item.inventoryItemId ?? "";
+const getPackageItemSourceId = (item: {
+  childProductItemId: string | null;
+  inventoryItemId?: string | null;
+}) => item.childProductItemId ?? item.inventoryItemId ?? "";
+
+type PackageItemCreateData = Prisma.ProductPackageItemCreateManyInput;
 
 const assertPackageItemValid = (
   item: CatalogPackageItemInput,
@@ -1867,7 +1867,7 @@ const productSelectionInclude = {
       },
     },
   },
-} as const as any;
+} as const as Prisma.ProductItemInclude;
 
 const loadTemplateBindingsForProduct = async (params: {
   productItemId: string;
@@ -1984,9 +1984,9 @@ export const CatalogService = {
                 additionalDiscountPercent:
                   packageSummary?.additionalDiscountPercent ?? 0,
                 items:
-                  packageItems && packageItems.length > 0
+                  resolvedPackageItems && resolvedPackageItems.length > 0
                     ? {
-                        create: packageItems,
+                        create: resolvedPackageItems,
                       }
                     : undefined,
               } satisfies Prisma.ProductPackageCreateWithoutProductItemInput,
@@ -2033,7 +2033,7 @@ export const CatalogService = {
     const packageSummary =
       input.package === undefined ? undefined : (input.package ?? null);
     const existingPackageItems = existing.package?.items.map((item) => ({
-      childProductItemId: getPackageItemSourceId(item as any),
+      childProductItemId: getPackageItemSourceId(item),
       quantity: item.quantity,
       pricingMode: item.pricingMode,
       overridePrice: item.overridePrice,
@@ -2206,17 +2206,19 @@ export const CatalogService = {
 
           if (nextPackageItems.length > 0) {
             await tx.productPackageItem.createMany({
-              data: nextPackageItems.map((item) => ({
-                packageId: pkg.id,
-                childProductItemId: item.childProductItemId,
-                inventoryItemId: item.inventoryItemId,
-                quantity: item.quantity,
-                pricingMode: item.pricingMode,
-                overridePrice: item.overridePrice,
-                discountPercent: item.discountPercent,
-                sortOrder: item.sortOrder,
-                isOptional: item.isOptional,
-              })) as any,
+              data: nextPackageItems.map(
+                (item): PackageItemCreateData => ({
+                  packageId: pkg.id,
+                  childProductItemId: item.childProductItemId,
+                  inventoryItemId: item.inventoryItemId,
+                  quantity: item.quantity,
+                  pricingMode: item.pricingMode,
+                  overridePrice: item.overridePrice,
+                  discountPercent: item.discountPercent,
+                  sortOrder: item.sortOrder,
+                  isOptional: item.isOptional,
+                }),
+              ),
             });
           }
         }
@@ -2732,7 +2734,7 @@ export const CatalogService = {
           },
         },
       },
-    } as any)) as unknown as ProductRecord[];
+    } as unknown as Prisma.ProductItemFindManyArgs)) as unknown as ProductRecord[];
 
     return candidateOrgs
       .map((org) => {
