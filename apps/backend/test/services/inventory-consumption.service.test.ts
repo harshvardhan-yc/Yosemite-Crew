@@ -366,6 +366,9 @@ describe("InventoryConsumptionService", () => {
         isNeutered: true,
         currentWeight: 12.5,
         photoUrl: "https://cdn.example/patient.png",
+        parent: {
+          name: "Jane Doe",
+        },
       },
       appointmentKind: "INPATIENT",
     });
@@ -455,6 +458,7 @@ describe("InventoryConsumptionService", () => {
             petSpecies: "Canine",
             petSex: "Male",
             petReproductiveStatus: "Neutered",
+            petParentName: "Jane Doe",
             patientImageUrl: "https://cdn.example/patient.png",
             petWeight: 12.5,
             petWeightUnit: "kg",

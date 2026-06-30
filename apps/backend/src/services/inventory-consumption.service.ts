@@ -75,6 +75,7 @@ type PrescriptionDispenseRequestMedication = Record<string, unknown> & {
 type PrescriptionDispenseRequestMetadata = Record<string, unknown> & {
   appointmentKind?: AppointmentKindValue;
   dispenseStockSource?: DispenseStockSource;
+  petParentName?: string;
 };
 
 const asNonEmptyString = (value: unknown): string | undefined => {
@@ -404,6 +405,23 @@ const buildPetSnapshot = (patient: Record<string, unknown>) => {
   return snapshot;
 };
 
+const resolvePetParentName = (patient: Record<string, unknown>) => {
+  const parent = patient.parent;
+  if (parent && typeof parent === "object" && !Array.isArray(parent)) {
+    const parentRecord = parent as Record<string, unknown>;
+    const fullName = [
+      asNonEmptyString(parentRecord.firstName),
+      asNonEmptyString(parentRecord.lastName),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" ")
+      .trim();
+    return asNonEmptyString(parentRecord.name) ?? fullName ?? undefined;
+  }
+
+  return undefined;
+};
+
 const loadPetSnapshot = async (
   db: Pick<typeof prisma, "appointment" | "encounter" | "patient">,
   params: {
@@ -428,8 +446,13 @@ const loadPetSnapshot = async (
     });
 
     if (appointment) {
+      const patientRecord = toRecord(appointment.patient);
+      const petParentName = resolvePetParentName(patientRecord);
       return {
-        snapshot: buildPetSnapshot(toRecord(appointment.patient)),
+        snapshot: {
+          ...buildPetSnapshot(patientRecord),
+          ...(petParentName ? { petParentName } : {}),
+        },
         appointmentKind:
           appointment.appointmentKind === "INPATIENT"
             ? "INPATIENT"
@@ -471,8 +494,20 @@ const loadPetSnapshot = async (
     },
   });
 
+  const patientRecord = patient ? toRecord(patient) : undefined;
+  const petParentName = patientRecord
+    ? resolvePetParentName(patientRecord)
+    : undefined;
   return {
-    snapshot: patient ? buildPetSnapshot(toRecord(patient)) : {},
+    snapshot:
+      patientRecord && petParentName
+        ? {
+            ...buildPetSnapshot(patientRecord),
+            petParentName,
+          }
+        : patientRecord
+          ? buildPetSnapshot(patientRecord)
+          : {},
   };
 };
 
