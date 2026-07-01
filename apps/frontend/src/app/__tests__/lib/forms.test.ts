@@ -797,7 +797,7 @@ describe('buildTemplatePayload appliesTo linking', () => {
     });
   });
 
-  it('drops empty legacy prescription instructions and notes sections when mapping to UI', () => {
+  it('keeps the canonical prescription instructions and notes sections when mapping to UI', () => {
     const mapped = mapTemplateToUI({
       id: 'tpl-prescription',
       organisationId: 'org-1',
@@ -847,11 +847,14 @@ describe('buildTemplatePayload appliesTo linking', () => {
       ],
     } as any);
 
-    expect(mapped.schema).toHaveLength(1);
-    expect(mapped.schema[0].id).toBe('medications');
+    expect(mapped.schema.map((section) => section.id)).toEqual([
+      'medications',
+      'instructions',
+      'notes',
+    ]);
   });
 
-  it('drops populated richText instructions and notes sections the backend appends on reload', () => {
+  it('keeps the populated richText instructions and notes sections the backend returns on reload', () => {
     const mapped = mapTemplateToUI({
       id: 'tpl-prescription-rich',
       organisationId: 'org-1',
@@ -914,8 +917,11 @@ describe('buildTemplatePayload appliesTo linking', () => {
       ],
     } as any);
 
-    expect(mapped.schema).toHaveLength(1);
-    expect(mapped.schema[0].id).toBe('medications');
+    expect(mapped.schema.map((section) => section.id)).toEqual([
+      'medications',
+      'instructions',
+      'notes',
+    ]);
   });
 });
 
