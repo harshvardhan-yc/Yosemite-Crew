@@ -256,8 +256,10 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
       minShelfLifeAlertDate: toStringSafe(
         b.minShelfLifeAlertDate ?? attributes.minShelfLifeAlertDate
       ),
-      expiryWarningBefore: toStringSafe(b.expiryWarningBefore ?? attributes.expiryWarningBefore),
-      barcode: toStringSafe(b.barcode ?? attributes.barcode),
+      expiryWarningBefore: toStringSafe(
+        (b as any).expiryWarningBefore ?? attributes.expiryWarningBefore
+      ),
+      barcode: toStringSafe((b as any).barcode ?? attributes.barcode),
       quantity: toStringSafe(b.quantity),
       allocated: toStringSafe(b.allocated),
       createdAt: toStringSafe(b.createdAt),
@@ -340,7 +342,7 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
     },
     classification: {
       genericName: toStringSafe(apiItem.genericName ?? attributes.genericName),
-      form: toStringSafe(attributes.form),
+      form: toStringSafe(apiItem.dosageForm ?? attributes.form),
       unitofMeasure: normalizeStringOrArray(
         apiItem.unitOfMeasure ?? attributes.unitofMeasure ?? attributes.unitOfMeasure
       ),
@@ -523,7 +525,7 @@ export const buildInventoryPayload = (
   const genericName = formData.classification.genericName?.trim() || undefined;
   const strength = formData.classification.strength?.trim() || undefined;
   const dosageForm =
-    formData.classification.dosageForm?.trim() || formData.classification.form?.trim() || undefined;
+    formData.classification.form?.trim() || formData.classification.dosageForm?.trim() || undefined;
   const routeOfAdministration = formData.classification.administration?.trim() || undefined;
   const prescriptionRequired = normalizeBooleanStringForApi(
     formData.classification.prescriptionRequired ?? formData.basicInfo.prescriptionRequired
@@ -572,6 +574,7 @@ export const buildInventoryPayload = (
     animalStage: formData.basicInfo.animalStage,
     skuCode: formData.basicInfo.skuCode,
     ...formData.classification,
+    dosageForm: formData.classification.form || formData.classification.dosageForm,
     brand: formData.basicInfo.brand ?? formData.vendor.brand,
     tax: formData.pricing.tax,
     maxDiscount: formData.pricing.maxDiscount,
@@ -589,9 +592,10 @@ export const buildInventoryPayload = (
     minStockAlert: formData.stock.minStockAlert,
     reorderQuantity: formData.stock.reorderQuantity,
     available: batchTotals.available ?? toNumberSafe(formData.stock.available),
-    expiryWarningBefore: firstBatch?.expiryWarningBefore,
-    barcode: firstBatch?.barcode,
-    serial: firstBatch?.serial ?? firstBatch?.barcode,
+    expiryWarningBefore:
+      formData.attributes?.expiryWarningBefore ?? firstBatch?.expiryWarningBefore,
+    barcode: formData.attributes?.barcode ?? firstBatch?.barcode,
+    serial: firstBatch?.serial ?? formData.attributes?.barcode ?? firstBatch?.barcode,
     tracking: firstBatch?.tracking,
     litterId: firstBatch?.litterId,
     nextRefillDate: firstBatch?.nextRefillDate,
@@ -616,6 +620,8 @@ export const buildInventoryPayload = (
     storageInstructions,
     unitOfMeasure,
     packageQuantity,
+    unitQuantity: toNumberSafe(formData.stock.unitQnt),
+    stockUnitType: formData.stock.stockType?.trim() || undefined,
     storageLocation,
     minimumStock,
     attributes: {
