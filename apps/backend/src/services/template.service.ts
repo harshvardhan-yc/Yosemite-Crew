@@ -16,7 +16,10 @@ import type {
 import { normalizeTemplateKind } from "@yosemite-crew/types";
 import { z } from "zod";
 import { prisma } from "src/config/prisma";
-import { validateClinicalTemplateBlueprint } from "src/services/clinical-template-blueprints";
+import {
+  normalizeClinicalTemplateSchemaSnapshot,
+  validateClinicalTemplateBlueprint,
+} from "src/services/clinical-template-blueprints";
 import {
   createRenderedDocumentRecord,
   type PersistRenderedDocumentInput,
@@ -809,7 +812,11 @@ export const TemplateService = {
     const parsed = createTemplateSchema.parse(input);
     const updatedBy = parsed.updatedBy ?? parsed.createdBy;
     const storageKind = toStorageTemplateKind(parsed.kind);
-    validateTemplateSchemaForKind(storageKind, parsed.schemaSnapshot);
+    const schemaSnapshot = normalizeClinicalTemplateSchemaSnapshot(
+      storageKind,
+      parsed.schemaSnapshot,
+    );
+    validateTemplateSchemaForKind(storageKind, schemaSnapshot);
     const organisationId =
       parsed.ownership === "YC_LIBRARY" ? undefined : parsed.organisationId;
     const ownerUserId =
@@ -838,7 +845,7 @@ export const TemplateService = {
         data: {
           templateId: created.id,
           version: 1,
-          schemaSnapshot: toJsonInput(parsed.schemaSnapshot),
+          schemaSnapshot: toJsonInput(schemaSnapshot),
           renderConfigSnapshot: toJsonInput(parsed.renderConfigSnapshot),
           validationSnapshot: toJsonInput(parsed.validationSnapshot),
           createdBy: parsed.createdBy,
@@ -882,10 +889,17 @@ export const TemplateService = {
     const currentVersion = hasVersionChanges
       ? await loadTemplateVersionOrThrow(template.id, targetVersion)
       : null;
-    const nextSchemaSnapshot =
+    const rawNextSchemaSnapshot =
       parsed.schemaSnapshot === undefined
         ? currentVersion?.schemaSnapshot
         : parsed.schemaSnapshot;
+    const nextSchemaSnapshot =
+      rawNextSchemaSnapshot == null
+        ? rawNextSchemaSnapshot
+        : normalizeClinicalTemplateSchemaSnapshot(
+            template.kind,
+            templateSchemaSnapshotSchema.parse(rawNextSchemaSnapshot),
+          );
 
     if (nextSchemaSnapshot != null) {
       validateTemplateSchemaForKind(template.kind, nextSchemaSnapshot);

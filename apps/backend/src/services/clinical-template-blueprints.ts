@@ -12,6 +12,7 @@ type BlueprintFieldType =
   | "signature"
   | "table"
   | "repeater"
+  | "observation"
   | "medicationLine"
   | "diagnosis"
   | "procedure"
@@ -452,6 +453,38 @@ export const buildClinicalTemplateSchemaSnapshot = (
     fields: section.fields.map((field) => ({ ...field })),
   })),
 });
+
+export const normalizeClinicalTemplateSchemaSnapshot = (
+  kind: TemplateKind,
+  snapshot: ClinicalTemplateSchemaSnapshot,
+): ClinicalTemplateSchemaSnapshot => {
+  if (kind !== "PRESCRIPTION") {
+    return snapshot;
+  }
+
+  const existingSectionIds = new Set(
+    snapshot.sections.map((section) => section.id.trim()),
+  );
+  const missingOptionalSections = PRESCRIPTION_BLUEPRINT.sections
+    .filter(
+      (section) => section.id === "instructions" || section.id === "notes",
+    )
+    .filter((section) => !existingSectionIds.has(section.id));
+
+  if (missingOptionalSections.length === 0) {
+    return snapshot;
+  }
+
+  return {
+    sections: [
+      ...snapshot.sections,
+      ...missingOptionalSections.map((section) => ({
+        ...section,
+        fields: section.fields.map((field) => ({ ...field })),
+      })),
+    ],
+  };
+};
 
 // FE-consumable default SOAP seed: four S/O/A/P sections, single-sourced from the backend
 // canonical structure.
