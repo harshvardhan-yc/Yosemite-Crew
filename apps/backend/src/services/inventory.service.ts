@@ -333,6 +333,8 @@ export interface InventoryBatchInput {
   batchNumber?: string;
   lotNumber?: string;
   regulatoryTrackingId?: string;
+  expiryWarningBefore?: string;
+  barcode?: string;
   manufactureDate?: Date;
   expiryDate?: Date;
   minShelfLifeAlertDate?: Date;
@@ -1725,6 +1727,8 @@ export const InventoryService = {
         batchNumber: batchInput.batchNumber ?? undefined,
         lotNumber: batchInput.lotNumber ?? undefined,
         regulatoryTrackingId: batchInput.regulatoryTrackingId ?? undefined,
+        expiryWarningBefore: batchInput.expiryWarningBefore ?? undefined,
+        barcode: batchInput.barcode ?? undefined,
         manufactureDate: batchInput.manufactureDate ?? undefined,
         expiryDate: batchInput.expiryDate ?? undefined,
         minShelfLifeAlertDate: batchInput.minShelfLifeAlertDate ?? undefined,
@@ -1764,6 +1768,9 @@ export const InventoryService = {
     if (input.lotNumber !== undefined) data.lotNumber = input.lotNumber ?? null;
     if (input.regulatoryTrackingId !== undefined)
       data.regulatoryTrackingId = input.regulatoryTrackingId ?? null;
+    if (input.expiryWarningBefore !== undefined)
+      data.expiryWarningBefore = input.expiryWarningBefore ?? null;
+    if (input.barcode !== undefined) data.barcode = input.barcode ?? null;
     if (input.manufactureDate !== undefined)
       data.manufactureDate = input.manufactureDate ?? null;
     if (input.expiryDate !== undefined)

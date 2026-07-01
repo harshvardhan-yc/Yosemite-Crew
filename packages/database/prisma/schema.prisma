@@ -2532,6 +2532,8 @@ model InventoryBatch {
   batchNumber          String?
   lotNumber            String?
   regulatoryTrackingId String?
+  expiryWarningBefore  String?
+  barcode              String?
   manufactureDate      DateTime?
   expiryDate           DateTime?
   minShelfLifeAlertDate DateTime?

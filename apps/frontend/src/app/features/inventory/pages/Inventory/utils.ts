@@ -256,8 +256,8 @@ export const mapApiItemToInventoryItem = (apiItem: InventoryApiItem): InventoryI
       minShelfLifeAlertDate: toStringSafe(
         b.minShelfLifeAlertDate ?? attributes.minShelfLifeAlertDate
       ),
-      expiryWarningBefore: toStringSafe(attributes.expiryWarningBefore),
-      barcode: toStringSafe(attributes.barcode),
+      expiryWarningBefore: toStringSafe(b.expiryWarningBefore ?? attributes.expiryWarningBefore),
+      barcode: toStringSafe(b.barcode ?? attributes.barcode),
       quantity: toStringSafe(b.quantity),
       allocated: toStringSafe(b.allocated),
       createdAt: toStringSafe(b.createdAt),
@@ -500,6 +500,8 @@ export const buildBatchPayload = (batch: BatchValues): InventoryBatchPayload | u
     batchNumber: batch.batch,
     lotNumber: batch.serial,
     regulatoryTrackingId: batch.tracking,
+    expiryWarningBefore: batch.expiryWarningBefore,
+    barcode: batch.barcode,
     manufactureDate: normalizedManufacture ?? (manufactureRaw || undefined),
     expiryDate: normalizedExpiry ?? (expiryRaw || undefined),
     minShelfLifeAlertDate: normalizedMinShelfLife ?? (minShelfRaw || undefined),

@@ -455,9 +455,30 @@ describe("Inventory service", () => {
       quantity: 4,
       allocated: 0,
     });
+    (prisma.inventoryBatch.create as jest.Mock).mockResolvedValue({
+      id: "batch-1",
+      itemId: "item-1",
+      organisationId: "org-1",
+      quantity: 3,
+      allocated: 0,
+      expiryWarningBefore: "30 days",
+      barcode: "BAR-123",
+    });
 
-    const created = await InventoryService.addBatch("item-1", { quantity: 3 });
+    const created = await InventoryService.addBatch("item-1", {
+      quantity: 3,
+      expiryWarningBefore: "30 days",
+      barcode: "BAR-123",
+    });
     expect(created.id).toBe("batch-1");
+    expect(
+      (prisma.inventoryBatch.create as jest.Mock).mock.calls[0][0].data,
+    ).toEqual(
+      expect.objectContaining({
+        expiryWarningBefore: "30 days",
+        barcode: "BAR-123",
+      }),
+    );
     expect(
       (prisma.inventoryItem.update as jest.Mock).mock.calls[0][0].data,
     ).toEqual(
@@ -471,8 +492,18 @@ describe("Inventory service", () => {
 
     const updated = await InventoryService.updateBatch("batch-1", {
       quantity: 4,
+      expiryWarningBefore: "21 days",
+      barcode: "BAR-456",
     });
     expect(updated.quantity).toBe(4);
+    expect(
+      (prisma.inventoryBatch.update as jest.Mock).mock.calls[0][0].data,
+    ).toEqual(
+      expect.objectContaining({
+        expiryWarningBefore: "21 days",
+        barcode: "BAR-456",
+      }),
+    );
     expect(
       (prisma.inventoryItem.updateMany as jest.Mock).mock.calls[0][0].data,
     ).toEqual(

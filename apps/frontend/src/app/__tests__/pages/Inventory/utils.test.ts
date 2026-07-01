@@ -360,6 +360,31 @@ describe('Inventory Utils', () => {
       expect(result.batches?.[0].barcode).toBe('BAR-123');
     });
 
+    it('prefers batch-specific display fields over shared attributes', () => {
+      const result = mapApiItemToInventoryItem({
+        ...mockApiItem,
+        attributes: {
+          ...mockApiItem.attributes,
+          expiryWarningBefore: 'shared warning',
+          barcode: 'SHARED-BAR',
+        },
+        batches: [
+          {
+            _id: 'b1',
+            batchNumber: 'BATCH-1',
+            quantity: 10,
+            expiryWarningBefore: 'per-batch warning',
+            barcode: 'PER-BATCH-BAR',
+          },
+        ],
+      } as unknown as InventoryApiItem);
+
+      expect(result.batch.expiryWarningBefore).toBe('per-batch warning');
+      expect(result.batch.barcode).toBe('PER-BATCH-BAR');
+      expect(result.batches?.[0].expiryWarningBefore).toBe('per-batch warning');
+      expect(result.batches?.[0].barcode).toBe('PER-BATCH-BAR');
+    });
+
     it('selects first batch if no expiry dates provided', () => {
       const item = {
         ...mockApiItem,
@@ -597,6 +622,17 @@ describe('Inventory Utils', () => {
         };
         const payload = buildBatchPayload(batch);
         expect(payload?.expiryDate).toBe('2026-01-01T05:30:00.000Z');
+      });
+
+      it('preserves per-batch expiry warning and barcode fields', () => {
+        const batch = {
+          ...mockInventoryItem.batches![0],
+          expiryWarningBefore: '30 days',
+          barcode: 'BAR-123',
+        };
+        const payload = buildBatchPayload(batch);
+        expect(payload?.expiryWarningBefore).toBe('30 days');
+        expect(payload?.barcode).toBe('BAR-123');
       });
 
       it('falls back to current/available for quantity if quantity field missing', () => {

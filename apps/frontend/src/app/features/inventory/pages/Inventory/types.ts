@@ -14,6 +14,8 @@ export type InventoryBatchApi = {
   batchNumber?: string;
   lotNumber?: string;
   regulatoryTrackingId?: string;
+  expiryWarningBefore?: string;
+  barcode?: string;
   manufactureDate?: string;
   expiryDate?: string;
   minShelfLifeAlertDate?: string;
@@ -70,6 +72,8 @@ export type InventoryBatchPayload = {
   batchNumber?: string;
   lotNumber?: string;
   regulatoryTrackingId?: string;
+  expiryWarningBefore?: string;
+  barcode?: string;
   manufactureDate?: string;
   expiryDate?: string;
   minShelfLifeAlertDate?: string;
