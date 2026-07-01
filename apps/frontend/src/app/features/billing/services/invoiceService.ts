@@ -81,6 +81,11 @@ type PaymentSessionResponse = {
   providerCheckoutSessionId?: string;
 };
 
+type InvoiceCheckoutSessionResponse = {
+  checkout?: PaymentSessionResponse | null;
+  emailSent?: boolean;
+};
+
 type InvoiceBackendArtifacts = {
   pdfUrl?: unknown;
   invoicePdfUrl?: unknown;
@@ -589,6 +594,28 @@ export const getPaymentLink = async (invoiceId: string): Promise<string | undefi
     return url;
   } catch (err) {
     console.error('Failed to load specialities:', err);
+    throw err;
+  }
+};
+
+export const sendInvoiceToClient = async (
+  invoiceId: string
+): Promise<InvoiceCheckoutSessionResponse> => {
+  const primaryOrgId = useOrgStore.getState().primaryOrgId;
+  if (!primaryOrgId) {
+    console.warn('No primary organization selected. Cannot send invoice to client.');
+    return {};
+  }
+  try {
+    if (!invoiceId) {
+      throw new Error('Invoice ID missing');
+    }
+    const res = await postData<
+      FinanceEnvelope<InvoiceCheckoutSessionResponse> | InvoiceCheckoutSessionResponse
+    >(`/fhir/v1/invoice/${invoiceId}/checkout-session`);
+    return unwrapFinanceData(res.data);
+  } catch (err) {
+    console.error('Failed to send invoice to client:', err);
     throw err;
   }
 };
