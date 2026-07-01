@@ -17,11 +17,18 @@ type ClinicalAlert = { title?: string; severity: 'critical' | 'high' | 'medium' 
 const APPT_ACTIONS = ['Reschedule', 'Send form', 'Mark complete', 'Book follow-up'] as const;
 type AppointmentAction = (typeof APPT_ACTIONS)[number];
 
-const getVisibleAppointmentActions = (appointment?: Appointment): AppointmentAction[] => {
+const getVisibleAppointmentActions = (
+  appointment?: Appointment,
+  completing?: boolean
+): AppointmentAction[] => {
   const status = appointment?.status;
   return APPT_ACTIONS.filter((action) => {
     if (action === 'Reschedule') return allowReschedule(status);
-    if (action === 'Mark complete') return canTransitionAppointmentStatus(status, 'COMPLETED');
+    if (action === 'Mark complete') {
+      // Hide as soon as the completion is in flight so the button can't be
+      // clicked twice while the status round-trip is still pending.
+      return !completing && canTransitionAppointmentStatus(status, 'COMPLETED');
+    }
     return true;
   });
 };
@@ -30,6 +37,8 @@ export type ChatHeaderContextProps = Readonly<{
   allergy?: string;
   alerts?: ClinicalAlert[];
   appointment?: Appointment;
+  /** True while a "Mark complete" request is in flight — hides that action. */
+  completing?: boolean;
   onAction: (action: string) => void;
 }>;
 
@@ -37,6 +46,7 @@ export function ChatHeaderContext({
   allergy,
   alerts,
   appointment,
+  completing,
   onAction,
 }: ChatHeaderContextProps) {
   const flags: string[] = [];
@@ -56,7 +66,7 @@ export function ChatHeaderContext({
       })
     : undefined;
   const apptName = appointment?.patient?.name ?? appointment?.companion?.name;
-  const visibleActions = getVisibleAppointmentActions(appointment);
+  const visibleActions = getVisibleAppointmentActions(appointment, completing);
 
   if (flags.length === 0 && !appointment) return null;
 

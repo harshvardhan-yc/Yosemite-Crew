@@ -643,6 +643,7 @@ const ChannelHeaderWithCounterpart: FC<{
             allergy={companion?.allergy?.trim() || undefined}
             alerts={companion?.alerts}
             appointment={appointment}
+            completing={completingAppointment}
             onAction={handleApptAction}
           />
           {appointment && (

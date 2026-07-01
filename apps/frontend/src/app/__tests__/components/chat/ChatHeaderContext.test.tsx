@@ -87,6 +87,17 @@ describe('ChatHeaderContext', () => {
     expect(screen.queryByRole('button', { name: 'Reschedule' })).not.toBeInTheDocument();
   });
 
+  it('hides mark complete while a completion request is in flight', () => {
+    render(
+      <ChatHeaderContext
+        appointment={{ ...appointment, status: 'IN_PROGRESS' } as Appointment}
+        completing
+        onAction={jest.fn()}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Mark complete' })).not.toBeInTheDocument();
+  });
+
   it.each(['Reschedule', 'Send form', 'Book follow-up'])(
     'calls onAction with "%s" when that button is clicked',
     (label) => {
