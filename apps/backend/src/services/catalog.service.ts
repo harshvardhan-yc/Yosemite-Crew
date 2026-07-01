@@ -2718,15 +2718,15 @@ export const CatalogService = {
                       take: 1,
                     },
                   },
-                  inventoryItem: {
-                    select: {
-                      id: true,
-                      name: true,
-                      sku: true,
-                      status: true,
-                      sellingPrice: true,
-                      currency: true,
-                    },
+                },
+                inventoryItem: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sku: true,
+                    status: true,
+                    sellingPrice: true,
+                    currency: true,
                   },
                 },
               },
