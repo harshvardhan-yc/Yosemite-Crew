@@ -170,9 +170,18 @@ describe('AppointmentContextMenu', () => {
           displayName: 'Ward 2A',
           code: '2A',
           isActive: true,
+          isOccupied: true,
+        },
+        'unit-2b': {
+          id: 'unit-2b',
+          roomId: 'room-2',
+          displayName: 'Ward 2B',
+          code: '2B',
+          isActive: true,
+          isOccupied: false,
         },
       },
-      roomUnitIdsByRoomId: { 'room-2': ['unit-2a'] },
+      roomUnitIdsByRoomId: { 'room-2': ['unit-2a', 'unit-2b'] },
     };
     render(
       <AppointmentContextMenu
@@ -203,9 +212,9 @@ describe('AppointmentContextMenu', () => {
         room: { id: 'room-2', name: 'Room 2' },
       })
     );
-    expect(mockSetRoomUnit).toHaveBeenCalledWith('appt-1', 'room-2', 'unit-2a');
+    expect(mockSetRoomUnit).toHaveBeenCalledWith('appt-1', 'room-2', 'unit-2b');
     expect(assignEncounterUnit).toHaveBeenCalledWith(
-      expect.objectContaining({ encounterId: 'enc-1', unitId: 'unit-2a' })
+      expect.objectContaining({ encounterId: 'enc-1', unitId: 'unit-2b' })
     );
   });
 
