@@ -2008,6 +2008,8 @@ model WorkspaceTreatmentItem {
   priceSnapshot      Json
   billingStatus      String   @default("UNBILLED")
   invoiceRowId       String?
+  settledInvoiceId   String?
+  settledAt          DateTime?
   lockState          Json?
   prescriptionId     String?
   createdAt          DateTime @default(now())
@@ -2017,6 +2019,7 @@ model WorkspaceTreatmentItem {
   @@index([organisationId, appointmentId])
   @@index([organisationId, billingStatus])
   @@index([invoiceRowId])
+  @@index([settledInvoiceId])
   @@index([prescriptionId])
 }
 

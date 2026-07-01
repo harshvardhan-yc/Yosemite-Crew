@@ -48,6 +48,7 @@ jest.mock("src/config/prisma", () => ({
     organization: { findUnique: jest.fn() },
     parent: { findUnique: jest.fn() },
     paymentAttempt: { updateMany: jest.fn(), findFirst: jest.fn() },
+    workspaceTreatmentItem: { updateMany: jest.fn() },
   },
 }));
 
@@ -1621,8 +1622,10 @@ describe("InvoiceService", () => {
       id: "inv_3",
       status: "AWAITING_PAYMENT",
       organisationId,
+      appointmentId,
       patientId,
       parentId,
+      items: [{ id: "treatment-line-1" }],
     });
     (prisma.invoice.update as jest.Mock).mockResolvedValueOnce({
       id: "inv_3",
@@ -1648,6 +1651,16 @@ describe("InvoiceService", () => {
 
     const paid = await InvoiceService.markInvoicePaid({ invoiceId: "inv_3" });
     expect(paid).toBeTruthy();
+    expect(prisma.workspaceTreatmentItem.updateMany).toHaveBeenCalledWith({
+      where: {
+        appointmentId,
+        invoiceRowId: { in: ["treatment-line-1"] },
+      },
+      data: {
+        settledInvoiceId: "inv_3",
+        settledAt: expect.any(Date),
+      },
+    });
     expect(prisma.financeEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
