@@ -42,6 +42,7 @@ import { resolvePaymentCollectionMethod } from "src/utils/payment";
 import { ensureObjectId as ensureObjectIdStrict } from "src/utils/mongo";
 import { assertEmail } from "src/utils/sanitize";
 import { CatalogService, CatalogServiceError } from "./catalog.service";
+import { CompanionOrganisationService } from "./companion-organisation.service";
 
 export class AppointmentServiceError extends Error {
   constructor(
@@ -1409,6 +1410,52 @@ const getOrganisationName = async (
   return organisation?.name;
 };
 
+const getOrganisationType = async (
+  organisationId?: string,
+): Promise<"HOSPITAL" | "BREEDER" | "BOARDER" | "GROOMER" | undefined> => {
+  if (!organisationId) return undefined;
+  if (isReadFromPostgres()) {
+    const organisation = await prisma.organization.findUnique({
+      where: { id: organisationId },
+      select: { type: true },
+    });
+    return organisation?.type ?? undefined;
+  }
+  if (typeof OrganizationModel.findById !== "function") {
+    return undefined;
+  }
+  const query = OrganizationModel.findById(organisationId) as unknown;
+  if (!isOrganisationNameQuery(query)) {
+    return undefined;
+  }
+  const organisation = (await query.select("type").lean()) as {
+    type?: "HOSPITAL" | "BREEDER" | "BOARDER" | "GROOMER";
+  };
+  return organisation?.type;
+};
+
+const linkPatientToOrganisationFromMobile = async (params: {
+  parentId: string;
+  patientId: string;
+  organisationId: string;
+}) => {
+  const organisationType = await getOrganisationType(params.organisationId);
+
+  if (!organisationType) {
+    throw new AppointmentServiceError(
+      "Unable to resolve organisation type for appointment booking.",
+      404,
+    );
+  }
+
+  await CompanionOrganisationService.linkByParent({
+    parentId: params.parentId,
+    patientId: params.patientId,
+    organisationId: params.organisationId,
+    organisationType,
+  });
+};
+
 const sendAppointmentAssignmentEmails = async (
   appointment: AppointmentDocument | Appointment,
   organisationName?: string,
@@ -2180,6 +2227,11 @@ export const AppointmentService = {
       }
 
       const appointment = buildAppointmentFromInput(input, "REQUESTED");
+      await linkPatientToOrganisationFromMobile({
+        parentId: appointment.patient.parent.id,
+        patientId: appointment.patient.id,
+        organisationId: appointment.organisationId,
+      });
 
       let created;
       try {
@@ -2326,6 +2378,11 @@ export const AppointmentService = {
     }
 
     const appointment = buildAppointmentFromInput(input, "REQUESTED");
+    await linkPatientToOrganisationFromMobile({
+      parentId: appointment.patient.parent.id,
+      patientId: appointment.patient.id,
+      organisationId: appointment.organisationId,
+    });
 
     const persistable = toPersistable(appointment);
     let savedAppointment: AppointmentDocument;
