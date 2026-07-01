@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, jest, it } from "@jest/globals";
 import { AppointmentPrismaService } from "../../src/services/appointment.prisma.service";
 import { prisma } from "../../src/config/prisma";
 import { InvoiceService } from "../../src/services/invoice.service";
+import { CompanionOrganisationService } from "../../src/services/companion-organisation.service";
 
 jest.mock("@yosemite-crew/types", () => ({
   ...(jest.requireActual("@yosemite-crew/types") as unknown as Record<
@@ -34,6 +35,12 @@ jest.mock("../../src/services/invoice.service", () => ({
     createCheckoutSessionAndEmailParent: jest.fn(),
     markAppointmentReadyForBilling: jest.fn(),
     setInvoiceDepositTarget: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/companion-organisation.service", () => ({
+  CompanionOrganisationService: {
+    linkByParent: jest.fn(),
   },
 }));
 
@@ -87,6 +94,13 @@ jest.mock("../../src/config/prisma", () => ({
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    organization: {
+      findUnique: jest.fn(),
+    },
+    patientOrganisation: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+    },
   },
 }));
 
@@ -109,6 +123,9 @@ const mockedInvoiceService = InvoiceService as unknown as {
   createCheckoutSessionAndEmailParent: jest.Mock;
   markAppointmentReadyForBilling: jest.Mock;
   setInvoiceDepositTarget: jest.Mock;
+};
+const mockedCompanionOrgService = CompanionOrganisationService as unknown as {
+  linkByParent: jest.Mock;
 };
 
 const baseDomain = {
@@ -209,6 +226,9 @@ describe("AppointmentPrismaService", () => {
     mockedPrisma.occupancy.deleteMany.mockResolvedValue({ count: 1 } as any);
     mockedPrisma.roomUnit.findUnique.mockResolvedValue(null);
     mockedPrisma.roomUnitGroup.findUnique.mockResolvedValue(null);
+    mockedPrisma.organization.findUnique.mockResolvedValue({
+      type: "HOSPITAL",
+    });
     mockedPrisma.patient.findUnique.mockResolvedValue({
       id: "comp_1",
       type: "dog",
@@ -296,6 +316,14 @@ describe("AppointmentPrismaService", () => {
     );
     expect((result as any).paymentStatus).toBe("UNPAID");
     expect(result.id).toBe("appt_1");
+    expect(mockedCompanionOrgService.linkByParent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentId: "parent_1",
+        patientId: "comp_1",
+        organisationId: "org_1",
+        organisationType: "HOSPITAL",
+      }),
+    );
     expect((result as any).templateDefaults).toEqual([
       expect.objectContaining({
         templateKind: "SOAP_NOTE",
@@ -455,6 +483,14 @@ describe("AppointmentPrismaService", () => {
     expect(mockedInvoiceService.bootstrapForAppointment).toHaveBeenCalledWith(
       "appt_1",
       "PAYMENT_LINK",
+    );
+    expect(mockedCompanionOrgService.linkByParent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentId: "parent_1",
+        patientId: "comp_1",
+        organisationId: "org_1",
+        organisationType: "HOSPITAL",
+      }),
     );
     expect(
       mockedInvoiceService.createCheckoutSessionAndEmailParent,
