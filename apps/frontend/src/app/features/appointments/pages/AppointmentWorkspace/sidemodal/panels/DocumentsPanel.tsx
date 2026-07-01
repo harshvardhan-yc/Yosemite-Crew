@@ -8,7 +8,7 @@ import {
   LuFileSignature,
   LuPrinter,
 } from 'react-icons/lu';
-import type { Appointment, Form } from '@yosemite-crew/types';
+import type { Appointment, Form, TemplateLike } from '@yosemite-crew/types';
 
 type AppointmentStatus = Appointment['status'];
 import TabToggle from '@/app/ui/primitives/TabToggle/TabToggle';
@@ -27,7 +27,6 @@ import {
 } from '@/app/features/forms/services/appointmentFormsService';
 import { loadTemplateForms } from '@/app/features/forms/services/templateFormsService';
 import { downloadSubmissionPdf } from '@/app/features/forms/services/formSigningService';
-import type { TemplateLike } from '@yosemite-crew/types';
 import {
   createEncounterDocumentPacket,
   getEncounterDocumentPacketPdfUrl,

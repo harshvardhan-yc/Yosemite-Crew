@@ -301,12 +301,12 @@ const taskAssignmentSchemaToFormFields = (snapshot: TemplateSchemaSnapshot): For
         )
         .map((block, index) => {
           const prefix = `task_blocks_task_${index + 1}`;
-          const instructions =
-            typeof block.additionalNotes === 'string'
-              ? block.additionalNotes
-              : typeof block.description === 'string'
-                ? block.description
-                : '';
+          let instructions = '';
+          if (typeof block.additionalNotes === 'string') {
+            instructions = block.additionalNotes;
+          } else if (typeof block.description === 'string') {
+            instructions = block.description;
+          }
           const recurrence = (
             block.recurrence && typeof block.recurrence === 'object' ? block.recurrence : {}
           ) as {

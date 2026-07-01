@@ -1764,13 +1764,16 @@ const InvoiceStep = ({
       const result = await sendInvoiceToClient(invoice.id);
       const checkoutUrl = result.checkout?.url ?? result.checkout?.checkoutUrl;
       setConfirmationLink(result.emailSent ? null : (checkoutUrl ?? null));
-      setConfirmation(
-        result.emailSent
-          ? 'Invoice sent to client.'
-          : checkoutUrl
-            ? 'Checkout created, but the client email was not sent. Share this link manually.'
-            : 'Invoice prepared for client payment.'
-      );
+      let confirmationMessage: string;
+      if (result.emailSent) {
+        confirmationMessage = 'Invoice sent to client.';
+      } else if (checkoutUrl) {
+        confirmationMessage =
+          'Checkout created, but the client email was not sent. Share this link manually.';
+      } else {
+        confirmationMessage = 'Invoice prepared for client payment.';
+      }
+      setConfirmation(confirmationMessage);
       await reloadBilling();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to send invoice to client.');
