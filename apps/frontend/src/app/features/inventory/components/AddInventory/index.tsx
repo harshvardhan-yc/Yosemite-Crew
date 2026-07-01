@@ -11,8 +11,8 @@ import Labels from '@/app/ui/widgets/Labels/Labels';
 const labels: { key: InventorySectionKey; name: string }[] = [
   { key: 'basicInfo', name: 'Basic Details' },
   { key: 'classification', name: 'Clinical Details' },
-  { key: 'stock', name: 'Stock Control' },
   { key: 'batch', name: 'Batch and expiry' },
+  { key: 'stock', name: 'Stock Control' },
   { key: 'pricing', name: 'Pricing' },
   { key: 'vendor', name: 'Vendor details' },
 ];

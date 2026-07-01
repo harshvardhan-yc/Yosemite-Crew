@@ -79,6 +79,11 @@ import {
   reverseAppointmentReadyForBilling,
 } from '@/app/features/billing/services/invoiceService';
 import { useNotify } from '@/app/hooks/useNotify';
+import {
+  getAssignableRoomUnits,
+  getFirstAssignableRoomUnitId,
+  toAssignableRoomOptions,
+} from '@/app/features/appointments/lib/roomUnitAvailability';
 
 type AppointmentWorkspaceProps = {
   appointment: Appointment;
@@ -117,17 +122,17 @@ const isBareCheckInAdmission = (
 const getRoomUnits = (
   roomId: string | undefined,
   roomUnitsById: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitsById'],
-  roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId']
-) => {
-  if (!roomId) return [];
-  const indexedUnits = (roomUnitIdsByRoomId[roomId] ?? [])
-    .map((unitId) => roomUnitsById[unitId])
-    .filter((unit) => unit?.isActive !== false);
-  if (indexedUnits.length) return indexedUnits;
-  return Object.values(roomUnitsById).filter(
-    (unit) => unit.roomId === roomId && unit.isActive !== false
+  roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId'],
+  currentUnitId?: string
+) =>
+  getAssignableRoomUnits(
+    roomId,
+    {
+      roomUnitsById,
+      roomUnitIdsByRoomId,
+    },
+    currentUnitId
   );
-};
 
 const isValidStep = (value: string | null): value is WorkspaceStep =>
   value != null && (WORKSPACE_STEPS as string[]).includes(value);
@@ -568,16 +573,34 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     () => rooms.find((room) => room.id === effectiveEncounter?.roomId),
     [effectiveEncounter?.roomId, rooms]
   );
+  const roomIndexes = useMemo(
+    () => ({ roomUnitsById, roomUnitIdsByRoomId }),
+    [roomUnitIdsByRoomId, roomUnitsById]
+  );
   const selectedRoomUnits = useMemo(
-    () => getRoomUnits(selectedRoom?.id, roomUnitsById, roomUnitIdsByRoomId),
-    [roomUnitIdsByRoomId, roomUnitsById, selectedRoom?.id]
+    () =>
+      getRoomUnits(
+        selectedRoom?.id,
+        roomUnitsById,
+        roomUnitIdsByRoomId,
+        effectiveEncounter?.unitId
+      ),
+    [effectiveEncounter?.unitId, roomUnitIdsByRoomId, roomUnitsById, selectedRoom?.id]
   );
   const roomOptions = useMemo(() => {
-    if (rooms.length) return rooms.map((room) => ({ label: room.name, value: room.id }));
+    if (rooms.length) {
+      return toAssignableRoomOptions(
+        rooms,
+        roomIndexes,
+        effectiveEncounter?.roomId,
+        effectiveEncounter?.unitId,
+        encounterMode === 'INPATIENT'
+      );
+    }
     return effectiveEncounter?.roomId
       ? [{ label: 'Room 1', value: effectiveEncounter.roomId }]
       : [];
-  }, [effectiveEncounter?.roomId, rooms]);
+  }, [effectiveEncounter?.roomId, effectiveEncounter?.unitId, encounterMode, roomIndexes, rooms]);
   const unitOptions = useMemo(() => {
     if (selectedRoomUnits.length) {
       return selectedRoomUnits.map((unit) => ({
@@ -592,14 +615,19 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const unitOptionsByRoomId = useMemo(() => {
     const optionsByRoom: Record<string, { label: string; value: string }[]> = {};
     for (const room of rooms) {
-      const options = getRoomUnits(room.id, roomUnitsById, roomUnitIdsByRoomId).map((unit) => ({
+      const options = getRoomUnits(
+        room.id,
+        roomUnitsById,
+        roomUnitIdsByRoomId,
+        effectiveEncounter?.unitId
+      ).map((unit) => ({
         label: unit.displayName || unit.code,
         value: unit.id,
       }));
       if (options.length) optionsByRoom[room.id] = options;
     }
     return optionsByRoom;
-  }, [roomUnitIdsByRoomId, roomUnitsById, rooms]);
+  }, [effectiveEncounter?.unitId, roomUnitIdsByRoomId, roomUnitsById, rooms]);
   const hasAdmission = Boolean(
     effectiveEncounter?.admittedAt && !isBareCheckInAdmission(effectiveEncounter, appointment)
   );
@@ -887,7 +915,11 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
 
   const handleRoomSelect = useCallback(
     async (option: { value: string }) => {
-      const firstUnit = getRoomUnits(option.value, roomUnitsById, roomUnitIdsByRoomId)[0]?.id;
+      const firstUnit = getFirstAssignableRoomUnitId(
+        option.value,
+        { roomUnitsById, roomUnitIdsByRoomId },
+        effectiveEncounter?.unitId
+      );
       const nextUnit = encounterMode === 'INPATIENT' ? firstUnit : undefined;
       const previousRoomId = effectiveEncounter?.roomId;
       const previousUnitId = effectiveEncounter?.unitId;
@@ -1112,7 +1144,11 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
 
   useEffect(() => {
     if (!appointmentId || !encounter || encounter.roomId || !appointment.room?.id) return;
-    const firstUnit = getRoomUnits(appointment.room.id, roomUnitsById, roomUnitIdsByRoomId)[0]?.id;
+    const firstUnit = getFirstAssignableRoomUnitId(
+      appointment.room.id,
+      { roomUnitsById, roomUnitIdsByRoomId },
+      encounter.unitId
+    );
     setRoomUnit(
       appointmentId,
       appointment.room.id,
