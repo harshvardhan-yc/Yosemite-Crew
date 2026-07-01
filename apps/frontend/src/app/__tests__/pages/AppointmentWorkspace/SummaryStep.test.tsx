@@ -46,6 +46,7 @@ jest.mock('@/app/features/appointments/services/workspaceAggregateService', () =
     signing: { status: 'IN_PROGRESS', signingUrl: 'https://sign.test/abc' },
   }),
   getEncounterDocumentPacketPdfUrl: jest.fn().mockResolvedValue('blob:packet-pdf'),
+  reconcileWorkspaceDocumentPacket: jest.fn().mockResolvedValue({ packetId: 'packet-1' }),
   listEncounterWorkspaceDocuments: jest.fn(),
   getAppointmentWorkspaceBootstrap: jest.fn().mockResolvedValue({}),
   normalizeWorkspaceBootstrapForEncounter: jest.fn(() => ({})),
