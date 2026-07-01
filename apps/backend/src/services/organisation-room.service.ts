@@ -870,6 +870,9 @@ const buildSummary = (
   };
 };
 
+const isSummaryVacant = (room: OrganisationRoomSummaryItem) =>
+  room.vacantUnits > 0 || room.totalUnits === 0;
+
 export const OrganisationRoomService = {
   async create(
     input: Partial<OrganisationRoomInput>,
@@ -953,12 +956,16 @@ export const OrganisationRoomService = {
     return toRecord(updated, resolvedLinks.specialities, resolvedLinks.staff);
   },
 
-  async getAllByOrganizationId(organisationId: string) {
-    return this.getSummaryByOrganizationId(organisationId);
+  async getAllByOrganizationId(
+    organisationId: string,
+    options?: { vacantOnly?: boolean },
+  ) {
+    return this.getSummaryByOrganizationId(organisationId, options);
   },
 
   async getSummaryByOrganizationId(
     organisationId: string,
+    options?: { vacantOnly?: boolean },
   ): Promise<OrganisationRoomSummaryItem[]> {
     const orgId = requireNonEmptyString(organisationId, "organisationId");
     const referenceMaps = await loadRoomReferenceMaps(orgId);
@@ -1007,7 +1014,7 @@ export const OrganisationRoomService = {
     const unitsByRoomId = groupRowsByRoom(units);
     const groupsByRoomId = groupRowsByRoom(groups);
 
-    return rooms.map((room) =>
+    const summaries = rooms.map((room) =>
       buildSummary(
         room,
         unitsByRoomId.get(room.id) ?? [],
@@ -1017,6 +1024,26 @@ export const OrganisationRoomService = {
         referenceMaps.staffByRoom.get(room.id) ?? [],
       ),
     );
+
+    if (!options?.vacantOnly) {
+      return summaries;
+    }
+
+    return summaries.filter(isSummaryVacant).map((room) => ({
+      ...room,
+      units: room.units.filter((unit) => !unit.isOccupied),
+      unitGroups: room.unitGroups.map((group) => ({
+        ...group,
+        occupiedCount: 0,
+        vacantCount: group.unitCount,
+      })),
+      occupiedUnits: 0,
+      vacantUnits: room.totalUnits,
+      occupancyDisplay:
+        room.totalUnits > 0
+          ? `Vacant (${room.totalUnits})`
+          : room.occupancyDisplay,
+    }));
   },
 
   async getById(
