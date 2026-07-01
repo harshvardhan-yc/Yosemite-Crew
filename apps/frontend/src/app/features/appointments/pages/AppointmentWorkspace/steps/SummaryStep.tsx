@@ -46,6 +46,7 @@ import {
   getEncounterDocumentPacketPdfUrl,
   listEncounterWorkspaceDocuments,
   normalizeWorkspaceBootstrapForEncounter,
+  reconcileWorkspaceDocumentPacket,
   signWorkspaceDocumentPacket,
 } from '@/app/features/appointments/services/workspaceAggregateService';
 
@@ -458,6 +459,20 @@ const SummaryStep = ({
   // ready-for-billing) reflect the completed Documenso signature.
   const refreshAfterSigning = useCallback(async () => {
     if (!organisationId || !appointmentId) return;
+    // The Documenso completion webhook can't reach the backend in local/dev and
+    // can lag in prod, so first ask the backend to reconcile the packet against
+    // Documenso directly (pull the signed copy, mark packet + documents SIGNED).
+    // Best-effort: if the reconcile endpoint isn't deployed yet (404) or signing
+    // is genuinely incomplete, we swallow the error and fall through to the
+    // bootstrap + documents refetch below, which still reflects webhook truth.
+    const packetId = signingPacketIdRef.current;
+    if (packetId) {
+      try {
+        await reconcileWorkspaceDocumentPacket(organisationId, packetId);
+      } catch (error) {
+        console.error('Unable to reconcile packet signing:', error);
+      }
+    }
     try {
       const bootstrap = await getAppointmentWorkspaceBootstrap(organisationId, appointmentId);
       mergeEncounterData(appointmentId, normalizeWorkspaceBootstrapForEncounter(bootstrap));
@@ -471,6 +486,9 @@ const SummaryStep = ({
   // sign was started as the signal to refetch (the Documenso webhook has run
   // server-side by then).
   const signingInitiatedRef = useRef(false);
+  // The packet being signed, captured when signing starts so the post-close
+  // reconcile can pull server-side signing truth from Documenso directly.
+  const signingPacketIdRef = useRef<string | null>(null);
   const resolvedDischargeEncounterRef = useRef<string | null>(null);
   const dischargeResolveKey = encounterId ?? appointmentId;
   const companionId = appointment?.patient?.id;
@@ -578,6 +596,9 @@ const SummaryStep = ({
       if (!packetId) {
         throw new Error('Document packet could not be created.');
       }
+      // Remember the packet so the post-close reconcile can resolve its signing
+      // state against Documenso directly.
+      signingPacketIdRef.current = packetId;
       const signed = await signWorkspaceDocumentPacket(organisationId, packetId, {
         signerName: encounter.leadName ?? undefined,
       });

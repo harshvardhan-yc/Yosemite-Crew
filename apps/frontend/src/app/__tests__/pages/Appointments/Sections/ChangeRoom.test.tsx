@@ -218,6 +218,46 @@ describe('ChangeRoom', () => {
     });
   });
 
+  it('does not offer occupied units for inpatient room assignment', () => {
+    mockRoomState = {
+      roomUnitsById: {
+        'unit-2a': {
+          id: 'unit-2a',
+          roomId: 'room-2',
+          displayName: 'Ward 2A',
+          code: '2A',
+          isActive: true,
+          isOccupied: true,
+        },
+        'unit-2b': {
+          id: 'unit-2b',
+          roomId: 'room-2',
+          displayName: 'Ward 2B',
+          code: '2B',
+          isActive: true,
+          isOccupied: false,
+        },
+      },
+      roomUnitIdsByRoomId: { 'room-2': ['unit-2a', 'unit-2b'] },
+    };
+
+    render(
+      <ChangeRoom
+        showModal={true}
+        setShowModal={jest.fn()}
+        activeAppointment={{
+          ...baseAppointment,
+          appointmentKind: 'INPATIENT',
+        }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Room B' }));
+
+    expect(screen.queryByRole('button', { name: 'Ward 2A' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ward 2B' })).toBeInTheDocument();
+  });
+
   it('shows error message on failed save', async () => {
     mockUpdateAppointment.mockRejectedValue({
       response: { data: { message: 'Room unavailable' } },

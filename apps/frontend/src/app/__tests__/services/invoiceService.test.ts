@@ -7,6 +7,7 @@ import {
   markAppointmentReadyForBilling,
   markInvoicePaid,
   reverseAppointmentReadyForBilling,
+  sendInvoiceToClient,
   updateInvoicePaymentCollectionMethod,
 } from '@/app/features/billing/services/invoiceService';
 import { useInvoiceStore } from '@/app/stores/invoiceStore';
@@ -634,6 +635,27 @@ describe('invoiceService', () => {
     await getPaymentLink('inv-1');
     expect(postData).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+
+  it('sends the invoice checkout session to the client email endpoint', async () => {
+    (postData as jest.Mock).mockResolvedValue({
+      data: {
+        data: {
+          checkout: { url: 'https://stripe.test/pay/inv-1', paymentAttemptId: 'pay-attempt-1' },
+          emailSent: true,
+        },
+        meta: null,
+        error: null,
+      },
+    });
+
+    const result = await sendInvoiceToClient('inv-1');
+
+    expect(postData).toHaveBeenCalledWith('/fhir/v1/invoice/inv-1/checkout-session');
+    expect(result).toEqual({
+      checkout: { url: 'https://stripe.test/pay/inv-1', paymentAttemptId: 'pay-attempt-1' },
+      emailSent: true,
+    });
   });
 
   it('throws when mark paid invoice id is missing', async () => {

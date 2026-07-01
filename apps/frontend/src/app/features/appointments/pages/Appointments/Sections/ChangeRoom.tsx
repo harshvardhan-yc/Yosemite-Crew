@@ -11,21 +11,17 @@ import {
 } from '@/app/features/appointments/services/appointmentService';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useOrganisationRoomStore } from '@/app/stores/roomStore';
+import {
+  getAssignableRoomUnits,
+  getFirstAssignableRoomUnitId,
+  toAssignableRoomOptions,
+} from '@/app/features/appointments/lib/roomUnitAvailability';
 
 type ChangeRoomProps = {
   showModal: boolean;
   setShowModal: React.Dispatch<React.SetStateAction<boolean>>;
   activeAppointment: Appointment;
 };
-
-const getFirstUnitIdForRoom = (
-  roomId: string,
-  roomUnitsById: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitsById'],
-  roomUnitIdsByRoomId: ReturnType<typeof useOrganisationRoomStore.getState>['roomUnitIdsByRoomId']
-) =>
-  (roomUnitIdsByRoomId[roomId] ?? [])
-    .map((unitId) => roomUnitsById[unitId])
-    .find((unit) => unit?.isActive !== false)?.id;
 
 const ChangeRoom = ({ showModal, setShowModal, activeAppointment }: ChangeRoomProps) => {
   const rooms = useRoomsForPrimaryOrg();
@@ -37,23 +33,31 @@ const ChangeRoom = ({ showModal, setShowModal, activeAppointment }: ChangeRoomPr
     activeAppointment.id ? state.encountersById[activeAppointment.id] : undefined
   );
   const isInpatient = activeAppointment.appointmentKind === 'INPATIENT';
+  const currentUnitId = encounter?.unitId;
+  const roomIndexes = useMemo(
+    () => ({ roomUnitsById, roomUnitIdsByRoomId }),
+    [roomUnitIdsByRoomId, roomUnitsById]
+  );
   const roomOptions = useMemo(
-    () => rooms.map((room) => ({ label: room.name, value: room.id })),
-    [rooms]
+    () =>
+      toAssignableRoomOptions(
+        rooms,
+        roomIndexes,
+        activeAppointment.room?.id,
+        currentUnitId,
+        isInpatient
+      ),
+    [activeAppointment.room?.id, currentUnitId, isInpatient, roomIndexes, rooms]
   );
   const [selectedRoomId, setSelectedRoomId] = useState<string>(activeAppointment.room?.id || '');
   const [selectedUnitId, setSelectedUnitId] = useState<string>(
-    encounter?.unitId ||
-      getFirstUnitIdForRoom(activeAppointment.room?.id || '', roomUnitsById, roomUnitIdsByRoomId) ||
+    currentUnitId ||
+      getFirstAssignableRoomUnitId(activeAppointment.room?.id || '', roomIndexes, currentUnitId) ||
       ''
   );
   const selectedRoomUnits = useMemo(
-    () =>
-      (roomUnitIdsByRoomId[selectedRoomId] ?? []).flatMap((unitId) => {
-        const unit = roomUnitsById[unitId];
-        return unit && unit.isActive !== false ? [unit] : [];
-      }),
-    [roomUnitIdsByRoomId, roomUnitsById, selectedRoomId]
+    () => getAssignableRoomUnits(selectedRoomId, roomIndexes, currentUnitId),
+    [currentUnitId, roomIndexes, selectedRoomId]
   );
   const unitOptions = useMemo(
     () =>
@@ -76,9 +80,7 @@ const ChangeRoom = ({ showModal, setShowModal, activeAppointment }: ChangeRoomPr
     const newRoomId = activeAppointment.room?.id || '';
     if (selectedRoomId !== newRoomId) setSelectedRoomId(newRoomId);
     const newUnitId =
-      encounter?.unitId ||
-      getFirstUnitIdForRoom(newRoomId, roomUnitsById, roomUnitIdsByRoomId) ||
-      '';
+      currentUnitId || getFirstAssignableRoomUnitId(newRoomId, roomIndexes, currentUnitId) || '';
     if (selectedUnitId !== newUnitId) setSelectedUnitId(newUnitId);
     if (errorMessage !== null) setErrorMessage(null);
   }
@@ -94,7 +96,7 @@ const ChangeRoom = ({ showModal, setShowModal, activeAppointment }: ChangeRoomPr
     setSelectedRoomId(option.value);
     setSelectedUnitId(
       isInpatient
-        ? getFirstUnitIdForRoom(option.value, roomUnitsById, roomUnitIdsByRoomId) || ''
+        ? getFirstAssignableRoomUnitId(option.value, roomIndexes, currentUnitId) || ''
         : ''
     );
   };

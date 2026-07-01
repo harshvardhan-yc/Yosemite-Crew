@@ -487,6 +487,39 @@ describe('workspaceAggregateService', () => {
     expect(patch.stepStatus?.TREATMENT).toBe('COMPLETED');
   });
 
+  it('keeps a billed prescription-linked item in the prescription section even when its kind is not a medication', () => {
+    // After billing/dispense the backend can persist the drug as a treatment-item
+    // row whose kind is no longer MEDICATION/PRESCRIPTION but which still links to a
+    // prescription artifact. It must stay in the prescription section (read-only via
+    // `billed`), not be misfiled under Services & Packages or dropped entirely.
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      treatmentItems: [
+        {
+          id: 'ti-billed-rx',
+          productId: 'prod-drug',
+          servicePackageKind: 'SERVICE',
+          prescriptionId: 'rx-artifact-1',
+          name: 'Metronidazole',
+          quantity: 1,
+          priceSnapshot: { unitPrice: 18 },
+          billingStatus: 'BILLED',
+        },
+      ],
+    });
+
+    expect(patch.services ?? []).not.toContainEqual(
+      expect.objectContaining({ id: 'ti-billed-rx' })
+    );
+    expect(patch.prescription).toEqual([
+      expect.objectContaining({
+        id: 'ti-billed-rx',
+        medicineName: 'Metronidazole',
+        priceCents: 1800,
+        billed: true,
+      }),
+    ]);
+  });
+
   it('merges stored prescriptions with medication treatment items without duplicating ids', () => {
     const patch = normalizeWorkspaceBootstrapForEncounter({
       prescriptions: [
