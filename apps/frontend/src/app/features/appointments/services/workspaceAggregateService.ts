@@ -181,8 +181,17 @@ const normalizeDocuments = (items: Record<string, unknown>[]): WorkspaceDocument
 // both the same.
 const MEDICATION_TREATMENT_KINDS = new Set(['MEDICATION', 'PRESCRIPTION']);
 
+// A treatment item belongs in the prescription section when its kind is a medicine
+// OR it links to a prescription artifact (`prescriptionId`). The link check matters
+// for BILLED/dispensed drugs: once billed, the backend can persist the drug as a
+// treatment-item row whose `servicePackageKind` is no longer MEDICATION/PRESCRIPTION,
+// which would otherwise misfile the paid prescription under Services & Packages (or
+// drop it from the prescription list entirely once the virtual artifact line is
+// deduped away). Keying off the prescription link keeps a paid prescription visible
+// and read-only in the prescription section.
 const isMedicationTreatmentItem = (item: Record<string, unknown>): boolean =>
-  MEDICATION_TREATMENT_KINDS.has(asString(item.servicePackageKind) ?? '');
+  MEDICATION_TREATMENT_KINDS.has(asString(item.servicePackageKind) ?? '') ||
+  Boolean(asString(item.prescriptionId));
 
 const normalizeTreatmentItems = (items: Record<string, unknown>[]): LineItem[] =>
   items
@@ -713,6 +722,29 @@ export const signWorkspaceDocumentPacket = async (
   const res = await postData<WorkspaceDocumentPacketDTO>(
     `/v1/workspace/organisations/${organisationId}/document-packets/${packetId}/sign`,
     body
+  );
+  return res.data;
+};
+
+/**
+ * Reconcile a packet's signing state on demand, bypassing the Documenso
+ * completion webhook. The webhook can't reach the backend in local/dev (and can
+ * lag in prod), so we call this when the signing overlay closes: the backend
+ * pulls the signed copy straight from Documenso and, if signed, finalizes the
+ * packet + marks every bundled document SIGNED, returning the updated packet.
+ *
+ * NOTE: the `.../document-packets/:packetId/reconcile` endpoint ships in a later
+ * backend release. Until it is deployed this call 404s; callers must treat a
+ * failure as "not reconciled yet" and fall back to the bootstrap refetch. Once
+ * the backend is live this starts working end-to-end with no frontend change.
+ */
+export const reconcileWorkspaceDocumentPacket = async (
+  organisationId: string,
+  packetId: string
+) => {
+  const res = await postData<WorkspaceDocumentPacketDTO>(
+    `/v1/workspace/organisations/${organisationId}/document-packets/${packetId}/reconcile`,
+    {}
   );
   return res.data;
 };
