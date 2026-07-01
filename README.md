@@ -14,9 +14,7 @@
 
 <br>
 <p align="center">
-  <a href="https://yosemitecrew.com/">
-      <img src="https://d2il6osz49gpup.cloudfront.net/github.gif" alt="YC logo" />
-  </a>
+  <video src="https://d2il6osz49gpup.cloudfront.net/launchVideo.mp4" controls muted loop playsinline width="800"></video>
 </p>
 
 <br>
@@ -36,21 +34,6 @@
 # 📝 Overview
 
 Yosemite Crew is an open-source operating system designed for animal health industry. At its core is a free, fully customizable Practice Information Management System (PIMS) that unifies pet care operations, bringing together pet owners, pet businesses, and developers into one innovative ecosystem.
-
-## Release Versioning
-
-Frontend release tags follow the `pims-v*` pattern.
-
-- Latest shipped baseline before this revamp: `pms-v1.3.0-beta`
-- Current frontend release line: `pims-v2.0.0-beta`
-- Tag format: `pims-v<major>.<minor>.<patch>-beta`
-
-Release tags should be created from the repo root after the target commit is ready:
-
-```sh
-git tag -a pims-v2.0.0-beta -m "PIMS frontend v2.0.0-beta"
-git push origin pims-v2.0.0-beta
-```
 
 For Pet Owners
 
