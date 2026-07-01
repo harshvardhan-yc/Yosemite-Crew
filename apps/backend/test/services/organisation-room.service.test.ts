@@ -369,6 +369,63 @@ describe("OrganisationRoomService", () => {
     expect(result[0]?.unitGroups[0]?.occupiedCount).toBe(1);
   });
 
+  it("filters out occupied rooms and units when vacantOnly is requested", async () => {
+    mockedPrisma.organisationRoom.findMany.mockResolvedValue([
+      { ...baseRoom, id: "room_1", name: "Ward A" },
+      { ...baseRoom, id: "room_2", name: "Ward B" },
+    ]);
+    mockedPrisma.roomUnit.findMany.mockResolvedValue([
+      {
+        id: "unit_1",
+        roomId: "room_1",
+        unitGroupId: null,
+        code: "A-01",
+        displayName: "A1",
+        size: null,
+        speciesConstraints: [],
+        isActive: true,
+      },
+      {
+        id: "unit_2",
+        roomId: "room_1",
+        unitGroupId: null,
+        code: "A-02",
+        displayName: "A2",
+        size: null,
+        speciesConstraints: [],
+        isActive: true,
+      },
+      {
+        id: "unit_3",
+        roomId: "room_2",
+        unitGroupId: null,
+        code: "B-01",
+        displayName: "B1",
+        size: null,
+        speciesConstraints: [],
+        isActive: true,
+      },
+    ]);
+    mockedPrisma.admission.findMany.mockResolvedValue([
+      { unitId: "unit_1" },
+      { unitId: "unit_3" },
+    ]);
+
+    const result = await OrganisationRoomService.getSummaryByOrganizationId(
+      "org_1",
+      { vacantOnly: true },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("room_1");
+    expect(result[0]?.occupiedUnits).toBe(0);
+    expect(result[0]?.vacantUnits).toBe(2);
+    expect(result[0]?.occupancyDisplay).toBe("Vacant (2)");
+    expect(result[0]?.units).toEqual([
+      expect.objectContaining({ id: "unit_2", isOccupied: false }),
+    ]);
+  });
+
   it("returns room-level occupancy when no units exist", async () => {
     mockedPrisma.organisationRoom.findUnique.mockResolvedValue(baseRoom);
     mockedPrisma.organisationRoom.findMany.mockResolvedValue([baseRoom]);

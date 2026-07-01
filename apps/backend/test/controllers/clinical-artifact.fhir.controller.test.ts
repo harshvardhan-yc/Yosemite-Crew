@@ -29,6 +29,7 @@ jest.mock("../../src/services/clinical-artifact.service", () => {
       reopenPrescription: jest.fn(),
       amendPrescription: jest.fn(),
       deletePrescription: jest.fn(),
+      cancelPrescription: jest.fn(),
       createDischargeSummary: jest.fn(),
       updateDischargeSummary: jest.fn(),
       getDischargeSummary: jest.fn(),
@@ -201,6 +202,10 @@ describe("ClinicalArtifactFhirController", () => {
       artifact: { id: "artifact-2" },
       prescription: { id: "rx-1" },
     } as never);
+    mockedService.cancelPrescription.mockResolvedValueOnce({
+      artifact: { id: "artifact-2" },
+      prescription: { id: "rx-1" },
+    } as never);
 
     await ClinicalArtifactFhirController.listPrescriptionsForAppointment(
       req as Request,
@@ -232,12 +237,20 @@ describe("ClinicalArtifactFhirController", () => {
       req as Request,
       res as Response,
     );
+    await ClinicalArtifactFhirController.cancelPrescription(
+      req as Request,
+      res as Response,
+    );
 
     expect(mockedService.createPrescription).toHaveBeenCalledWith(
       expect.objectContaining({ status: "COMPLETED" }),
     );
     expect(mockedMapper.prescriptionToMedicationRequest).toHaveBeenCalledTimes(
-      3,
+      4,
+    );
+    expect(mockedService.cancelPrescription).toHaveBeenCalledWith(
+      "rx-1",
+      "org-1",
     );
     expect(statusMock).toHaveBeenCalledWith(201);
     expect(statusMock).toHaveBeenCalledWith(204);

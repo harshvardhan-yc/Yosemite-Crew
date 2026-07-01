@@ -502,6 +502,8 @@ export const buildBatchPayload = (batch: BatchValues): InventoryBatchPayload | u
     batchNumber: batch.batch,
     lotNumber: batch.serial,
     regulatoryTrackingId: batch.tracking,
+    expiryWarningBefore: batch.expiryWarningBefore,
+    barcode: batch.barcode,
     manufactureDate: normalizedManufacture ?? (manufactureRaw || undefined),
     expiryDate: normalizedExpiry ?? (expiryRaw || undefined),
     minShelfLifeAlertDate: normalizedMinShelfLife ?? (minShelfRaw || undefined),

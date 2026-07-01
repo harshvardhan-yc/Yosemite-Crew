@@ -304,7 +304,14 @@ const toTaskKind = (value: unknown): TaskKind | undefined =>
   value === "OBSERVATION_TOOL" ||
   value === "HYGIENE" ||
   value === "DIET" ||
-  value === "CUSTOM"
+  value === "CUSTOM" ||
+  value === "CARE" ||
+  value === "PROCEDURE" ||
+  value === "DIAGNOSTIC" ||
+  value === "COMMUNICATION" ||
+  value === "BILLING" ||
+  value === "RECORD" ||
+  value === "ADMIN"
     ? value
     : undefined;
 

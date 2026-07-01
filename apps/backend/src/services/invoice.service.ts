@@ -327,6 +327,29 @@ const toInvoiceRecord = (row: InvoiceWithCreditNotes): Invoice => {
   };
 };
 
+const withRenderedDocument = async <T extends Invoice>(
+  invoice: T,
+): Promise<T & Pick<Invoice, "renderedDocumentId" | "pdfUrl">> => {
+  if (!invoice.id || !invoice.organisationId) {
+    return invoice as T & Pick<Invoice, "renderedDocumentId" | "pdfUrl">;
+  }
+  const document = await prisma.renderedDocument.findFirst({
+    where: {
+      organisationId: invoice.organisationId,
+      sourceKind: "INVOICE",
+      sourceId: invoice.id,
+    },
+    select: { id: true, pdfUrl: true },
+  });
+  return document
+    ? {
+        ...invoice,
+        renderedDocumentId: document.id,
+        pdfUrl: document.pdfUrl,
+      }
+    : (invoice as T & Pick<Invoice, "renderedDocumentId" | "pdfUrl">);
+};
+
 const buildInvoiceLineSnapshots = (items: DraftInvoiceItemInput[]) =>
   items.map((item) => {
     const total =
@@ -1008,6 +1031,28 @@ const recordInvoicePaidState = async (invoice: PrismaInvoice, paidAt: Date) => {
       visitBillingStage: "SETTLED",
     },
   });
+  const invoiceRowIds = (Array.isArray(invoice.items) ? invoice.items : [])
+    .map((item) =>
+      typeof item === "object" &&
+      item !== null &&
+      "id" in item &&
+      typeof item.id === "string"
+        ? item.id
+        : null,
+    )
+    .filter((id): id is string => Boolean(id));
+  if (invoiceRowIds.length > 0) {
+    await prisma.workspaceTreatmentItem.updateMany({
+      where: {
+        appointmentId: invoice.appointmentId,
+        invoiceRowId: { in: invoiceRowIds },
+      },
+      data: {
+        settledInvoiceId: invoice.id,
+        settledAt: paidAt,
+      },
+    });
+  }
 
   await recordInvoiceAuditForRow(updated, "INVOICE_PAID", updated.id, {
     status: updated.status,
@@ -1545,7 +1590,6 @@ export const InvoiceService = {
     }
 
     if (
-      invoice.billingCollectionMode === "PREPAY_AT_BOOKING" ||
       invoice.visitBillingStage === "READY_FOR_BILLING" ||
       invoice.visitBillingStage === "SETTLED"
     ) {
@@ -1663,10 +1707,12 @@ export const InvoiceService = {
     });
 
     return Promise.all(
-      docs.map(async (doc) => ({
-        ...toInvoiceRecord(doc),
-        ...(await loadInvoiceFinancialDetails(doc)),
-      })),
+      docs.map(async (doc) =>
+        withRenderedDocument({
+          ...toInvoiceRecord(doc),
+          ...(await loadInvoiceFinancialDetails(doc)),
+        }),
+      ),
     );
   },
 
@@ -1771,8 +1817,10 @@ export const InvoiceService = {
         image: org?.imageUrl ?? "",
       },
       invoice: {
-        ...toInvoiceRecord(doc),
-        ...financialDetails,
+        ...(await withRenderedDocument({
+          ...toInvoiceRecord(doc),
+          ...financialDetails,
+        })),
       },
     };
   },

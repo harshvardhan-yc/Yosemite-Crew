@@ -567,6 +567,22 @@ export const ClinicalArtifactFhirController = {
     }
   },
 
+  async cancelPrescription(req: Request, res: Response) {
+    try {
+      const record = await ClinicalArtifactService.cancelPrescription(
+        req.params.prescriptionId,
+        req.params.organisationId,
+      );
+      return res
+        .status(200)
+        .json(
+          clinicalArtifactFhirMapper.prescriptionToMedicationRequest(record),
+        );
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
   async finalizeDischargeSummary(req: Request, res: Response) {
     try {
       const record = await ClinicalArtifactService.finalizeDischargeSummary(

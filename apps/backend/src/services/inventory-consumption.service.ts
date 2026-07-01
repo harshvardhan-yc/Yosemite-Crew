@@ -56,6 +56,7 @@ type PrescriptionDispenseRequestContext = {
 
 type PrescriptionDispenseRequestMedication = Record<string, unknown> & {
   inventoryItemName?: string | null;
+  inventoryItemCode?: string | null;
   frequency?: string | null;
   frequencyPerDay?: number | null;
   durationDays?: number | null;
@@ -75,6 +76,14 @@ type PrescriptionDispenseRequestMedication = Record<string, unknown> & {
 type PrescriptionDispenseRequestMetadata = Record<string, unknown> & {
   appointmentKind?: AppointmentKindValue;
   dispenseStockSource?: DispenseStockSource;
+  petParentName?: string;
+};
+
+type PrescriptionDispenseRequestDisplayFields = {
+  patientName?: string | null;
+  parentName?: string | null;
+  leadName?: string | null;
+  location?: string | null;
 };
 
 const asNonEmptyString = (value: unknown): string | undefined => {
@@ -404,6 +413,23 @@ const buildPetSnapshot = (patient: Record<string, unknown>) => {
   return snapshot;
 };
 
+const resolvePetParentName = (patient: Record<string, unknown>) => {
+  const parent = patient.parent;
+  if (parent && typeof parent === "object" && !Array.isArray(parent)) {
+    const parentRecord = parent as Record<string, unknown>;
+    const fullName = [
+      asNonEmptyString(parentRecord.firstName),
+      asNonEmptyString(parentRecord.lastName),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" ")
+      .trim();
+    return asNonEmptyString(parentRecord.name) ?? fullName ?? undefined;
+  }
+
+  return undefined;
+};
+
 const loadPetSnapshot = async (
   db: Pick<typeof prisma, "appointment" | "encounter" | "patient">,
   params: {
@@ -428,8 +454,13 @@ const loadPetSnapshot = async (
     });
 
     if (appointment) {
+      const patientRecord = toRecord(appointment.patient);
+      const petParentName = resolvePetParentName(patientRecord);
       return {
-        snapshot: buildPetSnapshot(toRecord(appointment.patient)),
+        snapshot: {
+          ...buildPetSnapshot(patientRecord),
+          ...(petParentName ? { petParentName } : {}),
+        },
         appointmentKind:
           appointment.appointmentKind === "INPATIENT"
             ? "INPATIENT"
@@ -471,8 +502,20 @@ const loadPetSnapshot = async (
     },
   });
 
+  const patientRecord = patient ? toRecord(patient) : undefined;
+  const petParentName = patientRecord
+    ? resolvePetParentName(patientRecord)
+    : undefined;
   return {
-    snapshot: patient ? buildPetSnapshot(toRecord(patient)) : {},
+    snapshot:
+      patientRecord && petParentName
+        ? {
+            ...buildPetSnapshot(patientRecord),
+            petParentName,
+          }
+        : patientRecord
+          ? buildPetSnapshot(patientRecord)
+          : {},
   };
 };
 
@@ -495,10 +538,22 @@ const enrichDispenseRequestMedications = async (
     .map((item) => asNonEmptyString(item.inventoryItemId))
     .filter((value): value is string => Boolean(value));
   const skus = normalized
-    .map((item) => asNonEmptyString(item.inventoryItemSku))
+    .map(
+      (item) =>
+        asNonEmptyString(item.inventoryItemSku) ?? asNonEmptyString(item.sku),
+    )
     .filter((value): value is string => Boolean(value));
+  const codes = normalized.flatMap((item) =>
+    [
+      asNonEmptyString(item.inventoryItemCode),
+      asNonEmptyString(item.medicationCode),
+      asNonEmptyString(item.drugCode),
+      asNonEmptyString(item.code),
+      asNonEmptyString(item.name),
+    ].filter((value): value is string => Boolean(value)),
+  );
 
-  if (!ids.length && !skus.length) {
+  if (!ids.length && !skus.length && !codes.length) {
     return params.medications;
   }
 
@@ -508,6 +563,7 @@ const enrichDispenseRequestMedications = async (
       OR: [
         ...(ids.length ? [{ id: { in: ids } }] : []),
         ...(skus.length ? [{ sku: { in: skus } }] : []),
+        ...(codes.length ? [{ name: { in: codes } }] : []),
       ],
     },
     select: {
@@ -533,10 +589,24 @@ const enrichDispenseRequestMedications = async (
           Boolean(entry[0]),
       ),
   );
+  const byCode = new Map(
+    inventoryItems
+      .map((item) => [normalizeKey(item.name), item] as const)
+      .filter(
+        (entry): entry is readonly [string, (typeof inventoryItems)[number]] =>
+          Boolean(entry[0]),
+      ),
+  );
 
   return normalized.map<PrescriptionDispenseRequestMedication>((item) => {
     const itemId = asNonEmptyString(item.inventoryItemId);
     const itemSku = asNonEmptyString(item.inventoryItemSku);
+    const itemCode =
+      asNonEmptyString(item.inventoryItemCode) ??
+      asNonEmptyString(item.medicationCode) ??
+      asNonEmptyString(item.drugCode) ??
+      asNonEmptyString(item.code) ??
+      asNonEmptyString(item.name);
     const frequency = asNonEmptyString(item.frequency ?? item.freq);
     const doseParts = readDoseParts(item.dosage ?? item.dose);
     const durationDays =
@@ -548,7 +618,8 @@ const enrichDispenseRequestMedications = async (
     const doseQty = readPositiveNumber(item.doseQty) ?? doseParts.doseQty;
     const inventoryItem =
       (itemId ? byId.get(itemId) : undefined) ??
-      (itemSku ? bySku.get(itemSku) : undefined);
+      (itemSku ? bySku.get(itemSku) : undefined) ??
+      (itemCode ? byCode.get(normalizeKey(itemCode)) : undefined);
     const stockUnitQty =
       readPositiveInteger(item.stockUnitQty ?? item.stockUnitQuantity) ??
       inventoryItem?.packageQuantity ??
@@ -573,6 +644,7 @@ const enrichDispenseRequestMedications = async (
         asNonEmptyString(item.inventoryItemName) ??
         asNonEmptyString(item.medication) ??
         null,
+      inventoryItemCode: itemCode ?? null,
       frequency,
       frequencyPerDay,
       durationDays,
@@ -1386,6 +1458,87 @@ const buildPrescriptionDispenseRequestInclude = () =>
     },
   }) as const;
 
+const resolveDispenseRequestDisplayFields = async (
+  db: Pick<typeof prisma, "appointment">,
+  request: {
+    prescription: {
+      artifact: {
+        appointmentId?: string | null;
+      };
+    };
+  },
+): Promise<PrescriptionDispenseRequestDisplayFields> => {
+  const appointmentId = asNonEmptyString(
+    request.prescription.artifact.appointmentId,
+  );
+  if (!appointmentId) {
+    return {};
+  }
+
+  const appointment = await db.appointment.findFirst({
+    where: { id: appointmentId },
+    select: {
+      patient: true,
+      lead: true,
+      room: true,
+    },
+  });
+
+  if (!appointment) {
+    return {};
+  }
+
+  const appointmentRecord = toRecord(appointment);
+  const patient = toRecord(appointmentRecord.patient);
+  const lead = toRecord(appointmentRecord.lead);
+  const room = toRecord(appointmentRecord.room);
+
+  const location =
+    asNonEmptyString(room?.name) ??
+    asNonEmptyString(room?.unitName) ??
+    (() => {
+      const unit = toRecord(room.unit);
+      return asNonEmptyString(unit.displayName) ?? asNonEmptyString(unit.name);
+    })();
+
+  return {
+    patientName:
+      asNonEmptyString(patient.name) ??
+      asNonEmptyString(patient.companionName) ??
+      asNonEmptyString(patient.displayName) ??
+      null,
+    parentName: resolvePetParentName(patient) ?? null,
+    leadName: asNonEmptyString(lead.name) ?? null,
+    location: location ?? null,
+  };
+};
+
+const hydrateDispenseRequest = async (
+  db: Pick<typeof prisma, "appointment">,
+  request:
+    | (NonNullable<
+        Awaited<ReturnType<typeof prisma.prescriptionDispenseRequest.findFirst>>
+      > & {
+        prescription: {
+          artifact: {
+            appointmentId?: string | null;
+          };
+        };
+      })
+    | null,
+) => {
+  if (!request) return request;
+
+  const displayFields = await resolveDispenseRequestDisplayFields(
+    db,
+    request as never,
+  );
+  return {
+    ...request,
+    ...displayFields,
+  };
+};
+
 export const InventoryConsumptionService = {
   async upsertRule(input: InventoryConsumptionRuleInput) {
     const organisationId = asNonEmptyString(input.organisationId);
@@ -1452,7 +1605,7 @@ export const InventoryConsumptionService = {
       );
     }
 
-    return prisma.prescriptionDispenseRequest.findMany({
+    const requests = await prisma.prescriptionDispenseRequest.findMany({
       where: {
         organisationId,
         ...(params.status ? { status: params.status } : {}),
@@ -1463,6 +1616,10 @@ export const InventoryConsumptionService = {
       include: buildPrescriptionDispenseRequestInclude(),
       orderBy: [{ requestedAt: "desc" }, { createdAt: "desc" }],
     });
+
+    return Promise.all(
+      requests.map((request) => hydrateDispenseRequest(prisma, request)),
+    );
   },
 
   async getPrescriptionDispenseRequest(params: {
@@ -1493,7 +1650,7 @@ export const InventoryConsumptionService = {
       );
     }
 
-    return request;
+    return hydrateDispenseRequest(prisma, request);
   },
 
   async createPrescriptionDispenseRequest(params: {
@@ -1625,7 +1782,7 @@ export const InventoryConsumptionService = {
       );
     }
 
-    return prisma.$transaction(async (tx) => {
+    const updatedId = await prisma.$transaction(async (tx) => {
       const request = await tx.prescriptionDispenseRequest.findFirst({
         where: {
           organisationId,
@@ -1639,7 +1796,7 @@ export const InventoryConsumptionService = {
         return null;
       }
 
-      return tx.prescriptionDispenseRequest.update({
+      await tx.prescriptionDispenseRequest.update({
         where: { id: request.id },
         data: {
           status: "NOT_DISPENSED",
@@ -1648,7 +1805,24 @@ export const InventoryConsumptionService = {
           reviewedAt: new Date(),
         },
       });
+      return request.id;
     });
+
+    if (!updatedId) {
+      return null;
+    }
+
+    const refreshedRequest = await prisma.prescriptionDispenseRequest.findFirst(
+      {
+        where: {
+          id: updatedId,
+          organisationId,
+        },
+        include: buildPrescriptionDispenseRequestInclude(),
+      },
+    );
+
+    return hydrateDispenseRequest(prisma, refreshedRequest);
   },
 
   async consume(request: InventoryConsumptionRequest) {
@@ -1845,20 +2019,27 @@ export const InventoryConsumptionService = {
 
     const lines: InventoryConsumptionLineInput[] = [];
     for (const item of product.package.items) {
+      const sourceId = item.childProductItemId ?? item.inventoryItemId;
+      if (!sourceId) {
+        throw new InventoryConsumptionServiceError(
+          "Package component is missing a source reference",
+          400,
+        );
+      }
       const rule = await resolveInventoryItemFromRule(
         prisma,
         organisationId,
         "PACKAGE",
-        item.childProductItemId,
+        sourceId,
       );
       if (!rule) {
         throw new InventoryConsumptionServiceError(
-          `Missing inventory mapping for package component ${item.childProductItemId}.`,
+          `Missing inventory mapping for package component ${sourceId}.`,
           400,
         );
       }
       lines.push({
-        sourceLineKey: item.childProductItemId,
+        sourceLineKey: sourceId,
         inventoryItemId: rule.inventoryItemId,
         quantity: Math.max(
           1,

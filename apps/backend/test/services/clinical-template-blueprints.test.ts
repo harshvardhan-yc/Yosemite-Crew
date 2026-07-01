@@ -3,6 +3,7 @@ import { CANONICAL_PRESCRIPTION_ROW_KEYS } from "@yosemite-crew/types";
 import {
   buildClinicalTemplateSchemaSnapshot,
   getClinicalTemplateBlueprint,
+  normalizeClinicalTemplateSchemaSnapshot,
   validateClinicalTemplateBlueprint,
 } from "../../src/services/clinical-template-blueprints";
 
@@ -40,9 +41,14 @@ describe("clinical template blueprints", () => {
 
     expect(blueprint.sections.map((section) => section.id)).toEqual([
       "medications",
+      "instructions",
+      "notes",
     ]);
     expect(blueprint.sections[0].fields[0].type).toBe("medicationLine");
     expect(blueprint.sections[0].fields[0].key).toBe("medicationLine");
+    expect(blueprint.sections[0].fields[0].rules).toEqual(
+      expect.objectContaining({ inventoryItemKind: "MEDICAL" }),
+    );
     expect(blueprint.sections[0].fields[0].rules?.columns).toEqual(
       CANONICAL_PRESCRIPTION_ROW_KEYS,
     );
@@ -52,6 +58,43 @@ describe("clinical template blueprints", () => {
         type: "medicationLine",
       }),
     );
+  });
+
+  it("adds optional prescription sections for medication-only payloads", () => {
+    const canonical = buildClinicalTemplateSchemaSnapshot("PRESCRIPTION");
+    const medications = canonical.sections.find(
+      (section) => section.id === "medications",
+    );
+    const normalized = normalizeClinicalTemplateSchemaSnapshot(
+      TemplateKind.PRESCRIPTION,
+      { sections: medications ? [medications] : [] },
+    );
+
+    expect(normalized.sections.map((section) => section.id)).toEqual([
+      "medications",
+      "instructions",
+      "notes",
+    ]);
+    expect(
+      validateClinicalTemplateBlueprint(TemplateKind.PRESCRIPTION, normalized),
+    ).toEqual(
+      expect.objectContaining({
+        missingSectionIds: [],
+        missingFieldPaths: [],
+        invalidFieldPaths: [],
+      }),
+    );
+  });
+
+  it("preserves complete prescription snapshots", () => {
+    const snapshot = buildClinicalTemplateSchemaSnapshot("PRESCRIPTION");
+
+    expect(
+      normalizeClinicalTemplateSchemaSnapshot(
+        TemplateKind.PRESCRIPTION,
+        snapshot,
+      ),
+    ).toBe(snapshot);
   });
 
   it("returns a discharge blueprint using follow-up days rather than a date", () => {

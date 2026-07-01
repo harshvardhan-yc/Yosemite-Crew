@@ -90,7 +90,11 @@ describe("template-library-seed", () => {
         key: "medicationLine",
         type: "medicationLine",
         repeatable: true,
+        label: "Medication lines",
+        order: 1,
+        required: true,
         rules: {
+          inventoryItemKind: "MEDICAL",
           columns: [
             "inventoryItemId",
             "medicineId",

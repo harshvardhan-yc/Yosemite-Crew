@@ -369,7 +369,7 @@ const updateInvoiceAfterPayment = async (params: {
     : roundMoney(invoice.depositCollectedAmount ?? 0);
 
   if (appliedAmount >= balance) {
-    return prisma.invoice.update({
+    const settledInvoice = await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         status: "PAID",
@@ -383,6 +383,29 @@ const updateInvoiceAfterPayment = async (params: {
           : {}),
       },
     });
+    const invoiceRowIds = (Array.isArray(invoice.items) ? invoice.items : [])
+      .map((item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "id" in item &&
+        typeof item.id === "string"
+          ? item.id
+          : null,
+      )
+      .filter((id): id is string => Boolean(id));
+    if (invoiceRowIds.length > 0) {
+      await prisma.workspaceTreatmentItem.updateMany({
+        where: {
+          appointmentId: invoice.appointmentId,
+          invoiceRowId: { in: invoiceRowIds },
+        },
+        data: {
+          settledInvoiceId: invoiceId,
+          settledAt: receivedAt,
+        },
+      });
+    }
+    return settledInvoice;
   }
 
   if (isDepositPayment) {
@@ -723,8 +746,8 @@ export const FinancePaymentService = {
             parentId: invoice.parentId ?? "",
           },
         },
-        success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
-        cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}"`,
+        success_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
         expires_at: expiresAt,
       },
       {
