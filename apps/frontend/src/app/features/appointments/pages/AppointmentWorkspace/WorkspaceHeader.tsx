@@ -74,27 +74,25 @@ const WorkspaceHeader = ({
   const hasAlerts = alerts.length > 0 || clientAlerts.length > 0 || Boolean(onAddAlert);
 
   return (
-    <div className="flex min-w-0 items-start justify-between gap-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <button
-            type="button"
-            aria-label="Go back"
-            onClick={onBack}
-            className="flex size-9 items-center justify-center rounded-full text-neutral-900 transition-colors duration-150 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
-          >
-            <IoIosArrowBack size={22} aria-hidden="true" />
-          </button>
-          <h1 className="font-satoshi text-[24px] font-medium leading-[120%] tracking-[-0.48px] text-neutral-900">
-            {companionName.split(' ')[0]}&rsquo;s Appointment
-          </h1>
-          <AppointmentStatusPill appointment={appointment} />
-          {appointment.isEmergency && <EmergencyBadge />}
-        </div>
+    <div className="flex min-w-0 items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <button
+          type="button"
+          aria-label="Go back"
+          onClick={onBack}
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-neutral-900 transition-colors duration-150 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-brand"
+        >
+          <IoIosArrowBack size={22} aria-hidden="true" />
+        </button>
+        <h1 className="shrink-0 font-satoshi text-[24px] font-medium leading-[120%] tracking-[-0.48px] text-neutral-900">
+          {companionName.split(' ')[0]}&rsquo;s Appointment
+        </h1>
+        <AppointmentStatusPill appointment={appointment} />
+        {appointment.isEmergency && <EmergencyBadge />}
         {hasAlerts && (
           <div
             data-testid="workspace-alert-strip"
-            className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 scrollbar-hidden"
+            className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1 scrollbar-hidden"
           >
             {alerts.map((alert) => (
               <div key={alert.id} className="shrink-0">
@@ -130,7 +128,7 @@ const WorkspaceHeader = ({
           </div>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-3 self-start">
+      <div className="flex shrink-0 items-center gap-3">
         {canAdmit && onAdmit && (
           <Primary
             text={isAdmitting ? 'Admitting' : 'Admit'}
