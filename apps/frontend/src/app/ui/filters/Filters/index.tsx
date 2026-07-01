@@ -197,7 +197,9 @@ const Filters = ({
               }
             >
               <span>
-                {selectedStatus?.key === 'all' ? 'Status' : (selectedStatus?.name ?? 'Status')}
+                {selectedStatus?.key?.toLowerCase() === 'all'
+                  ? 'Status'
+                  : (selectedStatus?.name ?? 'Status')}
               </span>
               <FaCaretDown
                 size={14}

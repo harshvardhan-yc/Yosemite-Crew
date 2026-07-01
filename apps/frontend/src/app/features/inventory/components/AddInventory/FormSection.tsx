@@ -88,7 +88,7 @@ const PricingSummary = ({ formData }: { formData: InventoryItem }) => (
         {formatCurrencyValue(getGrossProfitPerUnit(formData), formData.currency)}
       </span>
     </div>
-    <div>
+    <div className="mb-4">
       <span>Margin : </span>
       <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
         {formatPercentValue(getMarginPercent(formData))}
@@ -263,7 +263,13 @@ const FormSection: React.FC<FormSectionProps> = ({
           inname={field.name}
           value={value}
           inlabel={placeholder || ''}
-          onChange={(e) => handleChange(field, e.target.value, index)}
+          onChange={(e) => {
+            const raw = e.target.value;
+            const val = field.numeric
+              ? raw.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+              : raw;
+            handleChange(field, val, index);
+          }}
           error={error}
           className="min-h-12!"
         />
