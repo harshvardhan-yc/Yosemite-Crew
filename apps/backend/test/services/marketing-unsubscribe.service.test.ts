@@ -1,7 +1,7 @@
 const updateContact = jest.fn();
 const createContact = jest.fn();
 
-jest.mock("aws-sdk/clients/sesv2", () =>
+jest.mock("aws-sdk/clients/sesv2.js", () =>
   jest.fn(() => ({ updateContact, createContact })),
 );
 import {

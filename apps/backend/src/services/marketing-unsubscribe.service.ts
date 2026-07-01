@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import SESV2 from "aws-sdk/clients/sesv2";
+import SESV2 from "aws-sdk/clients/sesv2.js";
 
 const TOKEN_SEPARATOR = ".";
 
