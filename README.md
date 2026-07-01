@@ -163,7 +163,5 @@ Thanks to everyone who has contributed to Yosemite Crew!
 
 See the [growth over time](#-star-history) above. Browse everyone who starred or forked the project:
 
-<!-- Fallback roster links (reporoster.com images can be unreliable). -->
-
-[![Stargazers repo roster for @YosemiteCrew/Yosemite-Crew](https://reporoster.com/stars/YosemiteCrew/Yosemite-Crew)](https://github.com/YosemiteCrew/Yosemite-Crew/stargazers)
-[![Forkers repo roster for @YosemiteCrew/Yosemite-Crew](https://reporoster.com/forks/YosemiteCrew/Yosemite-Crew)](https://github.com/YosemiteCrew/Yosemite-Crew/network/members)
+- ⭐ [View all Stargazers](https://github.com/YosemiteCrew/Yosemite-Crew/stargazers)
+- 🍴 [View all Forkers](https://github.com/YosemiteCrew/Yosemite-Crew/network/members)
