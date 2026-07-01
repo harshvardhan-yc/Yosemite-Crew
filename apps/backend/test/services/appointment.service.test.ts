@@ -32,6 +32,7 @@ import {
   CatalogService,
   CatalogServiceError,
 } from "../../src/services/catalog.service";
+import { CompanionOrganisationService } from "../../src/services/companion-organisation.service";
 import { FormModel } from "src/models/form";
 import { prisma } from "src/config/prisma";
 import logger from "src/utils/logger";
@@ -112,6 +113,12 @@ jest.mock("../../src/services/catalog.service", () => ({
   },
   CatalogService: {
     resolveSelection: jest.fn(),
+  },
+}));
+
+jest.mock("../../src/services/companion-organisation.service", () => ({
+  CompanionOrganisationService: {
+    linkByParent: jest.fn(),
   },
 }));
 
@@ -234,6 +241,7 @@ jest.mock("src/config/prisma", () => ({
       upsert: jest.fn(),
     },
     organizationBilling: { findUnique: jest.fn() },
+    patientOrganisation: { findFirst: jest.fn(), create: jest.fn() },
   },
 }));
 
@@ -328,6 +336,12 @@ describe("AppointmentService", () => {
       async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma),
     );
     (prisma.invoice.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.organization.findUnique as jest.Mock).mockResolvedValue({
+      type: "HOSPITAL",
+    });
+    (OrganizationModel.findById as jest.Mock).mockReturnValue(
+      createQueryChain({ type: "HOSPITAL" }),
+    );
   });
 
   it("covers appointment helper validation and status branches", async () => {
@@ -1215,6 +1229,7 @@ describe("AppointmentService", () => {
         serviceType: "OBSERVATION_TOOL",
         observationToolId: "tool_1",
       });
+      prisma.organization.findUnique.mockResolvedValue({ type: "HOSPITAL" });
       prisma.organizationBilling.findUnique.mockResolvedValue({ plan: "free" });
       prisma.organizationUsageCounter.findUnique.mockResolvedValue({
         orgId: "org_1",
@@ -1287,6 +1302,14 @@ describe("AppointmentService", () => {
       const result = await AppointmentService.createRequestedFromMobile(dto);
 
       expect(prisma.appointment.create).toHaveBeenCalled();
+      expect(CompanionOrganisationService.linkByParent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parentId: "parent_1",
+          patientId: "comp_1",
+          organisationId: "org_1",
+          organisationType: "HOSPITAL",
+        }),
+      );
       expect(prisma.organizationUsageCounter.update).toHaveBeenCalled();
       expect(InvoiceService.setInvoiceDepositTarget).toHaveBeenCalledWith(
         "inv_1",
@@ -1307,6 +1330,7 @@ describe("AppointmentService", () => {
         isActive: true,
         serviceType: "STANDARD",
       });
+      prisma.organization.findUnique.mockResolvedValue({ type: "HOSPITAL" });
       prisma.organizationBilling.findUnique.mockResolvedValue({ plan: "free" });
       prisma.organizationUsageCounter.findUnique.mockResolvedValue({
         orgId: "org_1",
@@ -1365,6 +1389,14 @@ describe("AppointmentService", () => {
       const result = await AppointmentService.createRequestedFromMobile(dto);
 
       expect((result.appointment as any).formIds).toEqual([]);
+      expect(CompanionOrganisationService.linkByParent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parentId: "parent_1",
+          patientId: "comp_1",
+          organisationId: "org_1",
+          organisationType: "HOSPITAL",
+        }),
+      );
       expect(InvoiceService.setInvoiceDepositTarget).toHaveBeenCalledWith(
         "inv_2",
         25,
@@ -1573,6 +1605,12 @@ describe("AppointmentService", () => {
   });
 
   describe("createRequestedFromMobile (mongo)", () => {
+    beforeEach(() => {
+      (OrganizationModel.findById as jest.Mock).mockReturnValue(
+        createQueryChain({ type: "HOSPITAL" }),
+      );
+    });
+
     it("should throw when free plan observation tool limit reached", async () => {
       const startTime = new Date();
       const endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
@@ -1651,6 +1689,14 @@ describe("AppointmentService", () => {
         durationMinutes: 30,
       } as any);
 
+      expect(CompanionOrganisationService.linkByParent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parentId: validId,
+          patientId: validId,
+          organisationId: validId,
+          organisationType: "HOSPITAL",
+        }),
+      );
       expect(TaskService.createCustom).toHaveBeenCalledWith(
         expect.objectContaining({
           observationToolId: toolId.toString(),

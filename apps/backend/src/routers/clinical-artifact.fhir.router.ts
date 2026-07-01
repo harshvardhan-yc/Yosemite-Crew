@@ -143,6 +143,15 @@ router.post(
 );
 
 router.post(
+  String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$cancel`,
+  authorizeCognito,
+  dischargeSummaryLimiter,
+  withOrgPermissions(),
+  requirePermission(["prescription:edit:any"]),
+  (req, res) => ClinicalArtifactFhirController.cancelPrescription(req, res),
+);
+
+router.post(
   String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$reopen`,
   authorizeCognito,
   dischargeSummaryLimiter,
