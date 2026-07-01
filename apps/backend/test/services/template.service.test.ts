@@ -25,6 +25,9 @@ jest.mock("src/config/prisma", () => ({
 }));
 
 jest.mock("src/services/clinical-template-blueprints", () => ({
+  normalizeClinicalTemplateSchemaSnapshot: jest.fn(
+    (_kind, snapshot) => snapshot,
+  ),
   validateClinicalTemplateBlueprint: jest.fn(() => ({
     requiredSectionIds: [],
     missingSectionIds: [],

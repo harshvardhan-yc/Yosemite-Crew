@@ -898,6 +898,151 @@ describe("WorkspaceService", () => {
     expect(created.invoiceRowId).toBe("ti-bootstrap");
   });
 
+  it("does not reattach a treatment item that was already settled", async () => {
+    mockedPrisma.workspaceTreatmentItem.create.mockResolvedValueOnce({
+      id: "ti-settled",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      productId: "prod-settled",
+      productVersion: null,
+      productSnapshot: { name: "Medication" },
+      servicePackageKind: "PRESCRIPTION",
+      quantity: 1,
+      priceSnapshot: { name: "Medication", finalAmount: 25 },
+      billingStatus: "BILLED",
+      invoiceRowId: "ti-settled",
+      settledInvoiceId: "invoice-paid",
+      settledAt: new Date("2026-06-30T10:00:00.000Z"),
+      lockState: null,
+      prescriptionId: null,
+      createdAt: new Date("2026-06-30T09:00:00.000Z"),
+      updatedAt: new Date("2026-06-30T10:00:00.000Z"),
+    });
+
+    const created = await WorkspaceService.createEncounterTreatmentItem({
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      productId: "prod-settled",
+      productSnapshot: { name: "Medication" },
+      servicePackageKind: "PRESCRIPTION",
+      quantity: 1,
+      priceSnapshot: { name: "Medication", finalAmount: 25 },
+    });
+
+    expect(created.settled).toBe(true);
+    expect(
+      mockedInvoiceService.findOpenInvoiceForAppointment,
+    ).not.toHaveBeenCalled();
+    expect(mockedInvoiceService.addItemsToInvoice).not.toHaveBeenCalled();
+  });
+
+  it("reopens the canonical paid invoice for a new treatment item", async () => {
+    mockedInvoiceService.bootstrapForAppointment.mockResolvedValueOnce({
+      id: "invoice-paid",
+      status: "PAID",
+    });
+    mockedPrisma.workspaceTreatmentItem.create.mockResolvedValueOnce({
+      id: "ti-new",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      productId: "prod-new",
+      productVersion: null,
+      productSnapshot: { name: "Lab" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 1,
+      priceSnapshot: { name: "Lab", finalAmount: 30 },
+      billingStatus: "UNBILLED",
+      invoiceRowId: null,
+      settledInvoiceId: null,
+      settledAt: null,
+      lockState: null,
+      prescriptionId: null,
+      createdAt: new Date("2026-06-30T11:00:00.000Z"),
+      updatedAt: new Date("2026-06-30T11:00:00.000Z"),
+    });
+    mockedPrisma.workspaceTreatmentItem.update.mockResolvedValueOnce({
+      id: "ti-new",
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      productId: "prod-new",
+      productVersion: null,
+      productSnapshot: { name: "Lab" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 1,
+      priceSnapshot: { name: "Lab", finalAmount: 30 },
+      billingStatus: "BILLED",
+      invoiceRowId: "ti-new",
+      settledInvoiceId: null,
+      settledAt: null,
+      lockState: null,
+      prescriptionId: null,
+      createdAt: new Date("2026-06-30T11:00:00.000Z"),
+      updatedAt: new Date("2026-06-30T11:01:00.000Z"),
+    });
+
+    await WorkspaceService.createEncounterTreatmentItem({
+      organisationId: "org-1",
+      appointmentId: "appt-1",
+      encounterId: "enc-1",
+      productId: "prod-new",
+      productSnapshot: { name: "Lab" },
+      servicePackageKind: "PROCEDURE",
+      quantity: 1,
+      priceSnapshot: { name: "Lab", finalAmount: 30 },
+    });
+
+    expect(mockedInvoiceService.addItemsToInvoice).toHaveBeenCalledWith(
+      "invoice-paid",
+      [expect.objectContaining({ id: "ti-new" })],
+    );
+  });
+
+  it("preserves prescription classification when updating a linked treatment row", async () => {
+    const existing = {
+      id: "ti-prescription",
+      organisationId: "org-1",
+      appointmentId: null,
+      encounterId: "enc-1",
+      productId: "med-1",
+      productVersion: null,
+      productSnapshot: { name: "Medication" },
+      servicePackageKind: "MEDICATION",
+      quantity: 1,
+      priceSnapshot: { unitPrice: 25 },
+      billingStatus: "BILLED",
+      invoiceRowId: "ti-prescription",
+      settledInvoiceId: "invoice-paid",
+      settledAt: new Date("2026-06-30T10:00:00.000Z"),
+      lockState: null,
+      prescriptionId: "prescription-1",
+      createdAt: new Date("2026-06-30T09:00:00.000Z"),
+      updatedAt: new Date("2026-06-30T10:00:00.000Z"),
+    };
+    mockedPrisma.workspaceTreatmentItem.findFirst.mockResolvedValueOnce(
+      existing,
+    );
+    mockedPrisma.workspaceTreatmentItem.update.mockResolvedValueOnce(existing);
+
+    const updated = await WorkspaceService.updateTreatmentItem(
+      existing.id,
+      existing.organisationId,
+      { servicePackageKind: "SERVICE" },
+    );
+
+    expect(mockedPrisma.workspaceTreatmentItem.update).toHaveBeenCalledWith({
+      where: { id: existing.id },
+      data: expect.objectContaining({
+        servicePackageKind: "MEDICATION",
+      }),
+    });
+    expect(updated.servicePackageKind).toBe("MEDICATION");
+    expect(updated.prescriptionId).toBe("prescription-1");
+  });
+
   it("builds the encounter bootstrap even when no linked appointment is resolved", async () => {
     mockedPrisma.encounter.findFirst.mockResolvedValue({
       id: "enc-2",

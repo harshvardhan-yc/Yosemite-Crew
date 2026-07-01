@@ -21,6 +21,7 @@ const ClinicalArtifactFhirController = {
   getPrescription: jest.fn(),
   updatePrescription: jest.fn(),
   deletePrescription: jest.fn(),
+  cancelPrescription: jest.fn(),
   finalizePrescription: jest.fn(),
   reopenPrescription: jest.fn(),
   amendPrescription: jest.fn(),
@@ -121,6 +122,10 @@ describe("clinical-artifact.fhir.router", () => {
       ["/organisation/:organisationId/prescription/:prescriptionId", "post"],
       [
         String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$finalize`,
+        "post",
+      ],
+      [
+        String.raw`/organisation/:organisationId/prescription/:prescriptionId/\$cancel`,
         "post",
       ],
       [

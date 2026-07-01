@@ -27,6 +27,16 @@ type InventoryBatchIdentity = {
   _id?: string;
   itemId?: string;
   organisationId?: string;
+  batchNumber?: string;
+  lotNumber?: string;
+  regulatoryTrackingId?: string;
+  expiryWarningBefore?: string;
+  barcode?: string;
+  manufactureDate?: string;
+  expiryDate?: string;
+  minShelfLifeAlertDate?: string;
+  quantity?: number;
+  allocated?: number;
 };
 
 export type InventoryBatchApi = InventoryBatchDetails &

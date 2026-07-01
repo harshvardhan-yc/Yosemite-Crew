@@ -19,6 +19,7 @@ import { CatalogService, CatalogServiceError } from "./catalog.service";
 import { InvoiceService } from "./invoice.service";
 import { FinancePaymentService } from "./finance/payment";
 import { resolvePaymentCollectionMethod } from "src/utils/payment";
+import { CompanionOrganisationService } from "./companion-organisation.service";
 
 type AppointmentStatus = AppointmentDomain["status"];
 
@@ -1393,6 +1394,25 @@ const createAppointment = async (
   });
   assertSelectionSupportsAppointmentKind(selection, appointmentKind);
 
+  const organisation = await prisma.organization.findUnique({
+    where: { id: input.organisationId },
+    select: { type: true },
+  });
+
+  if (!organisation?.type) {
+    throw new AppointmentPrismaServiceError(
+      "Unable to resolve organisation type for appointment booking.",
+      404,
+    );
+  }
+
+  await CompanionOrganisationService.linkByParent({
+    parentId: input.patient.parent.id,
+    patientId: input.patient.id,
+    organisationId: input.organisationId,
+    organisationType: organisation.type,
+  });
+
   const created = await prisma.$transaction(async (tx) => {
     const patientId = getPatientId(input.patient);
     const resolvedCaseId = await resolveCaseContext({
@@ -1771,8 +1791,6 @@ export const AppointmentPrismaService = {
         },
       });
     });
-
-    await InvoiceService.markAppointmentReadyForBilling(appointmentId);
 
     return toResponse(updated as AppointmentRow);
   },

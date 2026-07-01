@@ -851,6 +851,8 @@ type TreatmentItemRow = {
   priceSnapshot: unknown;
   billingStatus: string;
   invoiceRowId: string | null;
+  settledInvoiceId: string | null;
+  settledAt: Date | null;
   lockState: unknown;
   prescriptionId: string | null;
   createdAt: Date;
@@ -896,7 +898,11 @@ const mapTreatmentItemRow = (
     !Array.isArray(row.productSnapshot)
       ? (row.productSnapshot as Record<string, unknown>)
       : {},
-  servicePackageKind: row.servicePackageKind,
+  servicePackageKind:
+    row.prescriptionId &&
+    !["MEDICATION", "PRESCRIPTION"].includes(row.servicePackageKind)
+      ? "PRESCRIPTION"
+      : row.servicePackageKind,
   quantity: row.quantity,
   priceSnapshot:
     typeof row.priceSnapshot === "object" &&
@@ -906,6 +912,9 @@ const mapTreatmentItemRow = (
       : {},
   billingStatus: row.billingStatus,
   invoiceRowId: row.invoiceRowId,
+  settled: Boolean(row.settledInvoiceId),
+  settledInvoiceId: row.settledInvoiceId,
+  settledAt: row.settledAt,
   lockState:
     typeof row.lockState === "string"
       ? row.lockState
@@ -972,7 +981,7 @@ const buildInvoiceLineFromTreatmentItem = (row: TreatmentItemRow) => {
 };
 
 const syncTreatmentItemInvoice = async (row: TreatmentItemRow) => {
-  if (!row.appointmentId) {
+  if (!row.appointmentId || row.settledInvoiceId) {
     return row;
   }
 
@@ -990,7 +999,9 @@ const syncTreatmentItemInvoice = async (row: TreatmentItemRow) => {
         bootstrappedInvoice &&
         typeof bootstrappedInvoice.id === "string" &&
         bootstrappedInvoice.id.trim() &&
-        ["AWAITING_PAYMENT", "PENDING"].includes(bootstrappedInvoice.status)
+        ["AWAITING_PAYMENT", "PENDING", "PAID"].includes(
+          bootstrappedInvoice.status,
+        )
       ) {
         invoice = { id: bootstrappedInvoice.id.trim() };
       }
@@ -2195,7 +2206,9 @@ export const WorkspaceService = {
           input.productSnapshot === undefined
             ? undefined
             : (input.productSnapshot as Prisma.InputJsonValue),
-        servicePackageKind: input.servicePackageKind ?? undefined,
+        servicePackageKind: existing.prescriptionId
+          ? existing.servicePackageKind
+          : (input.servicePackageKind ?? undefined),
         quantity: input.quantity ?? undefined,
         priceSnapshot:
           input.priceSnapshot === undefined
