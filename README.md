@@ -13,9 +13,8 @@
 </div>
 
 <br>
-<p align="center">
-  <video src="https://d2il6osz49gpup.cloudfront.net/launchVideo.mp4" controls muted loop playsinline width="800"></video>
-</p>
+
+https://github.com/user-attachments/assets/46f13270-295e-4d7d-ba34-d11cba392cdc
 
 <br>
 
