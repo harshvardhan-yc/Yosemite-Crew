@@ -1044,6 +1044,39 @@ describe("CaseEncounterService", () => {
     });
   });
 
+  it("rejects assignment when the transaction client is missing the room unit delegate", async () => {
+    mockedPrisma.$transaction.mockImplementationOnce(async (callback: any) =>
+      callback({
+        ...mockedPrisma,
+        roomUnit: undefined,
+      }),
+    );
+    mockedPrisma.encounter.findUnique.mockResolvedValue(
+      baseEncounterRow as never,
+    );
+    mockedPrisma.admission.findUnique.mockResolvedValue({
+      encounterId: "enc_1",
+      organisationId: "org_1",
+      patientId: "comp_1",
+      unitId: null,
+      expectedStayDays: null,
+      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
+      dischargedAt: null,
+      createdAt: new Date("2026-06-11T10:30:00.000Z"),
+      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
+    } as never);
+
+    await expect(
+      CaseEncounterService.assignUnit("enc_1", {
+        unitId: "unit_1",
+        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      message: "Transaction client is missing roomUnit delegate.",
+      statusCode: 500,
+    });
+  });
+
   it("rejects assignment when the unit group species constraints do not match", async () => {
     mockedPrisma.encounter.findUnique.mockResolvedValue(
       baseEncounterRow as never,
