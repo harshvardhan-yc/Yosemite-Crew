@@ -618,15 +618,23 @@ const AppointmentFormsPanel = ({
     [forms]
   );
 
+  // Whether the search input is focused. Focusing the field surfaces the full
+  // list of assignable forms (like the pre-revamp side-modal), so the clinician
+  // can browse without having to type a query first.
+  const [searchFocused, setSearchFocused] = useState(false);
+
   const templateMatches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return templates.filter(
-      (template) =>
-        template.name.toLowerCase().includes(q) &&
-        !assignedTitles.has(template.name.trim().toLowerCase())
+    const unassigned = templates.filter(
+      (template) => !assignedTitles.has(template.name.trim().toLowerCase())
     );
+    // Empty query → show everything available so the dropdown is never blank when
+    // the org actually has assignable forms.
+    if (!q) return unassigned;
+    return unassigned.filter((template) => template.name.toLowerCase().includes(q));
   }, [query, templates, assignedTitles]);
+
+  const dropdownOpen = Boolean(organisationId) && (Boolean(query.trim()) || searchFocused);
 
   const handleAssignTemplate = async (template: TemplateLike) => {
     if (!organisationId || assigningId) return;
@@ -666,14 +674,18 @@ const AppointmentFormsPanel = ({
         <Search
           value={query}
           setSearch={setQuery}
+          onFocus={() => setSearchFocused(true)}
           placeholder="Search forms to add"
           label="Search forms to add"
           className="w-full!"
         />
         <SearchResultsDropdown
           anchorRef={searchAnchorRef}
-          open={Boolean(query.trim()) && Boolean(organisationId)}
-          onClose={() => setQuery('')}
+          open={dropdownOpen}
+          onClose={() => {
+            setQuery('');
+            setSearchFocused(false);
+          }}
         >
           {templateMatches.length > 0 ? (
             <ul>
@@ -689,7 +701,9 @@ const AppointmentFormsPanel = ({
             </ul>
           ) : (
             <p className="px-4 py-3 text-body-4 text-text-secondary">
-              No forms available to add for this search.
+              {query.trim()
+                ? 'No forms available to add for this search.'
+                : 'No assignable forms available to add.'}
             </p>
           )}
         </SearchResultsDropdown>

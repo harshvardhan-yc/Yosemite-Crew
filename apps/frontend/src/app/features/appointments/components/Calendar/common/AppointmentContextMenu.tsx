@@ -15,6 +15,7 @@ import {
   changeAppointmentStatus,
   updateAppointment,
 } from '@/app/features/appointments/services/appointmentService';
+import { loadRoomsForOrgPrimaryOrg } from '@/app/features/organization/services/roomService';
 import { AppointmentStatus } from '@/app/features/appointments/types/appointments';
 import { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 import { useOrgStore } from '@/app/stores/orgStore';
@@ -96,10 +97,11 @@ const AppointmentContextMenuComponent: React.FC<AppointmentContextMenuProps> = (
   onClose,
 }) => {
   const router = useRouter();
-  useLoadRoomsForPrimaryOrg();
+  useLoadRoomsForPrimaryOrg({ force: true, silent: true });
   const rooms = useRoomsForPrimaryOrg();
   const roomUnitsById = useOrganisationRoomStore((state) => state.roomUnitsById);
   const roomUnitIdsByRoomId = useOrganisationRoomStore((state) => state.roomUnitIdsByRoomId);
+  const setRoomUnitOccupied = useOrganisationRoomStore((state) => state.setRoomUnitOccupied);
   const initEncounter = useAppointmentWorkspaceStore((state) => state.initEncounter);
   const setRoomUnit = useAppointmentWorkspaceStore((state) => state.setRoomUnit);
   const orgsById = useOrgStore((state) => state.orgsById);
@@ -195,6 +197,9 @@ const AppointmentContextMenuComponent: React.FC<AppointmentContextMenuProps> = (
             unitId: nextUnitId,
             reason: 'Appointment quick action room assignment',
           });
+          setRoomUnitOccupied(currentUnitId, false);
+          setRoomUnitOccupied(nextUnitId, true);
+          await loadRoomsForOrgPrimaryOrg({ force: true, silent: true });
         }
       }
       onClose();

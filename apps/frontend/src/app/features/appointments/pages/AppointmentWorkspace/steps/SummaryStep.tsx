@@ -386,6 +386,10 @@ const SummaryStep = ({
   // hydrated/admitted visits). Acts as the last-resort fallback so the document,
   // sign, and print logic still has encounter context.
   const [hydratedEncounterId, setHydratedEncounterId] = useState<string | undefined>();
+  // Packet-level signing truth captured from the reconcile response. Kept
+  // alongside the documents-derived signal so the Sign→Download Signed swap fires
+  // even before the per-document SIGNED status has propagated into the read-model.
+  const [packetSigned, setPacketSigned] = useState(false);
 
   const templateSearchRef = useRef<HTMLDivElement>(null);
   const templateMatches = useMemo(() => {
@@ -468,7 +472,10 @@ const SummaryStep = ({
     const packetId = signingPacketIdRef.current;
     if (packetId) {
       try {
-        await reconcileWorkspaceDocumentPacket(organisationId, packetId);
+        const reconciled = await reconcileWorkspaceDocumentPacket(organisationId, packetId);
+        if (reconciled?.signing?.status?.toUpperCase() === 'SIGNED') {
+          setPacketSigned(true);
+        }
       } catch (error) {
         console.error('Unable to reconcile packet signing:', error);
       }
@@ -687,8 +694,10 @@ const SummaryStep = ({
   // against the one signed packet PDF. Drives the Sign→Download Signed swap and the
   // "print the signed copy" behaviour.
   const isPacketSigned = useMemo(
-    () => documents.some((document) => document.signingStatus?.toUpperCase() === 'SIGNED'),
-    [documents]
+    () =>
+      packetSigned ||
+      documents.some((document) => document.signingStatus?.toUpperCase() === 'SIGNED'),
+    [documents, packetSigned]
   );
 
   // Signing may only begin while the appointment is actively in progress; before

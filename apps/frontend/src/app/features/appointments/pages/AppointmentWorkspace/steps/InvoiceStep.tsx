@@ -634,6 +634,25 @@ export const buildBillableItems = (
   return uniqueByName([...visitItems, ...catalogItems], existingNames);
 };
 
+/**
+ * Names that must not be auto-seeded onto the editable bill because they are already
+ * represented there — either on the current builder or on an OPEN (unpaid/partial)
+ * invoice, which hydrateInvoiceBilling seeds straight into the builder. Paid invoices
+ * are handled separately (settledLineNames) and excluded here so their lines don't
+ * block a legitimate re-bill.
+ */
+export const collectSeededBillNames = (
+  builderNames: string[],
+  pastInvoices: PastInvoice[]
+): Set<string> => {
+  const names = new Set(builderNames.map((name) => normalizeLineName(name)));
+  for (const invoice of pastInvoices) {
+    if (invoice.status === 'PAID_FULL') continue;
+    for (const item of invoice.items) names.add(normalizeLineName(item.name));
+  }
+  return names;
+};
+
 const computeInvoiceTotalCents = (encounter: AppointmentEncounter): number => {
   const subtotalCents = encounter.invoiceLineItems.reduce((sum, item) => sum + item.grossCents, 0);
   const lineDiscountCents = encounter.invoiceLineItems.reduce(
@@ -1457,24 +1476,37 @@ const InvoiceStep = ({
   const seededBillNamesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!canBuildBill || !billingHydrated) return;
-    const existing = new Set(
-      encounter.invoiceLineItems.map((item) => item.name.trim().toLowerCase())
+    // Names already represented on the bill: the current builder plus any OPEN invoice
+    // (hydrateInvoiceBilling seeds those into the builder). The booked service in
+    // particular is persisted onto that invoice AND exists as a treatment row here; its
+    // invoice line name and treatment name can differ, so anchoring the booked service by
+    // its dedicated key stops the second copy from seeding. `taken` is mutated in-loop so
+    // two candidates that normalize to the same name can't both seed.
+    const taken = collectSeededBillNames(
+      encounter.invoiceLineItems.map((item) => item.name),
+      encounter.pastInvoices
     );
+    // A booked line already on any open invoice blocks re-seeding it under a mismatched name.
+    const bookedAlreadyOnBill =
+      bookedLineKey !== undefined && taken.size > 0 && encounter.pastInvoices.length > 0;
     autoSeedCandidates.forEach((line) => {
-      const key = line.name.trim().toLowerCase();
+      const key = normalizeLineName(line.name);
       if (!key || seededBillNamesRef.current.has(key)) return;
       seededBillNamesRef.current.add(key);
-      if (!existing.has(key)) {
-        addInvoiceLineItem(appointmentId, line);
-      }
+      const isBookedDuplicate = key === bookedLineKey && bookedAlreadyOnBill;
+      if (taken.has(key) || isBookedDuplicate) return;
+      taken.add(key);
+      addInvoiceLineItem(appointmentId, line);
     });
   }, [
     addInvoiceLineItem,
     appointmentId,
     autoSeedCandidates,
     billingHydrated,
+    bookedLineKey,
     canBuildBill,
     encounter.invoiceLineItems,
+    encounter.pastInvoices,
   ]);
 
   useEffect(() => {
@@ -1537,6 +1569,16 @@ const InvoiceStep = ({
       const billing = await reloadBilling();
       if (!billing) return;
       if (isInvoiceSettled(findInvoiceById(billing.pastInvoices, targetInvoiceId))) {
+        // Online payment settled: clear the editable draft bill and mark the paid
+        // treatment/prescription rows billed — the manual (cash/deposit) paths do this
+        // via recordInvoicePayment, but the online poll only reloads pastInvoices, so
+        // without this the paid line items linger in the Total Bill after the client
+        // pays. recordInvoicePayment no-ops once invoiceLineItems is empty, so the
+        // repeated poll → confirm transition stays idempotent.
+        recordInvoicePayment(appointmentId, {
+          method: 'ONLINE',
+          byName: encounter.leadName ?? 'Front desk',
+        });
         setPaymentProgress((current) =>
           current?.invoiceId === targetInvoiceId ? { ...current, status: 'confirmed' } : current
         );
@@ -1544,7 +1586,13 @@ const InvoiceStep = ({
         setConfirmation('Online payment confirmed');
       }
     },
-    [paymentProgress?.invoiceId, reloadBilling]
+    [
+      appointmentId,
+      encounter.leadName,
+      paymentProgress?.invoiceId,
+      recordInvoicePayment,
+      reloadBilling,
+    ]
   );
 
   const startPaymentProgress = useCallback(

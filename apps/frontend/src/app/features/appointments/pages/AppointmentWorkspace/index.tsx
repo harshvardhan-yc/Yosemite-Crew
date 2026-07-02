@@ -25,6 +25,7 @@ import { resolveLockHours } from '@/app/lib/appointmentLockWindow';
 import { getAppointmentCompanion, normalizeAppointmentStatus } from '@/app/lib/appointments';
 import { useAppointmentLockWindow } from '@/app/hooks/useAppointmentLockWindow';
 import { useLoadRoomsForPrimaryOrg, useRoomsForPrimaryOrg } from '@/app/hooks/useRooms';
+import { loadRoomsForOrgPrimaryOrg } from '@/app/features/organization/services/roomService';
 import { useLoadCompanionsForPrimaryOrg } from '@/app/hooks/useCompanion';
 import { useCompanionTerminologyText } from '@/app/hooks/useCompanionTerminologyText';
 import { useCompanionStore } from '@/app/stores/companionStore';
@@ -315,11 +316,12 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const { notify } = useNotify();
   const terminologyText = useCompanionTerminologyText();
   const attributes = useAuthStore((s) => s.attributes);
-  useLoadRoomsForPrimaryOrg();
+  useLoadRoomsForPrimaryOrg({ force: true, silent: true });
   useLoadCompanionsForPrimaryOrg();
   const rooms = useRoomsForPrimaryOrg();
   const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
   const roomUnitIdsByRoomId = useOrganisationRoomStore((s) => s.roomUnitIdsByRoomId);
+  const setRoomUnitOccupied = useOrganisationRoomStore((s) => s.setRoomUnitOccupied);
   const catalogSpecialities = useRevampCatalogStore((s) => s.specialities);
   const catalogServices = useRevampCatalogStore((s) => s.services);
   const catalogPackages = useRevampCatalogStore((s) => s.packages);
@@ -495,6 +497,17 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     [appointment.startTime, encounterMode, lockWindow]
   );
 
+  // Ready-for-billing is a monotonic milestone: once any invoice for this visit is
+  // paid/settled it can't be un-marked (the backend 409s the revert), so lock the
+  // toggle in that state. This also keeps the box shown as satisfied after payment.
+  const billingSettled = useMemo(
+    () =>
+      (encounter?.pastInvoices ?? []).some(
+        (invoice) => invoice.status === 'PAID_FULL' || invoice.outstandingCents <= 0
+      ),
+    [encounter?.pastInvoices]
+  );
+
   // Land on the step from the URL, else the status-driven landing step — once
   // per appointment. A ref guards against re-running when the encounter mutates.
   const landedForRef = useRef<string | null>(null);
@@ -631,6 +644,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
   const hasAdmission = Boolean(
     effectiveEncounter?.admittedAt && !isBareCheckInAdmission(effectiveEncounter, appointment)
   );
+  const roomAssignmentLocked = isCompletedAppointment || Boolean(effectiveEncounter?.dischargedAt);
   const supportOptions = useMemo(() => {
     const seen = new Set<string>();
     const options: { label: string; value: string }[] = [];
@@ -696,6 +710,13 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
     const next = getNextStep(activeStep);
     if (next) handleStepChange(next);
   }, [activeStep, handleStepChange]);
+
+  const notifyRoomAssignmentLocked = useCallback(() => {
+    notify('warning', {
+      title: 'Room assignment locked',
+      text: 'Room and unit cannot be changed after the appointment is discharged or completed.',
+    });
+  }, [notify]);
 
   const refreshWorkspaceEncounterId = useCallback(async () => {
     const organisationId = appointment.organisationId;
@@ -804,6 +825,10 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         if (resolvedRoomId || resolvedUnitId) {
           setRoomUnit(appointmentId, resolvedRoomId, resolvedUnitId);
         }
+        if (resolvedUnitId) {
+          setRoomUnitOccupied(resolvedUnitId, true);
+          await loadRoomsForOrgPrimaryOrg({ force: true, silent: true });
+        }
         refreshWorkspaceEncounterId().catch((error) => {
           console.error('Unable to refresh workspace after admission:', error);
         });
@@ -844,6 +869,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       notify,
       refreshWorkspaceEncounterId,
       rooms,
+      setRoomUnitOccupied,
       setRoomUnit,
       terminologyText,
     ]
@@ -870,6 +896,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           assignedBy: actor.name,
           reason: 'Workspace room assignment',
         });
+        setRoomUnitOccupied(unitId, true);
+        await loadRoomsForOrgPrimaryOrg({ force: true, silent: true });
         return true;
       } catch (error) {
         const message = getErrorMessage(error);
@@ -892,6 +920,7 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       handleAdmit,
       notify,
       refreshWorkspaceEncounterId,
+      setRoomUnitOccupied,
     ]
   );
 
@@ -915,6 +944,10 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
 
   const handleRoomSelect = useCallback(
     async (option: { value: string }) => {
+      if (roomAssignmentLocked) {
+        notifyRoomAssignmentLocked();
+        return;
+      }
       const firstUnit = getFirstAssignableRoomUnitId(
         option.value,
         { roomUnitsById, roomUnitIdsByRoomId },
@@ -930,6 +963,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       ]);
       if (nextUnit && !unitPersisted) {
         setRoomUnit(appointmentId, previousRoomId, previousUnitId);
+      } else if (unitPersisted) {
+        setRoomUnitOccupied(previousUnitId, false);
       }
     },
     [
@@ -939,21 +974,30 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       effectiveEncounter?.unitId,
       persistRoomAssignment,
       persistUnitAssignment,
+      roomAssignmentLocked,
       roomUnitIdsByRoomId,
       roomUnitsById,
+      notifyRoomAssignmentLocked,
       setRoomUnit,
+      setRoomUnitOccupied,
     ]
   );
 
   const handleUnitSelect = useCallback(
     async (option: { value: string }) => {
+      if (roomAssignmentLocked) {
+        notifyRoomAssignmentLocked();
+        return;
+      }
       const previousUnitId = effectiveEncounter?.unitId;
       setRoomUnit(appointmentId, effectiveEncounter?.roomId, option.value);
       const [, unitPersisted] = await Promise.all([
         persistRoomAssignment(effectiveEncounter?.roomId),
         persistUnitAssignment(option.value),
       ]);
-      if (!unitPersisted) {
+      if (unitPersisted) {
+        setRoomUnitOccupied(previousUnitId, false);
+      } else {
         setRoomUnit(appointmentId, effectiveEncounter?.roomId, previousUnitId);
       }
     },
@@ -963,7 +1007,10 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       effectiveEncounter?.unitId,
       persistRoomAssignment,
       persistUnitAssignment,
+      roomAssignmentLocked,
+      notifyRoomAssignmentLocked,
       setRoomUnit,
+      setRoomUnitOccupied,
     ]
   );
 
@@ -1203,6 +1250,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
           { overrideReason }
         );
         await completeAppointmentStatus();
+        setRoomUnitOccupied(effectiveEncounter?.unitId, false);
+        await loadRoomsForOrgPrimaryOrg({ force: true, silent: true });
         markDischarged(appointmentId, dischargedAt);
         notify('success', {
           title: terminologyText('Patient discharged'),
@@ -1224,7 +1273,9 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
       isFinalizing,
       markDischarged,
       notify,
+      effectiveEncounter?.unitId,
       terminologyText,
+      setRoomUnitOccupied,
     ]
   );
 
@@ -1355,7 +1406,8 @@ const AppointmentWorkspace = ({ appointment }: AppointmentWorkspaceProps) => {
         onSaveAndNext={handleSaveAndNext}
         onToggleReadyForBilling={handleReadyForBillingToggle}
         onToggleReadyForDischarge={handleReadyForDischargeToggle}
-        billingTogglesLocked={encounter?.viewOnly ?? false}
+        roomAssignmentLocked={roomAssignmentLocked}
+        billingTogglesLocked={(encounter?.viewOnly ?? false) || billingSettled}
         dischargeTogglesLocked={(encounter?.viewOnly ?? false) || lockedByWindow}
         primaryCta={workspacePrimaryCta}
       />
