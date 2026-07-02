@@ -514,16 +514,17 @@ const shouldFetchInvoices = (
   return status === 'idle' || status === 'error';
 };
 
-const normalizeInvoiceLineKey = (
-  item: Pick<InvoiceItem, 'name' | 'quantity' | 'unitPrice' | 'total'>
-) =>
+// Dedupe key for "is this line already on the invoice". Intentionally keyed on
+// name + quantity only — NOT price. The same booked service can reach the invoice
+// through two pipelines (the treatment/catalog seed and the FE bill re-seed) whose
+// prices differ by a sub-cent rounding delta (e.g. 257.127 vs 257.13), and keying
+// on price let that rounded copy slip past the guard and append a duplicate line.
+const normalizeInvoiceLineKey = (item: Pick<InvoiceItem, 'name' | 'quantity'>) =>
   [
     String(item.name ?? '')
       .trim()
       .toLowerCase(),
     Number(item.quantity),
-    Number(item.unitPrice),
-    Number(item.total),
   ].join('|');
 
 const filterNewInvoiceLineItems = (invoice: Invoice, lineItems: InvoiceItem[]): InvoiceItem[] => {
