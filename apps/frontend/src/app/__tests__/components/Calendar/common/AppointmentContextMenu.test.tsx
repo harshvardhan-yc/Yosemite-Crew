@@ -46,6 +46,10 @@ jest.mock('@/app/hooks/useRooms', () => ({
   ]),
 }));
 
+jest.mock('@/app/features/organization/services/roomService', () => ({
+  loadRoomsForOrgPrimaryOrg: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('@/app/features/appointments/services/appointmentService', () => ({
   assignEncounterUnit: jest.fn(),
   changeAppointmentStatus: jest.fn(),
@@ -65,6 +69,7 @@ jest.mock('@/app/stores/appointmentWorkspaceStore', () => ({
 let mockRoomState = {
   roomUnitsById: {} as Record<string, any>,
   roomUnitIdsByRoomId: {} as Record<string, string[]>,
+  setRoomUnitOccupied: jest.fn(),
 };
 jest.mock('@/app/stores/roomStore', () => ({
   useOrganisationRoomStore: Object.assign((selector: any) => selector(mockRoomState), {
@@ -88,6 +93,7 @@ describe('AppointmentContextMenu', () => {
     mockRoomState = {
       roomUnitsById: {},
       roomUnitIdsByRoomId: {},
+      setRoomUnitOccupied: jest.fn(),
     };
     Object.defineProperty(globalThis, 'innerWidth', {
       configurable: true,
@@ -182,6 +188,7 @@ describe('AppointmentContextMenu', () => {
         },
       },
       roomUnitIdsByRoomId: { 'room-2': ['unit-2a', 'unit-2b'] },
+      setRoomUnitOccupied: jest.fn(),
     };
     render(
       <AppointmentContextMenu

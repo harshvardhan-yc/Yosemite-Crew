@@ -25,6 +25,7 @@ import {
   assignEncounterUnit,
   updateAppointment,
 } from '@/app/features/appointments/services/appointmentService';
+import { loadRoomsForOrgPrimaryOrg } from '@/app/features/organization/services/roomService';
 import { AppointmentViewIntent } from '@/app/features/appointments/types/calendar';
 import { useNotify } from '@/app/hooks/useNotify';
 import LabelDropdown from '@/app/ui/inputs/Dropdown/LabelDropdown';
@@ -171,6 +172,7 @@ const ViewAppointmentOverviewModal = ({
   const rooms = useRoomsForPrimaryOrg();
   const roomUnitsById = useOrganisationRoomStore((s) => s.roomUnitsById);
   const roomUnitIdsByRoomId = useOrganisationRoomStore((s) => s.roomUnitIdsByRoomId);
+  const setRoomUnitOccupied = useOrganisationRoomStore((s) => s.setRoomUnitOccupied);
   const invoices = useInvoicesForPrimaryOrg();
   const orgsById = useOrgStore((s) => s.orgsById);
   const companion = getAppointmentCompanion(activeAppointment);
@@ -186,6 +188,11 @@ const ViewAppointmentOverviewModal = ({
   );
 
   const [savingRoom, setSavingRoom] = useState(false);
+
+  React.useEffect(() => {
+    if (!showModal) return;
+    loadRoomsForOrgPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+  }, [showModal]);
   const isInpatient = activeAppointment.appointmentKind === 'INPATIENT';
   const appointmentParent = companion.parent as
     | (typeof companion.parent & ParentImageFields)
@@ -301,6 +308,9 @@ const ViewAppointmentOverviewModal = ({
               unitId: nextUnitId,
               reason: 'Appointment overview room assignment',
             });
+            setRoomUnitOccupied(currentUnitId, false);
+            setRoomUnitOccupied(nextUnitId, true);
+            await loadRoomsForOrgPrimaryOrg({ force: true, silent: true });
           }
         }
       } catch {
@@ -319,6 +329,7 @@ const ViewAppointmentOverviewModal = ({
       roomIndexes,
       rooms,
       setRoomUnit,
+      setRoomUnitOccupied,
     ]
   );
 
@@ -338,6 +349,9 @@ const ViewAppointmentOverviewModal = ({
             unitId: option.value,
             reason: 'Appointment overview unit assignment',
           });
+          setRoomUnitOccupied(currentUnitId, false);
+          setRoomUnitOccupied(option.value, true);
+          await loadRoomsForOrgPrimaryOrg({ force: true, silent: true });
         }
       } catch {
         notify('error', { title: 'Unit update failed', text: 'Please try again.' });
@@ -356,6 +370,8 @@ const ViewAppointmentOverviewModal = ({
       isInpatient,
       notify,
       setRoomUnit,
+      currentUnitId,
+      setRoomUnitOccupied,
     ]
   );
 
