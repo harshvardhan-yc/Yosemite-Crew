@@ -59,8 +59,6 @@ const getBasicInfoErrors = (
   const errs: Record<string, string> = {};
   if (!values.name && !inventory.basicInfo.name) errs.name = 'Name is required';
   if (!values.category && !inventory.basicInfo.category) errs.category = 'Category is required';
-  if (!values.subCategory && !inventory.basicInfo.subCategory)
-    errs.subCategory = 'Sub category is required';
   return errs;
 };
 
