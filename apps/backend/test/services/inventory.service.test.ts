@@ -152,6 +152,54 @@ describe("Inventory service", () => {
     );
   });
 
+  it("passes batch warning and barcode fields through createMany", async () => {
+    (prisma.inventoryItem.create as jest.Mock).mockResolvedValue({
+      id: "item-2",
+      organisationId: "org-1",
+      name: "Syringe",
+      category: "Consumables",
+      businessType: "HOSPITAL",
+      status: "ACTIVE",
+      onHand: 0,
+      allocated: 0,
+    });
+    (prisma.inventoryBatch.createMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+    (prisma.inventoryItem.update as jest.Mock).mockResolvedValue({
+      id: "item-2",
+      organisationId: "org-1",
+      onHand: 1,
+      allocated: 0,
+    });
+    (prisma.inventoryBatch.findMany as jest.Mock).mockResolvedValue([]);
+
+    await InventoryService.createItem({
+      organisationId: "org-1",
+      name: "Syringe",
+      category: "Consumables",
+      businessType: "HOSPITAL",
+      batches: [
+        {
+          quantity: 1,
+          expiryWarningBefore: "30 days",
+          barcode: "ABC-123",
+        },
+      ],
+    });
+
+    expect(prisma.inventoryBatch.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            expiryWarningBefore: "30 days",
+            barcode: "ABC-123",
+          }),
+        ],
+      }),
+    );
+  });
+
   it("derives stock unit fields from legacy attributes when top-level fields are absent", async () => {
     (prisma.inventoryItem.create as jest.Mock).mockResolvedValue({
       id: "item-legacy",

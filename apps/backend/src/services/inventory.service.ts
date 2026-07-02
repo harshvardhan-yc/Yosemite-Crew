@@ -1023,6 +1023,8 @@ const createInventoryItemInPostgres = async (
         batchNumber: b.batchNumber ?? undefined,
         lotNumber: b.lotNumber ?? undefined,
         regulatoryTrackingId: b.regulatoryTrackingId ?? undefined,
+        expiryWarningBefore: b.expiryWarningBefore ?? undefined,
+        barcode: b.barcode ?? undefined,
         manufactureDate: b.manufactureDate ?? undefined,
         expiryDate: b.expiryDate ?? undefined,
         minShelfLifeAlertDate: b.minShelfLifeAlertDate ?? undefined,
