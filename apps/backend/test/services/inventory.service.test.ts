@@ -296,6 +296,42 @@ describe("Inventory service", () => {
     expect(result.item.allocated).toBe(7);
   });
 
+  it("normalizes empty sku to null on update", async () => {
+    (prisma.inventoryItem.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: "item-3",
+      organisationId: "org-1",
+      category: "Consumables",
+      businessType: "HOSPITAL",
+      itemType: "NON_MEDICAL",
+      sku: "",
+    });
+    (prisma.inventoryItem.update as jest.Mock).mockResolvedValueOnce({
+      id: "item-3",
+      organisationId: "org-1",
+      category: "Consumables",
+      businessType: "HOSPITAL",
+      sku: null,
+    });
+
+    const result = await InventoryService.updateItem(
+      "item-3",
+      {
+        sku: "",
+      },
+      "org-1",
+    );
+
+    expect(prisma.inventoryItem.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.inventoryItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sku: null,
+        }),
+      }),
+    );
+    expect(result.item.sku).toBeNull();
+  });
+
   it("prefers legacy attribute stock fields during updates when top-level fields are absent", async () => {
     (prisma.inventoryItem.findFirst as jest.Mock).mockResolvedValueOnce({
       id: "item-2",
