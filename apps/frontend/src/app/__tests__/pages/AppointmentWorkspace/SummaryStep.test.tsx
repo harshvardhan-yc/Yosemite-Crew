@@ -46,6 +46,7 @@ jest.mock('@/app/features/appointments/services/workspaceAggregateService', () =
     signing: { status: 'IN_PROGRESS', signingUrl: 'https://sign.test/abc' },
   }),
   getEncounterDocumentPacketPdfUrl: jest.fn().mockResolvedValue('blob:packet-pdf'),
+  reconcileWorkspaceDocumentPacket: jest.fn().mockResolvedValue({ packetId: 'packet-1' }),
   listEncounterWorkspaceDocuments: jest.fn(),
   getAppointmentWorkspaceBootstrap: jest.fn().mockResolvedValue({}),
   normalizeWorkspaceBootstrapForEncounter: jest.fn(() => ({})),
@@ -132,6 +133,7 @@ const appointment = {
   id: APPT,
   organisationId: 'org-1',
   encounterId: 'enc-1',
+  status: 'IN_PROGRESS',
 } as any;
 
 const reset = () => {
@@ -754,6 +756,7 @@ describe('SummaryStep', () => {
     const appointmentWithoutEncounter = {
       id: APPT,
       organisationId: 'org-1',
+      status: 'IN_PROGRESS',
     } as any;
     const enc = { ...seedAndGet(), dischargeSavedAt: '2026-04-20T10:00:00Z' };
     await act(async () => {

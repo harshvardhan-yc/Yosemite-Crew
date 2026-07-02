@@ -19,12 +19,24 @@ import {
 import { loadWorkspaceClinicalArtifacts } from '@/app/features/appointments/services/workspaceClinicalService';
 import { listSoapTemplatesForWorkspace } from '@/app/features/appointments/services/workspaceTemplateService';
 import { getAppointmentWorkspaceBootstrap } from '@/app/features/appointments/services/workspaceAggregateService';
-import { markAppointmentReadyForBilling } from '@/app/features/billing/services/invoiceService';
+import {
+  markAppointmentReadyForBilling,
+  reverseAppointmentReadyForBilling,
+} from '@/app/features/billing/services/invoiceService';
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
 const mockNotify = jest.fn();
 let mockStepParam: string | null = null;
+const mockLoadOrganisationCatalog = jest.fn().mockResolvedValue(undefined);
+const mockLoadSpecialityCatalog = jest.fn().mockResolvedValue(undefined);
+let mockRevampCatalogState = {
+  specialities: [] as any[],
+  services: [] as any[],
+  packages: [] as any[],
+  loadOrganisationCatalog: mockLoadOrganisationCatalog,
+  loadSpecialityCatalog: mockLoadSpecialityCatalog,
+};
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ replace: mockReplace, push: mockPush }),
@@ -33,6 +45,10 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/app/hooks/useNotify', () => ({
   useNotify: () => ({ notify: mockNotify }),
+}));
+
+jest.mock('@/app/hooks/useCompanionTerminologyText', () => ({
+  useCompanionTerminologyText: () => (text: string) => text,
 }));
 
 jest.mock('@/app/features/appointments/pages/AppointmentWorkspace/steps/SoapStep', () => ({
@@ -159,18 +175,11 @@ jest.mock('@/app/features/appointments/services/workspaceAggregateService', () =
 
 jest.mock('@/app/features/billing/services/invoiceService', () => ({
   markAppointmentReadyForBilling: jest.fn().mockResolvedValue({}),
+  reverseAppointmentReadyForBilling: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('@/app/stores/revampCatalogStore', () => ({
-  useRevampCatalogStore: jest.fn((selector: any) =>
-    selector({
-      specialities: [],
-      services: [],
-      packages: [],
-      loadOrganisationCatalog: jest.fn().mockResolvedValue(undefined),
-      loadSpecialityCatalog: jest.fn().mockResolvedValue(undefined),
-    })
-  ),
+  useRevampCatalogStore: jest.fn((selector: any) => selector(mockRevampCatalogState)),
 }));
 
 const makeAppointment = (startTime: Date, inpatient = false): Appointment => ({
@@ -226,6 +235,15 @@ const resetStore = () => {
   (loadWorkspaceClinicalArtifacts as jest.Mock).mockResolvedValue({});
   (listSoapTemplatesForWorkspace as jest.Mock).mockResolvedValue([]);
   (getAppointmentWorkspaceBootstrap as jest.Mock).mockResolvedValue({});
+  mockLoadOrganisationCatalog.mockClear();
+  mockLoadSpecialityCatalog.mockClear();
+  mockRevampCatalogState = {
+    specialities: [],
+    services: [],
+    packages: [],
+    loadOrganisationCatalog: mockLoadOrganisationCatalog,
+    loadSpecialityCatalog: mockLoadSpecialityCatalog,
+  };
   useOrganisationRoomStore.setState({
     roomUnitsById: {},
     roomUnitIdsByRoomId: {},
@@ -433,10 +451,28 @@ describe('AppointmentWorkspace container', () => {
   });
 
   it('converts an outpatient workspace to inpatient through the admit endpoint', async () => {
+    (useRoomsForPrimaryOrg as jest.Mock).mockReturnValue([{ id: 'room-1', name: 'Ward A' }]);
+    useOrganisationRoomStore.setState({
+      roomUnitsById: {
+        'unit-a': {
+          id: 'unit-a',
+          organisationId: 'org-1',
+          roomId: 'room-1',
+          code: 'A',
+          displayName: 'A',
+          isActive: true,
+        },
+      },
+      roomUnitIdsByRoomId: {
+        'room-1': ['unit-a'],
+      },
+    });
     render(<AppointmentWorkspace appointment={makeAppointment(new Date())} />);
 
     expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /hospitalize patient/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /room/i }).at(-1)!);
+    fireEvent.click(screen.getByRole('button', { name: 'Ward A' }));
     fireEvent.click(screen.getByRole('button', { name: /convert to inpatient/i }));
 
     await waitFor(() => {
@@ -445,12 +481,169 @@ describe('AppointmentWorkspace container', () => {
         'appt-workspace',
         expect.objectContaining({
           admittedAt: expect.any(String),
-          assignmentReason: 'Admitted from appointment workspace',
+          room: { id: 'room-1', name: 'Ward A' },
+          roomUnitId: 'unit-a',
+          assignmentReason: 'Initial inpatient placement',
         })
       );
     });
     expect(useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.mode).toBe(
       'INPATIENT'
+    );
+  });
+
+  it('validates hospitalization room and unit before conversion', async () => {
+    render(<AppointmentWorkspace appointment={makeAppointment(new Date())} />);
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /hospitalize patient/i }));
+    fireEvent.click(screen.getByRole('button', { name: /convert to inpatient/i }));
+
+    expect(await screen.findByText('Room is required.')).toBeInTheDocument();
+    expect(screen.getByText('Unit is required.')).toBeInTheDocument();
+    expect(admitAppointment).not.toHaveBeenCalled();
+  });
+
+  it('updates hospitalization unit options when the selected room changes without a room-unit index', async () => {
+    (useRoomsForPrimaryOrg as jest.Mock).mockReturnValue([
+      { id: 'room-1', name: 'Ward A' },
+      { id: 'room-2', name: 'Ward B' },
+    ]);
+    useOrganisationRoomStore.setState({
+      roomUnitsById: {
+        'unit-b': {
+          id: 'unit-b',
+          organisationId: 'org-1',
+          roomId: 'room-2',
+          code: 'B',
+          displayName: 'B',
+          isActive: true,
+        },
+      },
+      roomUnitIdsByRoomId: {},
+    });
+
+    render(<AppointmentWorkspace appointment={makeAppointment(new Date())} />);
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /hospitalize patient/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /room/i }).at(-1)!);
+    fireEvent.click(screen.getByRole('button', { name: 'Ward B' }));
+
+    expect(screen.getByRole('button', { name: 'Unit: B' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /convert to inpatient/i }));
+
+    await waitFor(() => {
+      expect(admitAppointment).toHaveBeenCalledWith(
+        'org-1',
+        'appt-workspace',
+        expect.objectContaining({
+          room: { id: 'room-2', name: 'Ward B' },
+          roomUnitId: 'unit-b',
+        })
+      );
+    });
+  });
+
+  it('adds multiple hospitalization services and packages with typed dropdown pills', async () => {
+    (useRoomsForPrimaryOrg as jest.Mock).mockReturnValue([{ id: 'room-1', name: 'Ward A' }]);
+    useOrganisationRoomStore.setState({
+      roomUnitsById: {
+        'unit-a': {
+          id: 'unit-a',
+          organisationId: 'org-1',
+          roomId: 'room-1',
+          code: 'A',
+          displayName: 'A',
+          isActive: true,
+        },
+      },
+      roomUnitIdsByRoomId: {
+        'room-1': ['unit-a'],
+      },
+    });
+    mockRevampCatalogState = {
+      ...mockRevampCatalogState,
+      services: [
+        {
+          id: 'svc-hosp',
+          organisationId: 'org-1',
+          status: 'ACTIVE',
+          isBookable: true,
+          // Only inpatient-bookable items appear in the hospitalization picker.
+          isInpatientPreferred: true,
+          name: 'Hospitalization monitoring',
+          grossAmount: 50,
+          maxDiscount: 5,
+        },
+      ],
+      packages: [
+        {
+          id: 'pkg-care',
+          organisationId: 'org-1',
+          status: 'ACTIVE',
+          isBookable: true,
+          isInpatientPreferred: true,
+          name: 'Inpatient care package',
+          serverFinalAmount: 120,
+          additionalDiscount: 12,
+        },
+      ],
+    };
+
+    render(<AppointmentWorkspace appointment={makeAppointment(new Date())} />);
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /hospitalize patient/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /room/i }).at(-1)!);
+    fireEvent.click(screen.getByRole('button', { name: 'Ward A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Additional Service / Package' }));
+
+    expect(
+      screen.getByRole('button', { name: /Hospitalization monitoring Service/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Inpatient care package Package/i })
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Hospitalization monitoring Service/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Inpatient care package Package/i }));
+
+    expect(
+      screen.getByRole('button', { name: /Hospitalization monitoring, Inpatient care package/i })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('$ 170.00')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: /convert to inpatient/i }));
+
+    await waitFor(() => {
+      expect(admitAppointment).toHaveBeenCalledWith(
+        'org-1',
+        'appt-workspace',
+        expect.objectContaining({
+          room: { id: 'room-1', name: 'Ward A' },
+          roomUnitId: 'unit-a',
+        })
+      );
+    });
+    const services =
+      useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.services ?? [];
+    expect(services).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          refId: 'svc-hosp',
+          kind: 'SERVICE',
+          name: 'Hospitalization monitoring',
+          unitPriceCents: 5000,
+        }),
+        expect.objectContaining({
+          refId: 'pkg-care',
+          kind: 'PACKAGE',
+          name: 'Inpatient care package',
+          unitPriceCents: 12000,
+        }),
+      ])
     );
   });
 
@@ -546,6 +739,90 @@ describe('AppointmentWorkspace container', () => {
     expect(
       useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.admittedAt
     ).toEqual(expect.any(String));
+  });
+
+  it('does not show the inpatient admit action before check-in', async () => {
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(new Date(), true),
+            encounterId: 'enc-1',
+            status: 'UPCOMING',
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Admit' })).not.toBeInTheDocument();
+  });
+
+  it('keeps admit available for a checked-in inpatient with a legacy bare admission stamp', async () => {
+    const startTime = new Date();
+    (getAppointmentWorkspaceBootstrap as jest.Mock).mockResolvedValue({
+      appointment: { id: 'appt-workspace', kind: 'INPATIENT', status: 'CHECKED_IN' },
+      encounter: {
+        id: 'enc-1',
+        appointmentKind: 'INPATIENT',
+        encounterClass: 'IMP',
+        status: 'arrived',
+        admission: {
+          encounterId: 'enc-1',
+          organisationId: 'org-1',
+          patientId: 'comp-1',
+          admittedAt: startTime.toISOString(),
+        },
+      },
+    });
+
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(startTime, true),
+            encounterId: 'enc-1',
+            status: 'CHECKED_IN',
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Admit' })).toBeInTheDocument();
+  });
+
+  it('sends only backend-valid lead and support members when admitting', async () => {
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(new Date(), true),
+            encounterId: 'enc-1',
+            lead: { id: 'lead-1', name: 'Dr Lead' },
+            supportStaff: [
+              { id: 'support-1', name: 'Nurse One' },
+              { id: '', name: 'Missing Id' },
+              { id: 'support-2', name: '' },
+            ],
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Admit' }));
+
+    await waitFor(() => {
+      expect(admitAppointment).toHaveBeenCalledWith(
+        'org-1',
+        'appt-workspace',
+        expect.objectContaining({
+          lead: { id: 'lead-1', name: 'Dr Lead' },
+          supportStaff: [{ id: 'support-1', name: 'Nurse One' }],
+        })
+      );
+    });
   });
 
   it('refreshes encounter id before persisting a unit change when appointment prop has no encounter id', async () => {
@@ -834,6 +1111,100 @@ describe('AppointmentWorkspace container', () => {
           .value
       ).toBe(true);
     });
+  });
+
+  it('reverses ready for billing on the server when the toggle is un-ticked', async () => {
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(new Date(), true),
+            encounterId: 'enc-1',
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    // Tick ready first, then un-tick it so the second click drives the reverse call.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+
+    await waitFor(() => {
+      expect(reverseAppointmentReadyForBilling).toHaveBeenCalledWith(
+        'appt-workspace',
+        expect.objectContaining({
+          organisationId: 'org-1',
+          patientId: 'comp-1',
+          parentId: 'parent-1',
+          visitId: 'enc-1',
+        })
+      );
+    });
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(false);
+    });
+  });
+
+  it('keeps the toggle marked and warns when reversal is rejected with a 409 (paid invoice)', async () => {
+    (reverseAppointmentReadyForBilling as jest.Mock).mockRejectedValueOnce({
+      response: { status: 409, data: { message: 'payments applied' } },
+    });
+    render(
+      <AppointmentWorkspace
+        appointment={
+          {
+            ...makeAppointment(new Date(), true),
+            encounterId: 'enc-1',
+          } as Appointment
+        }
+      />
+    );
+
+    expect(await screen.findByText('SOAP read only: false')).toBeInTheDocument();
+    // Tick ready first so the next click attempts a reverse the server rejects with 409.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /ready for billing/i }));
+    });
+
+    await waitFor(() => {
+      expect(reverseAppointmentReadyForBilling).toHaveBeenCalled();
+    });
+    // The optimistic flip is rolled back, so it stays marked after the 409.
+    await waitFor(() => {
+      expect(
+        useAppointmentWorkspaceStore.getState().getEncounter('appt-workspace')?.readyForBilling
+          .value
+      ).toBe(true);
+    });
+    expect(mockNotify).toHaveBeenCalledWith(
+      'warning',
+      expect.objectContaining({ title: 'Can’t unmark ready for billing' })
+    );
   });
 
   it('wires active step callbacks from Diagnostics through Invoice', async () => {

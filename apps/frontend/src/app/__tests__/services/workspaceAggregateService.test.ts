@@ -233,6 +233,7 @@ describe('workspaceAggregateService', () => {
         readyForDischargeByName: 'Dr Discharge',
         readyForDischargeAt: '2026-06-18T10:05:00.000Z',
         admission: {
+          room: { id: 'room-1' },
           unitId: 'unit-1',
           admittedAt: '2026-06-18T08:30:00.000Z',
         },
@@ -276,6 +277,7 @@ describe('workspaceAggregateService', () => {
     });
 
     expect(patch.mode).toBe('INPATIENT');
+    expect(patch.roomId).toBe('room-1');
     expect(patch.unitId).toBe('unit-1');
     expect(patch.admittedAt).toBe('2026-06-18T08:30:00.000Z');
     expect(patch.readyForDischarge?.value).toBe(true);
@@ -485,6 +487,39 @@ describe('workspaceAggregateService', () => {
     expect(patch.stepStatus?.TREATMENT).toBe('COMPLETED');
   });
 
+  it('keeps a billed prescription-linked item in the prescription section even when its kind is not a medication', () => {
+    // After billing/dispense the backend can persist the drug as a treatment-item
+    // row whose kind is no longer MEDICATION/PRESCRIPTION but which still links to a
+    // prescription artifact. It must stay in the prescription section (read-only via
+    // `billed`), not be misfiled under Services & Packages or dropped entirely.
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      treatmentItems: [
+        {
+          id: 'ti-billed-rx',
+          productId: 'prod-drug',
+          servicePackageKind: 'SERVICE',
+          prescriptionId: 'rx-artifact-1',
+          name: 'Metronidazole',
+          quantity: 1,
+          priceSnapshot: { unitPrice: 18 },
+          billingStatus: 'BILLED',
+        },
+      ],
+    });
+
+    expect(patch.services ?? []).not.toContainEqual(
+      expect.objectContaining({ id: 'ti-billed-rx' })
+    );
+    expect(patch.prescription).toEqual([
+      expect.objectContaining({
+        id: 'ti-billed-rx',
+        medicineName: 'Metronidazole',
+        priceCents: 1800,
+        billed: true,
+      }),
+    ]);
+  });
+
   it('merges stored prescriptions with medication treatment items without duplicating ids', () => {
     const patch = normalizeWorkspaceBootstrapForEncounter({
       prescriptions: [
@@ -543,9 +578,12 @@ describe('workspaceAggregateService', () => {
               {
                 id: 'line-1',
                 medication: '',
+                strength: '75mg',
                 dosage: '75mg',
                 route: 'PO',
                 frequency: 'BID',
+                quantity: '2',
+                metadata: { dosageForm: 'Tablet' },
               },
             ],
             medications: [{ medication: '', inventoryItemId: 'inv-1' }],
@@ -569,11 +607,91 @@ describe('workspaceAggregateService', () => {
         id: 'line-1',
         // Per-line medication is blank, so the artifact summary is the label.
         medicineName: 'Carprofen 75 mg Tablets',
+        strength: '75mg',
+        dosageForm: 'Tablet',
         dosage: '75mg',
         route: 'PO',
         frequency: 'BID',
+        qty: '2',
       }),
     ]);
     expect(patch.services).toBeUndefined();
+  });
+
+  it('flags an artifact-sourced prescription line as billed from its medication treatment item', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      prescriptions: [
+        {
+          artifact: { id: 'artifact-1', kind: 'PRESCRIPTION', summary: 'Paracetamol' },
+          prescription: {
+            id: 'rx-1',
+            items: [{ id: 'line-1', medication: 'Paracetamol', inventoryItemId: 'inv-9' }],
+            medications: [{ medication: 'Paracetamol', inventoryItemId: 'inv-9' }],
+          },
+        },
+      ],
+      // The billed status lives on the medication treatment item and links to the artifact by
+      // prescriptionId. Inventory id alone is not enough because the same drug can be prescribed
+      // more than once.
+      treatmentItems: [
+        {
+          id: 'ti-1',
+          prescriptionId: 'rx-1',
+          productId: 'inv-9',
+          servicePackageKind: 'MEDICATION',
+          name: 'Paracetamol',
+          quantity: 1,
+          billingStatus: 'BILLED',
+        },
+      ],
+    });
+
+    expect(patch.prescription).toEqual([expect.objectContaining({ id: 'line-1', billed: true })]);
+  });
+
+  it('does not mark a same-drug artifact prescription as billed without a prescription link', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      prescriptions: [
+        {
+          artifact: { id: 'artifact-2', kind: 'PRESCRIPTION', summary: 'Paracetamol repeat' },
+          prescription: {
+            id: 'rx-repeat',
+            items: [{ id: 'line-repeat', medication: 'Paracetamol', inventoryItemId: 'inv-9' }],
+          },
+        },
+      ],
+      treatmentItems: [
+        {
+          id: 'ti-billed-other',
+          prescriptionId: 'rx-original',
+          productId: 'inv-9',
+          servicePackageKind: 'MEDICATION',
+          name: 'Paracetamol',
+          quantity: 1,
+          billingStatus: 'BILLED',
+        },
+      ],
+    });
+
+    expect(patch.prescription).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'line-repeat', billed: false })])
+    );
+  });
+
+  it('keeps an artifact-sourced prescription line unbilled when no billed treatment item matches', () => {
+    const patch = normalizeWorkspaceBootstrapForEncounter({
+      prescriptions: [
+        {
+          artifact: { id: 'artifact-1', kind: 'PRESCRIPTION', summary: 'Paracetamol' },
+          prescription: {
+            id: 'rx-1',
+            items: [{ id: 'line-1', medication: 'Paracetamol', inventoryItemId: 'inv-9' }],
+          },
+        },
+      ],
+      treatmentItems: [],
+    });
+
+    expect(patch.prescription).toEqual([expect.objectContaining({ id: 'line-1', billed: false })]);
   });
 });

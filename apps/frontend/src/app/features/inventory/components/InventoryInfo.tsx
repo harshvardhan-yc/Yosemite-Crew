@@ -274,6 +274,8 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
       'batch',
       'manufactureDate',
       'expiryDate',
+      'expiryWarningBefore',
+      'barcode',
       'serial',
       'tracking',
       'litterId',
@@ -388,7 +390,11 @@ const BatchEditor: React.FC<BatchEditorProps> = ({
         inname={name}
         value={value}
         inlabel={placeholder || ''}
-        onChange={(e) => onChangeHandler(batchIndex, typedName, e.target.value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          const val = field.numeric ? raw.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1') : raw;
+          onChangeHandler(batchIndex, typedName, val);
+        }}
         className="min-h-12!"
       />
     );
@@ -529,8 +535,8 @@ type InventoryInfoProps = {
 const modalSections: { key: InventorySectionKey; name: string }[] = [
   { key: 'basicInfo', name: 'Basic Details' },
   { key: 'classification', name: 'Clinical Details' },
-  { key: 'stock', name: 'Stock Control' },
   { key: 'batch', name: 'Batch and expiry' },
+  { key: 'stock', name: 'Stock Control' },
   { key: 'pricing', name: 'Pricing' },
   { key: 'vendor', name: 'Vendor details' },
 ];
@@ -624,7 +630,7 @@ const PricingCurrencySummary = ({ inventory }: { inventory: InventoryItem }) => 
           {formatCurrencyValue(getGrossProfitPerUnit(inventory), currency)}
         </span>
       </div>
-      <div>
+      <div className="mb-4">
         <span>Margin : </span>
         <span className="rounded-full bg-badge-blue-bg px-2 font-semibold text-badge-blue-text">
           {formatPercentValue(getMarginPercent(inventory))}

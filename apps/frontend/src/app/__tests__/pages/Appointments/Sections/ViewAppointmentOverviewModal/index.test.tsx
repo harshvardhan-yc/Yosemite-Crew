@@ -23,6 +23,10 @@ jest.mock('@/app/hooks/useInvoices', () => ({
   useInvoicesForPrimaryOrg: jest.fn(() => []),
 }));
 
+jest.mock('@/app/hooks/useCompanionTerminologyText', () => ({
+  useCompanionTerminologyText: () => (text: string) => text,
+}));
+
 jest.mock('@/app/stores/orgStore', () => ({
   useOrgStore: jest.fn((selector) => selector({ orgsById: { 'org-1': { type: 'HOSPITAL' } } })),
 }));
