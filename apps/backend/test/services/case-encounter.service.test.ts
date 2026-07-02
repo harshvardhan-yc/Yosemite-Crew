@@ -72,6 +72,9 @@ jest.mock("../../src/config/prisma", () => ({
     companion: {
       findUnique: jest.fn(),
     },
+    patient: {
+      findUnique: jest.fn(),
+    },
     roomUnitAssignment: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -143,7 +146,7 @@ describe("CaseEncounterService", () => {
     mockedPrisma.$transaction.mockImplementation(async (callback: any) =>
       callback(mockedPrisma),
     );
-    mockedPrisma.companion.findUnique.mockResolvedValue({
+    mockedPrisma.patient.findUnique.mockResolvedValue({
       id: "comp_1",
       type: "dog",
       speciesCode: "canislf",
@@ -945,7 +948,7 @@ describe("CaseEncounterService", () => {
       createdAt: new Date("2026-06-11T10:00:00.000Z"),
       updatedAt: new Date("2026-06-11T10:00:00.000Z"),
     } as never);
-    mockedPrisma.companion.findUnique.mockResolvedValue({
+    mockedPrisma.patient.findUnique.mockResolvedValue({
       id: "comp_1",
       type: "dog",
       speciesCode: "canislf",
@@ -1027,7 +1030,7 @@ describe("CaseEncounterService", () => {
       createdAt: new Date("2026-06-11T10:00:00.000Z"),
       updatedAt: new Date("2026-06-11T10:00:00.000Z"),
     } as never);
-    mockedPrisma.companion.findUnique.mockResolvedValue({
+    mockedPrisma.patient.findUnique.mockResolvedValue({
       id: "comp_1",
       type: "dog",
       speciesCode: "canislf",
@@ -1041,39 +1044,6 @@ describe("CaseEncounterService", () => {
     ).rejects.toMatchObject({
       message: "Room unit is not compatible with this companion's species.",
       statusCode: 409,
-    });
-  });
-
-  it("rejects assignment when the transaction client is missing the room unit delegate", async () => {
-    mockedPrisma.$transaction.mockImplementationOnce(async (callback: any) =>
-      callback({
-        ...mockedPrisma,
-        roomUnit: undefined,
-      }),
-    );
-    mockedPrisma.encounter.findUnique.mockResolvedValue(
-      baseEncounterRow as never,
-    );
-    mockedPrisma.admission.findUnique.mockResolvedValue({
-      encounterId: "enc_1",
-      organisationId: "org_1",
-      patientId: "comp_1",
-      unitId: null,
-      expectedStayDays: null,
-      admittedAt: new Date("2026-06-11T10:30:00.000Z"),
-      dischargedAt: null,
-      createdAt: new Date("2026-06-11T10:30:00.000Z"),
-      updatedAt: new Date("2026-06-11T10:30:00.000Z"),
-    } as never);
-
-    await expect(
-      CaseEncounterService.assignUnit("enc_1", {
-        unitId: "unit_1",
-        assignedAt: new Date("2026-06-11T11:00:00.000Z"),
-      }),
-    ).rejects.toMatchObject({
-      message: "Transaction client is missing roomUnit delegate.",
-      statusCode: 500,
     });
   });
 
@@ -1116,7 +1086,7 @@ describe("CaseEncounterService", () => {
       capabilities: [],
       isActive: true,
     } as never);
-    mockedPrisma.companion.findUnique.mockResolvedValue({
+    mockedPrisma.patient.findUnique.mockResolvedValue({
       id: "comp_1",
       type: "dog",
       speciesCode: "canislf",

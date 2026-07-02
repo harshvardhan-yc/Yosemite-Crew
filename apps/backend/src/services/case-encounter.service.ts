@@ -382,7 +382,7 @@ const resolveAssignableUnitContext = async (params: {
   );
   const companionDelegate = getTransactionDelegate<CompanionDelegate>(
     tx,
-    "companion",
+    "patient",
   );
 
   const unit = await roomUnitDelegate.findUnique({
