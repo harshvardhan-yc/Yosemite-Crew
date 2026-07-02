@@ -114,6 +114,20 @@ describe('DocumentsPanel forms search', () => {
     expect(screen.queryByText('Draft form')).not.toBeInTheDocument();
   });
 
+  it('shows all assignable forms on focus without typing a query', async () => {
+    renderPanel();
+    await waitFor(() => expect(loadTemplateForms).toHaveBeenCalled());
+
+    fireEvent.focus(screen.getByLabelText('Search forms to add'));
+
+    // Both assignable (consent + custom FORM) templates surface immediately;
+    // clinical/plan/draft kinds stay filtered out.
+    expect(await screen.findByText('Surgery Consent')).toBeInTheDocument();
+    expect(screen.getByText('Custom intake form')).toBeInTheDocument();
+    expect(screen.queryByText('SOAP note')).not.toBeInTheDocument();
+    expect(screen.queryByText('Draft form')).not.toBeInTheDocument();
+  });
+
   it('assigns a template and refetches the assigned forms', async () => {
     renderPanel();
     await waitFor(() => expect(fetchAppointmentForms).toHaveBeenCalled());
