@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Appointment } from '@yosemite-crew/types';
 import CenterModal from '@/app/ui/overlays/Modal/CenterModal';
 import ModalHeader from '@/app/ui/overlays/Modal/ModalHeader';
@@ -9,6 +9,7 @@ import {
   assignEncounterUnit,
   updateAppointment,
 } from '@/app/features/appointments/services/appointmentService';
+import { loadRoomsForOrgPrimaryOrg } from '@/app/features/organization/services/roomService';
 import { useAppointmentWorkspaceStore } from '@/app/stores/appointmentWorkspaceStore';
 import { useOrganisationRoomStore } from '@/app/stores/roomStore';
 import {
@@ -27,6 +28,7 @@ const ChangeRoom = ({ showModal, setShowModal, activeAppointment }: ChangeRoomPr
   const rooms = useRoomsForPrimaryOrg();
   const roomUnitsById = useOrganisationRoomStore((state) => state.roomUnitsById);
   const roomUnitIdsByRoomId = useOrganisationRoomStore((state) => state.roomUnitIdsByRoomId);
+  const setRoomUnitOccupied = useOrganisationRoomStore((state) => state.setRoomUnitOccupied);
   const initEncounter = useAppointmentWorkspaceStore((state) => state.initEncounter);
   const setRoomUnit = useAppointmentWorkspaceStore((state) => state.setRoomUnit);
   const encounter = useAppointmentWorkspaceStore((state) =>
@@ -69,6 +71,11 @@ const ChangeRoom = ({ showModal, setShowModal, activeAppointment }: ChangeRoomPr
   );
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showModal) return;
+    loadRoomsForOrgPrimaryOrg({ force: true, silent: true }).catch(() => undefined);
+  }, [showModal]);
 
   const prevResetKeyRef = useRef({ appointment: activeAppointment, showModal });
   const resetKey = { appointment: activeAppointment, showModal };
@@ -131,6 +138,9 @@ const ChangeRoom = ({ showModal, setShowModal, activeAppointment }: ChangeRoomPr
             unitId: selectedUnitId,
             reason: 'Appointment room assignment',
           });
+          setRoomUnitOccupied(encounter?.unitId, false);
+          setRoomUnitOccupied(selectedUnitId, true);
+          await loadRoomsForOrgPrimaryOrg({ force: true, silent: true });
         }
       }
       setShowModal(false);
