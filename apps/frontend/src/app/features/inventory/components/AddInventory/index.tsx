@@ -271,11 +271,6 @@ const AddInventory = ({
   const validateStock = (): Partial<Record<keyof typeof formData.stock, string>> => {
     const stock = formData.stock;
     const errors: Partial<Record<keyof typeof formData.stock, string>> = {};
-    if (!stock.current) {
-      errors.current = 'On hand quantity is required';
-    } else if (Number.isNaN(Number(stock.current))) {
-      errors.current = 'Enter a valid number';
-    }
     if (!stock.reorderLevel) {
       errors.reorderLevel = 'Reorder level is required';
     } else if (Number.isNaN(Number(stock.reorderLevel))) {
