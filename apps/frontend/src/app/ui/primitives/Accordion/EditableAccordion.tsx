@@ -595,6 +595,7 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
         onDeleteClick={onDelete}
       >
         <div className={`flex flex-col`}>
+          {dynamicFooter && <div className="mb-3">{dynamicFooter(formValues)}</div>}
           {fields
             .filter((field) => !fieldFilter || fieldFilter(field.key, formValues))
             .map((field) => {
@@ -622,7 +623,6 @@ const EditableAccordion: React.FC<EditableAccordionProps> = ({
               );
             })}
           {renderedFooter && <div className="mt-3">{renderedFooter}</div>}
-          {dynamicFooter && <div className="mt-3">{dynamicFooter(formValues)}</div>}
         </div>
       </Accordion>
 
